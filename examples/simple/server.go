@@ -5,12 +5,14 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/workflow"
-	"golang.org/x/sync/semaphore"
+	"github.com/google/uuid"
 )
 
 func getHello(w http.ResponseWriter, r *http.Request) {
@@ -18,15 +20,20 @@ func getHello(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "Hello, HTTP!\n")
 }
 
-// infinite loop ticker to feed data to queue
-func feedQueue(queue chan<- string) {
+// infinite loop ticker to feed work to queue, 'simulate ingestion'
+func feedQueue(queue concurrency.Queue[string]) {
 	ticker := time.NewTicker(75 * time.Millisecond)
 
 	go func() {
 		for {
 			t := <-ticker.C
 			for i := range rand.IntN(10) {
-				queue <- t.String() + " " + strconv.Itoa(i)
+
+				go func() {
+					if queue.CanEnQueue() {
+						queue.EnQueue(t.String() + " " + strconv.Itoa(i))
+					}
+				}()
 			}
 		}
 	}()
@@ -52,32 +59,55 @@ func main() {
 	ctx := &workflow.Context{}
 	workflow := &ScrapeWorkflow{}
 
-	const concurrencyLimit = 30
+	const concurrencyLimit = 300
 
-	jobQueue := make(chan string, concurrencyLimit*10)
-	workflowSem := semaphore.NewWeighted(concurrencyLimit)
+	workQueue, err := concurrency.NewPressureQueue[string](concurrencyLimit * 10)
+	if err != nil {
+		os.Exit(1)
+	}
 
-	feedQueue(jobQueue)
+	workerPoolLimiter, err := concurrency.NewWorkerPoolLimiter(concurrencyLimit)
+	if err != nil {
+		os.Exit(1)
+	}
+	// workflowSem := semaphore.NewWeighted(concurrencyLimit)
 
+	feedQueue(workQueue)
+
+	// infinite wait - block main thread forever via Wait at end
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	// queue processor
 	go func() {
 		for {
-			permit := workflowSem.TryAcquire(1)
-			if !permit {
+			// slightly more mem efficient here instead of in work gothread, but could move back for clarity / access clustering
+			if !workQueue.CanDeQueue() {
 				continue
 			}
 
-			timeString := <-jobQueue
+			threadOwner, err := uuid.NewV7()
+			if err != nil {
+				continue
+			}
 
-			// gothread for work
+			if !workerPoolLimiter.CanAcquirePermit(threadOwner.String()) {
+				continue
+			}
+
+			workerPoolLimiter.AcquirePermit(threadOwner.String())
+
+			// gothread for work, in flight work limited by concurrency limit
 			go func() {
-				defer workflowSem.Release(1)
+				defer workerPoolLimiter.ReleasePermit(threadOwner.String())
+
+				work, err := workQueue.DeQueue()
+				if err != nil {
+					return
+				}
 
 				workflow.Run(ctx, &ScrapeInput{
-					URL: timeString,
+					URL: work,
 				})
 			}()
 		}
