@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/agentstax/vulkan/pkg/workflow"
+	"golang.org/x/sync/semaphore"
 )
 
 func getHello(w http.ResponseWriter, r *http.Request) {
@@ -17,7 +20,7 @@ func getHello(w http.ResponseWriter, r *http.Request) {
 
 // infinite loop ticker to feed data to queue
 func feedQueue(queue chan<- string) {
-	ticker := time.NewTicker(250 * time.Millisecond)
+	ticker := time.NewTicker(75 * time.Millisecond)
 
 	go func() {
 		for {
@@ -46,20 +49,40 @@ func main() {
 	// 	os.Exit(1)
 	// }
 
-	const concurrencyLimit = 5
-	jobQueue := make(chan string, concurrencyLimit)
+	ctx := &workflow.Context{}
+	workflow := &ScrapeWorkflow{}
+
+	const concurrencyLimit = 30
+
+	jobQueue := make(chan string, concurrencyLimit*10)
+	workflowSem := semaphore.NewWeighted(concurrencyLimit)
 
 	feedQueue(jobQueue)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 
+	// queue processor
 	go func() {
 		for {
+			permit := workflowSem.TryAcquire(1)
+			if !permit {
+				continue
+			}
+
 			timeString := <-jobQueue
-			fmt.Println(timeString)
+
+			// gothread for work
+			go func() {
+				defer workflowSem.Release(1)
+
+				workflow.Run(ctx, &ScrapeInput{
+					URL: timeString,
+				})
+			}()
 		}
 	}()
 
+	// infinite wait - block main thread forever
 	wg.Wait()
 }
