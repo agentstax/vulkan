@@ -1,0 +1,91 @@
+---
+title: Message Lifecycle
+description: Every message is a state machine — retries, backoff, leases, and dead letters you can SELECT.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+In a log system, a message is just *present*. In Vulkan, for every consumer
+group that opts in, a message has a **state machine**:
+
+```
+                       attempts < max
+            ┌────────── (backoff) ◀─────────┐
+            ▼                               │ failure
+  ┌───────┐     claim      ┌────────────┐   │
+  │ ready │ ─────────────▶ │ processing │ ──┤
+  └───────┘                └────────────┘   │ success
+      ▲                          │          ▼
+      │ lease expired            │      ┌──────┐
+      └────── (reaper) ◀─────────┘      │ done │
+                                        └──────┘
+                       attempts = max
+            failure ────────────────▶  ┌──────┐
+                                        │ dead │  ◀─ your DLQ, as rows
+                                        └──────┘
+```
+
+Each transition is recorded with attempts, timestamps, and the last error —
+**per consumer group**. Group A dead-lettering message 5 doesn't affect group
+B sailing through it.
+
+## Retries & backoff
+
+```go
+vulkan.Subscribe(client, "orders", "fraud-screening", screen,
+    vulkan.WithRetries(5),
+    vulkan.WithBackoff(vulkan.Exponential(2*time.Second)), // 2s, 4s, 8s…
+)
+```
+
+A failed message isn't retried by anyone *waiting* — its `run_at` is pushed
+into the future and it simply becomes claimable again when the time comes.
+Backoff is a timestamp, not a timer in a process that might die.
+
+## Leases: surviving dead workers
+
+When a worker claims a message, it takes a **lease** (`locked_at`), not a
+database lock. If the worker finishes, it resolves the message. If the worker
+*vanishes* — OOM-killed, deploy, kernel panic — the lease expires and a reaper
+flips the message back to `ready`. No heartbeat protocol, no session state,
+no rebalancing storm. The message is simply work that becomes claimable again.
+
+<Aside type="caution" title="At-least-once, and proud of it">
+Leases mean a slow-but-alive worker and a reaper can occasionally both process
+the same message — the same trade SQS, Pulsar, and every real queue makes.
+Vulkan is honest about being **at-least-once**: write idempotent handlers
+(Vulkan gives you `msg.Offset` and `msg.ID` as natural idempotency keys).
+Systems that promise exactly-once delivery are selling you exactly-once
+*something else*.
+</Aside>
+
+## The dead-letter queue is a query
+
+After max attempts, messages land in `dead` — with their full payload, attempt
+count, and final error, still joined to the log:
+
+```sql
+SELECT e.payload, d.attempts, d.last_error, d.updated_at
+FROM vulkan.deliveries d
+JOIN vulkan.events e ON e."offset" = d.event_offset
+WHERE d.consumer_group = 'fraud-screening' AND d.status = 'dead'
+ORDER BY d.updated_at DESC;
+```
+
+No redrive policies to configure, no separate DLQ queues to wire per consumer,
+no expiring messages you never got to look at. Fix the bug, then:
+
+```go
+// Redrive everything dead for this group — or pass a filter.
+client.Redrive(ctx, "orders", "fraud-screening", vulkan.DeadOnly())
+```
+
+[Full dead-letter guide →](/guides/dead-letters/)
+
+## Why this matters
+
+This per-message lifecycle is precisely what the log world can't express — a
+Kafka consumer's *only* state is "I have read up to offset N." One poison
+message and your choices are: stall the partition, skip and lose it, or build
+a parallel retry-topic system by hand. In Vulkan, lifecycle is native, and it
+coexists with [replay and fan-out](/concepts/streams/) on the same stream.

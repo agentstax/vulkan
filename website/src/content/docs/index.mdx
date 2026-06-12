@@ -1,0 +1,182 @@
+---
+title: Vulkan
+description: Your Postgres is already a message platform. Vulkan is a Go library that gives the database you already run durable background jobs, streams, and routing — with no brokers to deploy and nothing to outgrow.
+template: splash
+hero:
+  title: Your Postgres is already a message platform.
+  tagline: >-
+    Vulkan is a Go library that gives the database you already run durable
+    background jobs, streams, and routing — with no brokers to deploy and
+    nothing to outgrow.
+  actions:
+    - text: Quickstart
+      link: /quickstart/
+      icon: rocket
+    - text: Try to lose a message
+      link: /demo/
+      icon: right-arrow
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/agentstax/vulkan
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import ChaosDiagram from '../../components/ChaosDiagram.astro';
+import CloudDashboard from '../../components/CloudDashboard.astro';
+
+<ChaosDiagram />
+
+<p style="text-align:center; color: var(--sl-color-gray-3); font-size: 0.9rem; margin-top: 0.25rem;">
+	Every twelve seconds, worker-2 is <code>kill -9</code>'d mid-message.
+	Watch what doesn't happen. <a href="/demo/">Then run the attacks yourself →</a>
+</p>
+
+## Start with the problem you actually have
+
+You don't need a message platform today. You need to send a welcome email
+after signup, process a Stripe webhook, resize an upload — *reliably*. That
+usually means adding Redis or SQS to your stack before lunch. With Vulkan it
+means adding nothing:
+
+```go
+queue := vulkan.Queue[WelcomeEmail](client, "emails")
+
+// In your signup handler — same transaction as the user INSERT,
+// so the email job exists if and only if the user does:
+client.Tx(ctx, func(tx vulkan.Tx) error {
+    if err := users.Insert(ctx, tx, user); err != nil {
+        return err
+    }
+    return queue.EnqueueTx(ctx, tx, &WelcomeEmail{UserID: user.ID})
+})
+
+// Anywhere in your app (or a separate binary) — the worker:
+queue.Work(ctx, func(ctx context.Context, job vulkan.Message[WelcomeEmail]) error {
+    return mailer.SendWelcome(ctx, job.Payload)
+}, vulkan.WithRetries(5), vulkan.WithBackoff(vulkan.Exponential(time.Second)))
+```
+
+That's the whole setup. One library, one migration, your existing
+`DATABASE_URL`. Retries, exponential backoff, and a dead-letter queue you can
+`SELECT` — and because the job is enqueued **in your transaction**, the email
+can never fire for a signup that rolled back, and never get lost for one that
+committed. That last guarantee is structurally impossible with Redis, SQS, or
+any other external queue. [Why →](/guides/transactional-enqueue/)
+
+## You will outgrow a job queue. You won't outgrow this.
+
+Here's the thing about every async tool you could pick today: it's a fork in
+the road you can't see yet. The job queue can't fan out. The queue service
+can't replay. Eighteen months in, each new need means bolting on another
+system. Vulkan's bet: **a queue is just a stream with one consumer group** —
+so growing never means migrating.
+
+<Steps>
+
+1. **Day 1 — background jobs.** The code above. One queue, one worker,
+   retries and dead letters included. As capable as any job queue, with one
+   guarantee none of them have.
+
+2. **Month 3 — a second consumer.** Product wants an in-app activity feed
+   fed by the same signups. With a job queue, the message is deleted the
+   moment the email worker finishes — there's nothing left to consume. In
+   Vulkan, your queue was a durable stream all along:
+
+   ```go
+   vulkan.Subscribe(client, "emails", "activity-feed", recordSignup)
+   ```
+
+   One line. Independent cursor, independent retries, independent dead
+   letters. The email worker never notices.
+
+3. **Month 9 — a new service needs history.** You're building search. Point
+   it at the beginning of retained history and it bootstraps itself —
+   no hand-written backfill, no consistency scramble:
+
+   ```go
+   vulkan.Subscribe(client, "orders", "search-indexer", indexOrder,
+       vulkan.FromOffset(0))
+   ```
+
+4. **Year 1 — routing and ordering.** Multiple event types, regional
+   consumers, a per-account ordering requirement. Routing keys, bindings,
+   and per-key FIFO are already in the table:
+
+   ```go
+   stream.Publish(ctx, event,
+       vulkan.WithRoutingKey("orders.eu.created"),
+       vulkan.WithPartitionKey(order.AccountID))
+
+   vulkan.Bind(client, "eu-compliance", "orders.eu.>")
+   ```
+
+</Steps>
+
+Same table the whole way. Each step is *additive* — a line of code, not a
+migration project, not a second system, not a third. This is the point where
+other tools hand you a Kafka cluster and a sympathetic look.
+
+## Everything you'd otherwise bolt on later
+
+<CardGrid stagger>
+	<Card title="Transactional enqueue" icon="approve-check">
+		Save the row and queue the work — **in one COMMIT**. Kills the dual-write
+		problem outright; the one thing no external queue or broker can do.
+	</Card>
+	<Card title="Per-message lifecycle" icon="list-format">
+		Retries with exponential backoff, leases that survive dead workers, and
+		a dead-letter queue you can inspect with `SELECT`.
+	</Card>
+	<Card title="Retention & replay" icon="seti:clock">
+		Messages are facts, not ephemeral work items. New consumers can rebuild
+		from history — the superpower that usually costs you a Kafka cluster.
+	</Card>
+	<Card title="Fan-out without ceremony" icon="random">
+		Any number of consumer groups on one stream, each at its own pace with
+		its own retries and dead letters. Adding one is a line, not a topology.
+	</Card>
+	<Card title="Routing" icon="setting">
+		Publish with a routing key; bindings decide who receives —
+		`orders.*.created` wildcards and header matching, stored as rows.
+	</Card>
+	<Card title="FIFO where you need it" icon="bars">
+		Per-key ordering on demand: same key processes in order, everything
+		else runs fully parallel. Pay for ordering only where you opt in.
+	</Card>
+</CardGrid>
+
+## Open source. Cloud when you want it.
+
+The engine is open source — run it against any Postgres: yours, RDS, Neon,
+Railway, Supabase. And because the entire state is rows, your messaging layer
+answers questions like a database — because it is one:
+
+```sql
+-- 2am, something's off. "What happened to order ord_8431?" is a
+-- query, not an archaeology dig through a broker console:
+SELECT d.consumer_group, d.status, d.attempts, d.last_error
+FROM vulkan.events e
+JOIN vulkan.deliveries d ON d.event_offset = e."offset"
+WHERE e.payload->>'order_id' = 'ord_8431';
+```
+
+**Vulkan Cloud** is those same queries as a product — a live dashboard,
+dead-letter triage with one-click redrive, replay dry-runs, and alerts that
+know queues:
+
+<CloudDashboard />
+
+[What's in Vulkan Cloud →](/cloud/)
+
+<CardGrid>
+	<Card title="Start in five minutes" icon="rocket">
+		One migration, one import, your existing `DATABASE_URL`.
+		[Quickstart →](/quickstart/)
+	</Card>
+	<Card title="Skeptical? Good." icon="magnifier">
+		See how Vulkan stacks up against [job queues](/compare/job-queues/),
+		[Kafka](/compare/kafka/), and [RabbitMQ & SQS](/compare/rabbitmq-sqs/).
+	</Card>
+</CardGrid>

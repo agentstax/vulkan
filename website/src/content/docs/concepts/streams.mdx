@@ -1,0 +1,97 @@
+---
+title: Streams, Replay & Fan-out
+description: Messages are facts. Retain them, fan them out, and replay them — without a Kafka cluster.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A Vulkan **stream** is a named, append-only sequence of events. Publishing
+appends; consuming never deletes. That single decision — *retain instead of
+consume* — is what unlocks everything on this page.
+
+## Fan-out: consumers are independent by construction
+
+Because the log is shared and each consumer group holds only its own position
+(or its own delivery rows), adding a consumer is free and invisible to every
+other consumer:
+
+```go
+// Three teams, three groups, one stream — zero coordination.
+vulkan.Subscribe(client, "orders", "email-receipts", sendReceipt)
+vulkan.Subscribe(client, "orders", "fraud-screening", screen,
+    vulkan.WithRetries(5))
+vulkan.Subscribe(client, "orders", "warehouse-sync", syncWarehouse)
+```
+
+- A slow group falls behind **alone**; nobody else feels it.
+- A new group can start from *now* (`vulkan.FromLatest()`) or from the
+  beginning of retained history (`vulkan.FromOffset(0)`).
+- Groups choose their own semantics: full
+  [lifecycle](/concepts/lifecycle/) (retries, DLQ) or a bare cursor for
+  cheap high-volume reading.
+
+Contrast with queue-world fan-out: SQS needs an SNS topic fanned into N
+queues; RabbitMQ needs an exchange bound to N queues — in both, the moment a
+message is consumed it's gone, so *retroactive* fan-out is impossible. The
+consumer you add tomorrow can't see yesterday.
+
+## Replay: the time machine
+
+Since events are retained, "reprocess history" is just "move a cursor":
+
+```go
+// New search-indexing service? Build its state from history.
+vulkan.Subscribe(client, "orders", "search-indexer", indexOrder,
+    vulkan.FromOffset(0))
+
+// Bug shipped on Tuesday? Re-run just the affected window.
+client.Rewind(ctx, "orders", "warehouse-sync",
+    vulkan.ToTimestamp(tuesdayMorning))
+```
+
+What replay buys you in practice:
+
+- **New services bootstrap themselves** from history instead of needing
+  hand-written backfill jobs.
+- **Bug recovery becomes mechanical**: fix the handler, rewind the group,
+  let it re-run. No data archaeology.
+- **Staging environments get real traffic**: point a throwaway group at
+  production history (or a copied partition) and replay it.
+
+[Replay guide with worked examples →](/guides/replay/)
+
+## Lag: the one health metric
+
+Every group's health is one subtraction — how far behind the head of the log
+it is:
+
+```sql
+SELECT name,
+       (SELECT max("offset") FROM vulkan.events WHERE topic = 'orders')
+         - position AS lag
+FROM vulkan.consumers;
+```
+
+Vulkan exposes this as a metric per group (and Vulkan Cloud alerts on it),
+because lag is the early warning for every streaming failure mode: a stuck
+consumer, an under-provisioned worker pool, a poison-pill loop.
+
+<Aside type="caution" title="The retention cliff">
+Retention plus a permanently slow consumer has a sharp edge: if a group's lag
+grows past the retention window, history is dropped before the group reads
+it. This is Kafka's infamous "consumer fell off the log" failure — Vulkan
+can't repeal it, but it makes the approach visible (lag vs. retention is one
+query) and alertable long before you hit the cliff.
+</Aside>
+
+## Retention
+
+Retention is a per-stream policy, enforced by dropping time partitions —
+O(1) regardless of volume, no vacuum debt:
+
+```go
+vulkan.ConfigureStream(client, "orders",
+    vulkan.Retain(30*24*time.Hour),     // keep 30 days
+    vulkan.ArchiveTo("s3://acme-events"), // optional cold storage (Cloud)
+)
+```

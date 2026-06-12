@@ -1,0 +1,124 @@
+---
+title: Why Vulkan
+description: The case for one Postgres-native messaging platform instead of three brokers.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The dead-end problem
+
+Every async tool you adopt is a bet on your future needs, made when you know
+the least. You pick a job queue for the welcome emails. It's great. Then
+product wants an activity feed off the same events — but the queue deleted
+them. Then a new service needs last quarter's history — the queue never had
+it. Each time, the tool you have can't do the next thing, so you add another
+system beside it. Walk into almost any backend team a few years in and you'll
+find where that road ends — the same accidental architecture:
+
+1. **A job queue** (Sidekiq, Celery, SQS, a Redis list) for background work —
+   retries, dead letters, "process this exactly once-ish."
+2. **An event log** (Kafka, Kinesis) for facts — "an order was created," kept
+   around so new services can replay history and many teams can consume
+   independently.
+3. **A message broker** (RabbitMQ, SNS) for routing — publish here, deliver
+   there, based on topology nobody fully remembers.
+
+Three systems. Three sets of client libraries, three monitoring stacks, three
+on-call playbooks, three upgrade treadmills. And here's the uncomfortable
+part: **they're the same primitives with different defaults.** A queue is
+"messages are work you claim and consume." A log is "messages are facts you
+retain and re-read at a cursor." Routing is a predicate over message
+attributes. Every broker is one of these, or a deliberate fusion.
+
+Vulkan is the fusion, built deliberately, on the database you already
+operate — so the tool you pick for the welcome emails on day one is the same
+tool, and the same table, serving the fan-out, the replay, and the routing
+years later. The dead end never comes.
+
+## The dual-write problem (and why no broker can fix it)
+
+Every external broker shares one structural flaw. Your business data lives in
+Postgres; your messages live somewhere else. So every "save and notify"
+operation is **two writes to two systems with no shared transaction**:
+
+- The database commits, the publish fails → you did the work but **lost the
+  event**. The receipt never sends. The downstream service never hears.
+- The publish succeeds, the database rolls back → a **phantom event** for work
+  that never happened. The receipt sends for an order that doesn't exist.
+
+There is no safe ordering, and no amount of retry logic closes the gap. The
+industry's workaround is the *transactional outbox pattern*: write the event
+to a database table in your transaction, then run a relay process to forward
+it to the broker. Notice what that admits — **the only safe queue is a table
+in your database.** Vulkan just stops pretending otherwise. The outbox *is*
+the platform.
+
+```go
+// One transaction. The order and the event commit together, or neither does.
+err := client.Tx(ctx, func(tx vulkan.Tx) error {
+    if err := orders.Insert(ctx, tx, order); err != nil {
+        return err
+    }
+    return stream.PublishTx(ctx, tx, &OrderCreated{OrderID: order.ID})
+})
+```
+
+<Aside type="tip" title="This is the headline feature">
+Transactional enqueue isn't a nice-to-have — it deletes an entire class of
+consistency bugs that teams otherwise spend years patching with retries,
+reconciliation jobs, and incident reviews.
+[Read the full guide →](/guides/transactional-enqueue/)
+</Aside>
+
+## What you get by being *in* the database
+
+**Observability you already know how to use.** A broker is a black box with
+its own CLI and its own dashboard. Vulkan's entire state is rows. Queue depth,
+consumer lag, dead letters, the full history of a single message — all SQL.
+Your existing dashboards, backups, and point-in-time recovery cover your
+messaging layer for free.
+
+**Operational surface area of zero.** No new cluster. No ZooKeeper, no Raft
+quorum, no broker version matrix. If you can keep Postgres up — and you
+already have to — you can keep Vulkan up.
+
+**Honest scaling.** Postgres-backed queues comfortably handle thousands to
+tens of thousands of messages per second — which covers the actual workload of
+the overwhelming majority of products. If you're genuinely pushing
+Kafka-scale firehoses, use Kafka; [we'll tell you when](/compare/kafka/).
+What we won't do is make you pay Kafka's operational tax for a workload
+Postgres handles before breakfast.
+
+## What makes Vulkan different from "Postgres queue" libraries
+
+Libraries like River, pgmq, and graphile-worker proved the model: Postgres is
+a great queue. But they stop at **jobs** — claim, run, delete. Vulkan keeps
+going:
+
+| Capability | Job queue libraries | Vulkan |
+| --- | --- | --- |
+| Atomic claim, retries, DLQ | ✅ | ✅ |
+| Transactional enqueue | ✅ | ✅ |
+| Retained, replayable history | ❌ deleted on consume | ✅ append-only log |
+| Independent consumer groups (fan-out) | ❌ one consumer wins | ✅ cursor per group |
+| Routing by key/header bindings | ❌ | ✅ |
+| Per-key FIFO alongside full parallelism | ❌ | ✅ opt-in per message |
+
+The deep idea: Vulkan separates the **immutable log of what happened** from
+the **mutable state of who's processed it**. That one design decision is what
+lets a single system offer queue lifecycle *and* log replay *and* fan-out
+*and* routing simultaneously — the combination that currently forces you to
+run three brokers. [See how it works →](/concepts/architecture/)
+
+## Open source, with a cloud that earns its keep
+
+The engine is open source — run it as a Go library against any Postgres, in
+your VPC, forever, free. **Vulkan Cloud** is the same engine plus the things
+you'd rather not build: a live dashboard, retention and DLQ alerting,
+replay tooling with a UI, and managed upgrades. [Details →](/cloud/)
+
+---
+
+**Convinced?** [The quickstart](/quickstart/) takes five minutes and your
+existing `DATABASE_URL`. **Skeptical?** Better —
+[try to lose a message](/demo/) first.

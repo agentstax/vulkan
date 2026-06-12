@@ -1,0 +1,102 @@
+---
+title: Vulkan Cloud
+description: The open-source engine, fully managed — dashboards, alerts, replay tooling, and zero-downtime upgrades.
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+import CloudDashboard from '../../components/CloudDashboard.astro';
+
+Everything in Vulkan is open source and always will be. Vulkan Cloud is for
+teams who want the platform without owning its operations — the same engine,
+plus the tooling that turns "we *can* see everything in SQL" into "everyone on
+the team *does* see everything, on a dashboard, with alerts."
+
+<CloudDashboard />
+
+One screen answering the four questions that operate any messaging system:
+is work flowing (throughput per group), is anyone falling behind (lag, with
+replaying groups clearly marked), is anything dying (dead letters, with
+payloads and one-click redrive), and is anything stuck (oldest unacked age,
+hot partition keys).
+
+## What's in the box
+
+<CardGrid>
+	<Card title="Managed Postgres or bring your own" icon="seti:db">
+		Run on our managed, queue-tuned Postgres — or point Vulkan Cloud at your
+		existing database and keep your data exactly where it is. Your messages
+		never have to leave your VPC.
+	</Card>
+	<Card title="Audit log & team access" icon="seti:lock">
+		SSO, per-environment roles, and a full audit trail — every redrive,
+		rewind, and retention change recorded with who, when, and how many
+		messages it touched.
+	</Card>
+	<Card title="Replay console" icon="seti:clock">
+		Rewind any consumer group to an offset or a timestamp from the UI. Dry-run
+		first to see exactly what would be redelivered.
+	</Card>
+	<Card title="Dead-letter triage" icon="warning">
+		Inspect payloads and error history, fix the bug, then redrive one
+		message, a filtered set, or the whole DLQ — with one click.
+	</Card>
+	<Card title="Alerting that knows queues" icon="seti:notification">
+		Lag exceeding retention, DLQ growth, a consumer group gone quiet, a hot
+		partition key serializing your throughput — alerts on the failure modes
+		that actually happen, wired to Slack or PagerDuty.
+	</Card>
+	<Card title="Retention & lifecycle policies" icon="setting">
+		Set retention per stream in the UI. Partition-drop cleanup (not mass
+		DELETEs), archive-to-S3 for cold history, and automatic index health.
+	</Card>
+</CardGrid>
+
+## How it's priced
+
+Simple and aligned with the open-source promise:
+
+| | **Open Source** | **Cloud Starter** | **Cloud Pro** |
+| --- | --- | --- | --- |
+| The full engine | ✅ free, forever | ✅ | ✅ |
+| Streams & consumer groups | unlimited | unlimited | unlimited |
+| Dashboard, replay console, DLQ triage | — | ✅ | ✅ |
+| Alerting | — | basics | full, custom rules |
+| Managed Postgres | — | shared | dedicated, queue-tuned |
+| Bring-your-own database | n/a | — | ✅ |
+| Support | community | email | priority + shared Slack |
+| Price | $0 | $29/mo | usage-based |
+
+<Aside type="note" title="No semantic lock-in">
+Cloud runs the same open-source engine and the same schema. Leaving Vulkan
+Cloud is `pg_dump`, not a migration project. We think that's the only honest
+way to sell open-source infrastructure.
+</Aside>
+
+## The dashboard shows its work
+
+There's no proprietary metrics layer underneath any of this — every panel is
+a SQL query against the same tables your application uses, and clicking any
+panel reveals the query behind it. The lag chart is a subtraction; the DLQ
+panel is a `WHERE status = 'dead'`. That means nothing the dashboard knows is
+hidden from you, and everything it knows works in `psql`, Grafana, or a cron
+job too.
+
+It also means the dashboard can answer questions broker consoles can't,
+because your messages live next to your business data:
+
+```sql
+-- "Are all the dead fraud-screening messages from one merchant?"
+SELECT o.merchant_id, count(*)
+FROM vulkan.deliveries d
+JOIN vulkan.events e ON e."offset" = d.event_offset
+JOIN orders o ON o.id = e.payload->>'order_id'
+WHERE d.consumer_group = 'fraud-screening' AND d.status = 'dead'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+## The line we won't cross
+
+Features that change *what your code can do* — transactional enqueue, replay,
+fan-out, routing, FIFO — are open source, always. Cloud sells **operations**,
+not capabilities. If you ever find a semantic feature behind the paywall,
+file an issue titled "you broke your promise."

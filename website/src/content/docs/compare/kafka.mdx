@@ -1,0 +1,75 @@
+---
+title: Vulkan vs. Kafka
+description: Kafka's log semantics without Kafka's cluster — and an honest account of when you really do need Kafka.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Kafka is a magnificent piece of engineering for a problem most teams don't
+have. The pattern we see constantly: a team adopts Kafka for *semantics*
+(retained events, replay, fan-out, ordering) and then pays every month for
+*scale* they never use — in brokers, partitions math, consumer-group
+rebalances, and a dedicated platform engineer who is "the Kafka person."
+
+Vulkan's claim: you can have those semantics on Postgres, and you probably
+should — until the day your numbers say otherwise.
+
+## Feature by feature
+
+| | Kafka | Vulkan |
+| --- | --- | --- |
+| Retained, replayable log | ✅ | ✅ |
+| Independent consumer groups | ✅ | ✅ |
+| Per-key ordering | ✅ partitions (fixed count, chosen up front) | ✅ partition keys (just values, no resharding) |
+| Per-message retry/backoff | ❌ retry topics, hand-built | ✅ native |
+| Dead-letter queue | ❌ DIY topic + tooling | ✅ native, per group, queryable |
+| Delay / scheduled messages | ❌ | ✅ `run_at` |
+| Routing (key/header bindings) | ❌ consumers filter client-side | ✅ native |
+| Transactional enqueue with your DB writes | ❌ structurally impossible | ✅ the headline feature |
+| Ops footprint | brokers + KRaft/ZK + partitions + rebalancing | the Postgres you already run |
+| Inspect state | CLI tools, JMX, vendor UI | `psql` |
+| Throughput ceiling | effectively unbounded | tens of thousands msg/s |
+
+## The two pains Kafka can't shed
+
+**The operational tax.** A Kafka deployment is a distributed system with its
+own failure modes: partition leadership, ISR shrinkage, rebalance storms,
+consumer-group offset mysteries. Managed Kafka (MSK, Confluent) moves the tax
+from ops time to invoice, and the *semantic* complexity — partition counts,
+rebalancing, retry-topic plumbing — stays in your code.
+
+**The transaction gap.** Kafka lives outside your database, so every
+DB-write-plus-publish is a [dual write](/guides/transactional-enqueue/).
+The standard fix is an outbox table in Postgres plus Debezium relaying to
+Kafka — at which point you are running Postgres, Kafka, Kafka Connect, *and*
+Debezium to deliver a message that started and could have ended as a row.
+
+## When you genuinely need Kafka
+
+We'd rather be the platform that told you the truth than the one you ripped
+out angrily. Reach for Kafka (or Redpanda) when:
+
+- **Sustained throughput** beyond ~50k messages/sec — log-structured storage
+  and sequential disk I/O genuinely beat a B-tree database there.
+- **Massive retention** — months or years of full-firehose history that
+  shouldn't live inside your OLTP database.
+- **The ecosystem is the point** — Kafka Connect, Flink, ksqlDB; if your
+  architecture is stream processing, Kafka is its native soil.
+- **Cross-org pipelines** where "Kafka topic" is the contract.
+
+<Aside type="tip" title="The graduation path">
+Because Vulkan streams are durable and ordered, the day you outgrow one, a
+relay consumer group can forward it to a Kafka topic — with the cutover
+happening per-stream, gradually, while transactional enqueue keeps working on
+the Postgres side. Adopting Vulkan first doesn't paint you into a corner; it
+defers a big decision until you have the data to make it.
+</Aside>
+
+## The decision in one question
+
+> Are you buying Kafka for its semantics, or for its scale?
+
+If it's semantics — replay, fan-out, ordering, durability — Vulkan gives you
+all of them, plus lifecycle and transactions Kafka can't offer, with zero new
+infrastructure. If it's scale, and the numbers are real: use Kafka, with our
+blessing.

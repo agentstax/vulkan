@@ -1,0 +1,143 @@
+---
+title: "The Demo: Try to Lose a Message"
+description: One command spins up a live stream and dares you to break it — kill workers, crash mid-commit, restart the database. The loss counter stays at zero.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import ChaosDiagram from '../../components/ChaosDiagram.astro';
+
+Every messaging system claims durability. Claims are cheap. Vulkan ships a
+demo whose entire purpose is to let you **attack it** — because durability is
+the one product quality you can verify with your own hands in five minutes,
+and we'd rather you trust the experiment than the brochure.
+
+```sh
+go install github.com/agentstax/vulkan/cmd/vulkan@latest
+vulkan demo --chaos
+```
+
+One command spins up a disposable Postgres (Docker), a stream called
+`orders`, three workers, and starts producing 5,000 messages. The scoreboard
+at the bottom tracks three numbers — **produced, processed, lost** — and the
+demo prints suggestions for ways to hurt it. Your goal is to make `lost` read
+anything but zero.
+
+<ChaosDiagram animate={false} />
+
+## The attacks
+
+<Steps>
+
+1. **Kill a worker mid-message.**
+
+   ```sh
+   kill -9 $(pgrep -f vulkan-worker-2)
+   ```
+
+   Worker 2 dies holding claimed messages, with no chance to clean up — no
+   shutdown hook, no rollback call, nothing. Watch the scoreboard: the
+   messages it held go back to `ready` when their leases expire, the other
+   workers absorb them, `lost` stays 0.
+
+   There is no recovery code running. The transaction rollback *is* the
+   recovery, and the lease *is* the failover — both properties of the data,
+   not of any process that can die. [How leases work →](/concepts/lifecycle/)
+
+2. **Crash mid-commit, deterministically.**
+
+   Suspect the `kill` timing was lucky? Make the worker betray you on
+   purpose:
+
+   ```sh
+   vulkan demo worker --crash-after 3   # os.Exit(1) mid-transaction, every 3rd message
+   ```
+
+   A worker that *always* dies at the worst possible moment, forever. The
+   stream still drains. `lost: 0`.
+
+3. **Fail messages randomly.**
+
+   ```sh
+   vulkan demo worker --fail-rate 0.3 --retries 3
+   ```
+
+   Now 30% of handler calls return errors. Watch retries climb with
+   exponential backoff, and watch stubborn messages land in the dead-letter
+   queue — *visible, counted, and queryable*, not discarded:
+
+   ```sql
+   SELECT count(*) FROM vulkan.deliveries WHERE status = 'dead';
+   ```
+
+   Dead letters aren't lost messages. They're messages waiting for you, with
+   their full payload and error history. [Redrive them →](/guides/dead-letters/)
+
+4. **Go for the database.**
+
+   ```sh
+   docker restart vulkan-demo-postgres
+   ```
+
+   The one everyone assumes is cheating. Workers lose their connections, back
+   off, and reattach when Postgres returns; every in-flight message was
+   either committed (done, exactly as recorded) or not (claimable again).
+   Postgres's crash recovery has been hardened for thirty years — that's the
+   point of building on it instead of beside it.
+
+5. **The cruelest one: the zombie worker.**
+
+   ```sh
+   vulkan demo worker --sleep 30s   # processing takes longer than the lease
+   ```
+
+   The worker isn't dead — just slow. Its lease expires, the reaper re-readies
+   the message, another worker processes it… and then the zombie finishes
+   too. The same message processed **twice**. The scoreboard calls it out.
+
+   This isn't a Vulkan bug; it's the honest physics of distributed delivery —
+   the same trade SQS and Pulsar make. Vulkan *induces* it in the demo so
+   you design idempotent handlers knowing it's real, instead of discovering
+   it in production. [At-least-once, and proud of it →](/concepts/lifecycle/)
+
+</Steps>
+
+## The finale: three groups, one log
+
+```sh
+vulkan demo synthesis
+```
+
+The demo that shows why Vulkan is a *platform*, not a queue. On a single
+stream, simultaneously:
+
+- group **A** retries message #5 three times and dead-letters it,
+- group **B** processes message #5 without incident,
+- group **C** starts from offset 0 and replays the whole history.
+
+Per-group lifecycle, shared immutable log, independent cursors — the
+combination that normally requires running a queue *and* a log *and* glue.
+[Why that's hard everywhere else →](/concepts/queue-and-log/)
+
+## The scoreboard never lies
+
+The demo's counters aren't instrumentation we control — they're SQL against
+the same tables your application would use, and the demo prints every query
+it runs so you can run them yourself in `psql` mid-attack:
+
+```sql
+SELECT
+  (SELECT count(*) FROM vulkan.events)                            AS produced,
+  (SELECT count(*) FROM vulkan.deliveries WHERE status = 'done')  AS processed,
+  (SELECT count(*) FROM vulkan.deliveries WHERE status = 'dead')  AS dead_lettered;
+-- "lost" is produced minus everything accounted for. It will be zero.
+```
+
+<Aside type="tip" title="Now ask the uncomfortable question">
+Run this demo's attack list against your current stack — the worker `kill -9`,
+the crash-after-N, the broker restart. How many messages does your setup
+lose, duplicate silently, or strand in a queue you can't inspect? If you
+don't know, that's the answer.
+</Aside>
+
+Convinced enough to wire it into real code?
+[Quickstart →](/quickstart/)

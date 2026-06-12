@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="ember" x1="32" y1="4" x2="32" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffb86b"/>
+      <stop offset="0.55" stop-color="#ff7a3d"/>
+      <stop offset="1" stop-color="#e23d28"/>
+    </linearGradient>
+  </defs>
+  <!-- hexagonal forge mark -->
+  <path d="M32 3 L57 17.5 V46.5 L32 61 L7 46.5 V17.5 Z" stroke="url(#ember)" stroke-width="4" stroke-linejoin="round"/>
+  <!-- V flame -->
+  <path d="M20 20 L32 46 L44 20" stroke="url(#ember)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

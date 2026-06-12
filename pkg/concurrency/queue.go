@@ -1,7 +1,12 @@
 package concurrency
 
+import "errors"
+
 // could consider using struct{} instead of generic WorkType
 // generics can be confusing, struct you would need to cast on
+
+var ErrQueueFull = errors.New("queue full")
+var ErrQueueEmpty = errors.New("queue empty")
 
 type Queue[WorkType any] interface {
 	CanEnQueue() bool
@@ -28,10 +33,14 @@ func (q *PressureQueue[WorkType]) CanEnQueue() bool {
 	return false
 }
 
-// current impl is thread blocking. Might rethink this over time
+// non blocking and atomic ie doesn't rely on CanEnQueue
 func (q *PressureQueue[WorkType]) EnQueue(work WorkType) error {
-	q.queue <- work
-	return nil
+	select {
+	case q.queue <- work:
+		return nil
+	default:
+		return ErrQueueFull
+	}
 }
 
 func (q *PressureQueue[WorkType]) CanDeQueue() bool {

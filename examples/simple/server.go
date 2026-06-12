@@ -31,7 +31,10 @@ func feedQueue(queue concurrency.Queue[string]) {
 
 				go func() {
 					if queue.CanEnQueue() {
-						queue.EnQueue(t.String() + " " + strconv.Itoa(i))
+						err := queue.EnQueue(t.String() + " " + strconv.Itoa(i))
+						if err != nil {
+							fmt.Println(err.Error())
+						}
 					}
 				}()
 			}
@@ -81,30 +84,27 @@ func main() {
 	// queue processor
 	go func() {
 		for {
-			// slightly more mem efficient here instead of in work gothread, but could move back for clarity / access clustering
-			if !workQueue.CanDeQueue() {
-				continue
-			}
-
-			threadOwner, err := uuid.NewV7()
+			threadId, err := uuid.NewV7()
 			if err != nil {
+				return // something is very wrong if this happens
+			}
+
+			// blocking - waits till can get permit
+			err = workerPoolLimiter.AcquirePermit(ctx.ToContext(), threadId.String())
+			if err != nil {
+				return // context is likely cancel or shutdown in this case
+			}
+
+			// blocking - waits till can dequeue
+			work, err := workQueue.DeQueue()
+			if err != nil {
+				workerPoolLimiter.ReleasePermit(ctx.ToContext(), threadId.String())
 				continue
 			}
 
-			if !workerPoolLimiter.CanAcquirePermit(threadOwner.String()) {
-				continue
-			}
-
-			workerPoolLimiter.AcquirePermit(threadOwner.String())
-
-			// gothread for work, in flight work limited by concurrency limit
+			// dispatch gothread for work, in flight work limited by concurrency pool limit
 			go func() {
-				defer workerPoolLimiter.ReleasePermit(threadOwner.String())
-
-				work, err := workQueue.DeQueue()
-				if err != nil {
-					return
-				}
+				defer workerPoolLimiter.ReleasePermit(ctx.ToContext(), threadId.String())
 
 				workflow.Run(ctx, &ScrapeInput{
 					URL: work,

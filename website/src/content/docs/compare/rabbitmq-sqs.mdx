@@ -1,0 +1,80 @@
+---
+title: Vulkan vs. RabbitMQ & SQS
+description: Everything the queue world does well — plus the history it throws away.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+RabbitMQ and SQS are the workhorses of the queue world, and Vulkan borrows
+their best ideas shamelessly: acks, retries, dead letters, visibility
+timeouts, routing exchanges, FIFO groups. The disagreement is about one
+default: **what happens to a message after it's consumed.**
+
+They delete it. Vulkan keeps it. Almost every difference below falls out of
+that.
+
+## Feature by feature
+
+| | RabbitMQ | SQS | Vulkan |
+| --- | --- | --- | --- |
+| Ack / retry / DLQ | ✅ | ✅ | ✅ |
+| Delayed delivery | plugin | ✅ (15 min cap) | ✅ arbitrary `run_at` |
+| Routing | ✅ exchanges (the gold standard) | ❌ (SNS bolt-on) | ✅ topic + header bindings |
+| FIFO | per-queue | FIFO queues (300 msg/s cap) | ✅ per-key, opt-in per message |
+| Replay history | ❌ consumed = gone | ❌ consumed = gone | ✅ |
+| Fan-out to N consumers | exchange→N queues, **declared in advance** | SNS→N queues, **declared in advance** | any group, anytime, incl. retroactively |
+| Message visibility | opaque broker state | opaque, 14-day max | rows; retention you choose |
+| Transactional enqueue | ❌ | ❌ | ✅ |
+| Infrastructure | Erlang cluster to run | none (but AWS-only) | the Postgres you already run |
+
+## The retroactive fan-out problem
+
+Both systems can fan out — *if you declared the topology before the messages
+flowed*. An exchange with three bound queues delivers to three consumers; the
+fourth queue you bind next quarter receives only what's published after it
+exists. The past is gone; it was deleted on consume.
+
+This sounds like an edge case until you live it: every new service that
+"wishes it had been listening from the start" becomes a custom backfill
+project. In Vulkan, it's `vulkan.FromOffset(0)` —
+[replay is a one-liner](/guides/replay/), because nothing was deleted.
+
+## Debugging: black box vs. glass box
+
+When a message goes missing in RabbitMQ, the investigation involves the
+management UI, `rabbitmqctl`, and educated guessing about which queue, which
+exchange, which binding. In SQS, you have CloudWatch metrics and a console
+that shows you *counts* but fights you on *contents*.
+
+In Vulkan, the message is a row, its delivery history is rows, and the
+question "what happened to order ord_8431, everywhere?" is:
+
+```sql
+SELECT d.consumer_group, d.status, d.attempts, d.last_error
+FROM vulkan.events e
+JOIN vulkan.deliveries d ON d.event_offset = e."offset"
+WHERE e.payload->>'order_id' = 'ord_8431';
+```
+
+<Aside type="note" title="And the dual write, again">
+Like Kafka, both are external systems — so every "save then publish" is an
+unsafe [dual write](/guides/transactional-enqueue/). SQS's own docs recommend
+the outbox pattern for exactly this. The outbox is a Postgres table. Vulkan
+is what happens when you take that hint to its conclusion.
+</Aside>
+
+## When they're still the right call
+
+- **SQS** when you're all-in on AWS and want Lambda event-source mappings and
+  IAM-native everything with zero libraries — and you don't need replay,
+  routing, or transactions.
+- **RabbitMQ** when you need its protocol reach (AMQP/MQTT/STOMP clients in
+  every language since 2009) or sub-millisecond broker latencies in
+  fire-and-forget mode.
+- Either, when your messaging volume dwarfs your database capacity and you
+  want the isolation of a separate system.
+
+For the standard case — a product whose background work, events, and routing
+currently sprawl across one of these *plus* cron jobs *plus* an outbox — one
+Postgres-native platform is less to run, more to query, and strictly more
+capable.

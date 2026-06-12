@@ -1,0 +1,146 @@
+---
+// Mock of the Vulkan Cloud web dashboard — browser chrome, stat cards,
+// consumer-group table, and an alert toast. Numbers wiggle for liveness.
+---
+
+<div class="vc" aria-label="Vulkan Cloud dashboard: stream overview with throughput, lag, dead letters, consumer groups, and an alert notification">
+	<div class="chrome">
+		<span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+		<span class="url">cloud.vulkan.dev/acme/streams/orders</span>
+	</div>
+	<div class="app">
+		<div class="apphead">
+			<span class="crumb">acme / streams / <b>orders</b></span>
+			<span class="live"><span class="pulse"></span>live</span>
+		</div>
+
+		<div class="cards">
+			<div class="card">
+				<div class="ttl">Throughput</div>
+				<div class="val"><span class="tick" data-base="12481">12,481</span><span class="unit">/s</span></div>
+				<div class="spark"><i style="--h:40%"></i><i style="--h:55%"></i><i style="--h:48%"></i><i style="--h:70%"></i><i style="--h:62%"></i><i style="--h:84%"></i><i style="--h:78%"></i><i style="--h:92%"></i></div>
+			</div>
+			<div class="card">
+				<div class="ttl">Max lag</div>
+				<div class="val warn">142</div>
+				<div class="sub">fraud-screening</div>
+			</div>
+			<div class="card">
+				<div class="ttl">Dead letters</div>
+				<div class="val bad">2</div>
+				<div class="sub link">triage →</div>
+			</div>
+			<div class="card">
+				<div class="ttl">Oldest unacked</div>
+				<div class="val">3.2<span class="unit">s</span></div>
+				<div class="sub">healthy</div>
+			</div>
+		</div>
+
+		<div class="tbl">
+			<div class="tr th"><span>CONSUMER GROUP</span><span>MODE</span><span class="r">LAG</span><span class="r">DLQ</span><span class="r">RATE</span><span></span></div>
+			<div class="tr"><span>email-receipts</span><span class="mode">lifecycle</span><span class="r good">0</span><span class="r">0</span><span class="r"><span class="tick" data-base="1240">1,240</span>/s</span><span class="act">rewind</span></div>
+			<div class="tr"><span>fraud-screening</span><span class="mode">lifecycle</span><span class="r warn">142</span><span class="r bad">2 ⚠</span><span class="r"><span class="tick" data-base="643">643</span>/s</span><span class="act">redrive</span></div>
+			<div class="tr"><span>warehouse-sync</span><span class="mode">lifecycle</span><span class="r">37</span><span class="r">0</span><span class="r"><span class="tick" data-base="982">982</span>/s</span><span class="act">rewind</span></div>
+			<div class="tr"><span>search-indexer</span><span class="mode replay">cursor · replaying</span><span class="r replay">1.2M ↓</span><span class="r">—</span><span class="r"><span class="tick" data-base="9410">9,410</span>/s</span><span class="act">pause</span></div>
+		</div>
+
+		<div class="toast">
+			<span class="ticon">⚠</span>
+			<span><b>fraud-screening</b> DLQ grew +2 in 10 min — notified <b>#oncall</b></span>
+		</div>
+	</div>
+</div>
+
+<script>
+	const fmt = (n: number) => n.toLocaleString('en-US');
+	const ticks = document.querySelectorAll<HTMLElement>('.vc .tick');
+	if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+		setInterval(() => {
+			ticks.forEach((el) => {
+				const base = Number(el.dataset.base || '0');
+				el.textContent = fmt(Math.max(0, Math.round(base * (0.93 + Math.random() * 0.14))));
+			});
+		}, 1200);
+	}
+</script>
+
+<style>
+	.vc {
+		max-width: 52rem;
+		margin: 1.5rem auto;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 12px;
+		overflow: hidden;
+		background: #16100d;
+		box-shadow: 0 24px 60px -28px rgba(226, 61, 40, 0.3);
+		font-size: 0.82rem;
+		text-align: left;
+	}
+	.chrome {
+		display: flex; align-items: center; gap: 0.4rem;
+		padding: 0.55rem 0.9rem;
+		background: #221813; border-bottom: 1px solid #2e211b;
+	}
+	.dot { width: 11px; height: 11px; border-radius: 50%; }
+	.dot.red { background: #ff5f57; } .dot.yellow { background: #febc2e; } .dot.green { background: #28c840; }
+	.url {
+		margin-left: 0.7rem; padding: 0.15rem 0.8rem;
+		background: #171110; border-radius: 99px;
+		font-family: var(--__sl-font-mono, monospace);
+		font-size: 0.72rem; color: #8d7e76;
+	}
+
+	.app { padding: 1rem 1.1rem 1.1rem; color: #f0e4dd; }
+	.apphead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.9rem; }
+	.crumb { color: #8d7e76; } .crumb b { color: #ffb86b; }
+	.live { display: flex; align-items: center; gap: 0.4rem; color: #7bd88f; font-size: 0.75rem; }
+	.pulse { width: 8px; height: 8px; border-radius: 50%; background: #7bd88f; animation: pulse 2s infinite; }
+	@keyframes pulse { 50% { opacity: 0.3; } }
+
+	.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.7rem; }
+	.card {
+		background: #1d1410; border: 1px solid #2e211b; border-radius: 10px;
+		padding: 0.7rem 0.85rem; position: relative; overflow: hidden;
+	}
+	.ttl { color: #8d7e76; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; }
+	.val { font-size: 1.35rem; font-weight: 650; margin-top: 0.2rem; font-variant-numeric: tabular-nums; }
+	.unit { font-size: 0.8rem; color: #8d7e76; margin-left: 0.15rem; }
+	.sub { color: #8d7e76; font-size: 0.72rem; margin-top: 0.1rem; }
+	.sub.link { color: #ff9d66; }
+	.warn { color: #febc2e; } .bad { color: #ff6b5e; } .good { color: #7bd88f; }
+	.replay, .mode.replay { color: #6fb7ff; }
+	.spark { display: flex; gap: 3px; align-items: flex-end; height: 1.4rem; margin-top: 0.4rem; }
+	.spark i { width: 9%; height: var(--h); background: linear-gradient(180deg, #ff7a3d, #e23d28); border-radius: 2px 2px 0 0; }
+
+	.tbl { margin-top: 0.9rem; border: 1px solid #2e211b; border-radius: 10px; overflow: hidden; }
+	.tr {
+		display: grid;
+		grid-template-columns: 1.6fr 1.3fr 0.7fr 0.6fr 0.9fr 0.7fr;
+		gap: 0 0.8rem; padding: 0.5rem 0.85rem; align-items: center;
+		border-top: 1px solid #241a15; white-space: nowrap;
+	}
+	.tr.th { border-top: none; background: #1d1410; color: #594d47; font-size: 0.68rem; letter-spacing: 0.07em; }
+	.r { text-align: right; font-variant-numeric: tabular-nums; }
+	.mode { color: #8d7e76; }
+	.act {
+		justify-self: end; padding: 0.12rem 0.7rem;
+		border: 1px solid #3a2a20; border-radius: 99px;
+		color: #ff9d66; font-size: 0.72rem; cursor: default;
+	}
+
+	.toast {
+		display: flex; align-items: center; gap: 0.6rem;
+		margin-top: 0.9rem; padding: 0.55rem 0.85rem;
+		background: #241a12; border: 1px solid #4a2e1a; border-left: 3px solid #febc2e;
+		border-radius: 8px; color: #c4b6ae; font-size: 0.78rem;
+	}
+	.toast b { color: #f0e4dd; }
+	.ticon { color: #febc2e; }
+
+	@media (max-width: 640px) {
+		.cards { grid-template-columns: repeat(2, 1fr); }
+		.tr { grid-template-columns: 1.4fr 0.7fr 0.9fr; }
+		.tr > :nth-child(2), .tr > :nth-child(4), .tr > :nth-child(6) { display: none; }
+	}
+</style>

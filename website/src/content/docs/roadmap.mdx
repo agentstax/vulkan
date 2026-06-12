@@ -1,0 +1,78 @@
+---
+title: Roadmap
+description: Where Vulkan is, where it's going, and what we want your opinion on.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Vulkan is early, in the open, and being built in deliberate layers — each one
+proven against failure-injection labs (kill -9 mid-process, crash mid-commit,
+zombie workers) before the next goes on top. This page is the honest state of
+the world.
+
+## Now: the core engine
+
+The durable foundation — append + atomic claim, transactional enqueue, and
+the per-message lifecycle state machine (retries, backoff, leases, dead
+letters). The Go SDK's shape: typed generics over JSONB payloads
+(`vulkan.Stream[OrderCreated]`), handler funcs, and explicit configuration.
+
+Built alongside it from day one: the **failure-injection harness** behind
+[the chaos demo](/demo/) — `--fail-rate`, `--crash-after`, kill-mid-process
+labs. Every layer of the engine has to survive the harness before the next
+layer goes on top. The demo isn't marketing bolted onto the product; it's the
+test suite wearing a nice shirt.
+
+## Next: the log/queue split
+
+The architectural keystone described throughout these docs: separating the
+immutable `events` log from per-group `deliveries` — which unlocks retention,
+replay, independent fan-out, and per-group dead letters simultaneously. Then
+routing bindings (topic + header matchers) and opt-in per-key FIFO on top.
+
+## Then: the operational layer
+
+Partition-based retention with `DROP`-cheap expiry, `LISTEN/NOTIFY` wake-ups
+with fallback polling, and the four golden metrics (depth, lag per group, DLQ
+size, oldest unacked age) exposed natively — surfaced in
+[**Vulkan Cloud**](/cloud/): live dashboard, replay console, DLQ triage with
+one-click redrive, and queue-aware alerting.
+
+## Later: layers on the platform
+
+- **Durable workflows** — a code-first, multi-step workflow API
+  (`workflow.Run` / `step.Run`) where every step transition is a message on
+  the platform: transactional, retried, replayable, observable in SQL. The
+  Temporal/Hatchet capability, as a thin layer over primitives you can
+  already inspect.
+- **More SDKs** — TypeScript and Python clients over the same schema; the
+  wire protocol is Postgres, so any language with a driver is most of the way
+  there.
+- **Webhooks in/out** — HTTP ingestion endpoints and delivery-with-retries as
+  built-in stream endpoints (Cloud).
+- **Schema registry, lite** — optional payload schemas with
+  compatibility checks at publish time.
+
+<Aside type="note" title="What stays open source">
+Every semantic capability — transactions, lifecycle, replay, fan-out,
+routing, FIFO, workflows — ships in the open-source engine.
+Cloud sells operations (dashboards, alerting, managed Postgres), never
+capabilities. [The promise, in writing →](/cloud/)
+</Aside>
+
+## What we want from you
+
+This site exists to collect opinions, and the questions we're actively
+weighing:
+
+1. **Would you adopt this for a new project?** If not, what's the missing
+   piece — a language SDK, a benchmark, a migration path, a managed offer?
+2. **Which pitch lands harder:** "a job queue you'll never outgrow," or
+   "transactional enqueue kills your worst class of bugs"?
+3. **Where's your line for Postgres-as-queue?** What throughput or retention
+   number would make you reach for Kafka anyway?
+4. **Cloud:** would you pay for operations-on-top-of-open-source, or do you
+   only trust fully managed (database included)?
+
+Open an issue, or just reply to whoever sent you this link — they'll make
+sure it reaches us.

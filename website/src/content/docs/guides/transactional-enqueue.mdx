@@ -1,0 +1,115 @@
+---
+title: Transactional Enqueue
+description: Publish a message in the same transaction as your business write. The dual-write problem, solved by refusing to have two systems.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This is Vulkan's headline feature, so let's earn it properly.
+
+## The bug you've definitely shipped
+
+Here's the innocent-looking code at the heart of a thousand incident reviews:
+
+```go
+// ❌ The dual write. One of these will betray you.
+func CreateOrder(ctx context.Context, order Order) error {
+    if err := db.Insert(ctx, order); err != nil {   // write 1: database
+        return err
+    }
+    return broker.Publish(ctx, OrderCreated{order.ID}) // write 2: broker
+}
+```
+
+Two writes, two systems, no shared transaction. Walk the failure cases:
+
+- **DB commits, publish fails** (broker blip, network, deploy): the order
+  exists, the event doesn't. No receipt, no fraud check, no warehouse pick.
+  Silent.
+- **Swap the order — publish first, then DB write fails**: now there's an
+  event for an order that doesn't exist. The receipt sends; the warehouse
+  ships air.
+- **Retry the publish?** If the *first* attempt actually succeeded and only
+  the ack got lost, you publish twice. If your process dies before the retry,
+  you're back to case one.
+
+There is no ordering and no retry policy that closes this. The two systems
+can each be perfectly reliable and the *seam between them* still loses or
+fabricates events. The industry's accepted fix — the **transactional outbox
+pattern** — is to write the event into a database table inside your
+transaction, then relay it to the broker afterwards. Which is an admission:
+the only trustworthy enqueue is an `INSERT` in your own transaction.
+
+Vulkan's position: keep the insert, **skip the relay and the broker.** The
+outbox table *is* the message platform.
+
+## The fix
+
+```go
+// ✅ One transaction. Atomic by construction.
+func CreateOrder(ctx context.Context, order Order) error {
+    return client.Tx(ctx, func(tx vulkan.Tx) error {
+        if err := orders.Insert(ctx, tx, order); err != nil {
+            return err
+        }
+        return stream.PublishTx(ctx, tx, &OrderCreated{OrderID: order.ID})
+    })
+}
+```
+
+Both writes commit, or neither does. There is no failure window because there
+is no seam — it's one `COMMIT`, and Postgres has spent thirty years making
+sure `COMMIT` means what it says.
+
+You also get the converse guarantee free, from transaction isolation: **no
+consumer can ever observe the event before your transaction commits.** No
+more "the worker processed the job before the row it referenced was
+visible" — a race so common that job-queue docs have a standard name for the
+workaround (enqueue-after-commit hooks, with their own failure window).
+
+## Prove it to yourself
+
+<Steps>
+
+1. Open a transaction, write the business row, publish — then **force a
+   rollback**:
+
+   ```go
+   client.Tx(ctx, func(tx vulkan.Tx) error {
+       orders.Insert(ctx, tx, order)
+       stream.PublishTx(ctx, tx, &OrderCreated{OrderID: order.ID})
+       return errors.New("rollback on purpose")
+   })
+   ```
+
+2. Check both tables — **neither** row exists. No phantom event:
+
+   ```sql
+   SELECT count(*) FROM orders;                              -- 0
+   SELECT count(*) FROM vulkan.events WHERE topic = 'orders'; -- 0
+   ```
+
+3. Run it again without the error: both rows exist, and a worker picks the
+   message up — but only *after* the commit. While the transaction is open,
+   consumers can't see it. Atomicity on your side, isolation on theirs,
+   composing for free.
+
+</Steps>
+
+<Aside type="note" title="Need to reach external systems too?">
+If some events must also flow to systems outside Postgres (another org's
+Kafka, a partner webhook), your Vulkan stream already *is* a transactional
+outbox — add a relay consumer group that forwards downstream, with retries
+and a DLQ for the flaky remote end. The hard half (atomic capture) is done;
+the relay is just another consumer.
+</Aside>
+
+## Why brokers can't follow you here
+
+This isn't a missing feature Kafka could ship next quarter — it's
+structural. A broker is a *separate system*; your database transaction
+boundary physically cannot extend into it (two-phase commit exists and
+nobody's on-call rotation has ever been improved by it). Every
+broker-centric architecture eventually grows an outbox table, a relay, and a
+reconciliation job. Vulkan is what you get by taking that endpoint seriously
+and designing for it from the start.

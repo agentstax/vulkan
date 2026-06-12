@@ -1,0 +1,56 @@
+/* Vulkan — forge theme. Ember accent over volcanic neutrals. */
+
+:root {
+	--sl-color-accent-low: #3a1407;
+	--sl-color-accent: #ff7a3d;
+	--sl-color-accent-high: #ffc09e;
+	--sl-color-white: #fff7f2;
+	--sl-color-gray-1: #f0e4dd;
+	--sl-color-gray-2: #c4b6ae;
+	--sl-color-gray-3: #8d7e76;
+	--sl-color-gray-4: #594d47;
+	--sl-color-gray-5: #392f2b;
+	--sl-color-gray-6: #251d1a;
+	--sl-color-black: #171110;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #ffd9c2;
+	--sl-color-accent: #d44a14;
+	--sl-color-accent-high: #6b220a;
+	--sl-color-white: #1f1714;
+	--sl-color-gray-1: #2e2420;
+	--sl-color-gray-2: #463832;
+	--sl-color-gray-3: #6f5d54;
+	--sl-color-gray-4: #a3928a;
+	--sl-color-gray-5: #d8ccc5;
+	--sl-color-gray-6: #f3ebe6;
+	--sl-color-gray-7: #faf5f1;
+	--sl-color-black: #fffaf7;
+}
+
+/* Hero polish */
+[data-has-hero] .hero h1 {
+	background: linear-gradient(120deg, #ffb86b 0%, #ff7a3d 45%, #e23d28 100%);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	font-size: clamp(2.5rem, 6vw, 4rem);
+}
+
+[data-has-hero] .hero .tagline {
+	font-size: clamp(1.05rem, 2vw, 1.35rem);
+	line-height: 1.6;
+}
+
+/* Subtle ember glow behind the hero on the splash page */
+[data-has-hero] .page {
+	background:
+		radial-gradient(ellipse 70% 45% at 50% -5%, rgba(255, 122, 61, 0.12), transparent 70%),
+		var(--sl-color-bg);
+}
+
+/* Code blocks read like the product: keep them tight and prominent */
+.expressive-code {
+	margin-block: 1rem;
+}

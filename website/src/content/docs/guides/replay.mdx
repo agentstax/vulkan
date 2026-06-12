@@ -1,0 +1,86 @@
+---
+title: Replaying History
+description: Rewind a consumer group, bootstrap a new service from history, and recover from bad deploys mechanically.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Replay is the feature that quietly changes how you build. When history is
+retained and cursors are cheap, "reprocess everything since Tuesday" stops
+being a war-room project and becomes a function call.
+
+## Three replays you'll actually do
+
+### 1. Bootstrap a new service from history
+
+Your team ships a search service eight months after orders started flowing.
+With a consumed-and-gone queue, you'd write a custom backfill against the
+orders table, keep it consistent with live traffic, and pray during the
+cutover. With Vulkan:
+
+```go
+vulkan.Subscribe(client, "orders", "search-indexer", indexOrder,
+    vulkan.FromOffset(0))
+```
+
+The group starts at the oldest retained event, chews through history at its
+own pace (its lag shrinking is your progress bar), and seamlessly arrives at
+live traffic. Other groups never notice it happened.
+
+### 2. Recover from a bad deploy
+
+Tuesday 09:14: a deploy ships a bug in `warehouse-sync` that silently
+mis-handles EU orders. Wednesday: you notice. The fix:
+
+<Steps>
+
+1. Deploy the corrected handler.
+
+2. Rewind the group to before the damage:
+
+   ```go
+   client.Rewind(ctx, "orders", "warehouse-sync",
+       vulkan.ToTimestamp(time.Date(2026, 6, 9, 9, 0, 0, 0, time.UTC)))
+   ```
+
+3. Watch it re-run the window. Handlers are idempotent (they already had to
+   be — [at-least-once delivery](/concepts/lifecycle/)), so re-processing
+   the messages it had handled correctly is harmless.
+
+</Steps>
+
+No data archaeology, no hand-written SQL repair scripts at midnight, no
+"which orders did we miss?" spreadsheet. The log knows.
+
+### 3. Rebuild a projection from scratch
+
+Event-sourcing-style read models — a dashboard table, a denormalized cache, a
+materialized aggregate — can be **disposable** when the events are durable.
+Schema change in the projection? Drop the table, rewind the group, rebuild:
+
+```go
+client.Rewind(ctx, "orders", "revenue-dashboard", vulkan.ToOffset(0))
+```
+
+<Aside type="tip" title="Replay is a consumer-side decision">
+Notice that none of these required touching producers, other consumers, or
+stream configuration. A cursor is private state; moving yours is nobody
+else's business. This is the deep reason fan-out and replay come from the
+same design decision — [retention](/concepts/streams/).
+</Aside>
+
+## Dry runs (Cloud)
+
+Rewinding a group that fires emails is exciting in the wrong way. Vulkan
+Cloud's replay console shows exactly which events a rewind would redeliver —
+count, time range, sample payloads — before you commit, and can target the
+replay at a **shadow group** wired to a no-op or staging handler first.
+
+## What replay costs
+
+Nothing at write time — it's the same append-only log either way. At replay
+time it's sequential indexed reads, the cheapest thing Postgres does.
+The real budget question is **retention**: how much history to keep
+(`vulkan.Retain(30*24*time.Hour)`), traded against storage. Thirty days of
+JSONB events is usually laughably small next to the rest of your database —
+keep more than you think you need.

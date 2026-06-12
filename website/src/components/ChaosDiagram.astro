@@ -1,0 +1,168 @@
+---
+// Animated system diagram: messages flow app → Postgres → workers.
+// Worker-2 dies mid-message; the message visibly snaps back to Postgres
+// and is redelivered to worker-3. Loops every 12s. Pure SVG/SMIL, no JS.
+// Pass animate={false} for a static variant (same as reduced-motion).
+const { animate = true } = Astro.props;
+---
+
+<div class={animate ? 'chaos-diagram' : 'chaos-diagram static'}>
+	<svg viewBox="0 0 760 340" role="img" aria-label="Diagram: messages flow from your app through Postgres to three workers. Worker 2 is killed mid-message; the message returns to Postgres and is redelivered to worker 3. Zero messages lost.">
+		<defs>
+			<linearGradient id="emberG" x1="0" y1="0" x2="1" y2="1">
+				<stop offset="0" stop-color="#ffb86b" />
+				<stop offset="1" stop-color="#ff7a3d" />
+			</linearGradient>
+		</defs>
+
+		<!-- edges -->
+		<g stroke="#392f2b" stroke-width="2" fill="none">
+			<path d="M160,160 L320,160" />
+			<path d="M440,140 C520,140 540,68 600,68" />
+			<path d="M440,160 L600,160" />
+			<path d="M440,180 C520,180 540,252 600,252" />
+		</g>
+
+		<!-- your app -->
+		<g>
+			<rect x="30" y="132" width="130" height="56" rx="10" fill="#221813" stroke="#594d47" stroke-width="2" />
+			<text x="95" y="166" text-anchor="middle" class="label">your app</text>
+		</g>
+
+		<!-- postgres cylinder -->
+		<g>
+			<rect x="320" y="104" width="120" height="112" fill="#221813" stroke="none" />
+			<ellipse cx="380" cy="216" rx="60" ry="14" fill="#221813" stroke="#ff7a3d" stroke-opacity="0.5" stroke-width="2" />
+			<line x1="320" y1="104" x2="320" y2="216" stroke="#ff7a3d" stroke-opacity="0.5" stroke-width="2" />
+			<line x1="440" y1="104" x2="440" y2="216" stroke="#ff7a3d" stroke-opacity="0.5" stroke-width="2" />
+			<ellipse cx="380" cy="104" rx="60" ry="14" fill="#2a1c14" stroke="#ff7a3d" stroke-opacity="0.7" stroke-width="2" />
+			<text x="380" y="155" text-anchor="middle" class="label strong">Postgres</text>
+			<text x="380" y="178" text-anchor="middle" class="mono dim">vulkan.events</text>
+		</g>
+
+		<!-- workers -->
+		<g>
+			<rect x="600" y="42" width="120" height="52" rx="10" fill="#221813" stroke="#594d47" stroke-width="2" />
+			<text x="660" y="73" text-anchor="middle" class="label">worker-1</text>
+
+			<rect x="600" y="134" width="120" height="52" rx="10" fill="#221813" stroke="#594d47" stroke-width="2" />
+			<text x="660" y="165" text-anchor="middle" class="label">worker-2</text>
+
+			<rect x="600" y="226" width="120" height="52" rx="10" fill="#221813" stroke="#594d47" stroke-width="2" />
+			<text x="660" y="257" text-anchor="middle" class="label">worker-3</text>
+		</g>
+
+		<!-- lost: 0 badge (always true, always visible) -->
+		<g>
+			<rect x="618" y="2" width="102" height="26" rx="13" fill="#171110" stroke="#594d47" stroke-width="1.5" />
+			<text x="669" y="20" text-anchor="middle" class="mono badge">lost: 0</text>
+		</g>
+
+		<!-- feed dots: app → postgres, continuous -->
+		<g class="anim">
+			<circle r="5" fill="url(#emberG)">
+				<animateMotion path="M160,160 L320,160" dur="2s" begin="0s" repeatCount="indefinite" />
+				<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2s" begin="0s" repeatCount="indefinite" />
+			</circle>
+			<circle r="5" fill="url(#emberG)">
+				<animateMotion path="M160,160 L320,160" dur="2s" begin="1s" repeatCount="indefinite" />
+				<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2s" begin="1s" repeatCount="indefinite" />
+			</circle>
+		</g>
+
+		<!-- delivery dots to healthy workers, continuous -->
+		<g class="anim">
+			<circle r="5" fill="url(#emberG)">
+				<animateMotion path="M440,140 C520,140 540,68 600,68" dur="2.4s" begin="0.3s" repeatCount="indefinite" />
+				<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2.4s" begin="0.3s" repeatCount="indefinite" />
+			</circle>
+			<circle r="5" fill="url(#emberG)">
+				<animateMotion path="M440,180 C520,180 540,252 600,252" dur="2.4s" begin="1.4s" repeatCount="indefinite" />
+				<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2.4s" begin="1.4s" repeatCount="indefinite" />
+			</circle>
+		</g>
+
+		<!-- worker-2 routine dot: only during the first third of the loop (before the kill) -->
+		<g class="anim">
+			<circle r="5" fill="url(#emberG)">
+				<animateMotion
+					path="M440,160 L600,160"
+					dur="12s" repeatCount="indefinite"
+					calcMode="linear"
+					keyPoints="0;1;0;1;0;0"
+					keyTimes="0;0.14;0.141;0.28;0.281;1" />
+				<animate attributeName="opacity" values="1;1;1;1;0;0" keyTimes="0;0.14;0.141;0.28;0.281;1" dur="12s" repeatCount="indefinite" />
+			</circle>
+		</g>
+
+		<!-- the story dot: heads to worker-2, stalls when it dies, snaps back to postgres, redelivered to worker-3 -->
+		<g class="anim">
+			<circle r="6" fill="#ff7a3d">
+				<animateMotion
+					path="M440,160 L530,160 L440,160 C520,160 540,252 600,252"
+					dur="12s" repeatCount="indefinite"
+					calcMode="linear"
+					keyPoints="0;0;0.231;0.231;0.462;0.462;1;1"
+					keyTimes="0;0.30;0.355;0.395;0.45;0.55;0.64;1" />
+				<animate attributeName="fill" values="#ff7a3d;#ff7a3d;#ff6b5e;#ff6b5e;#ffb86b;#ffb86b" keyTimes="0;0.355;0.36;0.5;0.55;1" dur="12s" repeatCount="indefinite" />
+				<animate attributeName="opacity" values="0;0;1;1;1;1;0;0" keyTimes="0;0.30;0.31;0.45;0.55;0.63;0.66;1" dur="12s" repeatCount="indefinite" />
+			</circle>
+		</g>
+
+		<!-- the kill: worker-2 dims and gets crossed out for the middle of the loop -->
+		<g class="anim" opacity="0">
+			<rect x="598" y="132" width="124" height="56" rx="10" fill="#171110" opacity="0.6" />
+			<line x1="612" y1="144" x2="708" y2="176" stroke="#ff6b5e" stroke-width="5" stroke-linecap="round" />
+			<line x1="708" y1="144" x2="612" y2="176" stroke="#ff6b5e" stroke-width="5" stroke-linecap="round" />
+			<text x="660" y="206" text-anchor="middle" class="mono kill">kill -9</text>
+			<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.355;0.37;0.84;0.9;1" dur="12s" repeatCount="indefinite" />
+		</g>
+
+		<!-- captions -->
+		<text x="380" y="322" text-anchor="middle" class="mono caption anim">
+			messages flowing through the database you already run
+			<animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;0.33;0.36;0.86;0.92;1" dur="12s" repeatCount="indefinite" />
+		</text>
+		<text x="380" y="322" text-anchor="middle" class="mono caption hot anim">
+			worker killed mid-message → rolled back → redelivered. nothing lost.
+			<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.33;0.36;0.86;0.92;1" dur="12s" repeatCount="indefinite" />
+		</text>
+		<text x="380" y="322" text-anchor="middle" class="mono caption static-caption">
+			a worker dies mid-message → Postgres rolls back → another worker picks it up. lost: 0
+		</text>
+	</svg>
+</div>
+
+<style>
+	.chaos-diagram {
+		max-width: 46rem;
+		margin: 2.5rem auto 0.5rem;
+	}
+	.chaos-diagram svg {
+		width: 100%;
+		height: auto;
+		display: block;
+	}
+	.label {
+		fill: #f0e4dd;
+		font-family: var(--sl-font, system-ui, sans-serif);
+		font-size: 17px;
+	}
+	.label.strong { font-weight: 600; }
+	.mono { font-family: var(--__sl-font-mono, monospace); }
+	.dim { fill: #8d7e76; font-size: 13px; }
+	.badge { fill: #ffb86b; font-size: 15px; font-weight: 700; }
+	.kill { fill: #ff6b5e; font-size: 13px; }
+	.caption { fill: #8d7e76; font-size: 14px; }
+	.caption.hot { fill: #ffc09e; }
+
+	/* Static variant (animate={false}) and reduced motion: freeze to a
+	   static diagram with an explanatory caption */
+	.static-caption { display: none; }
+	.chaos-diagram.static .anim { display: none; }
+	.chaos-diagram.static .static-caption { display: block; }
+	@media (prefers-reduced-motion: reduce) {
+		.anim { display: none; }
+		.static-caption { display: block; }
+	}
+</style>

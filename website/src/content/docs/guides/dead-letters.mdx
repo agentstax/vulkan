@@ -1,0 +1,92 @@
+---
+title: Dead Letters & Recovery
+description: Where failed messages go, how to triage them with SQL, and how to redrive them after the fix.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Some messages will fail every retry. A malformed payload, a handler bug, a
+downstream API that 404s a deleted resource. The question that separates
+production-grade messaging from toys is: **where do those messages go, and
+how do you get them back?**
+
+In Vulkan, after a message exhausts its retries for a group, its delivery row
+flips to `dead` — payload, attempt history, and final error intact, per
+consumer group, forever queryable. Nothing is discarded, nothing expires
+behind your back, and no separate "DLQ queue" needs provisioning per consumer.
+
+## Triage with the tools you already have
+
+```sql
+-- What's dying, and why? Group by error to find the pattern.
+SELECT d.last_error, count(*),
+       min(e.created_at) AS first_seen, max(e.created_at) AS last_seen
+FROM vulkan.deliveries d
+JOIN vulkan.events e ON e."offset" = d.event_offset
+WHERE d.consumer_group = 'fraud-screening' AND d.status = 'dead'
+GROUP BY 1 ORDER BY 2 DESC;
+```
+
+```sql
+-- Inspect one casualty in full.
+SELECT e.payload, e.headers, d.attempts, d.last_error
+FROM vulkan.deliveries d
+JOIN vulkan.events e ON e."offset" = d.event_offset
+WHERE d.consumer_group = 'fraud-screening' AND d.status = 'dead'
+ORDER BY d.updated_at DESC LIMIT 1;
+```
+
+This is the underrated payoff of messaging-in-Postgres: dead-letter triage
+with `GROUP BY`, joins to your *business tables* ("are all the dead messages
+from one merchant?"), and your normal query tooling — instead of paging
+through an opaque DLQ one message at a time in a web console.
+
+## The recovery loop
+
+<Steps>
+
+1. **Alert.** A growing DLQ should page someone (a `count(*)` threshold; or
+   Vulkan Cloud's built-in DLQ alerts).
+
+2. **Diagnose.** Group dead messages by error; join to business data; find
+   the pattern. Usually one bug, many casualties.
+
+3. **Fix and deploy** the handler.
+
+4. **Redrive.** Reset dead messages to `ready` — all of them, or a filtered
+   subset:
+
+   ```go
+   // Everything dead for this group:
+   client.Redrive(ctx, "orders", "fraud-screening", vulkan.DeadOnly())
+
+   // Or surgically — only the ones that died of the bug you just fixed:
+   client.Redrive(ctx, "orders", "fraud-screening",
+       vulkan.DeadOnly(),
+       vulkan.WhereError("fraud API: 422%"))
+   ```
+
+   Redriven messages re-enter the normal
+   [lifecycle](/concepts/lifecycle/) with a fresh attempt budget.
+
+5. **Confirm.** The same triage query, now returning zero rows.
+
+</Steps>
+
+<Aside type="caution" title="Poison pills don't block the line">
+A message that fails forever never blocks the messages behind it — failed
+deliveries back off and dead-letter individually while the rest of the stream
+flows. This is the per-message lifecycle that log-only systems can't express:
+in Kafka, a poison message at offset N means choosing between stalling the
+partition at N or skipping data. In Vulkan it means one row in `dead` and an
+otherwise unremarkable Tuesday.
+</Aside>
+
+## Per-group isolation
+
+Dead letters are scoped to the consumer group, because failure is an opinion
+of the *consumer*, not a property of the message. The same event can be
+`dead` for `fraud-screening` (their API rejected it), `done` for
+`email-receipts`, and not yet delivered to a replaying analytics group — all
+three states coexisting on one immutable log row. That's the
+[fusion](/concepts/queue-and-log/) doing its job.

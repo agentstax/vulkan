@@ -1,0 +1,95 @@
+---
+title: Architecture
+description: Four tables, no daemons — how Vulkan turns Postgres into a message platform.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Vulkan has no broker process. The "server" is your Postgres database plus a
+schema; the "clients" are your own application processes running the Vulkan
+library. Everything below is rows.
+
+```
+                       ┌──────────────────────────────────────────────┐
+                       │                   POSTGRES                    │
+  producers            │                                              │   consumers
+                       │   vulkan.events            (immutable log)  │
+  app ──publish──────▶ │   ─ offset, topic, routing_key,             │
+  app ──publish-in-tx▶ │     partition_key, headers, payload          │
+                       │                  │                           │
+                       │                  │ fan-out via bindings      │
+                       │                  ▼                           │
+                       │   vulkan.bindings          (routing rules)  │
+                       │   ─ consumer_group, pattern                  │
+                       │                  │                           │
+                       │                  ▼                           │
+                       │   vulkan.deliveries   (per-group lifecycle) │ ◀─claim/ack── worker
+                       │   ─ (group, offset) → status, attempts,     │ ◀─claim/ack── worker
+                       │     run_at, locked_at, last_error            │
+                       │                                              │
+                       │   vulkan.consumers         (bare cursors)   │ ◀─read at cursor─ replayer
+                       │   ─ name → position                          │
+                       └──────────────────────────────────────────────┘
+```
+
+## The four tables
+
+**`events` — the log.** Append-only, never mutated by consumption. The
+`offset` (a bigserial) is the global position. Retention is enforced by
+time-partitioning, so expiring old history is a partition `DROP`, not a
+million-row `DELETE`.
+
+**`deliveries` — the lifecycle.** One row per `(consumer_group, event)` for
+groups that opt into full lifecycle. The status state machine
+(`ready → processing → done | dead`, with retry loops) lives here. Workers
+claim rows with `FOR UPDATE SKIP LOCKED`, so any number of workers compete
+safely with zero coordination. A partial index on ready rows keeps the claim
+query fast no matter how much history accumulates.
+
+**`consumers` — the cursors.** For groups that don't need per-message
+lifecycle (analytics readers, replicators, replays), consumption is just
+"read events past my position, advance my position." One integer per group.
+Fan-out costs nothing because the log is shared and positions are private.
+
+**`bindings` — the routing.** Which groups receive which events, decided at
+fan-out time by matching `routing_key` patterns (`orders.*.created`) or
+header predicates (JSONB containment). Producers never address consumers.
+
+## The flow of one message
+
+1. **Publish.** `INSERT INTO vulkan.events ...` — optionally inside *your*
+   transaction, next to your business writes. Commit makes the message
+   durable and visible, atomically.
+2. **Fan-out.** Delivery rows materialize for each lifecycle group whose
+   binding matches. Cursor groups need nothing materialized at all.
+3. **Claim.** A worker grabs ready deliveries with `SKIP LOCKED`, marks them
+   `processing`, commits the claim instantly, and runs your handler unlocked —
+   a ten-minute job never holds a database lock.
+4. **Resolve.** Success → `done`. Failure → re-`ready` with exponential
+   backoff, until attempts exhaust → `dead`. Worker crashed? A reaper returns
+   leases that expired, automatically.
+
+<Aside type="note" title="Two kinds of claim, deliberately">
+The instantaneous **lock** (`FOR UPDATE`) is only held while claiming. The
+durable **lease** (`status` + `locked_at`) is data, and survives anything —
+including the worker evaporating. This separation is what lets Vulkan handle
+long-running handlers without long-running transactions, which is the classic
+failure mode of naive Postgres queues.
+</Aside>
+
+## Write amplification, honestly
+
+Lifecycle costs writes: 1,000 events fanned out to 5 lifecycle groups means
+5,000 delivery rows (cursor groups: zero). That's the same trade Pulsar makes
+with per-subscription cursors and Kafka *refuses* to make (hence its retry-topic
+contortions). Vulkan makes it **per-stream optional**: pay for lifecycle where
+you need acks and dead letters, use free cursors where you don't.
+
+## Performance posture
+
+- Claim path: one indexed `UPDATE … SKIP LOCKED` round-trip per batch.
+- `LISTEN/NOTIFY` wakes idle workers instantly; a fallback poll catches
+  delayed messages and missed notifies.
+- Sustained tens of thousands of messages/second on ordinary Postgres
+  hardware — with batching, well beyond most products' lifetime peak.
+  When you genuinely outgrow that, [you'll know](/compare/kafka/).

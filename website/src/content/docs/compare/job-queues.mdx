@@ -1,0 +1,77 @@
+---
+title: Vulkan vs. Job Queues
+description: River, pgmq, and friends proved Postgres queues work. Vulkan is what comes after that proof.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+We owe this category a debt. River, pgmq, graphile-worker, Oban, pg-boss,
+and Solid Queue spent years proving the thesis Vulkan is built on: **Postgres
+is a great place for messages.** `SKIP LOCKED` claiming, transactional
+enqueue, partial indexes on ready rows — these are the community's hard-won
+patterns, and Vulkan uses all of them.
+
+The difference is scope. A job queue answers one question: *"run this work,
+reliably, soon."* Vulkan answers that one **and** the questions that
+historically forced you to add Kafka and RabbitMQ next year: *what happened?*
+(retention), *who else needs to know?* (fan-out, routing), *can we reprocess?*
+(replay).
+
+## Feature by feature
+
+| | pgmq | River | Vulkan |
+| --- | --- | --- | --- |
+| At-least-once delivery, `SKIP LOCKED` | ✅ | ✅ | ✅ |
+| Transactional enqueue | ✅ | ✅ | ✅ |
+| Retries with backoff, scheduling | ❌ basic visibility timeout | ✅ | ✅ |
+| Dead letters | archive table | ✅ | ✅ per consumer group |
+| Retained, replayable event log | ❌ | ❌ | ✅ |
+| Multiple independent consumer groups per message | ❌ | ❌ | ✅ |
+| Routing bindings | ❌ | ❌ | ✅ |
+| Per-key FIFO | ❌ | ❌ partial (unique/sequence opts) | ✅ |
+| Model | SQS-style queue, SQL API | Go job runner | log + queue platform |
+
+The structural difference is one design decision: job queues **delete (or
+archive) on completion**, so a message belongs to whoever claimed it first.
+That forecloses fan-out and replay permanently. Vulkan retains the log and
+moves lifecycle into per-group delivery state — same claiming machinery,
+applied per consumer group instead of globally.
+[The architecture page](/concepts/architecture/) shows exactly how.
+
+## "Isn't this just a job queue with extra steps?"
+
+For your first use case — background jobs — Vulkan behaves exactly like a
+great job queue, and you can use it as one (one lifecycle group, ignore
+everything else; the cursor machinery costs nothing if unused).
+
+The bet is about your *second* and *third* use cases. The team that adopts a
+job queue almost always ends up, eighteen months later, also running:
+
+- an **events pipeline** (Kafka/Kinesis) because product analytics and a new
+  service both needed the order stream the job queue had been deleting,
+- a **pub/sub layer** (SNS/RabbitMQ) because three services needed the same
+  notification and the job queue could only give it to one,
+- an **outbox + relay** because the broker introduced the dual-write problem
+  the Postgres queue never had.
+
+Each addition is individually reasonable; the sum is the three-broker sprawl
+that [Why Vulkan](/why-vulkan/) opens with. Vulkan's pitch to job-queue users
+is simple: *same start, different ceiling.*
+
+## What about Hatchet, Inngest, Temporal?
+
+Those are **workflow engines** — they orchestrate multi-step, long-running
+*functions* (often with a Postgres queue underneath, as in Hatchet's case).
+Different layer of the stack: a workflow engine needs a durable message
+platform; a message platform doesn't need a workflow engine. Vulkan is the
+platform layer — and a code-first workflow layer on top of it is
+[on the roadmap](/roadmap/), built on the same log, with the same
+transactional guarantees.
+
+<Aside type="tip" title="Migrating from River or pgmq">
+Vulkan speaks the same conceptual language (claim, ack, retry, DLQ), runs in
+the same database, and a stream with a single lifecycle group is
+semantically a superset of a job queue. Migration is a table-to-table copy
+and a worker swap — we're building a `vulkan migrate-from` helper for
+exactly this.
+</Aside>

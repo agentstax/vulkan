@@ -1,0 +1,81 @@
+---
+title: Queues, Logs & the Fusion
+description: The one mental model behind Vulkan — and behind every messaging system you've ever used.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every messaging system you've ever used — Kafka, RabbitMQ, SQS, NATS, Pulsar —
+is built from two primitives:
+
+- A **queue** treats messages as *work*: something claims each message,
+  processes it, and it's gone. The interesting state is per-message — claimed
+  by whom, attempted how many times, failed why.
+- A **log** treats messages as *facts*: append-only, retained, re-readable.
+  Nothing is consumed; consumers just remember *how far they've read* — a
+  single cursor.
+
+Each shape is great at what the other can't do:
+
+| | Queue (SQS, RabbitMQ) | Log (Kafka, Kinesis) |
+| --- | --- | --- |
+| Retries, backoff, dead letters | ✅ per-message state | ❌ a cursor can't say "5 failed but 6–8 are done" |
+| Replay history | ❌ consumed = gone | ✅ rewind the cursor |
+| Many independent consumers | ❌ one consumer wins | ✅ cursor per consumer |
+| "Handle this one bad message" | ✅ | ❌ skip it or stall the partition |
+
+This is why you end up running both — Kafka *and* SQS, or Kafka *and*
+RabbitMQ — and bolting on workarounds where each one falls short (Kafka's
+"retry topics" are a queue impersonation; SQS's 14-day retention is a log
+impersonation).
+
+## The fusion
+
+Vulkan's design move is to stop choosing. It separates the two concerns into
+two tables:
+
+- **`vulkan.events`** — the immutable, append-only **log**. Facts, retained,
+  ordered by offset. Retention, replay, routing, and partitions live here.
+- **`vulkan.deliveries`** — mutable, per-`(consumer group, message)`
+  **lifecycle** state. Claims, attempts, backoff, dead letters live here.
+
+A consumer group that needs full lifecycle gets delivery rows. A consumer that
+just wants to read the firehose (analytics, replication, replay) gets a bare
+cursor and skips the bookkeeping entirely. **Per stream, you choose the
+semantics — without changing systems.**
+
+<Aside type="tip" title="The aha">
+You can have retention, replay, and fan-out **and** per-message
+ack/retry/dead-letter simultaneously — by separating the immutable record of
+*what happened* from the mutable record of *who has handled it*. That single
+separation is the entire trick, and Postgres's transactional engine is what
+makes it cheap to build on.
+</Aside>
+
+## Why Postgres specifically
+
+Three properties make Postgres an unusually good substrate for this fusion:
+
+1. **`FOR UPDATE SKIP LOCKED`** — competing consumers in one SQL clause. Two
+   workers run the same claim query at the same instant and get *different*
+   rows. A crashed worker needs zero recovery code; transaction rollback *is*
+   the recovery.
+2. **Transactions that reach your data.** The log lives next to your business
+   tables, so publishing an event in the same transaction as a business write
+   is just… a transaction. No broker can offer this.
+   [The dual-write problem →](/guides/transactional-enqueue/)
+3. **It's already there.** Already deployed, already backed up, already
+   monitored, already trusted with your most important data.
+
+## Where each system fits in this model
+
+Once you have the queue/log lens, the whole landscape snaps into focus:
+
+- **SQS / RabbitMQ** — queues. Lifecycle-rich, history-poor.
+- **Kafka** — a log. History-rich, lifecycle-poor (a committed offset is the
+  *only* per-consumer state).
+- **Pulsar** — the closest existing fusion (per-subscription cursors *plus*
+  individual acks), at the cost of running BookKeeper + ZooKeeper + brokers.
+- **Vulkan** — the same fusion as tables, in the database you already run.
+
+Next: [how the tables actually fit together →](/concepts/architecture/)

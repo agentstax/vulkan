@@ -1,0 +1,80 @@
+---
+title: Routing
+description: Producers publish facts with attributes. Bindings decide who receives. Nobody addresses anybody.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The mark of a healthy event architecture: **producers don't know consumers
+exist.** A producer publishes what happened, annotated with attributes; the
+platform decides who receives it. In Vulkan, that decision is a **binding** —
+a stored predicate evaluated at fan-out time.
+
+## Topic-style routing
+
+Publish with a routing key:
+
+```go
+stream.Publish(ctx, &OrderCreated{...},
+    vulkan.WithRoutingKey("orders.eu.created"))
+```
+
+Bind groups with wildcard patterns (`*` matches one segment, `>` matches the
+rest):
+
+```go
+// Receipts care about every created order, anywhere.
+vulkan.Bind(client, "email-receipts", "orders.*.created")
+
+// The EU compliance service wants everything EU, any event type.
+vulkan.Bind(client, "eu-compliance", "orders.eu.>")
+
+// US warehouse only ships US orders.
+vulkan.Bind(client, "us-warehouse", "orders.us.>")
+```
+
+Publish `orders.eu.created` → `email-receipts` and `eu-compliance` get
+delivery rows; `us-warehouse` hears nothing. The producer changed zero lines
+when `eu-compliance` came online last month.
+
+## Header-style routing
+
+When routing depends on message *content* rather than a hierarchy, match on
+headers:
+
+```go
+stream.Publish(ctx, &OrderCreated{...},
+    vulkan.WithHeaders(vulkan.H{"tier": "enterprise", "amount_band": "high"}))
+
+// Concierge team only sees high-value enterprise orders.
+vulkan.BindHeaders(client, "concierge-review",
+    vulkan.H{"tier": "enterprise", "amount_band": "high"})
+```
+
+Under the hood this is JSONB containment (`headers @> pattern`) — indexed,
+fast, and visible in `EXPLAIN` like everything else in Vulkan.
+
+## Why route at fan-out time
+
+A binding could in principle be checked at publish time or at claim time.
+Vulkan evaluates it at **fan-out** — when delivery rows materialize — which
+buys a property the broker world can't match:
+
+<Aside type="tip" title="Retroactive routing">
+Because the log is retained, a binding added *today* can be applied to events
+published *last month* — just create the binding and rewind the group. In
+RabbitMQ, a message that matched no binding at publish time is gone forever.
+In Vulkan, routing is a predicate over durable facts, so re-deciding is
+always on the table.
+</Aside>
+
+## The model in one sentence
+
+RabbitMQ made routing famous with exchanges; NATS with subject wildcards.
+Vulkan's version: **an exchange is just a table of predicates, and a
+predicate over retained facts beats a predicate over fly-by messages.**
+
+```sql
+-- Your entire routing topology. No management UI required (but Cloud has one).
+SELECT consumer_group, pattern FROM vulkan.bindings ORDER BY 1;
+```

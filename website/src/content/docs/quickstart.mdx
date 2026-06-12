@@ -1,0 +1,171 @@
+---
+title: Quickstart
+description: Durable background jobs in five minutes — then the upgrade no job queue could ever make.
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+Five minutes to reliable background jobs on the Postgres you already have —
+then two more to see the thing no job queue could ever do. No Redis, no SQS,
+no new infrastructure.
+
+<Aside type="note">
+All you need is a Postgres connection string. Local Docker, RDS, Neon,
+Railway, Supabase — anything ≥ Postgres 14 works. (Want to see it survive
+`kill -9` before writing any code? [Run the chaos demo first →](/demo/))
+</Aside>
+
+<Steps>
+
+1. **Install the library and CLI**
+
+   ```sh
+   go get github.com/agentstax/vulkan
+   go install github.com/agentstax/vulkan/cmd/vulkan@latest
+   ```
+
+2. **Run the migrations**
+
+   Vulkan keeps its tables in their own schema, out of your way:
+
+   ```sh
+   vulkan migrate --database-url $DATABASE_URL
+   ```
+
+   ```
+   ✓ created schema  vulkan
+   ✓ created table   vulkan.events       (the log)
+   ✓ created table   vulkan.deliveries   (per-consumer lifecycle)
+   ✓ created table   vulkan.consumers    (cursors)
+   ✓ created table   vulkan.bindings     (routing)
+   ```
+
+3. **Your first queue: the welcome email**
+
+   The classic Day-1 problem — do something after signup, reliably:
+
+   ```go
+   package main
+
+   import (
+       "context"
+       "os"
+       "time"
+
+       "github.com/agentstax/vulkan"
+   )
+
+   type WelcomeEmail struct {
+       UserID string `json:"user_id"`
+   }
+
+   func main() {
+       ctx := context.Background()
+       client, _ := vulkan.Connect(ctx, os.Getenv("DATABASE_URL"))
+       defer client.Close()
+
+       queue := vulkan.Queue[WelcomeEmail](client, "emails")
+
+       // In your signup handler — same transaction as the user INSERT,
+       // so the job exists if and only if the user does:
+       client.Tx(ctx, func(tx vulkan.Tx) error {
+           if err := users.Insert(ctx, tx, user); err != nil {
+               return err
+           }
+           return queue.EnqueueTx(ctx, tx, &WelcomeEmail{UserID: user.ID})
+       })
+
+       // The worker — run it here or in a separate binary:
+       queue.Work(ctx, func(ctx context.Context, job vulkan.Message[WelcomeEmail]) error {
+           return mailer.SendWelcome(ctx, job.Payload)
+       },
+           vulkan.WithRetries(5),
+           vulkan.WithBackoff(vulkan.Exponential(time.Second)),
+       )
+   }
+   ```
+
+   That's a production-grade job queue: atomic claiming across any number of
+   workers, retries with exponential backoff — and because the enqueue is in
+   *your* transaction, the email can never fire for a signup that rolled
+   back, or get lost for one that committed.
+   [Why no external queue can do that →](/guides/transactional-enqueue/)
+
+4. **Watch a job fail its way to the dead-letter queue**
+
+   Make the handler fail (return an error unconditionally, or unplug your
+   mail API key) and enqueue a few jobs. Then look inside — your queue is
+   rows, so debugging is `psql`, not a broker console:
+
+   <Tabs>
+   <TabItem label="Queue health">
+   ```sql
+   SELECT status, count(*), max(attempts) AS attempts
+   FROM vulkan.deliveries
+   GROUP BY 1;
+   ```
+   </TabItem>
+   <TabItem label="Dead letters">
+   ```sql
+   SELECT e.payload, d.attempts, d.last_error
+   FROM vulkan.deliveries d
+   JOIN vulkan.events e ON e."offset" = d.event_offset
+   WHERE d.status = 'dead';
+   ```
+   </TabItem>
+   </Tabs>
+
+   Watch `attempts` climb, watch retries push into the future with backoff,
+   and after five failures watch the job land in `dead` — payload and error
+   history intact, waiting for you to fix the bug and
+   [redrive it](/guides/dead-letters/). Nothing expires behind your back.
+
+5. **The reveal: your queue was a stream all along**
+
+   Months from now, product wants an in-app activity feed driven by the same
+   signups. With any job queue, those messages are gone — consumed and
+   deleted. In Vulkan, a queue is just a stream with one consumer group, so
+   adding a second, fully independent consumer is one line:
+
+   ```go
+   vulkan.Subscribe(client, "emails", "activity-feed",
+       func(ctx context.Context, msg vulkan.Message[WelcomeEmail]) error {
+           return feed.RecordSignup(ctx, msg.Payload)
+       },
+   )
+   ```
+
+   Run it next to your email worker. Each group has its own cursor, its own
+   retries, its own dead letters; the email worker never notices. Re-run the
+   queue-health query — you'll see two `consumer_group`s working the same
+   events. This is the moment that separates Vulkan from every job queue:
+   the upgrade was *additive*, not a migration.
+
+6. **One more: replay history**
+
+   The activity feed shouldn't start empty — point it at the beginning of
+   retained history and it bootstraps itself, processing every signup it
+   missed, then seamlessly catches up to live:
+
+   ```go
+   vulkan.Subscribe(client, "emails", "activity-feed",
+       recordSignup,
+       vulkan.FromOffset(0),
+   )
+   ```
+
+   No hand-written backfill, no consistency scramble. Deleted-on-consume
+   systems structurally cannot do this. [Why replay matters →](/guides/replay/)
+
+</Steps>
+
+## Where next
+
+- [Try to lose a message](/demo/) — `kill -9` the workers, restart Postgres,
+  watch the loss counter stay at zero.
+- [Concepts: Queues, Logs & the Fusion](/concepts/queue-and-log/) — the
+  mental model behind the reveal in step 5.
+- [Routing](/concepts/routing/) and [FIFO](/concepts/ordering/) — the rest of
+  the growth path, when you need it.
+- [Vulkan Cloud](/cloud/) — all of the above with dashboards, alerts, and
+  nothing to operate.

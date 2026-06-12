@@ -1,0 +1,70 @@
+---
+title: Ordering & FIFO
+description: Strict per-key ordering exactly where you opt in — full parallelism everywhere else.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Ordering and concurrency are fundamentally at odds: if message B must wait for
+message A, no amount of workers makes B faster. Systems that pretend otherwise
+either serialize everything (slow) or order nothing (wrong). Vulkan's answer
+is the same as Kafka's and SQS FIFO's — **order within a key** — but opt-in
+per message rather than baked into stream topology.
+
+## Partition keys
+
+Tag messages that must be ordered relative to each other with a key:
+
+```go
+// All events for one account process in order…
+stream.Publish(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
+    vulkan.WithPartitionKey("acct-42"))
+
+// …while unkeyed messages parallelize across every worker.
+stream.Publish(ctx, &EmailRequested{To: "x@example.com"})
+```
+
+The guarantee: **within a consumer group, at most one message per partition
+key is in flight at a time, claimed in log order.** Messages with different
+keys — and messages with no key — run fully parallel. Fifty workers can chew
+through a stream while `acct-42`'s events march through single-file.
+
+Under the hood it's one predicate in the claim query: *skip rows whose key
+already has an in-flight delivery in this group*. No partition count to
+choose up front, no rebalancing, no "we picked 12 partitions in 2024 and now
+we're stuck with them."
+
+## The hot-key trade, made visible
+
+A hot key serializes itself — that's not a bug, it's what you asked for.
+If one account produces 80% of your traffic, that account processes at
+single-worker speed while everything else saturates the pool:
+
+```sql
+-- Who's hot right now?
+SELECT e.partition_key, count(*) AS backlog
+FROM vulkan.deliveries d
+JOIN vulkan.events e ON e."offset" = d.event_offset
+WHERE d.status = 'ready' AND e.partition_key IS NOT NULL
+GROUP BY 1 ORDER BY 2 DESC LIMIT 10;
+```
+
+(Vulkan Cloud charts this and alerts when a key starts dragging group
+latency.)
+
+<Aside type="caution" title="Retries bend ordering — by design">
+If `acct-42`'s message #3 fails and backs off, should #4 wait? Vulkan's
+default is **strict**: the key stays blocked until #3 resolves (succeeds or
+dead-letters), preserving order through retries. If you'd rather skip ahead,
+opt the group into `vulkan.OrderBestEffort()` — looser, faster, and honest
+about it. Both behaviors are explicit; neither happens to you by surprise.
+</Aside>
+
+## Compared to the neighbors
+
+| | Kafka | SQS FIFO | Vulkan |
+| --- | --- | --- | --- |
+| Ordering unit | partition (fixed count) | MessageGroupId | partition key |
+| Choose order per message? | ❌ topic-wide topology | ✅ | ✅ |
+| Unordered fast path on same stream | ❌ | ❌ separate queue | ✅ null key |
+| Reshard pain | repartitioning project | n/a | none — keys are just values |
