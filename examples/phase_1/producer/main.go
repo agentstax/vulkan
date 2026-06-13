@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"math/rand/v2"
 	"os"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
@@ -11,6 +13,17 @@ import (
 )
 
 func main() {
+	// FLAGS
+
+	// -count n
+	countPtr := flag.Int("count", 1, "number of messages produced")
+
+	// must always parse
+	flag.Parse()
+
+	fmt.Printf("count: %d\n", *countPtr)
+
+	// SETUP
 	ctx := context.Background()
 
 	pgConnectionParams := &datastore.PostgresConnectionParams{
@@ -33,14 +46,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	work, err := common.NewWork(123, "admin@example.com")
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
+	// WORK
+	for range *countPtr {
 
-	if err = producer.Produce(ctx, work); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		work, err := common.NewWork(rand.IntN(100), "admin@example.com")
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+
+		if err = producer.Produce(ctx, work); err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+
+		fmt.Printf("successfully produced message %s\n", work.Id)
 	}
 }

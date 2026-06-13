@@ -75,16 +75,16 @@ mid-process", "slow a consumer", or "fail a message". You can't do those by
 hand reliably — build the knobs once, early, as flags on the example
 producer/consumer binaries:
 
-- [ ] `producer --count N` — enqueue N messages in a loop (with distinct
+- [x] `producer --count N` — enqueue N messages in a loop (with distinct
       payloads so you can trace individual messages).
-- [ ] `consumer --sleep 2s` — artificial processing time, so there's a window
+- [x] `consumer --sleep 2s` — artificial processing time, so there's a window
       to kill it mid-process.
-- [ ] `consumer --fail-rate 0.2` — consumerFunc returns an error randomly.
-- [ ] `consumer --crash-after 3` — `os.Exit(1)` mid-transaction after the Nth
+- [x] `consumer --fail-rate 0.2` — consumerFunc returns an error randomly.
+- [x] `consumer --crash-after 3` — `os.Exit(1)` mid-transaction after the Nth
       message. Simulates a real crash (no rollback call, no cleanup).
-- [ ] `just` recipes: `just produce N`, `just consume`, plus a way to run two
+- [x] `just` recipes: `just produce N`, `just consume`, plus a way to run two
       consumers side by side (two terminals is fine).
-- [ ] A peek query you'll run constantly:
+- [x] A peek query you'll run constantly:
       `just peek` → `SELECT id, payload, created_at FROM jobs ORDER BY id;`
       (extend it with status/attempts columns as the schema grows).
 
@@ -168,6 +168,7 @@ the recovery.
 **Explain it back** (from memory, no peeking):
 1. Why does the `DELETE` have to be in the same transaction as the claim? Walk
    through what can go wrong with each of the two orderings if it's separate.
+Answer: 
 2. A worker is killed with `kill -9` mid-process. Step by step, what does
    Postgres do, and when does the row become claimable again?
 3. What does `SKIP LOCKED` change about the query's *result set*, exactly? Why

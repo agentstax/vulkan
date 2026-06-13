@@ -9,24 +9,38 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// fuck options patterns it always sucks to me
+// long live dysfunctional options pattern - https://rednafi.com/go/dysfunctional-options-pattern/
+
+// ideally idepotent func
 type ConsumerFunc[WorkType any] func(ctx context.Context, work WorkType) error
 
 type Consumer[WorkType any] interface {
 	Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error
 }
 
-type WorkConsumer[WorkType any] struct {
-	Datastore  Datastore[WorkType]
+type WorkConsumerConfig struct {
 	BatchLimit int
 	PollRate   time.Duration
 }
 
-func NewWorkConsumer[WorkType any](datastore Datastore[WorkType], batchLimit int, pollRate time.Duration) (*WorkConsumer[WorkType], error) {
+// TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
+type WorkConsumer[WorkType any] struct {
+	Datastore    Datastore[WorkType]
+	ShutdownFunc ShutdownFunc[WorkType]
+	Config       *WorkConsumerConfig
+}
+
+// only required params here
+func NewWorkConsumer[WorkType any](datastore Datastore[WorkType]) *WorkConsumer[WorkType] {
 	return &WorkConsumer[WorkType]{
-		Datastore:  datastore,
-		BatchLimit: batchLimit,
-		PollRate:   pollRate,
-	}, nil
+		Datastore:    datastore,
+		ShutdownFunc: DefaultShutdownFunc[WorkType],
+		Config: &WorkConsumerConfig{
+			BatchLimit: 1, // no batching by default
+			PollRate:   5 * time.Second,
+		},
+	}
 }
 
 func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
@@ -51,7 +65,7 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 }
 
 func (p *WorkConsumer[WorkType]) Poll(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
-	ticker := time.NewTicker(p.PollRate)
+	ticker := time.NewTicker(p.Config.PollRate)
 	defer ticker.Stop()
 
 	for {
@@ -76,7 +90,7 @@ func (p *WorkConsumer[WorkType]) ProcessBatch(ctx context.Context, consumerFunc 
 	// each attempt should have its own timeout, but could be easy to mess up
 	defer cancel()
 
-	err := p.Datastore.ProcessMessages(batchCtx, p.BatchLimit, consumerFunc)
+	err := p.Datastore.ProcessMessages(batchCtx, p.Config.BatchLimit, consumerFunc)
 	if err != nil {
 		// processing errors should not cancel thread
 		// TODO - should have retry and terminal failure logic here
@@ -85,12 +99,5 @@ func (p *WorkConsumer[WorkType]) ProcessBatch(ctx context.Context, consumerFunc 
 }
 
 func (p *WorkConsumer[WorkType]) Shutdown(ctx context.Context) error {
-	if err := p.Datastore.Shutdown(ctx); err != nil {
-		return err
-	}
-
-	// simulate long running shutdown for now
-	time.Sleep(3 * time.Second)
-
-	return nil
+	return p.ShutdownFunc(ctx, p)
 }
