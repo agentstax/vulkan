@@ -28,6 +28,10 @@ peek:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
     -c "SELECT * FROM message_log ORDER BY id;"
 
+peek-users:
+  psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
+    -c "SELECT * FROM users ORDER BY id;"
+
 ### DOC SITE (https://vulkan-5ss.pages.dev) ###
 
 site-dev:

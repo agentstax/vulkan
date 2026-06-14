@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// use struct{} to force serializeable object for jsonb field
+// TODO - Consider using struct {} instead of generics
 
 // TODO - the pgx.Tx here couples this datastore-agnostic package to pgx should try to decouple if we ever want many datastores (probably not)
 type ProducerFunc[WorkType any] func(ctx context.Context, tx pgx.Tx) (*WorkType, error)

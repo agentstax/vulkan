@@ -68,5 +68,80 @@ isn't lost; it's just owned by someone else right now.)
 
 - **Table name:** keeping `message_log` (the plan's text says `jobs`). Deferring
   the rename; Phase 4's log/queue split is the deliberate rename moment.
-</content>
-</invoke>
+
+---
+
+## Phase 1.5 — Transactional enqueue (the killer feature)
+
+**What it does, and the tradeoff:** because the queue is a *table in the same
+database* as your business data, the job `INSERT` and the business write commit in
+**one transaction** — both land or neither does. `AppendMessage` opens the tx,
+hands it to the producer callback (`ProducerFunc(ctx, tx)`) so the caller's
+business write runs on the *same* tx, then INSERTs into `message_log` and commits.
+Any error on either path trips the deferred `Rollback` and unwinds both writes.
+This is the one thing Kafka/RabbitMQ structurally cannot offer, because the
+transaction boundary doesn't reach a separate system. The tradeoff is coupling:
+the queue now lives in (and shares connection/transaction budget with) your
+business DB — you can't scale or operate it independently the way an external
+broker lets you.
+
+**The aha:** "do the thing, and durably record that follow-up work is needed" is
+a single atomic step. There is no window where the business row exists but the job
+doesn't, or vice versa — so there's no reconciliation code to write.
+
+### Explain it back
+
+**1. Describe the dual-write problem, why neither ordering is safe, and why
+retries don't fix it.**
+
+The dual-write problem is writing to **two separate systems with no shared
+transaction** — e.g. commit the business row to Postgres, then publish the event
+to an external broker (Kafka/RabbitMQ). There's no safe ordering:
+- DB commits, then publish fails → work done, event lost.
+- Publish succeeds, then DB rolls back → phantom event for work that never
+  happened.
+
+Retries narrow the window for transient faults (a network blip), but can't close
+it: the process can die *between* the two writes, and a permanent failure (e.g.
+validation rejection on the second write) leaves the first one stranded with
+nothing to retry against. The only real fix is to make both writes part of one
+transaction — which is exactly what putting the queue *in* Postgres buys you, and
+why this phase removes the dual-write entirely.
+
+**2. Why can a consumer never observe a job from an uncommitted producer tx? Which
+ACID property does the work?**
+
+**Isolation.** Under read-committed, one transaction's uncommitted writes are
+invisible to every other transaction. The producer's INSERT lives in the WAL but
+isn't visible in the table to anyone but the producer until `COMMIT`, so the
+consumer's claim query simply doesn't see the row. (Atomicity guarantees the
+producer's own writes are all-or-nothing; Isolation is what governs what *other*
+transactions are allowed to see.)
+
+**3. What is the outbox pattern, and what part of it have you already built?**
+
+The outbox pattern reliably gets events to an *external* system without the
+dual-write problem: the business write and an insert into an **outbox table**
+happen in one transaction, and a separate **relay** process reads the outbox table
+and forwards downstream (to Kafka, Elasticsearch, etc.). What I've already built
+is the outbox itself — `message_log` is the outbox table, and the atomic
+business-write-beside-the-enqueue is the producer side of the pattern. The only
+missing piece is the relay (Phase-9-ish; Debezium/CDC reading the WAL is the
+canonical version).
+
+### Done
+
+- Migration `002_users` adds the toy business table.
+- Producer API threads `pgx.Tx` into the callback so the business write shares the
+  enqueue's transaction (the "insert-only client" / River-style shape).
+- Labs passed: forced rollback → neither row exists; commit → both exist and a
+  worker claims the job; uncommitted producer tx → consumer can't claim until
+  commit.
+
+### Decisions
+
+- **pgx coupling:** `ProducerFunc` takes a concrete `pgx.Tx`, coupling this
+  otherwise datastore-agnostic package to pgx. Accepted deliberately (pgx is the
+  only backend). If a second backend ever appears, extract a driver-neutral
+  Querier interface + adapter — TODO marked at `pkg/producer/producer.go`.
+

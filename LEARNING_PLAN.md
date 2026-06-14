@@ -26,9 +26,9 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | Phase | State | Notes |
 |---|---|---|
 | 0 — Setup | ✅ done | golang-migrate + justfile + docker-compose wired |
-| 1 — Durable atom | 🔨 **in progress** | remaining: delete-after-process, poll loop, graceful shutdown, two-worker lab |
-| 1.5 — Transactional enqueue | ⬜ | |
-| 2 — Lifecycle | ⬜ | |
+| 1 — Durable atom | ✅ done | tagged `phase-1` |
+| 1.5 — Transactional enqueue | ✅ done | answers in NOTES.md; tag `phase-1.5` |
+| 2 — Lifecycle | 🔨 **next** | |
 | 3 — Competing consumers | ⬜ | ⚠️ batching already leaked into Phase 1 code — see trap T1 |
 | 4 — Log/queue split | ⬜ | |
 | 5 — Fan-out | ⬜ | |
@@ -202,19 +202,19 @@ No amount of retry logic fully closes this gap. It's the fundamental integration
 pain of external brokers.
 
 **Build:**
-- [ ] Add a toy business table (e.g. `users`) via a new migration.
-- [ ] An API shape question worth sweating: the producer currently owns its own
+- [x] Add a toy business table (e.g. `users`) via a new migration.
+- [x] An API shape question worth sweating: the producer currently owns its own
       pool and transaction. To enqueue inside the *caller's* transaction, the
       producer needs to accept a `pgx.Tx`. Design that (e.g.
       `Produce(ctx, tx, work)` or a `ProducerInTx` variant) — this exact API
       tension is why River's docs talk about "insert-only clients."
-- [ ] Wrap a business write + a `jobs` INSERT in a single `BEGIN ... COMMIT`.
+- [x] Wrap a business write + a `jobs` INSERT in a single `BEGIN ... COMMIT`.
 
 **Lab:**
-- [ ] Force an error (rollback) *after* the business write but *before* commit;
+- [x] Force an error (rollback) *after* the business write but *before* commit;
       `just peek` both tables — confirm **neither** row exists.
-- [ ] Commit successfully; confirm **both** exist and a worker picks up the job.
-- [ ] **Visibility proof:** inside an open (uncommitted) producing transaction,
+- [x] Commit successfully; confirm **both** exist and a worker picks up the job.
+- [x] **Visibility proof:** inside an open (uncommitted) producing transaction,
       run a consumer — confirm it cannot claim the job until commit. Atomicity
       on the producer side and isolation on the consumer side compose for free.
 
@@ -235,6 +235,8 @@ to build the relay now — just know the table you already have is the outbox.
 2. Why can't a consumer ever observe a job from an uncommitted producer
    transaction? Which ACID property is doing the work?
 3. What is the outbox pattern, and what part of it have you already built?
+
+→ Answered (corrected) in NOTES.md, "Phase 1.5 — Transactional enqueue".
 
 **Done when:** labs pass, NOTES.md entry written, `git tag phase-1.5`.
 
