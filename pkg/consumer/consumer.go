@@ -13,7 +13,7 @@ import (
 // long live dysfunctional options pattern - https://rednafi.com/go/dysfunctional-options-pattern/
 
 // ideally idepotent func
-type ConsumerFunc[WorkType any] func(ctx context.Context, work WorkType) error
+type ConsumerFunc[WorkType any] func(ctx context.Context, work *WorkType) error
 
 type Consumer[WorkType any] interface {
 	Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error

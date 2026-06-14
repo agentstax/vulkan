@@ -65,7 +65,7 @@ func main() {
 
 	// WORK
 	var attempts atomic.Int64
-	err = workConsumer.Consume(ctx, func(ctx context.Context, work common.Work) error {
+	err = workConsumer.Consume(ctx, func(ctx context.Context, work *common.Work) error {
 		fmt.Printf("work processes start %s\n", work.Id)
 
 		// artificial sleep

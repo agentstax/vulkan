@@ -97,7 +97,7 @@ func (d *PostgresDatastore[Message]) ProcessMessages(ctx context.Context, limit 
 		}
 
 		// ### PROCESS MESSAGE ###
-		if err := consumerFunc(ctx, message); err != nil {
+		if err := consumerFunc(ctx, &message); err != nil {
 			return err
 		}
 	}

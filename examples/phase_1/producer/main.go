@@ -10,6 +10,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/producer/datastore"
+	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -44,18 +45,19 @@ func main() {
 
 	// WORK
 	for range *countPtr {
+		work, err := producer.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
+			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
+			if err != nil {
+				return nil, err
+			}
 
-		work, err := common.NewWork(rand.IntN(100), "admin@example.com")
+			return work, nil
+		})
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
 		}
 
-		if err = producer.Produce(ctx, work); err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
-		}
-
-		fmt.Printf("successfully produced message %s\n", work.Id)
+		fmt.Printf("successfully produced message: %s\n", work.Id)
 	}
 }

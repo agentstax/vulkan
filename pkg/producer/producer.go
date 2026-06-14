@@ -1,8 +1,15 @@
 package producer
 
-import "context"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+)
 
 // use struct{} to force serializeable object for jsonb field
+
+// TODO - the pgx.Tx here couples this datastore-agnostic package to pgx should try to decouple if we ever want many datastores (probably not)
+type ProducerFunc[WorkType any] func(ctx context.Context, tx pgx.Tx) (*WorkType, error)
 
 type Producer[WorkType any] interface {
 	Produce(ctx context.Context, work *WorkType) error
@@ -18,11 +25,11 @@ func NewWorkProducer[WorkType any](datastore Datastore[WorkType]) *WorkProducer[
 	}
 }
 
-func (p *WorkProducer[WorkType]) Produce(ctx context.Context, work *WorkType) error {
-	err := p.datastore.AppendMessage(ctx, work)
+func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc ProducerFunc[WorkType]) (*WorkType, error) {
+	message, err := p.datastore.AppendMessage(ctx, producerFunc)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return message, nil
 }

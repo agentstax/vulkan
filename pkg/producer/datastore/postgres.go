@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -42,18 +43,34 @@ func NewPostgresDatastore[Message any](ctx context.Context, params *PostgresConn
 	}, nil
 }
 
-func (d *PostgresDatastore[Message]) AppendMessage(ctx context.Context, message *Message) error {
-	sql := `
-		INSERT INTO message_log (payload)
-		VALUES ($1)
-		RETURNING id
-	`
-
-	var id int
-	err := d.Pool.QueryRow(ctx, sql, message).Scan(&id)
+func (d *PostgresDatastore[Message]) AppendMessage(ctx context.Context, producerFunc producer.ProducerFunc[Message]) (*Message, error) {
+	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	// If Commit() is called successfully, Rollback() becomes a no-op and returns pgx.ErrTxClosed.
+	defer tx.Rollback(ctx)
+
+	// let user do transactional enqueue and return work/message
+	message, err := producerFunc(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+
+	sql := `
+		INSERT INTO message_log (payload)
+		VALUES ($1);
+	`
+
+	_, err = tx.Exec(ctx, sql, message)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return message, nil
 }
