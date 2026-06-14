@@ -61,6 +61,10 @@ func (d *PostgresDatastore[Message]) ProcessMessages(ctx context.Context, limit 
 	// If Commit() is called successfully, Rollback() becomes a no-op and returns pgx.ErrTxClosed.
 	defer tx.Rollback(ctx)
 
+	// FOR UPDATE SKIP LOCKED is what makes competing consumers safe:
+	//   FOR UPDATE   - locks the claimed rows until this tx commits/rolls back
+	//   SKIP LOCKED  - other consumers' claims skip rows already locked here
+	// Without it, every consumer SELECTs the same rows and processes them twice.
 	claimSql := `
 		SELECT * FROM message_log
 		ORDER BY id

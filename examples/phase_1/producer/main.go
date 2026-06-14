@@ -40,11 +40,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	producer, err := producer.NewWorkProducer(datastore)
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
+	producer := producer.NewWorkProducer(datastore)
 
 	// WORK
 	for range *countPtr {

@@ -12,10 +12,10 @@ type WorkProducer[WorkType any] struct {
 	datastore Datastore[WorkType]
 }
 
-func NewWorkProducer[WorkType any](datastore Datastore[WorkType]) (*WorkProducer[WorkType], error) {
+func NewWorkProducer[WorkType any](datastore Datastore[WorkType]) *WorkProducer[WorkType] {
 	return &WorkProducer[WorkType]{
 		datastore: datastore,
-	}, nil
+	}
 }
 
 func (p *WorkProducer[WorkType]) Produce(ctx context.Context, work *WorkType) error {

@@ -18,7 +18,7 @@ migrate-down:
 
 # EX: just consume
 consume processorsleep="0.1" shutdownsleep="1.0" failrate="0.0" crashafter="-1":
-  go run examples/phase_1/consumer/main.go -processor-sleep={{ processorsleep }} shutdown-sleep={{ shutdownsleep }} -fail-rate={{ failrate }} -crash-after={{ crashafter }}
+  go run examples/phase_1/consumer/main.go -processor-sleep={{ processorsleep }} -shutdown-sleep={{ shutdownsleep }} -fail-rate={{ failrate }} -crash-after={{ crashafter }}
 
 # EX: just produce 3
 produce count="1":

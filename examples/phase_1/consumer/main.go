@@ -23,7 +23,7 @@ func main() {
 	processorSleepPtr := flag.Float64("processor-sleep", 0.1, "artifical sleep in consumer func for testing (in seconds)")
 	shutdownSleepPtr := flag.Float64("shutdown-sleep", 1.0, "artifical sleep on graceful shutdown for testing (in seconds)")
 	failRatePtr := flag.Float64("fail-rate", 0.0, "artifical fail rate in consumer func for testing")
-	crashAfterPtr := flag.Int("crash-after", -1, "artificial crash after n attempts for testing")
+	crashAfterPtr := flag.Float64("crash-after", -1, "artificial crash after n attempts for testing")
 
 	// must always parse
 	flag.Parse()
@@ -31,7 +31,7 @@ func main() {
 	fmt.Printf("flag processor sleep: %f\n", *processorSleepPtr)
 	fmt.Printf("flag shutdown sleep: %f\n", *shutdownSleepPtr)
 	fmt.Printf("flag fail rate: %f\n", *failRatePtr)
-	fmt.Printf("crash after: %d\n", *crashAfterPtr)
+	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
 	// SETUP
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -52,7 +52,7 @@ func main() {
 	}
 
 	workConsumer := consumer.NewWorkConsumer(datastore).WithBatchLimit(1).WithPollRate(1 * time.Second)
-	workConsumer.WithCustomShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
+	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err
 		}
@@ -61,7 +61,7 @@ func main() {
 		time.Sleep(time.Duration(*shutdownSleepPtr) * time.Second)
 
 		return nil
-	})
+	}).WithShutdownTimeout(3 * time.Second)
 
 	// WORK
 	var attempts atomic.Int64
@@ -74,7 +74,7 @@ func main() {
 		// artificial crash
 		attempts.Add(1)
 		if *crashAfterPtr > 0 && attempts.Load() >= int64(*crashAfterPtr) {
-			fmt.Printf("crashing after: %d attempts\n", *crashAfterPtr)
+			fmt.Printf("crashing after: %f attempts\n", *crashAfterPtr)
 			os.Exit(1)
 		}
 

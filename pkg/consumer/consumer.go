@@ -20,8 +20,9 @@ type Consumer[WorkType any] interface {
 }
 
 type WorkConsumerConfig struct {
-	BatchLimit int
-	PollRate   time.Duration
+	BatchLimit      int
+	PollRate        time.Duration
+	ShutdownTimeout time.Duration
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -37,8 +38,9 @@ func NewWorkConsumer[WorkType any](datastore Datastore[WorkType]) *WorkConsumer[
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
-			BatchLimit: 1, // no batching by default
-			PollRate:   5 * time.Second,
+			BatchLimit:      1, // no batching by default
+			PollRate:        5 * time.Second,
+			ShutdownTimeout: 10 * time.Second,
 		},
 	}
 }
@@ -58,6 +60,7 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 	}
 
 	// always attempt to gracefully shutdown
+
 	errShutdown := p.Shutdown(ctx)
 
 	// any nil errors are discarded (so both nil -> returns nil)
@@ -99,5 +102,11 @@ func (p *WorkConsumer[WorkType]) ProcessBatch(ctx context.Context, consumerFunc 
 }
 
 func (p *WorkConsumer[WorkType]) Shutdown(ctx context.Context) error {
-	return p.ShutdownFunc(ctx, p)
+	// graceful shutdown:
+	// - cannot pass cancel context otherwise any functionality that uses ctx will immediately fail which is not what we want
+	// - need to pass timeout as well so shutdown cannot hang forever
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.ShutdownTimeout)
+	defer cancel()
+
+	return p.ShutdownFunc(shutdownCtx, p)
 }

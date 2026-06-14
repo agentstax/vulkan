@@ -150,15 +150,15 @@ message. When you reintroduce batching in Phase 3, you'll do it knowing the
 failure-domain question it raises.
 
 **Lab:**
-- [ ] **Two workers, no collisions:** `just produce 20`, run two consumers with
+- [x] **Two workers, no collisions:** `just produce 20`, run two consumers with
       `--sleep 1s`, watch the printed messages interleave with no duplicates.
-- [ ] **The SKIP LOCKED contrast:** remove `SKIP LOCKED`, rerun. Watch worker 2
+- [x] **The SKIP LOCKED contrast:** remove `SKIP LOCKED`, rerun. Watch worker 2
       block behind worker 1 and the workers serialize. Put it back. That
       contrast is the whole lesson of this phase.
-- [ ] **Kill mid-process:** run a consumer with `--sleep 5s`, `kill -9` it
+- [x] **Kill mid-process:** run a consumer with `--sleep 5s`, `kill -9` it
       during the sleep, run `just peek` — the row is still there (tx rolled
       back, lock released). Start another consumer — it picks the row up.
-- [ ] **Crash-after:** same proof via `--crash-after`, no manual kill needed.
+- [x] **Crash-after:** same proof via `--crash-after`, no manual kill needed.
 
 **The aha:** `SKIP LOCKED` is what lets two workers run the exact same query at
 the same instant and get *different* rows instead of one blocking the other.
@@ -168,11 +168,14 @@ the recovery.
 **Explain it back** (from memory, no peeking):
 1. Why does the `DELETE` have to be in the same transaction as the claim? Walk
    through what can go wrong with each of the two orderings if it's separate.
-Answer: 
+Answer: If delete is not in tx then the delete command could have a network blip error and we end up with completed work that is 'retried' essentially.
+If delete is handled before processing and the worker crashes mid process the work is lost forever and never handled (worst case)
 2. A worker is killed with `kill -9` mid-process. Step by step, what does
    Postgres do, and when does the row become claimable again?
+Answer: When the connection is closed without a committed transaction it is assumed failed and is rolled back
 3. What does `SKIP LOCKED` change about the query's *result set*, exactly? Why
    is that safe here when skipping rows would normally be a correctness bug?
+Answer: a locked row can be assumed to be a row 'in process'. Because we don't want to double process work this is correct functionality
 
 **Done when:** all labs pass, questions answered in NOTES.md, `git tag phase-1`.
 
