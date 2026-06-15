@@ -21,7 +21,9 @@ type Consumer[WorkType any] interface {
 
 type WorkConsumerConfig struct {
 	BatchLimit      int
+	MaxAttempts     int
 	PollRate        time.Duration
+	WorkTimeout     time.Duration // TODO - consider a better name
 	ShutdownTimeout time.Duration
 }
 
@@ -39,7 +41,9 @@ func NewWorkConsumer[WorkType any](datastore Datastore[WorkType]) *WorkConsumer[
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
 			BatchLimit:      1, // no batching by default
+			MaxAttempts:     3,
 			PollRate:        5 * time.Second,
+			WorkTimeout:     30 * time.Second,
 			ShutdownTimeout: 10 * time.Second,
 		},
 	}
@@ -87,13 +91,13 @@ func (p *WorkConsumer[WorkType]) ProcessBatch(ctx context.Context, consumerFunc 
 	// work should not be immediately cancelled on a SIGINT/SIGTERM
 	// instead attempt to finish inflight requests bounded by timeout
 	// TODO - timeout should be configurable
-	batchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	batchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.WorkTimeout)
 
 	// TODO - need to consider how timeout and retry logic works together
 	// each attempt should have its own timeout, but could be easy to mess up
 	defer cancel()
 
-	err := p.Datastore.ProcessMessages(batchCtx, p.Config.BatchLimit, consumerFunc)
+	err := p.Datastore.ProcessMessages(batchCtx, p.Config.BatchLimit, p.Config.MaxAttempts, p.Config.WorkTimeout, consumerFunc)
 	if err != nil {
 		// processing errors should not cancel thread
 		// TODO - should have retry and terminal failure logic here

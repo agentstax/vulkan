@@ -145,3 +145,106 @@ canonical version).
   only backend). If a second backend ever appears, extract a driver-neutral
   Querier interface + adapter — TODO marked at `pkg/producer/producer.go`.
 
+---
+
+## Phase 2 — Per-message lifecycle
+
+**What it does, and the tradeoff:** a message is no longer just present/absent —
+it carries a state machine in its own columns (`status`, `attempts`,
+`can_run_after`, `locked_at`, `last_error`). Claiming stops deleting and instead
+flips `status='ready' → 'processing'` and stamps `locked_at`; on success the row
+goes `done`, on failure it either goes back to `ready` with a backoff
+(`can_run_after = now() + backoff`) or, once `attempts` hits the max, to `dead`.
+The tradeoff is that the DB lock no longer protects work for its whole lifetime —
+so reclaiming crashed work is now *my* responsibility (the lease), and delivery
+becomes at-least-once instead of exactly-once.
+
+**The aha:** the `FOR UPDATE` lock only spans the fast claim statement now
+(milliseconds), not the processing. The durable "I'm working on this" is the
+*row data* (`status='processing'` + `locked_at`), not a DB lock. That swap is the
+whole phase — it's what lets a 10-minute job run without pinning a transaction
+and a connection for 10 minutes. The cost of giving up the auto-releasing lock is
+that I had to add lease reclamation, and reclamation is what makes delivery
+at-least-once.
+
+### Explain it back
+
+**1. In Phase 1, what held the claim? In Phase 2, what holds it? Why did it have
+to change?**
+
+Phase 1: the DB lock (`FOR UPDATE`) held the claim for the entire processing
+duration. Phase 2: the row *data* holds it — `status='processing'` plus
+`locked_at`. It had to change because a long-running job in Phase 1 keeps a
+transaction (and its connection) open for its whole lifecycle; under any real
+concurrency that pins a huge number of connections open, which doesn't scale.
+Phase 2 takes only a millisecond lock to claim, then relies on the row data +
+the claim predicate to know what's "in flight" versus available.
+
+**2. The full state machine, with every transition's trigger.**
+
+- `ready` **→** `processing` — a claim matches the row (`status='ready' AND
+  can_run_after <= now()`); the claim sets `locked_at`, `attempts++`, and
+  releases the lock.
+- `processing` **→** `done` — `consumerFunc` returns nil; `RecordSuccess`.
+- `processing` **→** `ready` (retry) — `consumerFunc` returns an error and
+  `attempts < maxAttempts`; `RecordFailure` sets `can_run_after = now() +
+  backoff(attempts)` and records `last_error`.
+- `processing` **→** `dead` — `consumerFunc` errors and `attempts >=
+  maxAttempts`; terminal, no more retries (this set is the dead-letter queue,
+  queryable as `WHERE status='dead'`).
+- `processing` **→** `processing` (reclaim) — the worker crashed and the lease
+  expired (`locked_at < now() - stuck_window`); the *next* claim matches the
+  stuck row via the OR-branch, re-stamps `locked_at` and `attempts++`. No
+  separate reaper process — reclamation is folded into the claim.
+
+*Correction vs my recall:* my original answer listed the happy path + both
+failure branches but omitted the `processing → processing` **reclaim** edge (the
+transition that defines Phase 2), and didn't spell out that retry means
+`→ ready` *plus* a backoff on `can_run_after`.
+
+**3. Why does lease reclamation make delivery at-least-once rather than
+exactly-once? What property must the consumerFunc have?**
+
+If a `consumerFunc` runs longer than the lease window, the row looks "stuck" and
+another worker reclaims and re-runs it — so the same message can be processed
+more than once. Two mitigations, and you want both: keep the lease window
+comfortably longer than the work timeout so live workers aren't reclaimed, and
+make the `consumerFunc` **idempotent** so a genuine double-delivery (crash after
+side effect but before `RecordSuccess`, slow worker past its lease, etc.) is
+harmless. The timeout buffer reduces *how often* it happens; idempotency is the
+only thing that makes it *correct*.
+
+*Correction vs my recall:* I originally framed it as "long lease **OR**
+idempotent." Wrong — they're not alternatives. Idempotency is mandatory; a
+longer lease only lowers the *frequency* of double-delivery and never eliminates
+it (a crash after the side effect but before `RecordSuccess` re-runs regardless
+of lease length).
+
+### Done
+
+- Migration `003_lifecycle` adds the five columns (`status NOT NULL DEFAULT
+  'ready'` is the one that actually gates the claim).
+- Claim is a single `UPDATE … RETURNING` with `FOR UPDATE SKIP LOCKED` in the
+  subquery; reclamation folded in via the `OR (status='processing' AND
+  locked_at < now() - buffer)` branch.
+- Labs passed: backoff/attempts climb and stubborn messages land in `dead`;
+  `dead` set is the DLQ-as-a-query; crash-mid-process is reclaimed and completed
+  by another worker; **T2 induced** (sleep > lease → same message processed
+  twice) and understood.
+
+### Decisions
+
+- **Reclamation = claim predicate, not a reaper daemon.** An expired lease is
+  just another claimable row, so the claim's `WHERE` matches it. Keeps the
+  design coordinator-free — every worker is symmetric, no singleton sweeper.
+- **Stuck window = `workTimeout + 5s buffer`.** The buffer must exceed the work
+  timeout or a worker still legitimately processing gets reclaimed (induces T2 by
+  accident). Eventually make the buffer configurable.
+- **Config single-owner:** the consumer owns the operational knobs
+  (`BatchLimit`, `MaxAttempts`, `WorkTimeout`) and passes them into
+  `ProcessMessages`; the datastore constructor takes only connection params
+  (matching the producer datastore). Removed the duplicated `PostgresDatastoreConfig`
+  that had made `WithBatchLimit`/`WithMaxAttempts` silent no-ops.
+- **At-least-once is now the contract.** `consumerFunc` should be idempotent;
+  noted in the type doc as "ideally idempotent func."
+

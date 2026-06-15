@@ -28,8 +28,8 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 0 — Setup | ✅ done | golang-migrate + justfile + docker-compose wired |
 | 1 — Durable atom | ✅ done | tagged `phase-1` |
 | 1.5 — Transactional enqueue | ✅ done | answers in NOTES.md; tag `phase-1.5` |
-| 2 — Lifecycle | 🔨 **next** | |
-| 3 — Competing consumers | ⬜ | ⚠️ batching already leaked into Phase 1 code — see trap T1 |
+| 2 — Lifecycle | ✅ done | answers in NOTES.md; tag `phase-2` |
+| 3 — Competing consumers | 🔨 **next** | ⚠️ batching already leaked into Phase 1 code — see trap T1 |
 | 4 — Log/queue split | ⬜ | |
 | 5 — Fan-out | ⬜ | |
 | 6 — Synthesis | ⬜ | |
@@ -254,19 +254,32 @@ DB-backed job libraries (River, Oban, graphile-worker) advertise as
 This is the feature Kafka can't do natively and RabbitMQ hides from you.
 
 **Build:**
-- [ ] Migration: add `status text` (`ready|processing|done|dead`),
+- [x] Migration: add `status text` (`ready|processing|done|dead`),
       `attempts int default 0`, `run_at timestamptz default now()`,
       `locked_at timestamptz`, `last_error text`.
-- [ ] Claim changes to `WHERE status='ready' AND run_at <= now()`, and instead
+- [x] Claim changes to `WHERE status='ready' AND run_at <= now()`, and instead
       of deleting: `UPDATE status='processing', locked_at=now(), attempts=attempts+1`.
       **Note the structural change:** claim and process are now *separate
       transactions*. The claim tx commits fast; processing happens unlocked.
-- [ ] On success → `status='done'` (keep the row for now, so you can see history).
-- [ ] On failure → if `attempts < max`: `status='ready', run_at = now() + backoff(attempts)`
+- [x] On success → `status='done'` (keep the row for now, so you can see history).
+- [x] On failure → if `attempts < max`: `status='ready', run_at = now() + backoff(attempts)`
       (exponential backoff); else `status='dead'`.
-- [ ] **Lease / visibility timeout:** a reaper job that runs periodically:
-      `UPDATE ... SET status='ready' WHERE status='processing' AND locked_at < now() - interval 'X'`.
-      Recovers messages from workers that crashed mid-process.
+- [x] **Lease / visibility timeout (reclamation):** recover messages from workers
+      that crashed mid-process. An expired lease is just another claimable row, so
+      **fold reclamation into the claim** rather than running a separate reaper
+      daemon — widen the claim's eligibility predicate to
+      `WHERE (status='ready' AND run_at <= now())
+             OR (status='processing' AND locked_at < now() - interval 'X')`.
+      Every normal claim then reclaims an expired lease as a side effect: no
+      coordinator, no singleton, workers stay symmetric (the pull model's whole
+      point). The lock is still only held for the fast claim tx — the long-lived
+      "I'm working on this" is the *data* lease (`status`+`locked_at`), not a DB
+      lock. Reclaimed rows flow through the same `attempts=attempts+1`, so a
+      repeatedly-crashing worker eventually hits max-attempts → `dead`.
+      *Naive alternative:* a standalone periodic `UPDATE ... SET status='ready'
+      WHERE status='processing' AND locked_at < ...`. It's idempotent and safe to
+      run from any/all workers, but a dedicated reaper *process* drifts toward the
+      centralized server we're avoiding. Decision: fold-into-claim.
 
 **⚠️ Trap T2 — the zombie worker:** after the lease expires and the reaper
 re-readies a message, the *original* worker may still be alive and slow — now
@@ -275,13 +288,13 @@ at-least-once. You don't have to solve it in this phase (idempotency is the
 real answer), but induce it in the lab and name it in NOTES.md.
 
 **Lab:**
-- [ ] `--fail-rate 0.3` with `max=3`: watch attempts climb, `run_at` push into
+- [x] `--fail-rate 0.3` with `max=3`: watch attempts climb, `run_at` push into
       the future (backoff), and stubborn messages land in `dead`.
-- [ ] `SELECT * FROM jobs WHERE status='dead'` — that's your dead-letter queue,
+- [x] `SELECT * FROM jobs WHERE status='dead'` — that's your dead-letter queue,
       as a query. You can *see* every message's state, attempt count, and error.
-- [ ] `--crash-after` a worker mid-process; watch the reaper return its job
+- [x] `--crash-after` a worker mid-process; watch the reaper return its job
       after the lease expires and another worker complete it.
-- [ ] **Induce T2:** set `--sleep` longer than the lease. Watch the same
+- [x] **Induce T2:** set `--sleep` longer than the lease. Watch the same
       message processed twice. Feel it.
 
 **The aha:** the `FOR UPDATE` lock only lasts the *claiming* transaction — once
@@ -292,9 +305,21 @@ Getting this distinction is the single most important insight in the whole plan.
 **Explain it back:**
 1. In Phase 1, what held the claim? In Phase 2, what holds it? Why did it have
    to change? (Hint: what would a 10-minute job do to a Phase 1 transaction?)
+Answer: Phase1 the db lock, Phase2 the db row data (status='processing' and locked_at).
+A long running job in phase1 would hold open a transaction the entire lifecycle. With high concurrency a huge number of connections would remain open which is not scalable. With phase2 we have a millisecond lock and instead rely on queries and row data to understand what is 'locked' vs not.
 2. Walk the full state machine including every transition's trigger.
-3. Why does the reaper make delivery at-least-once rather than exactly-once?
-   What property must the consumerFunc now have?
+Answer: 
+- 1. Select and lock work from queue
+- 2. Update work to 'processing' -> release lock
+- 3. Do consumer job on work
+- 4a. If success record success on work row in db
+- 4b. If failure:
+  - i. If has attempts left -> retry work
+  - ii. If no attepts left -> mark as dead (do not retry)
+3. Why does lease reclamation make delivery at-least-once rather than
+   exactly-once? What property must the consumerFunc now have?
+Answer: If the consumerFunc takes longer than the lease than another concurrent worker could pickup the work as it is considered reclaimable
+To fix that the lease timeout must be greater than the consumerFunc timeout OR the consumerFunc must be idepotent
 
 **Done when:** labs pass (including T2 induced and understood), NOTES.md,
 `git tag phase-2`.
@@ -323,6 +348,11 @@ amortize round-trips.
 - [ ] Add the **critical index**: a partial index
       `CREATE INDEX ON jobs (run_at) WHERE status='ready'`. Without it, the claim
       query table-scans as `done`/`dead` rows accumulate.
+      **Caveat from the Phase 2 fold-in:** the claim also matches
+      `status='processing' AND locked_at < ...`, so a `WHERE status='ready'`-only
+      index doesn't cover the expired-lease branch. While the `processing` set
+      stays small that branch is cheap; if it grows, widen the index predicate (or
+      add a second partial index on `locked_at WHERE status='processing'`).
 
 **Lab:**
 - [ ] **Measure the index:** seed a few hundred thousand rows (mostly

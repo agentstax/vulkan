@@ -37,7 +37,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pgConnectionParams := &datastore.PostgresConnectionParams{
+	pgParams := &datastore.PostgresConnectionParams{
 		User:     "example_user",
 		Pass:     "example_password",
 		Host:     "localhost",
@@ -45,13 +45,13 @@ func main() {
 		Database: "example_db",
 	}
 
-	datastore, err := datastore.NewPostgresDatastore[common.Work](ctx, pgConnectionParams)
+	datastore, err := datastore.NewPostgresDatastore[common.Work](ctx, pgParams)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	workConsumer := consumer.NewWorkConsumer(datastore).WithBatchLimit(1).WithPollRate(1 * time.Second)
+	workConsumer := consumer.NewWorkConsumer(datastore).WithBatchLimit(1).WithMaxAttempts(3).WithPollRate(1 * time.Second).WithWorkTimeout(10 * time.Second)
 	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err
@@ -66,6 +66,8 @@ func main() {
 	// WORK
 	var attempts atomic.Int64
 	err = workConsumer.Consume(ctx, func(ctx context.Context, work *common.Work) error {
+		// TODO - think through how users can log or confirm if a run is a retry or not. Maybe add info into context?
+
 		fmt.Printf("work processes start %s\n", work.Id)
 
 		// artificial sleep
