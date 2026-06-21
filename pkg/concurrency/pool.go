@@ -2,6 +2,7 @@ package concurrency
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 
@@ -24,6 +25,10 @@ type WorkerPoolLimiter struct {
 }
 
 func NewWorkerPoolLimiter(limit int) (*WorkerPoolLimiter, error) {
+	if limit < 1 {
+		return nil, fmt.Errorf("limit cannot be < 1, got %d", limit)
+	}
+
 	return &WorkerPoolLimiter{
 		owners:    []string{},
 		semaphore: semaphore.NewWeighted(int64(limit)),

@@ -17,6 +17,16 @@ func (c *WorkConsumer[WorkType]) WithWorkTimeout(workTimeout time.Duration) *Wor
 	return c
 }
 
+func (c *WorkConsumer[WorkType]) WithQueueTimeout(queueTimeout time.Duration) *WorkConsumer[WorkType] {
+	c.Config.QueueTimeout = queueTimeout
+	return c
+}
+
+func (c *WorkConsumer[WorkType]) WithAckMargin(ackMargin time.Duration) *WorkConsumer[WorkType] {
+	c.Config.AckMargin = ackMargin
+	return c
+}
+
 func (c *WorkConsumer[WorkType]) WithPollRate(pollRate time.Duration) *WorkConsumer[WorkType] {
 	c.Config.PollRate = pollRate
 	return c

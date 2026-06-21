@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vulkan — Phase 3 Lab: Find the Ceiling</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --ink:#e6e9ef; --mut:#9aa4b2;
+    --line:#2a2f3a; --accent:#5aa9ff; --accent2:#ffb454; --good:#5fd38d; --bad:#ff6b6b; --warn:#ffd166;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.3px}
+  h2{font-size:22px;margin:46px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:17px;margin:26px 0 8px;color:var(--accent)}
+  .sub{color:var(--mut);margin:0 0 8px}
+  p{margin:10px 0}
+  code,kbd{font-family:var(--mono);font-size:.88em;background:#0b0d12;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  pre{background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:13px;color:#cdd6e4}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:18px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  @media(max-width:760px){.grid2,.grid3{grid-template-columns:1fr}}
+  .kv{display:flex;flex-wrap:wrap;gap:8px 22px;color:var(--mut);font-size:13.5px}
+  .kv b{color:var(--ink);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+  th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--mut);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+  tbody tr:hover{background:#1b1f29}
+  .mono{font-family:var(--mono)}
+  .lead{font-size:16.5px}
+  .big{font-size:30px;font-weight:700;letter-spacing:-.5px}
+  .big.good{color:var(--good)} .big.bad{color:var(--bad)} .big.acc{color:var(--accent)} .big.amber{color:var(--accent2)}
+  ul{margin:10px 0;padding-left:22px} li{margin:6px 0}
+  .callout{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0}
+  .callout.bad{border-color:var(--bad)} .callout.good{border-color:var(--good)} .callout.warn{border-color:var(--warn)}
+  .bar{height:16px;border-radius:4px;background:var(--accent);display:inline-block;vertical-align:middle}
+  .muted{color:var(--mut)}
+  svg{width:100%;height:auto;display:block}
+  .grid{stroke:var(--line);stroke-width:1}
+  .axis{stroke:#3a4150;stroke-width:1.2}
+  .ebar{stroke:#3a4150;stroke-width:1.4}
+  .line{fill:none;stroke-width:2.5}
+  .tdot{fill:#3f4757}
+  .ylab,.xlab{fill:var(--mut);font:12px var(--mono)}
+  .ylab{text-anchor:end} .xlab{text-anchor:middle}
+  .atitle{fill:var(--mut);font:12.5px -apple-system;text-anchor:middle}
+  .foot{color:var(--mut);font-size:13px;margin-top:50px;border-top:1px solid var(--line);padding-top:16px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mut);margin:6px 2px 0}
+  .legend i{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+  .rev{font-size:12.5px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:14px 0}
+  .eq{font-family:var(--mono);font-size:15px;background:#0b0d12;border:1px solid var(--line);border-radius:8px;padding:10px 14px;display:inline-block;margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Phase 3 Lab — Find the Ceiling</h1>
+  <p class="sub">Vulkan · Postgres-as-a-queue · where throughput tops out, and which stage is actually the limit</p>
+
+  <div class="rev">
+    <b>Rev 2.</b> An earlier version concluded "the bottleneck is the single prefetch/claim loop." That was only true for the
+    one configuration first measured (<code>batch=100</code>). On closer testing the claim cost is <i>sublinear</i> in batch, so a
+    single loop can supply far more than we consume — the real ceiling is the <b>worker ack path</b>. This rev corrects the model.
+  </div>
+
+  <div class="panel">
+    <div class="kv">
+      <span><b>Date</b> 2026-06-20</span>
+      <span><b>Postgres</b> 18.4 (Docker)</span>
+      <span><b>Host</b> 10 CPU · darwin</span>
+      <span><b>synchronous_commit</b> on</span>
+      <span><b>fsync</b> on</span>
+      <span><b>shared_buffers</b> 128 MB</span>
+      <span><b>max_connections</b> 100</span>
+    </div>
+    <p class="muted" style="margin:12px 0 0;font-size:13.5px">
+      One consumer process. No-op <code>consumerFunc</code> (sleep&nbsp;=&nbsp;0) so the number measures the <b>queue machinery</b> —
+      claim + ack + Postgres — not handler work. Each run drains a freshly-seeded backlog; throughput timed first→last processed
+      (connect/startup excluded). The <code>idx_claim_active</code> index (migration 005) is present unless noted. Lines on charts
+      = best of trials (contention noise is one-directional — it only ever <i>slows</i> a run); whiskers = min–max.
+    </p>
+  </div>
+
+  <!-- ============ TL;DR ============ -->
+  <h2>TL;DR</h2>
+  <div class="callout">
+    <div class="eq">throughput = min( &nbsp;supply(batch)&nbsp; , &nbsp;ack_capacity(workers)&nbsp; )</div>
+    <p style="margin:8px 0 0">Two independent limits (once the claim query is indexed). Which one binds depends on how big your batch is.
+    Small batch → supply-bound. Big batch → ack-bound. There is no fixed "single prefetcher" ceiling.</p>
+  </div>
+  <ul class="lead">
+    <li><b>Ceiling on this box: ~20–22k msgs/sec</b> at 64 workers — and it's the <b>ack path</b> (one single-row <code>UPDATE</code>+commit per message), not the claim loop.</li>
+    <li><b>Claim cost is sublinear in batch</b> (~3.4&nbsp;µs/row asymptote), so a <b>single</b> prefetch loop can supply <b>~290k rows/s</b>. You don't need parallel prefetchers anywhere near current scale — a bigger <code>batch</code> lifts supply out of the way.</li>
+    <li><b>At <code>batch=100</code> the system is co-limited</b> (~17–18k): per-claim round-trip caps supply right around where the ack path saturates. Raising batch reveals the ack ceiling (~22k), which then <b>scales with workers</b>.</li>
+    <li><b>The index still matters most.</b> Without it, the <code>ORDER BY id</code> claim scans the graveyard of <code>done</code> rows — one claim went <b>0.057&nbsp;ms → 41.8&nbsp;ms (730×)</b>. That collapses the whole supply curve. Fixed in migration 005.</li>
+    <li><b>Real dip at 2 workers</b> — the group-commit valley.</li>
+  </ul>
+
+  <!-- ============ MODEL ============ -->
+  <h2>1 · The model: <code>min(supply, ack)</code></h2>
+  <p>Three things can limit a single consumer. Whichever is lowest wins:</p>
+  <div class="grid3">
+    <div class="panel">
+      <h3 style="margin-top:0">Claim query cost</h3>
+      <p class="muted" style="font-size:13.5px">How long one claim takes. Cheap with the right index; <b>O(graveyard)</b> without it. Set by indexing, not tuning.</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Prefetch supply</h3>
+      <p class="muted" style="font-size:13.5px"><code>batch / L(batch)</code>. At small batch dominated by the ~6&nbsp;ms round-trip. Scales with <b>batch</b> → ~290k/s.</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Worker ack throughput</h3>
+      <p class="muted" style="font-size:13.5px">One single-row <code>UPDATE</code>+commit per message, group-commit-limited. Scales with <b>concurrency</b>.</p>
+    </div>
+  </div>
+
+  <!-- ============ CHART 1 ============ -->
+  <h2>2 · Throughput vs. workers — the bottleneck moves with batch</h2>
+  <p>Same conditions for both lines (200k backlog, indexed). At small concurrency both are ack-bound and overlap. At 64 workers <code>batch=100</code> hits its supply cap (~17–18k) while <code>batch=5000</code> rides the ack path up to ~20k.</p>
+  <div class="panel">
+    <div id="chart1"></div>
+    <div class="legend">
+      <span><i style="background:#5aa9ff"></i>batch = 100 (supply-capped at high w)</span>
+      <span><i style="background:#ffb454"></i>batch = 5000 (ack-bound, scales with w)</span>
+      <span><i style="background:#3a4150"></i>min–max</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Workers</th><th>batch=100 (best)</th><th>batch=5000 (best)</th><th>Binding limit</th></tr></thead>
+    <tbody>
+      <tr><td>8</td><td>7,875</td><td>8,380</td><td>ack path (few workers)</td></tr>
+      <tr><td>16</td><td>10,417</td><td>9,020</td><td>ack path</td></tr>
+      <tr><td>32</td><td>12,163</td><td>13,898</td><td>ack path</td></tr>
+      <tr><td>64</td><td>17,783</td><td>20,180</td><td>batch=100 → supply · batch=5000 → ack</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    The two curves nearly coincide until 64 workers because, at this scale, supply at <code>batch=100</code> (~17–18k, round-trip-limited)
+    sits right at the ack ceiling (~20–22k). They're <b>co-limited</b> — which is why the first measurement looked like "the prefetcher is
+    the bottleneck." It isn't a wall; it's one of two close numbers.
+  </div>
+
+  <!-- ============ CHART 2 ============ -->
+  <h2>3 · Throughput vs. batch — supply lifts, then the ack path caps it</h2>
+  <p>64 workers fixed, 200k backlog, batch swept 100→50,000. Throughput rises ~17.7k→~22.6k then flattens: by <code>batch=50,000</code> the prefetcher does just <b>4 claims</b> for the whole run (~0.8&nbsp;s of a 10&nbsp;s run) — it's idle most of the time. The remaining wall is the ack path.</p>
+  <div class="panel">
+    <div id="chart2"></div>
+    <div class="legend"><span><i style="background:#5fd38d"></i>throughput @ 64 workers</span><span class="muted">batch size (rows per claim)</span></div>
+  </div>
+
+  <h3>Why batch helps: claim cost is sublinear</h3>
+  <p>Server-side <code>EXPLAIN ANALYZE</code> of the claim on a fresh all-<code>ready</code> table. Per-row cost <i>falls</i> as batch grows and asymptotes near <b>3.4&nbsp;µs/row</b> — so a single loop's supply ceiling is <code>1 / 3.4µs ≈ 290k rows/s</code>:</p>
+  <table>
+    <thead><tr><th>Batch</th><th>Claim exec</th><th>Per row</th><th>Single-loop supply (batch / exec)</th></tr></thead>
+    <tbody>
+      <tr><td>100</td><td class="mono">0.64 ms</td><td class="mono">6.4 µs</td><td class="mono">157k/s</td></tr>
+      <tr><td>500</td><td class="mono">8.0 ms</td><td class="mono">16.1 µs <span class="muted">·noisy</span></td><td class="mono">62k/s</td></tr>
+      <tr><td>1,000</td><td class="mono">9.8 ms</td><td class="mono">9.8 µs <span class="muted">·noisy</span></td><td class="mono">102k/s</td></tr>
+      <tr><td>2,000</td><td class="mono">12.8 ms</td><td class="mono">6.4 µs</td><td class="mono">156k/s</td></tr>
+      <tr><td>5,000</td><td class="mono">22.2 ms</td><td class="mono">4.4 µs</td><td class="mono">226k/s</td></tr>
+      <tr><td>10,000</td><td class="mono">37.5 ms</td><td class="mono">3.8 µs</td><td class="mono">267k/s</td></tr>
+      <tr><td>20,000</td><td class="mono">70.2 ms</td><td class="mono">3.5 µs</td><td class="mono">285k/s</td></tr>
+      <tr><td>50,000</td><td class="mono">173.1 ms</td><td class="mono">3.5 µs</td><td class="mono"><b>289k/s</b></td></tr>
+    </tbody>
+  </table>
+  <div class="callout good">
+    The gap between server-side supply (157k/s at batch=100) and measured end-to-end (~17k/s) is the <b>per-claim round-trip</b>
+    (~6&nbsp;ms Go↔PG over the 0.6&nbsp;ms of server work). Batch amortizes that fixed cost — exactly why a bigger batch (held in a deeper
+    buffer) raises throughput. It tops out at the ack ceiling, not at the prefetcher.
+  </div>
+
+  <!-- ============ SECTION 4: CLAIM COST / INDEX ============ -->
+  <h2>4 · The claim-cost leg: the index that keeps it cheap</h2>
+  <p>Everything above assumes the claim stays cheap. It only does with the right index. The claim does <code>ORDER BY id</code>, so the planner walks the <b>primary key</b> and filters status inline. As <code>done</code> rows pile up at low ids, every claim scans through the graveyard to reach live rows:</p>
+  <table>
+    <thead><tr><th>Backlog state</th><th>Plan</th><th>Rows filtered</th><th>Exec time</th></tr></thead>
+    <tbody>
+      <tr><td>Fresh — 200k ready, 0 done</td><td class="mono">pkey scan</td><td>0</td><td><span class="mono">0.057 ms</span> <span class="bar" style="width:6px"></span></td></tr>
+      <tr><td>Half-drained — 150k done, 50k ready</td><td class="mono">pkey scan</td><td class="mono" style="color:var(--bad)">150,001</td><td><span class="mono" style="color:var(--bad)">41.840 ms</span> <span class="bar" style="width:97%;background:var(--bad)"></span></td></tr>
+      <tr><td>Half-drained — <b>with idx_claim_active</b></td><td class="mono" style="color:var(--good)">idx_claim_active</td><td>0</td><td><span class="mono" style="color:var(--good)">~0.09 ms</span> <span class="bar" style="width:9px;background:var(--good)"></span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout bad">
+    Without the index a claim degrades <b>0.057&nbsp;ms → 41.8&nbsp;ms (730×)</b> as the queue drains — <code>L(batch)</code> stops being
+    cheap-per-row and the entire supply curve collapses (we measured ~6.4k/s at 64 workers in this state, with backends 87.5% idle on
+    <code>ClientRead</code> — genuinely claim-bound). This is the one regime where the prefetch loop really is the bottleneck, and it's a
+    <i>missing-index</i> problem, not a structural one.
+  </div>
+  <p>The fix (migration 005, <b>applied</b>): a partial index keyed on <code>id</code> covering both live states, so the ordered scan never touches the graveyard and FIFO ordering is preserved. The existing <code>idx_claim_ready</code> / <code>idx_claim_processing</code> (004) can't drive an <code>id</code> ordering across the <code>ready OR processing</code> predicate, so this query never used them.</p>
+  <pre>CREATE INDEX idx_claim_active ON message_log (id) WHERE status IN ('ready','processing');</pre>
+
+  <!-- ============ SECTION 5: VALLEY ============ -->
+  <h2>5 · The 2-worker valley</h2>
+  <p>In the low-concurrency series every 2-worker trial came in <b>below</b> the 1-worker best (1w ≈ 1,700/s; 2w clustered 1,070–1,180/s). This is the <b>group-commit valley</b>, a property of the ack path under <code>synchronous_commit = on</code>:</p>
+  <ul>
+    <li><b>1 worker:</b> commits are serial — one WAL fsync per ack, no cross-backend contention.</li>
+    <li><b>2 workers:</b> two backends now contend on the commit path, but there still aren't enough concurrent committers for Postgres to <b>group-commit</b> (batch many transactions into one fsync). You pay the contention without the amortization → a net regression.</li>
+    <li><b>4+ workers:</b> each fsync flushes several transactions' WAL at once; the cost amortizes and throughput climbs steeply.</li>
+  </ul>
+  <p class="muted" style="font-size:13.5px">This is also why the ack ceiling scales with workers — and why <b>batched acks</b> (below) would raise it: fewer, fatter commits.</p>
+
+  <!-- ============ SECTION 6: ACTIONS ============ -->
+  <h2>6 · How to go faster (in order)</h2>
+  <ol>
+    <li><b>Keep claims cheap — the 005 index (done).</b> Non-negotiable; without it nothing else matters as the queue fills.</li>
+    <li><b>Raise <code>batch</code> + buffer to clear the supply limit.</b> Cheap, single-loop, gets you to the ack ceiling. Bounded for <i>real</i> jobs by the lease window (every buffered row's <code>lease_until</code> is ticking — the shallow-buffer rule is a lease-safety constraint, not a throughput one).</li>
+    <li><b>Add workers to raise the ack ceiling.</b> Throughput scaled 8k→20k across 8→64 workers; bounded by <code>max_connections</code>.</li>
+    <li><b>Batch the acks.</b> The ack path is the wall — one single-row commit per message. Grouping acks (multi-row <code>UPDATE</code> per commit) cuts per-message fsync + round-trip, the same amortization trick applied to the write side. Costs at-least-once granularity.</li>
+    <li><b>Multiple prefetchers</b> (the <code>queue.go</code> broadcast TODO) — only needed past ~290k/s supply, i.e. far beyond the current ack-bound regime. Not the near-term lever.</li>
+    <li><b>Archive <code>done</code>/<code>dead</code> rows</b> — keeps the live table small so claim cost stays flat (complements the index from the other side; Phase 3.5).</li>
+  </ol>
+
+  <h3>Code changes made</h3>
+  <table>
+    <thead><tr><th>File</th><th>Change</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">migrations/005_claim_active_index</td><td><code>idx_claim_active (id) WHERE status IN ('ready','processing')</code></td><td><span style="color:var(--good)">applied</span></td></tr>
+      <tr><td class="mono">pkg/consumer/datastore.go</td><td><code>MaxConns</code> → <code>pool_max_conns</code> (default pool caps at 10)</td><td><span style="color:var(--good)">done</span></td></tr>
+      <tr><td class="mono">examples/phase_1/bench/main.go</td><td>silent, self-timing sweep harness (<code>-concurrency -batch -count -maxconns</code>)</td><td><span style="color:var(--good)">done</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============ APPENDIX ============ -->
+  <h2>Appendix · Raw data &amp; method</h2>
+  <pre># seed fresh backlog (TRUNCATE + generate_series), then:
+bench -concurrency=C -batch=B -count=K -maxconns=80
+# throughput = (processed-1) / (t_last - t_first)   # first→last, excludes connect/startup
+# line = best of trials; noise is one-directional (only slows)</pre>
+
+  <h3>Throughput vs workers (200k backlog, indexed) — msgs/s</h3>
+  <table>
+    <thead><tr><th>Workers</th><th>batch=100 trials</th><th>batch=5000 trials</th></tr></thead>
+    <tbody>
+      <tr><td>8</td><td class="mono">7874.6 · 5361.6</td><td class="mono">8379.8 · 3905.9</td></tr>
+      <tr><td>16</td><td class="mono">10416.9 · 6981.1</td><td class="mono">9020.3 · 8304.7</td></tr>
+      <tr><td>32</td><td class="mono">12162.9 · 11226.7</td><td class="mono">13292.5 · 13898.3</td></tr>
+      <tr><td>64</td><td class="mono">16523.3 · 17783.3</td><td class="mono">15099.6 · 20179.8</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Throughput vs batch @ 64 workers (200k backlog, indexed) — msgs/s</h3>
+  <table>
+    <thead><tr><th>Batch</th><th>Trial 1</th><th>Trial 2</th></tr></thead>
+    <tbody>
+      <tr><td>100</td><td class="mono">17721.5</td><td class="mono">17434.1</td></tr>
+      <tr><td>1,000</td><td class="mono">19424.5</td><td class="mono">18960.3</td></tr>
+      <tr><td>5,000</td><td class="mono">20346.3</td><td class="mono">18862.3</td></tr>
+      <tr><td>10,000</td><td class="mono">20611.1</td><td class="mono">20369.9</td></tr>
+      <tr><td>20,000</td><td class="mono">22295.9</td><td class="mono">15820.6</td></tr>
+      <tr><td>50,000</td><td class="mono">19484.1</td><td class="mono">22591.0</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Initial sweep that started the investigation (30k backlog, pre-index, batch=100)</h3>
+  <p class="muted" style="font-size:13px">This is the curve that first read as "single-prefetcher ceiling ~16k." It's the supply-capped (and partly graveyard-affected) regime; superseded by the matched runs above.</p>
+  <table>
+    <thead><tr><th>Workers</th><th>1</th><th>2</th><th>4</th><th>8</th><th>16</th><th>32</th><th>64</th></tr></thead>
+    <tbody>
+      <tr><td>best msgs/s</td><td class="mono">1737</td><td class="mono" style="color:var(--bad)">1181</td><td class="mono">2549</td><td class="mono">4280</td><td class="mono">8179</td><td class="mono">14113</td><td class="mono">16188</td></tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    Vulkan Phase 3 learning lab · local Docker Postgres 18.4, single consumer process. Numbers are hardware-specific; the transferable
+    results are the <b>shape</b> (<code>min(supply, ack)</code>; sublinear claim cost; graveyard-scan rot without the right index; the
+    group-commit valley) — not the absolute msgs/sec.
+  </div>
+
+</div>
+
+<script>
+const fmt = v => v>=1000 ? (v/1000)+'k' : ''+v;
+
+function drawChart(elId, cfg){
+  const W=760,H=430, m={t:24,r:26,b:64,l:80};
+  const iw=W-m.l-m.r, ih=H-m.t-m.b, n=cfg.labels.length;
+  const xpx = i => m.l + (n===1 ? iw/2 : iw*i/(n-1));
+  const ypx = v => m.t + ih - (v/cfg.yMax)*ih;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+  for(let t=0; t<=cfg.yMax+1e-6; t+=cfg.yStep){
+    const y=ypx(t);
+    s += `<line class="grid" x1="${m.l}" y1="${y}" x2="${W-m.r}" y2="${y}"/>`;
+    s += `<text class="ylab" x="${m.l-10}" y="${y+4}">${fmt(t)}</text>`;
+  }
+  s += `<line class="axis" x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${m.t+ih}"/>`;
+  s += `<line class="axis" x1="${m.l}" y1="${m.t+ih}" x2="${W-m.r}" y2="${m.t+ih}"/>`;
+  cfg.labels.forEach((lb,i)=> s += `<text class="xlab" x="${xpx(i)}" y="${m.t+ih+24}">${lb}</text>`);
+  cfg.series.forEach(se=>{
+    const best = se.trials.map(a=>Math.max(...a));
+    const mn = se.trials.map(a=>Math.min(...a));
+    se.trials.forEach((a,i)=>{
+      const x=xpx(i);
+      s += `<line class="ebar" x1="${x}" y1="${ypx(mn[i])}" x2="${x}" y2="${ypx(best[i])}"/>`;
+      s += `<line class="ebar" x1="${x-5}" y1="${ypx(best[i])}" x2="${x+5}" y2="${ypx(best[i])}"/>`;
+      s += `<line class="ebar" x1="${x-5}" y1="${ypx(mn[i])}" x2="${x+5}" y2="${ypx(mn[i])}"/>`;
+    });
+    se.trials.forEach((a,i)=> a.forEach(v=> s += `<circle class="tdot" cx="${xpx(i)}" cy="${ypx(v)}" r="2"/>`));
+    const pts = best.map((v,i)=>`${xpx(i)},${ypx(v)}`).join(' ');
+    s += `<polyline class="line" stroke="${se.color}" points="${pts}"/>`;
+    best.forEach((v,i)=> s += `<circle cx="${xpx(i)}" cy="${ypx(v)}" r="4.5" fill="${se.color}"/>`);
+  });
+  s += `<text class="atitle" x="${m.l+iw/2}" y="${H-12}">${cfg.xTitle}</text>`;
+  s += `<text class="atitle" transform="translate(20 ${m.t+ih/2}) rotate(-90)" x="0" y="0">${cfg.yTitle}</text>`;
+  s += `</svg>`;
+  document.getElementById(elId).innerHTML = s;
+}
+
+// Chart 1: throughput vs workers, batch=100 vs batch=5000 (200k, indexed)
+drawChart('chart1', {
+  labels:[8,16,32,64], yMax:24000, yStep:4000,
+  xTitle:'workers (concurrent consumerFuncs)', yTitle:'throughput (msgs/sec)',
+  series:[
+    {color:'#5aa9ff', trials:[[7874.6,5361.6],[10416.9,6981.1],[12162.9,11226.7],[16523.3,17783.3]]},
+    {color:'#ffb454', trials:[[8379.8,3905.9],[9020.3,8304.7],[13292.5,13898.3],[15099.6,20179.8]]}
+  ]
+});
+
+// Chart 2: throughput vs batch @ 64 workers (200k, indexed)
+drawChart('chart2', {
+  labels:[100,1000,5000,10000,20000,50000], yMax:24000, yStep:4000,
+  xTitle:'batch size (rows per claim)', yTitle:'throughput (msgs/sec) @ 64 workers',
+  series:[
+    {color:'#5fd38d', trials:[[17721.5,17434.1],[19424.5,18960.3],[20346.3,18862.3],[20611.1,20369.9],[22295.9,15820.6],[19484.1,22591.0]]}
+  ]
+});
+</script>
+</body>
+</html>

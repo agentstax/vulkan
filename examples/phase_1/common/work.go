@@ -8,6 +8,9 @@ type Work struct {
 	Id    string `json:"id"`
 	Age   int    `json:"age"`
 	Email string `json:"email"`
+	// SleepMs lets a payload carry its own processing time, so a stream can mix
+	// fast and slow messages (the Phase 3 variance proof). 0 = no artificial sleep.
+	SleepMs int `json:"sleep_ms,omitempty"`
 }
 
 func NewWork(age int, email string) (*Work, error) {

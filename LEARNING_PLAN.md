@@ -29,7 +29,8 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 1 — Durable atom | ✅ done | tagged `phase-1` |
 | 1.5 — Transactional enqueue | ✅ done | answers in NOTES.md; tag `phase-1.5` |
 | 2 — Lifecycle | ✅ done | answers in NOTES.md; tag `phase-2` |
-| 3 — Competing consumers | 🔨 **next** | ⚠️ batching already leaked into Phase 1 code — see trap T1 |
+| 3 — Competing consumers | 🔨 **next** | dispatcher + lease-aware buffer + worker pool; ⚠️ batching already leaked into Phase 1 code — see trap T1 |
+| 3.5 — Throughput / the commit wall | ⬜ | measure ceiling + `synchronous_commit` (the portable lever); batch-ack→cursor bridge; archive→P9, sharding→P8/P6 |
 | 4 — Log/queue split | ⬜ | |
 | 5 — Fan-out | ⬜ | |
 | 6 — Synthesis | ⬜ | |
@@ -334,54 +335,177 @@ delayed redelivery.
 ## Phase 3 — Competing consumers & batching
 
 **Concept:** scale throughput by adding workers without double-processing, and
-amortize round-trips.
+amortize round-trips. The shape: **one dispatcher batch-claims into a bounded,
+lease-aware buffer; a worker pool drains it.** This is the prefetch + worker-pool
+pattern — exactly how a RabbitMQ/SQS consumer with a prefetch count actually
+works. Reuse `pkg/concurrency`: `PressureQueue` is the buffer, `WorkerPoolLimiter`
+is the concurrency cap. (The `examples/simple/server.go` scrape loop is this
+pattern for *ephemeral* work — Phase 3 is porting it to *durable, leased* work,
+which is where it gets interesting.)
+
+**Why this shape (vs N symmetric workers):** N independent workers each looping
+claim→process→ack is the simpler option and is *throughput-equivalent when work
+is slow* (both converge to N/W — see the derivation in NOTES Phase 3). The
+dispatcher+pool wins on the two things that *don't* converge: it absorbs
+**variance in work time** (a slow message ties up one worker, not a whole
+worker's serially-processed batch), and it collapses **connection count** (1
+claimer + 1 ack-batcher + N pure-compute workers = 2 DB connections regardless of
+N, instead of ~N). If those don't matter for a given workload, the N-worker loop
+is the honest simpler choice — record why you picked what you picked.
 
 **Build:**
-- [ ] Run N worker goroutines (reuse your existing `pkg/concurrency` pool),
-      each looping: claim → process → ack.
-- [ ] Reintroduce batch-claim — `LIMIT 50 FOR UPDATE SKIP LOCKED` — but now
-      answer the Trap T1 question deliberately: with Phase 2's state machine,
-      claim is its own fast transaction and each message's success/failure is
-      recorded *individually*. One bad message no longer poisons the batch.
-      Write down in NOTES.md why the batch failure-domain problem from Phase 1
-      dissolved.
-- [ ] Add the **critical index**: a partial index
-      `CREATE INDEX ON jobs (run_at) WHERE status='ready'`. Without it, the claim
-      query table-scans as `done`/`dead` rows accumulate.
+- [x] **Dispatcher loop:** batch-claim `min(batchLimit, freeBufferSlots)` rows and
+      push each into the `PressureQueue`. Gate the claim on `CanEnQueue` — you must
+      **never** hit the `EnQueue`→`ErrQueueFull` drop path, because you cannot drop
+      a row you've already leased. Backpressure flows *backwards*: a full buffer
+      means stop claiming.
+- [x] **Worker pool:** N goroutines drain the buffer (acquire permit → dequeue →
+      process → ack → release permit). Reuse `WorkerPoolLimiter`.
+- [x] **Bound the buffer to the lease — the real lesson of this phase.** Every
+      item in the buffer is a *ticking lease*: `locked_at` was stamped and
+      `attempts` already incremented at claim time. If an item waits in the buffer
+      longer than `workTimeout + buffer`, another process reclaims it and you
+      double-process work *that was never even touched* — and idle items burn
+      attempts toward `dead`. So prefetch **shallow**: buffer depth ≈ one batch,
+      sized so N workers drain it well inside the lease window. The buffer is a
+      worker-feeding tray, not a reservoir. (This is the hazard that did *not*
+      exist for the ephemeral scrape queue, where losing/redoing work was free.)
+- [x] Reintroduce batch-claim — `LIMIT 50 FOR UPDATE SKIP LOCKED` — and answer the
+      Trap T1 question deliberately: with Phase 2's state machine, claim is its own
+      fast transaction and each message's success/failure is recorded
+      *individually*. One bad message no longer poisons the batch. Write down in
+      NOTES.md why the Phase 1 batch failure-domain problem dissolved.
+- [x] Add the **critical index**: a partial index
+      `CREATE INDEX ON message_log (can_run_after) WHERE status='ready'`. Without
+      it the claim table-scans as terminal rows accumulate.
       **Caveat from the Phase 2 fold-in:** the claim also matches
       `status='processing' AND locked_at < ...`, so a `WHERE status='ready'`-only
       index doesn't cover the expired-lease branch. While the `processing` set
-      stays small that branch is cheap; if it grows, widen the index predicate (or
-      add a second partial index on `locked_at WHERE status='processing'`).
+      stays small that branch is cheap; if it grows, add a second partial index on
+      `locked_at WHERE status='processing'`. (Phase 3.5's archive lever shrinks
+      this problem from the other direction.)
+- [x] **ctx-aware shutdown.** `DeQueue` blocks on `<-channel` with no ctx, so a
+      parked worker won't notice cancellation. On shutdown: stop the dispatcher
+      first, then close/drain the buffer so workers fall through — any
+      un-dequeued leased rows just get reclaimed later (durability holds). Note
+      this gap; it's the tax for reusing an ephemeral-work primitive for durable
+      work.
 
 **Lab:**
-- [ ] **Measure the index:** seed a few hundred thousand rows (mostly
+- [x] **Measure the index:** seed a few hundred thousand rows (mostly
       `done`/`dead`), `EXPLAIN ANALYZE` the claim query with and without the
       partial index. Record both numbers in NOTES.md. The index is the
       difference between a queue that stays fast and one that rots.
-- [ ] **Find the ceiling:** plot throughput vs worker count (rough numbers are
+- [x] **Find the ceiling:** plot throughput vs worker count (rough numbers are
       fine — msgs/sec at 1, 2, 4, 8, 16 workers). Find where it stops scaling.
       Knowing where Postgres-as-a-queue tops out (tens of thousands/sec) tells
       you when you'd ever need Kafka. Record the ceiling and your guess at the
-      bottleneck.
+      bottleneck. (Phase 3.5 is where you push this number.)
+- [x] **Variance proof:** mix a few deliberately slow messages (`--sleep`) into a
+      fast stream. Confirm the pool keeps draining the fast ones while the slow
+      ones occupy single workers — the thing an N-serial-batch worker structurally
+      can't do. This is the dispatcher+pool's reason to exist.
 
 **Explain it back:**
 1. Why is the partial index so much better than a full index on `(status, run_at)`
    for this workload?
+Answer: I only seeded around ~1000 and it is already apparent. The main difference is between a bitmap heap scan (with partial indexes) vs a full sequential scan (without indexes). Full scans are just much slower than a map lookup. In the actual time case with ~1000 rows it was .215 (without index) and .05 (with index) and this read difference I would assume only grows when not using index
 2. Batch claiming in Phase 1 had a failure-domain problem. Why doesn't Phase 3's
    batching have it?
+Answer: I'm not 100% sure but I do know with Phase1 we held the claim / lease via a lock at the db level. While this is effective it is not scalable. Each in process claim holds open a connection the entire time processing is occurring. For a long running job with many concurrent workers and many consumers this is a resource nightmare for the postgres database.
 3. What was your measured ceiling, and what do you think the bottleneck was —
    lock contention, WAL, round-trips, or the worker code itself? How would you
    tell?
+Answer: you did this analysis but with current topology acks are the bottleneck. With a single ack per commit the full roundtrip is costly. We could batch commits but with upcoming changes in topology soon it may not be worth it.
+4. Why must the in-memory buffer stay shallow? Walk through what goes wrong with a
+   deep prefetch buffer that did *not* go wrong for the scrape queue in
+   `examples/simple`.
+Answer: A deep prefetch buffer means that claimed work and their associated leases will regularly be lost while waiting in the buffer. While their is logic to handle this it is not perfect and can lead to excess double processing. Additionally it is just extra unnecessary work the pressure queue only needs to have a shallow buffer that hides or masks the claim sql latency such that it improves throughput.
 
-**Done when:** both measurements recorded with numbers, NOTES.md,
+**Done when:** all measurements recorded with numbers, NOTES.md,
 `git tag phase-3`. **Phases 1–3 are a production-grade job queue** — this is
 literally what River/Oban/graphile-worker are. Pause here and skim River's
 docs; you'll recognize everything.
 
 **Real systems:** Kafka consumer group (one partition → one consumer); RabbitMQ
-multiple consumers on a queue. Batching = Kafka `max.poll.records`, SQS batch
-receive.
+prefetch count + a consumer worker pool; SQS batch receive. Batching = Kafka
+`max.poll.records`.
+
+---
+
+## Phase 3.5 — Throughput: the commit wall (measure, don't over-build)
+
+**Concept:** Phase 3 maxed out *concurrency*; this phase is about *commit rate*.
+The cost model (NOTES Phase 3) says throughput converges to "how fast Postgres
+commits the claim+ack writes" — **2 durable writes per message** — and the
+fsync-per-commit is the wall. **But Phase 4 is about to change the data topology
+out from under this**, so the discipline here is *measure the wall and apply only
+the portable fix; don't optimize a physical layout you're about to refactor away.*
+
+That deferral is itself the lesson: of the four obvious levers, three are coupled
+to the queue topology and either **dissolve or relocate** when Phase 4 replaces
+the mutable table with an append-only log + cursor. The cursor model *is* the
+limit case of two of them. So we measure all four conceptually, build only the
+one that survives, and forward-reference the rest to where they actually live.
+
+**Build (the portable core):**
+- [ ] **Measure the ceiling precisely.** Extend Phase 3's find-the-ceiling lab into
+      a recorded baseline: msgs/sec at saturation, and *which* resource is the wall
+      (WAL/fsync, claim-lock contention, round-trips, or worker code). This number
+      is your "when would I ever need Kafka" threshold — it carries forward
+      unchanged through every later phase.
+- [ ] **`synchronous_commit` (the one lever that survives the topology change).**
+      Relax it (`local`/`off`) and re-measure commit rate. The point you must be
+      able to articulate: **this is safe *because* you already accepted
+      at-least-once in Phase 2.** A lost ack on crash = a reclaim = a reprocess,
+      which idempotency already covers — you're not buying new risk, just cashing
+      in risk you already priced. (It would *not* be free for a bank ledger; that's
+      the contrast.) It's a global Postgres knob, so it applies identically to the
+      cursor model and the `deliveries` model later.
+
+**Measure-only (understand the lever, then watch Phase 4 subsume it):**
+- [ ] **Batch-ack / group-commit** — quantify it, don't build heavy infra. Acking B
+      messages in one `UPDATE … WHERE id = ANY($1)` collapses B fsyncs into ~1.
+      Note *why this is the bridge to Phase 4*: the cursor is the **ultimate**
+      batched ack — N messages "acked" by a single integer write
+      (`UPDATE consumers SET position = $last`). You're about to get this lever for
+      free as a side effect of the topology, so feel its cost now and let Phase 4
+      eliminate it.
+
+**Deferred (topology-coupled — cross-referenced to their real home):**
+- [ ] **Archive terminal rows → Phase 9 (retention).** An append-only log has no
+      `done`/`dead` rows to archive; the "bloat" concern becomes "the log grows
+      forever," solved by time-partition-drop retention in Phase 9. Building a
+      `message_archive` table now would be thrown away at Phase 4. (It *does* return
+      for the `deliveries` table in Phase 6 — note it there.)
+- [ ] **Claim-hotspot sharding → Phase 8 (partitions) / Phase 6 (deliveries).** The
+      single-hot-index-end contention *dissolves* in the cursor model (no competing
+      claim — each cursor reads its own `offset > position` range). It returns only
+      when competing claims return on `deliveries` (Phase 6), and sharding is
+      exactly what Phase 8's `partition_key` formalizes.
+
+**Lab:**
+- [ ] Record the baseline ceiling, then re-measure after `synchronous_commit` and
+      (on paper or a quick spike) after batch-ack. Note which moved it most.
+- [ ] **Crash-after-async-commit:** with `synchronous_commit=off`, kill mid-batch
+      and confirm reclamation reprocesses the lost acks — at-least-once still holds.
+      This is the lab that *proves* relaxing the commit didn't add risk.
+
+**Explain it back:**
+1. Why is the fsync-per-commit the throughput wall, and why is the *ack* (not the
+   claim) the half that's hardest to amortize in the queue model?
+2. Why does the at-least-once contract make `synchronous_commit=off` a free lunch
+   here when it wouldn't be for a bank ledger?
+3. Which of the four levers survive the Phase 4 topology change, and why do the
+   other three dissolve or relocate? (This is the real point of the phase.)
+
+**Done when:** baseline + `synchronous_commit` ceilings recorded with numbers, the
+batch-ack→cursor bridge and the two deferrals written in NOTES.md,
+`git tag phase-3.5`.
+
+**Real systems:** group commit (Postgres `commit_delay`, MySQL binlog group
+commit); `synchronous_commit` trade-offs; the Kafka log model as the structural
+end-state of ack-amortization (one offset commit per poll, not per message).
 
 ---
 
@@ -497,6 +621,13 @@ per-consumer delivery state. Also feel the cost: delivery rows are N× writes fo
 N groups (write amplification). That cost is *why* Kafka punts lifecycle to
 "retry topics" instead.
 
+**Phase 3.5's levers come home here.** `deliveries` is a mutable, claimed,
+status-bearing table again — so the queue-shaped optimizations you deferred apply
+to it: competing `SKIP LOCKED` claims reintroduce the claim-hotspot contention
+(lever 4 → shard by `consumer_group`/key), and accumulating `done` delivery rows
+reintroduce the archive concern (lever 3 → archive or partition them, per Phase 9).
+The append-only `events` log never needs either; only the lifecycle layer does.
+
 **Explain it back:**
 1. Draw the end-state architecture from memory: tables, who writes what, who
    reads what. (This was Phase 0's "destination" — you've now arrived.)
@@ -575,6 +706,12 @@ bindings decide who receives.
 make it *optional* per message. The practical resolution of the
 "FIFO vs concurrency" problem.
 
+**Picks up from Phase 3.5 (deferred lever 4):** `partition_key` is also the
+principled answer to the claim-hotspot contention you measured back in Phase 3.5.
+Sharding the claim by key spreads workers across distinct index ranges instead of
+all contending on one hot end — the throughput fix and the ordering primitive turn
+out to be the same mechanism.
+
 **Explain it back:**
 1. Why can't you have both total ordering and full concurrency? Where exactly
    does the serialization happen in your claim query?
@@ -597,7 +734,11 @@ consumers); SQS FIFO **MessageGroupId**.
 - [ ] **Retention policy:** a janitor that drops `events` older than X (and their
       `done` deliveries). Learn it the cheap way with native time-partitioning
       (`PARTITION BY RANGE (created_at)`) so retention is a partition `DROP`, not
-      a mass `DELETE`.
+      a mass `DELETE`. **This is the real home of Phase 3.5's deferred lever 3
+      (archive terminal rows):** in the log model "don't let the table rot" is a
+      time-based retention/partition-drop, not a mid-stream archive — same concern,
+      correct mechanism for the topology. (Archiving *done* `deliveries` rows is the
+      one place the original archive idea still applies.)
 - [ ] Optionally implement **log compaction** (keep only the latest event per
       `partition_key`) to see Kafka's compacted-topic idea.
 - [ ] **Observability:** expose queue depth (`ready` count), lag per group, DLQ

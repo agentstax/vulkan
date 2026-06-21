@@ -248,3 +248,128 @@ of lease length).
 - **At-least-once is now the contract.** `consumerFunc` should be idempotent;
   noted in the type doc as "ideally idempotent func."
 
+---
+
+## Phase 3 — Competing consumers & batching
+
+**What it does, and the shape:** one `Prefetch` goroutine batch-claims
+`min(batchLimit, freeSlots)` rows into a bounded `PressureQueue`; a `Dispatch`
+loop drains it, spawning one goroutine per message gated by `WorkerPoolLimiter`.
+Backpressure flows backwards — the prefetcher gates on `WaitForRoom` (replacing
+the plan's `CanEnQueue`) so a full buffer stops claiming and we never hit the
+`EnQueue` drop path (you can't drop a row you've already leased).
+
+**The aha — buffer depth is two different constraints.** For *durability* the
+buffer must stay shallow: every buffered row's `lease_until` is already stamped
+and `attempts` already incremented, so a row that dwells past its lease window
+gets reclaimed and double-processed (and idle rows burn attempts toward `dead`).
+For *throughput* the buffer only needs to be deep enough to mask one claim's
+round-trip. These are separate — the shallow rule is a lease-safety constraint,
+not a throughput law (see the ceiling work below).
+
+### Explain it back
+
+**1. Why is the partial index so much better than a full index on
+`(status, run_at)` for this workload?**
+
+A full `(status, run_at)` index indexes *every* row — including the entire
+graveyard of `done`/`dead`. It grows with the queue's whole history and rots
+(bloat, cache pressure, vacuum cost) even though we only ever query the tiny
+live (`ready`) set. A partial index `WHERE status='ready'` contains only live
+rows, so it stays small no matter how much history accumulates, and the claim
+scan never touches dead entries. (`status` is also low-cardinality, so it's a
+poor leading column for a composite index; the partial predicate drops it
+entirely and the index orders purely by the useful key.)
+
+*Correction vs my LEARNING_PLAN answer:* I compared *index vs no index* (bitmap
+heap scan vs sequential scan, ~0.05ms vs ~0.215ms at 1000 rows). That's a real
+effect but it's the wrong comparison — the question is partial vs *full
+composite*, and the point is the graveyard: the partial index excludes it, the
+full one carries it forever. **Deeper twist from the ceiling lab:** because the
+claim does `ORDER BY id`, neither the `(status, run_at)` index *nor* the
+`can_run_after` partial index is actually used — the planner takes the primary
+key and filters inline, scanning the whole graveyard (0.057ms → 41.8ms, 730×, at
+150k `done` rows). The fix was migration 005: a partial index keyed on `id`
+covering both live states, so the ordered scan skips the graveyard.
+
+**2. Batch claiming in Phase 1 had a failure-domain problem. Why doesn't
+Phase 3's batching have it?**
+
+Phase 1 claimed *and processed* a batch inside one transaction — all-or-nothing.
+One message failing, or any mid-batch error/rollback, took down the whole batch;
+unrelated messages shared a single success/failure fate. Phase 3 splits it: the
+claim is its own fast transaction (flip `status→processing`, stamp the lease,
+`attempts++`), and then each message is processed and acked **individually** —
+`RecordSuccess`/`RecordFailure` per row, guarded by a `lease_token` CAS. A
+failure is recorded only against that one row (its own backoff/retry/dead-letter).
+The batch is now purely a round-trip optimization, not a failure unit — one bad
+message can't poison its batch-mates.
+
+*Correction vs my LEARNING_PLAN answer:* I described the connection/lock-holding
+scalability problem (Phase 1 pinning a connection per in-flight job). True, but
+that's the Phase 2 "what held the claim / why it had to change" answer — not the
+failure-domain problem, which is about per-message ack isolation.
+
+**3. What was the measured ceiling, what's the bottleneck, and how would you
+tell?**
+
+~20–22k msgs/sec at 64 workers on this box, and the bottleneck is the **ack
+path** — one single-row `UPDATE` + commit per message, so each pays a WAL fsync
+and a round-trip (`synchronous_commit = on`). Batching commits would lift it but
+may not be worth it given upcoming topology changes. How I told: (a) sampling
+`pg_stat_activity` wait events; (b) raising `batch` lifted throughput then
+plateaued — so *not* supply-bound; (c) at a fixed large batch, throughput scaled
+with worker count (8k→20k across 8→64) — so it's the concurrent-commit/ack path.
+
+**4. Why must the in-memory buffer stay shallow? What goes wrong with a deep
+buffer that didn't for the scrape queue?**
+
+Every buffered row carries a live lease (`lease_until` stamped, `attempts++` at
+claim time). In a deep buffer rows dwell past the lease window, get reclaimed by
+another worker, and are double-processed (the reclaim logic bounds the damage but
+can't prevent it) — and idle rows burn attempts toward `dead`. The scrape queue
+in `examples/simple` had no lease and no durability: losing or redoing ephemeral
+work was free, so deep buffering was harmless there. Here a shallow buffer is all
+you need — just enough to mask claim-SQL latency and keep workers fed.
+
+### Done (measurements)
+
+- **Index lab:** claim on a 150k-`done` / 50k-`ready` table — pkey scan filtered
+  150,001 graveyard rows, 0.057ms (fresh) → 41.840ms (730×). With the 005
+  `idx_claim_active (id) WHERE status IN ('ready','processing')` it drops to
+  ~0.09ms and throughput on a deep backlog recovered ~4.8k → ~19k/s.
+- **Ceiling lab:** `throughput = min(supply(batch), ack_capacity(workers))`.
+  Claim cost is sublinear in batch (~3.4µs/row asymptote → single-loop supply
+  ~290k/s), so the prefetcher is *not* a hard ceiling; at `batch=100` supply is
+  round-trip-capped ~17–18k, right at the ack ceiling. Raising batch reveals the
+  ack wall (~20–22k @64w), which scales with workers. Full write-up:
+  `phase3-ceiling-report.html`.
+- **Group-commit valley:** 1 worker ~1.7k/s, 2 workers ~1.1k/s — added
+  contention before group commit amortizes the fsync; recovers from 4 workers up.
+- **T1 dissolution:** recorded in Q2 above — per-message ack isolation.
+- **Variance proof** (`examples/phase_1/variance`, payload-driven `SleepMs`):
+  3 slow (3s) at the front of 6000 fast (5ms), 8 workers. Fast throughput *never
+  stalled* while slow held workers — 14/14 250ms buckets active, min 150 fast/
+  bucket — and stepped from ~180/bucket (5 free workers) to ~310/bucket the moment
+  the 3 slow finished (~3.3s). Wall **6.1s vs 60.7s** at concurrency=1, where the
+  lone worker head-of-line-blocked on every slow message (min **0** fast/bucket).
+
+### Outstanding
+
+- `examples/simple` doesn't compile (never ported off the removed `CanEnQueue`),
+  so `go build ./...` is red. Deferred intentionally.
+
+### Decisions
+
+- **`min(supply, ack)` is the mental model**, not "single prefetch loop is the
+  ceiling" (an earlier wrong conclusion from only measuring `batch=100`).
+- **005 index keyed on `id`, covering `ready`+`processing`.** The 004 partial
+  indexes (`can_run_after WHERE ready`, `lease_until WHERE processing`) can't
+  drive an `id` ordering across the `ready OR processing` predicate, so the claim
+  never uses them — re-evaluate whether they earn their keep.
+- **`MaxConns` on the datastore** (`pool_max_conns`): the default pool caps at
+  `max(4, nCPU)`=10, which is a fake ceiling above ~10 workers.
+- **Levers, in order:** keep claims cheap (index) → raise batch+buffer to clear
+  supply → add workers for ack capacity → batch the acks → multiple prefetchers
+  (only past ~290k/s) → archive `done`/`dead` (Phase 3.5).
+

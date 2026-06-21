@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumer/datastore"
 )
 
 func main() {
@@ -37,7 +37,20 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pgParams := &datastore.PostgresConnectionParams{
+	const concurrencyLimit = 5
+
+	pressureQueue, err := concurrency.NewPressureQueue[consumer.MessageRow](concurrencyLimit * 10)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	workerPoolLimiter, err := concurrency.NewWorkerPoolLimiter(concurrencyLimit)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	pgParams := &consumer.PostgresConnectionParams{
 		User:     "example_user",
 		Pass:     "example_password",
 		Host:     "localhost",
@@ -45,13 +58,14 @@ func main() {
 		Database: "example_db",
 	}
 
-	datastore, err := datastore.NewPostgresDatastore[common.Work](ctx, pgParams)
+	datastore, err := consumer.NewPostgresDatastore[common.Work](ctx, pgParams)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	workConsumer := consumer.NewWorkConsumer(datastore).WithBatchLimit(1).WithMaxAttempts(3).WithPollRate(1 * time.Second).WithWorkTimeout(10 * time.Second)
+	workConsumer := consumer.NewWorkConsumer[common.Work](pressureQueue, workerPoolLimiter, datastore)
+	workConsumer.WithBatchLimit(1).WithMaxAttempts(3).WithPollRate(1 * time.Second).WithWorkTimeout(5 * time.Second).WithQueueTimeout(2 * time.Second).WithAckMargin(1 * time.Second)
 	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err
@@ -61,7 +75,7 @@ func main() {
 		time.Sleep(time.Duration(*shutdownSleepPtr) * time.Second)
 
 		return nil
-	}).WithShutdownTimeout(3 * time.Second)
+	}).WithShutdownTimeout(10 * time.Second)
 
 	// WORK
 	var attempts atomic.Int64
