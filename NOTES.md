@@ -373,3 +373,163 @@ you need — just enough to mask claim-SQL latency and keep workers fed.
   supply → add workers for ack capacity → batch the acks → multiple prefetchers
   (only past ~290k/s) → archive `done`/`dead` (Phase 3.5).
 
+---
+
+## Phase 3.5 — Throughput: the commit wall
+
+Phase 3 maxed out concurrency and traced the wall to the **ack path**: one
+single-row `UPDATE … WHERE id=$1 AND lease_token=$2` per message via autocommit
+`Pool.Exec`, so each ack is its own commit and pays a WAL fsync. The claim is one
+commit per *batch* (amortized over `batch=100`), so the ack is the half that
+resists amortization. This phase measures the only portable lever that survives
+the Phase 4 topology change: **`synchronous_commit`** (whether `COMMIT` blocks on
+the fsync, or returns early and lets the WAL writer flush async).
+
+### Done (measurements)
+
+**`on` vs `off`, batch=100, count=20000, best-of-3, fresh-seeded backlog per run
+(zero graveyard), Docker postgres:18 on localhost.** Harness: `/tmp/sweep.sh`
+driving the Phase 3 `bench` binary.
+
+| workers | `on` (msgs/s) | `off` (msgs/s) | speedup |
+|--------:|--------------:|---------------:|:-------:|
+| 1  |  1,721.7 | 10,312.0 | **5.99×** |
+| 8  |  6,586.2 | 25,035.1 | 3.80× |
+| 32 | 18,991.7 | 29,874.8 | 1.57× |
+| 64 | 21,423.8 | 27,357.3 | 1.28× |
+
+- **The gap is biggest at conc=1 and shrinks as workers rise** — the opposite of
+  the naive "more acks/sec ⇒ bigger win" guess. The mechanism is **group commit**:
+  under `on`, many concurrent ack-commits are batched into one physical fsync, so
+  high concurrency *already* amortizes the fsync and narrows the gap to `off`. At
+  conc=1 there's one commit in flight at a time, every ack pays a full fsync, and
+  `off` (which skips it) wins ~6×. This is the same amortization the plan's
+  measure-only "batch-ack / group-commit" lever exploits explicitly — Postgres
+  does it automatically across *concurrent* committers; batch-ack would do it
+  across *one* committer's many rows.
+- **Concrete fsync cost (conc=1, the clean signal):** per-ack wall = 581µs (`on`)
+  vs 97µs (`off`) ⇒ **~484µs is the fsync wait** on this storage. conc=1 is the
+  cleanest reading (one commit at a time, fsync fully exposed vs fully skipped)
+  and the lowest-variance row (on 1543–1722, off 10180–10312).
+- **Baseline reproduces Phase 3:** `on` @64w = 21.4k/s matches the Phase 3
+  ceiling (~20–22k), confirming the harness.
+- **`off` stops climbing past ~32w** (29.9k → 27.4k @64w): with the fsync removed
+  you hit the *other* Phase 3 walls (round-trips, pool, scheduler), so `off`
+  doesn't scale forever — it just moves the ceiling up and shifts it earlier.
+
+### Caveats (so the ratio isn't over-read)
+
+- **High-concurrency variance is large** (on@8: 2280–6586; off@64: 14739–27357).
+  Best-of-3/max is the right estimator (noise is one-directional — only slows),
+  but the robust finding is the *shape* (gap shrinks with concurrency), not the
+  exact peak. conc=1 is the number to trust.
+- **Docker storage floor.** Absolute fsync cost depends on the container's volume
+  (Docker Desktop VM, not bare NVMe). On faster durable storage the `on` baseline
+  rises and the `off` ratio compresses; on slower disk it widens. The 6× at
+  conc=1 is this box, not a universal constant.
+- `local` not tested: identical to `on` without a synchronous standby (it only
+  relaxes the *replica* wait, not the local fsync). On a single node
+  {on, local, remote_write, remote_apply} all behave as "wait for local flush";
+  only `off` skips the fsync. Measuring `local` would need standing up a streaming
+  replica — out of scope for "measure, don't over-build."
+- DB knob was set via `ALTER DATABASE example_db SET synchronous_commit=off`
+  (pool connections inherit it at connect; session-level `SET` would NOT reach
+  the pool) and **RESET back to default `on`** after the sweep — the dev DB is not
+  left silently non-durable. Re-flip with the same ALTER to adopt it.
+
+### Why `off` is safe here (the free lunch)
+
+A lost ack on crash → lease expires → reclaim → reprocess, which is exactly the
+at-least-once contract already accepted in Phase 2 and covered by idempotency. A
+lost claim → row still `ready` → re-claimed. No *new* failure mode; just cashing
+in risk already priced. (Not free for a bank ledger: no replay path for a lost
+commit ⇒ durability is mandatory ⇒ `on` required.) `off` ≠ `fsync=off`: it risks
+only the last few hundred ms of commits on crash, never corruption/inconsistency.
+
+### Crash lab (done) — proves `off` adds no new failure mode
+
+Harness: `examples/phase_1/crashlab` (logs every processed payload id to a file =
+the app's durable record of work it believed it did) + `/tmp/crashlab.sh`. Seed
+5000 durable rows (CHECKPOINT after seed so the backlog survives), run the app,
+**`docker kill` Postgres at ~40% processed (SIGKILL → no graceful fsync)**,
+`docker start` (crash recovery), drain the reclaimed backlog. `wal_writer_delay`
+widened to 10s so the lost set is large/deterministic instead of a race on the
+200ms writer tick — same mechanism, just a bigger window than production's ~200ms.
+
+Identical crash, ~2200 processed before the kill:
+
+| | `off` | `on` (control) |
+|---|------:|---------------:|
+| acks lost on crash (app-processed but not `done` after recovery) | **899** | **85** |
+| ids reprocessed (appear 2+× in app log) | 899 | 85 |
+| seeded ids processed ≥1× (no loss) | 5000/5000 | 5000/5000 |
+| final `done` | 5000/5000 | 5000/5000 |
+
+- **At-least-once held both ways:** every seeded id ran ≥1×, all 5000 ended
+  `done`. The crash caused *reprocessing*, never *loss* — lost ack → `processing`
+  row whose lease expired → reclaimed by the next claim → reran.
+- **The 85 under `on` is irreducible**, not a durability bug: work that ran but
+  hadn't acked at the SIGKILL instant. *Any* at-least-once system reprocesses that
+  in-flight set on crash regardless of the knob (bounded by concurrency × work
+  latency, not by the flush window).
+- **`off` added ~814 *extra* duplicates** (899−85) — the acks it lost that `on`
+  would have fsync'd. That's the entire cost of `off`: **more duplicate work on
+  crash, not a new class of failure.** Duplicates are exactly what Phase 2's
+  at-least-once + idempotency already absorb, so the throughput win (Phase 3.5
+  table: up to 6×) is bought with risk already priced. Proven, not asserted.
+- Note `off` didn't revert *everything* since the checkpoint (1301 acks survived)
+  — WAL buffers got partially write()/fsync'd as they filled. Realistic: the lost
+  window is "since the last flush," not "since the last checkpoint."
+- Cleanup: both knobs reset to defaults (`synchronous_commit=on`,
+  `wal_writer_delay=200ms`); verified via `SHOW`.
+
+### Explain it back
+
+Sharpened from my LEARNING_PLAN answers (originals kept there); corrections noted.
+
+**1. Why is fsync-per-commit the throughput wall, and why is the *ack* (not the
+claim) the half hardest to amortize?**
+
+fsync is a costly physical mem→disk flush. The claim is **one commit per batch**
+(amortized over ~100 rows); the ack is **one commit per message** via autocommit
+`Pool.Exec`, so it can't amortize — that's the hard half. The on/off gap is
+biggest at low concurrency (6× @1w) and shrinks at high concurrency (1.3× @64w)
+because **group commit** auto-batches *concurrent* committers' fsyncs, so `on`
+already amortizes when many commits are in flight.
+*Correction:* the knob is `synchronous_commit=off` (defers the fsync to the WAL
+writer), NOT `fsync=off` (skips it entirely → risks corruption). Group commit
+needs concurrent in-flight commits, so conc=1 (one at a time) gets the biggest
+win from `off`.
+
+**2. Why is `off` a free lunch here but not for a bank ledger?**
+
+at-least-once ⇒ duplicates are already possible ⇒ consumers are idempotent ⇒ a
+lost commit is harmless because reclaim reruns the work. So relaxing durability
+buys throughput against risk already priced in.
+*Correction (two):* (a) what `off` loses on crash is the **acked-but-not-yet-
+flushed** window — work the app *did* ack but whose commit wasn't durable, so it
+*looks* unacked after recovery (crash lab: 899 lost under `off` vs 85 under `on`).
+Not "unackd work" generically. (b) The ledger contrast is **no replay path for a
+lost commit**, not "exactly-once needs distributed transactions." A queue can
+replay (the message is still there + idempotency); a ledger that told the customer
+"done" then lost the commit cannot, so durability is mandatory. Deciding question:
+*is there a recovery path for a lost commit?*
+
+**3. Which of the four levers survive Phase 4, and why do the rest dissolve/relocate?**
+
+Four levers: **`synchronous_commit`** (survives — a global durability knob, blind
+to table layout); **batch-ack** (dissolves — the cursor *is* the ultimate batched
+ack: N messages acked by one integer write `position=$last`); **archive terminal
+rows** (relocates → Phase 9 retention/partition-drop; an append-only log has no
+`done`/`dead` rows to archive; returns for `deliveries` in Phase 6); **claim-
+hotspot sharding** (dissolves — each cursor reads its own `offset > position`
+range, so no competing claim on a shared hot row; returns when competing claims
+return on `deliveries` in Phase 6, formalized as Phase 8's `partition_key`).
+*Correction:* I named 3 of 4 and missed **claim-hotspot sharding** (the 4th);
+also archive *relocates* rather than purely vanishing.
+
+### Outstanding / deferred
+
+- **batch-ack measurement** — skipped (user's call). It's measure-only anyway; the
+  cursor model (Phase 4) is its limit case, so the bridge is understood, not built.
+

@@ -494,10 +494,13 @@ one that survives, and forward-reference the rest to where they actually live.
 **Explain it back:**
 1. Why is the fsync-per-commit the throughput wall, and why is the *ack* (not the
    claim) the half that's hardest to amortize in the queue model?
+Answer: fsync-per-commit flushes data from mem to disk for every commit. The difference between operations in-mem vs on disk is costly in time. Because our current architecture makes an ack per work, unlike our claim process which does batching, a large amount of time is spent fsyncing / disk writing. Turning fsync off trades commit durability for speed however that is not an issue as we have a reclaimation process and a at-least-once fire policy. So the durability risk is not there. The intresting part is that at low throughput / concurrency fsync gives huge gains while at high throughput / concurrency it is more modest. That is because postgres automatically batches the fsync disk writes at high commit throughput so the fysnc off setting does less.
 2. Why does the at-least-once contract make `synchronous_commit=off` a free lunch
    here when it wouldn't be for a bank ledger?
+Answer: At least once means un ackd work CAN be processed again, double processing or technically even more. This does imply consumers must be idepotent but it allows us to lose unackd work because we will simply try it again via our reclaimation process. However for bank ledgers where exactly-once is required this is not a good fit. These normally need distrubuted transactions (or something like this)
 3. Which of the four levers survive the Phase 4 topology change, and why do the
    other three dissolve or relocate? (This is the real point of the phase.)
+Answer: synchronous_commit=off survives. Archiving rows is not needed for optimization as an indexed cursor will replace it. Batch acks are not needed because the cursor is the lifecycle tracker. Not sure what the third one is.
 
 **Done when:** baseline + `synchronous_commit` ceilings recorded with numbers, the
 batch-ack→cursor bridge and the two deferrals written in NOTES.md,
