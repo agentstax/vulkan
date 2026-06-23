@@ -20,6 +20,7 @@ import (
 func main() {
 	// FLAGS
 
+	groupPtr := flag.String("group", "learning.v1", "consumer group name")
 	processorSleepPtr := flag.Float64("processor-sleep", 0.1, "artifical sleep in consumer func for testing (in seconds)")
 	shutdownSleepPtr := flag.Float64("shutdown-sleep", 1.0, "artifical sleep on graceful shutdown for testing (in seconds)")
 	failRatePtr := flag.Float64("fail-rate", 0.0, "artifical fail rate in consumer func for testing")
@@ -28,6 +29,7 @@ func main() {
 	// must always parse
 	flag.Parse()
 
+	fmt.Printf("flag group: %s\n", *groupPtr)
 	fmt.Printf("flag processor sleep: %f\n", *processorSleepPtr)
 	fmt.Printf("flag shutdown sleep: %f\n", *shutdownSleepPtr)
 	fmt.Printf("flag fail rate: %f\n", *failRatePtr)
@@ -64,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	workConsumer := consumer.NewWorkConsumer[common.Work]("learning.v1", pressureQueue, workerPoolLimiter, datastore)
+	workConsumer := consumer.NewWorkConsumer[common.Work](*groupPtr, pressureQueue, workerPoolLimiter, datastore)
 	workConsumer.WithBatchLimit(10).WithMaxAttempts(3).WithPollRate(1 * time.Second).WithWorkTimeout(5 * time.Second).WithQueueTimeout(2 * time.Second).WithAckMargin(1 * time.Second)
 	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {

@@ -136,7 +136,7 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 	}
 
 	fmt.Println("consumer starting")
-	errProcess := p.ProcessV2(ctx, consumerFunc)
+	errProcess := p.Process(ctx, consumerFunc)
 	if errors.Is(errProcess, context.Canceled) {
 		errProcess = nil // requested shutdown, not a failure per say
 	}
@@ -148,7 +148,23 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 	return errors.Join(errProcess, errShutdown)
 }
 
-func (p *WorkConsumer[WorkType]) ProcessV2(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+	ticker := time.NewTicker(p.Config.PollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := p.Claim(ctx, consumerFunc); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (p *WorkConsumer[WorkType]) Claim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
 	messages, err := p.Datastore.ClaimMessagesV2(ctx, p.Group, p.Config.BatchLimit)
 	if err != nil {
 		return err

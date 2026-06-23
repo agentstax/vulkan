@@ -632,3 +632,98 @@ it.)
   Phase 6.5 (`backoff` shows as an unused-function lint — intentional). They reference
   dropped columns, so they're parked, not live; delete or revive them at Phase 6.5.
 
+---
+
+## Phase 5 — Fan-out to independent consumers
+
+**What it does, and the tradeoff:** many consumers, each with its own cursor over
+the *same* `message_log`, each at its own pace. The schema already supported it —
+`cursors` is keyed by `consumer_group`, so two groups are two rows with two
+independent `position` values. The work was to *formalize* it: a `-group` flag on
+the consumer (`just consume group=…`) so I can run several groups side by side over
+one log. `Register` → `UpsertCursor(group)` lazily creates a group's cursor at
+`position = 0` (the column default), so a **brand-new group starts at the earliest
+retained offset and replays forward** without touching any other group. The "lag"
+health metric is `head − position` per group: `max(id) FROM message_log` minus each
+cursor (now a `just lag` recipe). There's no real tradeoff here — fan-out is pure
+upside *paid for in advance* by Phase 4's decision to retain the log; this phase
+just spends it.
+
+The other structural change that made the lab work: `ProcessV2` became `Process`
+with a real **poll loop** (a `time.Ticker`, `claim → process → advance` each tick,
+`ctx.Done()` to stop). Phase 4 was single-shot — fine for a one-pass replay demo,
+useless for "slow consumer A keeps falling behind while B stays current," which
+needs both to poll continuously. `Claim` is the extracted per-batch body.
+
+**The aha:** fan-out is *free because of a decision made two chapters earlier*.
+Deleting on consume (Phase 1) made the message's processed-state a property of the
+*message* — one shared bit, so the first consumer to finish ends it for everyone.
+Retaining the log + moving processed-state into a per-consumer *cursor* (Phase 4)
+made it a property of the *reader*. Same events, N independent readers. The cursor
+being per-consumer is the whole unlock; nothing in Phase 5 is new mechanism, it's
+just running the Phase 4 primitive more than once.
+
+### Explain it back
+
+**1. Why is fan-out structurally impossible in the Phase 1–3 design?**
+
+Because consumption *mutates or destroys shared message state*. In Phase 1 consume =
+`DELETE`; in Phase 2–3 consume = `UPDATE status='done'` on the one row. Either way
+"has this been processed?" is a single bit attached to the message itself, not to
+any consumer — a one-to-one mapping. The instant one worker finishes, the row is
+gone (or `done`) and every other consumer sees it as handled; there's nowhere to
+record that consumer B still hasn't read it. Fan-out needs one-to-many: the log
+holds the facts immutably and each consumer carries its *own* position. That's
+exactly the Phase 4 split — independent `cursors` rows over an append-only log.
+
+**2. Operational risk of a permanently-slow consumer group once retention (Phase 9)
+exists?**
+
+It's consumer lag taken to the failure case: its `position` falls so far behind that
+retention deletes log rows *the group hasn't read yet* — the data is dropped out from
+under the cursor. On the next read the cursor points below the oldest surviving
+offset, so those messages are gone for that group, never processed, with no error at
+claim time (the `WHERE id > position` read just returns the surviving tail). This is
+Kafka's "consumer fell off the retention window." The defense is operational, not
+structural: monitor `head − position` (the `just lag` metric) and alarm before lag
+approaches the retention horizon — retention and the slowest consumer's lag are in a
+race, and you have to guarantee retention wins by a margin.
+
+### Done
+
+- `-group` flag on the consumer harness + `just consume group=…`; `NewWorkConsumer`
+  takes the group through to `Register`/`ClaimMessagesV2`/`MoveCursor`, so each group
+  is an independent cursor over the shared `message_log`.
+- `Process` is now a poll loop (`time.Ticker` on `PollRate`, `ctx.Done()` to stop);
+  `Claim` holds the per-batch claim→process→advance. `ProcessV2` rename is complete,
+  no stale refs.
+- `just lag` recipe: `head − position` per group — the reproducible health metric the
+  lab watches diverge.
+- Lab: a new group registered mid-run starts at offset 0 and catches up without
+  affecting others; slowing group A with `-processorsleep` makes its lag climb while
+  group B stays near 0. Independent consumption confirmed.
+- Build + vet green on `./pkg/...` and the Phase 5 harness.
+
+### Decisions
+
+- **Naming drift accepted (again).** The plan's Phase 5 talks `events`/`consumers`;
+  I'm still on Phase 4's `message_log`/`cursors`/`position`. Same shapes, different
+  names — noted so a future reader maps the plan's terms to mine.
+- **One consumer per group in this phase — so `MoveCursor` stays non-monotonic
+  (`SET position = $1`), and that's still safe.** Correcting my Phase 4 forecast: I
+  said the `GREATEST(position, $1)` guard would be needed "once Phase 5 puts
+  concurrent advances on a shared cursor." It doesn't — fan-out is *different groups
+  on different cursors*, one consumer each, so advances on any one cursor are still
+  strictly ascending. Concurrent advances on a *shared* cursor only appear when
+  multiple workers compete *within* a group (the sharded-lanes / claim-from-log work
+  in Phase 6.5). That's where `GREATEST` actually lands — deferred to there, not here.
+- **Failure semantics unchanged from Phase 4.** A `consumerFunc` error returns up
+  through `Claim`→`Process` and stops the whole poll loop (the cursor model has no
+  per-row failure resolution). I ran the fan-out lab at `fail-rate=0` to keep the
+  focus on independent positions; per-group retry/DLQ is the Phase 6 `deliveries`
+  work, not a Phase 5 gap.
+- **Poll loop ticks before its first claim.** `time.NewTicker(PollRate)` waits one
+  interval before the first tick, so a consumer idles `PollRate` before its first
+  read — acceptable for the lab, and the same pattern as the parked V1 `Poll`. If
+  first-claim latency ever matters, do an immediate claim before entering the loop.
+

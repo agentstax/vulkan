@@ -20,8 +20,8 @@ migrate-down:
 ### TESTING ###
 
 # EX: just consume
-consume processorsleep="0.1" shutdownsleep="1.0" failrate="0.0" crashafter="-1":
-  go run examples/phase_1/consumer/main.go -processor-sleep={{ processorsleep }} -shutdown-sleep={{ shutdownsleep }} -fail-rate={{ failrate }} -crash-after={{ crashafter }}
+consume group="learning.v1" processorsleep="0.1" shutdownsleep="1.0" failrate="0.0" crashafter="-1":
+  go run examples/phase_1/consumer/main.go -group={{ group }} -processor-sleep={{ processorsleep }} -shutdown-sleep={{ shutdownsleep }} -fail-rate={{ failrate }} -crash-after={{ crashafter }}
 
 # EX: just produce 3
 produce count="1":
@@ -34,6 +34,12 @@ peek:
 peek-users:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
     -c "SELECT * FROM users ORDER BY id;"
+
+# Phase 5 health metric: per-group lag = log head − cursor position.
+# Run two groups, slow one with -processorsleep, watch their lags diverge.
+lag:
+  psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
+    -c "SELECT c.consumer_group, c.position, COALESCE((SELECT max(id) FROM message_log), 0) AS head, COALESCE((SELECT max(id) FROM message_log), 0) - c.position AS lag FROM cursors c ORDER BY lag DESC;"
 
 ### DOC SITE (https://vulkan-5ss.pages.dev) ###
 

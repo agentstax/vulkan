@@ -67,8 +67,8 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 3 — Competing consumers | ✅ done | answers in NOTES.md; tag `phase-3` |
 | 3.5 — Throughput / the commit wall | ✅ done | answers in NOTES.md; tag `phase-3.5` |
 | 4 — Log/queue split | ✅ done | `message_log` + per-group cursor; **`ORDER BY id`** is load-bearing (high-water mark must be ordered); answers in NOTES.md; tag `phase-4` |
-| 5 — Fan-out | 🔨 **next** | per-group cursors over one log; lag = head − position |
-| 6 — Synthesis (naive per-row) | ⬜ | `deliveries` row per (group,event); **measure the write-amplification wall** |
+| 5 — Fan-out | ✅ done | `-group` flag → independent `cursors` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
+| 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
 | 6.5 — Claim-from-log refactor | ⬜ | range-claim happy path (no per-event rows) + sparse exception window + leases + waterline + sharding |
 | 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row) |
 | 8 — FIFO partitions | ⬜ | ordering opt-in on the lifecycle path |
@@ -620,16 +620,16 @@ Pulsar (managed ledgers + per-subscription cursors). Retention-by-time is Kafka
 at its own pace.
 
 **Build:**
-- [ ] You already have `consumers.position` keyed by name — so multiple named
+- [x] You already have `consumers.position` keyed by name — so multiple named
       consumers reading the same `events` is *already* fan-out. Formalize it: a
       `consumer_group` concept where each group has an independent position.
-- [ ] Compute **lag**: `(SELECT max("offset") FROM events) - position` per
+- [x] Compute **lag**: `(SELECT max("offset") FROM events) - position` per
       group. This is your health metric.
 
 **Lab:**
-- [ ] Add a new group while the system runs; it starts at the earliest retained
+- [x] Add a new group while the system runs; it starts at the earliest retained
       offset and catches up without affecting the others.
-- [ ] Slow consumer A to a crawl (`--sleep`); consumer B stays current. Watch
+- [x] Slow consumer A to a crawl (`--sleep`); consumer B stays current. Watch
       their lags diverge. Independent consumption confirmed.
 
 **The aha:** fan-out is free *because* you retained the log and made the cursor
@@ -638,9 +638,11 @@ per-consumer. Deleting on consume (Phase 1) made this impossible; retaining
 
 **Explain it back:**
 1. Why is fan-out structurally impossible in the Phase 1–3 design?
+Answer: lifecycle is directly tied to the message log in phase 1-3 meaning it is a one-to-one mapping. Once it is processed by something anything else will also consider it processed. New design is one-to-many
 2. What's the operational risk of a consumer group that's permanently slow,
    once retention (Phase 9) exists? (This is Kafka's "consumer fell off the
    retention window" failure.)
+Answer: This is consumer lag at its extreme. This would mean it risks messages not being processed at all
 
 **Done when:** labs pass, NOTES.md, `git tag phase-5`.
 
