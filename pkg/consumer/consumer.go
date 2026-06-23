@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
-	"github.com/google/uuid"
-	"golang.org/x/sync/errgroup"
 )
 
 // fuck options patterns it always sucks to me
@@ -35,6 +33,7 @@ type WorkConsumerConfig struct {
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
 type WorkConsumer[WorkType any] struct {
+	Group        string
 	Queue        concurrency.Queue[MessageRow]
 	PoolLimiter  concurrency.PoolLimiter
 	Datastore    Datastore[WorkType]
@@ -43,8 +42,9 @@ type WorkConsumer[WorkType any] struct {
 }
 
 // only required params here
-func NewWorkConsumer[WorkType any](queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType]) *WorkConsumer[WorkType] {
+func NewWorkConsumer[WorkType any](group string, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType]) *WorkConsumer[WorkType] {
 	return &WorkConsumer[WorkType]{
+		Group:        group,
 		Queue:        queue,
 		PoolLimiter:  poolLimiter,
 		Datastore:    datastore,
@@ -120,6 +120,14 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	return nil
 }
 
+func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
+	if err := p.Datastore.UpsertCursor(ctx, p.Group); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
 	// fail fast before spawning anything
 	// TODO - this should probably be moved to New() -- but requires rethinking dysfunctional options pattern womp womp
@@ -128,7 +136,7 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 	}
 
 	fmt.Println("consumer starting")
-	errProcess := p.Process(ctx, consumerFunc)
+	errProcess := p.ProcessV2(ctx, consumerFunc)
 	if errors.Is(errProcess, context.Canceled) {
 		errProcess = nil // requested shutdown, not a failure per say
 	}
@@ -140,176 +148,200 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 	return errors.Join(errProcess, errShutdown)
 }
 
-func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
-	// nested errorgroup from consume, will bubble up
-	g, ctx := errgroup.WithContext(ctx)
+func (p *WorkConsumer[WorkType]) ProcessV2(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+	messages, err := p.Datastore.ClaimMessagesV2(ctx, p.Group, p.Config.BatchLimit)
+	if err != nil {
+		return err
+	}
 
-	// on shutdown the Prefetch and Dispatch loops stop pulling new work immediately
-	// the wg lets already-dispatched in-flight work drain / finish first
-	var wg sync.WaitGroup
-
-	// loop to feed queue with claimed / batched work
-	g.Go(func() error {
-		return p.Prefetch(ctx)
-	})
-
-	// create threads per work based on concurrency and available permits
-	g.Go(func() error {
-		return p.Dispatch(ctx, &wg, consumerFunc)
-	})
-
-	// block / wait for error (bubbles up)
-	errWg := g.Wait()
-	// wait for all dispatched in-flight work to complete before moving forward and triggering shutdown
-	// because the consumerFunc can ignore context timeout cancellations we need a separate process tracking shutdown timeout
-	// which allows shutdown to move forward after shutdown timeout has been reached even if their is still in-flight work
-	p.Drain(&wg)
-
-	return errWg
-}
-
-func (p *WorkConsumer[WorkType]) Prefetch(ctx context.Context) error {
-	// threshold must be >= BatchLimit so a full claimed batch always has room and
-	// EnQueue never blocks mid-batch.
-	// TODO - make sure is validated if they differ at some point
-	threshold := p.Config.BatchLimit
-
-	// forever loop feeding claimed work into pressure queue (assumes a singleton)
-	for {
-		// recursive block until cap - len of queue >= fetch threshold
-		// TODO - should have dedicated debounce timeout field not PollRate
-		batchSize, err := p.Queue.WaitForRoom(ctx, p.Config.PollRate, threshold)
-		if err != nil {
+	for _, message := range messages {
+		var work WorkType
+		if err := json.Unmarshal(message.Payload, &work); err != nil {
 			return err
 		}
-		if batchSize == 0 {
-			continue // immediately get back into blocking WaitForRoom
+
+		if err := consumerFunc(ctx, &work); err != nil {
+			return err
 		}
 
-		// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
-		leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
-		// b/c of concurrency batchSize could be > BatchLimit
-		limit := min(batchSize, p.Config.BatchLimit)
-		// claim batch of work from datastore
-		messages, err := p.Datastore.ClaimMessages(ctx, limit, leaseDuration)
-		if err != nil {
-			// ctx cancellation is a real shutdown -> propagate and stop
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-			// db network blips should be retried
-			// TODO - eventually add backoff with jitter to not spam a down DB or cause thundering herd from all consumers on db liveliness startup
-			if err := SleepWithContext(ctx, p.Config.PollRate); err != nil {
-				return err
-			}
-			continue
+		if err := p.Datastore.MoveCursor(ctx, p.Group, message.Id); err != nil {
+			return err
 		}
-		if len(messages) == 0 {
-			// no claimable work, wait for a bit before trying to claim to not spam cpu / db with loop checks
-			// TODO - eventually add jitter to not cauase thundering herd from all consumers attempting to claim from db at same time
-			if err := SleepWithContext(ctx, p.Config.PollRate); err != nil {
-				return err
-			}
-			continue
-		}
-
-		for _, message := range messages {
-			if err := p.Queue.EnQueue(ctx, &message); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (p *WorkConsumer[WorkType]) Dispatch(ctx context.Context, wg *sync.WaitGroup, consumerFunc ConsumerFunc[WorkType]) error {
-	for {
-		threadId, err := uuid.NewV7()
-		if err != nil {
-			return err // something is very wrong if this happens
-		}
-
-		// blocking - waits till can get permit
-		err = p.PoolLimiter.AcquirePermit(ctx, threadId.String())
-		if err != nil {
-			return err // context is likely cancel or shutdown in this case
-		}
-
-		// blocking - waits till can dequeue
-		messageRow, err := p.Queue.DeQueue(ctx)
-		if err != nil {
-			p.PoolLimiter.ReleasePermit(ctx, threadId.String())
-			continue
-		}
-
-		// dispatch gothread for work, in flight work limited by concurrency pool limit
-		wg.Go(func() {
-			defer p.PoolLimiter.ReleasePermit(ctx, threadId.String())
-
-			if err := p.ProcessClaim(ctx, messageRow, consumerFunc); err != nil {
-				// TODO - decide how claim processing errors should be handled
-				// should likely give user an easy way to extend this functionality
-				// for not just print
-				fmt.Printf("process claim error: %v\n", err)
-				return
-			}
-		})
-	}
-}
-
-func (p *WorkConsumer[WorkType]) ProcessClaim(ctx context.Context, messageRow *MessageRow, consumerFunc ConsumerFunc[WorkType]) error {
-	// because claimed work could sit in pressure queue forever if processors take that long
-	// we need to check that lease has enough time left for full WorkTimeout
-	// otherwise force a reclaim so other workers (or same) can quickly pick back up work
-	if messageRow.LeaseUntil.Before(time.Now().Add(p.Config.WorkTimeout).Add(p.Config.AckMargin)) {
-		return p.Datastore.ForceReclaim(ctx, messageRow)
-	}
-
-	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
-	// instead attempt to finish inflight requests bounded by timeout
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.WorkTimeout)
-	defer cancel()
-
-	var message WorkType
-	if err := json.Unmarshal(messageRow.Payload, &message); err != nil {
-		// a bad payload is likely to never be retried successfully
-		if recordError := p.Datastore.RecordTerminal(ctx, messageRow, err); recordError != nil {
-			if errors.Is(recordError, ErrLeaseLost) {
-				return nil // a lease lost means it was claimed by a new worker, don't burn an attempt let new owner do it
-			}
-
-			return recordError // TODO - should collect error into []error and continue to allow rest of batch to attempt to finish first
-		}
-
-		return err
-	}
-
-	if err := consumerFunc(ctx, &message); err != nil {
-		// TODO - consider adding a debug field which logs this error if true
-
-		// actual processing error -> should retry till exhaust
-		if recordError := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, messageRow, err); recordError != nil {
-			if errors.Is(recordError, ErrLeaseLost) {
-				return nil // a lease lost means it was claimed by a new worker, don't burn an attempt let new owner do it
-			}
-
-			return recordError // TODO - should collect error into []error and continue to allow rest of batch to attempt to finish first
-		}
-
-		return err
-	}
-
-	// if reach here processing successful for message
-	// TODO - consider adding a debug field which logs this success if true
-	if recordError := p.Datastore.RecordSuccess(ctx, messageRow); recordError != nil {
-		if errors.Is(recordError, ErrLeaseLost) {
-			return nil // a lease lost means it was claimed by a new worker, don't burn an attempt let new owner do it
-		}
-
-		return recordError // TODO - should collect error into []error and continue to allow rest of batch to attempt to finish first
 	}
 
 	return nil
 }
+
+// func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+// 	// nested errorgroup from consume, will bubble up
+// 	g, ctx := errgroup.WithContext(ctx)
+
+// 	// on shutdown the Prefetch and Dispatch loops stop pulling new work immediately
+// 	// the wg lets already-dispatched in-flight work drain / finish first
+// 	var wg sync.WaitGroup
+
+// 	// loop to feed queue with claimed / batched work
+// 	g.Go(func() error {
+// 		return p.Prefetch(ctx)
+// 	})
+
+// 	// create threads per work based on concurrency and available permits
+// 	g.Go(func() error {
+// 		return p.Dispatch(ctx, &wg, consumerFunc)
+// 	})
+
+// 	// block / wait for error (bubbles up)
+// 	errWg := g.Wait()
+// 	// wait for all dispatched in-flight work to complete before moving forward and triggering shutdown
+// 	// because the consumerFunc can ignore context timeout cancellations we need a separate process tracking shutdown timeout
+// 	// which allows shutdown to move forward after shutdown timeout has been reached even if their is still in-flight work
+// 	p.Drain(&wg)
+
+// 	return errWg
+// }
+
+// func (p *WorkConsumer[WorkType]) Prefetch(ctx context.Context) error {
+// 	// threshold must be >= BatchLimit so a full claimed batch always has room and
+// 	// EnQueue never blocks mid-batch.
+// 	// TODO - make sure is validated if they differ at some point
+// 	threshold := p.Config.BatchLimit
+
+// 	// forever loop feeding claimed work into pressure queue (assumes a singleton)
+// 	for {
+// 		// recursive block until cap - len of queue >= fetch threshold
+// 		// TODO - should have dedicated debounce timeout field not PollRate
+// 		batchSize, err := p.Queue.WaitForRoom(ctx, p.Config.PollRate, threshold)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		if batchSize == 0 {
+// 			continue // immediately get back into blocking WaitForRoom
+// 		}
+
+// 		// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
+// 		leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
+// 		// b/c of concurrency batchSize could be > BatchLimit
+// 		limit := min(batchSize, p.Config.BatchLimit)
+// 		// claim batch of work from datastore
+// 		messages, err := p.Datastore.ClaimMessages(ctx, limit, leaseDuration)
+// 		if err != nil {
+// 			// ctx cancellation is a real shutdown -> propagate and stop
+// 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+// 				return err
+// 			}
+// 			// db network blips should be retried
+// 			// TODO - eventually add backoff with jitter to not spam a down DB or cause thundering herd from all consumers on db liveliness startup
+// 			if err := SleepWithContext(ctx, p.Config.PollRate); err != nil {
+// 				return err
+// 			}
+// 			continue
+// 		}
+// 		if len(messages) == 0 {
+// 			// no claimable work, wait for a bit before trying to claim to not spam cpu / db with loop checks
+// 			// TODO - eventually add jitter to not cauase thundering herd from all consumers attempting to claim from db at same time
+// 			if err := SleepWithContext(ctx, p.Config.PollRate); err != nil {
+// 				return err
+// 			}
+// 			continue
+// 		}
+
+// 		for _, message := range messages {
+// 			if err := p.Queue.EnQueue(ctx, &message); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	}
+// }
+
+// func (p *WorkConsumer[WorkType]) Dispatch(ctx context.Context, wg *sync.WaitGroup, consumerFunc ConsumerFunc[WorkType]) error {
+// 	for {
+// 		threadId, err := uuid.NewV7()
+// 		if err != nil {
+// 			return err // something is very wrong if this happens
+// 		}
+
+// 		// blocking - waits till can get permit
+// 		err = p.PoolLimiter.AcquirePermit(ctx, threadId.String())
+// 		if err != nil {
+// 			return err // context is likely cancel or shutdown in this case
+// 		}
+
+// 		// blocking - waits till can dequeue
+// 		messageRow, err := p.Queue.DeQueue(ctx)
+// 		if err != nil {
+// 			p.PoolLimiter.ReleasePermit(ctx, threadId.String())
+// 			continue
+// 		}
+
+// 		// dispatch gothread for work, in flight work limited by concurrency pool limit
+// 		wg.Go(func() {
+// 			defer p.PoolLimiter.ReleasePermit(ctx, threadId.String())
+
+// 			if err := p.ProcessClaim(ctx, messageRow, consumerFunc); err != nil {
+// 				// TODO - decide how claim processing errors should be handled
+// 				// should likely give user an easy way to extend this functionality
+// 				// for not just print
+// 				fmt.Printf("process claim error: %v\n", err)
+// 				return
+// 			}
+// 		})
+// 	}
+// }
+
+// func (p *WorkConsumer[WorkType]) ProcessClaim(ctx context.Context, messageRow *MessageRow, consumerFunc ConsumerFunc[WorkType]) error {
+// 	// because claimed work could sit in pressure queue forever if processors take that long
+// 	// we need to check that lease has enough time left for full WorkTimeout
+// 	// otherwise force a reclaim so other workers (or same) can quickly pick back up work
+// 	if messageRow.LeaseUntil.Before(time.Now().Add(p.Config.WorkTimeout).Add(p.Config.AckMargin)) {
+// 		return p.Datastore.ForceReclaim(ctx, messageRow)
+// 	}
+
+// 	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
+// 	// instead attempt to finish inflight requests bounded by timeout
+// 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.WorkTimeout)
+// 	defer cancel()
+
+// 	var message WorkType
+// 	if err := json.Unmarshal(messageRow.Payload, &message); err != nil {
+// 		// a bad payload is likely to never be retried successfully
+// 		if recordError := p.Datastore.RecordTerminal(ctx, messageRow, err); recordError != nil {
+// 			if errors.Is(recordError, ErrLeaseLost) {
+// 				return nil // a lease lost means it was claimed by a new worker, don't burn an attempt let new owner do it
+// 			}
+
+// 			return recordError // TODO - should collect error into []error and continue to allow rest of batch to attempt to finish first
+// 		}
+
+// 		return err
+// 	}
+
+// 	if err := consumerFunc(ctx, &message); err != nil {
+// 		// TODO - consider adding a debug field which logs this error if true
+
+// 		// actual processing error -> should retry till exhaust
+// 		if recordError := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, messageRow, err); recordError != nil {
+// 			if errors.Is(recordError, ErrLeaseLost) {
+// 				return nil // a lease lost means it was claimed by a new worker, don't burn an attempt let new owner do it
+// 			}
+
+// 			return recordError // TODO - should collect error into []error and continue to allow rest of batch to attempt to finish first
+// 		}
+
+// 		return err
+// 	}
+
+// 	// if reach here processing successful for message
+// 	// TODO - consider adding a debug field which logs this success if true
+// 	if recordError := p.Datastore.RecordSuccess(ctx, messageRow); recordError != nil {
+// 		if errors.Is(recordError, ErrLeaseLost) {
+// 			return nil // a lease lost means it was claimed by a new worker, don't burn an attempt let new owner do it
+// 		}
+
+// 		return recordError // TODO - should collect error into []error and continue to allow rest of batch to attempt to finish first
+// 	}
+
+// 	return nil
+// }
 
 func (p *WorkConsumer[WorkType]) Drain(wg *sync.WaitGroup) {
 	doneSignal := make(chan struct{})

@@ -8,6 +8,9 @@ database-up:
 database-down:
   docker-compose -f ./scripts/database/docker-compose.yaml down
 
+database-delete:
+  docker-compose -f ./scripts/database/docker-compose.yaml down -v
+
 migrate-up:
   migrate -source file:./migrations -database postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable up
 

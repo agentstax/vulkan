@@ -533,3 +533,102 @@ also archive *relocates* rather than purely vanishing.
 - **batch-ack measurement** — skipped (user's call). It's measure-only anyway; the
   cursor model (Phase 4) is its limit case, so the bridge is understood, not built.
 
+---
+
+## Phase 4 — The log/queue split: retention + replay
+
+**What it does, and the tradeoff:** stop deleting on consume. The data splits in
+two: `message_log` (append-only — `id BIGSERIAL`, `payload`, `created_at`; rows are
+never mutated or deleted) and `cursors` (`consumer_group`, `position`) — one
+high-water mark per group. Claiming stops being an `UPDATE` that mutates row state
+and becomes a pure read: `SELECT * FROM message_log WHERE id > position ORDER BY id
+LIMIT N`. After processing, the consumer advances its cursor (`MoveCursor`). The
+whole Phase 2/3 lifecycle machine — `status`, `attempts`, `lease_*`, `Record*`,
+reclaim — falls off the hot path; the migration drops those columns (old lifecycle
+migrations parked in `migrations/old/`). The tradeoff: I gain free retention and
+replay, but I lose per-row resolution — the cursor is a single integer, so I can no
+longer say "message 5 failed but 6,7,8 are done." A failure can only stop the
+cursor, not punch a hole in it.
+
+**The aha:** the cursor is a **high-water mark**, and "high-water mark" is
+load-bearing — it only works if it advances *monotonically over an ordered log*.
+This bare cursor read *is* the claim-from-log happy path the whole platform rides
+on. Drop the ordering and the abstraction silently breaks (see the correction
+below) — that's the lesson the phase is really teaching.
+
+### Explain it back
+
+**1. What can a cursor not express that per-row status could?**
+
+Per-row lifecycle. With one integer I can't represent "5 failed, 6/7/8 succeeded" —
+a hole in the middle. On a failure my only moves are *stop* (leave the cursor before
+the bad row and retry it forever — head-of-line block) or *skip* (advance past it
+and lose it). Per-row `status`/`attempts`/`dead` could mark exactly that one row
+failed while its neighbours finished. That hole is the tension Phases 6–6.5 resolve
+with a sparse exception side-table.
+
+**2. Why does replay cost nothing?**
+
+Reading position is decoupled from the data, and the log is append-only, so any
+position is valid — replay is just `UPDATE cursors SET position = 0` (or to a
+timestamp's offset) and the consumer re-reads history. Phase 1 could never do this:
+it *deleted* on consume, so there was no history to replay. Replay is free because I
+stopped destroying the thing I'd want to replay.
+
+**3. Crash after processing, before the cursor update?**
+
+On restart the cursor still points before that message, so it's claimed and
+processed again → at-least-once. Same contract as Phase 2's lease, now enforced by
+*ordering* (process-then-advance) instead of a lease: everything at or below the
+cursor is durably done, so the consumerFunc must stay idempotent.
+
+*Correction — the real Phase 4 lesson (caught in review):* my first cut of
+`ClaimMessagesV2` had `WHERE id > $1 LIMIT $2` with **no `ORDER BY`**. SQL guarantees
+no row order without `ORDER BY`, so `LIMIT` returns an *arbitrary* N rows — and since
+`ProcessV2` advances the cursor to each returned `id`, the high-water mark can jump
+*past* unread offsets and silently drop them forever (cursor=0, ids 1–5, limit 2
+returns {4,5} → cursor=5 → 1,2,3 gone). It passed casual testing only because a small
+table happens to get a forward PK index scan — coincidence, not a guarantee. The fix,
+and the whole point of the phase, is `ORDER BY id`: a high-water mark is only correct
+over an *ordered* claim. (My dead V1 claim already had `ORDER BY id`; V2 had regressed
+it.)
+
+### Done
+
+- Migration `001_messages` now defines `message_log(id BIGSERIAL pk, payload jsonb,
+  created_at)` — append-only, no status columns. `002_cursors(consumer_group pk,
+  position bigint default 0)`. Old lifecycle migrations (`003_lifecycle`, claim
+  indexes) moved to `migrations/old/`.
+- `ClaimMessagesV2`: one transaction — `SELECT position … FOR UPDATE` (errors loudly
+  via `pgx.ErrNoRows` if the group was never registered), then `SELECT * … WHERE id >
+  position ORDER BY id LIMIT N`, **drain rows (`CollectRows`) before commit** (a pgx
+  conn can't commit while a result set is still streaming — "conn busy"). `ProcessV2`:
+  process each message, then `MoveCursor` to its id.
+- Lab: a fresh consumer registered at position 0 replays history independently of
+  other groups (size `BatchLimit` to cover the log); `git diff phase-3..HEAD` shows
+  the lifecycle machine deleted from the hot path and per-row failure resolution lost.
+- Build + vet green on `./pkg/...` after the `ORDER BY` fix.
+
+### Decisions
+
+- **Per-message cursor advance (vs once-per-batch to `$last`).** I advance after
+  *each* message, not once at the end. Costs N updates per batch but gives a tighter
+  at-least-once checkpoint — a crash mid-batch only reprocesses from the last
+  committed message, not the whole batch. Correct as long as the batch is ordered
+  (which `ORDER BY id` now guarantees). The plan's "UPDATE position = $last" is the
+  cheaper variant; I chose granularity over round-trips on purpose.
+- **`MoveCursor` left as `SET position = $1` (not `GREATEST`).** With an ordered
+  claim + one consumer per group, advances are strictly ascending, so monotonicity
+  holds without a guard, and the bare `UPDATE` keeps the `RowsAffected()==0 ⇒
+  unregistered group` check working. The `GREATEST(position, $1)` monotonic guard
+  becomes necessary once Phase 5 puts concurrent advances on a shared cursor —
+  deferred to there.
+- **`FOR UPDATE` on the cursor only serializes concurrent *claims*, not the
+  process→advance window** (the txn commits before processing). Fine for Phase 4's
+  one-consumer-per-cursor model; real cross-consumer exclusion is the lease /
+  exception-window work in Phase 6+.
+- **Lease machinery kept but dormant.** V1 `ClaimMessages`, `backoff`, `ErrLeaseLost`
+  and the commented `Record*` blocks stay as reference for when leases return in
+  Phase 6.5 (`backoff` shows as an unused-function lint — intentional). They reference
+  dropped columns, so they're parked, not live; delete or revive them at Phase 6.5.
+

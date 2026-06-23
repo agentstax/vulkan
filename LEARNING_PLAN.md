@@ -19,6 +19,41 @@ Target capabilities:
 
 ---
 
+## Reference implementation (check your work — don't read ahead)
+
+A complete, tested reference of this plan's **end-state** lives in
+[`reference/waterline/`](reference/waterline/): the hybrid managed-cursor
+("waterline") design — an append-only `events` log + a sparse `deliveries`
+exception window + per-(group, lane) cursors, with routing, FIFO partitions, and
+log compaction implemented and benchmarked. It is a runnable, adversarially-
+reviewed **answer key**, not a substitute for building it yourself: peeking before
+you've done a phase's lab and Explain-it-back defeats the point. Use it to *check*
+your design after each phase, and to see how the pieces compose at the end.
+
+- Run it / read the design notes: [`reference/waterline/README.md`](reference/waterline/README.md)
+- Throughput vs. the SQL targets (and the honest caveats): [`reference/waterline/BENCH_RESULTS.md`](reference/waterline/BENCH_RESULTS.md)
+- The six correctness invariants it must hold: [`bench/scale/waterline_design_v2_hybrid.md`](bench/scale/waterline_design_v2_hybrid.md)
+
+| Phase | Compare your work against (in `reference/waterline/`) |
+|---|---|
+| 1–2 lifecycle | `deliveries` + `ClaimExceptions`/`Ack`/`Nack`/`DeadLetter` (`pglog.go`) |
+| 1.5 txn enqueue | `AppendTx` (`append.go`) |
+| 3 / 3.5 commit wall | `AckBatch` (the batch-ack lever); `BENCH_RESULTS.md` measures the fsync wall |
+| 4 log/queue split | `events` + `cursors`; replay = reset the cursor |
+| 5 fan-out | independent `cursors` rows per group |
+| 6 lifecycle-on-log (naive per-row) | the `deliveries`-row-per-(group,event) model — what you measure the write-amplification wall on |
+| 6.5 claim-from-log refactor | `pglog.go` `Claim`/`Commit` (range-claim, no per-event rows) + sparse `deliveries` exception window + `leases` + `Advance` waterline + `sharding.go` lanes |
+| 7 routing | `routing.go` — NATS topic regex + header JSONB `@>` |
+| 8 FIFO partitions | `partitions.go` — at-most-one-in-flight-per-key, FIFO-through-retry |
+| 9 retention/compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe |
+
+One honest delta between this plan and the reference, worth knowing before you
+compare: a group is **either** a cursor/happy-path consumer **or** a
+FIFO/`deliveries` consumer, not both at once (the reference enforces this; the plan
+builds them as separate modes in Phases 6.5 and 8).
+
+---
+
 ## Status board
 
 Update this as you go. One line per phase; the current phase gets the detail.
@@ -29,14 +64,15 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 1 — Durable atom | ✅ done | tagged `phase-1` |
 | 1.5 — Transactional enqueue | ✅ done | answers in NOTES.md; tag `phase-1.5` |
 | 2 — Lifecycle | ✅ done | answers in NOTES.md; tag `phase-2` |
-| 3 — Competing consumers | 🔨 **next** | dispatcher + lease-aware buffer + worker pool; ⚠️ batching already leaked into Phase 1 code — see trap T1 |
-| 3.5 — Throughput / the commit wall | ⬜ | measure ceiling + `synchronous_commit` (the portable lever); batch-ack→cursor bridge; archive→P9, sharding→P8/P6 |
-| 4 — Log/queue split | ⬜ | |
-| 5 — Fan-out | ⬜ | |
-| 6 — Synthesis | ⬜ | |
-| 7 — Routing | ⬜ | |
-| 8 — FIFO partitions | ⬜ | |
-| 9 — Operational layer | ⬜ | |
+| 3 — Competing consumers | ✅ done | answers in NOTES.md; tag `phase-3` |
+| 3.5 — Throughput / the commit wall | ✅ done | answers in NOTES.md; tag `phase-3.5` |
+| 4 — Log/queue split | ✅ done | `message_log` + per-group cursor; **`ORDER BY id`** is load-bearing (high-water mark must be ordered); answers in NOTES.md; tag `phase-4` |
+| 5 — Fan-out | 🔨 **next** | per-group cursors over one log; lag = head − position |
+| 6 — Synthesis (naive per-row) | ⬜ | `deliveries` row per (group,event); **measure the write-amplification wall** |
+| 6.5 — Claim-from-log refactor | ⬜ | range-claim happy path (no per-event rows) + sparse exception window + leases + waterline + sharding |
+| 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row) |
+| 8 — FIFO partitions | ⬜ | ordering opt-in on the lifecycle path |
+| 9 — Operational layer | ⬜ | retention, compaction, observability |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -101,13 +137,27 @@ every later phase, and in Phase 9 they're how you exercise the metrics.
 - [x] Stack: Go + Postgres (docker-compose locally, Railway Postgres available).
 - [x] Migration tool: `golang-migrate`, driven by `justfile` recipes — you'll
       evolve the schema ~8 times, so migrations are part of the discipline.
-- [x] Internalize the end-state **two-table split** you'll arrive at gradually:
+- [x] Internalize the end-state you'll arrive at in two moves. The destination is
+      a **claim-from-log** platform, not a row-per-message one:
   - `events` — immutable, append-only **log** (retention, replay, routing,
-    partitions live here)
-  - `deliveries` — mutable, per-(consumer, message) **lifecycle** state
-    (ack/retry/dead-letter live here)
-- [x] Don't build the split yet. Start with one table and split it at Phase 4 —
-      feeling *why* the split is necessary is the lesson.
+    partitions live here). Never deleted on consume.
+  - the **happy path is a CURSOR that claims ranges straight from the log** — in
+    the steady state there is *no* per-message row at all. A group's progress is
+    two integers per lane: `claimed` (read frontier) and `committed` (the
+    waterline — every offset at/below it is resolved).
+  - `deliveries` — a **sparse exception window**: a row exists *only* for a
+    message that fell off the happy path (retry / dead-letter / out-of-order).
+    Per-message lifecycle (ack/retry/DLQ) lives here, for the small exceptional
+    fraction — not for every message.
+  - `leases` — a crash-safe reservation of an in-flight claimed range, so a
+    crashed worker's range is reclaimable.
+- [x] You reach this in two moves, and **the refactor between them is the lesson**:
+      first the *naive* split where EVERY (group, message) gets a `deliveries` row
+      (Phase 6) — then you measure its write-amplification wall and **refactor to
+      claim-from-log** (Phase 6.5), where the cursor carries the happy path and
+      `deliveries` shrinks to just the exceptions.
+- [x] Don't build any of it yet. Start with one table and split it at Phase 4 —
+      feeling *why* each split is necessary is the point.
 
 **Mental model to hold:** a **log** is "messages are facts you retain and re-read
 at a cursor"; a **queue** is "messages are work you claim and consume." Every
@@ -116,7 +166,7 @@ fusion.
 
 ---
 
-## Phase 1 — The durable atom: append + atomic claim 🔨
+## Phase 1 — The durable atom: append + atomic claim ✅
 
 **Concept:** durability + exactly-one-worker-gets-each-message, the irreducible
 core of any queue.
@@ -332,7 +382,7 @@ delayed redelivery.
 
 ---
 
-## Phase 3 — Competing consumers & batching
+## Phase 3 — Competing consumers & batching 🔨
 
 **Concept:** scale throughput by adding workers without double-processing, and
 amortize round-trips. The shape: **one dispatcher batch-claims into a bounded,
@@ -376,7 +426,7 @@ is the honest simpler choice — record why you picked what you picked.
       *individually*. One bad message no longer poisons the batch. Write down in
       NOTES.md why the Phase 1 batch failure-domain problem dissolved.
 - [x] Add the **critical index**: a partial index
-      `CREATE INDEX ON message_log (can_run_after) WHERE status='ready'`. Without
+      `CREATE INDEX ON message_log (run_at) WHERE status='ready'`. Without
       it the claim table-scans as terminal rows accumulate.
       **Caveat from the Phase 2 fold-in:** the claim also matches
       `status='processing' AND locked_at < ...`, so a `WHERE status='ready'`-only
@@ -519,36 +569,42 @@ the mutable record of who's processed it. This is the Kafka model, and the
 foundation for everything after.
 
 **Build (the big refactor):**
-- [ ] `events("offset" bigserial pk, topic text, payload jsonb, created_at)` —
+- [x] `events("offset" bigserial pk, topic text, payload jsonb, created_at)` —
       append-only, **never deleted on consume**. `offset` is the position.
       (Quoting note: `offset` is a reserved word in SQL — quote it or name the
       column `position`/`log_offset`.)
-- [ ] `consumers(name text pk, position bigint)` — one cursor per consumer.
-- [ ] A consumer reads
+- [x] `consumers(name text pk, position bigint)` — one cursor per consumer.
+- [x] A consumer reads
       `SELECT * FROM events WHERE "offset" > $position ORDER BY "offset" LIMIT N`,
       processes, then `UPDATE consumers SET position = $last`.
-- [ ] **Replay** = `UPDATE consumers SET position = 0` (or to a timestamp's
+- [x] **Replay** = `UPDATE consumers SET position = 0` (or to a timestamp's
       offset). Re-reads history.
 
 **Lab:**
-- [ ] Point a brand-new consumer at offset 0 and watch it replay the entire
+- [x] Point a brand-new consumer at offset 0 and watch it replay the entire
       history independently of other consumers. That's the superpower Kafka has
       and RabbitMQ structurally cannot.
-- [ ] `git diff phase-3..HEAD` — read your own refactor. Which code got
+- [x] `git diff phase-3..HEAD` — read your own refactor. Which code got
       *simpler* (no status machine on the hot path) and what capability got
       *lost*? That diff is the queue↔log tradeoff, in your own code.
 
-**The aha:** the cursor is a **high-water mark** — a single integer. Note what
-you just *lost*: you can no longer say "message 5 failed but 6,7,8 are done."
-That hole is the exact tension you'll resolve in Phase 6. Feel the loss now.
+**The aha:** the cursor is a **high-water mark** — a single integer. This bare
+cursor read *is* the claim-from-log happy path the whole platform is built on;
+everything later either rides it (fan-out, routing) or adds a sparse side-table
+for the cases it can't express. Note what you just *lost*: you can no longer say
+"message 5 failed but 6,7,8 are done." That hole is the exact tension you'll
+resolve in Phases 6–6.5. Feel the loss now.
 
 **Explain it back:**
 1. What exactly can a cursor not express that per-row status could? Give the
    concrete failure scenario.
+Answer: per-row lifecycle. If a row fails you either have to stop / exit OR skip it.
 2. Why does replay cost nothing extra in this design? What Phase 1 decision
    would have made it impossible?
+Answer: because we have decoupled messages from reading position and messages are an append only log, you can freely process from any position in the log just by changing the cursor position. Phase 1 could never do this because we delete messages after processing.
 3. When the consumer crashes *after* processing but *before* the cursor
    update, what happens on restart? What delivery guarantee does that imply?
+Answer: In this case it would retry the already processed message. To that extent this is an at-least-once guarantee
 
 **Done when:** labs pass, NOTES.md, `git tag phase-4`.
 
@@ -593,11 +649,16 @@ subscription is an independent cursor); JetStream **durable consumers**.
 
 ---
 
-## Phase 6 — Reconcile lifecycle + fan-out (the synthesis)
+## Phase 6 — Lifecycle + fan-out: the per-row synthesis (and its wall)
 
 **Concept:** give *each* consumer group per-message lifecycle (Phase 2) over the
-*shared* log (Phase 4). The hard, interesting part — and where Pulsar earns its
-keep.
+*shared* log (Phase 4). The obvious way — the one every "lifecycle on a log"
+system reaches for first — is a `deliveries` row per (group, event). Build that
+here, get the full synthesis working, then **measure the wall it hits**: a row per
+(group, event) is N× write amplification and brings back the claim hotspot. That
+wall is exactly what Phase 6.5 refactors away with claim-from-log. This is the
+plan's "the refactor *is* the lesson" turn — you have to feel the per-row cost to
+understand why the cursor happy path matters.
 
 **Build:**
 - [ ] New table:
@@ -611,18 +672,28 @@ keep.
       keep using a bare cursor (Phase 5). Only lifecycle-needing groups get
       delivery rows. Per stream, choose cursor vs delivery-rows.
 
+*→ Don't peek at the reference yet: `reference/waterline/` implements the
+claim-from-log endpoint you'll refactor toward in Phase 6.5, not the per-row model
+you're building here. Build the per-row synthesis, measure its wall, THEN compare.*
+
 **Lab — the synthesis demo (the one that proves you understand the whole
 problem space):**
 - [ ] Group A dead-letters message 5 (per-group DLQ via
       `WHERE consumer_group='A' AND status='dead'`) while group B processes
       message 5 fine and group C is replaying from offset 0 — all on the same
       log, simultaneously. Script this as a `just` recipe; it's your demo.
+- [ ] **Measure the wall (carry this number into Phase 6.5):** with G lifecycle
+      groups, materialize + drain a few hundred thousand events and record
+      msgs/sec and rows-written. Watch throughput scale *down* as you add groups
+      (the N× write amplification) and as `done` rows pile up (the claim hotspot
+      returns — Phase 3.5 lever 4). This baseline is what claim-from-log has to beat.
 
 **The aha:** you can have retention/replay/fan-out **and** per-message
 ack/retry/DLQ simultaneously — by separating the immutable log from mutable
 per-consumer delivery state. Also feel the cost: delivery rows are N× writes for
 N groups (write amplification). That cost is *why* Kafka punts lifecycle to
-"retry topics" instead.
+"retry topics" instead — and it's why Phase 6.5 stops writing a row per message
+and lets the cursor carry the happy path, paying for a row only on the exceptions.
 
 **Phase 3.5's levers come home here.** `deliveries` is a mutable, claimed,
 status-bearing table again — so the queue-shaped optimizations you deferred apply
@@ -632,20 +703,141 @@ reintroduce the archive concern (lever 3 → archive or partition them, per Phas
 The append-only `events` log never needs either; only the lifecycle layer does.
 
 **Explain it back:**
-1. Draw the end-state architecture from memory: tables, who writes what, who
-   reads what. (This was Phase 0's "destination" — you've now arrived.)
+1. Draw this per-row architecture from memory: tables, who writes what, who reads
+   what. (You've reached the *naive* synthesis — the claim-from-log end-state
+   comes in Phase 6.5.)
 2. Quantify the write amplification: 1000 events, 5 lifecycle groups, 2
    cursor groups — how many rows written?
 3. For a given new stream, how do you decide cursor vs delivery-rows? Name the
    deciding question.
 
-**Done when:** synthesis demo runs from one recipe, NOTES.md,
-`git tag phase-6`. **You've graduated from "queue" to "log+queue platform."**
-Phases 7–9 are polish — stop here if it's enough.
+**Done when:** synthesis demo runs from one recipe AND the write-amplification
+wall is measured with numbers, NOTES.md, `git tag phase-6`. You now have a working
+log+queue platform — but a row-per-message one. **Phase 6.5 is the refactor that
+turns it into claim-from-log; don't stop before it if throughput matters.**
 
 **Real systems:** Pulsar **Shared** subscriptions with individual acks +
 per-subscription DLQ (the canonical "lifecycle on a log"); JetStream
 `AckExplicit`. Kafka's non-answer: separate retry/DLQ topics.
+
+---
+
+## Phase 6.5 — Claim-from-log: escape the per-row wall
+
+**Concept:** Phase 6 wrote a `deliveries` row for *every* (group, message) and
+measured the wall that creates. The fix is to stop doing that. The happy path goes
+back to the **bare cursor of Phase 4–5** — it **claims a contiguous range straight
+from the log** and processes it, writing **no per-message row at all**. You only
+pay for a `deliveries` row when a message *fails* — a **sparse exception window**.
+Two integers per lane carry the happy path (`claimed`, `committed`); the
+exceptional fraction gets the Phase 2 retry/backoff/dead state machine (with
+`processing` renamed `inflight` and the `done` state dropped — success is a
+DELETE). This is the design the reference implements and the benchmark vindicated
+(claim-from-log ran several× the per-row drain).
+
+The pieces you add to the Phase 4–5 cursor:
+- a **lease** per claimed range, so a crash mid-range is recoverable (Phase 2's
+  visibility timeout, but over a *range* instead of a row);
+- a **sparse `deliveries`** table for failures only, with states collapsed to
+  `ready | inflight | dead` (`inflight` is Phase 2's `processing`, renamed) —
+  **no `done`/`acked`**, because *success is a DELETE* (pop-delete), and a success
+  on the happy path never created a row to begin with;
+- a **waterline** (`committed`) pinned just below the **lowest** open lease or
+  unresolved exception on the lane — *head-of-line blocking*: one stuck offset
+  holds the line, so the gap up to `claimed` also contains the already-succeeded
+  offsets above it. Advanced lazily off the hot path.
+
+**Build (the refactor):**
+- [ ] **Evolve the cursor (it's a rename + two adds).** `consumers` → `cursors`;
+      Phase 5's `position` becomes `claimed` (the read frontier) and you add
+      `committed` (the waterline — every offset ≤ it is resolved):
+      `cursors(consumer_group, lane, committed, claimed, block_hi)`. `lane`/
+      `block_hi` are for the sharding escape hatch below (start with one lane,
+      `block_hi` NULL).
+- [ ] **Claim a range, not a row.** In one statement advance the read frontier and
+      capture the window:
+      `UPDATE cursors SET claimed = LEAST(claimed + $batch, head) WHERE … AND
+      claimed < head RETURNING old.claimed AS lo, new.claimed AS hi;` then read
+      `events WHERE "offset" > lo AND "offset" <= hi`. **No per-event row is
+      written.** (`head` = `max("offset")`; PG18 has `old`/`new` in RETURNING. For a
+      *sharded* lane, cap at the lane's frozen `block_hi` instead of `head` — i.e.
+      `LEAST(claimed + $batch, COALESCE(block_hi, head))`.)
+- [ ] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
+      lo, hi, lease_until, lease_token, reclaims)` row at claim time. **Reclaim** =
+      grab one expired lease with `FOR UPDATE SKIP LOCKED` and **rotate its token**
+      (so the original slow worker's later commit becomes a no-op). Workers try
+      Reclaim before Claim, so a crashed range drains first. A batch that keeps
+      *crashing* the worker would be reclaimed forever, so cap it: after N reclaims,
+      **quarantine** the range into the exception window (per-message isolation) —
+      that's what `reclaims` counts.
+- [ ] **Park only the failures.** After processing the range, `Commit` in one
+      transaction: **free the lease first, guarded by your token** — if it's gone
+      (you were reclaimed), park *nothing* and bail; only if you still held it do
+      you `INSERT` a `deliveries` row (`state='ready'`) for each *failed* offset.
+      Successes vanish — they were never rows.
+- [ ] **Exception drain = pop-delete.** A separate worker claims `ready`
+      exceptions → `inflight` (`SKIP LOCKED`, fold in expired-`inflight` reclaim
+      like Phase 2), runs the Phase 2 state machine, and on success **DELETEs the
+      row** (no `done` state). Exhausted retries → `dead` (the per-group DLQ).
+- [ ] **Advance the waterline (lazily).** A roller sets
+      `committed = GREATEST(committed, LEAST(min open-lease lo, min unresolved-
+      exception offset − 1, claimed))` per lane. `dead` rows do **not** block.
+      This is off the hot path — staleness only delays GC, never breaks correctness.
+- [ ] **(Escape hatch) shard one hot group into lanes.** A single group's frontier
+      is one `cursors` row; concurrent workers contend on it. Give the group **K
+      lanes**, each owning a **frozen, contiguous block** of the log (`block_hi`),
+      and define `Watermark` = the contiguous waterline across lanes (the committed
+      of the first lane not yet at its `block_hi`). Keep K=1 until a group is
+      *provably* frontier-bound — don't shard speculatively.
+
+**Lab:**
+- [ ] **Beat the Phase 6 baseline.** Re-run the Phase 6 throughput lab against the
+      claim-from-log path on the same backlog. Record the ratio — you're looking
+      for the several-× the benchmark saw, *and* for `deliveries` staying near-empty
+      (only failures wrote rows).
+- [ ] **Crash mid-range, recover.** `--crash-after` inside a claimed range; confirm
+      no exception rows were written, the lease expires, **Reclaim re-reads the
+      exact range** and reprocesses it (at-least-once → idempotent processing).
+- [ ] **Watch the waterline lag and catch up.** With one failing message in a
+      range, watch `committed` pin just below it while `claimed` runs ahead; let the
+      exception reach `dead` and watch `committed` jump past it to the head.
+- [ ] **(Optional) sharding.** One hot group, single lane vs K lanes; plot the
+      frontier throughput. Confirm `Watermark` reaches head only when *all* lanes
+      drain their blocks.
+
+**The aha:** the cursor was the happy path all along (Phase 4); Phase 6's per-row
+table was the detour. By writing a row **only on failure**, you pay the lifecycle
+cost for the ~1% that needs it and let a single integer (`committed`) speak for the
+99% that just worked. The gap `(committed, claimed]` is everything at or above the
+lowest unresolved offset — head-of-line blocking — which is exactly why one hot
+lane can stall and why the escape hatch shards it into independent lanes.
+
+**Explain it back:**
+1. Phase 6 wrote one row per (group, message); this phase writes a row only on
+   failure. Where, exactly, did the write amplification go — and what now carries
+   the "this offset succeeded" fact instead of a row?
+2. What do `claimed` and `committed` each mean, and what sits in the gap
+   `(committed, claimed]` (hint: not only the failed/in-flight work)? What makes
+   `committed` advance?
+3. A worker crashes mid-range. Walk the recovery. Why must `Commit` free the lease
+   *before* parking exceptions, and why does the reclaimer rotate the lease token?
+4. Why is there no `done`/`acked` state? When a happy-path message succeeds, what
+   row changes?
+5. When would you shard a single group into lanes, and what does that trade away?
+   Why is striping by `offset % K` the wrong way to do it?
+
+**Done when:** claim-from-log throughput beats the Phase 6 per-row baseline (with
+numbers), and crash-reclaim + the pop-delete exception drain + the lazy waterline
+are each demonstrated, NOTES.md, `git tag phase-6.5`. **Now** compare your design
+to `reference/waterline/` (`pglog.go` Claim/Reclaim/Commit/Advance,
+`sharding.go`): note the six correctness invariants in
+`bench/scale/waterline_design_v2_hybrid.md` it had to fix — stale-token commits,
+lane-scoped Advance, crash-loop dead-lettering — and check yours against them.
+
+**Real systems:** Kafka **offset commit** (one integer per poll — the cursor — is
+the "ultimate batched ack" from Phase 3.5); SQS **visibility timeout** (the lease,
+over a message; here over a range); Pulsar managed cursors. The sparse exception
+table is the principled version of Kafka's "retry topic."
 
 ---
 
@@ -655,18 +847,35 @@ per-subscription DLQ (the canonical "lifecycle on a log"); JetStream
 bindings decide who receives.
 
 **Build:**
-- [ ] `events` already has `topic`; add `routing_key text` and use the
-      `headers`/`payload` JSONB.
-- [ ] `bindings(consumer_group text, pattern text)`. Fan-out (Phase 6) consults
-      bindings: only create a `deliveries` row for groups whose binding matches.
+- [ ] `events` already has `topic`; add `routing_key text` and
+      `headers jsonb not null default '{}'`. (The reference keeps `headers`
+      *separate* from `payload` so routing can match on metadata without parsing
+      the body — that's the column the header matcher below reads.)
+- [ ] `bindings(consumer_group text, kind text, pattern text, header_match jsonb)`
+      — one table for both matcher styles (`kind='topic'` uses `pattern`,
+      `kind='header'` uses `header_match`). Routing is a **predicate evaluated at
+      read/fan-out time**, and it lands differently in the two models:
+  - *Per-row (Phase 6):* it gates row creation — only materialize a `deliveries`
+    row for groups whose binding matches.
+  - *Claim-from-log (Phase 6.5):* the cursor still advances over the **whole** log
+    (so `committed` stays a dense frontier), but the range read is **filtered** to
+    matching events — a non-matching offset is "resolved" with no work and no
+    exception row. A binding added *after* events exist therefore only affects
+    offsets at/above the group's current frontier; replay to route history.
 - [ ] Implement two matchers to learn the two styles: **topic**
       (`routing_key ~ pattern`, with `*`/`>`-style wildcards) and
       **header/content** (`headers @> '{...}'` JSONB containment).
 
+*→ Reference (after you've built it): `reference/waterline/routing.go` — see
+`natsToRegex` for the `*`/`>` → POSIX-regex translation, and `readRange` in
+`pglog.go` for how the binding predicate is pushed into the read so a no-binding
+group matches all. Watch the foot-gun it guards: a `{}` header match would match
+every event.*
+
 **Lab:**
-- [ ] Publish `orders.eu.created`; a group bound to `orders.*.created` gets a
-      delivery row, one bound to `orders.us.>` does not. Routing works without
-      the producer knowing any consumer exists.
+- [ ] Publish `orders.eu.created`; a group bound to `orders.*.created` receives it,
+      one bound to `orders.us.>` does not. Routing works without the producer
+      knowing any consumer exists.
 
 **The aha:** routing is just a predicate evaluated at fan-out time. RabbitMQ's
 "exchanges" are this; the flexibility lives in the matcher.
@@ -689,12 +898,25 @@ bindings decide who receives.
 
 **Build:**
 - [ ] Add `partition_key text` to `events` (nullable = no ordering).
-- [ ] **Cursor consumers:** order within a partition by reading a partition with
-      a single reader in `offset` order.
+- [ ] **Decide which path carries ordering.** The bare claim-from-log happy path
+      (Phase 6.5) is *unordered* under concurrent workers — it hands out contiguous
+      ranges in parallel, so two workers can process two offsets of the same key at
+      once. FIFO is therefore an **opt-in on the lifecycle path**: a keyed stream
+      materializes `deliveries` rows and drains them with the keyed claim below;
+      unordered, max-throughput streams stay on the bare cursor.
+- [ ] **Cursor consumers (the trivial case):** a *single* reader in `offset` order
+      already gives per-partition order — the K=1 happy path. Keeping order under
+      *many* workers is the interesting case, and it needs the keyed claim below.
 - [ ] **Lifecycle (delivery) consumers:** enforce "at most one in-flight per
       key" — claim with a predicate that **skips rows whose `partition_key`
       already has an in-flight delivery in this group**. Null key → no
       constraint, full concurrency.
+
+*→ Reference (after you've built it): `reference/waterline/partitions.go` —
+`ClaimPartitioned` is the keyed claim. Note the extra subtlety it solves that this
+phase's Explain-it-back asks about: to keep order **through a retry**, only the
+lowest unresolved offset of a key is eligible, so a backed-off head blocks its
+later offsets (and a dead head stops blocking).*
 
 **Lab:**
 - [ ] Messages with `partition_key='acct-42'` always process in order even under
@@ -740,16 +962,28 @@ consumers); SQS FIFO **MessageGroupId**.
       a mass `DELETE`. **This is the real home of Phase 3.5's deferred lever 3
       (archive terminal rows):** in the log model "don't let the table rot" is a
       time-based retention/partition-drop, not a mid-stream archive — same concern,
-      correct mechanism for the topology. (Archiving *done* `deliveries` rows is the
-      one place the original archive idea still applies.)
+      correct mechanism for the topology. (In the *per-row* Phase 6 model, `done`
+      `deliveries` rows accumulate and are the one place the original archive idea
+      still applies; after the Phase 6.5 refactor the exception window self-cleans —
+      success is a DELETE — so only `dead` DLQ rows persist and need a retention
+      policy of their own.)
 - [ ] Optionally implement **log compaction** (keep only the latest event per
       `partition_key`) to see Kafka's compacted-topic idea.
-- [ ] **Observability:** expose queue depth (`ready` count), lag per group, DLQ
-      size, oldest unacked age. These four numbers are how you operate any queue.
+- [ ] **Observability:** expose backlog/lag per group (`head − committed`, the
+      waterline gap), the `ready` exception count (retry depth), DLQ size (`dead`
+      count), and oldest-unacked age. These four numbers are how you operate any
+      queue.
 - [ ] **Latency (optional):** add `LISTEN/NOTIFY` so producers wake idle workers
       instead of relying on poll interval, with a fallback poll for missed
       notifies and delayed (`run_at`) messages. Knowing *why* you keep the
       fallback poll (NOTIFY is fire-and-forget, lost if no listener) is the lesson.
+
+*→ Reference (after you've built it): `reference/waterline/compaction.go` —
+`Compact`/`CompactSafe` implement keep-latest-per-`partition_key` with tombstones,
+and a watermark-safe floor so compaction never drops a value a consumer hasn't
+passed (nor an event a live/dead `deliveries` row still references). Retention by
+partition-drop and the four observability numbers (lag = `head − committed`, DLQ
+size, ready count, oldest unacked) are left for you to add.*
 
 **Lab:**
 - [ ] Drop a retention partition and confirm consumers past that point are
@@ -776,8 +1010,8 @@ monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
 
 ## How to use this
 
-- **Do the phases in order.** Resist jumping to Phase 6. Each checkpoint is a
-  concept you can't skip.
+- **Do the phases in order.** Resist jumping to the synthesis (Phases 6–6.5).
+  Each checkpoint is a concept you can't skip.
 - **The labs are the learning.** Reading the aha is not the same as watching
   two workers not collide. If you skipped a lab, the phase isn't done.
 - **Explain-it-back is the retention mechanism.** Answer from memory. Wrong or
@@ -785,8 +1019,8 @@ monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
 - **Tag every phase.** The diffs between tags are a record of *why* each
   refactor happened — that's the document your future self wants.
 - **Stop when it's enough.** Phases 1–3 alone are a production-grade job queue.
-  Phases 4–6 are where you graduate from "queue" to "log+queue platform."
-  7–9 are polish.
-- **The meta-lesson:** by Phase 6 you'll understand *in your hands* why Kafka,
+  Phases 4–6 graduate you from "queue" to "log+queue platform"; Phase 6.5
+  (claim-from-log) is the throughput payoff that makes it scale. 7–9 are polish.
+- **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.

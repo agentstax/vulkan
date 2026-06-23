@@ -51,16 +51,6 @@ func main() {
 				return nil, err
 			}
 
-			// test for transactional enqueue
-			sql := `
-				INSERT INTO users (username)
-				VALUES ($1);
-			`
-			_, err = tx.Exec(ctx, sql, work.Email)
-			if err != nil {
-				return nil, err
-			}
-
 			return work, nil
 		})
 		if err != nil {

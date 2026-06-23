@@ -64,8 +64,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	workConsumer := consumer.NewWorkConsumer[common.Work](pressureQueue, workerPoolLimiter, datastore)
-	workConsumer.WithBatchLimit(1).WithMaxAttempts(3).WithPollRate(1 * time.Second).WithWorkTimeout(5 * time.Second).WithQueueTimeout(2 * time.Second).WithAckMargin(1 * time.Second)
+	workConsumer := consumer.NewWorkConsumer[common.Work]("learning.v1", pressureQueue, workerPoolLimiter, datastore)
+	workConsumer.WithBatchLimit(10).WithMaxAttempts(3).WithPollRate(1 * time.Second).WithWorkTimeout(5 * time.Second).WithQueueTimeout(2 * time.Second).WithAckMargin(1 * time.Second)
 	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err
@@ -76,6 +76,11 @@ func main() {
 
 		return nil
 	}).WithShutdownTimeout(10 * time.Second)
+
+	if err := workConsumer.Register(ctx); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
 
 	// WORK
 	var attempts atomic.Int64

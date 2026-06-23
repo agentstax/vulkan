@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,24 +20,27 @@ var (
 )
 
 type Datastore[Message any] interface {
-	ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
-	ForceReclaim(ctx context.Context, messageRow *MessageRow) error
-	RecordSuccess(ctx context.Context, messageRow *MessageRow) error
-	RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error
-	RecordTerminal(ctx context.Context, messageRow *MessageRow, failureErr error) error
+	UpsertCursor(ctx context.Context, consumerGroup string) error
+	MoveCursor(ctx context.Context, consumerGroup string, position int64) error
+	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
+	ClaimMessagesV2(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error)
+	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
+	// RecordSuccess(ctx context.Context, messageRow *MessageRow) error
+	// RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error
+	// RecordTerminal(ctx context.Context, messageRow *MessageRow, failureErr error) error
 	Shutdown(ctx context.Context) error
 }
 
 type MessageRow struct {
-	Id          int64           `db:"id"`
-	Payload     json.RawMessage `db:"payload"`
-	Status      string          `db:"status"`
-	Attempts    int             `db:"attempts"`
-	CanRunAfter time.Time       `db:"can_run_after"`
-	LeaseUntil  *time.Time      `db:"lease_until"` // nullable
-	LeaseToken  pgtype.UUID     `db:"lease_token"` // nullable
-	LastError   *string         `db:"last_error"`  // nullable
-	CreatedAt   time.Time       `db:"created_at"`
+	Id      int64           `db:"id"`
+	Payload json.RawMessage `db:"payload"`
+	// Status      string          `db:"status"`
+	// Attempts    int             `db:"attempts"`
+	// CanRunAfter time.Time       `db:"can_run_after"`
+	// LeaseUntil  *time.Time      `db:"lease_until"` // nullable
+	// LeaseToken  pgtype.UUID     `db:"lease_token"` // nullable
+	// LastError   *string         `db:"last_error"`  // nullable
+	CreatedAt time.Time `db:"created_at"`
 }
 
 type PostgresConnectionParams struct {
@@ -79,6 +81,90 @@ func NewPostgresDatastore[Message any](ctx context.Context, params *PostgresConn
 	}, nil
 }
 
+func (d *PostgresDatastore[Message]) UpsertCursor(ctx context.Context, consumerGroup string) error {
+	sql := `
+		INSERT INTO cursors (consumer_group)
+		VALUES ($1)
+		ON CONFLICT DO NOTHING;
+	`
+
+	_, err := d.Pool.Exec(ctx, sql, consumerGroup)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *PostgresDatastore[Message]) MoveCursor(ctx context.Context, consumerGroup string, position int64) error {
+	sql := `
+		UPDATE cursors
+		SET
+			position = $1
+		WHERE
+			consumer_group = $2;
+	`
+
+	tag, err := d.Pool.Exec(ctx, sql, position, consumerGroup)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("no cursor registered for group %s", consumerGroup)
+	}
+
+	return nil
+}
+
+func (d *PostgresDatastore[Message]) ClaimMessagesV2(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error) {
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	cursorSql := `
+		SELECT position FROM cursors
+		WHERE consumer_group = $1
+		FOR UPDATE -- don't allow cursor position to update while in claiming transaction
+	`
+
+	var pos int64
+	if err := tx.QueryRow(ctx, cursorSql, consumerGroup).Scan(&pos); err != nil {
+		// either consumer was not registered or cursor was deleted somehow
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("no cursor registered for group %s", consumerGroup)
+		}
+
+		return nil, err
+	}
+
+	claimSql := `
+		SELECT * FROM message_log
+		WHERE id > $1
+		ORDER BY id -- the cursor is a high-water mark: rows MUST come back in offset
+		            -- order or LIMIT returns an arbitrary subset and the cursor can
+		            -- advance past unread offsets (silent message loss).
+		LIMIT $2;
+	`
+
+	rows, err := tx.Query(ctx, claimSql, pos, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	msgs, err := pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return msgs, nil
+}
+
 func (d *PostgresDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
 	// FOR UPDATE SKIP LOCKED makes the sub select query safe for update ie other consumers in group cannot select while being updated:
 	sql := `
@@ -107,120 +193,120 @@ func (d *PostgresDatastore[Message]) ClaimMessages(ctx context.Context, limit in
 	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
 }
 
-func (d *PostgresDatastore[Message]) ForceReclaim(ctx context.Context, messageRow *MessageRow) error {
-	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
-	defer cancel()
+// func (d *PostgresDatastore[Message]) ForceReclaim(ctx context.Context, messageRow *MessageRow) error {
+// 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
+// 	defer cancel()
 
-	sql := `
-		UPDATE message_log
-		SET 
-			status = 'ready',
-			lease_until = NULL,
-			lease_token = NULL,
-			last_error = NULL,
-			attempts = attempts - 1,    -- undo the claim-time increment; this was never run
-			can_run_after = now()
-		WHERE id = $1
-			AND lease_token = $2;
-	`
+// 	sql := `
+// 		UPDATE message_log
+// 		SET
+// 			status = 'ready',
+// 			lease_until = NULL,
+// 			lease_token = NULL,
+// 			last_error = NULL,
+// 			attempts = attempts - 1,    -- undo the claim-time increment; this was never run
+// 			can_run_after = now()
+// 		WHERE id = $1
+// 			AND lease_token = $2;
+// 	`
 
-	_, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken)
-	if err != nil {
-		return err
-	}
+// 	_, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-func (d *PostgresDatastore[Message]) RecordSuccess(ctx context.Context, messageRow *MessageRow) error {
-	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
-	defer cancel()
+// func (d *PostgresDatastore[Message]) RecordSuccess(ctx context.Context, messageRow *MessageRow) error {
+// 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
+// 	defer cancel()
 
-	sql := `
-		UPDATE message_log
-		SET 
-			status = 'done',
-			lease_until = NULL,
-			lease_token = NULL,
-			last_error = NULL
-		WHERE id = $1
-			AND lease_token = $2;
-	`
+// 	sql := `
+// 		UPDATE message_log
+// 		SET
+// 			status = 'done',
+// 			lease_until = NULL,
+// 			lease_token = NULL,
+// 			last_error = NULL
+// 		WHERE id = $1
+// 			AND lease_token = $2;
+// 	`
 
-	tags, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken)
-	if err != nil {
-		return err
-	}
-	// this should only happen if the lease_token no longer is valid
-	// ie it was claimed by another worker or said another way the leased expired
-	if tags.RowsAffected() == 0 {
-		return ErrLeaseLost
-	}
+// 	tags, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	// this should only happen if the lease_token no longer is valid
+// 	// ie it was claimed by another worker or said another way the leased expired
+// 	if tags.RowsAffected() == 0 {
+// 		return ErrLeaseLost
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-func (d *PostgresDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error {
-	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
-	defer cancel()
+// func (d *PostgresDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error {
+// 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
+// 	defer cancel()
 
-	if messageRow.Attempts >= maxAttempts {
-		// terminal failure, no more retries
-		return d.RecordTerminal(ctx, messageRow, failureErr)
-	} else {
-		// non terminal failure, should retry after backoff
-		sql := `
-			UPDATE message_log
-			SET 
-				status = 'ready',
-				lease_until = NULL,
-				lease_token = NULL,
-				last_error = $3,
-				can_run_after = now() + make_interval(secs => $4)
-			WHERE id = $1
-				AND lease_token = $2;
-		`
+// 	if messageRow.Attempts >= maxAttempts {
+// 		// terminal failure, no more retries
+// 		return d.RecordTerminal(ctx, messageRow, failureErr)
+// 	} else {
+// 		// non terminal failure, should retry after backoff
+// 		sql := `
+// 			UPDATE message_log
+// 			SET
+// 				status = 'ready',
+// 				lease_until = NULL,
+// 				lease_token = NULL,
+// 				last_error = $3,
+// 				can_run_after = now() + make_interval(secs => $4)
+// 			WHERE id = $1
+// 				AND lease_token = $2;
+// 		`
 
-		tags, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken, failureErr.Error(), backoff(messageRow.Attempts).Seconds())
-		if err != nil {
-			return err
-		}
-		// this should only happen if the lease_token no longer is valid
-		// ie it was claimed by another worker or said another way the leased expired
-		if tags.RowsAffected() == 0 {
-			return ErrLeaseLost
-		}
-		return nil
-	}
-}
+// 		tags, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken, failureErr.Error(), backoff(messageRow.Attempts).Seconds())
+// 		if err != nil {
+// 			return err
+// 		}
+// 		// this should only happen if the lease_token no longer is valid
+// 		// ie it was claimed by another worker or said another way the leased expired
+// 		if tags.RowsAffected() == 0 {
+// 			return ErrLeaseLost
+// 		}
+// 		return nil
+// 	}
+// }
 
-func (d *PostgresDatastore[Message]) RecordTerminal(ctx context.Context, messageRow *MessageRow, terminalErr error) error {
-	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
-	defer cancel()
+// func (d *PostgresDatastore[Message]) RecordTerminal(ctx context.Context, messageRow *MessageRow, terminalErr error) error {
+// 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
+// 	defer cancel()
 
-	// terminal failure, no more retries
-	sql := `
-		UPDATE message_log
-		SET 
-			status = 'dead',
-			lease_until = NULL,
-			lease_token = NULL,
-			last_error = $3
-		WHERE id = $1
-			AND lease_token = $2;
-	`
+// 	// terminal failure, no more retries
+// 	sql := `
+// 		UPDATE message_log
+// 		SET
+// 			status = 'dead',
+// 			lease_until = NULL,
+// 			lease_token = NULL,
+// 			last_error = $3
+// 		WHERE id = $1
+// 			AND lease_token = $2;
+// 	`
 
-	tags, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken, terminalErr.Error())
-	if err != nil {
-		return err
-	}
-	// this should only happen if the lease_token no longer is valid
-	// ie it was claimed by another worker or said another way the leased expired
-	if tags.RowsAffected() == 0 {
-		return ErrLeaseLost
-	}
-	return nil
-}
+// 	tags, err := d.Pool.Exec(ctx, sql, messageRow.Id, messageRow.LeaseToken, terminalErr.Error())
+// 	if err != nil {
+// 		return err
+// 	}
+// 	// this should only happen if the lease_token no longer is valid
+// 	// ie it was claimed by another worker or said another way the leased expired
+// 	if tags.RowsAffected() == 0 {
+// 		return ErrLeaseLost
+// 	}
+// 	return nil
+// }
 
 // TODO - backoff should be overrideable func from consumer definition
 func backoff(attempts int) time.Duration {
