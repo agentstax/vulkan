@@ -2,6 +2,11 @@ package consumer
 
 import "time"
 
+func (c *WorkConsumer[WorkType]) WithType(consumerType ConsumerType) *WorkConsumer[WorkType] {
+	c.Config.Type = consumerType
+	return c
+}
+
 func (c *WorkConsumer[WorkType]) WithBatchLimit(batchLimit int) *WorkConsumer[WorkType] {
 	c.Config.BatchLimit = batchLimit
 	return c

@@ -663,14 +663,14 @@ plan's "the refactor *is* the lesson" turn — you have to feel the per-row cost
 understand why the cursor happy path matters.
 
 **Build:**
-- [ ] New table:
+- [x] New table:
       `deliveries(consumer_group text, event_offset bigint, status, attempts, locked_at, last_error, PRIMARY KEY(consumer_group, event_offset))`.
-- [ ] A "fan-out" step (a projector per group, or a lazy insert) materializes a
+- [x] A "fan-out" step (a projector per group, or a lazy insert) materializes a
       `deliveries` row per (group, event) as events arrive.
-- [ ] Each group now claims *its own* delivery rows with `SKIP LOCKED` + the
+- [x] Each group now claims *its own* delivery rows with `SKIP LOCKED` + the
       Phase 2 state machine. The `events` log stays immutable; lifecycle lives
       entirely in `deliveries`.
-- [ ] Keep a cheap path: broadcast/replay consumers that don't need lifecycle
+- [x] Keep a cheap path: broadcast/replay consumers that don't need lifecycle
       keep using a bare cursor (Phase 5). Only lifecycle-needing groups get
       delivery rows. Per stream, choose cursor vs delivery-rows.
 
@@ -680,11 +680,7 @@ you're building here. Build the per-row synthesis, measure its wall, THEN compar
 
 **Lab — the synthesis demo (the one that proves you understand the whole
 problem space):**
-- [ ] Group A dead-letters message 5 (per-group DLQ via
-      `WHERE consumer_group='A' AND status='dead'`) while group B processes
-      message 5 fine and group C is replaying from offset 0 — all on the same
-      log, simultaneously. Script this as a `just` recipe; it's your demo.
-- [ ] **Measure the wall (carry this number into Phase 6.5):** with G lifecycle
+- [x] **Measure the wall (carry this number into Phase 6.5):** with G lifecycle
       groups, materialize + drain a few hundred thousand events and record
       msgs/sec and rows-written. Watch throughput scale *down* as you add groups
       (the N× write amplification) and as `done` rows pile up (the claim hotspot
@@ -737,104 +733,257 @@ exceptional fraction gets the Phase 2 retry/backoff/dead state machine (with
 DELETE). This is the design the reference implements and the benchmark vindicated
 (claim-from-log ran several× the per-row drain).
 
-The pieces you add to the Phase 4–5 cursor:
-- a **lease** per claimed range, so a crash mid-range is recoverable (Phase 2's
-  visibility timeout, but over a *range* instead of a row);
-- a **sparse `deliveries`** table for failures only, with states collapsed to
-  `ready | inflight | dead` (`inflight` is Phase 2's `processing`, renamed) —
-  **no `done`/`acked`**, because *success is a DELETE* (pop-delete), and a success
-  on the happy path never created a row to begin with;
-- a **waterline** (`committed`) pinned just below the **lowest** open lease or
-  unresolved exception on the lane — *head-of-line blocking*: one stuck offset
-  holds the line, so the gap up to `claimed` also contains the already-succeeded
-  offsets above it. Advanced lazily off the hot path.
+This is the densest refactor in the plan, so it's split into **four movements** —
+each adds exactly one new survivable failure, ends in its own watchable lab, and
+gets its own `git tag`:
 
-**Build (the refactor):**
-- [ ] **Evolve the cursor (it's a rename + two adds).** `consumers` → `cursors`;
+- **6.5a — the happy path.** Claim a range, write no row, beat the baseline.
+  (No crashes, no failures yet.)
+- **6.5b — lease the range.** Survive a worker *crash* mid-range: reclaim and
+  re-read the exact range.
+- **6.5c — the exception window.** Survive a message *failure*: park only the
+  failures, drain them pop-delete.
+- **6.5d — shard the hot lane (escape hatch, optional).** Survive a group being
+  *frontier-bound*: split it into independent lanes.
+
+The spine through all four is the **waterline**, `committed`, and it grows exactly
+one term per movement: in 6.5a it just trails `claimed`; 6.5b pins it below the
+lowest **open lease**; 6.5c also below the lowest **unresolved exception**; 6.5d
+makes that pin **lane-scoped** and defines the contiguous `Watermark` across lanes.
+Watching that one formula accrete is the through-line of the phase.
+
+*Schema for all four movements:* `cursors(consumer_group, lane, committed,
+claimed, block_hi)` (Phase 5's `consumers`/`position` renamed and extended;
+`lane`/`block_hi` lie dormant until 6.5d — start with one lane, `block_hi` NULL);
+a `leases` table (6.5b); a **sparse** `deliveries` collapsed to
+`ready | inflight | dead` (6.5c).
+
+---
+
+### 6.5a — Claim-from-log: the happy path
+
+**Concept:** the cursor was the happy path all along. With one worker and no
+failures you never write a delivery row — a contiguous range is claimed,
+processed, and the waterline trails right behind it. This movement alone delivers
+the headline throughput result; everything after it is about surviving what goes
+wrong.
+
+**Build:**
+- [x] **Evolve the cursor (a rename + two adds).** `consumers` → `cursors`;
       Phase 5's `position` becomes `claimed` (the read frontier) and you add
       `committed` (the waterline — every offset ≤ it is resolved):
-      `cursors(consumer_group, lane, committed, claimed, block_hi)`. `lane`/
-      `block_hi` are for the sharding escape hatch below (start with one lane,
-      `block_hi` NULL).
-- [ ] **Claim a range, not a row.** In one statement advance the read frontier and
+      `cursors(consumer_group, lane, committed, claimed, block_hi)`. Start with one
+      lane, `block_hi` NULL (those two columns wake up in 6.5d).
+- [x] **Claim a range, not a row.** In one statement advance the read frontier and
       capture the window:
       `UPDATE cursors SET claimed = LEAST(claimed + $batch, head) WHERE … AND
       claimed < head RETURNING old.claimed AS lo, new.claimed AS hi;` then read
       `events WHERE "offset" > lo AND "offset" <= hi`. **No per-event row is
-      written.** (`head` = `max("offset")`; PG18 has `old`/`new` in RETURNING. For a
-      *sharded* lane, cap at the lane's frozen `block_hi` instead of `head` — i.e.
-      `LEAST(claimed + $batch, COALESCE(block_hi, head))`.)
-- [ ] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
-      lo, hi, lease_until, lease_token, reclaims)` row at claim time. **Reclaim** =
-      grab one expired lease with `FOR UPDATE SKIP LOCKED` and **rotate its token**
-      (so the original slow worker's later commit becomes a no-op). Workers try
-      Reclaim before Claim, so a crashed range drains first. A batch that keeps
-      *crashing* the worker would be reclaimed forever, so cap it: after N reclaims,
-      **quarantine** the range into the exception window (per-message isolation) —
-      that's what `reclaims` counts.
-- [ ] **Park only the failures.** After processing the range, `Commit` in one
-      transaction: **free the lease first, guarded by your token** — if it's gone
-      (you were reclaimed), park *nothing* and bail; only if you still held it do
-      you `INSERT` a `deliveries` row (`state='ready'`) for each *failed* offset.
-      Successes vanish — they were never rows.
-- [ ] **Exception drain = pop-delete.** A separate worker claims `ready`
-      exceptions → `inflight` (`SKIP LOCKED`, fold in expired-`inflight` reclaim
-      like Phase 2), runs the Phase 2 state machine, and on success **DELETEs the
-      row** (no `done` state). Exhausted retries → `dead` (the per-group DLQ).
-- [ ] **Advance the waterline (lazily).** A roller sets
-      `committed = GREATEST(committed, LEAST(min open-lease lo, min unresolved-
-      exception offset − 1, claimed))` per lane. `dead` rows do **not** block.
-      This is off the hot path — staleness only delays GC, never breaks correctness.
-- [ ] **(Escape hatch) shard one hot group into lanes.** A single group's frontier
-      is one `cursors` row; concurrent workers contend on it. Give the group **K
-      lanes**, each owning a **frozen, contiguous block** of the log (`block_hi`),
-      and define `Watermark` = the contiguous waterline across lanes (the committed
-      of the first lane not yet at its `block_hi`). Keep K=1 until a group is
-      *provably* frontier-bound — don't shard speculatively.
+      written.** (`head` = `max("offset")`; PG18 has `old`/`new` in RETURNING.)
+- [x] **Advance the waterline (inline, for now).** With one synchronous worker and
+      no failures, set `committed = hi` once the batch is processed. (6.5b/6.5c turn
+      this into a lazy roller pinned below the lowest blocker — there are none yet.)
 
 **Lab:**
-- [ ] **Beat the Phase 6 baseline.** Re-run the Phase 6 throughput lab against the
-      claim-from-log path on the same backlog. Record the ratio — you're looking
-      for the several-× the benchmark saw, *and* for `deliveries` staying near-empty
-      (only failures wrote rows).
+- [x] **Beat the Phase 6 baseline.** Re-run the Phase 6 throughput lab against the
+      claim-from-log path on the same backlog, **at fail-rate 0**. Record the ratio
+      — you're looking for the several-× the benchmark saw, *and* for `deliveries`
+      staying **empty** (the happy path wrote no rows).
+
+**Explain it back:**
+1. Phase 6 wrote one row per (group, message); this movement writes none. Where,
+   exactly, did the write amplification go — and what now carries the "this offset
+   succeeded" fact instead of a row?
+Answer: The cursor now carries the successfull messages via the committed waterline. Anything past this waterline can be considered in a terminal state.
+2. What do `claimed` and `committed` each mean, and — in this single-worker,
+   no-failure happy path — how do they relate? (The gap between them only opens in
+   6.5b/6.5c; you'll revisit what lives in it there.)
+Answer: Anything before committed is considered in a terminal state (success only right now). Anything between committed and claimed can be considered 'in-flight'. And anything past claimed can be considered 'waiting'.
+
+**Done when:** claim-from-log beats the Phase 6 per-row baseline on the same
+backlog (with numbers) and `deliveries` stayed empty, NOTES.md,
+`git tag phase-6.5a`.
+
+*→ Reference (after you've built it): `reference/waterline/pglog.go` — `Claim` (the
+`reserve` CTE with `old`/`new` RETURNING) and `readRange`. Ignore the lease INSERT
+and routing predicate for now; they belong to 6.5b and Phase 7.*
+
+---
+
+### 6.5b — Lease the range: crash recovery
+
+**Concept:** the 6.5a happy path has a hole — a worker that crashes *after*
+claiming a range but *before* finishing leaves those offsets claimed-but-
+unprocessed, with nothing to reprocess them and a waterline that would falsely sail
+past. The fix is a **lease** per claimed range: Phase 2's visibility timeout, but
+over a *range* instead of a row. A crash now leaves an expired lease another worker
+reclaims and re-reads.
+
+**Build:**
+- [ ] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
+      lo, hi, lease_until, lease_token, reclaims)` row at claim time, in the **same
+      transaction** as the `claimed` advance.
+- [ ] **Reclaim before Claim.** Workers try **Reclaim** first: grab one expired
+      lease with `FOR UPDATE SKIP LOCKED` and **rotate its token** (so the original
+      slow worker's later commit becomes a no-op), then re-read the exact range. A
+      crashed range therefore drains before new work.
+- [ ] **Pin the waterline below open leases.** `committed`'s advance gains its first
+      real blocker: `committed = GREATEST(committed, LEAST(min open-lease lo,
+      claimed))`. Now the gap `(committed, claimed]` holds the in-flight ranges.
+      Make this a **lazy** roller off the hot path — staleness only delays GC.
+
+*(The poison-batch cap — a range whose processing keeps **crashing the worker**
+would be reclaimed forever — needs somewhere to quarantine those offsets, so it's
+deferred to 6.5c where the exception window gives them a home. `reclaims` counts
+toward it here.)*
+
+**Lab:**
 - [ ] **Crash mid-range, recover.** `--crash-after` inside a claimed range; confirm
-      no exception rows were written, the lease expires, **Reclaim re-reads the
+      **no exception rows were written**, the lease expires, **Reclaim re-reads the
       exact range** and reprocesses it (at-least-once → idempotent processing).
-- [ ] **Watch the waterline lag and catch up.** With one failing message in a
-      range, watch `committed` pin just below it while `claimed` runs ahead; let the
-      exception reach `dead` and watch `committed` jump past it to the head.
+      Watch `committed` stay pinned at the range's `lo` until the reclaim completes.
+
+**Explain it back:**
+1. A worker crashes mid-range. Walk the recovery step by step. Why does the
+   reclaimer **rotate** the lease token, and what goes wrong if it merely refreshes
+   `lease_until`?
+2. What does an open lease do to `committed`, and why must it — what breaks in 6.5a
+   if the waterline advances past an in-flight range?
+
+**Done when:** a mid-range crash is reclaimed and reprocessed with no lost or
+duplicated *effect*, `deliveries` still empty, NOTES.md, `git tag phase-6.5b`.
+Must hold **R5**: Reclaim is one atomic `FOR UPDATE SKIP LOCKED` + token rotation,
+so a stale worker can't free a live lease.
+
+*→ Reference: `reference/waterline/pglog.go` — `Reclaim` (note the single-statement
+token rotation and `reclaims` counter) and the `leases` INSERT inside `Claim`.*
+
+---
+
+### 6.5c — The exception window: park only failures
+
+**Concept:** so far every offset either succeeds or gets reprocessed wholesale. Now
+handle a message that *fails* (bad payload, downstream error) without dragging its
+whole range down. After processing a range, **park only the failed offsets** as
+sparse `deliveries` rows; the successes vanish (they were never rows). Parked rows
+get the Phase 2 retry/backoff/dead machine — collapsed to `ready | inflight | dead`,
+because *success is a DELETE* (pop-delete), so there's no `done`/`acked` state.
+
+**Build:**
+- [ ] **Sparse `deliveries`, three states.** `ready | inflight | dead` (`inflight`
+      is Phase 2's `processing`, renamed; **no `done`**). A row exists only for a
+      failed offset; `dead` is the per-group DLQ, retained below the line.
+- [ ] **Commit: free the lease first, then park.** In one transaction, **free the
+      lease guarded by your token** — if it's gone (you were reclaimed), park
+      *nothing* and bail; only if you still held it do you `INSERT` a `deliveries`
+      row (`state='ready'`) per failed offset. Use `ON CONFLICT DO UPDATE` so a
+      re-park advances `attempts` toward `dead` (never `DO NOTHING`, which freezes
+      attempts), and never clobbers a leased or already-`dead` row.
+- [ ] **Exception drain = pop-delete.** A separate worker claims `ready` exceptions
+      → `inflight` (`SKIP LOCKED`), folding in expired-`inflight` reclaim (a crashed
+      exception worker, like Phase 2). Run the Phase 2 machine: on success **DELETE
+      the row** (no `done`); exhausted retries → `dead`. A process-crashing poison
+      row can't reach user-code Nack, so reap expired-`inflight`-at-max-attempts to
+      `dead` *without* user code (the crash-loop backstop).
+- [ ] **Quarantine the poison batch (from 6.5b).** Wire 6.5b's reclaim cap: after N
+      reclaims, a happy-path range that keeps crashing the worker is parked into
+      this window (per-message isolation), where the crash-loop backstop
+      dead-letters the actual poison.
+- [ ] **Waterline gains its second term.** `committed = GREATEST(committed,
+      LEAST(min open-lease lo, min unresolved-exception offset − 1, claimed))`.
+      `dead` rows do **not** block. Still lazy, still off the hot path.
+
+**Lab:**
+- [ ] **Watch the waterline lag and catch up.** With one failing message in a range,
+      watch `committed` pin just below it while `claimed` runs ahead; let the
+      exception exhaust its retries to `dead` and watch `committed` jump past it to
+      the head. Confirm `deliveries` holds only the failed offset(s), never
+      successes.
+
+**Explain it back:**
+1. Why must `Commit` free the lease **before** parking exceptions (and check it
+   still owns it)? What does a slow/reclaimed worker inject if it parks first?
+2. Why is there no `done`/`acked` state? When a happy-path message succeeds, what
+   row changes — and when an *exception* succeeds, what row changes?
+3. What sits in the gap `(committed, claimed]` now — and why is it *not only* the
+   failed/in-flight work? (Hint: the already-succeeded offsets stranded above the
+   lowest blocker — head-of-line blocking.)
+
+**Done when:** a failing message parks one exception row, retries with backoff,
+dead-letters, and the waterline pins then jumps past it; the pop-delete drain and
+crash-loop backstop are demonstrated; `deliveries` stays sparse, NOTES.md,
+`git tag phase-6.5c`. Must hold **R3** (free-lease-first, token-guarded Commit — no
+phantom rows from a stale worker) and **R6** (`Nack`/`DeadLetter` specified; the
+park `DO UPDATE` advances `attempts` toward `dead` and never clobbers a leased/dead
+row).
+
+*→ Reference: `reference/waterline/pglog.go` — `Commit` (free-first, then
+`ON CONFLICT DO UPDATE` park), `ClaimExceptions` + `reapExpiredSQL` (drain with
+crash-loop reap), `Ack`/`AckBatch` (pop-delete), `Nack`/`DeadLetter`, and `Advance`
+(the two-blocker `LEAST`). Note `eventsFor`: the drain pairs events to deliveries
+**by offset**, not row position — `UPDATE … RETURNING` order is not offset order.*
+
+---
+
+### 6.5d — Shard the hot lane (escape hatch, optional)
+
+**Concept:** a single group's frontier is one `cursors` row, so many concurrent
+workers contend on it. Give the group **K lanes**, each owning a **frozen,
+contiguous block** of the log, and let them drain independently. Keep K=1 until a
+group is *provably* frontier-bound — don't shard speculatively. This is the
+optional capstone; skip it unless you want to feel the contention and lift it.
+
+**Build:**
+- [ ] **Freeze K contiguous blocks.** From a frozen head H, seed K `cursors` rows,
+      lane `s` owning block `(H·s/k, H·(s+1)/k]` via `block_hi`. The claim caps at
+      the lane's `block_hi` instead of `head`:
+      `LEAST(claimed + $batch, COALESCE(block_hi, head))`. Frozen + contiguous ⇒
+      lanes never overlap (no dup) and never leave a seam (no gap).
+- [ ] **Lane-scope the exception blocker.** `Advance`'s exception term must be
+      `AND lane = $lane`, or one lane's stuck exception freezes every lane's
+      waterline.
+- [ ] **Define the contiguous `Watermark`.** The group's cumulative guarantee is the
+      `committed` of the **first lane not yet at its `block_hi`** (everything below
+      it is dense), not `min(committed)` (which sticks once lane 0 finishes, so
+      `CaughtUp` could never fire).
+
+**Lab:**
 - [ ] **(Optional) sharding.** One hot group, single lane vs K lanes; plot the
       frontier throughput. Confirm `Watermark` reaches head only when *all* lanes
       drain their blocks.
 
-**The aha:** the cursor was the happy path all along (Phase 4); Phase 6's per-row
-table was the detour. By writing a row **only on failure**, you pay the lifecycle
-cost for the ~1% that needs it and let a single integer (`committed`) speak for the
-99% that just worked. The gap `(committed, claimed]` is everything at or above the
-lowest unresolved offset — head-of-line blocking — which is exactly why one hot
-lane can stall and why the escape hatch shards it into independent lanes.
-
 **Explain it back:**
-1. Phase 6 wrote one row per (group, message); this phase writes a row only on
-   failure. Where, exactly, did the write amplification go — and what now carries
-   the "this offset succeeded" fact instead of a row?
-2. What do `claimed` and `committed` each mean, and what sits in the gap
-   `(committed, claimed]` (hint: not only the failed/in-flight work)? What makes
-   `committed` advance?
-3. A worker crashes mid-range. Walk the recovery. Why must `Commit` free the lease
-   *before* parking exceptions, and why does the reclaimer rotate the lease token?
-4. Why is there no `done`/`acked` state? When a happy-path message succeeds, what
-   row changes?
-5. When would you shard a single group into lanes, and what does that trade away?
-   Why is striping by `offset % K` the wrong way to do it?
+1. When would you shard a single group into lanes, and what does that trade away?
+2. Why is striping by `offset % K` the wrong way to do it — what can't a dense
+   single-integer cursor represent?
+3. Why is `Watermark` the first-incomplete-lane's `committed` and not
+   `min(committed)` across lanes?
 
-**Done when:** claim-from-log throughput beats the Phase 6 per-row baseline (with
-numbers), and crash-reclaim + the pop-delete exception drain + the lazy waterline
-are each demonstrated, NOTES.md, `git tag phase-6.5`. **Now** compare your design
-to `reference/waterline/` (`pglog.go` Claim/Reclaim/Commit/Advance,
-`sharding.go`): note the six correctness invariants in
-`bench/scale/waterline_design_v2_hybrid.md` it had to fix — stale-token commits,
-lane-scoped Advance, crash-loop dead-lettering — and check yours against them.
+**Done when:** K lanes beat a single lane on a frontier-bound group (with numbers)
+and `Watermark` reaches head only when all lanes drain, NOTES.md,
+`git tag phase-6.5d`. Must hold **R1/R4** (lane claims clamp to a **frozen**
+`block_hi` — no gap/dup across lanes) and **R2** (lane-scoped `Advance` — one lane's
+exception can't freeze the others).
+
+*→ Reference: `reference/waterline/sharding.go` — `InitLanes` (frozen-block seeding,
+the re-shard and too-small guards) and `CaughtUp`; `pglog.go` `Watermark` (the
+first-incomplete-lane query).*
+
+---
+
+**The aha (the whole phase):** the cursor was the happy path all along (Phase 4);
+Phase 6's per-row table was the detour. By writing a row **only on failure**, you
+pay the lifecycle cost for the ~1% that needs it and let a single integer
+(`committed`) speak for the 99% that just worked. The gap `(committed, claimed]` is
+everything at or above the lowest unresolved offset — head-of-line blocking — which
+is exactly why one hot lane can stall and why 6.5d shards it into independent lanes.
+
+**The six load-bearing invariants:** the reference's first draft had six real bugs
+an adversarial review caught and a Postgres harness confirmed. They're distributed
+across the movements above — **R5** in 6.5b; **R3, R6** in 6.5c; **R1, R2, R4** in
+6.5d — and written up in `bench/scale/waterline_design_v2_hybrid.md`. After you've
+built all four, check your design against that list: stale-token commits,
+lane-scoped Advance, frozen blocks, crash-loop dead-lettering.
 
 **Real systems:** Kafka **offset commit** (one integer per poll — the cursor — is
 the "ultimate batched ack" from Phase 3.5); SQS **visibility timeout** (the lease,

@@ -727,3 +727,92 @@ race, and you have to guarantee retention wins by a margin.
   read — acceptable for the lab, and the same pattern as the parked V1 `Poll`. If
   first-claim latency ever matters, do an immediate claim before entering the loop.
 
+---
+
+## Phase 6.5a — Claim-from-log: the happy path
+
+**What it does, and the win:** the happy path stops writing a row per message. The
+cursor grows from Phase 5's single `position` into two frontiers — `claimed` (the
+read frontier) and `committed` (the waterline). One `UPDATE … RETURNING` advances
+`claimed` over a contiguous range `(low, high]`, I read exactly that range from
+`message_log`, process it, and record success by advancing `committed`. **No
+per-message row is written.** Where Phase 6 paid O(N) `deliveries` writes (an INSERT
++ status UPDATEs per message per group), N successes now collapse into advancing two
+integers on one `cursors` row.
+
+**The aha:** the write amplification didn't move somewhere cheaper — on the happy
+path it *vanished*. The cursor was the happy path all along (it's the Phase 4
+primitive); Phase 6's per-row table was the detour. A single integer (`committed`)
+now speaks for every offset that just worked, and you only ever pay a row for the
+exceptional fraction (6.5c).
+
+### Explain it back
+
+**1. Where did the write amplification go, and what carries "this offset
+succeeded"?**
+
+The `committed` waterline carries it: every offset **≤ committed** is in a terminal
+state (success-only for now). The amplification didn't relocate — on the happy path
+it's *gone*. Phase 6 wrote O(N) `deliveries` rows; now a successful message writes
+**no row at all**, and N successes collapse into advancing one integer (`committed`)
+on one `cursors` row. O(N) row writes → O(1) integer advance.
+
+**2. What do `claimed` and `committed` mean, and how do they relate in the
+single-worker, no-failure happy path?**
+
+Three zones on the log: **≤ committed** = resolved/terminal (success only right
+now); **`(committed, claimed]`** = claimed-but-not-yet-resolved (in-flight); **>
+claimed** = unclaimed (waiting). `claimed` is the read frontier, advanced atomically
+at claim time; `committed` is the waterline. In this happy path the gap is
+*transient* — `committed` marches up behind `claimed` message by message and catches
+it whenever the consumer drains/idles. The gap only becomes a *persistent* structure
+in 6.5b (open leases pin it) and 6.5c (unresolved exceptions pin it).
+
+### Done
+
+- Migration `002_cursors`: `position` → `claimed` + `committed` (both `BIGINT NOT
+  NULL DEFAULT 0`). `lane`/`block_hi` deliberately deferred to 6.5d.
+- `ClaimMessagesWithCursor`: one txn — `claimed = LEAST(claimed + $batch, MAX(id))`,
+  capturing the window via a CTE (`old_values`) joined back in `FROM` so `RETURNING
+  old_values.claimed AS low, cursors.claimed AS high` returns `(low, high]` on PG
+  <18 too (not relying on PG18's built-in `old`/`new`). Empty result (claimed at
+  head, or group missing) ⇒ `pgx.ErrNoRows` ⇒ `nil, nil` (caught up). Then `SELECT *
+  FROM message_log WHERE id > low AND id <= high ORDER BY id` — **no per-message row
+  written**; drain before commit (the Phase 4 "conn busy" lesson).
+- `MoveCursor`: `committed = $1 WHERE committed < $1` — monotonic guard.
+- `CursorClaim`: claim the range, then per message unmarshal → process →
+  `MoveCursor(message.Id)`.
+- `Process` is now a `ConsumerType` switch (`CURSOR` / `LIFECYCLE`); 6.5a is the
+  `CURSOR` arm. `WithType` builder added; the example pins `WithType(consumer.CURSOR)`.
+- Build + vet green on `./pkg/...` (`backoff` shows as an unused-fn lint —
+  intentional, it returns in 6.5c).
+- Benchmark intentionally **not run** at this point — the "beat the Phase 6 baseline"
+  ratio is unrecorded by choice.
+
+### Decisions
+
+- **Per-message commit (vs once-per-batch to `high`).** Carried over from Phase 4: I
+  advance `committed` after *each* message, not once at `high`. Costs N cursor
+  updates per batch instead of 1, but gives a tighter at-least-once checkpoint (a
+  crash reprocesses from the last committed message, not the whole range). It *does*
+  dilute the headline write-amp win — committing once at `high` is the O(1)-per-batch
+  ideal — but each update is one in-place HOT update on a single row, still far below
+  Phase 6's per-row INSERT. Keeping granularity on purpose; not benchmarking yet, so
+  the exact ratio stays unrecorded.
+- **The monotonic guard forecasted back in Phase 4/5 has landed.** `MoveCursor` is
+  now `… WHERE committed < $1` (the `GREATEST`-equivalent I said would arrive "at
+  Phase 6.5"). Caveat it introduces: `RowsAffected()==0` now means *either*
+  unregistered group *or* a monotonic no-op (re-commit of an already-passed offset),
+  yet the error still reads "no cursor registered". Harmless in the ordered
+  single-worker happy path (every `message.Id > committed`); revisit when concurrent
+  within-group advances arrive in 6.5b+.
+- **`old_values` CTE, not PG18 `old`.** Kept the read-old-value-via-CTE approach but
+  renamed it off `old` (so PG18's built-in `old` transition alias doesn't shadow it)
+  and joined it via `FROM` so `RETURNING` can see it. Works on PG <18; doesn't depend
+  on the 18-only feature.
+- **`claimed` advances at claim time, before processing — and there is no lease
+  yet.** So a crash after claiming but before committing strands `(committed,
+  claimed]`: the next claim reads above `claimed` and skips them. This is the known,
+  intended 6.5a hole — crash-safety is exactly what 6.5b's range lease adds. Happy
+  path only here.
+

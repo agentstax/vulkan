@@ -22,12 +22,14 @@ var (
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
 	MoveCursor(ctx context.Context, consumerGroup string, position int64) error
+	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
-	ClaimMessagesV2(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error)
+	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error)
+	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
 	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
-	// RecordSuccess(ctx context.Context, messageRow *MessageRow) error
-	// RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error
-	// RecordTerminal(ctx context.Context, messageRow *MessageRow, failureErr error) error
+	RecordSuccess(ctx context.Context, delivery *DeliveryRow) error
+	RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error) error
+	RecordTerminal(ctx context.Context, delivery *DeliveryRow, failureErr error) error
 	Shutdown(ctx context.Context) error
 }
 
@@ -41,6 +43,23 @@ type MessageRow struct {
 	// LeaseToken  pgtype.UUID     `db:"lease_token"` // nullable
 	// LastError   *string         `db:"last_error"`  // nullable
 	CreatedAt time.Time `db:"created_at"`
+}
+
+type CursorRange struct {
+	Low  int64 `db:"low"`
+	High int64 `db:"high"`
+}
+
+// DeliveryRow is one (consumer_group, message_id) row of the deliveries table:
+// the mutable per-consumer lifecycle state that lives off the immutable message_log.
+// Payload is not stored on the row -- it's joined back in from message_log at claim time.
+// Phase 6 skips the lease columns (lease_until / lease_token); crash recovery is Phase 6.5.
+type DeliveryRow struct {
+	ConsumerGroup string          `db:"consumer_group"`
+	MessageId     int64           `db:"message_id"`
+	Payload       json.RawMessage `db:"payload"`
+	Status        string          `db:"status"`
+	Attempts      int             `db:"attempts"`
 }
 
 type PostgresConnectionParams struct {
@@ -100,9 +119,9 @@ func (d *PostgresDatastore[Message]) MoveCursor(ctx context.Context, consumerGro
 	sql := `
 		UPDATE cursors
 		SET
-			position = $1
-		WHERE
-			consumer_group = $2;
+			committed = $1
+		WHERE consumer_group = $2
+			AND committed < $1;
 	`
 
 	tag, err := d.Pool.Exec(ctx, sql, position, consumerGroup)
@@ -116,24 +135,63 @@ func (d *PostgresDatastore[Message]) MoveCursor(ctx context.Context, consumerGro
 	return nil
 }
 
-func (d *PostgresDatastore[Message]) ClaimMessagesV2(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error) {
+func (d *PostgresDatastore[Message]) FanOut(ctx context.Context, consumerGroup string) error {
+	sql := `
+		INSERT INTO deliveries (consumer_group, message_id, status)
+		SELECT
+			$1, 
+			id, 
+			'ready'
+		FROM message_log -- no need to batch / limit this is for demonstration purposes only
+		ON CONFLICT DO NOTHING;
+	`
+
+	_, err := d.Pool.Exec(ctx, sql, consumerGroup)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error) {
 	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
+	// TODO - projector could likely tracked head in a RWMutex such that it doesn't need to be calculated here
+	// TODO - consider if we should lock any rows like claimed cursor during this tx
 	cursorSql := `
-		SELECT position FROM cursors
-		WHERE consumer_group = $1
-		FOR UPDATE -- don't allow cursor position to update while in claiming transaction
+		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
+			SELECT * FROM cursors
+			WHERE consumer_group = $1
+		)
+		UPDATE cursors
+		SET
+			claimed = LEAST(cursors.claimed + $2, (SELECT MAX(id) FROM message_log)) -- move claimed frontier forward by max(batchLimit)
+		FROM old_values
+		WHERE cursors.consumer_group = $1
+			AND cursors.claimed < (SELECT MAX(id) FROM message_log)
+		RETURNING
+			old_values.claimed AS low,
+			cursors.claimed AS high;
 	`
 
-	var pos int64
-	if err := tx.QueryRow(ctx, cursorSql, consumerGroup).Scan(&pos); err != nil {
-		// either consumer was not registered or cursor was deleted somehow
+	cursorRows, err := tx.Query(ctx, cursorSql, consumerGroup, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	claimedRange, err := pgx.CollectOneRow(cursorRows, pgx.RowToStructByName[CursorRange])
+	if err != nil {
+		// two cases for no rows returned
+		// 1. We are at head of message_log ie not messages to process
+		// 2. We could not find the cursor for this consumer group
+		// TODO - for now we just consider 1 but should have better validation for 2 edge case
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("no cursor registered for group %s", consumerGroup)
+			return nil, nil
 		}
 
 		return nil, err
@@ -142,18 +200,18 @@ func (d *PostgresDatastore[Message]) ClaimMessagesV2(ctx context.Context, consum
 	claimSql := `
 		SELECT * FROM message_log
 		WHERE id > $1
-		ORDER BY id -- the cursor is a high-water mark: rows MUST come back in offset
-		            -- order or LIMIT returns an arbitrary subset and the cursor can
-		            -- advance past unread offsets (silent message loss).
-		LIMIT $2;
+			AND id <= $2 -- TODO should consider if low or high should be inclusive or not
+		ORDER BY id; -- the cursor is a high-water mark: rows MUST come back in offset
+		             -- order or LIMIT returns an arbitrary subset and the cursor can
+		             -- advance past unread offsets (silent message loss).
 	`
 
-	rows, err := tx.Query(ctx, claimSql, pos, limit)
+	messageRows, err := tx.Query(ctx, claimSql, claimedRange.Low, claimedRange.High)
 	if err != nil {
 		return nil, err
 	}
 
-	msgs, err := pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
+	msgs, err := pgx.CollectRows(messageRows, pgx.RowToStructByName[MessageRow])
 	if err != nil {
 		return nil, err
 	}
@@ -165,33 +223,138 @@ func (d *PostgresDatastore[Message]) ClaimMessagesV2(ctx context.Context, consum
 	return msgs, nil
 }
 
-func (d *PostgresDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
-	// FOR UPDATE SKIP LOCKED makes the sub select query safe for update ie other consumers in group cannot select while being updated:
+func (d *PostgresDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error) {
+	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
+	// one statement (the Phase 2 state machine, now per-(group, message) instead of
+	// per-message). SKIP LOCKED keeps competing workers from grabbing the same row.
+	//
+	// deliveries only stores message_id, not the payload, so we join message_log
+	// back in -- the log stays immutable, all mutation lives in deliveries.
+	//
+	// Phase 6 deliberately has no lease: a 'processing' row that never gets resolved
+	// (consumer crash) just sits there. Visibility-timeout reclaim is Phase 6.5.
 	sql := `
-		UPDATE message_log
-		SET 
-			status = 'processing',
-			lease_until = now() + make_interval(secs => $2),
-			lease_token = gen_random_uuid(), -- 'owner' claims this uuid
-			attempts = attempts + 1
-		WHERE id IN (
-			SELECT id FROM message_log
-			WHERE (status = 'ready' AND can_run_after <= now())
-				OR (status = 'processing' AND lease_until < now()) -- retreive any 'expired' work
-			ORDER BY id
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED
+		WITH claimed AS (
+			UPDATE deliveries
+			SET
+				status = 'processing',
+				attempts = attempts + 1,
+				updated_at = now()
+			WHERE (consumer_group, message_id) IN (
+				SELECT consumer_group, message_id FROM deliveries
+				WHERE consumer_group = $1
+					AND status = 'ready'
+				ORDER BY message_id
+				LIMIT $2
+				FOR UPDATE SKIP LOCKED
+			)
+			RETURNING consumer_group, message_id, status, attempts
 		)
-		RETURNING *;
+		SELECT
+			c.consumer_group,
+			c.message_id,
+			c.status,
+			c.attempts,
+			m.payload
+		FROM claimed c
+		JOIN message_log m ON m.id = c.message_id
+		ORDER BY c.message_id;
 	`
 
-	rows, err := d.Pool.Query(ctx, sql, limit, leaseDuration.Seconds())
+	rows, err := d.Pool.Query(ctx, sql, consumerGroup, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
+	return pgx.CollectRows(rows, pgx.RowToStructByName[DeliveryRow])
 }
+
+// RecordSuccess marks a claimed delivery 'done'. Terminal success for this
+// (group, message); the log row is untouched and other groups are unaffected.
+func (d *PostgresDatastore[Message]) RecordSuccess(ctx context.Context, delivery *DeliveryRow) error {
+	sql := `
+		UPDATE deliveries
+		SET
+			status = 'done',
+			last_error = NULL,
+			updated_at = now()
+		WHERE consumer_group = $1
+			AND message_id = $2;
+	`
+
+	_, err := d.Pool.Exec(ctx, sql, delivery.ConsumerGroup, delivery.MessageId)
+	return err
+}
+
+// RecordFailure handles a processing error: retry until attempts are exhausted,
+// then hand off to RecordTerminal (the per-group DLQ). attempts was already
+// incremented at claim time, so >= maxAttempts means this was the last try.
+// Phase 6 has no backoff (the deliveries table carries no can_run_after) -- a
+// 'ready' row is simply re-claimed on the next poll.
+func (d *PostgresDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error) error {
+	if delivery.Attempts >= maxAttempts {
+		return d.RecordTerminal(ctx, delivery, failureErr)
+	}
+
+	sql := `
+		UPDATE deliveries
+		SET
+			status = 'ready',
+			last_error = $3,
+			updated_at = now()
+		WHERE consumer_group = $1
+			AND message_id = $2;
+	`
+
+	_, err := d.Pool.Exec(ctx, sql, delivery.ConsumerGroup, delivery.MessageId, failureErr.Error())
+	return err
+}
+
+// RecordTerminal dead-letters a delivery: no more retries. The DLQ for a group is
+// just `WHERE consumer_group = $1 AND status = 'dead'`; one group can dead-letter a
+// message while another processes the same offset fine.
+func (d *PostgresDatastore[Message]) RecordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error) error {
+	sql := `
+		UPDATE deliveries
+		SET
+			status = 'dead',
+			last_error = $3,
+			updated_at = now()
+		WHERE consumer_group = $1
+			AND message_id = $2;
+	`
+
+	_, err := d.Pool.Exec(ctx, sql, delivery.ConsumerGroup, delivery.MessageId, terminalErr.Error())
+	return err
+}
+
+// func (d *PostgresDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
+// 	// FOR UPDATE SKIP LOCKED makes the sub select query safe for update ie other consumers in group cannot select while being updated:
+// 	sql := `
+// 		UPDATE message_log
+// 		SET
+// 			status = 'processing',
+// 			lease_until = now() + make_interval(secs => $2),
+// 			lease_token = gen_random_uuid(), -- 'owner' claims this uuid
+// 			attempts = attempts + 1
+// 		WHERE id IN (
+// 			SELECT id FROM message_log
+// 			WHERE (status = 'ready' AND can_run_after <= now())
+// 				OR (status = 'processing' AND lease_until < now()) -- retreive any 'expired' work
+// 			ORDER BY id
+// 			LIMIT $1
+// 			FOR UPDATE SKIP LOCKED
+// 		)
+// 		RETURNING *;
+// 	`
+
+// 	rows, err := d.Pool.Query(ctx, sql, limit, leaseDuration.Seconds())
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
+// }
 
 // func (d *PostgresDatastore[Message]) ForceReclaim(ctx context.Context, messageRow *MessageRow) error {
 // 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)

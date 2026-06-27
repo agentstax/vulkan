@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"golang.org/x/sync/errgroup"
 )
 
 // fuck options patterns it always sucks to me
@@ -21,7 +22,15 @@ type Consumer[WorkType any] interface {
 	Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error
 }
 
+type ConsumerType string
+
+const (
+	CURSOR    ConsumerType = "CURSOR"
+	LIFECYCLE ConsumerType = "LIFECYCLE"
+)
+
 type WorkConsumerConfig struct {
+	Type            ConsumerType
 	BatchLimit      int
 	MaxAttempts     int
 	PollRate        time.Duration
@@ -50,6 +59,7 @@ func NewWorkConsumer[WorkType any](group string, queue concurrency.Queue[Message
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
+			Type:            CURSOR,
 			BatchLimit:      1, // no batching by default
 			MaxAttempts:     3,
 			PollRate:        5 * time.Second,
@@ -135,17 +145,48 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 		return err
 	}
 
+	errGroup, ctx := errgroup.WithContext(ctx)
+
+	fmt.Println("consumer deliveries projector starting")
+	errGroup.Go(func() error {
+		return p.Project(ctx)
+	})
+
 	fmt.Println("consumer starting")
-	errProcess := p.Process(ctx, consumerFunc)
-	if errors.Is(errProcess, context.Canceled) {
-		errProcess = nil // requested shutdown, not a failure per say
+	errGroup.Go(func() error {
+		return p.Process(ctx, consumerFunc)
+	})
+
+	err := errGroup.Wait()
+	if errors.Is(err, context.Canceled) {
+		err = nil // requested shutdown, not a failure per say
 	}
 
 	// always attempt to gracefully shutdown
 	errShutdown := p.Shutdown(ctx)
 
 	// any nil errors are discarded (so both nil -> returns nil)
-	return errors.Join(errProcess, errShutdown)
+	return errors.Join(err, errShutdown)
+}
+
+func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
+	if p.Config.Type == CURSOR {
+		return nil // don't need projection for cursor only
+	}
+
+	ticker := time.NewTicker(p.Config.PollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := p.Datastore.FanOut(ctx, p.Group); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
@@ -157,15 +198,25 @@ func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc Consu
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Claim(ctx, consumerFunc); err != nil {
-				return err
+			switch p.Config.Type {
+			case CURSOR:
+				if err := p.CursorClaim(ctx, consumerFunc); err != nil {
+					return err
+				}
+			case LIFECYCLE:
+				if err := p.LifecycleClaim(ctx, consumerFunc); err != nil {
+					return err
+				}
+			default:
+				return errors.New("invalid consumer type")
 			}
+
 		}
 	}
 }
 
-func (p *WorkConsumer[WorkType]) Claim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
-	messages, err := p.Datastore.ClaimMessagesV2(ctx, p.Group, p.Config.BatchLimit)
+func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+	messages, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Group, p.Config.BatchLimit)
 	if err != nil {
 		return err
 	}
@@ -181,6 +232,49 @@ func (p *WorkConsumer[WorkType]) Claim(ctx context.Context, consumerFunc Consume
 		}
 
 		if err := p.Datastore.MoveCursor(ctx, p.Group, message.Id); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// LifecycleClaim is the per-row lifecycle path (Phase 6): claim this group's own
+// delivery rows and run each through the Phase 2 state machine
+// (success -> 'done', retryable failure -> 'ready', exhausted/bad payload -> 'dead').
+//
+// Unlike CursorClaim, a single message's failure does NOT stop the batch: each
+// delivery resolves independently, so group A can dead-letter message 5 while it
+// keeps draining 6, 7, 8. That per-message isolation is the whole point of the
+// deliveries table -- the cursor model can't do it (one bad message blocks the line).
+//
+// No lease handling here: Phase 6 doesn't do crash recovery, so a delivery left in
+// 'processing' (consumer died mid-process) just sits there until Phase 6.5's reclaim.
+func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Group, p.Config.BatchLimit)
+	if err != nil {
+		return err
+	}
+
+	for _, delivery := range deliveries {
+		var work WorkType
+		if err := json.Unmarshal(delivery.Payload, &work); err != nil {
+			// a bad payload will never deserialize -> straight to the DLQ, no retries
+			if recordErr := p.Datastore.RecordTerminal(ctx, &delivery, err); recordErr != nil {
+				return recordErr
+			}
+			continue
+		}
+
+		if err := consumerFunc(ctx, &work); err != nil {
+			// processing error -> retry until attempts exhaust, then dead-letter
+			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, &delivery, err); recordErr != nil {
+				return recordErr
+			}
+			continue
+		}
+
+		if err := p.Datastore.RecordSuccess(ctx, &delivery); err != nil {
 			return err
 		}
 	}
