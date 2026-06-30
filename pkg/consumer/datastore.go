@@ -149,22 +149,43 @@ func (d *PostgresDatastore[Message]) CommitRange(ctx context.Context, consumerGr
 	return err
 }
 
-// AdvanceWaterline is the lazy roller: committed rolls up to the lowest open lease's
-// low (every offset <= it is resolved), clamped to claimed when no lease is open.
-// GREATEST keeps it monotonic. Runs off the hot path -- staleness only delays GC.
+// committed is the waterline: the mark below which every offset is resolved. it
+// rides at the lowest open lease's low, or at `claimed` when nothing is leased.
+//
+// Race Condition:
+//
+//	Because our claiming transaction in FreshClaimMessagesWithCursor advances
+//	cursors.claimed AND inserts a lease we must read both cursors and leases
+//	tables back in one SELECT, then write separately. Read them inside a single
+//	UPDATE instead and postgres hands back the new claimed row but not the new
+//	lease, so committed can advance past a range that is still being processed.
+//
+//	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
+//	newest version, but its subqueries keep the snapshot from when the statement
+//	began -- so cursors comes back fresh, leases stale.
 func (d *PostgresDatastore[Message]) AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error) {
-	sql := `
-		UPDATE cursors c
-		SET committed = GREATEST(c.committed,
-			LEAST(
-				(SELECT MIN(low) FROM leases WHERE consumer_group = $1), -- lowest in-flight range
-				c.claimed)) -- LEAST ignores NULLs, so no open lease -> committed catches up to claimed
-		WHERE c.consumer_group = $1
-		RETURNING c.committed;
+	// 1. compute the target. LEAST ignores NULLs, so zero open leases -> claimed.
+	const targetSql = `
+		SELECT LEAST((SELECT MIN(low) FROM leases WHERE consumer_group = $1), claimed)
+		FROM cursors
+		WHERE consumer_group = $1;
+	`
+
+	var target int64
+	if err := d.Pool.QueryRow(ctx, targetSql, consumerGroup).Scan(&target); err != nil {
+		return 0, err
+	}
+
+	// 2. apply it. GREATEST -> committed only ever moves forward.
+	const rollSql = `
+		UPDATE cursors
+		SET committed = GREATEST(committed, $2)
+		WHERE consumer_group = $1
+		RETURNING committed;
 	`
 
 	var committed int64
-	err := d.Pool.QueryRow(ctx, sql, consumerGroup).Scan(&committed)
+	err := d.Pool.QueryRow(ctx, rollSql, consumerGroup, target).Scan(&committed)
 	return committed, err
 }
 

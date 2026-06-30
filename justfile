@@ -27,6 +27,11 @@ consume group="learning.v1" processorsleep="0.1" shutdownsleep="1.0" failrate="0
 produce count="1":
   go run examples/phase_1/producer/main.go -count={{ count }}
 
+# Phase 6.5b lab: crash mid-range, recover. Deterministic, self-verifying --
+# needs >=20 rows in message_log (run `just produce 20` first if empty).
+reclaim-lab:
+  go run examples/phase_1/reclaimlab/main.go
+
 peek:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
     -c "SELECT * FROM message_log ORDER BY id;"
