@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vulkan fanout/consume benchmark — head-to-head</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c22; --panel2:#1d242c; --ink:#e6edf3; --mut:#9aa7b4;
+    --line:#2a323c; --accent:#5ec8f8; --good:#5fd38a; --warn:#f0c674; --bad:#f08a8a;
+    --d1:#f0a868; --d23:#c5a3f0; --d45:#5fd3a6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 24px 96px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px}
+  h2{font-size:22px;margin:44px 0 6px;padding-top:18px;border-top:1px solid var(--line)}
+  h3{font-size:17px;margin:26px 0 8px;color:var(--accent)}
+  p{margin:10px 0}
+  .sub{color:var(--mut);font-size:14px;margin:0 0 8px}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+  .lead{font-size:17px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:10px;padding:16px 18px;margin:18px 0}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}.g5{grid-template-columns:repeat(5,1fr)}
+  @media(max-width:760px){.g2,.g3,.g5{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card h4{margin:0 0 6px;font-size:15px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+  .pill-d1{color:var(--d1);border-color:var(--d1)} .pill-d23{color:var(--d23);border-color:var(--d23)}
+  .pill-d45{color:var(--d45);border-color:var(--d45)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em}
+  td.num,th.num{text-align:right;font-family:ui-monospace,Menlo,monospace}
+  tr:hover td{background:#1a212833}
+  .win{color:var(--good);font-weight:700}.lose{color:var(--bad)}.mid{color:var(--warn)}
+  .why{background:var(--panel2);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:14px}
+  .why b{color:var(--accent)}
+  .callout{border-radius:10px;padding:14px 16px;margin:16px 0;border:1px solid}
+  .c-key{background:#13251d;border-color:#2f6b4a}.c-warn{background:#2a2415;border-color:#6b5a2f}
+  .c-fix{background:#241a26;border-color:#5a3f6b}
+  .callout b{color:var(--ink)}
+  .pipe{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;margin:8px 0}
+  .stage{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-family:ui-monospace,Menlo,monospace}
+  .arrow{color:var(--mut)}
+  .skip{opacity:.4;text-decoration:line-through}
+  ul{margin:8px 0 8px 0;padding-left:22px}li{margin:4px 0}
+  .small{font-size:13px;color:var(--mut)}
+  .bar{height:10px;border-radius:5px;background:var(--accent);display:inline-block;vertical-align:middle}
+  .legend{font-size:12.5px;color:var(--mut);margin-top:4px}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+  .kbd{font-family:ui-monospace,Menlo,monospace;background:#0b0e12;border:1px solid var(--line);
+    border-radius:5px;padding:1px 6px;font-size:.86em}
+  .toc{columns:2;font-size:14px;color:var(--mut)}.toc a{color:var(--accent);text-decoration:none}
+  @media(max-width:760px){.toc{columns:1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>How should Vulkan fan out an event log to consumers?</h1>
+<p class="sub">A head-to-head benchmark of 5 Postgres designs · throwaway Postgres&nbsp;18.4 (OrbStack, 8&nbsp;cores / 8&nbsp;GB), pgbench/psql 17.9 · ~150 measured runs, audited <b>twice</b> &amp; corrected · 2026-06-21 · <a href="#audit2" style="color:var(--accent)">jump to the second-audit corrections →</a></p>
+
+<div class="lead">
+<b>The one-sentence answer:</b> writing a <em>deliveries row per (consumer-group, event)</em> — the obvious "queue table" approach — costs a row write on <b>both</b> the produce side and the consume side, and the consume side is the wall (~124k work-items/s). Designs that <b>skip the per-event row</b> (claim straight from the log, advance a cursor per batch) run <b>~3–4× faster at matched scale and ~8× as the number of consumer groups grows</b>, and sustain ~4–8× more end-to-end load. The richness a deliveries row buys you (independent/out-of-order acks, retries, dead-lettering, per-message visibility) is exactly what makes it expensive — and most messages never need it.
+</div>
+
+<h2 id="toc" style="border:0;padding:0">Contents</h2>
+<div class="toc">
+<a href="#terms">1. Terms &amp; how to read the numbers</a><br>
+<a href="#model">2. The mental model: a 3-stage pipeline</a><br>
+<a href="#designs">3. The five designs</a><br>
+<a href="#method">4. How it was measured</a><br>
+<a href="#append">5. Stage A — Append (producer)</a><br>
+<a href="#fanout">6. Stage B — Fanout / materialize</a><br>
+<a href="#consume">7. Stage C — Consume / drain</a><br>
+<a href="#e2e">8. Stage D — End-to-end &amp; breaking points</a><br>
+<a href="#ladder">9. Optimization ladders (what helped, what didn't)</a><br>
+<a href="#correction">10. The correction story (audit)</a><br>
+<a href="#matrix">11. Recommendation matrix</a><br>
+<a href="#trust">12. Trust rating &amp; caveats</a><br>
+<a href="#audit2">13. Second audit — corrections &amp; bound-moving optimizations</a><br>
+</div>
+
+<!-- ============ 1. TERMS ============ -->
+<h2 id="terms">1 · Terms &amp; how to read the numbers</h2>
+<p>Every number in this report is one of a few specific things. Pinning these down first prevents the conflation that plagues throughput talk.</p>
+<table>
+<tr><th>Term</th><th>Definition</th></tr>
+<tr><td><b>event</b></td><td>One record appended to the immutable log (a row in <code>events</code>).</td></tr>
+<tr><td><b>consumer group</b></td><td>An independent subscriber that must see <em>every</em> event (e.g. "billing", "search-index"). <code>G</code> = number of groups.</td></tr>
+<tr><td><b>unit</b> (work-item)</td><td>One <code>(group, event)</code> pair — one atomic piece of work. <b>One event with G groups = G units.</b></td></tr>
+<tr><td><b>units/s</b> <span class="tag">primary metric</span></td><td>Work-items completed (claimed + acked) per second. This is what the database actually does, so it's the honest measure of capacity.</td></tr>
+<tr><td><b>events/s fully processed</b></td><td>= <code>units/s ÷ G</code>. An event is "fully processed" only once <em>all</em> G groups have acked it. This is the user-facing view.</td></tr>
+<tr><td><b>append rate</b></td><td>Events written to the log per second (produce side only).</td></tr>
+<tr><td><b>breaking point</b></td><td>The highest <em>offered</em> append rate at which the backlog stays bounded (consumers keep up). Past it, the backlog grows forever.</td></tr>
+</table>
+<div class="why"><b>Worked example.</b> <b>d4 at saturation = 287k units/s</b> with G=10 groups. That's <b>287,000 ÷ 10 ≈ 28.7k events/s fully processed</b> — every one of those events got handled by all 10 groups.</div>
+
+<!-- ============ 2. MODEL ============ -->
+<h2 id="model">2 · The mental model: a 3-stage pipeline</h2>
+<p>Every design is some arrangement of three stages. <b>Where</b> a design puts the cost (or skips a stage) is the entire story — so the results are organized stage-by-stage, not design-by-design.</p>
+<div class="grid g3">
+  <div class="card"><h4>A · Append</h4><p class="small">Producer writes the event to the log. Cost is dominated by the commit <code>fsync</code> (durability), which batching amortizes.</p></div>
+  <div class="card"><h4>B · Fanout / materialize</h4><p class="small">Turn 1 event into G work-items — one <code>deliveries</code> row per group. <b>This is the optional, contentious stage.</b> Two designs skip it entirely.</p></div>
+  <div class="card"><h4>C · Consume</h4><p class="small">A worker claims a work-item, processes it, and acks. Cost depends entirely on whether "a work-item" is a row to rewrite or just a cursor to advance.</p></div>
+</div>
+<p>How each design maps onto the pipeline (struck-through = stage skipped):</p>
+<table>
+<tr><th>Design</th><th>Append</th><th>Fanout</th><th>Consume</th></tr>
+<tr><td><span class="tag pill-d1">d1</span> sync trigger</td><td colspan="2" style="text-align:center">▣ <b>fused</b> — fanout runs <em>inside</em> the append transaction (a trigger)</td><td>per-row claim+ack</td></tr>
+<tr><td><span class="tag pill-d23">d2</span> NOTIFY+projector</td><td>bare append</td><td>async (separate process, woken by <code>NOTIFY</code>)</td><td>per-row claim+ack</td></tr>
+<tr><td><span class="tag pill-d23">d3</span> polling projector</td><td>bare append</td><td>async (separate process, polls)</td><td>per-row claim+ack</td></tr>
+<tr><td><span class="tag pill-d45">d4</span> claim-from-log</td><td>bare append</td><td class="skip">none</td><td>claim a <em>range</em> from the log, advance cursor</td></tr>
+<tr><td><span class="tag pill-d45">d5</span> range-lease</td><td>bare append</td><td class="skip">none</td><td>claim range + write 1 lease row, advance cursor</td></tr>
+</table>
+<div class="callout c-key">
+<b>Why d1/d2/d3 share a "consume" number but nothing else.</b> All three end up with the identical per-<code>(group,event)</code> <code>deliveries</code> row, so they run the <em>same</em> claim+ack code and have the <em>same</em> consume ceiling (~124k units/s). They differ entirely in <b>stage B</b>: d1 pays fanout synchronously on the producer's commit; d2/d3 pay it asynchronously in a separate process. That difference dominates their end-to-end behavior — which is why they are <em>not</em> interchangeable despite the shared consume cost.
+</div>
+
+<!-- ============ 3. DESIGNS ============ -->
+<h2 id="designs">3 · The five designs</h2>
+<div class="grid g2">
+  <div class="card"><h4><span class="tag pill-d1">d1</span> Synchronous trigger fanout</h4>
+    <p class="small">An <code>AFTER INSERT</code> statement-level trigger inserts one <code>deliveries</code> row per group, <b>in the producer's own transaction</b>. Simple, strongly consistent: the moment an event commits, its work-items exist.</p>
+    <p class="small"><b>Pays:</b> fanout latency on every append; per-row claim+ack on consume.</p></div>
+  <div class="card"><h4><span class="tag pill-d23">d2</span> NOTIFY + async projector</h4>
+    <p class="small">Producer commits only the event + a coalesced <code>pg_notify</code> (once per statement, never per row). A separate "projector" process <code>LISTEN</code>s and materializes the <code>deliveries</code> rows off the hot path.</p>
+    <p class="small"><b>Pays:</b> fanout asynchronously (low producer latency); per-row claim+ack on consume.</p></div>
+  <div class="card"><h4><span class="tag pill-d23">d3</span> Polling projector</h4>
+    <p class="small">Same as d2 but the projector polls (<code>WHERE offset &gt; projected</code>) instead of waiting on a notification. Simpler, no LISTEN plumbing; trades a little latency.</p>
+    <p class="small"><b>Pays:</b> same as d2.</p></div>
+  <div class="card"><h4><span class="tag pill-d45">d4</span> Claim-from-log</h4>
+    <p class="small">No per-event rows at all. Each group has a <em>claim frontier</em> (a cursor). A worker atomically bumps it (&ldquo;I took offsets 5000–5200 for group g&rdquo;), reads those events, processes, and commits the new cursor. Rows are written only for exceptions (retries/dead-letters).</p>
+    <p class="small"><b>Pays:</b> one cursor update per <em>batch</em> + a per-event read. No fanout.</p></div>
+  <div class="card"><h4><span class="tag pill-d45">d5</span> Range-lease</h4>
+    <p class="small">Like d4, but each claimed range also writes a durable <code>lease</code> row (deleted on commit). That lease makes a crashed range reclaimable — Kafka-style offset ownership.</p>
+    <p class="small"><b>Pays:</b> d4's cost + one lease INSERT/DELETE per batch (~3%).</p></div>
+  <div class="card" style="background:var(--panel2)"><h4>The thing under test</h4>
+    <p class="small">d1/d2/d3 answer <em>&ldquo;what's the best way to materialize a row per work-item?&rdquo;</em> d4/d5 answer the deeper question: <em>&ldquo;do we need the row at all?&rdquo;</em> They are the ceiling the others are measured against.</p></div>
+</div>
+
+<!-- ============ 4. METHOD ============ -->
+<h2 id="method">4 · How it was measured</h2>
+<ul>
+<li><b>Steady-state, not peak.</b> Each run samples throughput once per second; we drop a warm-up window and take the <b>median</b> (with p10/p90) of the remaining 20–25s. Drain ceilings are the <b>median of 3 independent repeats</b>.</li>
+<li><b>Real work only.</b> Throughput is a per-second delta of a completion counter that only the ack path increments — so empty/no-op claims can't inflate it.</li>
+<li><b>Correctness checked every run.</b> Fanout must produce exactly <code>events × groups</code> rows; claim-from-log must complete exactly <code>events × groups</code> units with no double-processing and no gaps (verified to the row under 32 concurrent workers).</li>
+<li><b>Breaking point</b> = ramp the offered append rate until the backlog (<code>head − processed</code>) stops being flat and starts growing without bound.</li>
+<li><b>Independently audited.</b> A separate adversarial review re-checked the harness and forced two corrections (see §10) — the most important being that the no-fanout read had to actually touch the event payload, not just count an index.</li>
+</ul>
+
+<!-- ============ 5. APPEND ============ -->
+<h2 id="append">5 · Stage A — Append (producer)</h2>
+<p>This is shared by d2/d3/d4/d5 (they all do a "bare" append). d1 is different — its append also runs the fanout trigger, covered in §6.</p>
+<h3>Bare append ceiling — batching is everything</h3>
+<table>
+<tr><th>Knob</th><th class="num">events/s</th><th>note</th></tr>
+<tr><td>single-row insert, 1 client</td><td class="num">1.7k</td><td>fsync-per-event floor</td></tr>
+<tr><td>single-row, 32 clients</td><td class="num">~12k</td><td>group-commit amortizes fsync across concurrent txns</td></tr>
+<tr><td>single-row, 64 clients</td><td class="num">21k</td><td>knee — 8 cores saturated</td></tr>
+<tr><td>batch 100 / txn, 32 clients</td><td class="num win">533k</td><td>amortize one fsync over 100 rows</td></tr>
+<tr><td>batch 1000 / txn, 32 clients</td><td class="num win">922k</td><td></td></tr>
+<tr><td><code>synchronous_commit=off</code>, batch 100</td><td class="num">997k</td><td>~2× (removes the fsync wait)</td></tr>
+<tr><td><code>UNLOGGED</code> table, batch 100</td><td class="num">1.45M</td><td>no WAL at all — the absolute insert ceiling</td></tr>
+</table>
+<div class="why"><b>Why:</b> with <code>synchronous_commit=on</code> the producer is bound by the <b>commit fsync</b>. The single biggest lever is <b>batching</b> — one fsync over N rows instead of N fsyncs. Concurrency helps via <em>group commit</em>; <code>commit_delay=50µs</code> added a further +35% on single-row. Append is rarely the bottleneck for any design except d1.</div>
+
+<!-- ============ 6. FANOUT ============ -->
+<h2 id="fanout">6 · Stage B — Fanout / materialize</h2>
+<p>This stage exists only for d1/d2/d3 (d4/d5 skip it). It writes one <code>deliveries</code> row per group per event. The question: do it synchronously in the trigger (d1), or asynchronously in a projector (d2/d3)?</p>
+
+<h3>d1 — synchronous trigger: the fanout tax</h3>
+<p>Because the trigger runs inside the producer's transaction, the producer's effective <b>append rate collapses as groups grow</b> — it has to write G delivery rows before its own insert commits.</p>
+<table>
+<tr><th>groups (G)</th><th class="num">d1 append (events/s)</th><th class="num">delivery-rows/s written</th></tr>
+<tr><td>1</td><td class="num">~19k</td><td class="num">19k</td></tr>
+<tr><td>10</td><td class="num">9.7k</td><td class="num">97k</td></tr>
+<tr><td>50</td><td class="num">4.4k</td><td class="num">218k</td></tr>
+<tr><td>100</td><td class="num">3.7k</td><td class="num">371k</td></tr>
+<tr><td>500</td><td class="num">0.94k</td><td class="num">471k</td></tr>
+</table>
+<div class="why"><b>Why:</b> the trigger's <em>row-writing</em> throughput plateaus at <b>~0.5M delivery-rows/s</b> on this box, no matter the group count, sync setting, or batch size — it's bound by writing rows, not by fsync. So the producer's event rate is simply <b>~0.5M ÷ G</b>. At 500 groups the producer is choked to under 1k events/s.</div>
+
+<h3>d2/d3 — async projector: decouple fanout from the commit</h3>
+<p>The projector materializes the same rows in a separate process, so the producer commits at the bare rate. Its own ceiling:</p>
+<table>
+<tr><th>projector config (G=10)</th><th class="num">delivery-rows/s</th><th>note</th></tr>
+<tr><td>1 process, small batch (1k offsets)</td><td class="num">290k</td><td></td></tr>
+<tr><td>1 process, batch 20k offsets</td><td class="num">342k</td><td>batch plateaus ~20k</td></tr>
+<tr><td>2 processes (sharded by group)</td><td class="num">526k</td><td>~1.5×</td></tr>
+<tr><td>4 processes</td><td class="num win">~600–666k</td><td>scales to the 8 cores</td></tr>
+<tr><td>8 processes</td><td class="num">629k</td><td>regresses — core oversubscription</td></tr>
+</table>
+<div class="why"><b>Why:</b> the projector's set-based <code>INSERT…SELECT</code> hits roughly the same ~0.5–0.7M rows/s wall as the trigger — materialization costs the same no matter who does it. The win isn't speed, it's <b>decoupling</b>: the producer's commit no longer waits for fanout. <code>NOTIFY</code> (d2) and polling (d3) reached the same throughput; NOTIFY just has lower idle latency. <b>But see §8</b> — that decoupling has a sting when everything runs at once.</div>
+
+<!-- ============ 7. CONSUME ============ -->
+<h2 id="consume">7 · Stage C — Consume / drain</h2>
+<p>This is the decisive stage. Numbers below are the corrected, replicated drain ceilings (median of 3 reps, G=10, batch 200, with a real per-event heap read on d4/d5).</p>
+<table>
+<tr><th>Design</th><th class="num">units/s (cc16)</th><th class="num">units/s (cc32)</th><th class="num">vs per-row</th></tr>
+<tr><td><span class="tag pill-d1">d1</span><span class="tag pill-d23">d2</span><span class="tag pill-d23">d3</span> per-row claim+ack</td><td class="num">124k</td><td class="num">99k</td><td class="num">1×</td></tr>
+<tr><td><span class="tag pill-d45">d4</span> claim-from-log</td><td class="num win">481k</td><td class="num win">430k</td><td class="num win">3.9–4.3×</td></tr>
+<tr><td><span class="tag pill-d45">d5</span> range-lease</td><td class="num win">400k</td><td class="num win">411k</td><td class="num win">3.2–4.1×</td></tr>
+<tr><td><span class="tag pill-d45">d4</span> claim-from-log @ <b>G=100</b></td><td class="num"></td><td class="num win">768k</td><td class="num win">7.7×</td></tr>
+</table>
+
+<h3 style="color:var(--bad)">Why the per-row path is the wall (~124k units/s)</h3>
+<div class="why">Completing one unit means <b>two UPDATEs</b>: <code>ready→inflight</code> (claim) then <code>inflight→acked</code> (ack). Each UPDATE writes a new heap row-version and maintains the index. So it's <b>~2 row-writes + index upkeep per unit</b>, and it's bound by <em>row-write throughput, not commit fsync</em>. The evidence that it's row-bound, not fsync-bound:
+<ul>
+<li><code>synchronous_commit=off</code> gave <b>~no improvement</b> (112k vs 116k) — removing the fsync didn't help, because fsync wasn't the limit.</li>
+<li>Collapsing claim+ack into <b>one</b> transaction made it <b>worse</b> (51k) — one fewer commit, but it holds the row locks longer, so 32 concurrent workers hit far more <code>SKIP LOCKED</code> contention.</li>
+<li>More clients past cc16 <b>regresses</b> (99k at cc32) — lock/latch contention, not throughput headroom.</li>
+</ul>
+The only lever that helped was batching the claim (b1000 → +15%).</div>
+
+<h3 style="color:var(--good)">Why claim-from-log is 3–8× cheaper</h3>
+<div class="why">A claim-from-log worker writes <b>nothing per event</b>. It atomically bumps <b>one cursor row</b> ("took offsets 5000–5200 for group g") and reads those events. The only write is the cursor advance — <b>once per batch of 200</b>, i.e. ~1/200th the writes. It still <em>reads</em> each event (a heap fetch — we forced that with <code>count(payload)</code> so the comparison is fair), but a read is far cheaper than two writes + index maintenance.</div>
+<div class="why"><b>Why it scales with group count</b> (the 4× → 8× jump): the cursor is <em>per group</em>.
+<ul>
+<li><b>G=1, 32 workers:</b> all 32 fight over one cursor row → serialized → ~100–128k units/s. This is the single-frontier contention wall.</li>
+<li><b>G=100, 32 workers:</b> the 32 spread across 100 cursor rows → almost no contention → <b>768k</b>.</li>
+</ul>
+This is the exact <em>opposite</em> of materialize designs, where more groups means more rows to write (slower). For claim-from-log, more groups means less contention (faster).</div>
+<p class="small"><b>d5 vs d4:</b> range-lease is consistently a touch below claim-from-log — the extra <code>INSERT</code>+<code>DELETE</code> of the lease row per batch. You buy crash-safe range reclaim for ~3–5%.</p>
+
+<!-- ============ 8. E2E ============ -->
+<h2 id="e2e">8 · Stage D — End-to-end &amp; breaking points</h2>
+<p>Now everything runs at once: producer + (projector) + consumers, G=10, on the same 8 cores. This is where the stages interact — and where d2's async decoupling backfires.</p>
+<table>
+<tr><th>Design</th><th class="num">append (ev/s)</th><th class="num">saturation (units/s)</th><th class="num">events/s fully</th><th class="num">breaking point</th><th class="num">10M-row spill</th></tr>
+<tr><td><span class="tag pill-d1">d1</span> sync trigger</td><td class="num">19.5k</td><td class="num">75k</td><td class="num">7.5k</td><td class="num">~5–10k</td><td class="num lose">−26%</td></tr>
+<tr><td><span class="tag pill-d23">d2</span> NOTIFY+proj</td><td class="num lose">3.4k</td><td class="num lose">34k</td><td class="num">3.4k</td><td class="num lose">~3.4k (capped)</td><td class="num">—</td></tr>
+<tr><td><span class="tag pill-d23">d3</span> poll proj</td><td class="num">26.9k</td><td class="num">43k</td><td class="num">4.3k</td><td class="num">~5–10k</td><td class="num">—</td></tr>
+<tr><td><span class="tag pill-d45">d4</span> claim-from-log</td><td class="num win">68.7k</td><td class="num win">287k</td><td class="num win">28.7k</td><td class="num win">~20–40k</td><td class="num win">−6%</td></tr>
+<tr><td><span class="tag pill-d45">d5</span> range-lease</td><td class="num win">72.8k</td><td class="num win">300k</td><td class="num win">30k</td><td class="num win">~20–40k</td><td class="num">−14%</td></tr>
+</table>
+<p class="small"><b>Breaking point</b> = highest offered events/s before the backlog diverges. <b>Spill</b> = throughput change when the hot table is pre-grown to 10M rows.</p>
+
+<div class="callout c-warn">
+<b>The counter-intuitive finding: async fanout (d2) was the <em>slowest</em> end-to-end — worse than the synchronous trigger.</b><br>
+d2 saturates at 34k units/s vs d1's 75k. Reason: 8 cores, and at saturation you're running the producer + <b>4 projector processes</b> + 16 consumer threads + a <code>NOTIFY</code> on every insert statement, all flat-out. The projectors and NOTIFY machinery steal CPU and WAL bandwidth, <b>starving the producer to ~3.4k ev/s</b> — so little arrives that nothing else can run fast either. Async fanout decouples <em>latency</em> (the producer's commit doesn't wait for fanout) but <b>not throughput</b> — everyone still shares the same cores. On a box with spare cores this would look very different; under saturation on a fixed core budget, moving fanout to its own process just adds contention.
+</div>
+<div class="why"><b>Why d4/d5 also degrade least with table size</b> (−6% vs d1's −26% at 10M rows): claiming a contiguous offset <em>range</em> is a clean B-tree range scan that stays cheap as the log grows. The per-row path claims scattered <code>ready</code> rows via a partial index over a table that keeps accumulating <code>acked</code> rows, so it feels table growth more. <span class="small">(Caveat: 10M rows ≈ 1.5GB still fit cache, so this is an index/table-size effect, not true disk spill — see §12.)</span></div>
+
+<!-- ============ 9. LADDER ============ -->
+<h2 id="ladder">9 · Optimization ladders — what helped, what didn't</h2>
+<div class="grid g3">
+  <div class="card"><h4>Append</h4>
+  <p class="small win">✓ batching (biggest lever, ~40–70×)<br>✓ sync=off (~2–3.7×)<br>✓ commit_delay=50µs (+35%)<br>✓ UNLOGGED (ceiling 1.45M)</p></div>
+  <div class="card"><h4>Materialize (projector)</h4>
+  <p class="small win">✓ parallel shards → 4 cores (~2×)<br>✓ offset-window batch ≈ 20k</p>
+  <p class="small lose">✗ &gt;4 shards regresses (oversubscription)</p></div>
+  <div class="card"><h4>Per-row consume</h4>
+  <p class="small win">✓ batch the claim (+15%)</p>
+  <p class="small lose">✗ sync=off (no help — row-bound)<br>✗ combined 1-txn claim+ack (worse)<br>✗ &gt;16 clients (regresses)</p></div>
+  <div class="card"><h4>Claim-from-log consume</h4>
+  <p class="small win">✓ more groups (less frontier contention)<br>✓ bigger batch</p>
+  <p class="small lose">✗ many clients on few groups (single-frontier wall ~100–128k)</p>
+  <p class="small">↻ unexhausted: <b>shard the frontier</b> (multiple cursor rows/group) — would lift the low-group wall.</p></div>
+  <div class="card"><h4>Range-lease consume</h4>
+  <p class="small">= claim-from-log − ~3–5% (lease row write/delete).</p></div>
+  <div class="card" style="background:var(--panel2)"><h4>Key takeaway</h4>
+  <p class="small">The two halves have <b>different bottlenecks</b>: append is <b>fsync-bound</b> (fix with batching), per-row consume is <b>row-write-bound</b> (no fsync trick helps). That asymmetry is why the per-row path can't be tuned out of its ~124k wall.</p></div>
+</div>
+
+<!-- ============ 10. CORRECTION ============ -->
+<h2 id="correction">10 · The correction story (why these numbers are trustworthy)</h2>
+<p>An independent adversarial audit reviewed the harness and the raw data. It confirmed the correctness invariants hold exactly, but caught two issues that <b>inflated the first-pass headline from a real ~3–8× to a misleading 40×</b>. Both are fixed in the numbers above.</p>
+<div class="callout c-fix">
+<b>Fix 1 — the no-fanout read was cheating.</b> The claim-from-log "read the events" step was <code>SELECT count(*)</code>, which Postgres answered with an <b>index-only scan</b> on the offset primary key — it never touched the heap or read the event payload. So d4/d5 were "completing" work without doing a real consumer's read. <b>Fix:</b> changed to <code>count(payload)</code> (payload isn't indexed, so it forces a per-event heap fetch). This <em>slowed</em> d4/d5 (saturation 480k→287k) and is why the matched advantage is ~3–4×, not the inflated number.
+</div>
+<div class="callout c-fix">
+<b>Fix 2 — exhausted backlogs &amp; N=1.</b> Several top figures were measured on backlogs that fully drained mid-window (so the trailing samples were idle, distorting the median), and most points were single runs with ~20% run-to-run variance. <b>Fix:</b> re-ran the load-bearing drains with non-exhausting backlogs and <b>3 repeats each</b>, reporting median-of-medians. The clean "141k" per-row number I'd cited turned out to be one unreplicated outlier; the honest replicated peak is <b>124k</b>.
+</div>
+<p class="small">What the audit <em>confirmed</em> as solid: the fanout count invariant (<code>deliveries == events×groups</code>, exact on every run), the no-loss/no-dup frontier (<code>done == events×groups</code> exact under 32 concurrent workers), the empty-claim-proof rate metric, and the overall ranking.</p>
+
+<!-- ============ 11. MATRIX ============ -->
+<h2 id="matrix">11 · Recommendation matrix</h2>
+<table>
+<tr><th>Your situation</th><th>Use</th><th>Why</th></tr>
+<tr><td>High throughput, many groups, in-order / cumulative ack is acceptable</td><td><span class="tag pill-d45">d4</span> claim-from-log</td><td>3–8× cheaper, gets faster as groups grow, shrugs off log size (−6% @10M)</td></tr>
+<tr><td>Need crash-safe range reclaim / Kafka-style offset ownership</td><td><span class="tag pill-d45">d5</span> range-lease</td><td>d4's speed + a durable lease per batch for ~3–5%</td></tr>
+<tr><td>Rich per-message lifecycle (retries, DLQ, out-of-order / individual acks, per-message visibility) at modest rate</td><td><span class="tag pill-d1">d1</span> sync trigger</td><td>simplest &amp; strongly consistent; the deliveries row <em>is</em> the lifecycle. Fine to ~5–7k events/s per group-set</td></tr>
+<tr><td>Very high-volume ingest where the producer must not pay fanout latency, <em>and</em> you have cores to spare</td><td><span class="tag pill-d23">d3</span> poll projector</td><td>decouples fanout from commit; simpler than d2 and same throughput. Watch core contention (§8)</td></tr>
+<tr><td><b>The Vulkan platform recommendation</b></td><td><b>Hybrid managed-cursor</b></td><td>claim-from-log + cumulative commit on the happy path (d4/d5 speed) <b>+</b> a deliveries/exceptions table <em>only</em> for retries / dead-letters / out-of-order. Pay the per-row cost for the small fraction that actually needs per-message lifecycle — the "waterline + sparse exceptions" model.</td></tr>
+</table>
+
+<!-- ============ 12. TRUST ============ -->
+<h2 id="trust">12 · Trust rating &amp; caveats</h2>
+<div class="grid g2">
+<div class="card"><h4 class="win">Direction &amp; matched ratios — HIGH</h4>
+<p class="small">Replicated (3 reps), fair per-event reads on both sides, non-exhausting backlogs, and exact correctness invariants checked every run. The ranking and the ~3–8× advantage are solid.</p></div>
+<div class="card"><h4 class="mid">Absolute magnitudes — MEDIUM</h4>
+<p class="small">Single box, 8 usable cores, co-tenant dev DB, tiny JSONB payloads, ~4–23% run-to-run variance. Single-point peaks (commit_delay, projector shards) sit within overlapping noise bands.</p></div>
+</div>
+<h3>Specific caveats</h3>
+<ul>
+<li><b>No true disk spill was reached.</b> The 10M-row "spill" tier (~1.5GB) still fit the 8GB container cache, so that degradation is index/table-size, not disk I/O. Raising OrbStack RAM and pushing a table past 8GB is the obvious next step.</li>
+<li><b>Read parity is conservative, not identical.</b> d4/d5 do a per-event heap read; d1/d2/d3 rewrite the delivery row but don't separately re-read the event payload — i.e. the comparison is tilted slightly <em>against</em> the no-fanout headline, so the real gap is at least what's shown.</li>
+<li><b>Tiny payloads.</b> Larger event bodies would make the per-event read cost more, narrowing d4/d5's lead somewhat (and making batching even more important).</li>
+<li><b>Unexhausted lever:</b> sharding the d4/d5 per-group frontier would lift the single-group wall (~100–128k) — not measured here.</li>
+</ul>
+<div class="callout c-fix" style="margin-top:14px"><b>Update:</b> the last three caveats were directly tested in the <a href="#audit2" style="color:var(--accent)">second audit (§13)</a> — read parity is fair (the gap is real, not a read-skipping artifact), frontier sharding lifts the g1 wall ~3.8×, and per-row pop-delete <em>doubles</em> the drain. True disk spill remains the one unmeasured lever.</div>
+
+<!-- ============ 13. SECOND AUDIT ============ -->
+<h2 id="audit2">13 · Second audit — corrections &amp; bound-moving optimizations</h2>
+<p>A second independent pass: six parallel adversarial reviewers (read parity, unit fairness, breaking-point method, environment, bound classification, statistics) over code + raw data, plus a <b>serial empirical re-test suite</b> on a fresh throwaway PG18 container with the co-tenant dev DB <b>verified idle throughout</b>. Two questions: (1) did each technique measure what we claimed, and (2) which untried levers move the bounds. All re-tests are median-of-3.</p>
+
+<div class="callout c-key"><b>One-line outcome:</b> the directional findings and matched ratios <b>hold and are now stronger</b> (read parity tested; invariants machine-enforced) — but several "walls" are <b>removable</b>: per-row 124k → <b>258k with pop-delete</b>, claim-log g1 → <b>521k by sharding the frontier</b>; and the e2e 75k/287k/300k figures are <b>burndown rates, not steady-state ceilings</b>.</div>
+
+<h3>13.1 Accuracy verdicts per headline</h3>
+<table>
+<tr><th>Claim</th><th>Verdict</th><th>Why</th></tr>
+<tr><td>Per-row ~124k, "row-write bound, only batching helps"</td><td class="mid"><b>Restate</b></td><td>~124k replicated &amp; <code>sync=off</code> truly doesn't help — but it's no wall: <b>UNLOGGED +45%</b>, <b>pop-delete +134%</b>. Write-<em>volume</em> bound (heap versions + index + WAL), an 8-core level, not fundamental.</td></tr>
+<tr><td>No-fanout ~3.9–4.3× (g10), ~7.7× (g100)</td><td class="win"><b>Confirmed</b></td><td>Reproduces; and the read-parity worry is now tested — <b>fair ratio 3.65× ≈ current 3.61×</b>. The gap is real, not an artifact of the per-row path skipping the event read.</td></tr>
+<tr><td>"Large payloads would compress the gap"</td><td class="lose"><b>Refuted (as stated)</b></td><td>At <em>cached</em> 1–4 KB the fair ratio holds/widens (4.25–4.51×). Compression needs the working set &gt; RAM (true disk spill, unreached).</td></tr>
+<tr><td>claim-log g1 "wall ~100–128k"</td><td class="mid"><b>Wall yes, fundamental no</b></td><td>K=1 replicates (136k); <b>sharding the frontier → 455–521k (+280%)</b>. Removable single-cursor-row contention.</td></tr>
+<tr><td>e2e ceilings 75k / 287k / 300k</td><td class="lose"><b>Refuted as steady-state</b></td><td>Every sat run is <code>diverging=true</code> → burndown of an ever-growing producer-co-tenant backlog, below the isolated drain ceilings. Tiers (~4–8×) hold; absolutes &amp; d4-vs-d5 order don't.</td></tr>
+<tr><td>Producer 21k→922k→1.45M; <code>commit_delay</code> +35%</td><td class="mid"><b>Direction ok, precision soft</b></td><td>N=1; <code>commit_delay</code> +35% could be ~0–65% vs a noisy baseline. Cite insert ceiling as <b>~1.4–1.45M</b>.</td></tr>
+<tr><td>d1 fanout 0.5M plateau; projector 666k peak</td><td class="win"><b>Confirmed / hardware</b></td><td>Both are 8-core write-throughput limits (projector regresses at exactly 8 shards), not Postgres limits.</td></tr>
+<tr><td>Spill −26% / −6% / −14%</td><td class="lose"><b>Overstated / rerun</b></td><td>N=1, noise-dominated, diverging burndowns, asymmetric setup, and <b>not disk spill</b> (cache-resident). True spill unreached.</td></tr>
+<tr><td>"Invariants verified every run"</td><td class="win"><b>Now enforced &amp; passing</b></td><td>No script actually asserted it before. New harness enforces &amp; <b>all PASS</b>: d3 each delivery acked once; d4/d5 <code>done==head×G</code>, cursors at head (no dup/skip); d5 <b>0 dangling leases</b>.</td></tr>
+</table>
+
+<h3>13.2 Read parity is fair — the gap is not a read-skipping artifact</h3>
+<p>The sharpest construct-validity worry was that per-row consumers never read the event body while claim-log does <code>count(payload)</code>. Tested directly (units/s, g10/b200/cc16):</p>
+<table>
+<tr><th>payload</th><th class="num">per-row no-read</th><th class="num">per-row +read</th><th class="num">claim-log +read</th><th class="num">fair ratio</th></tr>
+<tr><td>tiny <code>{"x":1}</code></td><td class="num">127.7k</td><td class="num">126.2k</td><td class="num">460.9k</td><td class="num win">3.65×</td></tr>
+<tr><td>~1 KB</td><td class="num">—</td><td class="num">131.9k</td><td class="num">560.2k</td><td class="num win">4.25×</td></tr>
+<tr><td>~4 KB</td><td class="num">—</td><td class="num">122.4k</td><td class="num">551.9k</td><td class="num win">4.51×</td></tr>
+</table>
+<div class="why"><b>Reading it:</b> adding a payload read to the per-row consumer changes <em>nothing</em> (126k vs 128k) — the path is write-bound. Claim-log is flat across cached payload sizes because its batched sequential read is nearly free until reads leave RAM. So the no-fanout advantage is real, and "bigger payloads narrow it" only holds off-cache.</div>
+
+<h3>13.3 The claim-log g1 wall is a removable contention artifact</h3>
+<p>Splitting one group's single claim frontier into K disjoint contiguous blocks, each its own cursor row (units/s, g1/b200):</p>
+<table>
+<tr><th class="num">frontier shards K</th><th class="num">1</th><th class="num">2</th><th class="num">4</th><th class="num">8</th><th class="num">16 (cc16)</th><th class="num">16 (cc32)</th></tr>
+<tr><td>units/s</td><td class="num">136.5k</td><td class="num">111.9k</td><td class="num">224.0k</td><td class="num">299.0k</td><td class="num win">454.5k</td><td class="num win">520.7k</td></tr>
+</table>
+<p class="small">+280% over the single frontier — up to the g10/g100 level. Correctness asserted PASS (disjoint blocks, union = full log exactly once; no dup/gap).</p>
+
+<h3>13.4 Breaking the per-row wall</h3>
+<p>The 2-UPDATE state-flip is not the only per-row option (units/s, g10/cc16, vs baseline):</p>
+<table>
+<tr><th>variant</th><th class="num">b200</th><th class="num">b1000</th></tr>
+<tr><td>baseline: ready→inflight→acked (2 UPDATEs)</td><td class="num">110–124k</td><td class="num">140k <span class="small">(+27%)</span></td></tr>
+<tr><td>UNLOGGED deliveries (2-UPDATE)</td><td class="num">160k <span class="win">(+45%)</span></td><td class="num">—</td></tr>
+<tr><td><b>pop-delete</b>: 1-txn <code>SELECT … FOR UPDATE SKIP LOCKED</code> + <code>DELETE</code></td><td class="num win">182k (+65%)</td><td class="num win">258k (+134%)</td></tr>
+<tr><td>pop-delete + UNLOGGED</td><td class="num">168k</td><td class="num">247k</td></tr>
+</table>
+<div class="why"><b>Why:</b> the wall is write <em>volume</em>, not durability latency. <code>sync=off</code> (fsync only) doesn't help, but removing WAL entirely (UNLOGGED) does (+45%), and replacing two row-rewrites with one delete helps most (+134%). pop-delete trades retry/lifecycle for speed (at-most-once on crash); its low WAL volume is why UNLOGGED adds nothing on top of it.</div>
+
+<h3>13.5 What kind of bound is each "wall"?</h3>
+<ul>
+<li><b>Closest to Postgres-fundamental:</b> the UNLOGGED ~1.4–1.45M insert ceiling (CPU), and the architectural fact that a per-(group,event) row write costs &gt;0 on both sides — the reason no-fanout wins.</li>
+<li><b>This-hardware (8-core / cache), moves with more cores or RAM:</b> the per-row 110–124k level, the d1 0.5M fanout plateau, the 666k projector peak, all e2e absolutes, and every "spill" number (cache-resident).</li>
+<li><b>Harness artifact (removable now):</b> the g1 frontier wall (→ shard, +280%); the per-row 124k as a write-<em>pattern</em> choice (→ pop-delete, +134%); the e2e "ceilings" (diverging burndown); and the read-parity concern (tested ≈ no effect when cached).</li>
+</ul>
+
+<h3>13.6 Optimizations ranked by measured impact</h3>
+<table>
+<tr><th>lever</th><th class="num">measured delta</th><th>which bound</th></tr>
+<tr><td>pop-delete per-row consumer (b1000)</td><td class="num win">+134%</td><td>per-row drain 110k → 258k</td></tr>
+<tr><td>shard the claim-log frontier (g1, K=16)</td><td class="num win">+280%</td><td>low-group claim-log 136k → 521k</td></tr>
+<tr><td>UNLOGGED deliveries (at-most-once OK)</td><td class="num win">+45%</td><td>per-row 2-UPDATE path</td></tr>
+<tr><td>batch the claim/ack (b1000)</td><td class="num">+27%</td><td>per-row drain</td></tr>
+<tr><td class="small">untested: COPY / libpq pipelining (producer); n5–n6 projector shards; working set &gt; RAM (true spill)</td><td class="num small">—</td><td class="small">would move the producer / true-disk bounds</td></tr>
+</table>
+
+<p class="small" style="margin-top:24px;color:var(--mut)">Harness, raw per-run JSON, and the running log live in <code>bench/scale/</code> (<code>results/SUMMARY.md</code>, <code>results/FINDINGS.md</code>, <code>results/*.jsonl</code> incl. <code>audit_*.jsonl</code>). Two audit passes; reproducible via the drivers in <code>bench/scale/drivers/</code> (incl. <code>audit_*.sh</code>). The throwaway Postgres container was torn down.</p>
+
+</div>
+</body>
+</html>

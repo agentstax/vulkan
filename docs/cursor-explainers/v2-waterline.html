@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Rising Waterline — How a Managed Cursor Works</title>
+<style>
+  :root {
+    /* State palette — cohesive, accessible, distinguishable */
+    --bg:            #0e1726;
+    --panel:         #16223a;
+    --panel-2:       #1d2c4a;
+    --ink:           #e8eef9;
+    --ink-dim:       #9fb0cc;
+    --line:          #2b3c5e;
+
+    /* Water + states */
+    --settled:       #1f6feb;   /* settled below the waterline (= the mark) */
+    --settled-2:     #2d82ff;
+    --done:          #2ea043;   /* done, but above the line (a filled hole) */
+    --inflight:      #d9a416;   /* in-flight / being processed */
+    --failed:        #e0622e;   /* failed, retrying */
+    --dead:          #6b4ea8;   /* dead / dead-letter (capped cell) */
+    --empty:         #2a3850;   /* not yet started (air pocket / empty cell) */
+
+    --accent:        #59c0ff;
+    --warn:          #ffb454;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background:
+      radial-gradient(1200px 600px at 70% -10%, #1a2740 0%, transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  header.hero {
+    text-align: center;
+    padding-bottom: 8px;
+  }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  h1 {
+    font-size: clamp(30px, 5vw, 48px);
+    margin: 10px 0 6px;
+    line-height: 1.08;
+    background: linear-gradient(180deg, #ffffff, #bcd6ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .subtitle {
+    color: var(--ink-dim);
+    font-size: 18px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  h2 {
+    font-size: 26px;
+    margin: 56px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  h2 .num {
+    font-size: 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--accent);
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+
+  p.lede { color: var(--ink-dim); margin-top: 4px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 24px;
+    margin: 18px 0;
+  }
+
+  /* ============ THE COLUMN (vertical waterline) ============ */
+  .stage {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) 1fr;
+    gap: 28px;
+    align-items: stretch;
+  }
+  @media (max-width: 720px) {
+    .stage { grid-template-columns: 1fr; }
+  }
+
+  .column-area {
+    position: relative;
+    background:
+      linear-gradient(180deg, #0c1426, #0a1120);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 18px 18px 56px;
+    overflow: hidden;
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column-reverse; /* offset 0 at the BOTTOM */
+    gap: 6px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .cell {
+    position: relative;
+    height: 56px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.10);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 10px;
+    font-weight: 600;
+    transition: background 600ms ease, border-color 600ms ease, box-shadow 600ms ease, transform 350ms ease;
+    background: var(--empty);
+    color: var(--ink-dim);
+  }
+  .cell .ofs {
+    font-variant-numeric: tabular-nums;
+    background: rgba(0,0,0,0.30);
+    border-radius: 6px;
+    padding: 2px 9px;
+    font-size: 13px;
+    min-width: 56px;
+    text-align: center;
+    color: var(--ink);
+  }
+  .cell .tag {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    opacity: 0.95;
+    margin-left: auto;
+    text-transform: uppercase;
+  }
+
+  /* state visuals */
+  .cell.s-settled {
+    background: linear-gradient(180deg, var(--settled-2), var(--settled));
+    color: #fff;
+    border-color: rgba(120,180,255,0.55);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 0 1px rgba(31,111,235,0.25);
+  }
+  .cell.s-done {
+    background: linear-gradient(180deg, #34b14e, var(--done));
+    color: #fff;
+    border-color: rgba(120,230,150,0.5);
+  }
+  .cell.s-inflight {
+    background: repeating-linear-gradient(45deg, #d9a416 0 12px, #c89212 12px 24px);
+    color: #1b1403;
+    border-color: rgba(255,210,90,0.6);
+  }
+  .cell.s-failed {
+    background: linear-gradient(180deg, #ec7142, var(--failed));
+    color: #fff;
+    border-color: rgba(255,150,110,0.6);
+  }
+  .cell.s-dead {
+    background:
+      repeating-linear-gradient(135deg, rgba(0,0,0,0.18) 0 8px, transparent 8px 16px),
+      linear-gradient(180deg, #7d5dc0, var(--dead));
+    color: #fff;
+    border-color: rgba(180,150,240,0.6);
+  }
+  .cell.s-empty {
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 7px, transparent 7px 14px),
+      var(--empty);
+    color: var(--ink-dim);
+    border-style: dashed;
+    border-color: rgba(255,255,255,0.14);
+  }
+
+  /* "capped/sealed" lid on dead cells */
+  .cell.s-dead::before {
+    content: "";
+    position: absolute;
+    left: 6px; right: 6px; top: 4px;
+    height: 4px;
+    border-radius: 3px;
+    background: repeating-linear-gradient(90deg, #cdbcef 0 6px, #8e74c9 6px 12px);
+  }
+
+  /* gentle pulse for in-flight */
+  @keyframes pulse {
+    0%,100% { box-shadow: inset 0 0 0 rgba(0,0,0,0); }
+    50%     { box-shadow: 0 0 14px rgba(217,164,22,0.55); }
+  }
+  .cell.s-inflight { animation: pulse 1.8s ease-in-out infinite; }
+
+  /* THE WATERLINE — horizontal glowing line + animated water fill */
+  .waterline {
+    position: absolute;
+    left: 0; right: 0;
+    height: 0;
+    z-index: 5;
+    pointer-events: none;
+    transition: bottom 850ms cubic-bezier(.16,.84,.27,1);
+  }
+  .waterline .line {
+    position: absolute;
+    left: 0; right: 0; top: -2px;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--accent) 12%, var(--accent) 88%, transparent);
+    box-shadow: 0 0 12px var(--accent), 0 0 28px rgba(89,192,255,0.5);
+  }
+  .waterline .badge {
+    position: absolute;
+    left: -52px;
+    top: -16px;
+    width: 46px;
+    text-align: right;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-shadow: 0 1px 2px #000;
+  }
+  /* the submerged water tint below the line */
+  .water-fill {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 1;
+    background:
+      linear-gradient(180deg, rgba(46,130,255,0.20), rgba(31,111,235,0.32));
+    border-top: 2px solid rgba(89,192,255,0.55);
+    transition: height 850ms cubic-bezier(.16,.84,.27,1);
+    pointer-events: none;
+  }
+  .water-fill::after {
+    /* subtle surface shimmer */
+    content:"";
+    position:absolute; left:0; right:0; top:-1px; height:14px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.18), transparent);
+  }
+
+  /* surge highlight when the waterline jumps */
+  .column-area.surge .waterline .line {
+    box-shadow: 0 0 22px var(--accent), 0 0 48px rgba(89,192,255,0.85);
+  }
+  @keyframes flash {
+    0% { box-shadow: inset 0 0 0 2px rgba(89,192,255,0); }
+    35% { box-shadow: inset 0 0 0 2px rgba(89,192,255,0.9); }
+    100% { box-shadow: inset 0 0 0 2px rgba(89,192,255,0); }
+  }
+  .cell.justrose { animation: flash 900ms ease; }
+
+  /* ============ Controls + narration ============ */
+  .side {
+    display: flex;
+    flex-direction: column;
+  }
+  .scenario-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .scenario-tabs button {
+    flex: 1 1 auto;
+    background: var(--panel-2);
+    color: var(--ink-dim);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 180ms ease;
+  }
+  .scenario-tabs button:hover { border-color: var(--accent); color: var(--ink); }
+  .scenario-tabs button.active {
+    background: linear-gradient(180deg, var(--settled-2), var(--settled));
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .narration {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    flex: 1 1 auto;
+    min-height: 160px;
+  }
+  .narration .scen-title {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 4px;
+    color: var(--ink);
+  }
+  .narration .step-text { color: var(--ink-dim); font-size: 15px; }
+  .narration .mark-state {
+    margin-top: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(31,111,235,0.16);
+    border: 1px solid rgba(89,192,255,0.4);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-weight: 800;
+    font-size: 14px;
+  }
+  .narration .surge-tag {
+    margin-top: 12px;
+    display: none;
+    color: var(--warn);
+    font-weight: 800;
+    font-size: 14px;
+  }
+  .narration.is-surge .surge-tag { display: block; }
+
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .stepper button {
+    background: var(--panel-2);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 11px 16px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 160ms ease;
+  }
+  .stepper button:hover:not(:disabled) { border-color: var(--accent); }
+  .stepper button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .stepper .pgrow { flex: 1 1 auto; }
+  .dots { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+  .dots .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--line);
+    transition: background 200ms;
+  }
+  .dots .dot.on { background: var(--accent); }
+
+  /* ============ Legend ============ */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .legend .item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .legend .swatch {
+    width: 34px; height: 34px; flex: 0 0 auto;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.18);
+    margin-top: 2px;
+  }
+  .legend .lbl { font-weight: 800; font-size: 14px; }
+  .legend .desc { color: var(--ink-dim); font-size: 13px; }
+
+  .sw-settled { background: linear-gradient(180deg, var(--settled-2), var(--settled)); }
+  .sw-done    { background: linear-gradient(180deg, #34b14e, var(--done)); }
+  .sw-inflight{ background: repeating-linear-gradient(45deg, #d9a416 0 8px, #c89212 8px 16px); }
+  .sw-failed  { background: linear-gradient(180deg, #ec7142, var(--failed)); }
+  .sw-dead    { background: repeating-linear-gradient(135deg, rgba(0,0,0,0.2) 0 6px, transparent 6px 12px), linear-gradient(180deg, #7d5dc0, var(--dead)); }
+  .sw-empty   { background: repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 5px, transparent 5px 10px), var(--empty); border-style: dashed !important; }
+  .sw-water   { background: linear-gradient(180deg, transparent 40%, var(--accent) 42%, rgba(31,111,235,0.4) 100%); }
+
+  /* ============ Concept diagram (SVG-ish flow) ============ */
+  .twoup {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 720px){ .twoup { grid-template-columns: 1fr; } }
+
+  .callout {
+    border-left: 4px solid var(--warn);
+    background: rgba(255,180,84,0.08);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--warn); }
+
+  .vs {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 14px;
+    align-items: center;
+  }
+  @media (max-width: 720px){ .vs { grid-template-columns: 1fr; } .vs .vsmid{ text-align:center; } }
+  .vs .vsmid { font-weight: 800; color: var(--ink-dim); text-align: center; }
+  .mini-col {
+    background: #0c1426;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .mini-col h4 { margin: 0 0 10px; font-size: 14px; text-align: center; }
+  .mini-cell {
+    height: 34px; border-radius: 7px; margin-bottom: 5px;
+    display:flex; align-items:center; padding:0 10px; gap:8px;
+    font-size: 13px; font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .mini-cell .mofs { background: rgba(0,0,0,0.3); border-radius: 5px; padding: 1px 7px; font-size: 12px; }
+  .mini-stack { display:flex; flex-direction: column-reverse; }
+
+  /* glossary */
+  table.gloss {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  table.gloss th, table.gloss td {
+    text-align: left;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.gloss th { color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  table.gloss td.term { font-weight: 800; color: var(--ink); }
+  table.gloss tr:last-child td { border-bottom: none; }
+
+  .leak {
+    background: linear-gradient(180deg, #221a12, #1a140d);
+    border: 1px solid #5a4424;
+    border-radius: 16px;
+    padding: 22px 24px;
+  }
+  .leak h2 { margin-top: 0; }
+  .leak .col2 { display:grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 720px){ .leak .col2 { grid-template-columns: 1fr; } }
+  .leak h4 { margin: 0 0 6px; }
+  .leak .good h4 { color: #5fd07a; }
+  .leak .bad h4 { color: var(--warn); }
+  .leak ul { margin: 0; padding-left: 18px; }
+  .leak li { margin: 6px 0; color: var(--ink-dim); font-size: 14px; }
+
+  footer { text-align:center; color: var(--ink-dim); font-size: 13px; margin-top: 50px; }
+  code.k { background: var(--panel-2); border:1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">A managed cursor, visualized</div>
+    <h1>The Rising Waterline</h1>
+    <p class="subtitle">
+      A message log is a tall glass that fills from the bottom. The <b style="color:var(--accent)">waterline</b>
+      rises only as high as the <b>solid water beneath it</b> — it can never float over an air pocket.
+      That single rule is the whole idea.
+    </p>
+  </header>
+
+  <!-- ============ THE BIG PICTURE ============ -->
+  <h2><span class="num">1</span> The picture in one breath</h2>
+  <p class="lede">
+    Offsets are stacked cells, <b>0 at the bottom</b>, climbing upward as new messages arrive. Each cell is a
+    pocket that either fills (the message settles) or stays full of air (still working). The waterline is the
+    tallest level where <em>everything below is solid</em>.
+  </p>
+
+  <div class="panel">
+    <div class="vs">
+      <div class="mini-col">
+        <h4>Water can&rsquo;t float</h4>
+        <div class="mini-stack">
+          <div class="mini-cell s-settled"><span class="mofs">0</span> filled</div>
+          <div class="mini-cell s-empty"><span class="mofs">1</span> AIR POCKET</div>
+          <div class="mini-cell s-done"><span class="mofs">2</span> filled</div>
+          <div class="mini-cell s-done"><span class="mofs">3</span> filled</div>
+        </div>
+        <p class="desc" style="color:var(--ink-dim);font-size:13px;margin:8px 2px 0;">
+          2 and 3 are full of water, but 1 is air. The line stays at <b>0</b>. Filled-but-stranded cells are
+          <b>holes</b>.
+        </p>
+      </div>
+      <div class="vsmid">then 1 fills&nbsp;&rarr;</div>
+      <div class="mini-col">
+        <h4>The line surges</h4>
+        <div class="mini-stack">
+          <div class="mini-cell s-settled"><span class="mofs">0</span> filled</div>
+          <div class="mini-cell s-settled"><span class="mofs">1</span> filled</div>
+          <div class="mini-cell s-settled"><span class="mofs">2</span> filled</div>
+          <div class="mini-cell s-settled"><span class="mofs">3</span> filled</div>
+        </div>
+        <p class="desc" style="color:var(--ink-dim);font-size:13px;margin:8px 2px 0;">
+          One pocket fills and the line leaps from <b>0&nbsp;to&nbsp;3</b> in a single surge. Everything below
+          collapses to one number.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ LEGEND ============ -->
+  <h2><span class="num">2</span> Reading the cells</h2>
+  <div class="panel">
+    <div class="legend">
+      <div class="item">
+        <div class="swatch sw-water"></div>
+        <div><div class="lbl">The waterline</div><div class="desc">Highest level with solid water all the way down. <b>= the mark</b>, a single integer.</div></div>
+      </div>
+      <div class="item">
+        <div class="swatch sw-settled"></div>
+        <div><div class="lbl">Settled &mdash; below the line</div><div class="desc">Submerged &amp; fully accounted for. Compressed into the mark and garbage-collected.</div></div>
+      </div>
+      <div class="item">
+        <div class="swatch sw-done"></div>
+        <div><div class="lbl">Done &mdash; a filled hole</div><div class="desc">Finished, but stranded <em>above</em> the line because something below it is still air.</div></div>
+      </div>
+      <div class="item">
+        <div class="swatch sw-inflight"></div>
+        <div><div class="lbl">In-flight (air pocket)</div><div class="desc">A worker holds it right now. Empty space the line cannot rise through.</div></div>
+      </div>
+      <div class="item">
+        <div class="swatch sw-failed"></div>
+        <div><div class="lbl">Failed &mdash; retrying</div><div class="desc">Tried, errored, will be re-attempted. Still an air pocket for now.</div></div>
+      </div>
+      <div class="item">
+        <div class="swatch sw-dead"></div>
+        <div><div class="lbl">Dead &mdash; capped / sealed</div><div class="desc">Can never fill. Sealed with a lid so water rises <em>past</em> it. Kept in the dead-letter store.</div></div>
+      </div>
+      <div class="item">
+        <div class="swatch sw-empty"></div>
+        <div><div class="lbl">Not yet started</div><div class="desc">A message that exists but no worker has claimed it. Open air.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ THE INTERACTIVE WALKTHROUGH ============ -->
+  <h2><span class="num">3</span> Watch the line rise &mdash; four scenarios</h2>
+  <p class="lede">
+    Pick a scenario, then step through with <b>Next&nbsp;&#9656;</b>. Watch where the glowing waterline can
+    (and can&rsquo;t) go.
+  </p>
+
+  <div class="panel">
+    <div class="stage">
+      <!-- The column -->
+      <div class="column-area" id="columnArea">
+        <div class="water-fill" id="waterFill"></div>
+        <div class="waterline" id="waterline">
+          <div class="badge">mark</div>
+          <div class="line"></div>
+        </div>
+        <div class="column" id="column"><!-- cells injected by JS --></div>
+      </div>
+
+      <!-- Controls + narration -->
+      <div class="side">
+        <div class="scenario-tabs" id="tabs">
+          <button data-scen="A" class="active">A &middot; In&#8209;order</button>
+          <button data-scen="B">B &middot; Out&#8209;of&#8209;order</button>
+          <button data-scen="C">C &middot; Cascade</button>
+          <button data-scen="D">D &middot; Poison</button>
+        </div>
+
+        <div class="narration" id="narration">
+          <div class="scen-title" id="scenTitle"></div>
+          <div class="step-text" id="stepText"></div>
+          <div class="mark-state" id="markState"></div>
+          <div class="surge-tag" id="surgeTag">&#9889; SURGE &mdash; the line jumped multiple levels at once.</div>
+        </div>
+
+        <div class="stepper">
+          <button id="prevBtn">&#9664; Prev</button>
+          <div class="pgrow">
+            <div class="dots" id="dots"></div>
+          </div>
+          <button id="nextBtn">Next &#9654;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout" id="poisonCallout" style="display:none;">
+    <strong>&#9888; Why this beats a naive single cursor.</strong>
+    A plain cursor is one pointer that only moves to the next message <em>if that exact message succeeded</em>.
+    The instant offset&nbsp;1 dies, that pointer is <b>frozen at 0 forever</b> &mdash; head-of-line blocking,
+    the whole group stalls behind one bad message. The waterline simply <b>seals the dead cell and rises past it</b>.
+  </div>
+
+  <!-- ============ ROLL-UP MECHANICS ============ -->
+  <h2><span class="num">4</span> Two things, doing two jobs</h2>
+  <div class="twoup">
+    <div class="panel">
+      <h3 style="margin-top:0;">Below the line: one integer</h3>
+      <p class="desc" style="color:var(--ink-dim);font-size:14px;">
+        Everything submerged is <em>fully settled</em> (each message is <code class="k">done</code> or
+        <code class="k">dead</code>). It doesn&rsquo;t matter how it ended &mdash; it&rsquo;s under water. The
+        whole submerged region compresses to a <b>single number: the waterline height</b>. Old rows are
+        garbage-collected. This part of the log never grows.
+      </p>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;">Above the line: the exception window</h3>
+      <p class="desc" style="color:var(--ink-dim);font-size:14px;">
+        Above the surface lives the messy reality &mdash; some filled, some air, some sealed. These need
+        <b>real per-message state</b>. The window&rsquo;s size tracks the <b>disorder</b> (how far ahead workers
+        race), <em>not</em> the size of the whole log. Quiet, in-order traffic &rarr; almost no window.
+      </p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0;">The roll-up: a lazy, background surge</h3>
+    <p class="desc" style="color:var(--ink-dim);font-size:14px;">
+      Workers never touch the waterline. Each grabs a distinct cell (a short lease), fills it, moves on &mdash;
+      no coordination, even across machines. Separately, a background <b>roll-up</b> checks: &ldquo;are the cells
+      <em>directly above</em> the line all settled now?&rdquo; If so, it slides the line up to swallow the whole
+      contiguous run at once. Filling one low pocket can let it <b>cascade</b> several levels in a single move.
+    </p>
+    <p class="desc" style="color:var(--ink-dim);font-size:14px;margin-bottom:0;">
+      <b>Crash-safe by design:</b> per-cell outcomes are durable; only un-saved roll-up progress can be lost.
+      That&rsquo;s harmless &mdash; a stale-low line just rises again on restart by re-checking the cells. The
+      guarantee is <em>at-least-once</em>.
+    </p>
+  </div>
+
+  <!-- ============ GLOSSARY ============ -->
+  <h2><span class="num">5</span> Metaphor &rarr; reality</h2>
+  <div class="panel" style="padding:6px 8px;">
+    <table class="gloss">
+      <thead><tr><th>In the metaphor</th><th>Technical term</th><th>What it actually is</th></tr></thead>
+      <tbody>
+        <tr><td class="term">The waterline</td><td>The mark (high-water mark)</td><td>Greatest offset N where every offset &le; N is resolved. One integer.</td></tr>
+        <tr><td class="term">Solid water below</td><td>Settled / compressed region</td><td>Contiguous resolved prefix; collapsed to the integer &amp; garbage-collected.</td></tr>
+        <tr><td class="term">Air pockets</td><td>In-flight / failed offsets</td><td>Unresolved messages: being processed or awaiting retry.</td></tr>
+        <tr><td class="term">Filled holes</td><td>Done-but-above-mark</td><td>Completed offsets stranded above the line by a lower air pocket.</td></tr>
+        <tr><td class="term">The line surges / leaps</td><td>Roll-up (cascade)</td><td>Mark slides forward over a newly-contiguous run; may jump many positions.</td></tr>
+        <tr><td class="term">Capped / sealed cell</td><td>Dead-letter</td><td>Permanently-failed message; counts as resolved so the line passes it. Retained for audit.</td></tr>
+        <tr><td class="term">The exception window</td><td>The holes (per-msg state)</td><td>Region above the mark with real per-message rows; scales with disorder.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ WHERE IT LEAKS ============ -->
+  <div class="leak">
+    <h2 style="font-size:22px;"><span class="num" style="background:#3a2c14;border-color:#5a4424;color:var(--warn);">!</span> Where this metaphor leaks</h2>
+    <div class="col2">
+      <div class="good">
+        <h4>What it makes vivid</h4>
+        <ul>
+          <li><b>Contiguity is physical.</b> Water cannot hover over air &mdash; so it&rsquo;s obvious why the mark stops at the first gap.</li>
+          <li><b>The surge.</b> Filling one low pocket visibly lets the line leap many levels &mdash; the cascade is intuitive.</li>
+          <li><b>Poison doesn&rsquo;t block.</b> A sealed cell that water rises past captures &ldquo;dead counts as resolved&rdquo; cleanly.</li>
+          <li><b>Two-tier storage.</b> Submerged = one number; above = detailed state. The split reads naturally.</li>
+        </ul>
+      </div>
+      <div class="bad">
+        <h4>What it hides or distorts</h4>
+        <ul>
+          <li><b>Water is continuous; offsets are discrete.</b> Real fills are independent per-cell events, not a smooth liquid surface.</li>
+          <li><b>Gravity implies order; processing has none.</b> Workers fill cells in any order from any machine &mdash; nothing &ldquo;falls&rdquo; or settles by physics.</li>
+          <li><b>One waterline per group.</b> Each consumer group has its own line over the <em>same</em> log; the single-glass image hides the per-group multiplicity.</li>
+          <li><b>The line isn&rsquo;t a live sensor.</b> It&rsquo;s computed lazily in the background and can lag the true state; &ldquo;a rising level&rdquo; suggests instant, continuous tracking.</li>
+          <li><b>No real top.</b> The log is unbounded and append-only; a glass implies a finite container that could overflow.</li>
+          <li><b>Dead isn&rsquo;t &ldquo;solid.&rdquo;</b> A sealed cell is retained elsewhere for audit, not actually merged into the clean submerged block &mdash; the metaphor makes it look the same as a fill.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    The Rising Waterline &mdash; one mental model for the managed cursor. Best paired with the technical spec,
+    not a substitute for it.
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ----- state codes -----
+  // settled = submerged & resolved (below line)
+  // done    = resolved but above line (filled hole)
+  // inflight= worker holds it (air)
+  // failed  = errored, retrying (air)
+  // dead    = capped/sealed (resolved, line passes it)
+  // empty   = not yet started (air)
+  var TAGS = {
+    settled:  "settled",
+    done:     "done",
+    inflight: "in-flight",
+    failed:   "failed",
+    dead:     "dead",
+    empty:    "&mdash;"
+  };
+
+  // Each scenario: ordered list of frames.
+  // A frame = { states:[s0,s1,s2,s3], mark:Number(-1 means below 0), text, surge:bool }
+  // mark is the offset index of the highest SETTLED cell (-1 = no cell settled yet, line at floor).
+  var SCEN = {
+    A: {
+      title: "A · In-order completion",
+      frames: [
+        { s:["empty","empty","empty","empty"], mark:-1,
+          t:"Four messages have arrived (0–3). None claimed yet — the glass is all air. The waterline rests on the floor." },
+        { s:["inflight","empty","empty","empty"], mark:-1,
+          t:"A worker claims offset 0. It's an air pocket while in-flight — the line can't move yet." },
+        { s:["settled","empty","empty","empty"], mark:0,
+          t:"0 finishes. The pocket fills, the line rises to 0. Everything below is solid." },
+        { s:["settled","settled","empty","empty"], mark:1,
+          t:"1 finishes next. Line rises to 1. Still perfectly contiguous." },
+        { s:["settled","settled","settled","empty"], mark:2,
+          t:"2 finishes. Line rises to 2. One smooth step at a time — no holes ever form." },
+        { s:["settled","settled","settled","settled"], mark:3,
+          t:"3 finishes. Line at 3 — the whole glass is solid water, compressed to a single number." }
+      ]
+    },
+    B: {
+      title: "B · Out-of-order (the line gets stuck)",
+      frames: [
+        { s:["settled","empty","empty","empty"], mark:0,
+          t:"Start with 0 already settled — line at 0. Now workers race ahead on the upper offsets." },
+        { s:["settled","inflight","inflight","inflight"], mark:0,
+          t:"Three workers grab 1, 2 and 3 at once (no coordination). All three are air pockets above the line." },
+        { s:["settled","inflight","done","inflight"], mark:0,
+          t:"2 finishes first. It fills — but it's stranded ABOVE the line because 1 below it is still air. That's a HOLE." },
+        { s:["settled","inflight","done","done"], mark:0,
+          t:"3 finishes too. Another filled hole. The line is STILL at 0 — water can't float over the air pocket at 1." }
+      ]
+    },
+    C: {
+      title: "C · Roll-up cascade (the surge)",
+      frames: [
+        { s:["settled","inflight","done","done"], mark:0,
+          t:"Picking up from B: line stuck at 0, holes filled at 2 and 3, only 1 is still air." },
+        { s:["settled","done","done","done"], mark:0,
+          t:"1 finally finishes. Now offsets 1,2,3 are ALL solid — a contiguous run sits directly above the line, but the line hasn't moved yet (the roll-up runs lazily)." },
+        { s:["settled","settled","settled","settled"], mark:3, surge:true,
+          t:"The background roll-up wakes, sees the contiguous run, and SURGES: the line leaps from 0 straight to 3 in one move. All holes collapse into the number." }
+      ]
+    },
+    D: {
+      title: "D · Poison message (sealed, not stuck)",
+      frames: [
+        { s:["settled","inflight","done","done"], mark:0,
+          t:"Same starting point: line at 0, holes at 2 and 3, offset 1 still being worked." },
+        { s:["settled","failed","done","done"], mark:0,
+          t:"1 fails. It retries… and fails again. It will not succeed — it's becoming poison. Still air for now, line still at 0." },
+        { s:["settled","dead","done","done"], mark:0,
+          t:"1 is declared DEAD and sealed with a lid — copied to the dead-letter store for audit. A sealed cell counts as RESOLVED." },
+        { s:["settled","settled","settled","settled"], mark:3, surge:true, poison:true,
+          t:"Because the sealed cell counts as solid, the line rises PAST it — surging from 0 to 3. One bad message did not freeze the group." }
+      ]
+    }
+  };
+
+  var col       = document.getElementById("column");
+  var waterline = document.getElementById("waterline");
+  var waterFill = document.getElementById("waterFill");
+  var area      = document.getElementById("columnArea");
+  var scenTitle = document.getElementById("scenTitle");
+  var stepText  = document.getElementById("stepText");
+  var markState = document.getElementById("markState");
+  var narration = document.getElementById("narration");
+  var dots      = document.getElementById("dots");
+  var prevBtn   = document.getElementById("prevBtn");
+  var nextBtn   = document.getElementById("nextBtn");
+  var tabs      = document.getElementById("tabs");
+  var poisonCO  = document.getElementById("poisonCallout");
+
+  var cur = "A";
+  var idx = 0;
+  var prevStates = ["empty","empty","empty","empty"];
+  var prevMark = -2;
+
+  var CELL_H = 56;   // matches .cell height
+  var CELL_GAP = 6;  // matches .column gap
+  var PAD = 18;      // bottom padding of column-area
+
+  function buildCells(){
+    col.innerHTML = "";
+    for (var i=0;i<4;i++){
+      var c = document.createElement("div");
+      c.className = "cell s-empty";
+      c.dataset.i = i;
+      c.innerHTML = '<span class="ofs">offset '+i+'</span>'+
+                    '<span class="state">air pocket</span>'+
+                    '<span class="tag">&mdash;</span>';
+      col.appendChild(c);
+    }
+  }
+
+  var STATE_LABEL = {
+    settled:  "submerged",
+    done:     "filled (hole)",
+    inflight: "in-flight (air)",
+    failed:   "failed (air)",
+    dead:     "sealed / capped",
+    empty:    "air pocket"
+  };
+
+  function render(animate){
+    var frame = SCEN[cur].frames[idx];
+    var cells = col.children;
+
+    for (var i=0;i<4;i++){
+      var s = frame.s[i];
+      var cell = cells[i];
+      cell.className = "cell s-" + s;
+      // mark cells that just changed state for a flash
+      if (animate && prevStates[i] !== s) {
+        // re-trigger animation
+        void cell.offsetWidth;
+        cell.classList.add("justrose");
+        (function(c){ setTimeout(function(){ c.classList.remove("justrose"); }, 950); })(cell);
+      }
+      cell.querySelector(".state").textContent = STATE_LABEL[s];
+      cell.querySelector(".tag").innerHTML = TAGS[s];
+    }
+
+    // position the waterline.
+    // mark = index of highest settled cell; -1 means line on the floor.
+    var m = frame.mark;
+    var bottomPx;
+    if (m < 0){
+      bottomPx = PAD;                  // floor — nothing settled yet
+    } else {
+      // top edge of cell index m, measured from container bottom
+      bottomPx = PAD + (m+1)*CELL_H + m*CELL_GAP;
+    }
+    waterline.style.bottom = bottomPx + "px";
+    waterFill.style.height = (m < 0 ? 0 : bottomPx) + "px";
+
+    // surge flourish
+    if (frame.surge && animate){
+      area.classList.add("surge");
+      setTimeout(function(){ area.classList.remove("surge"); }, 1100);
+      narration.classList.add("is-surge");
+    } else {
+      narration.classList.remove("is-surge");
+    }
+
+    // narration
+    scenTitle.textContent = SCEN[cur].title;
+    stepText.textContent = frame.t;
+    var markLabel = (m < 0) ? "floor (nothing settled)" : ("offset " + m);
+    markState.innerHTML = "Waterline / mark: <b style='margin-left:4px'>" + markLabel + "</b>";
+
+    // poison callout shows during scenario D
+    poisonCO.style.display = (cur === "D") ? "block" : "none";
+
+    // dots
+    renderDots();
+    prevBtn.disabled = (idx === 0);
+    nextBtn.disabled = (idx === SCEN[cur].frames.length - 1);
+
+    prevStates = frame.s.slice();
+    prevMark = m;
+  }
+
+  function renderDots(){
+    dots.innerHTML = "";
+    var n = SCEN[cur].frames.length;
+    for (var i=0;i<n;i++){
+      var d = document.createElement("div");
+      d.className = "dot" + (i===idx ? " on" : "");
+      dots.appendChild(d);
+    }
+  }
+
+  function setScenario(s){
+    cur = s;
+    idx = 0;
+    prevStates = ["x","x","x","x"]; // force flash on first paint of a scenario's diffs
+    var btns = tabs.querySelectorAll("button");
+    btns.forEach(function(b){ b.classList.toggle("active", b.dataset.scen === s); });
+    render(false);
+  }
+
+  nextBtn.addEventListener("click", function(){
+    if (idx < SCEN[cur].frames.length - 1){ idx++; render(true); }
+  });
+  prevBtn.addEventListener("click", function(){
+    if (idx > 0){ idx--; render(true); }
+  });
+  tabs.addEventListener("click", function(e){
+    var b = e.target.closest("button");
+    if (b && b.dataset.scen){ setScenario(b.dataset.scen); }
+  });
+
+  // keyboard
+  document.addEventListener("keydown", function(e){
+    if (e.key === "ArrowRight"){ nextBtn.click(); }
+    else if (e.key === "ArrowLeft"){ prevBtn.click(); }
+  });
+
+  buildCells();
+  setScenario("A");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Managed Cursor — Watermark &amp; Ranges</title>
+<style>
+  :root {
+    /* Cohesive palette: cool blues/teals for "good/settled", warm for "exception" */
+    --bg:        #0f1419;
+    --panel:     #171e26;
+    --panel-2:   #1d2630;
+    --ink:       #e7edf3;
+    --ink-dim:   #9fb0c0;
+    --ink-faint: #6b7d8e;
+    --line:      #2c3744;
+    --accent:    #5aa9e6;
+
+    /* State colors — each has a distinct hue AND a label, never color-only */
+    --c-notyet:   #3a4654;  /* not-yet-started */
+    --c-inflight: #e0a93b;  /* in-flight (claimed/leased) */
+    --c-failed:   #d9603b;  /* failed, retrying */
+    --c-done:     #46c08b;  /* done (above mark / hole) */
+    --c-dead:     #8b6fd6;  /* dead-letter (terminal) */
+    --c-settled:  #2f7fb5;  /* settled, below/at watermark */
+
+    --c-notyet-t:   #c4ceda;
+    --c-inflight-t: #2a2008;
+    --c-failed-t:   #2a1108;
+    --c-done-t:     #07271a;
+    --c-dead-t:     #160c30;
+    --c-settled-t:  #eaf4fc;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  h1 { font-size: 30px; line-height:1.2; margin: 0 0 6px; letter-spacing:-0.01em; }
+  h2 { font-size: 21px; margin: 48px 0 12px; letter-spacing:-0.01em; }
+  h3 { font-size: 15px; margin: 0 0 8px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .08em; font-weight:600;}
+  p  { color: var(--ink-dim); margin: 0 0 12px; }
+  .sub { color: var(--ink-faint); font-size: 15px; margin-top: 0; }
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .92em;
+  }
+  a { color: var(--accent); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin: 16px 0;
+  }
+
+  /* ---------- Legend ---------- */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 10px 18px;
+  }
+  .legend .item { display:flex; align-items:center; gap:9px; font-size:13.5px; color:var(--ink); }
+  .legend .swatch {
+    width: 18px; height: 18px; border-radius: 5px; flex:0 0 auto;
+    border: 1px solid rgba(255,255,255,.18);
+  }
+  .legend .item small { display:block; color: var(--ink-faint); font-size:11.5px; line-height:1.3; }
+
+  /* ---------- Stepper ---------- */
+  .scenario-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 14px; }
+  .tab {
+    background: var(--panel-2); color: var(--ink-dim);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 14px; cursor:pointer; font-size:13.5px; font-weight:600;
+    transition: all .12s ease;
+  }
+  .tab:hover { color: var(--ink); border-color:#3a4856; }
+  .tab.active { background: var(--accent); color:#06121f; border-color: var(--accent); }
+  .tab .k { font-weight:800; margin-right:6px; }
+
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px;
+  }
+
+  .caption {
+    display:flex; gap:12px; align-items:flex-start;
+    background: var(--panel-2);
+    border:1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 20px;
+    min-height: 64px;
+  }
+  .caption .stepno {
+    flex:0 0 auto;
+    font-family: ui-monospace, monospace;
+    font-weight:800; font-size:13px;
+    background: var(--accent); color:#06121f;
+    border-radius:6px; padding:2px 8px; margin-top:2px;
+  }
+  .caption .txt { font-size:14.5px; color: var(--ink); }
+  .caption .txt b { color:#fff; }
+  .caption.warn { border-left-color: var(--c-failed); }
+  .caption.warn .stepno { background: var(--c-failed); color:#fff;}
+  .caption.good { border-left-color: var(--c-done); }
+  .caption.good .stepno { background: var(--c-done); color:#06251a;}
+  .caption.dead { border-left-color: var(--c-dead); }
+  .caption.dead .stepno { background: var(--c-dead); color:#fff;}
+
+  /* ---------- Number line + cells ---------- */
+  .axis-label { font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.1em; margin-bottom:6px;}
+  .numberline {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 8px;
+    margin: 4px 0 6px;
+  }
+  .cell {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 10px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    border: 1px solid rgba(255,255,255,.10);
+    transition: background .45s ease, color .45s ease, transform .35s ease, box-shadow .35s ease, opacity .45s ease;
+    font-family: ui-monospace, monospace;
+    overflow:hidden;
+  }
+  .cell .off { font-size: 22px; font-weight: 700; line-height:1; }
+  .cell .st  { font-size: 9.5px; margin-top:5px; letter-spacing:.04em; text-transform:uppercase; opacity:.85; text-align:center; padding:0 2px;}
+
+  .cell.notyet   { background: var(--c-notyet);   color: var(--c-notyet-t); }
+  .cell.inflight { background: var(--c-inflight); color: var(--c-inflight-t); }
+  .cell.failed   { background: var(--c-failed);   color: var(--c-failed-t); }
+  .cell.done     { background: var(--c-done);     color: var(--c-done-t); }
+  .cell.dead     { background: var(--c-dead);     color: var(--c-dead-t); }
+  .cell.settled  { background: var(--c-settled);  color: var(--c-settled-t); opacity:.62; }
+
+  /* "just changed" pop */
+  .cell.pop { box-shadow: 0 0 0 3px rgba(255,255,255,.55), 0 0 22px rgba(255,255,255,.30); transform: translateY(-3px); }
+  /* "just absorbed by watermark" */
+  .cell.absorb { animation: absorbPulse .7s ease; }
+  @keyframes absorbPulse {
+    0%   { box-shadow: 0 0 0 4px rgba(47,127,181,.9); transform: scale(1.06); }
+    100% { box-shadow: 0 0 0 0 rgba(47,127,181,0); transform: scale(1); }
+  }
+
+  /* ---------- Watermark pointer ---------- */
+  .wm-track { position: relative; height: 58px; margin-top: 2px; }
+  .wm {
+    position:absolute; top:0;
+    transition: left .6s cubic-bezier(.6,.05,.2,1);
+    transform: translateX(-50%);
+    display:flex; flex-direction:column; align-items:center;
+    width: 120px;
+  }
+  .wm .tri {
+    width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;
+    border-bottom: 12px solid var(--c-settled);
+    filter: drop-shadow(0 0 6px rgba(47,127,181,.6));
+  }
+  .wm .chip {
+    margin-top:4px;
+    background: var(--c-settled); color:#fff;
+    border-radius: 8px; padding: 4px 11px;
+    font-family: ui-monospace, monospace; font-weight:700; font-size:13px;
+    white-space:nowrap; box-shadow: 0 2px 10px rgba(0,0,0,.4);
+  }
+  .wm .chip small { display:block; font-weight:600; font-size:9.5px; opacity:.85; letter-spacing:.06em; }
+  .wm.atneg .chip { background: var(--c-notyet); color: var(--c-notyet-t); }
+  .wm.atneg .tri  { border-bottom-color: var(--c-notyet); }
+
+  /* shaded "settled" zone under the line, left of watermark */
+  .zone {
+    position:absolute; top:0; left:0; height:100%;
+    background: linear-gradient(90deg, rgba(47,127,181,.16), rgba(47,127,181,.05));
+    border-right: 2px dashed rgba(47,127,181,.55);
+    border-radius: 10px 0 0 10px;
+    transition: width .6s cubic-bezier(.6,.05,.2,1);
+    pointer-events:none;
+    z-index:0;
+  }
+  .nl-wrap { position:relative; padding-top: 18px; }
+  .nl-wrap .numberline { position:relative; z-index:1; }
+  .zonelabel {
+    position:absolute; top:-2px; left:8px; z-index:2;
+    font-size:10.5px; color: var(--c-settled); font-weight:700;
+    text-transform:uppercase; letter-spacing:.09em;
+    transition: opacity .4s ease;
+  }
+
+  /* ---------- ACK range bars ---------- */
+  .ranges-zone { margin-top: 26px; }
+  .ack-track {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 8px;
+    height: 30px;
+    margin-top: 4px;
+  }
+  .ackbar {
+    position:absolute; top:3px; height:22px;
+    background: repeating-linear-gradient(45deg, rgba(70,192,139,.85), rgba(70,192,139,.85) 8px, rgba(70,192,139,.6) 8px, rgba(70,192,139,.6) 16px);
+    border: 1px solid rgba(70,192,139,.9);
+    border-radius: 6px;
+    display:flex; align-items:center; justify-content:center;
+    font-family: ui-monospace, monospace; font-size:11px; font-weight:700; color:#06251a;
+    transition: left .5s ease, width .5s ease, opacity .4s ease;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+  }
+  .ackbar.dead {
+    background: repeating-linear-gradient(45deg, rgba(139,111,214,.9), rgba(139,111,214,.9) 8px, rgba(139,111,214,.6) 8px, rgba(139,111,214,.6) 16px);
+    border-color: rgba(139,111,214,.95); color:#fff;
+  }
+
+  /* ---------- Two-column: ranges table + backing store ---------- */
+  .twocol { display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:24px; }
+  @media (max-width: 720px){ .twocol { grid-template-columns:1fr; } .numberline,.ack-track{grid-template-columns:repeat(8,1fr);} }
+
+  .ds {
+    background: var(--panel-2); border:1px solid var(--line); border-radius:12px; padding:16px;
+  }
+  .ds h4 { margin:0 0 4px; font-size:13px; color:var(--ink); }
+  .ds .hint { font-size:11.5px; color:var(--ink-faint); margin:0 0 12px; }
+
+  table.t { width:100%; border-collapse:collapse; font-family: ui-monospace, monospace; font-size:12.5px; }
+  table.t th { text-align:left; color:var(--ink-faint); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; padding:4px 8px; border-bottom:1px solid var(--line);}
+  table.t td { padding:6px 8px; border-bottom:1px solid rgba(44,55,68,.6); color:var(--ink); }
+  table.t tr:last-child td { border-bottom:none; }
+  .pos-box {
+    display:inline-flex; align-items:center; gap:8px;
+    background: var(--c-settled); color:#fff; border-radius:8px; padding:6px 12px;
+    font-family: ui-monospace, monospace; font-weight:800; font-size:18px;
+    transition: background .4s ease;
+  }
+  .pos-box.atneg { background: var(--c-notyet); color: var(--c-notyet-t); }
+  .pos-box small { font-weight:600; font-size:10px; opacity:.85; }
+
+  .deliv-row td { transition: background .4s ease, opacity .5s ease; }
+  .deliv-row.gc { animation: gcOut 1s ease forwards; }
+  @keyframes gcOut {
+    0%   { background: rgba(47,127,181,.25); opacity:1;}
+    70%  { background: rgba(47,127,181,.10); opacity:.5; }
+    100% { opacity:.18; text-decoration: line-through; }
+  }
+  .badge {
+    display:inline-block; padding:1px 7px; border-radius:5px; font-size:10.5px; font-weight:700;
+  }
+  .b-done{ background:var(--c-done); color:var(--c-done-t);}
+  .b-inflight{ background:var(--c-inflight); color:var(--c-inflight-t);}
+  .b-failed{ background:var(--c-failed); color:#fff;}
+  .b-dead{ background:var(--c-dead); color:#fff;}
+
+  .gc-note { font-size:11px; color: var(--accent); margin-top:10px; min-height:16px; transition: opacity .3s;}
+
+  /* ---------- controls ---------- */
+  .controls { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:22px; }
+  .controls .btns { display:flex; gap:10px; }
+  button.nav {
+    background: var(--panel-2); color: var(--ink);
+    border:1px solid var(--line); border-radius:10px;
+    padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer;
+    transition: all .12s;
+  }
+  button.nav:hover:not(:disabled){ border-color: var(--accent); color:#fff; }
+  button.nav:disabled { opacity:.35; cursor:default; }
+  button.nav.primary { background: var(--accent); color:#06121f; border-color:var(--accent); }
+  .progress { display:flex; gap:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--line); transition: background .2s, transform .2s;}
+  .dot.on { background: var(--accent); transform: scale(1.25); }
+
+  /* contrast callout for poison */
+  .contrast {
+    margin-top:18px; border:1px dashed var(--c-failed); border-radius:10px; padding:12px 14px;
+    background: rgba(217,96,59,.07); font-size:13.5px; color: var(--ink);
+    display:none;
+  }
+  .contrast.show { display:block; }
+  .contrast b { color:#ffb59c; }
+  .naive-line { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .naive-cell {
+    width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    font-family:ui-monospace,monospace;font-size:12px;font-weight:700; border:1px solid rgba(255,255,255,.12);
+  }
+
+  /* glossary */
+  table.gloss { width:100%; border-collapse:collapse; font-size:13.5px; }
+  table.gloss th { text-align:left; padding:9px 12px; border-bottom:2px solid var(--line); color:var(--ink-dim); font-size:12px; text-transform:uppercase; letter-spacing:.05em;}
+  table.gloss td { padding:9px 12px; border-bottom:1px solid var(--line); color:var(--ink); vertical-align:top; }
+  table.gloss td.term { font-weight:700; color:#fff; }
+  table.gloss td .tech { color: var(--accent); font-family: ui-monospace, monospace; }
+
+  .leak {
+    background: linear-gradient(180deg, rgba(217,96,59,.08), rgba(23,30,38,.4));
+    border:1px solid #5a3a30; border-radius:14px; padding:22px;
+  }
+  .leak h2 { margin-top:0; }
+  .leak .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  @media (max-width:680px){ .leak .cols{grid-template-columns:1fr;} .twocol{grid-template-columns:1fr;} }
+  .leak ul { margin:6px 0 0; padding-left:18px; }
+  .leak li { color: var(--ink-dim); margin-bottom:8px; font-size:13.5px;}
+  .leak .vivid h3 { color: var(--c-done); }
+  .leak .hides h3 { color: var(--c-failed); }
+
+  .footnote { font-size:12.5px; color: var(--ink-faint); border-top:1px solid var(--line); margin-top:40px; padding-top:18px;}
+  .footnote code { color: var(--ink-dim); }
+  .kbd { font-family:ui-monospace,monospace; background:var(--panel-2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:11.5px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>The Managed Cursor</h1>
+  <p class="sub">A precise, data-structure-first view — <b>watermark&nbsp;&amp;&nbsp;ranges</b>. No metaphor, just the literal thing rendered cleanly. For implementers who want to build it.</p>
+
+  <p>A consumer group reads a durable, append-only log of messages with strictly-increasing offsets. Work finishes <b>out of order</b>. We track group progress with two pieces of state: one <b>integer watermark</b> (everything at or below it is fully settled) and a small set of <b>ACK ranges</b> above it (the messy window of mixed outcomes). This is exactly TCP cumulative&#8209;ACK&nbsp;+&nbsp;SACK, and Pulsar's managed&#8209;cursor mark&#8209;delete&nbsp;position&nbsp;+&nbsp;individually&#8209;acked&nbsp;ranges.</p>
+
+  <!-- ===================== LEGEND ===================== -->
+  <h2>State legend</h2>
+  <div class="panel">
+    <div class="legend">
+      <div class="item"><span class="swatch" style="background:var(--c-notyet)"></span><span>Not yet started<small>no delivery row exists</small></span></div>
+      <div class="item"><span class="swatch" style="background:var(--c-inflight)"></span><span>In&#8209;flight<small>claimed, lease held</small></span></div>
+      <div class="item"><span class="swatch" style="background:var(--c-failed)"></span><span>Failed, retrying<small>back to in&#8209;flight later</small></span></div>
+      <div class="item"><span class="swatch" style="background:var(--c-done)"></span><span>Done (in an ACK range)<small>above watermark, resolved</small></span></div>
+      <div class="item"><span class="swatch" style="background:var(--c-dead)"></span><span>Dead&#8209;letter<small>terminal; counts as resolved</small></span></div>
+      <div class="item"><span class="swatch" style="background:var(--c-settled);opacity:.62"></span><span>Settled &le; watermark<small>collapsed into the integer, GC&#8209;able</small></span></div>
+    </div>
+  </div>
+
+  <!-- ===================== WALKTHROUGH ===================== -->
+  <h2>Walk the four scenarios</h2>
+  <p>Pick a scenario, then step through with <span class="kbd">&#9664; Prev</span> / <span class="kbd">Next &#9654;</span> (or arrow keys). Watch the <b style="color:var(--c-settled)">watermark</b> slide, ranges <b style="color:var(--c-done)">merge</b>, and settled rows get <b style="color:var(--accent)">garbage&#8209;collected</b> from the backing store.</p>
+
+  <div class="scenario-tabs" id="tabs">
+    <button class="tab active" data-s="A"><span class="k">A</span>In&#8209;order</button>
+    <button class="tab" data-s="B"><span class="k">B</span>Out&#8209;of&#8209;order &rarr; holes</button>
+    <button class="tab" data-s="C"><span class="k">C</span>Roll&#8209;up cascade</button>
+    <button class="tab" data-s="D"><span class="k">D</span>Poison / dead&#8209;letter</button>
+  </div>
+
+  <div class="stage">
+    <div class="caption" id="caption">
+      <span class="stepno" id="stepno">A0</span>
+      <span class="txt" id="captiontxt"></span>
+    </div>
+
+    <!-- number line -->
+    <div class="nl-wrap">
+      <div class="axis-label">Offsets (the log)</div>
+      <div class="zonelabel" id="zonelabel" style="opacity:0">settled &mdash; collapsed into watermark</div>
+      <div class="zone" id="zone" style="width:0"></div>
+      <div class="numberline" id="numberline"></div>
+    </div>
+
+    <!-- watermark pointer -->
+    <div class="wm-track">
+      <div class="wm" id="wm">
+        <div class="tri"></div>
+        <div class="chip"><small>WATERMARK</small><span id="wmval">-1</span></div>
+      </div>
+    </div>
+
+    <!-- ack ranges (interval bars) -->
+    <div class="ranges-zone">
+      <div class="axis-label">ACK ranges above the watermark (interval bars)</div>
+      <div class="ack-track" id="acktrack"></div>
+    </div>
+
+    <!-- two-column data structure -->
+    <div class="twocol">
+      <div class="ds">
+        <h4>ACK range set (the "holes" / SACK blocks)</h4>
+        <p class="hint">Stored as intervals <code>[lo,hi]</code>. Size scales with the disorder window, not the log. Merges when a new ack bridges a gap.</p>
+        <table class="t" id="rangetable">
+          <thead><tr><th>range [lo,hi]</th><th>members</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="ds">
+        <h4>Backing store (Postgres)</h4>
+        <p class="hint">One <code>position</code> integer per group + a <code>deliveries</code> row only for the window above the watermark. Rows below it are GC&#8209;able.</p>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">cursor.position</div>
+          <span class="pos-box" id="posbox"><span id="posval">-1</span><small>&larr; the whole settled prefix, one int</small></span>
+        </div>
+        <div style="font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">deliveries (offset &gt; position)</div>
+        <table class="t" id="delivtable">
+          <thead><tr><th>offset</th><th>state</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="gc-note" id="gcnote">&nbsp;</div>
+      </div>
+    </div>
+
+    <!-- poison contrast -->
+    <div class="contrast" id="contrast">
+      <b>Why this beats a naive single cursor.</b> A naive design advances one position only while the very next offset is done. When offset&nbsp;1 goes <span class="badge b-dead">DEAD</span>, that cursor freezes at&nbsp;0 <b>forever</b> &mdash; head&#8209;of&#8209;line blocking. The managed cursor treats <i>dead</i> as resolved, so the watermark slides <b>past</b> it (the dead row is kept in the dead&#8209;letter store for audit).
+      <div class="naive-line" id="naiveline"></div>
+    </div>
+
+    <!-- controls -->
+    <div class="controls">
+      <div class="progress" id="progress"></div>
+      <div class="btns">
+        <button class="nav" id="prev">&#9664;&nbsp;Prev</button>
+        <button class="nav primary" id="next">Next&nbsp;&#9654;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== GLOSSARY ===================== -->
+  <h2>Glossary &mdash; this model's terms vs. the technical concept</h2>
+  <div class="panel" style="padding:6px 12px;">
+    <table class="gloss">
+      <thead><tr><th>This model</th><th>Maps to</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td class="term">Watermark</td><td><span class="tech">the mark</span> &middot; mark&#8209;delete position &middot; cumulative ACK</td><td>One integer N: every offset &le; N is resolved, with <b>no gaps</b>. The settled prefix, compressed.</td></tr>
+        <tr><td class="term">ACK ranges</td><td><span class="tech">the holes</span> &middot; individually&#8209;acked ranges &middot; SACK blocks</td><td>Non&#8209;contiguous intervals above the watermark holding the real per&#8209;message outcomes (the exception window).</td></tr>
+        <tr><td class="term">Range merge / compaction</td><td>&mdash;</td><td>When a new ack fills the gap between two ranges, they fuse into one interval.</td></tr>
+        <tr><td class="term">Watermark jump</td><td><span class="tech">roll&#8209;up</span></td><td>When a range becomes adjacent to the watermark, the integer "eats" it: the watermark advances over the whole run at once (can cascade).</td></tr>
+        <tr><td class="term">Dead member</td><td><span class="tech">dead&#8209;letter</span></td><td>A terminal-failed offset. It still counts as <i>resolved</i>, so it joins a range and the watermark passes it.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== LEAK BOX ===================== -->
+  <h2>Where this model leaks</h2>
+  <div class="leak">
+    <p style="color:var(--ink-dim);margin-top:0;">This rendering is deliberately literal, but even "no metaphor" hides things. Honest accounting:</p>
+    <div class="cols">
+      <div class="vivid">
+        <h3>What it makes clear</h3>
+        <ul>
+          <li><b>The contiguity rule.</b> The watermark only moves over a gapless run; the shaded zone makes "no holes below me" visually obvious.</li>
+          <li><b>Cost model.</b> One int + a range set that grows with <i>disorder</i>, not with the log length. You can see the table stay small.</li>
+          <li><b>Roll-up cascade.</b> Filling one gap can let the watermark jump several spots in a single slide.</li>
+          <li><b>No head-of-line blocking.</b> Dead counts as resolved, so one poison message can't freeze the group.</li>
+          <li><b>GC.</b> The 1:1 link between "watermark passed it" and "row is deletable" is explicit.</li>
+        </ul>
+      </div>
+      <div class="hides">
+        <h3>What it hides / distorts</h3>
+        <ul>
+          <li><b>Concurrency.</b> The stepper looks like one ordered actor. Really, many uncoordinated workers claim distinct offsets and ack independently; the watermark is advanced <i>lazily</i> by a separate background roll-up and is usually <b>stale-low</b>.</li>
+          <li><b>Time &amp; leases.</b> "In-flight" hides lease expiry, retries with backoff, and the at-least-once redelivery that can re-fire a message.</li>
+          <li><b>Crash recovery.</b> The clean slide hides that un-flushed roll-up progress can be lost; the watermark is then merely recomputed (harmlessly) on restart.</li>
+          <li><b>1-D tidiness.</b> A real range set can be far more fragmented than 8 cells, and merges/splits churn under load. The neat bars understate the bookkeeping.</li>
+          <li><b>"Done" vs "dead" look equal.</b> Both are "resolved" for the watermark, but operationally a dead-letter pile is an incident, not a success.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <b>Fidelity footnote.</b> This is precisely <code>TCP cumulative ACK + selective ACK (SACK) blocks</code> (RFC&nbsp;2018) and Apache&nbsp;Pulsar's managed&#8209;cursor model: a <code>mark&#8209;delete position</code> (our watermark) plus <code>individuallyDeletedMessages</code> ranges (our ACK ranges). The hot path (claim&nbsp;+&nbsp;ack) only touches per&#8209;message rows; the watermark is advanced off the hot path. Guarantee: at&#8209;least&#8209;once.
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // State codes: notyet, inflight, failed, done, dead. "settled" is derived (offset <= watermark).
+  // Each scenario = ordered list of frames. Each frame: states[8], watermark int, caption, kind, flags.
+  // We render 8 offsets (0..7). For these scenarios only 0..3 are interesting; 4..7 stay not-yet-started.
+
+  var N = 8;
+  var base = ["notyet","notyet","notyet","notyet","notyet","notyet","notyet","notyet"];
+
+  function f(states, wm, kind, no, txt, opts){
+    opts = opts || {};
+    return {
+      states: states.slice(),
+      wm: wm,
+      kind: kind,          // '', 'good', 'warn', 'dead'
+      no: no,
+      txt: txt,
+      changed: opts.changed || [],   // offsets that just changed (pop)
+      absorbed: opts.absorbed || [], // offsets just eaten by watermark
+      gc: opts.gc || [],             // offsets whose delivery row is being GC'd
+      gcnote: opts.gcnote || "",
+      contrast: !!opts.contrast,
+      naive: opts.naive || null      // for poison contrast: array of {off,state} for naive cursor
+    };
+  }
+
+  // helper to build a state array quickly from overrides
+  function S(over){ var a = base.slice(); for(var k in over){ a[+k]=over[k]; } return a; }
+
+  var SCEN = {
+    // ---------- A: IN ORDER ----------
+    A: [
+      f(S({}), -1, '', 'A0',
+        "Start. Nothing claimed. <b>Watermark = -1</b> (an empty prefix). No delivery rows exist yet.",
+        {}),
+      f(S({0:'inflight'}), -1, '', 'A1',
+        "A worker claims offset <b>0</b> &rarr; in-flight. A <code>deliveries</code> row appears. Watermark unchanged.",
+        {changed:[0]}),
+      f(S({0:'done'}), 0, 'good', 'A2',
+        "Offset <b>0</b> acks <span class='badge b-done'>DONE</span>. It is adjacent to the watermark &rarr; <b>watermark jumps -1 &rarr; 0</b>. Row 0 is now &le; watermark and gets GC'd.",
+        {changed:[0], absorbed:[0], gc:[0], gcnote:"GC: deliveries row offset 0 deleted (now part of the integer)."}),
+      f(S({1:'inflight'}), 0, '', 'A3',
+        "Claim offset <b>1</b>. In order again. Watermark still 0.",
+        {changed:[1]}),
+      f(S({1:'done'}), 1, 'good', 'A4',
+        "Offset <b>1</b> acks DONE, adjacent &rarr; <b>watermark 0 &rarr; 1</b>. Roll-up advances one step. Row 1 GC'd.",
+        {changed:[1], absorbed:[1], gc:[1], gcnote:"GC: deliveries row offset 1 deleted."}),
+      f(S({2:'done',3:'done'}), 3, 'good', 'A5',
+        "2 and 3 finish in order; each lets the <b>watermark step forward</b>. We never accumulate any ACK ranges &mdash; the table stays empty. <b>Watermark = 3.</b>",
+        {changed:[2,3], absorbed:[2,3], gc:[2,3], gcnote:"GC: rows 2,3 deleted. Best case: pure cumulative ACK, zero range bookkeeping."})
+    ],
+
+    // ---------- B: OUT OF ORDER -> HOLES ----------
+    B: [
+      f(S({0:'done'}), 0, 'good', 'B0',
+        "Offset <b>0</b> is done and absorbed &rarr; <b>watermark = 0</b>. Clean start.",
+        {absorbed:[0], gc:[0]}),
+      f(S({1:'inflight',2:'inflight',3:'inflight'}), 0, '', 'B1',
+        "Three workers claim <b>1, 2, 3</b> concurrently &rarr; all in-flight. Three <code>deliveries</code> rows. Watermark still 0.",
+        {changed:[1,2,3]}),
+      f(S({1:'inflight',2:'done',3:'inflight'}), 0, '', 'B2',
+        "Offset <b>2</b> finishes first (out of order). It is <b>not adjacent</b> to the watermark &mdash; offset 1 is still a gap &mdash; so the watermark <b>cannot move</b>. We record ACK range <code>[2,2]</code>.",
+        {changed:[2]}),
+      f(S({1:'inflight',2:'done',3:'done'}), 0, 'warn', 'B3',
+        "Offset <b>3</b> finishes too. It is adjacent to range [2,2], so they <b>merge into [2,3]</b>. But there is still a <b>hole at offset 1</b>, so the <b>watermark stays STUCK at 0</b>.",
+        {changed:[3]}),
+      f(S({1:'inflight',2:'done',3:'done'}), 0, 'warn', 'B4',
+        "This is the steady out-of-order state: <b>watermark = 0</b>, one ACK range <code>[2,3]</code> held as real rows, offset 1 still in-flight. Done work above a gap is <i>remembered, not collapsed.</i>",
+        {})
+    ],
+
+    // ---------- C: ROLL-UP CASCADE ----------
+    C: [
+      f(S({1:'inflight',2:'done',3:'done'}), 0, 'warn', 'C0',
+        "Pick up from scenario B: <b>watermark = 0</b>, hole at <b>1</b> (in-flight), ACK range <code>[2,3]</code> waiting above it.",
+        {}),
+      f(S({1:'done',2:'done',3:'done'}), 0, '', 'C1',
+        "Offset <b>1</b> finally acks <span class='badge b-done'>DONE</span>. It fills the gap and <b>bridges</b> the watermark to range [2,3] &mdash; a single contiguous run 1,2,3 now sits right above the mark.",
+        {changed:[1]}),
+      f(S({1:'done',2:'done',3:'done'}), 3, 'good', 'C2',
+        "<b>Roll-up cascade.</b> The watermark eats the whole adjacent run in one slide: <b>0 &rarr; 3</b> (it jumped 3 positions, not 1). Range [2,3] and offset 1 collapse into the integer; their rows GC.",
+        {absorbed:[1,2,3], gc:[1,2,3], gcnote:"GC: rows 1,2,3 all deleted in one roll-up. The ACK range set is now empty."}),
+      f(S({1:'done',2:'done',3:'done'}), 3, 'good', 'C3',
+        "Settled. <b>Watermark = 3</b>, no ACK ranges, deliveries window empty. Filling <i>one</i> hole cleared the entire exception window at once.",
+        {})
+    ],
+
+    // ---------- D: POISON / DEAD ----------
+    D: [
+      f(S({1:'inflight',2:'done',3:'done'}), 0, 'warn', 'D0',
+        "Same starting point as C: <b>watermark = 0</b>, hole at <b>1</b>, ACK range <code>[2,3]</code> above. But this time offset 1 keeps failing.",
+        {}),
+      f(S({1:'failed',2:'done',3:'done'}), 0, 'warn', 'D1',
+        "Offset <b>1</b> fails and retries &mdash; <span class='badge b-failed'>FAILED, RETRYING</span>. Still a hole; watermark stuck at 0. Retries exhaust&hellip;",
+        {changed:[1]}),
+      f(S({1:'dead',2:'done',3:'done'}), 0, 'dead', 'D2',
+        "Offset <b>1</b> is declared <span class='badge b-dead'>DEAD</span> (poison). Key rule: <b>dead counts as RESOLVED</b>. So offset 1 joins the resolved set and bridges to [2,3] &mdash; a contiguous resolved run 1,2,3.",
+        {changed:[1], contrast:true,
+         naive:[{off:0,st:'settled'},{off:1,st:'dead'},{off:2,st:'done'},{off:3,st:'done'}]}),
+      f(S({1:'dead',2:'done',3:'done'}), 3, 'dead', 'D3',
+        "<b>Watermark slides PAST the dead offset:</b> 0 &rarr; 3. The dead record is <b>not</b> deleted &mdash; it is moved to the <b>dead-letter store</b> for audit &mdash; but offset 1 no longer blocks the prefix. Rows 2,3 GC normally.",
+        {absorbed:[1,2,3], gc:[2,3],
+         gcnote:"GC: rows 2,3 deleted. Offset 1 retained in dead-letter store (audit), not GC'd.",
+         contrast:true,
+         naive:[{off:0,st:'settled'},{off:1,st:'dead'},{off:2,st:'done'},{off:3,st:'done'}]}),
+      f(S({1:'dead',2:'done',3:'done'}), 3, 'dead', 'D4',
+        "Done. <b>Watermark = 3</b> despite a permanently-failed message. One poison pill did <i>not</i> freeze the group. Contrast: a naive single cursor would sit at <b>0 forever</b>.",
+        {contrast:true,
+         naive:[{off:0,st:'settled'},{off:1,st:'dead'},{off:2,st:'done'},{off:3,st:'done'}]})
+    ]
+  };
+
+  // ---------- DOM refs ----------
+  var elNL = document.getElementById('numberline');
+  var elAck = document.getElementById('acktrack');
+  var elWM = document.getElementById('wm');
+  var elWMval = document.getElementById('wmval');
+  var elZone = document.getElementById('zone');
+  var elZoneLabel = document.getElementById('zonelabel');
+  var elCaption = document.getElementById('caption');
+  var elStepno = document.getElementById('stepno');
+  var elCapTxt = document.getElementById('captiontxt');
+  var elRangeBody = document.querySelector('#rangetable tbody');
+  var elDelivBody = document.querySelector('#delivtable tbody');
+  var elPos = document.getElementById('posval');
+  var elPosBox = document.getElementById('posbox');
+  var elGcNote = document.getElementById('gcnote');
+  var elContrast = document.getElementById('contrast');
+  var elNaive = document.getElementById('naiveline');
+  var elProgress = document.getElementById('progress');
+  var btnPrev = document.getElementById('prev');
+  var btnNext = document.getElementById('next');
+  var tabs = document.getElementById('tabs');
+
+  var STLABEL = {
+    notyet:"not started", inflight:"in-flight", failed:"failed", done:"done", dead:"dead", settled:"settled"
+  };
+  var STBADGE = { done:"b-done", inflight:"b-inflight", failed:"b-failed", dead:"b-dead" };
+
+  // build cells once
+  var cells = [];
+  for(var i=0;i<N;i++){
+    var c = document.createElement('div');
+    c.className = 'cell notyet';
+    c.innerHTML = '<span class="off">'+i+'</span><span class="st">not started</span>';
+    elNL.appendChild(c);
+    cells.push(c);
+  }
+
+  var cur = 'A';
+  var idx = 0;
+
+  function colWidthPct(){ return 100/N; }
+
+  // compute ACK ranges from states + watermark: contiguous runs of "resolved" (done|dead) strictly above wm
+  function computeRanges(states, wm){
+    var ranges = [];
+    var lo = null;
+    for(var i=wm+1;i<N;i++){
+      var resolved = (states[i]==='done' || states[i]==='dead');
+      if(resolved){
+        if(lo===null) lo=i;
+      } else {
+        if(lo!==null){ ranges.push([lo,i-1]); lo=null; }
+      }
+    }
+    if(lo!==null) ranges.push([lo,N-1]);
+    return ranges;
+  }
+
+  function render(prevWm){
+    var fr = SCEN[cur][idx];
+
+    // cells
+    for(var i=0;i<N;i++){
+      var st = fr.states[i];
+      var settled = (i <= fr.wm);
+      var cls = 'cell ' + (settled ? 'settled' : st);
+      cells[i].className = cls;
+      var label = settled ? 'settled' : STLABEL[st];
+      // if settled but it was dead, mark it specially
+      if(settled && st==='dead'){ cells[i].className='cell dead'; label='dead (kept)'; }
+      cells[i].querySelector('.st').textContent = label;
+      cells[i].querySelector('.off').textContent = i;
+    }
+    // pops
+    fr.changed.forEach(function(o){
+      cells[o].classList.add('pop');
+      setTimeout((function(o){return function(){ if(cells[o]) cells[o].classList.remove('pop'); };})(o), 650);
+    });
+    fr.absorbed.forEach(function(o){
+      cells[o].classList.add('absorb');
+      setTimeout((function(o){return function(){ if(cells[o]) cells[o].classList.remove('absorb'); };})(o), 720);
+    });
+
+    // watermark pointer position: center of column (wm). If wm=-1, sit just left of column 0.
+    var w = colWidthPct();
+    var leftPct;
+    if(fr.wm < 0){ leftPct = 0; elWM.classList.add('atneg'); elPosBox.classList.add('atneg'); }
+    else { leftPct = (fr.wm + 0.5) * w; elWM.classList.remove('atneg'); elPosBox.classList.remove('atneg'); }
+    elWM.style.left = leftPct + '%';
+    elWMval.textContent = fr.wm;
+    elPos.textContent = fr.wm;
+
+    // settled zone width = up to right edge of column wm
+    var zoneW = fr.wm < 0 ? 0 : (fr.wm + 1) * w;
+    elZone.style.width = zoneW + '%';
+    elZoneLabel.style.opacity = fr.wm < 0 ? 0 : 1;
+
+    // ACK range bars (only ranges that contain at least one resolved item above wm)
+    elAck.innerHTML = '';
+    var ranges = computeRanges(fr.states, fr.wm);
+    ranges.forEach(function(r){
+      var bar = document.createElement('div');
+      var hasDead = false;
+      for(var k=r[0];k<=r[1];k++){ if(fr.states[k]==='dead') hasDead=true; }
+      bar.className = 'ackbar' + (hasDead && r[0]===r[1] ? ' dead' : '');
+      // mixed dead+done range: keep green but it's fine; pure-dead single shows purple
+      var leftP = r[0]*w;
+      var widthP = (r[1]-r[0]+1)*w;
+      bar.style.left = 'calc('+leftP+'% + 1px)';
+      bar.style.width = 'calc('+widthP+'% - 2px)';
+      bar.textContent = '['+r[0]+','+r[1]+']';
+      elAck.appendChild(bar);
+    });
+
+    // range table
+    elRangeBody.innerHTML = '';
+    if(ranges.length===0){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="2" style="color:var(--ink-faint);font-style:italic;">&mdash; empty &mdash; (pure cumulative ACK)</td>';
+      elRangeBody.appendChild(tr);
+    } else {
+      ranges.forEach(function(r){
+        var members = [];
+        for(var k=r[0];k<=r[1];k++){
+          members.push(k + (fr.states[k]==='dead'?'(dead)':''));
+        }
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>['+r[0]+','+r[1]+']</td><td>'+members.join(', ')+'</td>';
+        elRangeBody.appendChild(tr);
+      });
+    }
+
+    // deliveries table: rows for offset > wm that have a state (not notyet)
+    elDelivBody.innerHTML = '';
+    var anyRow = false;
+    for(var j=0;j<N;j++){
+      var stj = fr.states[j];
+      var isGc = fr.gc.indexOf(j) !== -1;
+      var belowOrEq = j <= fr.wm;
+      // show a row if: it has activity AND (it's above wm OR it's being GC'd this frame OR it's a retained dead at/below wm)
+      var show = false;
+      if(stj!=='notyet'){
+        if(j > fr.wm) show = true;
+        else if(isGc) show = true;            // show it fading out this step
+        else if(stj==='dead') show = true;    // dead retained even below wm
+      }
+      if(!show) continue;
+      anyRow = true;
+      var tr = document.createElement('tr');
+      tr.className = 'deliv-row' + (isGc ? ' gc' : '');
+      var badgeCls = STBADGE[stj] || '';
+      var stTxt = STLABEL[stj];
+      var extra = '';
+      if(belowOrEq && stj==='dead') extra = ' <span style="color:var(--c-dead);font-size:10px;">&rarr; dead-letter store</span>';
+      tr.innerHTML = '<td>'+j+'</td><td><span class="badge '+badgeCls+'">'+stTxt+'</span>'+extra+'</td>';
+      elDelivBody.appendChild(tr);
+    }
+    if(!anyRow){
+      var tr2 = document.createElement('tr');
+      tr2.innerHTML = '<td colspan="2" style="color:var(--ink-faint);font-style:italic;">&mdash; window empty &mdash;</td>';
+      elDelivBody.appendChild(tr2);
+    }
+
+    // gc note
+    elGcNote.textContent = fr.gcnote || ' ';
+
+    // caption
+    elCaption.className = 'caption' + (fr.kind ? ' '+fr.kind : '');
+    elStepno.textContent = fr.no;
+    elCapTxt.innerHTML = fr.txt;
+
+    // contrast (poison)
+    if(fr.contrast){
+      elContrast.classList.add('show');
+      elNaive.innerHTML = '<span style="font-size:12px;color:var(--ink-faint);">Naive single cursor (stuck at 0): </span>';
+      fr.naive.forEach(function(n){
+        var d = document.createElement('div');
+        d.className = 'naive-cell';
+        var bg = 'var(--c-'+n.st+')';
+        d.style.background = bg;
+        d.style.color = (n.st==='dead'||n.st==='failed') ? '#fff' : '#06251a';
+        d.textContent = n.off;
+        elNaive.appendChild(d);
+      });
+      var freeze = document.createElement('span');
+      freeze.style.cssText='font-size:12px;color:#ffb59c;font-weight:700;margin-left:6px;';
+      freeze.innerHTML = '&#9888; cursor frozen at 0';
+      elNaive.appendChild(freeze);
+    } else {
+      elContrast.classList.remove('show');
+    }
+
+    // progress dots + buttons
+    elProgress.innerHTML = '';
+    for(var p=0;p<SCEN[cur].length;p++){
+      var dot = document.createElement('div');
+      dot.className = 'dot' + (p===idx?' on':'');
+      elProgress.appendChild(dot);
+    }
+    btnPrev.disabled = (idx===0);
+    btnNext.disabled = (idx===SCEN[cur].length-1);
+  }
+
+  function go(delta){
+    var ni = idx + delta;
+    if(ni<0 || ni>=SCEN[cur].length) return;
+    idx = ni;
+    render();
+  }
+
+  function setScenario(s){
+    cur = s; idx = 0;
+    Array.prototype.forEach.call(tabs.children, function(b){
+      b.classList.toggle('active', b.getAttribute('data-s')===s);
+    });
+    render();
+  }
+
+  // events
+  btnPrev.addEventListener('click', function(){ go(-1); });
+  btnNext.addEventListener('click', function(){ go(1); });
+  tabs.addEventListener('click', function(e){
+    var b = e.target.closest('.tab');
+    if(b) setScenario(b.getAttribute('data-s'));
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowLeft'){ go(-1); }
+    else if(e.key==='ArrowRight'){ go(1); }
+    else if(['a','b','c','d'].indexOf(e.key.toLowerCase())!==-1){ setScenario(e.key.toUpperCase()); }
+  });
+
+  // init
+  setScenario('A');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+[inv 17:11:07] START invariants G=10 events=100000 cc=32
+[inv 17:11:07] == d4 claim-from-log ==
+[inv 17:11:16] d4: head=100000 G=10 expected_units=1000000 done=1000000 cursors_not_at_head=0
+[inv 17:11:16] d4: PASS (done==head*G, all cursors at head => no dup/no skip)
+[inv 17:11:16] == d5 range-lease ==
+[inv 17:11:25] d5: head=100000 expected_units=1000000 done=1000000 cursors_not_at_head=0 open_leases=0
+[inv 17:11:25] d5: PASS (done==head*G, cursors at head, 0 dangling leases)
+[inv 17:11:25] == d3 per-row deliveries ==
+[inv 17:11:51] d3: head=100000 backlog=1000000 expected=1000000 done=1000000 acked=1000000 ready_or_inflight_left=0
+[inv 17:11:51] d3: PASS (every delivery acked exactly once)
+[inv 17:11:51] DONE invariants (fail=0)

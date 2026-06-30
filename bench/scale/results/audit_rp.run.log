@@ -1,0 +1,62 @@
+[rp 16:34:37] START audit_readparity reps=3 warmup=6 window=18
+[rp 16:34:37] == E1 per-row: build d3 g10, 500k events, 5M deliveries ==
+NOTICE:  trigger "trg_fanout" for relation "events" does not exist, skipping
+[rp 16:34:56] run A0_perrow_noread_rep1 (d=d3 g=10 cc=16 b=200 ovr=none win=18)
+{"label":"A0_perrow_noread_rep1","design":"d3","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":18,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":114322.12,"complete_p10":97217.52,"complete_p90":143451.94,"consumer_txn_med":560.3,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":4110600,"backlog_end":2017400,"backlog_slope_per_s":-118417.918,"diverging":false,"decay":true,"events_added":0,"deliveries_added":0,"done_added":2998200,"deliveries_total":5000000,"events_head":500000}
+[rp 16:35:40] run A0_perrow_noread_rep2 (d=d3 g=10 cc=16 b=200 ovr=none win=18)
+{"label":"A0_perrow_noread_rep2","design":"d3","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":18,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":137252.60,"complete_p10":122057.78,"complete_p90":148588.98,"consumer_txn_med":678.4,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":4154600,"backlog_end":1787200,"backlog_slope_per_s":-133946.421,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":3231800,"deliveries_total":5000000,"events_head":500000}
+[rp 16:36:22] run A0_perrow_noread_rep3 (d=d3 g=10 cc=16 b=200 ovr=none win=18)
+{"label":"A0_perrow_noread_rep3","design":"d3","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":18,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":127698.37,"complete_p10":77084.09,"complete_p90":148415.47,"consumer_txn_med":637.5,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":4126600,"backlog_end":1950800,"backlog_slope_per_s":-123051.204,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":3063600,"deliveries_total":5000000,"events_head":500000}
+[rp 16:37:04] run A1_perrow_read_rep1 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=18)
+[rp 16:37:04] RUN FAILED A1_perrow_read_rep1
+[rp 16:37:20] run A1_perrow_read_rep2 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=18)
+[rp 16:37:20] RUN FAILED A1_perrow_read_rep2
+[rp 16:37:36] run A1_perrow_read_rep3 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=18)
+[rp 16:37:36] RUN FAILED A1_perrow_read_rep3
+[rp 16:37:36] == E1 claim-log: build d4 g10, 3M events ==
+NOTICE:  trigger "trg_fanout" for relation "events" does not exist, skipping
+[rp 16:37:39] run A2_log_read_rep1 (d=d4 g=10 cc=16 b=200 ovr=none win=18)
+{"label":"A2_log_read_rep1","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":18,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":599006.80,"complete_p10":551093.30,"complete_p90":638064.24,"consumer_txn_med":3008.1,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":26287200,"backlog_end":15898600,"backlog_slope_per_s":-590203.785,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":14192400,"deliveries_total":0,"events_head":3000000}
+[rp 16:38:04] run A2_log_read_rep2 (d=d4 g=10 cc=16 b=200 ovr=none win=18)
+{"label":"A2_log_read_rep2","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":18,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":460884.34,"complete_p10":121707.01,"complete_p90":594428.87,"consumer_txn_med":2140.9,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":26315400,"backlog_end":19089400,"backlog_slope_per_s":-409668.841,"diverging":false,"decay":true,"events_added":0,"deliveries_added":0,"done_added":10914400,"deliveries_total":0,"events_head":3000000}
+[rp 16:38:29] run A2_log_read_rep3 (d=d4 g=10 cc=16 b=200 ovr=none win=18)
+{"label":"A2_log_read_rep3","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":18,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":342715.93,"complete_p10":25182.00,"complete_p90":494669.09,"consumer_txn_med":1516.1,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":26955400,"backlog_end":21381000,"backlog_slope_per_s":-330174.455,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":8985600,"deliveries_total":0,"events_head":3000000}
+[rp 16:38:54] run A3_log_noread_rep1 (d=d4 g=10 cc=16 b=200 ovr=claim_log_noread.sql win=18)
+[rp 16:38:54] RUN FAILED A3_log_noread_rep1
+[rp 16:38:54] run A3_log_noread_rep2 (d=d4 g=10 cc=16 b=200 ovr=claim_log_noread.sql win=18)
+[rp 16:38:54] RUN FAILED A3_log_noread_rep2
+[rp 16:38:54] run A3_log_noread_rep3 (d=d4 g=10 cc=16 b=200 ovr=claim_log_noread.sql win=18)
+[rp 16:38:54] RUN FAILED A3_log_noread_rep3
+[rp 16:38:54] == E4 payload ~1024B: per-row A1 ==
+NOTICE:  trigger "trg_fanout" for relation "events" does not exist, skipping
+[rp 16:39:05] run A1_perrow_read_sz1024_rep1 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=12)
+[rp 16:39:05] RUN FAILED A1_perrow_read_sz1024_rep1
+[rp 16:39:15] run A1_perrow_read_sz1024_rep2 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=12)
+[rp 16:39:15] RUN FAILED A1_perrow_read_sz1024_rep2
+[rp 16:39:24] run A1_perrow_read_sz1024_rep3 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=12)
+[rp 16:39:24] RUN FAILED A1_perrow_read_sz1024_rep3
+[rp 16:39:24] == E4 payload ~1024B: claim-log A2 ==
+NOTICE:  trigger "trg_fanout" for relation "events" does not exist, skipping
+[rp 16:39:31] run A2_log_read_sz1024_rep1 (d=d4 g=10 cc=16 b=200 ovr=none win=12)
+{"label":"A2_log_read_sz1024_rep1","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":12,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":625484.21,"complete_p10":579497.45,"complete_p90":669089.52,"consumer_txn_med":3184.4,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":10981400,"backlog_end":3871800,"backlog_slope_per_s":-623797.347,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":11382800,"deliveries_total":0,"events_head":1500000}
+[rp 16:39:50] run A2_log_read_sz1024_rep2 (d=d4 g=10 cc=16 b=200 ovr=none win=12)
+{"label":"A2_log_read_sz1024_rep2","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":12,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":560208.50,"complete_p10":388210.95,"complete_p90":584596.19,"consumer_txn_med":2771.5,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":11553000,"backlog_end":5756200,"backlog_slope_per_s":-508598.783,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":9457600,"deliveries_total":0,"events_head":1500000}
+[rp 16:40:09] run A2_log_read_sz1024_rep3 (d=d4 g=10 cc=16 b=200 ovr=none win=12)
+{"label":"A2_log_read_sz1024_rep3","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":12,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":320404.81,"complete_p10":86495.92,"complete_p90":504956.67,"consumer_txn_med":1353.4,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":13092000,"backlog_end":9579000,"backlog_slope_per_s":-304366.182,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":5432200,"deliveries_total":0,"events_head":1500000}
+[rp 16:40:28] == E4 payload ~4096B: per-row A1 ==
+NOTICE:  trigger "trg_fanout" for relation "events" does not exist, skipping
+[rp 16:40:41] run A1_perrow_read_sz4096_rep1 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=12)
+[rp 16:40:41] RUN FAILED A1_perrow_read_sz4096_rep1
+[rp 16:40:50] run A1_perrow_read_sz4096_rep2 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=12)
+[rp 16:40:50] RUN FAILED A1_perrow_read_sz4096_rep2
+[rp 16:41:00] run A1_perrow_read_sz4096_rep3 (d=d3 g=10 cc=16 b=200 ovr=claim_deliveries_read.sql win=12)
+[rp 16:41:00] RUN FAILED A1_perrow_read_sz4096_rep3
+[rp 16:41:00] == E4 payload ~4096B: claim-log A2 ==
+NOTICE:  trigger "trg_fanout" for relation "events" does not exist, skipping
+[rp 16:41:12] run A2_log_read_sz4096_rep1 (d=d4 g=10 cc=16 b=200 ovr=none win=12)
+{"label":"A2_log_read_sz4096_rep1","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":12,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":600119.63,"complete_p10":350248.21,"complete_p90":653898.92,"consumer_txn_med":2984.9,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":11235800,"backlog_end":5004400,"backlog_slope_per_s":-544443.138,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":10182400,"deliveries_total":0,"events_head":1500000}
+[rp 16:41:31] run A2_log_read_sz4096_rep2 (d=d4 g=10 cc=16 b=200 ovr=none win=12)
+{"label":"A2_log_read_sz4096_rep2","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":12,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":551886.16,"complete_p10":420965.97,"complete_p90":601448.18,"consumer_txn_med":2749.3,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":11630600,"backlog_end":5423800,"backlog_slope_per_s":-538679.035,"diverging":false,"decay":false,"events_added":0,"deliveries_added":0,"done_added":9663400,"deliveries_total":0,"events_head":1500000}
+[rp 16:41:50] run A2_log_read_sz4096_rep3 (d=d4 g=10 cc=16 b=200 ovr=none win=12)
+{"label":"A2_log_read_sz4096_rep3","design":"d4","run":"consumer","groups":10,"pc":4,"cc":16,"pbatch":1,"batch":200,"rate":0,"warmup":6,"window":12,"append_med":0,"append_p10":0,"append_p90":0,"complete_med":426300.62,"complete_p10":97482.61,"complete_p90":521893.06,"consumer_txn_med":1660.9,"proj_med":0,"proj_mode":"poll","proj_n":1,"proj_batch":5000,"backlog_start":11451400,"backlog_end":7543200,"backlog_slope_per_s":-340558.295,"diverging":false,"decay":true,"events_added":0,"deliveries_added":0,"done_added":7590600,"deliveries_total":0,"events_head":1500000}
+[rp 16:42:09] DONE audit_readparity -> /Users/brandonlouiscate/code/vulkan/bench/scale/results/audit_readparity.jsonl

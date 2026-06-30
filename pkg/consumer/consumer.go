@@ -216,7 +216,10 @@ func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc Consu
 }
 
 func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
-	messages, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Group, p.Config.BatchLimit)
+	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
+	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
+
+	messages, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Group, p.Config.BatchLimit, leaseDuration)
 	if err != nil {
 		return err
 	}

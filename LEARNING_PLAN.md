@@ -820,7 +820,7 @@ over a *range* instead of a row. A crash now leaves an expired lease another wor
 reclaims and re-reads.
 
 **Build:**
-- [ ] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
+- [x] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
       lo, hi, lease_until, lease_token, reclaims)` row at claim time, in the **same
       transaction** as the `claimed` advance.
 - [ ] **Reclaim before Claim.** Workers try **Reclaim** first: grab one expired

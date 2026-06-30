@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Reading Bookmark — how a managed cursor tracks progress</title>
+<style>
+  :root{
+    /* page */
+    --bg:#f6f4ef;
+    --panel:#ffffff;
+    --ink:#22201c;
+    --muted:#6c665c;
+    --line:#e3ddd1;
+    --accent:#b4541f;        /* warm bookmark-ribbon red/orange */
+    --accent-soft:#fbe9df;
+
+    /* state palette — cohesive, warm-paper themed, distinguishable */
+    --c-settled:#cdbf9a;     /* settled below mark (compressed / GC'd) */
+    --c-settled-ink:#5a4d2e;
+    --c-done:#3f8f5b;        /* read out-of-order (done hole) */
+    --c-done-ink:#1c4a2b;
+    --c-inflight:#2f6fb0;    /* being read (in-flight) */
+    --c-inflight-ink:#143b63;
+    --c-retry:#caa12a;       /* set aside to re-read (failed/retrying) */
+    --c-retry-ink:#5e4b09;
+    --c-dead:#8a4a8a;        /* torn page w/ skip slip (dead) */
+    --c-dead-ink:#3f1f3f;
+    --c-fresh:#efe9dd;       /* not yet started */
+    --c-fresh-ink:#8a8170;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 600px at 50% -200px, #fffaf2, transparent),
+      var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:48px 24px 96px}
+  header.hero{text-align:center;margin-bottom:8px}
+  .kicker{
+    display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);font-weight:700;background:var(--accent-soft);
+    padding:5px 12px;border-radius:999px;border:1px solid #f2d6c6;
+  }
+  h1{font-size:40px;line-height:1.1;margin:18px 0 6px;letter-spacing:-.02em}
+  .sub{font-size:18px;color:var(--muted);margin:0 auto;max-width:620px}
+  h2{font-size:24px;margin:48px 0 4px;letter-spacing:-.01em}
+  h3{font-size:17px;margin:24px 0 6px}
+  p{margin:10px 0}
+  .lead{font-size:16px;color:var(--muted)}
+
+  .panel{
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:24px;margin:18px 0;box-shadow:0 1px 0 #fff inset, 0 8px 24px -16px rgba(60,40,10,.25);
+  }
+
+  /* ---------- The Book diagram (the metaphor, drawn) ---------- */
+  .book-figure{display:flex;justify-content:center;margin:8px 0 4px}
+  .book-figure svg{max-width:100%;height:auto}
+
+  /* ---------- Legend ---------- */
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin-top:6px}
+  .legend .item{display:flex;align-items:flex-start;gap:10px;font-size:13.5px}
+  .swatch{
+    flex:none;width:26px;height:26px;border-radius:7px;border:1px solid rgba(0,0,0,.18);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-top:1px;
+  }
+  .legend .lbl{font-weight:600}
+  .legend .desc{color:var(--muted)}
+
+  .sw-settled{background:var(--c-settled);color:var(--c-settled-ink)}
+  .sw-done{background:var(--c-done);color:#fff}
+  .sw-inflight{background:var(--c-inflight);color:#fff}
+  .sw-retry{background:var(--c-retry);color:var(--c-retry-ink)}
+  .sw-dead{background:var(--c-dead);color:#fff}
+  .sw-fresh{background:var(--c-fresh);color:var(--c-fresh-ink)}
+
+  /* ---------- The interactive stepper ---------- */
+  .scenario-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
+  .scenario-tabs button{
+    font:inherit;font-size:13px;font-weight:600;cursor:pointer;
+    border:1px solid var(--line);background:#fff;color:var(--muted);
+    padding:8px 12px;border-radius:10px;transition:all .15s;
+  }
+  .scenario-tabs button .tag{color:var(--accent);font-weight:800;margin-right:6px}
+  .scenario-tabs button[aria-selected="true"]{
+    background:var(--accent);color:#fff;border-color:var(--accent);
+  }
+  .scenario-tabs button[aria-selected="true"] .tag{color:#ffe2d2}
+
+  .stage{
+    border:1px solid var(--line);border-radius:14px;background:#fdfbf6;
+    padding:20px 18px 16px;margin-top:14px;position:relative;overflow:hidden;
+  }
+  .scenario-title{font-size:15px;font-weight:700;margin:0 0 2px}
+  .scenario-blurb{font-size:13.5px;color:var(--muted);margin:0 0 14px}
+
+  /* the shelf of offsets */
+  .shelf-scroll{overflow-x:auto;padding:8px 4px 4px}
+  .shelf{
+    display:flex;gap:10px;justify-content:center;min-width:max-content;margin:0 auto;
+    position:relative;padding-top:30px;
+  }
+  .cell{
+    width:62px;height:78px;border-radius:10px;position:relative;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    border:1px solid rgba(0,0,0,.14);
+    transition:background .45s ease, color .45s ease, transform .35s ease, box-shadow .35s ease;
+    box-shadow:0 1px 2px rgba(60,40,10,.10);
+  }
+  .cell .off{font-size:20px;font-weight:800;line-height:1}
+  .cell .st{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:5px;opacity:.9;text-align:center;padding:0 3px}
+  .cell.settled{background:var(--c-settled);color:var(--c-settled-ink)}
+  .cell.done{background:var(--c-done);color:#fff}
+  .cell.inflight{background:var(--c-inflight);color:#fff}
+  .cell.retry{background:var(--c-retry);color:var(--c-retry-ink)}
+  .cell.dead{background:var(--c-dead);color:#fff}
+  .cell.fresh{background:var(--c-fresh);color:var(--c-fresh-ink);border-style:dashed}
+
+  /* a sticky read-ahead tab on done holes */
+  .cell.tab::after{
+    content:"";position:absolute;top:-9px;right:7px;width:14px;height:18px;
+    background:var(--c-done);border-radius:2px 2px 4px 4px;
+    box-shadow:0 2px 3px rgba(0,0,0,.2);
+    clip-path:polygon(0 0,100% 0,100% 100%,50% 78%,0 100%);
+  }
+  /* skip slip on dead pages */
+  .cell.slip::before{
+    content:"SKIP";position:absolute;top:-13px;left:50%;transform:translateX(-50%) rotate(-4deg);
+    background:#fff;color:var(--c-dead-ink);font-size:8px;font-weight:800;letter-spacing:.06em;
+    padding:2px 5px;border:1px solid var(--c-dead);border-radius:3px;
+    box-shadow:0 2px 4px rgba(0,0,0,.15);
+  }
+  .cell.justfilled{animation:pop .55s ease}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.12);box-shadow:0 6px 16px rgba(63,143,91,.45)}100%{transform:scale(1)}}
+  .cell.absorbing{animation:absorb .6s ease}
+  @keyframes absorb{0%{filter:saturate(1)}50%{filter:saturate(.4) brightness(1.15)}100%{filter:saturate(1)}}
+
+  /* the BOOKMARK ribbon that sits after the mark */
+  .bookmark{
+    position:absolute;top:-8px;width:0;height:0;pointer-events:none;
+    transition:left .6s cubic-bezier(.5,0,.2,1);
+    z-index:5;
+  }
+  .bookmark .ribbon{
+    position:absolute;left:-13px;top:0;width:26px;height:96px;
+    background:linear-gradient(180deg,var(--accent),#923f14);
+    border-radius:4px 4px 0 0;
+    box-shadow:0 4px 10px -2px rgba(120,50,10,.5);
+    clip-path:polygon(0 0,100% 0,100% 100%,50% 80%,0 100%);
+  }
+  .bookmark .ribbon::after{
+    content:"";position:absolute;left:5px;top:8px;width:16px;height:70px;
+    background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0));
+    border-radius:3px;
+  }
+  .bookmark .flag{
+    position:absolute;left:-34px;top:-30px;width:68px;text-align:center;
+    font-size:10px;font-weight:800;color:var(--accent);letter-spacing:.03em;
+    line-height:1.15;
+  }
+  .bookmark.atstart .flag{color:var(--muted)}
+
+  .gap-fill{position:relative}
+
+  /* the mark readout + naive-cursor comparison */
+  .readout{
+    display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;align-items:stretch;
+  }
+  .chip{
+    flex:1 1 200px;border:1px solid var(--line);border-radius:11px;padding:10px 14px;background:#fff;
+  }
+  .chip .ttl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+  .chip .val{font-size:26px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums}
+  .chip.mark{border-color:#f0cbb6;background:linear-gradient(180deg,#fff,var(--accent-soft))}
+  .chip.mark .val{color:var(--accent)}
+  .chip.holes .val{color:var(--c-done-ink)}
+  .chip.naive{border-color:#d8c7c7;background:#fbf2f2}
+  .chip.naive .ttl{color:#9c5a5a}
+  .chip.naive .val{color:#9c3b3b}
+  .chip .note{font-size:11.5px;color:var(--muted);margin-top:2px}
+
+  /* narration line */
+  .narrate{
+    margin-top:16px;background:#fff;border:1px dashed var(--line);border-radius:11px;
+    padding:12px 14px;font-size:14px;min-height:54px;display:flex;align-items:center;gap:10px;
+  }
+  .narrate .stepno{
+    flex:none;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;
+  }
+  .narrate strong{color:var(--accent)}
+
+  /* controls */
+  .controls{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+  .controls button{
+    font:inherit;font-weight:700;font-size:14px;cursor:pointer;
+    border:1px solid var(--accent);background:var(--accent);color:#fff;
+    padding:9px 18px;border-radius:10px;transition:filter .15s,transform .05s;
+  }
+  .controls button:hover{filter:brightness(1.06)}
+  .controls button:active{transform:translateY(1px)}
+  .controls button:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .controls .ghost{background:#fff;color:var(--accent)}
+  .progress-dots{display:flex;gap:7px;align-items:center}
+  .progress-dots .dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+  .progress-dots .dot.on{background:var(--accent)}
+
+  /* roll-up explainer mini-figure */
+  .rollup-fig{display:flex;justify-content:center;margin:6px 0}
+
+  /* glossary */
+  table.gloss{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+  table.gloss th,table.gloss td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.gloss th{background:#faf7f0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  table.gloss td.term{font-weight:700;color:var(--accent);white-space:nowrap}
+  table.gloss td.tech{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--c-inflight-ink);white-space:nowrap}
+
+  /* leaks box */
+  .leaks{border:1px solid #e6d4b0;background:linear-gradient(180deg,#fffaf0,#fdf3df);border-radius:16px;padding:22px 24px}
+  .leaks h2{margin-top:0}
+  .leaks .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .leaks ul{margin:6px 0 0;padding-left:18px}
+  .leaks li{margin:6px 0;font-size:14px}
+  .leaks .good h3{color:var(--c-done-ink)}
+  .leaks .bad h3{color:#9c3b3b}
+
+  .footnote{font-size:12.5px;color:var(--muted);text-align:center;margin-top:36px}
+
+  @media (max-width:620px){
+    h1{font-size:30px}
+    .leaks .cols{grid-template-columns:1fr}
+    .cell{width:54px;height:70px}
+    .cell .off{font-size:17px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <span class="kicker">A picture-first intro</span>
+    <h1>The Reading Bookmark</h1>
+    <p class="sub">How a message platform remembers <em>how far it has gotten</em> — even when work finishes out of order, and even when one item is hopelessly broken.</p>
+  </header>
+
+  <!-- ============ THE STORY / METAPHOR ============ -->
+  <section class="panel">
+    <p class="lead">Imagine reading a long, numbered book. You read mostly front-to-back, but sometimes you skip ahead and read a later page early. How do you remember your <em>true</em> progress — the point past which <strong>everything</strong> is read?</p>
+
+    <div class="book-figure" aria-hidden="true">
+      <!-- An open book with a bookmark ribbon and a couple of sticky tabs -->
+      <svg width="560" height="220" viewBox="0 0 560 220" role="img">
+        <defs>
+          <linearGradient id="pageL" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#fffdf7"/><stop offset="1" stop-color="#f0e9d8"/>
+          </linearGradient>
+          <linearGradient id="pageR" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#f0e9d8"/><stop offset="1" stop-color="#fffdf7"/>
+          </linearGradient>
+          <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#b4541f"/><stop offset="1" stop-color="#8f3f14"/>
+          </linearGradient>
+        </defs>
+        <!-- covers -->
+        <path d="M20 40 L280 24 L280 196 L20 208 Z" fill="#7d5a3a"/>
+        <path d="M540 40 L280 24 L280 196 L540 208 Z" fill="#6e4d30"/>
+        <!-- pages -->
+        <path d="M34 50 L280 34 L280 188 L34 198 Z" fill="url(#pageL)" stroke="#d8cdb4"/>
+        <path d="M526 50 L280 34 L280 188 L526 198 Z" fill="url(#pageR)" stroke="#d8cdb4"/>
+        <!-- spine -->
+        <line x1="280" y1="34" x2="280" y2="188" stroke="#c9bfa6" stroke-width="2"/>
+        <!-- text lines left page -->
+        <g stroke="#cfc6ad" stroke-width="3" stroke-linecap="round">
+          <line x1="60" y1="78" x2="250" y2="66"/><line x1="60" y1="96" x2="250" y2="84"/>
+          <line x1="60" y1="114" x2="230" y2="103"/><line x1="60" y1="132" x2="250" y2="120"/>
+          <line x1="60" y1="150" x2="210" y2="140"/>
+        </g>
+        <!-- text lines right page -->
+        <g stroke="#cfc6ad" stroke-width="3" stroke-linecap="round">
+          <line x1="312" y1="64" x2="500" y2="78"/><line x1="312" y1="82" x2="500" y2="96"/>
+          <line x1="312" y1="100" x2="480" y2="113"/><line x1="312" y1="118" x2="500" y2="132"/>
+        </g>
+        <!-- read-ahead sticky tabs poking from right page edge -->
+        <rect x="516" y="70" width="22" height="26" rx="3" fill="#3f8f5b"/>
+        <rect x="516" y="118" width="22" height="26" rx="3" fill="#3f8f5b"/>
+        <!-- BOOKMARK ribbon hanging down from left page -->
+        <path d="M150 34 L176 36 L176 206 L163 192 L150 206 Z" fill="url(#ribbon)"/>
+        <path d="M156 40 L170 41 L170 180 L156 180 Z" fill="#ffffff" opacity=".18"/>
+      </svg>
+    </div>
+    <p class="lead" style="text-align:center">The <strong style="color:var(--accent)">bookmark</strong> answers that question. It sits at the boundary where <em>all earlier pages are read</em>. The green <strong style="color:var(--c-done-ink)">sticky tabs</strong> mark later pages you finished early — ahead of the bookmark.</p>
+
+    <p style="margin-bottom:0">In our system the "book" is a durable, append-only <strong>message log</strong>: messages numbered 0, 1, 2, 3 … and never reordered. A team of workers "reads" (processes) them. The bookmark-plus-tabs idea is what we call the <strong>managed cursor</strong>.</p>
+  </section>
+
+  <!-- ============ THE TWO PARTS ============ -->
+  <section>
+    <h2>The cursor has two parts</h2>
+    <p class="lead">A single number, plus a small scrapbook of exceptions.</p>
+
+    <div class="panel" style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+      <div>
+        <h3 style="color:var(--accent);margin-top:0">1 · The Bookmark</h3>
+        <p style="font-size:14px;margin-top:4px">One integer: the highest page <strong>N</strong> such that <em>every</em> page up to N is finished. A bookmark <em>means</em> "all prior pages read" — so it can only move forward when there are <strong>no gaps</strong> behind it.</p>
+        <p style="font-size:14px;color:var(--muted)">Everything behind the bookmark collapses into just this one number and is thrown away. Cheap forever.</p>
+      </div>
+      <div>
+        <h3 style="color:var(--c-done-ink);margin-top:0">2 · The Read-Ahead Tabs</h3>
+        <p style="font-size:14px;margin-top:4px">A little scrapbook of pages <em>above</em> the bookmark whose outcomes are mixed: some read early (tabs), some still being read, some set aside to re-read, some torn out.</p>
+        <p style="font-size:14px;color:var(--muted)">This scrapbook only ever holds the messy frontier — its size tracks how out-of-order you got, not the length of the whole book.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LEGEND ============ -->
+  <section class="panel" aria-label="Color legend">
+    <h3 style="margin-top:0">Legend — what each page color means</h3>
+    <div class="legend">
+      <div class="item"><span class="swatch sw-settled" aria-hidden="true">≤</span>
+        <span><span class="lbl">Behind the bookmark</span><br><span class="desc">Settled &amp; compressed away (the integer)</span></span></div>
+      <div class="item"><span class="swatch sw-done" aria-hidden="true">✓</span>
+        <span><span class="lbl">Read early — tab</span><br><span class="desc">Done, but ahead of the bookmark (a hole)</span></span></div>
+      <div class="item"><span class="swatch sw-inflight" aria-hidden="true">↻</span>
+        <span><span class="lbl">Being read</span><br><span class="desc">In-flight: a worker holds it right now</span></span></div>
+      <div class="item"><span class="swatch sw-retry" aria-hidden="true">⟲</span>
+        <span><span class="lbl">Set aside</span><br><span class="desc">Failed once — will be re-read (retrying)</span></span></div>
+      <div class="item"><span class="swatch sw-dead" aria-hidden="true">✕</span>
+        <span><span class="lbl">Torn page + skip slip</span><br><span class="desc">Permanently failed — dead-lettered</span></span></div>
+      <div class="item"><span class="swatch sw-fresh" aria-hidden="true">·</span>
+        <span><span class="lbl">Not yet started</span><br><span class="desc">Untouched page further ahead</span></span></div>
+    </div>
+  </section>
+
+  <!-- ============ INTERACTIVE STEPPER ============ -->
+  <section>
+    <h2>Watch it move</h2>
+    <p class="lead">Pick a story, then step through it. Keep your eye on the <strong style="color:var(--accent)">bookmark ribbon</strong> and the <strong style="color:var(--c-done-ink)">tabs</strong>.</p>
+
+    <div class="panel">
+      <div class="scenario-tabs" role="tablist" aria-label="Scenarios">
+        <button role="tab" data-sc="A" aria-selected="true"><span class="tag">A</span> In order</button>
+        <button role="tab" data-sc="B" aria-selected="false"><span class="tag">B</span> Out of order</button>
+        <button role="tab" data-sc="C" aria-selected="false"><span class="tag">C</span> Roll-up cascade</button>
+        <button role="tab" data-sc="D" aria-selected="false"><span class="tag">D</span> Poison page</button>
+      </div>
+
+      <div class="stage">
+        <p class="scenario-title" id="scTitle">Scenario A — reading in order</p>
+        <p class="scenario-blurb" id="scBlurb"></p>
+
+        <div class="shelf-scroll">
+          <div class="shelf" id="shelf"><!-- cells + bookmark injected by JS --></div>
+        </div>
+
+        <div class="readout">
+          <div class="chip mark">
+            <div class="ttl">Bookmark (the mark)</div>
+            <div class="val" id="markVal">—</div>
+            <div class="note">highest page with nothing unfinished behind it</div>
+          </div>
+          <div class="chip holes">
+            <div class="ttl">Tabs in scrapbook (holes)</div>
+            <div class="val" id="holesVal">0</div>
+            <div class="note">pages done above the bookmark, kept individually</div>
+          </div>
+          <div class="chip naive">
+            <div class="ttl">A naïve single cursor would be at</div>
+            <div class="val" id="naiveVal">—</div>
+            <div class="note" id="naiveNote">a dumb cursor stops at the first unfinished page</div>
+          </div>
+        </div>
+
+        <div class="narrate">
+          <span class="stepno" id="stepNo">1</span>
+          <span id="narrate">Press <strong>Next ▶</strong> to begin.</span>
+        </div>
+
+        <div class="controls">
+          <button class="ghost" id="prevBtn">◀ Prev</button>
+          <div class="progress-dots" id="dots"></div>
+          <button id="nextBtn">Next ▶</button>
+          <button class="ghost" id="resetBtn" title="Restart this scenario">↺ Reset</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ROLL-UP EXPLAINER ============ -->
+  <section>
+    <h2>The slide (and why it can leap)</h2>
+    <p class="lead">When the pages <em>between</em> the bookmark and a run of tabs all become finished, the bookmark <strong>slides forward</strong>, sweeping up those tabs and collapsing them into the integer. Filling a single gap can let it jump several pages at once — that's the <strong>cascade</strong>.</p>
+    <div class="panel rollup-fig">
+      <svg width="640" height="150" viewBox="0 0 640 150" role="img" aria-label="Filling page 1 lets the bookmark slide from 0 to 3, sweeping up tabs at 2 and 3.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="#b4541f"/>
+          </marker>
+        </defs>
+        <!-- before/after labels -->
+        <text x="14" y="22" font-size="12" font-weight="700" fill="#6c665c">BEFORE: bookmark stuck at 0; page 1 set aside</text>
+        <!-- row -->
+        <g font-family="sans-serif">
+          <!-- 0 -->
+          <rect x="60" y="36" width="54" height="54" rx="8" fill="#cdbf9a" stroke="#0002"/><text x="87" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#5a4d2e">0</text>
+          <!-- 1 retry -->
+          <rect x="124" y="36" width="54" height="54" rx="8" fill="#caa12a" stroke="#0002"/><text x="151" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#5e4b09">1</text>
+          <!-- 2 done tab -->
+          <rect x="188" y="36" width="54" height="54" rx="8" fill="#3f8f5b" stroke="#0002"/><text x="215" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#fff">2</text>
+          <rect x="222" y="28" width="13" height="16" rx="2" fill="#2c6b42"/>
+          <!-- 3 done tab -->
+          <rect x="252" y="36" width="54" height="54" rx="8" fill="#3f8f5b" stroke="#0002"/><text x="279" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#fff">3</text>
+          <rect x="286" y="28" width="13" height="16" rx="2" fill="#2c6b42"/>
+          <!-- bookmark ribbon after 0 -->
+          <path d="M118 28 L131 28 L131 104 L124.5 96 L118 104 Z" fill="#b4541f"/>
+        </g>
+        <!-- arrow across -->
+        <path d="M330 63 L382 63" stroke="#b4541f" stroke-width="3" marker-end="url(#arrow)"/>
+        <text x="356" y="52" font-size="11" font-weight="800" fill="#b4541f" text-anchor="middle">1 read →</text>
+        <text x="356" y="84" font-size="10" fill="#6c665c" text-anchor="middle">slide!</text>
+        <!-- after -->
+        <text x="404" y="22" font-size="12" font-weight="700" fill="#6c665c">AFTER: 0–3 collapse into one integer</text>
+        <g font-family="sans-serif">
+          <rect x="404" y="36" width="54" height="54" rx="8" fill="#cdbf9a" stroke="#0002"/><text x="431" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#5a4d2e">0</text>
+          <rect x="468" y="36" width="54" height="54" rx="8" fill="#cdbf9a" stroke="#0002"/><text x="495" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#5a4d2e">1</text>
+          <rect x="532" y="36" width="54" height="54" rx="8" fill="#cdbf9a" stroke="#0002"/><text x="559" y="69" font-size="20" font-weight="800" text-anchor="middle" fill="#5a4d2e">2</text>
+          <rect x="596" y="36" width="34" height="54" rx="8" fill="#cdbf9a" stroke="#0002"/><text x="613" y="69" font-size="18" font-weight="800" text-anchor="middle" fill="#5a4d2e">3</text>
+          <!-- bookmark now after 3 -->
+          <path d="M624 28 L637 28 L637 104 L630.5 96 L624 104 Z" fill="#b4541f"/>
+        </g>
+        <text x="495" y="118" font-size="11" fill="#6c665c" text-anchor="middle">bookmark = 3 · scrapbook empty</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ============ GLOSSARY ============ -->
+  <section>
+    <h2>Tiny glossary</h2>
+    <p class="lead">Every metaphor word maps to a real term.</p>
+    <div class="panel" style="padding:8px 8px">
+      <table class="gloss">
+        <thead><tr><th>In the book…</th><th>…in the system</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td class="term">Bookmark</td><td class="tech">the mark</td><td>Cumulative high-water mark: greatest offset N where every offset ≤ N is resolved. One integer.</td></tr>
+          <tr><td class="term">Read-ahead tabs / scrapbook</td><td class="tech">the holes</td><td>The exception window above the mark — per-message state for the disordered frontier.</td></tr>
+          <tr><td class="term">Sliding the bookmark</td><td class="tech">roll-up</td><td>Advancing the mark to absorb a contiguous run of resolved offsets; can cascade.</td></tr>
+          <tr><td class="term">Page being read</td><td class="tech">in-flight</td><td>A message currently claimed by a worker (held under a short lease).</td></tr>
+          <tr><td class="term">Set aside to re-read</td><td class="tech">retrying</td><td>A message that failed and will be redelivered later.</td></tr>
+          <tr><td class="term">Torn page + skip slip</td><td class="tech">dead-letter</td><td>Permanently failed message. Counts as <em>resolved</em>, so the mark may pass it; the record is kept for audit.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ LEAKS ============ -->
+  <section class="leaks">
+    <h2>Where this metaphor leaks</h2>
+    <p class="lead" style="margin-top:0">No picture is the territory. Here's the honest ledger.</p>
+    <div class="cols">
+      <div class="good">
+        <h3>What it makes vivid ✓</h3>
+        <ul>
+          <li><strong>Why the bookmark must be contiguous.</strong> A bookmark inherently claims "everything before is read" — so a gap below it is nonsensical.</li>
+          <li><strong>Why one bad item can't freeze you.</strong> A <em>skip slip</em> on a torn page lets the bookmark glide past — no head-of-line blocking.</li>
+          <li><strong>Why the slide can leap.</strong> Filling the one page between bookmark and a strip of tabs sweeps them all up at once.</li>
+          <li><strong>Why the scrapbook stays small.</strong> It only holds the messy frontier; finished pages collapse into the integer and are discarded.</li>
+        </ul>
+      </div>
+      <div class="bad">
+        <h3>What it hides / distorts ✕</h3>
+        <ul>
+          <li><strong>One reader.</strong> Really there are <em>many</em> workers, on many machines, claiming distinct pages with no coordination. A lone reader badly understates the concurrency.</li>
+          <li><strong>The bookmark isn't on the hot path.</strong> Workers never touch it; a separate background pass slides it <em>lazily</em>. The book makes it feel like you move it as you read.</li>
+          <li><strong>Torn pages are kept, not gone.</strong> "Torn out" suggests discarded — dead messages are actually retained in a dead-letter store for audit.</li>
+          <li><strong>Crash behavior &amp; at-least-once.</strong> Per-page outcomes are durable; a lost slide just recomputes. A page can also be read twice. The cozy book hides all of this.</li>
+          <li><strong>No real "re-reading order."</strong> Retries can land anytime; the calm "set aside for later" understates the churn of a busy frontier.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <p class="footnote">The Reading Bookmark · a visual intro to the managed cursor · open offline, no dependencies</p>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // State codes: settled, done, inflight, retry, dead, fresh
+  // Each scenario is a list of FRAMES. Each frame = {states:[...], mark:Number|null,
+  //   narr:"...", filled:[idx...], absorbing:[idx...]} for animation hints.
+  // mark = index of last settled page (-1 means no bookmark yet / before page 0).
+  // We render 5 cells (0..4); page 4 stays "fresh" as the horizon.
+
+  const N = 5;
+  const ST = {SET:"settled", DONE:"done", IN:"inflight", RET:"retry", DEAD:"dead", FRESH:"fresh"};
+
+  function base(){ return [ST.FRESH,ST.FRESH,ST.FRESH,ST.FRESH,ST.FRESH]; }
+
+  // Helper to compute mark = highest index where all <= it are settled/dead-resolved.
+  // For these scripted frames we pass mark explicitly to keep narration tight.
+
+  const SCEN = {
+    A: {
+      title:"Scenario A — reading in order",
+      blurb:"Pages finish 0, 1, 2, 3 in order. The bookmark steps forward one page at a time. The scrapbook never fills — no tabs, no holes.",
+      frames:[
+        {s:[ST.IN,ST.FRESH,ST.FRESH,ST.FRESH,ST.FRESH], mark:-1,
+         n:"A worker picks up <strong>page 0</strong> — it's now <em>being read</em>. The bookmark sits before everything."},
+        {s:[ST.SET,ST.IN,ST.FRESH,ST.FRESH,ST.FRESH], mark:0, filled:[0],
+         n:"Page 0 is read. Nothing unfinished is behind it, so the bookmark <strong>slides to 0</strong>. Page 1 starts."},
+        {s:[ST.SET,ST.SET,ST.IN,ST.FRESH,ST.FRESH], mark:1, filled:[1],
+         n:"Page 1 is read. Bookmark <strong>slides to 1</strong>. Page 2 starts. Still no tabs needed."},
+        {s:[ST.SET,ST.SET,ST.SET,ST.IN,ST.FRESH], mark:2, filled:[2],
+         n:"Page 2 is read. Bookmark <strong>slides to 2</strong>. Page 3 starts."},
+        {s:[ST.SET,ST.SET,ST.SET,ST.SET,ST.FRESH], mark:3, filled:[3],
+         n:"Page 3 is read. Bookmark <strong>slides to 3</strong>. Perfectly in order — the scrapbook stayed empty the whole time."}
+      ]
+    },
+    B: {
+      title:"Scenario B — finishing out of order",
+      blurb:"0 finishes. Then 2 and 3 finish early — but page 1 is still being read. The bookmark gets STUCK at 0, and tabs pile up at 2 and 3.",
+      frames:[
+        {s:[ST.IN,ST.FRESH,ST.FRESH,ST.FRESH,ST.FRESH], mark:-1,
+         n:"Page 0 is being read."},
+        {s:[ST.SET,ST.IN,ST.FRESH,ST.FRESH,ST.FRESH], mark:0, filled:[0],
+         n:"Page 0 is read → bookmark <strong>slides to 0</strong>. Now page 1 is picked up."},
+        {s:[ST.SET,ST.IN,ST.DONE,ST.FRESH,ST.FRESH], mark:0, filled:[2], tabs:[2],
+         n:"A second worker races ahead and finishes <strong>page 2</strong> early. But page 1 isn't done — so the bookmark <em>can't</em> move. We stick a <strong>tab on page 2</strong> and keep it in the scrapbook."},
+        {s:[ST.SET,ST.IN,ST.DONE,ST.DONE,ST.FRESH], mark:0, filled:[3], tabs:[2,3],
+         n:"<strong>Page 3</strong> finishes early too. Still a gap at 1, so the bookmark stays <strong>stuck at 0</strong>. Two tabs now: 2 and 3."},
+        {s:[ST.SET,ST.IN,ST.DONE,ST.DONE,ST.FRESH], mark:0, tabs:[2,3], hold:true,
+         n:"This is the key state: <strong>bookmark = 0</strong>, but pages 2 and 3 are already done. The cursor honestly reports \"only 0 is fully settled\" while remembering the rest. <em>Continue to Scenario C to fill the gap.</em>"}
+      ]
+    },
+    C: {
+      title:"Scenario C — the roll-up cascade",
+      blurb:"Picking up from B: page 1 finally finishes. The single gap is filled — and the bookmark LEAPS from 0 straight to 3, sweeping up both tabs at once.",
+      frames:[
+        {s:[ST.SET,ST.IN,ST.DONE,ST.DONE,ST.FRESH], mark:0, tabs:[2,3],
+         n:"Where we left off: bookmark stuck at <strong>0</strong>, tabs on 2 and 3, page 1 still being read."},
+        {s:[ST.SET,ST.DONE,ST.DONE,ST.DONE,ST.FRESH], mark:0, tabs:[1,2,3], filled:[1],
+         n:"<strong>Page 1 is read!</strong> The one gap above the bookmark just closed. For a heartbeat, 1, 2 and 3 are all done above the mark…"},
+        {s:[ST.SET,ST.SET,ST.SET,ST.SET,ST.FRESH], mark:3, absorbing:[1,2,3],
+         n:"…and the bookmark <strong>LEAPS from 0 to 3</strong> in a single slide — a cascade. Pages 1, 2, 3 are swept up, their tabs removed, and all four collapse into the integer. Scrapbook empty again."}
+      ]
+    },
+    D: {
+      title:"Scenario D — a poison (torn) page",
+      blurb:"Same stuck state as B — but this time page 1 can never be read. It gets a SKIP SLIP (dead-letter). The bookmark slides PAST it. A naïve cursor would freeze forever.",
+      frames:[
+        {s:[ST.SET,ST.IN,ST.DONE,ST.DONE,ST.FRESH], mark:0, tabs:[2,3],
+         n:"Stuck again at bookmark <strong>0</strong>, tabs on 2 and 3. Page 1 is being read — but it keeps failing."},
+        {s:[ST.SET,ST.RET,ST.DONE,ST.DONE,ST.FRESH], mark:0, tabs:[2,3],
+         n:"Page 1 failed. It's <strong>set aside to re-read</strong> (retrying). The bookmark still can't move; the tabs wait."},
+        {s:[ST.SET,ST.DEAD,ST.DONE,ST.DONE,ST.FRESH], mark:0, tabs:[2,3], slips:[1],
+         n:"After enough failures page 1 is declared <strong>torn / unreadable</strong>. We attach a <strong>SKIP SLIP</strong> (dead-letter) and keep the torn page filed away for the record."},
+        {s:[ST.SET,ST.SET,ST.SET,ST.SET,ST.FRESH], mark:3, slips:[1], absorbing:[1,2,3],
+         n:"A skip slip counts as <em>resolved</em> — so the bookmark <strong>slides past page 1</strong> all the way to 3, sweeping up the tabs. <span style='color:#9c3b3b;font-weight:700'>A naïve single cursor would still be frozen at 0, blocked by one bad page forever.</span>"}
+      ]
+    }
+  };
+
+  // ---- naive cursor: stops at first page that is not settled/dead (i.e. first non-resolved). ----
+  // It does NOT understand dead pages as resolved EXCEPT we show the contrast: in D the naive cursor
+  // is blocked by page 1 forever. We compute it as: first index whose state is not (settled).
+  function naiveCursor(states){
+    // naive = furthest contiguous "done/settled" prefix, treating ONLY settled/done as progress,
+    // and crucially treating dead/retry/inflight as a hard stop. Returns last fully-good index or -1.
+    let last = -1;
+    for(let i=0;i<states.length;i++){
+      const s = states[i];
+      if(s===ST.SET || s===ST.DONE){ last = i; }
+      else { break; } // first non-finished page stops a naive cursor cold
+    }
+    return last;
+  }
+
+  const STLABEL = {settled:"settled", done:"read", inflight:"reading", retry:"set aside", dead:"torn", fresh:"—"};
+  const STSHORT = {settled:"settled", done:"tab ✓", inflight:"reading ↻", retry:"re-read ⟲", dead:"skip ✕", fresh:"unread"};
+
+  // ---- DOM ----
+  const shelf = document.getElementById("shelf");
+  const tabs = Array.from(document.querySelectorAll(".scenario-tabs button"));
+  const scTitle = document.getElementById("scTitle");
+  const scBlurb = document.getElementById("scBlurb");
+  const markVal = document.getElementById("markVal");
+  const holesVal = document.getElementById("holesVal");
+  const naiveVal = document.getElementById("naiveVal");
+  const naiveNote = document.getElementById("naiveNote");
+  const narrate = document.getElementById("narrate");
+  const stepNo = document.getElementById("stepNo");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const dots = document.getElementById("dots");
+
+  let cur = "A";
+  let step = 0;
+
+  // Build the static cells + bookmark once.
+  let cells = [];
+  let bookmark;
+  function buildShelf(){
+    shelf.innerHTML = "";
+    cells = [];
+    for(let i=0;i<N;i++){
+      const c = document.createElement("div");
+      c.className = "cell fresh";
+      const off = document.createElement("div"); off.className="off"; off.textContent=i;
+      const st = document.createElement("div"); st.className="st"; st.textContent="unread";
+      c.appendChild(off); c.appendChild(st);
+      shelf.appendChild(c);
+      cells.push({el:c, off, st});
+    }
+    bookmark = document.createElement("div");
+    bookmark.className = "bookmark atstart";
+    bookmark.innerHTML = '<div class="ribbon"></div><div class="flag">BOOKMARK<br>before&nbsp;all</div>';
+    shelf.appendChild(bookmark);
+  }
+
+  // Position the bookmark ribbon at the trailing edge of cell[mark].
+  // mark = -1 → before cell 0.
+  function positionBookmark(mark){
+    // measure relative to shelf
+    const shelfRect = shelf.getBoundingClientRect();
+    let leftPx;
+    if(mark < 0){
+      const r = cells[0].el.getBoundingClientRect();
+      leftPx = r.left - shelfRect.left - 5;
+      bookmark.classList.add("atstart");
+      bookmark.querySelector(".flag").innerHTML = "BOOKMARK<br>before&nbsp;all";
+    } else {
+      const r = cells[mark].el.getBoundingClientRect();
+      leftPx = r.right - shelfRect.left + 5;
+      bookmark.classList.remove("atstart");
+      bookmark.querySelector(".flag").innerHTML = "BOOKMARK<br>= "+mark;
+    }
+    bookmark.style.left = leftPx + "px";
+  }
+
+  function applyFrame(frame, animate){
+    const states = frame.s;
+    // count holes = done states above the mark
+    let holes = 0;
+    for(let i=0;i<N;i++){
+      const c = cells[i];
+      const s = states[i];
+      // reset classes but keep base
+      c.el.className = "cell " + s;
+      c.st.textContent = STSHORT[s] || s;
+      if(s === ST.SET) c.st.textContent = (i <= frame.mark ? "settled" : "settled");
+      // tabs
+      if(frame.tabs && frame.tabs.indexOf(i) !== -1){ c.el.classList.add("tab"); }
+      if(frame.slips && frame.slips.indexOf(i) !== -1){ c.el.classList.add("slip"); }
+      if(s === ST.DONE && i > frame.mark) holes++;
+      // animation hints
+      if(animate && frame.filled && frame.filled.indexOf(i) !== -1){
+        c.el.classList.add("justfilled");
+      }
+      if(animate && frame.absorbing && frame.absorbing.indexOf(i) !== -1){
+        c.el.classList.add("absorbing");
+      }
+    }
+    // readouts
+    markVal.textContent = frame.mark < 0 ? "— (none yet)" : frame.mark;
+    holesVal.textContent = holes;
+
+    const nv = naiveCursor(states);
+    naiveVal.textContent = nv < 0 ? "— (none yet)" : nv;
+    // naive contrast note
+    if(cur === "D" && step === SCEN.D.frames.length-1){
+      naiveNote.innerHTML = "<strong style='color:#9c3b3b'>frozen at 0 — blocked by the torn page forever</strong>";
+    } else if(cur === "B"){
+      naiveNote.textContent = "a naïve cursor also stops at the first unfinished page — but it has no scrapbook, so the early-done pages are forgotten";
+    } else {
+      naiveNote.textContent = "a naïve cursor stops at the first unfinished page";
+    }
+
+    // bookmark position (after layout)
+    requestAnimationFrame(()=>positionBookmark(frame.mark));
+
+    // narration
+    narrate.innerHTML = frame.n;
+    stepNo.textContent = step+1;
+  }
+
+  function renderDots(){
+    const total = SCEN[cur].frames.length;
+    dots.innerHTML = "";
+    for(let i=0;i<total;i++){
+      const d = document.createElement("span");
+      d.className = "dot" + (i===step ? " on":"");
+      dots.appendChild(d);
+    }
+  }
+
+  function render(animate){
+    const sc = SCEN[cur];
+    scTitle.textContent = sc.title;
+    scBlurb.textContent = sc.blurb;
+    applyFrame(sc.frames[step], animate);
+    renderDots();
+    prevBtn.disabled = (step === 0);
+    nextBtn.disabled = (step === sc.frames.length-1);
+    nextBtn.textContent = (step === sc.frames.length-1) ? "End" : "Next ▶";
+  }
+
+  function selectScenario(id){
+    cur = id;
+    step = 0;
+    tabs.forEach(t => t.setAttribute("aria-selected", t.dataset.sc===id ? "true":"false"));
+    render(false);
+  }
+
+  tabs.forEach(t => t.addEventListener("click", ()=>selectScenario(t.dataset.sc)));
+  nextBtn.addEventListener("click", ()=>{
+    if(step < SCEN[cur].frames.length-1){ step++; render(true); }
+  });
+  prevBtn.addEventListener("click", ()=>{
+    if(step > 0){ step--; render(false); }
+  });
+  resetBtn.addEventListener("click", ()=>{ step=0; render(false); });
+
+  // keyboard
+  document.addEventListener("keydown",(e)=>{
+    if(e.key==="ArrowRight"){ nextBtn.click(); }
+    else if(e.key==="ArrowLeft"){ prevBtn.click(); }
+  });
+
+  // reposition bookmark on resize
+  window.addEventListener("resize", ()=>positionBookmark(SCEN[cur].frames[step].mark));
+
+  buildShelf();
+  selectScenario("A");
+})();
+</script>
+</body>
+</html>

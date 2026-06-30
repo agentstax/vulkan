@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,7 +25,7 @@ type Datastore[Message any] interface {
 	MoveCursor(ctx context.Context, consumerGroup string, position int64) error
 	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
-	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error)
+	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error)
 	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
 	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
 	RecordSuccess(ctx context.Context, delivery *DeliveryRow) error
@@ -43,6 +44,14 @@ type MessageRow struct {
 	// LeaseToken  pgtype.UUID     `db:"lease_token"` // nullable
 	// LastError   *string         `db:"last_error"`  // nullable
 	CreatedAt time.Time `db:"created_at"`
+}
+
+type LeaseRow struct {
+	Token         pgtype.UUID `db:"token"`
+	ConsumerGroup string      `db:"consumer_group"`
+	Low           int64       `db:"low"`
+	High          int64       `db:"high"`
+	Until         time.Time   `db:"until"`
 }
 
 type CursorRange struct {
@@ -154,7 +163,84 @@ func (d *PostgresDatastore[Message]) FanOut(ctx context.Context, consumerGroup s
 	return nil
 }
 
-func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int) ([]MessageRow, error) {
+// ClaimMessagesWithCursor is the "Reclaim before Claim" dispatcher: a worker first
+// tries to pick up a crashed range (an expired lease) and only claims fresh work
+// from the frontier if there's nothing to reclaim -- so crashed ranges drain first.
+func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
+	reclaimedMessages, err := d.ReclaimWithCursor(ctx, consumerGroup, limit, leaseDuration)
+	if err != nil {
+		return nil, err
+	}
+	if len(reclaimedMessages) > 0 {
+		return reclaimedMessages, nil
+	}
+
+	// no reclaimed messages found -> try standard fresh claim
+	freshMessages, err := d.FreshClaimMessagesWithCursor(ctx, consumerGroup, limit, leaseDuration)
+	if err != nil {
+		return nil, err
+	}
+
+	return freshMessages, nil
+}
+
+// ReclaimWithCursor grabs ONE expired lease and re-reads its exact range so a
+// worker that crashed mid-range doesn't strand those offsets.
+//
+// Token rotation, done as delete-then-insert: instead of the reference's in-place
+// UPDATE ... SET lease_token = gen_random_uuid(), we DELETE the expired lease here
+// (FOR UPDATE SKIP LOCKED so only one reclaimer grabs it) and let the shared
+// ClaimMessages INSERT a brand-new lease (fresh token, refreshed `until`) over the
+// same range. Net effect is identical: the original slow worker's token no longer
+// exists, so its later token-guarded commit (6.5c) becomes a no-op. The whole thing
+// is one transaction -- the tx opened here is threaded into ClaimMessages, which
+// commits it -- so the delete+insert is atomic and a competing reclaimer can't
+// double-grab the range.
+func (d *PostgresDatastore[Message]) ReclaimWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// TODO - need some validation that the lease range is still valid
+	// ie either low > cursor.committed or something like this
+	// this should ideally shouldn't be possible but just in case
+
+	// if finds reclaimable lease - delete it immediately
+	reclaimSql := `
+		DELETE FROM leases
+		WHERE (token, consumer_group) IN (
+			SELECT token, consumer_group FROM leases
+			WHERE consumer_group = $1
+				AND until < now()
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING *;
+	`
+
+	leaseRows, err := tx.Query(ctx, reclaimSql, consumerGroup)
+	if err != nil {
+		return nil, err
+	}
+
+	lease, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[LeaseRow])
+	if err != nil {
+		// no reclaimable leases where found -> follow normal claim from message_log
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return d.ClaimMessages(
+		ctx, tx, consumerGroup, lease.Low, lease.High, limit, leaseDuration,
+	)
+}
+
+func (d *PostgresDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
 	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -197,6 +283,46 @@ func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context
 		return nil, err
 	}
 
+	return d.ClaimMessages(
+		ctx, tx, consumerGroup, claimedRange.Low, claimedRange.High, limit, leaseDuration,
+	)
+}
+
+func (d *PostgresDatastore[Message]) ClaimMessages(
+	ctx context.Context,
+	tx pgx.Tx,
+	consumerGroup string,
+	low int64,
+	high int64,
+	limit int,
+	leaseDuration time.Duration,
+) ([]MessageRow, error) {
+	// sanity check guard
+	if low >= high {
+		return nil, errors.New("invalid claimed range")
+	}
+
+	// get new lease associated with range
+	leaseSql := `
+		INSERT INTO leases (consumer_group, low, high, until)
+		VALUES (
+			$1, 
+			$2, 
+			$3, 
+			now() + make_interval(secs => $4)
+		)
+		RETURNING *;
+	`
+
+	leaseRows, err := tx.Query(ctx, leaseSql, consumerGroup, low, high, leaseDuration.Seconds())
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[LeaseRow]); err != nil {
+		return nil, err
+	}
+
 	claimSql := `
 		SELECT * FROM message_log
 		WHERE id > $1
@@ -206,7 +332,7 @@ func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context
 		             -- advance past unread offsets (silent message loss).
 	`
 
-	messageRows, err := tx.Query(ctx, claimSql, claimedRange.Low, claimedRange.High)
+	messageRows, err := tx.Query(ctx, claimSql, low, high)
 	if err != nil {
 		return nil, err
 	}
