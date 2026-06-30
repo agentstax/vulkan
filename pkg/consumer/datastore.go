@@ -163,8 +163,7 @@ func (d *PostgresDatastore[Message]) FanOut(ctx context.Context, consumerGroup s
 	return nil
 }
 
-// ClaimMessagesWithCursor is the "Reclaim before Claim" dispatcher: a worker first
-// tries to pick up a crashed range (an expired lease) and only claims fresh work
+// try to pick up a crashed range (an expired lease) and only claims fresh work
 // from the frontier if there's nothing to reclaim -- so crashed ranges drain first.
 func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
 	reclaimedMessages, err := d.ReclaimWithCursor(ctx, consumerGroup, limit, leaseDuration)
@@ -184,18 +183,8 @@ func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context
 	return freshMessages, nil
 }
 
-// ReclaimWithCursor grabs ONE expired lease and re-reads its exact range so a
+// grab ONE expired lease and re-reads its exact range so a
 // worker that crashed mid-range doesn't strand those offsets.
-//
-// Token rotation, done as delete-then-insert: instead of the reference's in-place
-// UPDATE ... SET lease_token = gen_random_uuid(), we DELETE the expired lease here
-// (FOR UPDATE SKIP LOCKED so only one reclaimer grabs it) and let the shared
-// ClaimMessages INSERT a brand-new lease (fresh token, refreshed `until`) over the
-// same range. Net effect is identical: the original slow worker's token no longer
-// exists, so its later token-guarded commit (6.5c) becomes a no-op. The whole thing
-// is one transaction -- the tx opened here is threaded into ClaimMessages, which
-// commits it -- so the delete+insert is atomic and a competing reclaimer can't
-// double-grab the range.
 func (d *PostgresDatastore[Message]) ReclaimWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
 	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
