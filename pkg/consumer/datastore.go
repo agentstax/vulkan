@@ -22,10 +22,13 @@ var (
 
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
-	MoveCursor(ctx context.Context, consumerGroup string, position int64) error
+	// CommitRange frees a finished range's lease (token-guarded); AdvanceWaterline is
+	// the lazy roller that rolls committed up to the lowest open lease.
+	CommitRange(ctx context.Context, consumerGroup string, token pgtype.UUID) error
+	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
 	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
-	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error)
+	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error)
 	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
 	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
 	RecordSuccess(ctx context.Context, delivery *DeliveryRow) error
@@ -57,6 +60,14 @@ type LeaseRow struct {
 type CursorRange struct {
 	Low  int64 `db:"low"`
 	High int64 `db:"high"`
+}
+
+// a leased window of work -- the messages to process plus the lease that guards
+// them. the worker frees the lease (CommitRange) once the whole range is done;
+// the lazy roller then advances committed past it.
+type ClaimedRange struct {
+	Lease    LeaseRow
+	Messages []MessageRow
 }
 
 // DeliveryRow is one (consumer_group, message_id) row of the deliveries table:
@@ -124,24 +135,37 @@ func (d *PostgresDatastore[Message]) UpsertCursor(ctx context.Context, consumerG
 	return nil
 }
 
-func (d *PostgresDatastore[Message]) MoveCursor(ctx context.Context, consumerGroup string, position int64) error {
+// CommitRange frees a finished range's lease. Token-guarded: if this worker was
+// reclaimed mid-range its token no longer exists, so the DELETE hits 0 rows and is a
+// harmless no-op -- the reclaimer owns the range now and will free its own lease.
+func (d *PostgresDatastore[Message]) CommitRange(ctx context.Context, consumerGroup string, token pgtype.UUID) error {
 	sql := `
-		UPDATE cursors
-		SET
-			committed = $1
-		WHERE consumer_group = $2
-			AND committed < $1;
+		DELETE FROM leases
+		WHERE consumer_group = $1
+			AND token = $2;
 	`
 
-	tag, err := d.Pool.Exec(ctx, sql, position, consumerGroup)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("no cursor registered for group %s", consumerGroup)
-	}
+	_, err := d.Pool.Exec(ctx, sql, consumerGroup, token)
+	return err
+}
 
-	return nil
+// AdvanceWaterline is the lazy roller: committed rolls up to the lowest open lease's
+// low (every offset <= it is resolved), clamped to claimed when no lease is open.
+// GREATEST keeps it monotonic. Runs off the hot path -- staleness only delays GC.
+func (d *PostgresDatastore[Message]) AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error) {
+	sql := `
+		UPDATE cursors c
+		SET committed = GREATEST(c.committed,
+			LEAST(
+				(SELECT MIN(low) FROM leases WHERE consumer_group = $1), -- lowest in-flight range
+				c.claimed)) -- LEAST ignores NULLs, so no open lease -> committed catches up to claimed
+		WHERE c.consumer_group = $1
+		RETURNING c.committed;
+	`
+
+	var committed int64
+	err := d.Pool.QueryRow(ctx, sql, consumerGroup).Scan(&committed)
+	return committed, err
 }
 
 func (d *PostgresDatastore[Message]) FanOut(ctx context.Context, consumerGroup string) error {
@@ -165,36 +189,27 @@ func (d *PostgresDatastore[Message]) FanOut(ctx context.Context, consumerGroup s
 
 // try to pick up a crashed range (an expired lease) and only claims fresh work
 // from the frontier if there's nothing to reclaim -- so crashed ranges drain first.
-func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
-	reclaimedMessages, err := d.ReclaimWithCursor(ctx, consumerGroup, limit, leaseDuration)
+func (d *PostgresDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
+	reclaimed, err := d.ReclaimWithCursor(ctx, consumerGroup, limit, leaseDuration)
 	if err != nil {
 		return nil, err
 	}
-	if len(reclaimedMessages) > 0 {
-		return reclaimedMessages, nil
+	if reclaimed != nil {
+		return reclaimed, nil
 	}
 
-	// no reclaimed messages found -> try standard fresh claim
-	freshMessages, err := d.FreshClaimMessagesWithCursor(ctx, consumerGroup, limit, leaseDuration)
-	if err != nil {
-		return nil, err
-	}
-
-	return freshMessages, nil
+	// nothing to reclaim -> try standard fresh claim (nil when caught up)
+	return d.FreshClaimMessagesWithCursor(ctx, consumerGroup, limit, leaseDuration)
 }
 
 // grab ONE expired lease and re-reads its exact range so a
 // worker that crashed mid-range doesn't strand those offsets.
-func (d *PostgresDatastore[Message]) ReclaimWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
+func (d *PostgresDatastore[Message]) ReclaimWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-
-	// TODO - need some validation that the lease range is still valid
-	// ie either low > cursor.committed or something like this
-	// this should ideally shouldn't be possible but just in case
 
 	// if finds reclaimable lease - delete it immediately
 	reclaimSql := `
@@ -229,7 +244,7 @@ func (d *PostgresDatastore[Message]) ReclaimWithCursor(ctx context.Context, cons
 	)
 }
 
-func (d *PostgresDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
+func (d *PostgresDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -285,7 +300,7 @@ func (d *PostgresDatastore[Message]) ClaimMessages(
 	high int64,
 	limit int,
 	leaseDuration time.Duration,
-) ([]MessageRow, error) {
+) (*ClaimedRange, error) {
 	// sanity check guard
 	if low >= high {
 		return nil, errors.New("invalid claimed range")
@@ -308,7 +323,8 @@ func (d *PostgresDatastore[Message]) ClaimMessages(
 		return nil, err
 	}
 
-	if _, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[LeaseRow]); err != nil {
+	lease, err := pgx.CollectOneRow(leaseRows, pgx.RowToStructByName[LeaseRow])
+	if err != nil {
 		return nil, err
 	}
 
@@ -335,7 +351,7 @@ func (d *PostgresDatastore[Message]) ClaimMessages(
 		return nil, err
 	}
 
-	return msgs, nil
+	return &ClaimedRange{Lease: lease, Messages: msgs}, nil
 }
 
 func (d *PostgresDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error) {

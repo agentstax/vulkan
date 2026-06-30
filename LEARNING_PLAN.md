@@ -823,11 +823,11 @@ reclaims and re-reads.
 - [x] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
       lo, hi, lease_until, lease_token, reclaims)` row at claim time, in the **same
       transaction** as the `claimed` advance.
-- [ ] **Reclaim before Claim.** Workers try **Reclaim** first: grab one expired
+- [x] **Reclaim before Claim.** Workers try **Reclaim** first: grab one expired
       lease with `FOR UPDATE SKIP LOCKED` and **rotate its token** (so the original
       slow worker's later commit becomes a no-op), then re-read the exact range. A
       crashed range therefore drains before new work.
-- [ ] **Pin the waterline below open leases.** `committed`'s advance gains its first
+- [x] **Pin the waterline below open leases.** `committed`'s advance gains its first
       real blocker: `committed = GREATEST(committed, LEAST(min open-lease lo,
       claimed))`. Now the gap `(committed, claimed]` holds the in-flight ranges.
       Make this a **lazy** roller off the hot path — staleness only delays GC.

@@ -157,6 +157,11 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 		return p.Process(ctx, consumerFunc)
 	})
 
+	fmt.Println("consumer waterline roller starting")
+	errGroup.Go(func() error {
+		return p.RollWaterline(ctx)
+	})
+
 	err := errGroup.Wait()
 	if errors.Is(err, context.Canceled) {
 		err = nil // requested shutdown, not a failure per say
@@ -183,6 +188,29 @@ func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := p.Datastore.FanOut(ctx, p.Group); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// RollWaterline is the lazy waterline roller: off the hot path, it periodically
+// rolls committed up to the lowest open lease (or claimed when none are open). Only
+// the cursor path has a waterline; the lifecycle path tracks state per delivery row.
+func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
+	if p.Config.Type != CURSOR {
+		return nil
+	}
+
+	ticker := time.NewTicker(p.Config.PollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if _, err := p.Datastore.AdvanceWaterline(ctx, p.Group); err != nil {
 				return err
 			}
 		}
@@ -219,12 +247,15 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
-	messages, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Group, p.Config.BatchLimit, leaseDuration)
+	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Group, p.Config.BatchLimit, leaseDuration)
 	if err != nil {
 		return err
 	}
+	if claimed == nil {
+		return nil // nothing to reclaim or claim -- caught up
+	}
 
-	for _, message := range messages {
+	for _, message := range claimed.Messages {
 		var work WorkType
 		if err := json.Unmarshal(message.Payload, &work); err != nil {
 			return err
@@ -233,13 +264,11 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 		if err := consumerFunc(ctx, &work); err != nil {
 			return err
 		}
-
-		if err := p.Datastore.MoveCursor(ctx, p.Group, message.Id); err != nil {
-			return err
-		}
 	}
 
-	return nil
+	// whole range processed -> free the lease. the lazy roller (RollWaterline)
+	// advances committed past it; we don't touch the waterline on the hot path.
+	return p.Datastore.CommitRange(ctx, p.Group, claimed.Lease.Token)
 }
 
 // LifecycleClaim is the per-row lifecycle path (Phase 6): claim this group's own
