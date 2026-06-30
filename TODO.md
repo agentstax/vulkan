@@ -13,6 +13,7 @@ Reconsider the lazy rollup (AdvanceWaterline)
   - on the metrics side of things how will users track and see when a message or batch is inflight and completed
 Consumer Consume's Project, Process and RollWaterline when error stop the consumer ie a database network blip crashes the consumer
   - we likley don't want this to happen and instead would want a retry backoff logic
+On graceful shutdown should update active inflight lease low to last processed work so it does not retry already processed work
 
 lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
   edge case: long-running jobs whose runtime exceeds WorkTimeout but still want fast reclaim on a real crash. today such a job is either falsely reclaimed mid-flight (double-processed) or forces a huge WorkTimeout (slow crash recovery). a heartbeat decouples the reclaim timeout from job duration - the lease tracks "worker still alive" instead of a one-shot duration guess.

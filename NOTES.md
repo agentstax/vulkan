@@ -816,3 +816,118 @@ in 6.5b (open leases pin it) and 6.5c (unresolved exceptions pin it).
   intended 6.5a hole — crash-safety is exactly what 6.5b's range lease adds. Happy
   path only here.
 
+---
+
+## Phase 6.5b — Lease the range: crash recovery
+
+**What it does, and the win:** the 6.5a happy path had a hole — a worker that
+claims a range and crashes *before* finishing strands `(committed, claimed]`: the
+next claim reads above `claimed` and skips them, and a naive waterline would sail
+right over the gap. 6.5b closes it with a **lease per claimed range** — Phase 2's
+visibility timeout, but over a *range* instead of a row. Claim now INSERTs a
+`leases(token, consumer_group, low, high, until)` row in the **same transaction**
+as the `claimed` advance; a crash leaves an *expired* lease another worker reclaims
+and re-reads. No new `deliveries` rows — crash recovery rides entirely on the lease
++ the two cursor frontiers.
+
+**The aha:** the lease is the gap's *owner*. The 6.5a gap `(committed, claimed]`
+was anonymous in-flight work; now every offset in it belongs to exactly one lease,
+and the waterline can't pass an offset until its lease is freed. Crash-safety,
+reclaim, and the waterline pin are the same fact read three ways — "this range is
+still owned."
+
+### Explain it back
+
+**1. A worker crashes mid-range — walk the recovery. Why rotate the lease token
+instead of just refreshing `lease_until`?**
+
+Worker claims `(lo, hi]` (lease inserted, token T) → crashes before `CommitRange` →
+lease just sits there → its `until` passes → on a later poll another worker's
+**Reclaim-before-Claim** scans `leases WHERE until < now()`, grabs it
+`FOR UPDATE SKIP LOCKED`, and re-reads the exact `(lo, hi]` under a **new** lease
+(new token T′). It reprocesses (at-least-once → processing must be idempotent).
+
+Rotating the token defends against the **zombie**: the original worker can resurrect
+(GC pause, slow syscall) and call `CommitRange`, which is token-guarded
+(`DELETE FROM leases WHERE consumer_group=$1 AND token=$2`). If reclaim had merely
+bumped `until` and kept token T, the zombie's commit would match T and free the
+**live** lease the reclaimer now holds — double-free, and the waterline would
+advance over a range still being processed. With T′, the zombie's `DELETE` hits 0
+rows: a harmless no-op. (In this impl reclaim is a DELETE + fresh INSERT, so a new
+token is structural, not an extra step.)
+
+**2. What does an open lease do to `committed`, and what breaks if the waterline
+passes an in-flight range?**
+
+An open lease **pins `committed` at its `low`**: the advance is `committed =
+GREATEST(committed, LEAST(min open-lease low, claimed))`, so the lowest open lease
+caps it. The reason is what `committed` *means* — **every offset ≤ `committed` is
+terminally resolved.** Let it pass an in-flight range and that promise is a lie: if
+the worker then crashes, those offsets were never processed, but everything that
+trusts the waterline (compaction/GC, "caught up", the durability guarantee) already
+counts them done → **silent loss.** (Reclaim itself doesn't depend on where
+`committed` sits — it scans the `leases` table — so the failure is the broken
+*guarantee*, not a broken reclaim.)
+
+### Done
+
+- Migration `004_leases`: `leases(token UUID DEFAULT gen_random_uuid(),
+  consumer_group, low, high, until)`, PK `(token, consumer_group)`. Lease covers
+  `(low, high]`.
+- `ClaimMessages` (shared by fresh + reclaim): INSERTs the lease in the **same tx**
+  as the range read, `RETURNING *` → `ClaimedRange{Lease, Messages}`. New return
+  type replaced the bare `[]MessageRow`.
+- `ClaimMessagesWithCursor` = **Reclaim-before-Claim**: `ReclaimWithCursor` first
+  (one `DELETE … WHERE token IN (SELECT … WHERE until < now() LIMIT 1 FOR UPDATE
+  SKIP LOCKED) RETURNING *`, then re-read the exact range under a fresh lease);
+  fall through to `FreshClaimMessagesWithCursor` only when nothing's reclaimable.
+  Crashed ranges therefore drain before new frontier work.
+- `CommitRange(group, token)`: token-guarded `DELETE FROM leases` — frees a finished
+  range, no-ops if the worker was reclaimed. Replaced 6.5a's per-message `MoveCursor`.
+- `AdvanceWaterline`: the **lazy roller** (own goroutine `RollWaterline`, ticks on
+  `PollRate`, off the hot path). **Two statements** — `SELECT LEAST((SELECT MIN(low)
+  FROM leases), claimed)` then `UPDATE … SET committed = GREATEST(committed,
+  $target)`. See Decisions for why it can't be one statement.
+- `CursorClaim` rewritten: claim a `ClaimedRange`, process the whole range, then
+  `CommitRange(token)`; the roller advances `committed` separately. `nil` claim ⇒
+  caught up, return.
+- Lab `examples/phase_1/reclaimlab`: deterministic, self-verifying — drives the
+  datastore directly, "crashes" by never committing a claim, short lease, asserts
+  exact range + token rotation + waterline pin + `deliveries` empty. Passes.
+- Build + vet green on `./pkg/...` (`backoff` still an intentional unused-fn lint —
+  it returns in 6.5c).
+
+### Decisions
+
+- **`AdvanceWaterline` must be two statements, not one — the EPQ snapshot trap.** The
+  obvious single `UPDATE cursors SET committed = LEAST((SELECT MIN(low) FROM
+  leases), claimed) … RETURNING` is **buggy under concurrency** and was caught by the
+  real-consumer run (the deterministic lab missed it — it's single-threaded). The
+  roller and a claim race: a claim advances `claimed` and inserts its lease in one
+  tx. Under READ COMMITTED the roller's UPDATE blocks on the claim's `cursors` row
+  lock; when it proceeds, **EvalPlanQual** re-reads the *target row* (`claimed`) at
+  its newest version but runs the `leases` subquery on the statement's **original**
+  snapshot — so it sees the new `claimed=10` but **not** the new lease → `LEAST(NULL,
+  10) = 10` → `committed` sails past the in-flight range. Fix: read `claimed` + `MIN(low)`
+  in **one plain SELECT** (one consistent snapshot, no EPQ), then `UPDATE … GREATEST`
+  separately. The target can only lag, never overshoot an open lease; `GREATEST`
+  keeps it monotonic. *FOR UPDATE can't save the single-statement form* (an INSERT
+  has no FOR UPDATE; you can't lock a not-yet-inserted lease; reads never block
+  writers); raising the isolation level converts it to abort-retry (worse under
+  contention). 6.5c/6.5d add more blocker terms — keep reading **every** term +
+  `claimed` in that same single snapshot.
+- **Lease covers `(low, high]` (low-exclusive, high-inclusive)** — same half-open
+  convention as the claim read (`id > low AND id <= high`), so a reclaimed range
+  re-reads byte-identical to the original claim.
+- **Reclaim drains before fresh claim, deliberately.** A crashed range is older work;
+  draining it first keeps `committed` moving and bounds how far `claimed` runs ahead
+  of an unresolved gap. One reclaim per poll (`LIMIT 1`) is enough — backlog of
+  expired leases bleeds down across polls.
+- **Poison-batch cap deferred to 6.5c.** A range whose processing *crashes the
+  worker* would be reclaimed forever. There's nowhere to quarantine those offsets
+  until the exception window exists, so the cap (and the `reclaims` counter) lands in
+  6.5c. Not a hole — a known handoff.
+- **`MoveCursor` is gone.** 6.5a advanced `committed` per message on the hot path;
+  6.5b moves all waterline motion to the lazy roller and frees leases on commit. The
+  hot path no longer touches `committed` at all.
+

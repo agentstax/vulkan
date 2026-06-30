@@ -838,7 +838,7 @@ deferred to 6.5c where the exception window gives them a home. `reclaims` counts
 toward it here.)*
 
 **Lab:**
-- [ ] **Crash mid-range, recover.** `--crash-after` inside a claimed range; confirm
+- [x] **Crash mid-range, recover.** `--crash-after` inside a claimed range; confirm
       **no exception rows were written**, the lease expires, **Reclaim re-reads the
       exact range** and reprocesses it (at-least-once → idempotent processing).
       Watch `committed` stay pinned at the range's `lo` until the reclaim completes.
@@ -847,8 +847,10 @@ toward it here.)*
 1. A worker crashes mid-range. Walk the recovery step by step. Why does the
    reclaimer **rotate** the lease token, and what goes wrong if it merely refreshes
    `lease_until`?
+Answer: Worker crashes mid-range -> Lease is 'lost' -> Lease expires -> worker reclaims on new claim cycle. Just bumping lease_until means we still have the wrong token owner so the worker does not own that claim anymore
 2. What does an open lease do to `committed`, and why must it — what breaks in 6.5a
    if the waterline advances past an in-flight range?
+Answer: An open lease prevents committed from moving past its low range. If we advanced committed past the leases low then we can no longer reclaim a lease if worker crashed mid lease.
 
 **Done when:** a mid-range crash is reclaimed and reprocessed with no lost or
 duplicated *effect*, `deliveries` still empty, NOTES.md, `git tag phase-6.5b`.
