@@ -162,6 +162,11 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 		return p.RollWaterline(ctx)
 	})
 
+	fmt.Println("consumer exception drain starting")
+	errGroup.Go(func() error {
+		return p.DrainExceptions(ctx, consumerFunc)
+	})
+
 	err := errGroup.Wait()
 	if errors.Is(err, context.Canceled) {
 		err = nil // requested shutdown, not a failure per say
@@ -279,6 +284,69 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 		}
 		return err
 	}
+	return nil
+}
+
+// DrainExceptions is a second poll loop over the sparse exception window, separate
+// from CursorClaim's range poll -- a backed-off exception can't block a fresh range
+// from claiming, and vice versa. Cursor-path only: the lifecycle path has no waterline
+// to pin, so a failed delivery just retries in place on the next LifecycleClaim.
+func (p *WorkConsumer[WorkType]) DrainExceptions(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+	if p.Config.Type != CURSOR {
+		return nil
+	}
+
+	ticker := time.NewTicker(p.Config.PollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := p.ExceptionClaim(ctx, consumerFunc); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
+
+	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration)
+	if err != nil {
+		return err
+	}
+
+	for _, exception := range claimed {
+		var work WorkType
+		// this payload already deserialized once, in CursorClaim, to reach the
+		// exception window in the first place -- same immutable message_log row,
+		// so it cannot fail to unmarshal here. a failure means an invariant broke
+		// elsewhere; surface it loudly instead of building unreachable recovery.
+		if err := json.Unmarshal(exception.Payload, &work); err != nil {
+			return err
+		}
+
+		if err := consumerFunc(ctx, &work); err != nil {
+			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err); recordErr != nil {
+				if errors.Is(recordErr, ErrLeaseLost) {
+					continue // reclaimed by the kill backstop or another worker -- not ours anymore
+				}
+				return recordErr
+			}
+			continue
+		}
+
+		if err := p.Datastore.RecordExceptionSuccess(ctx, &exception); err != nil {
+			if errors.Is(err, ErrLeaseLost) {
+				continue
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
