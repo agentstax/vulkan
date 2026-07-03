@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   attempts INT NOT NULL default 0,
   lease_until TIMESTAMPTZ,
   lease_token UUID,
+  can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries
   last_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
