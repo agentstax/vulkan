@@ -931,3 +931,151 @@ counts them done → **silent loss.** (Reclaim itself doesn't depend on where
   6.5b moves all waterline motion to the lazy roller and frees leases on commit. The
   hot path no longer touches `committed` at all.
 
+---
+
+## Phase 6.5c — The exception window: park only failures
+
+**What it does, and the win:** a failing message no longer drags its whole range
+down. `Commit` now takes two slices — `MessageException` (retryable) and
+`MessageTerminal` (unrecoverable, e.g. a bad payload) — and after freeing the
+range's lease it parks **only those**, one sparse `deliveries` row per failure,
+collapsed to `ready | inflight | dead` (no `done`: success is a row that's never
+written, or — for a row that already exists — a row that gets deleted). A second,
+independent poll loop (`DrainExceptions`) claims parked exceptions and runs them
+through the exact same retry/backoff/dead-letter shape Phase 2 had, just scoped to
+the tiny failing subset instead of every message. `AdvanceWaterline` grows a second
+blocker term so `committed` pins below the lowest unresolved exception the same way
+it already pinned below the lowest open lease. Closing the loop from 6.5b: a range
+that keeps crashing its worker (poison) now gets quarantined into this same window
+instead of being reclaimed forever.
+
+**The aha:** almost nothing here is a new failure-handling primitive — it's two
+systems that already existed (the 6.5a/6.5b range-claim happy path, and Phase 2's
+per-row retry state machine) being wired together. The kill backstop, the
+quarantine cap, and the waterline's second term are all just "how do these two
+systems hand off to each other," not new mechanism. The sparse row IS the handoff:
+it exists exactly as long as a message needs individual attention, and vanishes the
+moment it doesn't.
+
+### Explain it back
+
+**1. Why must `Commit` free the lease *before* parking exceptions (and check it
+still owns it)? What does a slow/reclaimed worker inject if it parks first?**
+
+Parking is a plain `INSERT` with no ownership check of its own — nothing about the
+statement knows or cares whether the worker calling it still holds the range's
+lease. If `Commit` parked first and freed second, a worker that's already been
+reclaimed (lease expired, a new owner is re-reading and re-processing the exact
+same range under a rotated token) could still successfully write exception rows
+for messages in that range — a stale worker injecting phantom failure rows into a
+range someone else now owns and may be concurrently resolving differently. Freeing
+first collapses "am I still the owner" and "give up ownership" into the same
+statement: the token-guarded `DELETE` either matches (still owner, proceed to
+park) or matches 0 rows (`ErrLeaseLost`, bail before touching `deliveries` at
+all). There's no window between a check and an action for a race to land in,
+because the check *is* the action.
+
+**2. Why is there no `done`/`acked` state? When a happy-path message succeeds,
+what row changes — and when an *exception* succeeds, what row changes?**
+
+A `deliveries` row's existence is itself the "still needs attention" signal, not a
+status value written onto it — so success is definitionally "no row," not a
+terminal status. On the happy path (a message that never failed) success writes
+nothing at all, the same 6.5a win of zero row writes per success. On the exception
+path a row already exists (from the earlier failure), so `RecordExceptionSuccess`
+**deletes** it rather than flipping it to some `done` state — the row's only
+reason for existing was "needs tracking," and once resolved there's nothing left
+to track. Both cases converge on the same rule, they just start from different
+places (never-written vs. written-then-removed).
+
+**3. What sits in the gap `(committed, claimed]` now — and why is it *not only*
+the failed/in-flight work?**
+
+Three things layered together: ranges under an open lease, offsets covered by an
+unresolved `ready`/`inflight` exception, and — easy to miss — every
+already-*succeeded* offset sitting **above** the lowest of those two blockers.
+`committed` is a single high-water mark, not a bitmap, so it can only certify a
+prefix; it has no way to say "everything succeeded except message 47." If message
+47 is parked and 48–200 all finished cleanly, `committed` still sits at 46 —
+48–200 are done and simply head-of-line-blocked behind 47's unresolved retry, even
+though nothing is wrong with them. Quarantine (chunk 8) makes this concrete at
+range scale too: once a whole range is dumped into the window, its perfectly-fine
+sibling messages sit in the same gap as the one that's actually poison, only
+distinguishable once each resolves individually via `ClaimExceptions` +
+`RecordExceptionSuccess`/`RecordExceptionFailure`.
+
+### Done
+
+- Schema: `can_run_after` (`deliveries`) + `reclaims` (`leases`) folded directly
+  into the existing `003_deliveries`/`004_leases` migrations — no new migration
+  file, per this project's no-migration-compat-concerns-yet stance.
+- `Commit(group, token, []MessageException, []MessageTerminal)`: frees the lease
+  token-guarded first (`ErrLeaseLost` + bail if stale), then parks exceptions as
+  `ready` and terminals as `dead` in the same transaction. No `ON CONFLICT` (see
+  Decisions).
+- `CursorClaim` isolates per-message failures: a bad payload becomes a
+  `MessageTerminal`, a `consumerFunc` error becomes a `MessageException`; the range
+  always frees regardless of individual outcomes — one bad message no longer fails
+  its batch-mates.
+- `AdvanceWaterline`'s second blocker term: `LEAST(min open-lease low, min
+  unresolved ready/inflight exception's message_id − 1, claimed)`. `dead` rows
+  don't block.
+- `ClaimExceptions`: the crash-loop kill backstop runs first (dead-letters
+  expired-`inflight` rows already at `maxAttempts`, no user code involved — a
+  poison exception can't reach `RecordExceptionFailure` to resolve itself, so this
+  is the only way it ever leaves the window), then claims `ready` + expired-
+  `inflight` → `inflight`, joined to `message_log` for payload.
+- `RecordExceptionSuccess` (pop-delete, token-guarded) and
+  `RecordExceptionFailure` (exhausted attempts → `dead`, otherwise → `ready` +
+  `backoff(attempts)`, token-guarded) — both `ErrLeaseLost`-aware, same as
+  `Commit`'s guard.
+- `DrainExceptions`: a fourth goroutine in `Consume` (cursor-path only), its own
+  poll loop separate from `CursorClaim` so a backed-off exception can't block
+  fresh ranges and a stuck range can't block a resolvable exception.
+- Poison-batch quarantine, closing the 6.5b handoff: fixed the `reclaims` counter
+  (was silently reset to 0 on every reclaim by a delete+insert; now a single
+  atomic `UPDATE ... SET reclaims = reclaims + 1`), and past `MaxRangeReclaims` a
+  range dumps every message into the exception window as a fresh-budget `ready`
+  row and frees its lease for good, instead of being handed out again.
+- Lab `examples/phase_1/exceptionlab`: deterministic, drives the datastore
+  directly — parks one exception, shows `committed` pin below it while later
+  ranges keep claiming/committing past it, resolves it, shows `committed` jump
+  straight to `claimed`. `just exception-lab`.
+- Build + vet green on `./pkg/...`; both `reclaim-lab` and `exception-lab` pass
+  with no regression to 6.5b's crash-recovery guarantees.
+
+### Decisions
+
+- **`MessageException`/`MessageTerminal` as two distinct types, not a bool flag
+  or sentinel error on one type.** Mirrors `LifecycleClaim`'s existing
+  `RecordTerminal`/`RecordFailure` split rather than inventing a new mechanism —
+  avoids "boolean blindness" (a flag whose meaning is opaque without external
+  context).
+- **No `ON CONFLICT` on the park `INSERT`**, though the plan suggested `ON
+  CONFLICT DO UPDATE`. Traced it: a `message_id` belongs to exactly one range
+  ever (`claimed` only moves forward), and free-lease-first means only the
+  still-owning worker ever reaches the `INSERT` — a collision can't happen in
+  this design. A real PK violation now surfaces loudly instead of being silently
+  absorbed by defensive SQL that had no actual trigger here.
+- **`RecordExceptionSuccess`/`RecordExceptionFailure`, not `Ack`/`Nack`.** Named
+  after the codebase's own existing verbs (`RecordSuccess`/`RecordFailure`/
+  `RecordTerminal`) instead of borrowed message-queue jargon.
+- **`concat()` over `||`** for building `last_error` strings — visually
+  confusable with logical `OR` from C-family languages.
+- **Reclaim rewritten as one atomic `UPDATE`** (`reclaims + 1`, token rotated,
+  `until` refreshed) instead of `DELETE` + `INSERT`. The old shape silently reset
+  `reclaims` to 0 on every reclaim — the exact bug this chunk's quarantine cap
+  depends on being correct, so it had to be fixed before quarantine could work at
+  all.
+- **Quarantine reuses the exception window rather than inventing range-level
+  dead-lettering.** A poisoned range's messages get the *same* per-message
+  retry/backoff/dead-letter treatment as an ordinary `CursorClaim` failure, so
+  `AdvanceWaterline` needed zero new logic to pin/unpin around a quarantined
+  range — it was already generic over "any unresolved exception."
+- **`ExceptionClaim`'s `json.Unmarshal` failure returns the raw error (fatal)
+  rather than getting its own retry/dead-letter path.** A parked exception's
+  payload already deserialized once, in `CursorClaim`, to reach the window in the
+  first place — same immutable `message_log` row — so a failure here can only
+  mean an invariant broke elsewhere; better to surface it loudly than build
+  unreachable recovery machinery for it.
+
