@@ -32,6 +32,11 @@ produce count="1":
 reclaim-lab:
   go run examples/phase_1/reclaimlab/main.go
 
+# Phase 6.5c lab: waterline pins on a failing message, jumps past it once resolved.
+# Deterministic, self-verifying -- needs >=20 rows in message_log.
+exception-lab:
+  go run examples/phase_1/exceptionlab/main.go
+
 peek:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
     -c "SELECT * FROM message_log ORDER BY id;"
