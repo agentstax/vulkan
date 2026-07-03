@@ -30,6 +30,8 @@ type Datastore[Message any] interface {
 	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error)
 	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
 	ClaimExceptions(ctx context.Context, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error)
+	RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error
+	RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error) error
 	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
 	RecordSuccess(ctx context.Context, delivery *DeliveryRow) error
 	RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error) error
@@ -84,7 +86,7 @@ type MessageTerminal struct {
 }
 
 // one exception claimed off the exception window for (re)processing -- the lease
-// token guards Ack/Nack the same way LeaseRow's does for a range.
+// token guards its resolution the same way LeaseRow's does for a range.
 type ClaimedException struct {
 	ConsumerGroup string          `db:"consumer_group"`
 	MessageId     int64           `db:"message_id"`
@@ -556,6 +558,80 @@ func (d *PostgresDatastore[Message]) ClaimExceptions(ctx context.Context, consum
 	}
 
 	return pgx.CollectRows(rows, pgx.RowToStructByName[ClaimedException])
+}
+
+// success pop-deletes the row -- same sparse convention as never parking it: no row means resolved.
+func (d *PostgresDatastore[Message]) RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
+	sql := `
+		DELETE FROM deliveries
+		WHERE consumer_group = $1
+			AND message_id = $2
+			AND lease_token = $3;
+	`
+
+	tag, err := d.Pool.Exec(ctx, sql, exception.ConsumerGroup, exception.MessageId, exception.LeaseToken)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+
+	return nil
+}
+
+// RecordExceptionFailure handles a retried exception's failure: attempts was already
+// incremented at claim time, so >= maxAttempts means this was the last try.
+func (d *PostgresDatastore[Message]) RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error) error {
+	if exception.Attempts >= maxAttempts {
+		sql := `
+			UPDATE deliveries
+			SET
+				status = 'dead',
+				lease_token = NULL,
+				lease_until = NULL,
+				last_error = $4,
+				updated_at = now()
+			WHERE consumer_group = $1
+				AND message_id = $2
+				AND lease_token = $3;
+		`
+
+		tag, err := d.Pool.Exec(ctx, sql, exception.ConsumerGroup, exception.MessageId, exception.LeaseToken, failureErr.Error())
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrLeaseLost
+		}
+
+		return nil
+	}
+
+	// clears the lease so it's claimable as a fresh 'ready' retry once can_run_after passes.
+	sql := `
+		UPDATE deliveries
+		SET
+			status = 'ready',
+			lease_token = NULL,
+			lease_until = NULL,
+			last_error = $4,
+			can_run_after = now() + make_interval(secs => $5),
+			updated_at = now()
+		WHERE consumer_group = $1
+			AND message_id = $2
+			AND lease_token = $3;
+	`
+
+	tag, err := d.Pool.Exec(ctx, sql, exception.ConsumerGroup, exception.MessageId, exception.LeaseToken, failureErr.Error(), backoff(exception.Attempts).Seconds())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+
+	return nil
 }
 
 // RecordSuccess marks a claimed delivery 'done'. Terminal success for this
