@@ -3,9 +3,9 @@ package main
 // Phase 6.5b lab: crash mid-range, recover.
 //
 // Drives the real datastore methods directly so a "crash" is deterministic: a
-// worker claims a range (which opens a lease) and then simply never CommitRanges
-// it -- exactly what a process that dies mid-range leaves behind. A short lease
-// lets the lab show the expiry + reclaim without real-time waiting.
+// worker claims a range (which opens a lease) and then simply never Commits it --
+// exactly what a process that dies mid-range leaves behind. A short lease lets the
+// lab show the expiry + reclaim without real-time waiting.
 //
 // Confirms: no exception rows are written, committed stays pinned at the crashed
 // range's lo, Reclaim re-reads the EXACT range with a ROTATED token (so the dead
@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -44,7 +45,7 @@ func main() {
 	const batch = 10
 
 	// ===== WORKER 1: claim a range, tick the roller, then CRASH (never commit) =====
-	step("WORKER 1 claims a range, then crashes mid-range (never CommitRange)")
+	step("WORKER 1 claims a range, then crashes mid-range (never Commit)")
 	claim1, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
 	must(err)
 	if claim1 == nil {
@@ -54,7 +55,7 @@ func main() {
 		claim1.Lease.Low, claim1.Lease.High, ids(claim1.Messages), shortTok(claim1.Lease.Token))
 	committed := advance(ctx, ds) // the lazy roller ticks while the range is in-flight
 	fmt.Printf("  roller tick -> committed = %d\n", committed)
-	// *** CRASH: control never reaches CommitRange(claim1) ***
+	// *** CRASH: control never reaches Commit(claim1) ***
 	oldTok := shortTok(claim1.Lease.Token)
 
 	snapshot(ctx, ds, "AFTER CRASH")
@@ -89,14 +90,16 @@ func main() {
 	fmt.Printf("  roller tick (mid-reclaim) -> committed = %d\n", committed)
 	assert("committed still pinned during reclaim", committedCol(ctx, ds), claim1.Lease.Low)
 
-	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: no-op
-	must(ds.CommitRange(ctx, group, claim1.Lease.Token))
+	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
+	if err := ds.Commit(ctx, group, claim1.Lease.Token, nil); !errors.Is(err, consumer.ErrLeaseLost) {
+		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
+	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds), 1)
 	assert("stale commit did not move the waterline", committedCol(ctx, ds), claim1.Lease.Low)
-	fmt.Println("  dead worker's stale CommitRange was a harmless no-op")
+	fmt.Println("  dead worker's stale Commit was rejected with ErrLeaseLost")
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
-	must(ds.CommitRange(ctx, group, claim2.Lease.Token))
+	must(ds.Commit(ctx, group, claim2.Lease.Token, nil))
 	committed = advance(ctx, ds)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
@@ -113,7 +116,7 @@ func main() {
 		if c == nil {
 			break // caught up
 		}
-		must(ds.CommitRange(ctx, group, c.Lease.Token))
+		must(ds.Commit(ctx, group, c.Lease.Token, nil))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, ds))
 	}
 	assert("committed reached head", committedCol(ctx, ds), head)

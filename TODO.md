@@ -15,6 +15,8 @@ Consumer Consume's Project, Process and RollWaterline when error stop the consum
   - we likley don't want this to happen and instead would want a retry backoff logic
 On graceful shutdown should update active inflight lease low to last processed work so it does not retry already processed work
 
+Commit's exception park is a loop of individual INSERTs inside one transaction (one Exec per failed message, one commit). switch to pgx.Batch: same per-row SQL, queued and sent together instead of one round-trip per row. deferred on purpose -- exceptions are the sparse/rare path by design, so the round-trip cost is unlikely to matter, and a plain loop is the simplest code to read while the exception-drain machinery around it is still being built. revisit once that's stable, since it's a small change (swap Exec-in-a-loop for Batch/SendBatch) that shouldn't touch the surrounding logic.
+
 recover() around consumerFunc invocations
   problem: today an ordinary Go panic (nil map write, index out of range, bad type assertion
   on an unexpected payload shape) is indistinguishable from a true process crash - nothing

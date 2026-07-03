@@ -22,9 +22,8 @@ var (
 
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
-	// CommitRange frees a finished range's lease (token-guarded); AdvanceWaterline is
-	// the lazy roller that rolls committed up to the lowest open lease.
-	CommitRange(ctx context.Context, consumerGroup string, token pgtype.UUID) error
+	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
+	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []Exception) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
 	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
@@ -55,6 +54,7 @@ type LeaseRow struct {
 	Low           int64       `db:"low"`
 	High          int64       `db:"high"`
 	Until         time.Time   `db:"until"`
+	Reclaims      int         `db:"reclaims"`
 }
 
 type CursorRange struct {
@@ -63,11 +63,17 @@ type CursorRange struct {
 }
 
 // a leased window of work -- the messages to process plus the lease that guards
-// them. the worker frees the lease (CommitRange) once the whole range is done;
-// the lazy roller then advances committed past it.
+// them. the worker frees the lease (Commit) once the whole range is done; the
+// lazy roller then advances committed past it.
 type ClaimedRange struct {
 	Lease    LeaseRow
 	Messages []MessageRow
+}
+
+// one failed message from a claimed range -- parked instead of failing the whole range.
+type Exception struct {
+	MessageId int64
+	Err       string
 }
 
 // DeliveryRow is one (consumer_group, message_id) row of the deliveries table:
@@ -135,18 +141,51 @@ func (d *PostgresDatastore[Message]) UpsertCursor(ctx context.Context, consumerG
 	return nil
 }
 
-// CommitRange frees a finished range's lease. Token-guarded: if this worker was
-// reclaimed mid-range its token no longer exists, so the DELETE hits 0 rows and is a
-// harmless no-op -- the reclaimer owns the range now and will free its own lease.
-func (d *PostgresDatastore[Message]) CommitRange(ctx context.Context, consumerGroup string, token pgtype.UUID) error {
-	sql := `
+// frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit
+// bails before parking any phantom exception rows.
+func (d *PostgresDatastore[Message]) Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []Exception) error {
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	freeSql := `
 		DELETE FROM leases
 		WHERE consumer_group = $1
 			AND token = $2;
 	`
 
-	_, err := d.Pool.Exec(ctx, sql, consumerGroup, token)
-	return err
+	tag, err := tx.Exec(ctx, freeSql, consumerGroup, token)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+
+	// no ON CONFLICT needed: only the worker whose token still matches the lease
+	// reaches this INSERT -- a stale worker's DELETE above matches 0 rows and
+	// returns before ever parking.
+	parkSql := `
+		INSERT INTO deliveries (consumer_group, message_id, status, attempts, can_run_after, last_error)
+		VALUES (
+			$1, 
+			$2, 
+			'ready',
+			0, 
+			now() + interval '5 seconds', 
+			$3
+		);
+	`
+
+	for _, e := range exceptions {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, e.MessageId, e.Err); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 // committed is the waterline: the mark below which every offset is resolved. it

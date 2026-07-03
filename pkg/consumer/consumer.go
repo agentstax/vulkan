@@ -268,7 +268,14 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 
 	// whole range processed -> free the lease. the lazy roller (RollWaterline)
 	// advances committed past it; we don't touch the waterline on the hot path.
-	return p.Datastore.CommitRange(ctx, p.Group, claimed.Lease.Token)
+	// nil exceptions -- CursorClaim doesn't isolate per-message failures yet.
+	if err := p.Datastore.Commit(ctx, p.Group, claimed.Lease.Token, nil); err != nil {
+		if errors.Is(err, ErrLeaseLost) {
+			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
+		}
+		return err
+	}
+	return nil
 }
 
 // LifecycleClaim is the per-row lifecycle path (Phase 6): claim this group's own
