@@ -29,6 +29,7 @@ type Datastore[Message any] interface {
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
 	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error)
 	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
+	ClaimExceptions(ctx context.Context, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error)
 	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
 	RecordSuccess(ctx context.Context, delivery *DeliveryRow) error
 	RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error) error
@@ -80,6 +81,16 @@ type MessageException struct {
 type MessageTerminal struct {
 	MessageId int64
 	Err       string
+}
+
+// one exception claimed off the exception window for (re)processing -- the lease
+// token guards Ack/Nack the same way LeaseRow's does for a range.
+type ClaimedException struct {
+	ConsumerGroup string          `db:"consumer_group"`
+	MessageId     int64           `db:"message_id"`
+	Attempts      int             `db:"attempts"`
+	LeaseToken    pgtype.UUID     `db:"lease_token"`
+	Payload       json.RawMessage `db:"payload"`
 }
 
 // DeliveryRow is one (consumer_group, message_id) row of the deliveries table:
@@ -477,6 +488,74 @@ func (d *PostgresDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Cont
 	}
 
 	return pgx.CollectRows(rows, pgx.RowToStructByName[DeliveryRow])
+}
+
+// ClaimExceptions drains the sparse exception window: kill exhausted deliveries, then claim.
+func (d *PostgresDatastore[Message]) ClaimExceptions(ctx context.Context, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error) {
+	// an exception that causes a crash loop never resolves normally -- without this
+	// backstop it would reclaim forever, pinning committed below it forever.
+	killSql := `
+		UPDATE deliveries
+		SET
+			status = 'dead',
+			lease_token = NULL,
+			lease_until = NULL,
+			updated_at = now(),
+			last_error = concat(last_error, ' [killed: crash-loop hit max attempts]')
+		WHERE consumer_group = $1
+			AND status = 'inflight'
+			AND lease_until < now()
+			AND attempts >= $2;
+	`
+	if _, err := d.Pool.Exec(ctx, killSql, consumerGroup, maxAttempts); err != nil {
+		return nil, err
+	}
+
+	// joins to message_log, since deliveries stores no payload of its own.
+	claimSql := `
+		WITH claimed AS (
+			UPDATE deliveries
+			SET
+				status = 'inflight',
+				lease_token = gen_random_uuid(),
+				lease_until = now() + make_interval(secs => $3),
+				attempts = attempts + 1,
+				updated_at = now()
+			WHERE (consumer_group, message_id) IN
+			(
+				-- claim either:
+				--   retryable 'ready' exceptions
+				--   expired 'inflight' exceptions
+				SELECT consumer_group, message_id FROM deliveries
+				WHERE consumer_group = $1
+					AND can_run_after <= now()
+					AND (
+						status = 'ready' OR 
+						(status = 'inflight' AND lease_until < now())
+					)
+				ORDER BY message_id
+				LIMIT $2
+				FOR UPDATE SKIP LOCKED
+			)
+			RETURNING consumer_group, message_id, attempts, lease_token
+		)
+		SELECT
+			c.consumer_group,
+			c.message_id,
+			c.attempts,
+			c.lease_token,
+			m.payload
+		FROM claimed c
+		JOIN message_log m ON m.id = c.message_id
+		ORDER BY c.message_id;
+	`
+
+	rows, err := d.Pool.Query(ctx, claimSql, consumerGroup, limit, leaseDuration.Seconds())
+	if err != nil {
+		return nil, err
+	}
+
+	return pgx.CollectRows(rows, pgx.RowToStructByName[ClaimedException])
 }
 
 // RecordSuccess marks a claimed delivery 'done'. Terminal success for this
