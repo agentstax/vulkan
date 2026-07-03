@@ -214,9 +214,17 @@ func (d *PostgresDatastore[Message]) Commit(ctx context.Context, consumerGroup s
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursors comes back fresh, leases stale.
 func (d *PostgresDatastore[Message]) AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error) {
-	// 1. compute the target. LEAST ignores NULLs, so zero open leases -> claimed.
+	// 1. compute the advance target, LEAST of:
+	// 		earliest open lease
+	// 		earliest unresolved exception (dead doesn't count -- only ready/inflight block)
+	// 		claimed (its caught up to head of log)
+	// LEAST ignores NULLs so any/all of those can be absent.
 	const targetSql = `
-		SELECT LEAST((SELECT MIN(low) FROM leases WHERE consumer_group = $1), claimed)
+		SELECT LEAST(
+			(SELECT MIN(low) FROM leases WHERE consumer_group = $1),
+			(SELECT MIN(message_id) - 1 FROM deliveries WHERE consumer_group = $1 AND status IN ('ready', 'inflight')),
+			claimed
+		)
 		FROM cursors
 		WHERE consumer_group = $1;
 	`
