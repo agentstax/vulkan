@@ -41,10 +41,11 @@ func main() {
 
 	const lease = 5 * time.Second
 	const batch = 5
+	const maxRangeReclaims = 3 // never hit in this lab -- no crashed/reclaimed ranges here
 
 	// ===== range 1: message 3 fails, the rest succeed =====
 	step("claim range 1 (ids 1-5), message 3 fails processing")
-	claim1, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
+	claim1, err := ds.ClaimMessagesWithCursor(ctx, group, batch, maxRangeReclaims, lease)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -62,7 +63,7 @@ func main() {
 
 	// ===== range 2: fully succeeds, but committed stays pinned on message 3 =====
 	step("claim + commit range 2 (ids 6-10), all succeed")
-	claim2, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
+	claim2, err := ds.ClaimMessagesWithCursor(ctx, group, batch, maxRangeReclaims, lease)
 	must(err)
 	if claim2 == nil {
 		die("expected a fresh claim, got nil")
@@ -99,7 +100,7 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
+		c, err := ds.ClaimMessagesWithCursor(ctx, group, batch, maxRangeReclaims, lease)
 		must(err)
 		if c == nil {
 			break // caught up

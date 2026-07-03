@@ -43,10 +43,11 @@ func main() {
 
 	const lease = 2 * time.Second
 	const batch = 10
+	const maxRangeReclaims = 3 // this lab reclaims exactly once -- never enough to quarantine
 
 	// ===== WORKER 1: claim a range, tick the roller, then CRASH (never commit) =====
 	step("WORKER 1 claims a range, then crashes mid-range (never Commit)")
-	claim1, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
+	claim1, err := ds.ClaimMessagesWithCursor(ctx, group, batch, maxRangeReclaims, lease)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -70,7 +71,7 @@ func main() {
 
 	// ===== WORKER 2: Reclaim-before-Claim grabs the EXACT expired range =====
 	step("WORKER 2 polls: Reclaim-before-Claim picks up the expired lease")
-	claim2, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
+	claim2, err := ds.ClaimMessagesWithCursor(ctx, group, batch, maxRangeReclaims, lease)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -111,7 +112,7 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := ds.ClaimMessagesWithCursor(ctx, group, batch, lease)
+		c, err := ds.ClaimMessagesWithCursor(ctx, group, batch, maxRangeReclaims, lease)
 		must(err)
 		if c == nil {
 			break // caught up
