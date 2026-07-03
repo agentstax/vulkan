@@ -255,21 +255,25 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 		return nil // nothing to reclaim or claim -- caught up
 	}
 
+	var exceptions []MessageException
+	var terminals []MessageTerminal
 	for _, message := range claimed.Messages {
 		var work WorkType
 		if err := json.Unmarshal(message.Payload, &work); err != nil {
-			return err
+			// bad payload will never deserialize -- no point retrying it
+			terminals = append(terminals, MessageTerminal{MessageId: message.Id, Err: err.Error()})
+			continue
 		}
 
 		if err := consumerFunc(ctx, &work); err != nil {
-			return err
+			exceptions = append(exceptions, MessageException{MessageId: message.Id, Err: err.Error()})
+			continue
 		}
 	}
 
-	// whole range processed -> free the lease. the lazy roller (RollWaterline)
-	// advances committed past it; we don't touch the waterline on the hot path.
-	// nil exceptions -- CursorClaim doesn't isolate per-message failures yet.
-	if err := p.Datastore.Commit(ctx, p.Group, claimed.Lease.Token, nil); err != nil {
+	// range always frees -- the lazy roller (RollWaterline) advances committed
+	// past it; failures ride along as parked exceptions, not a blocked range.
+	if err := p.Datastore.Commit(ctx, p.Group, claimed.Lease.Token, exceptions, terminals); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}

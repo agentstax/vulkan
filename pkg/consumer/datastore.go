@@ -23,7 +23,7 @@ var (
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
-	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []Exception) error
+	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
 	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
@@ -70,8 +70,14 @@ type ClaimedRange struct {
 	Messages []MessageRow
 }
 
-// one failed message from a claimed range -- parked instead of failing the whole range.
-type Exception struct {
+// one retryable failure from a claimed range -- parked as 'ready' instead of failing the whole range.
+type MessageException struct {
+	MessageId int64
+	Err       string
+}
+
+// one unrecoverable failure from a claimed range -- no retry could ever succeed, parks straight to 'dead'.
+type MessageTerminal struct {
 	MessageId int64
 	Err       string
 }
@@ -143,7 +149,7 @@ func (d *PostgresDatastore[Message]) UpsertCursor(ctx context.Context, consumerG
 
 // frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit
 // bails before parking any phantom exception rows.
-func (d *PostgresDatastore[Message]) Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []Exception) error {
+func (d *PostgresDatastore[Message]) Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
 	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -170,17 +176,22 @@ func (d *PostgresDatastore[Message]) Commit(ctx context.Context, consumerGroup s
 	parkSql := `
 		INSERT INTO deliveries (consumer_group, message_id, status, attempts, can_run_after, last_error)
 		VALUES (
-			$1, 
-			$2, 
-			'ready',
-			0, 
-			now() + interval '5 seconds', 
-			$3
+			$1,
+			$2,
+			$3,
+			0,
+			now() + interval '5 seconds',
+			$4
 		);
 	`
 
 	for _, e := range exceptions {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, e.MessageId, e.Err); err != nil {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, e.MessageId, "ready", e.Err); err != nil {
+			return err
+		}
+	}
+	for _, t := range terminals {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, t.MessageId, "dead", t.Err); err != nil {
 			return err
 		}
 	}
