@@ -55,7 +55,7 @@ go run ./reference/waterline/cmd/consumer -group demo --sleep 0.05 --fail-rate 0
 # routing (Phase 7)
 go run ./reference/waterline/cmd/producer -count 1 -routing-key orders.eu.created -headers '{"region":"eu"}'
 
-# FIFO partitions (Phase 8)
+# FIFO partitions (Phase 12)
 go run ./reference/waterline/cmd/producer -count 50 -partition-key acct-42
 go run ./reference/waterline/cmd/consumer -group fifo -mode fifo -workers 8
 
@@ -92,7 +92,7 @@ offset is "resolved" with no work. Consequence (the Phase 7 question): a binding
 added *after* events exist only affects offsets at/above the group's current
 frontier; route history by replaying (reset the cursor). See `routing.go`.
 
-### FIFO partitions (Phase 8) — ordering opt-in, on the lifecycle path
+### FIFO partitions (Phase 12) — ordering opt-in, on the lifecycle path
 The cheap claim-from-log happy path is the **unordered** max-throughput fan-out.
 A stream that needs ordering opts into the **lifecycle path**: `Materialize` a
 delivery per event (the Phase 6 fan-out), then drain with `ClaimPartitioned`,
@@ -105,7 +105,7 @@ its neighbours, so per-key order lives in the `deliveries` layer (per-row state)
 not the frontier-lane layer (contiguous blocks for read throughput — a different
 axis). See `partitions.go`.
 
-### Log compaction (Phase 9) — keep latest per key, safely
+### Log compaction (Phase 8) — keep latest per key, safely
 `Compact` keeps only the latest event per `partition_key` and removes a key whose
 latest value is a **tombstone** (`payload IS NULL`); unkeyed events are never
 touched. It is safe because the cursor advances by **coordinate** — deleting
@@ -135,5 +135,5 @@ with the absolute gaps explained.
 | 5 | fan-out | independent `cursors` per group |
 | 6 | lifecycle **on** the log | the happy path + sparse `deliveries` exception window |
 | 7 | routing | `bindings` + `routing.go` |
-| 8 | FIFO partitions | `partition_key` + `partitions.go` |
-| 9 | retention / compaction / observability | `compaction.go`; `Watermark`/`CaughtUp`; lag = `head − committed` |
+| 8 | retention / compaction / observability | `compaction.go`; `Watermark`/`CaughtUp`; lag = `head − committed` |
+| 12 | FIFO partitions | `partition_key` + `partitions.go` |

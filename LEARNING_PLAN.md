@@ -44,13 +44,17 @@ your design after each phase, and to see how the pieces compose at the end.
 | 6 lifecycle-on-log (naive per-row) | the `deliveries`-row-per-(group,event) model — what you measure the write-amplification wall on |
 | 6.5 claim-from-log refactor | `pglog.go` `Claim`/`Commit` (range-claim, no per-event rows) + sparse `deliveries` exception window + `leases` + `Advance` waterline + `sharding.go` lanes |
 | 7 routing | `routing.go` — NATS topic regex + header JSONB `@>` |
-| 8 FIFO partitions | `partitions.go` — at-most-one-in-flight-per-key, FIFO-through-retry |
-| 9 retention/compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe |
+| 8 retention/compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe |
+| 12 FIFO partitions | `partitions.go` — at-most-one-in-flight-per-key, FIFO-through-retry |
 
 One honest delta between this plan and the reference, worth knowing before you
 compare: a group is **either** a cursor/happy-path consumer **or** a
 FIFO/`deliveries` consumer, not both at once (the reference enforces this; the plan
-builds them as separate modes in Phases 6.5 and 8).
+builds them as separate modes in Phases 6.5 and 12). This plan's own
+`pkg/consumer.Datastore` interface goes further than the reference and supports
+*both* modes behind one interface (`CURSOR` and `LIFECYCLE`), which is exactly
+why it has more methods than the reference's `Log` interface — worth knowing
+before Phase 11 ("bloat" there isn't automatically waste).
 
 ---
 
@@ -69,10 +73,13 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 4 — Log/queue split | ✅ done | `message_log` + per-group cursor; **`ORDER BY id`** is load-bearing (high-water mark must be ordered); answers in NOTES.md; tag `phase-4` |
 | 5 — Fan-out | ✅ done | `-group` flag → independent `cursors` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
 | 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
-| 6.5 — Claim-from-log refactor | ⬜ | range-claim happy path (no per-event rows) + sparse exception window + leases + waterline + sharding |
+| 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
 | 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row) |
-| 8 — FIFO partitions | ⬜ | ordering opt-in on the lifecycle path |
-| 9 — Operational layer | ⬜ | retention, compaction, observability |
+| 8 — Operational layer | ⬜ | retention, compaction, observability — **current focus after 7** |
+| 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
+| 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
+| 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
+| 12 — FIFO partitions | ⬜ | deprioritized — ordering opt-in on the lifecycle path, not current focus |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -126,7 +133,7 @@ producer/consumer binaries:
       (extend it with status/attempts columns as the schema grows).
 
 These knobs are not throwaway — they become your failure-injection suite for
-every later phase, and in Phase 9 they're how you exercise the metrics.
+every later phase, and in Phase 8 they're how you exercise the metrics.
 
 ---
 
@@ -523,16 +530,16 @@ one that survives, and forward-reference the rest to where they actually live.
       eliminate it.
 
 **Deferred (topology-coupled — cross-referenced to their real home):**
-- [ ] **Archive terminal rows → Phase 9 (retention).** An append-only log has no
+- [ ] **Archive terminal rows → Phase 8 (retention).** An append-only log has no
       `done`/`dead` rows to archive; the "bloat" concern becomes "the log grows
-      forever," solved by time-partition-drop retention in Phase 9. Building a
+      forever," solved by time-partition-drop retention in Phase 8. Building a
       `message_archive` table now would be thrown away at Phase 4. (It *does* return
       for the `deliveries` table in Phase 6 — note it there.)
-- [ ] **Claim-hotspot sharding → Phase 8 (partitions) / Phase 6 (deliveries).** The
+- [ ] **Claim-hotspot sharding → Phase 12 (partitions) / Phase 6 (deliveries).** The
       single-hot-index-end contention *dissolves* in the cursor model (no competing
       claim — each cursor reads its own `offset > position` range). It returns only
       when competing claims return on `deliveries` (Phase 6), and sharding is
-      exactly what Phase 8's `partition_key` formalizes.
+      exactly what Phase 12's `partition_key` formalizes.
 
 **Lab:**
 - [ ] Record the baseline ceiling, then re-measure after `synchronous_commit` and
@@ -640,7 +647,7 @@ per-consumer. Deleting on consume (Phase 1) made this impossible; retaining
 1. Why is fan-out structurally impossible in the Phase 1–3 design?
 Answer: lifecycle is directly tied to the message log in phase 1-3 meaning it is a one-to-one mapping. Once it is processed by something anything else will also consider it processed. New design is one-to-many
 2. What's the operational risk of a consumer group that's permanently slow,
-   once retention (Phase 9) exists? (This is Kafka's "consumer fell off the
+   once retention (Phase 8) exists? (This is Kafka's "consumer fell off the
    retention window" failure.)
 Answer: This is consumer lag at its extreme. This would mean it risks messages not being processed at all
 
@@ -697,7 +704,7 @@ and lets the cursor carry the happy path, paying for a row only on the exception
 status-bearing table again — so the queue-shaped optimizations you deferred apply
 to it: competing `SKIP LOCKED` claims reintroduce the claim-hotspot contention
 (lever 4 → shard by `consumer_group`/key), and accumulating `done` delivery rows
-reintroduce the archive concern (lever 3 → archive or partition them, per Phase 9).
+reintroduce the archive concern (lever 3 → archive or partition them, per Phase 8).
 The append-only `events` log never needs either; only the lifecycle layer does.
 
 **Explain it back:**
@@ -745,6 +752,9 @@ gets its own `git tag`:
   failures, drain them pop-delete.
 - **6.5d — shard the hot lane (escape hatch, optional).** Survive a group being
   *frontier-bound*: split it into independent lanes.
+
+*(6.5d is deprioritized for now — its Build/Lab/Explain-it-back section has
+been moved to the end of this document, after Phase 12.)*
 
 The spine through all four is the **waterline**, `committed`, and it grows exactly
 one term per movement: in 6.5a it just trails `claimed`; 6.5b pins it below the
@@ -872,31 +882,31 @@ get the Phase 2 retry/backoff/dead machine — collapsed to `ready | inflight | 
 because *success is a DELETE* (pop-delete), so there's no `done`/`acked` state.
 
 **Build:**
-- [ ] **Sparse `deliveries`, three states.** `ready | inflight | dead` (`inflight`
+- [x] **Sparse `deliveries`, three states.** `ready | inflight | dead` (`inflight`
       is Phase 2's `processing`, renamed; **no `done`**). A row exists only for a
       failed offset; `dead` is the per-group DLQ, retained below the line.
-- [ ] **Commit: free the lease first, then park.** In one transaction, **free the
+- [x] **Commit: free the lease first, then park.** In one transaction, **free the
       lease guarded by your token** — if it's gone (you were reclaimed), park
       *nothing* and bail; only if you still held it do you `INSERT` a `deliveries`
       row (`state='ready'`) per failed offset. Use `ON CONFLICT DO UPDATE` so a
       re-park advances `attempts` toward `dead` (never `DO NOTHING`, which freezes
       attempts), and never clobbers a leased or already-`dead` row.
-- [ ] **Exception drain = pop-delete.** A separate worker claims `ready` exceptions
+- [x] **Exception drain = pop-delete.** A separate worker claims `ready` exceptions
       → `inflight` (`SKIP LOCKED`), folding in expired-`inflight` reclaim (a crashed
       exception worker, like Phase 2). Run the Phase 2 machine: on success **DELETE
       the row** (no `done`); exhausted retries → `dead`. A process-crashing poison
       row can't reach user-code Nack, so reap expired-`inflight`-at-max-attempts to
       `dead` *without* user code (the crash-loop backstop).
-- [ ] **Quarantine the poison batch (from 6.5b).** Wire 6.5b's reclaim cap: after N
+- [x] **Quarantine the poison batch (from 6.5b).** Wire 6.5b's reclaim cap: after N
       reclaims, a happy-path range that keeps crashing the worker is parked into
       this window (per-message isolation), where the crash-loop backstop
       dead-letters the actual poison.
-- [ ] **Waterline gains its second term.** `committed = GREATEST(committed,
+- [x] **Waterline gains its second term.** `committed = GREATEST(committed,
       LEAST(min open-lease lo, min unresolved-exception offset − 1, claimed))`.
       `dead` rows do **not** block. Still lazy, still off the hot path.
 
 **Lab:**
-- [ ] **Watch the waterline lag and catch up.** With one failing message in a range,
+- [x] **Watch the waterline lag and catch up.** With one failing message in a range,
       watch `committed` pin just below it while `claimed` runs ahead; let the
       exception exhaust its retries to `dead` and watch `committed` jump past it to
       the head. Confirm `deliveries` holds only the failed offset(s), never
@@ -924,52 +934,6 @@ row).
 crash-loop reap), `Ack`/`AckBatch` (pop-delete), `Nack`/`DeadLetter`, and `Advance`
 (the two-blocker `LEAST`). Note `eventsFor`: the drain pairs events to deliveries
 **by offset**, not row position — `UPDATE … RETURNING` order is not offset order.*
-
----
-
-### 6.5d — Shard the hot lane (escape hatch, optional)
-
-**Concept:** a single group's frontier is one `cursors` row, so many concurrent
-workers contend on it. Give the group **K lanes**, each owning a **frozen,
-contiguous block** of the log, and let them drain independently. Keep K=1 until a
-group is *provably* frontier-bound — don't shard speculatively. This is the
-optional capstone; skip it unless you want to feel the contention and lift it.
-
-**Build:**
-- [ ] **Freeze K contiguous blocks.** From a frozen head H, seed K `cursors` rows,
-      lane `s` owning block `(H·s/k, H·(s+1)/k]` via `block_hi`. The claim caps at
-      the lane's `block_hi` instead of `head`:
-      `LEAST(claimed + $batch, COALESCE(block_hi, head))`. Frozen + contiguous ⇒
-      lanes never overlap (no dup) and never leave a seam (no gap).
-- [ ] **Lane-scope the exception blocker.** `Advance`'s exception term must be
-      `AND lane = $lane`, or one lane's stuck exception freezes every lane's
-      waterline.
-- [ ] **Define the contiguous `Watermark`.** The group's cumulative guarantee is the
-      `committed` of the **first lane not yet at its `block_hi`** (everything below
-      it is dense), not `min(committed)` (which sticks once lane 0 finishes, so
-      `CaughtUp` could never fire).
-
-**Lab:**
-- [ ] **(Optional) sharding.** One hot group, single lane vs K lanes; plot the
-      frontier throughput. Confirm `Watermark` reaches head only when *all* lanes
-      drain their blocks.
-
-**Explain it back:**
-1. When would you shard a single group into lanes, and what does that trade away?
-2. Why is striping by `offset % K` the wrong way to do it — what can't a dense
-   single-integer cursor represent?
-3. Why is `Watermark` the first-incomplete-lane's `committed` and not
-   `min(committed)` across lanes?
-
-**Done when:** K lanes beat a single lane on a frontier-bound group (with numbers)
-and `Watermark` reaches head only when all lanes drain, NOTES.md,
-`git tag phase-6.5d`. Must hold **R1/R4** (lane claims clamp to a **frozen**
-`block_hi` — no gap/dup across lanes) and **R2** (lane-scoped `Advance` — one lane's
-exception can't freeze the others).
-
-*→ Reference: `reference/waterline/sharding.go` — `InitLanes` (frozen-block seeding,
-the re-shard and too-small guards) and `CaughtUp`; `pglog.go` `Watermark` (the
-first-incomplete-lane query).*
 
 ---
 
@@ -1045,7 +1009,302 @@ every event.*
 
 ---
 
-## Phase 8 — Optional FIFO partitions
+## Phase 8 — Operational layer
+
+**Concept:** what makes it survivable in production and observable enough to trust.
+
+**Build:**
+- [ ] **Retention policy:** a janitor that drops `events` older than X (and their
+      `done` deliveries). Learn it the cheap way with native time-partitioning
+      (`PARTITION BY RANGE (created_at)`) so retention is a partition `DROP`, not
+      a mass `DELETE`. **This is the real home of Phase 3.5's deferred lever 3
+      (archive terminal rows):** in the log model "don't let the table rot" is a
+      time-based retention/partition-drop, not a mid-stream archive — same concern,
+      correct mechanism for the topology. (In the *per-row* Phase 6 model, `done`
+      `deliveries` rows accumulate and are the one place the original archive idea
+      still applies; after the Phase 6.5 refactor the exception window self-cleans —
+      success is a DELETE — so only `dead` DLQ rows persist and need a retention
+      policy of their own.)
+- [ ] Optionally implement **log compaction** (keep only the latest event per
+      `partition_key`) to see Kafka's compacted-topic idea.
+- [ ] **Observability:** expose backlog/lag per group (`head − committed`, the
+      waterline gap), the `ready` exception count (retry depth), DLQ size (`dead`
+      count), and oldest-unacked age. These four numbers are how you operate any
+      queue.
+- [ ] **Latency (optional):** add `LISTEN/NOTIFY` so producers wake idle workers
+      instead of relying on poll interval, with a fallback poll for missed
+      notifies and delayed (`run_at`) messages. Knowing *why* you keep the
+      fallback poll (NOTIFY is fire-and-forget, lost if no listener) is the lesson.
+
+*→ Reference (after you've built it): `reference/waterline/compaction.go` —
+`Compact`/`CompactSafe` implement keep-latest-per-`partition_key` with tombstones,
+and a watermark-safe floor so compaction never drops a value a consumer hasn't
+passed (nor an event a live/dead `deliveries` row still references). Retention by
+partition-drop and the four observability numbers (lag = `head − committed`, DLQ
+size, ready count, oldest unacked) are left for you to add.*
+
+**Lab:**
+- [ ] Drop a retention partition and confirm consumers past that point are
+      unaffected — and decide what happens to a consumer whose cursor is
+      *inside* the dropped range (this is the Phase 5 question coming home).
+- [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
+      every failure mode you've built and watch each of the four metrics react.
+      If a failure doesn't move a metric, you have a blind spot.
+
+**Explain it back:**
+1. Why is partition-drop retention so much cheaper than `DELETE WHERE
+   created_at < X`? (Think WAL, vacuum, indexes.)
+2. Why must `LISTEN/NOTIFY` keep the fallback poll? Name both message classes
+   it would otherwise lose.
+3. For each of the four metrics: which failure mode is it the early warning for?
+
+**Done when:** every induced failure is visible in a metric, NOTES.md,
+`git tag phase-8`. Core platform operability is done — FIFO ordering (Phase 12)
+and lane sharding (6.5d) are optional add-ons from here, not prerequisites.
+
+**Real systems:** Kafka `retention.ms` + **log compaction**; consumer **lag**
+monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
+
+---
+
+## Phase 9 — Consumer fault isolation & recovery
+
+**Concept:** `consumerFunc` is a black box you don't control — it can return an
+ordinary error, panic, hang forever, or the datastore call around it can blip.
+Only the first case is handled today, through the retry/backoff/dead path built
+in 6.5c. This phase closes the other three, one failure mode at a time, using
+that same exception window as the landing zone for each — so a panic or a hang
+becomes "one message failed," never "the whole range/consumer died." No
+`reference/waterline` counterpart for this phase — the reference implements only
+the datastore/`Log` layer (`Claim`/`Commit`/`Advance`/…), never the worker loop
+that calls `consumerFunc`, so there's nothing to compare against here; this
+phase is `pkg/consumer`-specific.
+
+**Build:**
+- [ ] **Datastore-blip retry backoff.** `Consume`'s `Project`/`Process`/
+      `RollWaterline` goroutines currently return a raw DB error straight to the
+      errgroup, killing the whole consumer on a transient network blip. Wrap
+      their DB-facing calls in a retry-with-backoff instead of propagating
+      immediately.
+- [ ] **Graceful-shutdown lease truncation.** `Consume` already calls a
+      pluggable `p.ShutdownFunc` on the way out (`Shutdown`, `consumer.go`), so
+      this is extending that hook, not building shutdown from scratch: before
+      releasing an in-flight lease, update its low bound to the last
+      successfully processed offset in that range, so a restart doesn't
+      reprocess work that already completed.
+- [ ] **`recover()` around the `consumerFunc` call.** A bare Go panic (nil map
+      write, index out of range, a bad type assertion on an unexpected payload)
+      is indistinguishable from a real process crash today — it takes down the
+      *whole claimed range* (lease expires, gets reclaimed, re-reads the exact
+      same range, panics again) instead of failing the one message. `consumerFunc`
+      is currently called raw, with no recover, at **three independent sites**:
+      `CursorClaim`, `ExceptionClaim`, and `LifecycleClaim` — so this is a good
+      candidate for one small shared helper (e.g. `callSafely(ctx, consumerFunc,
+      work) error`) all three call, instead of tripling the defer/recover logic.
+      A recovered panic becomes an ordinary error routed through the **same**
+      per-message retry/backoff/dead path as any other failure, with the panic
+      value + `runtime/debug.Stack()` captured into `last_error`. Note what
+      `recover()` does *not* catch: OS-level faults (stack overflow, SIGSEGV via
+      cgo, OOM-kill, an external kill) — those still need the range-level
+      quarantine cap (6.5c) as the backstop.
+- [ ] **Hard per-message timeout via a detached-goroutine race.** `WorkTimeout`
+      is validated today but never enforced as a deadline — it only feeds the
+      lease-duration math (an *earlier* version of this code did wrap the call in
+      `context.WithTimeout`, still visible commented-out around `consumer.go`'s
+      dead V1/V2 paths, but that wrapping was dropped and never replaced). A bare
+      `context.WithTimeout` isn't enough on its own anyway: it's cooperative
+      (just closes `ctx.Done()`), so it does nothing for a call that never checks
+      its context (blocking cgo, a tight CPU loop, a library that ignores ctx).
+      Instead race completion against a timer with a buffered channel so the
+      *caller* can give up independent of the callee — and fold this into the
+      same shared helper as the `recover()` item above, since both wrap the exact
+      same three call sites:
+      ```go
+      done := make(chan error, 1) // buffered so a late send never blocks
+      go func() { done <- consumerFunc(ctx, &work) }()
+      select {
+      case err := <-done:
+          // finished in time
+      case <-time.After(p.Config.WorkTimeout):
+          err = ErrWorkTimeout
+          // consumerFunc's goroutine is NOT killed — it's abandoned, not stopped
+      }
+      ```
+      Go has no goroutine kill: this converts "one message hangs the whole
+      range, worker gets externally killed, whole range reclaimed and
+      re-crashes" into "one message leaks one goroutine" — better containment,
+      not a full fix. Route the timeout through the retry/dead path like any
+      other failure. If reusing `errgroup` for structural consistency, do NOT
+      call `Wait()` synchronously on this — `Wait()` blocks until every
+      goroutine returns, so it hangs right alongside a genuinely stuck call.
+- [ ] **Track abandoned goroutines.** Once calls can be abandoned, a small
+      in-process registry — keyed per **(message, attempt)**, not per-message,
+      since the same message can time out on more than one attempt and a
+      per-message key would let the second overwrite the first's entry. Expose
+      a counter (`hard_timeouts_total` — how often this happens), a gauge
+      (`abandoned_outstanding` — how many are leaked *right now*, the direct
+      leak-prediction signal), and a histogram (late-finish latency, for the
+      ones that do eventually return). Tag `last_error` distinctly for a
+      hard-timeout abort (e.g. `"hard timeout after Ns, goroutine abandoned"`)
+      so it's queryable without extra infra.
+- [ ] **(Stretch, low priority) lease heartbeat/renewal.** For long-running jobs
+      whose runtime legitimately exceeds `WorkTimeout` but still want fast
+      reclaim on a real crash: hand `consumerFunc` a `heartbeat()`/`touch()`
+      handle; the lease only extends when touched
+      (`UPDATE ... SET lease_until = now()+ext WHERE id=$1 AND lease_token=$2`).
+      `RowsAffected==0` on a renew means the lease was already reclaimed —
+      cancel the work context. Keep a hard max-duration ceiling regardless, so
+      a buggy progress loop that keeps touching forever still eventually caps
+      out. Opt-in; short jobs ignore it and rely on the fixed lease window.
+
+**Lab:**
+- [ ] Induce each failure mode with the existing harness (or new flags): a
+      `consumerFunc` that panics, one that hangs past `WorkTimeout`, and a
+      forced DB error mid-loop. Confirm: the panic retries/dead-letters just
+      the one message, not the whole range; the hang times out and retries
+      while the abandoned goroutine shows up in the gauge; the DB blip doesn't
+      kill the consumer and it recovers once the blip clears.
+
+**Explain it back:**
+1. Why does a recovered panic have to go through the *exact same*
+   retry/backoff/dead path as an ordinary error, instead of its own
+   special-cased handling?
+2. Why is `context.WithTimeout` alone insufficient to enforce `WorkTimeout`,
+   and what does the detached-goroutine race actually buy you given Go has no
+   goroutine kill?
+3. Why key the abandoned-goroutine registry by (message, attempt) rather than
+   by message alone?
+
+**Done when:** all three induced failure modes recover correctly and are
+demonstrated in the lab, NOTES.md, `git tag phase-9`.
+
+**Real systems:** this is the same isolation problem every worker framework
+solves — Sidekiq's `retry` + `death_handlers`, Temporal's activity heartbeats
+(the model for the stretch lease-heartbeat item), Kubernetes liveness probes as
+the outer backstop for faults nothing in-process can catch.
+
+---
+
+## Phase 10 — Observability: logging & the rollup model
+
+**Concept:** right now the only way to see consumer health is to query
+Postgres directly. This phase adds the operator-facing surface — a pluggable
+logger and a live debug readout — and settles the lazy-vs-synchronous waterline
+question this plan deliberately deferred back in 6.5b ("make this a lazy roller
+off the hot path — staleness only delays GC"). No `reference/waterline`
+counterpart either: it has no logger and no debug surface of its own (it's a
+teaching artifact meant to be read, not operated), so there's nothing to
+compare against — you're building past what the reference bothered with.
+
+**Build:**
+- [ ] **Common logger interface.** The internal `pkg` logging should accept a
+      logger *interface*, not a hardcoded implementation, so callers can plug
+      in their own structured or unstructured logger.
+- [ ] **Writer-based default logger.** Provide a default implementation that
+      takes an arbitrary `io.Writer`, so a caller with no opinions gets
+      something reasonable for free.
+- [ ] **Debug/metrics readout.** A debug mode or method that prints current
+      queue state on demand: the `claimed`/`committed` gap per group, exception
+      counts (`ready`/`inflight`/`dead`), and open-lease count — an ad hoc,
+      inspectable version of Phase 8's four operational numbers, useful before
+      you've wired up a real metrics backend.
+- [ ] **Resolve the lazy-vs-synchronous rollup.** Decide, with measured
+      numbers, whether `AdvanceWaterline` should stay a periodic lazy tick or
+      become synchronous — advance right after a lease/batch resolves instead
+      of waiting for the next tick. Record the latency-vs-overhead tradeoff you
+      measured, not just the decision.
+- [ ] **Inflight/completed visibility.** Surface, per group, how many
+      messages/batches are currently inflight vs. resolved — the metric gap the
+      lazy-rollup question originally flagged (today you can infer this from
+      `claimed − committed`, but it's not exposed as a first-class number).
+
+**Lab:**
+- [ ] Run the consumer under load with the new debug output on; watch the
+      `claimed`/`committed` gap and exception counts move in real time as you
+      inject failures with the existing harness (`--fail-rate`, `--crash-after`).
+      Compare how quickly `committed` reflects reality under the lazy roller vs.
+      the synchronous option.
+
+**Explain it back:**
+1. What's the tradeoff between a lazy periodic rollup and a synchronous one —
+   what do you gain and what do you pay for each?
+2. Why does a live debug readout of claimed/committed/exception-count matter
+   even though the underlying data was always queryable in Postgres directly?
+
+**Done when:** the pluggable logger and debug readout work end-to-end, the
+lazy-vs-synchronous rollup decision is made and recorded with measured
+reasoning, NOTES.md, `git tag phase-10`.
+
+**Real systems:** Kafka consumer-group lag exporters; the `slog` interface
+pattern (Go's own answer to "pluggable logger"); Temporal/Sidekiq dashboards
+built on exactly these counters (backlog, in-flight, dead-letter, oldest-unacked).
+
+---
+
+## Phase 11 — Architecture cleanup: datastore boundary & producer API
+
+**Concept:** a few structural seams accumulated while building the platform —
+the consumer knows more about Postgres-specific datastore internals than it
+should, the producer can't fan out to multiple queues in one transactional
+write, and a couple of small polish items were deliberately deferred until the
+core was stable. This phase is cleanup, not new capability.
+
+*→ Reference (partial, for the first item only): `reference/waterline/types.go`
+defines a deliberately small `Log` interface (`Claim`/`Reclaim`/`Commit`/
+`ClaimExceptions`/`Ack`/`Nack`/`DeadLetter`/`Advance`/`Watermark` — 9 methods) as
+the target shape to compare `pkg/consumer`'s current `Datastore` interface
+against (`datastore.go` — 13 methods, since it supports **both** `CURSOR` and
+`LIFECYCLE` modes behind one interface, which the reference deliberately keeps
+separate — see the "honest delta" note near the top of this document). One
+caveat worth knowing before you audit: the reference doesn't fully solve
+backend-agnosticism either — `Range.Token` is typed `pgtype.UUID` directly in
+its public struct, the same pgx-specific leak `Datastore.Commit`'s `token`
+parameter has. So "abstract the boundary" here means making a *deliberate,
+documented* choice about how far to go, not necessarily eliminating every pgx
+type — even the reference didn't bother.*
+
+**Build:**
+- [ ] **Abstract the datastore boundary.** Audit `pkg/consumer` for places that
+      assume more than the `Datastore` interface promises, so swapping the
+      backing store wouldn't require touching consumer logic.
+- [ ] **Evaluate `database/sql` vs. `pgx`.** Decide whether removing the
+      `pgx`-specific dependency is worth losing pgx-only features (native
+      types, `COPY`, etc.) — document the decision even if the answer is "keep
+      pgx."
+- [ ] **Multi-target transactional enqueue.** Extend the producer so one call
+      can publish to multiple queues/topics within the same transaction
+      (today's `Produce(ctx, tx, work)` only targets one).
+- [ ] **Attempt audit trail.** An append-only table recording each attempt
+      (`attempted_at`, error) per message, written but **never read by the hot
+      path** — so it can't slow down claims — for debugging/auditing only.
+- [ ] **Small polish.** Swap `context.WithTimeout`/`WithDeadline` for their
+      `*Cause` variants where it improves error messages; batch `Commit`'s
+      per-row exception-park `INSERT`s via `pgx.Batch` instead of a loop (this
+      was deferred on purpose back in 6.5c — revisit now that the surrounding
+      exception machinery is stable).
+
+**Lab:** no new failure mode to induce — this is refactor-and-verify. Re-run
+the full existing lab suite (`just reclaim-lab`, `just exception-lab`, and the
+rest) after the datastore-boundary refactor and confirm no regressions.
+
+**Explain it back:**
+1. What did depending directly on Postgres-specific datastore internals cost
+   you, concretely — name one place in the consumer that would have to change
+   if you swapped datastores?
+2. Why does the attempt-audit table deliberately never get read by the hot
+   path?
+
+**Done when:** the datastore boundary is audited and cleaned up (or documented
+as intentionally not fully abstracted), multi-target enqueue works, all
+existing labs still pass, NOTES.md, `git tag phase-11`.
+
+**Real systems:** the repository-pattern debate in general; River/Oban both
+commit to a single backing store rather than abstracting it — worth deciding
+deliberately which side of that tradeoff this project is on.
+
+---
+
+## Phase 12 — Optional FIFO partitions
 
 **Concept:** ordering on demand, paid for only where you opt in.
 
@@ -1096,7 +1355,7 @@ out to be the same mechanism.
 2. What does a retry (Phase 2 backoff) do to per-key ordering? Is "at most one
    in-flight per key" enough to preserve order through a retry?
 
-**Done when:** labs pass, NOTES.md, `git tag phase-8`.
+**Done when:** labs pass, NOTES.md, `git tag phase-12`.
 
 **Real systems:** Kafka **partitions** (key → partition, order within
 partition); Pulsar **Key_Shared** subscriptions (per-key order across multiple
@@ -1104,60 +1363,54 @@ consumers); SQS FIFO **MessageGroupId**.
 
 ---
 
-## Phase 9 — Operational layer
+## 6.5d — Shard the hot lane (deferred, optional)
 
-**Concept:** what makes it survivable in production and observable enough to trust.
+*Deprioritized for now — not part of the current focus (Phases 7–11). Revisit
+only if a single group's frontier is provably contended. Originally the fourth
+movement of Phase 6.5; kept labeled `6.5d` rather than folded into the main
+numbered sequence, since it's still conceptually part of that refactor.*
+
+**Concept:** a single group's frontier is one `cursors` row, so many concurrent
+workers contend on it. Give the group **K lanes**, each owning a **frozen,
+contiguous block** of the log, and let them drain independently. Keep K=1 until a
+group is *provably* frontier-bound — don't shard speculatively. This is the
+optional capstone; skip it unless you want to feel the contention and lift it.
 
 **Build:**
-- [ ] **Retention policy:** a janitor that drops `events` older than X (and their
-      `done` deliveries). Learn it the cheap way with native time-partitioning
-      (`PARTITION BY RANGE (created_at)`) so retention is a partition `DROP`, not
-      a mass `DELETE`. **This is the real home of Phase 3.5's deferred lever 3
-      (archive terminal rows):** in the log model "don't let the table rot" is a
-      time-based retention/partition-drop, not a mid-stream archive — same concern,
-      correct mechanism for the topology. (In the *per-row* Phase 6 model, `done`
-      `deliveries` rows accumulate and are the one place the original archive idea
-      still applies; after the Phase 6.5 refactor the exception window self-cleans —
-      success is a DELETE — so only `dead` DLQ rows persist and need a retention
-      policy of their own.)
-- [ ] Optionally implement **log compaction** (keep only the latest event per
-      `partition_key`) to see Kafka's compacted-topic idea.
-- [ ] **Observability:** expose backlog/lag per group (`head − committed`, the
-      waterline gap), the `ready` exception count (retry depth), DLQ size (`dead`
-      count), and oldest-unacked age. These four numbers are how you operate any
-      queue.
-- [ ] **Latency (optional):** add `LISTEN/NOTIFY` so producers wake idle workers
-      instead of relying on poll interval, with a fallback poll for missed
-      notifies and delayed (`run_at`) messages. Knowing *why* you keep the
-      fallback poll (NOTIFY is fire-and-forget, lost if no listener) is the lesson.
-
-*→ Reference (after you've built it): `reference/waterline/compaction.go` —
-`Compact`/`CompactSafe` implement keep-latest-per-`partition_key` with tombstones,
-and a watermark-safe floor so compaction never drops a value a consumer hasn't
-passed (nor an event a live/dead `deliveries` row still references). Retention by
-partition-drop and the four observability numbers (lag = `head − committed`, DLQ
-size, ready count, oldest unacked) are left for you to add.*
+- [ ] **Freeze K contiguous blocks.** From a frozen head H, seed K `cursors` rows,
+      lane `s` owning block `(H·s/k, H·(s+1)/k]` via `block_hi`. The claim caps at
+      the lane's `block_hi` instead of `head`:
+      `LEAST(claimed + $batch, COALESCE(block_hi, head))`. Frozen + contiguous ⇒
+      lanes never overlap (no dup) and never leave a seam (no gap).
+- [ ] **Lane-scope the exception blocker.** `Advance`'s exception term must be
+      `AND lane = $lane`, or one lane's stuck exception freezes every lane's
+      waterline.
+- [ ] **Define the contiguous `Watermark`.** The group's cumulative guarantee is the
+      `committed` of the **first lane not yet at its `block_hi`** (everything below
+      it is dense), not `min(committed)` (which sticks once lane 0 finishes, so
+      `CaughtUp` could never fire).
 
 **Lab:**
-- [ ] Drop a retention partition and confirm consumers past that point are
-      unaffected — and decide what happens to a consumer whose cursor is
-      *inside* the dropped range (this is the Phase 5 question coming home).
-- [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
-      every failure mode you've built and watch each of the four metrics react.
-      If a failure doesn't move a metric, you have a blind spot.
+- [ ] **(Optional) sharding.** One hot group, single lane vs K lanes; plot the
+      frontier throughput. Confirm `Watermark` reaches head only when *all* lanes
+      drain their blocks.
 
 **Explain it back:**
-1. Why is partition-drop retention so much cheaper than `DELETE WHERE
-   created_at < X`? (Think WAL, vacuum, indexes.)
-2. Why must `LISTEN/NOTIFY` keep the fallback poll? Name both message classes
-   it would otherwise lose.
-3. For each of the four metrics: which failure mode is it the early warning for?
+1. When would you shard a single group into lanes, and what does that trade away?
+2. Why is striping by `offset % K` the wrong way to do it — what can't a dense
+   single-integer cursor represent?
+3. Why is `Watermark` the first-incomplete-lane's `committed` and not
+   `min(committed)` across lanes?
 
-**Done when:** every induced failure is visible in a metric, NOTES.md,
-`git tag phase-9`. The platform is done.
+**Done when:** K lanes beat a single lane on a frontier-bound group (with numbers)
+and `Watermark` reaches head only when all lanes drain, NOTES.md,
+`git tag phase-6.5d`. Must hold **R1/R4** (lane claims clamp to a **frozen**
+`block_hi` — no gap/dup across lanes) and **R2** (lane-scoped `Advance` — one lane's
+exception can't freeze the others).
 
-**Real systems:** Kafka `retention.ms` + **log compaction**; consumer **lag**
-monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
+*→ Reference: `reference/waterline/sharding.go` — `InitLanes` (frozen-block seeding,
+the re-shard and too-small guards) and `CaughtUp`; `pglog.go` `Watermark` (the
+first-incomplete-lane query).*
 
 ---
 
@@ -1173,7 +1426,14 @@ monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
   refactor happened — that's the document your future self wants.
 - **Stop when it's enough.** Phases 1–3 alone are a production-grade job queue.
   Phases 4–6 graduate you from "queue" to "log+queue platform"; Phase 6.5
-  (claim-from-log) is the throughput payoff that makes it scale. 7–9 are polish.
+  (claim-from-log) is the throughput payoff that makes it scale. 7–11 round out
+  routing, operability, and the fault-tolerance/architecture gaps tracked in
+  TODO.md — do them in order too, they build on each other the same way.
+- **Current focus:** Phase 7 (Routing), then Phase 8 (Operational layer), then
+  Phases 9–11 (TODO.md-derived: fault isolation, observability, architecture
+  cleanup). Phase 12 (FIFO partitions) and 6.5d (lane sharding) are optional
+  and deliberately deferred to the end of this document — pick them up only if
+  a real workload demands ordering or lane-level throughput.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.
