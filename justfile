@@ -37,6 +37,11 @@ reclaim-lab:
 exception-lab:
   go run examples/phase_1/exceptionlab/main.go
 
+# routing lab: bindings gate what a group receives, not what gets claimed.
+# Deterministic, self-verifying, self-seeding -- publishes its own messages.
+routing-lab:
+  go run examples/phase_1/routinglab/main.go
+
 peek:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
     -c "SELECT * FROM message_log ORDER BY id;"
