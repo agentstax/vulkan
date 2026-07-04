@@ -43,7 +43,7 @@ func NewPostgresDatastore[Message any](ctx context.Context, params *PostgresConn
 	}, nil
 }
 
-func (d *PostgresDatastore[Message]) AppendMessage(ctx context.Context, producerFunc producer.ProducerFunc[Message]) (*Message, error) {
+func (d *PostgresDatastore[Message]) AppendMessage(ctx context.Context, producerFunc producer.ProducerFunc[Message], routingKey string) (*Message, error) {
 	tx, err := d.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -59,11 +59,14 @@ func (d *PostgresDatastore[Message]) AppendMessage(ctx context.Context, producer
 	}
 
 	sql := `
-		INSERT INTO message_log (payload)
-		VALUES ($1);
+		INSERT INTO message_log (payload, routing_key)
+		VALUES (
+			$1, 
+			NULLIF($2, '') -- if routing_key is empty string '' insert as NULL
+		);
 	`
 
-	_, err = tx.Exec(ctx, sql, message)
+	_, err = tx.Exec(ctx, sql, message, routingKey)
 	if err != nil {
 		return nil, err
 	}

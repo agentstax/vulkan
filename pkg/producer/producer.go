@@ -25,8 +25,8 @@ func NewWorkProducer[WorkType any](datastore Datastore[WorkType]) *WorkProducer[
 	}
 }
 
-func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc ProducerFunc[WorkType]) (*WorkType, error) {
-	message, err := p.datastore.AppendMessage(ctx, producerFunc)
+func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc ProducerFunc[WorkType], routingKey string) (*WorkType, error) {
+	message, err := p.datastore.AppendMessage(ctx, producerFunc, routingKey)
 	if err != nil {
 		return nil, err
 	}

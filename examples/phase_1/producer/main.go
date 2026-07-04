@@ -19,10 +19,13 @@ func main() {
 	// -count n
 	countPtr := flag.Int("count", 1, "number of messages produced")
 
+	// -routing-key key
+	routingKeyPtr := flag.String("routing-key", "", "routing key attached to each message (optional)")
+
 	// must always parse
 	flag.Parse()
 
-	fmt.Printf("count: %d\n", *countPtr)
+	fmt.Printf("count: %d, routing-key: %q\n", *countPtr, *routingKeyPtr)
 
 	// SETUP
 	ctx := context.Background()
@@ -52,7 +55,7 @@ func main() {
 			}
 
 			return work, nil
-		})
+		}, *routingKeyPtr)
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
