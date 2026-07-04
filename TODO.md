@@ -136,6 +136,15 @@ lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
     - in-process we can only bound queue damage (stop renewing -> reclaim -> dead-letter), not kill the hung goroutine; accept the leak until process restart.
   depends on lease_token + lease_until (done); pairs with the existing workCtx (WithoutCancel+WorkTimeout) and attempts/dead-letter machinery.
 
+FanOut rescans the entire message_log on every call instead of tracking a per-group
+high-water mark. `INSERT INTO deliveries ... SELECT ... FROM message_log` has no
+`WHERE id > <last fanned-out id>` and no LIMIT, so cost grows with total log size,
+not with new-messages-since-last-call -- `ON CONFLICT DO NOTHING` makes it correct
+regardless of how many times a row gets re-selected, just wasteful. fine at demo
+scale (the SQL comment already says so), but a real fix means giving the LIFECYCLE
+path its own per-group cursor, which is a bigger scope decision than a quick batch
+LIMIT -- revisit alongside any future work on the LIFECYCLE path itself.
+
 add a proper NATS-style topic selector for routing bindings (LATER, low priority)
   today `bindings.pattern` is a true wildcard: `*` matches any run of characters
   including dots, so it can span any number of hierarchy levels (`orders.*.central1`

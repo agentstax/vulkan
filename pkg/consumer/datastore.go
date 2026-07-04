@@ -260,14 +260,30 @@ func (d *PostgresDatastore[Message]) AdvanceWaterline(ctx context.Context, consu
 	return committed, err
 }
 
+// FanOut materializes one deliveries row per message this group is bound to receive.
 func (d *PostgresDatastore[Message]) FanOut(ctx context.Context, consumerGroup string) error {
 	sql := `
 		INSERT INTO deliveries (consumer_group, message_id, status)
 		SELECT
-			$1, 
-			id, 
+			$1,
+			m.id,
 			'ready'
-		FROM message_log -- no need to batch / limit this is for demonstration purposes only
+		FROM message_log m -- no need to batch / limit this is for demonstration purposes only
+		WHERE (
+			-- no bindings for consumer_group exists
+			NOT EXISTS (
+				SELECT 1 FROM bindings b
+				WHERE b.consumer_group = $1
+			)
+			-- bindings for consumer_group exists and match routing_key pattern
+			OR EXISTS (
+				SELECT 1 FROM bindings b
+				WHERE b.consumer_group = $1
+					AND m.routing_key ~ b.pattern
+			)
+			-- if bindings exist but our routing_key does not match any of them
+			-- no row is materialized for this message at all
+		)
 		ON CONFLICT DO NOTHING;
 	`
 
