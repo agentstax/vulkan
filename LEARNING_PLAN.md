@@ -43,7 +43,7 @@ your design after each phase, and to see how the pieces compose at the end.
 | 5 fan-out | independent `cursors` rows per group |
 | 6 lifecycle-on-log (naive per-row) | the `deliveries`-row-per-(group,event) model — what you measure the write-amplification wall on |
 | 6.5 claim-from-log refactor | `pglog.go` `Claim`/`Commit` (range-claim, no per-event rows) + sparse `deliveries` exception window + `leases` + `Advance` waterline + `sharding.go` lanes |
-| 7 routing | `routing.go` — NATS topic regex + header JSONB `@>` |
+| 7 routing | `routing.go` — NATS topic regex (header JSONB `@>` deferred to optional Phase 7b) |
 | 8 retention/compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe |
 | 12 FIFO partitions | `partitions.go` — at-most-one-in-flight-per-key, FIFO-through-retry |
 
@@ -74,7 +74,8 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 5 — Fan-out | ✅ done | `-group` flag → independent `cursors` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
 | 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
-| 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row) |
+| 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row); topic/NATS-wildcard matching only, header matching cut to **7b** |
+| 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 8 — Operational layer | ⬜ | retention, compaction, observability — **current focus after 7** |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
@@ -964,14 +965,13 @@ table is the principled version of Kafka's "retry topic."
 bindings decide who receives.
 
 **Build:**
-- [ ] `events` already has `topic`; add `routing_key text` and
-      `headers jsonb not null default '{}'`. (The reference keeps `headers`
-      *separate* from `payload` so routing can match on metadata without parsing
-      the body — that's the column the header matcher below reads.)
-- [ ] `bindings(consumer_group text, kind text, pattern text, header_match jsonb)`
-      — one table for both matcher styles (`kind='topic'` uses `pattern`,
-      `kind='header'` uses `header_match`). Routing is a **predicate evaluated at
-      read/fan-out time**, and it lands differently in the two models:
+- [ ] `message_log` gets a `routing_key text` column.
+- [ ] `bindings(consumer_group text, pattern text, display text)` — a group
+      with **no** binding matches all events; a group **with** a binding only
+      receives events whose `routing_key` matches `pattern` (a NATS-style
+      `*`/`>` wildcard, translated to a POSIX regex). Routing is a **predicate
+      evaluated at read/fan-out time**, and it lands differently in the two
+      models:
   - *Per-row (Phase 6):* it gates row creation — only materialize a `deliveries`
     row for groups whose binding matches.
   - *Claim-from-log (Phase 6.5):* the cursor still advances over the **whole** log
@@ -979,15 +979,19 @@ bindings decide who receives.
     matching events — a non-matching offset is "resolved" with no work and no
     exception row. A binding added *after* events exist therefore only affects
     offsets at/above the group's current frontier; replay to route history.
-- [ ] Implement two matchers to learn the two styles: **topic**
-      (`routing_key ~ pattern`, with `*`/`>`-style wildcards) and
-      **header/content** (`headers @> '{...}'` JSONB containment).
+- [ ] Scoped down to one matcher style (topic/NATS-wildcard) on purpose —
+      header/content matching (`headers @> '{...}'` JSONB containment) is a
+      real alternative some systems offer (see Real systems below) but was cut
+      to keep the first pass simple. It would slot in later as a pure addition
+      (a `headers jsonb` column on `message_log`, a second predicate branch in
+      `bindings`) without touching anything built here.
 
 *→ Reference (after you've built it): `reference/waterline/routing.go` — see
 `natsToRegex` for the `*`/`>` → POSIX-regex translation, and `readRange` in
 `pglog.go` for how the binding predicate is pushed into the read so a no-binding
-group matches all. Watch the foot-gun it guards: a `{}` header match would match
-every event.*
+group matches all. The reference also builds a header/content matcher
+(`kind='header'`, JSONB containment) that this phase deliberately skips — read
+it there if you want to see the shape headers-matching would take.*
 
 **Lab:**
 - [ ] Publish `orders.eu.created`; a group bound to `orders.*.created` receives it,
@@ -1000,7 +1004,9 @@ every event.*
 **Explain it back:**
 1. Where does the routing decision execute, and why there rather than at claim
    time or produce time? What changes if a binding is added after events exist?
-2. Topic-style vs header-style matching — when is each the right tool?
+2. Why doesn't a single `routing_key` string need a second, header-style
+   matcher to be useful — and what kind of matching question would eventually
+   force you to add one?
 
 **Done when:** lab passes, NOTES.md, `git tag phase-7`.
 
@@ -1414,6 +1420,56 @@ first-incomplete-lane query).*
 
 ---
 
+## 7b — Header/content routing (deferred, optional)
+
+*Deprioritized for now — cut from Phase 7 to keep the first pass simple: one
+matcher style is enough to learn where the routing predicate lives and how it
+differs between the CURSOR and LIFECYCLE paths, and this is a pure addition
+on top of that (nothing built in Phase 7 needs to change). Revisit only if a
+real routing need can't be expressed as a `routing_key` pattern.*
+
+**Concept:** `routing_key` matching is positional/hierarchical
+(`orders.eu.created`, matched left-to-right by token). Some routing
+decisions are about an *unordered set of attributes* instead — "region=eu
+AND tier=gold, regardless of what else is on the event" doesn't fit a
+hierarchy at all. A header/content matcher answers that case with JSONB
+containment instead of a regex.
+
+**Build:**
+- [ ] Add `headers jsonb not null default '{}'` to `message_log`.
+- [ ] `bindings` needs a way to carry a header-match alongside the existing
+      `pattern` column — reintroduce a discriminator (a `kind` column or
+      similar) once there are two matcher shapes to choose between; Phase 7
+      dropped it because with only one shape it had nothing to discriminate.
+- [ ] Header matcher: `headers @> '{...}'` (JSONB containment) — a group
+      matches when its bound match object is a subset of the event's headers.
+- [ ] **The foot-gun to guard against:** an empty `{}` header match is `@>`-true
+      for *every* event, silently widening a group to match everything.
+      Reject it at bind time.
+
+*→ Reference: `reference/waterline/routing.go`'s `BindHeader` (the foot-gun
+guard) and the `kind='header'` branch of `pglog.go`'s `readRange` — this was
+already built there in full; port it once you want it here.*
+
+**Lab:**
+- [ ] Bind a group to `{"region":"eu","tier":"gold"}`; only events whose
+      headers are a superset of that match route to it. A topic-bound group
+      and a header-bound group coexist fine on the same stream.
+
+**Explain it back:**
+1. Topic-style vs header-style matching — when is each the right tool, and
+   what routing question can't a single `routing_key` string express?
+2. Why must an empty header match be rejected instead of silently matching
+   everything?
+
+**Done when:** lab passes, NOTES.md, `git tag phase-7b`.
+
+**Real systems:** RabbitMQ header exchanges (`x-match: all`/`x-match: any`)
+— the topic-vs-headers split Phase 7 cites via RabbitMQ exchanges is exactly
+the one this phase revisits.
+
+---
+
 ## How to use this
 
 - **Do the phases in order.** Resist jumping to the synthesis (Phases 6–6.5).
@@ -1431,9 +1487,11 @@ first-incomplete-lane query).*
   TODO.md — do them in order too, they build on each other the same way.
 - **Current focus:** Phase 7 (Routing), then Phase 8 (Operational layer), then
   Phases 9–11 (TODO.md-derived: fault isolation, observability, architecture
-  cleanup). Phase 12 (FIFO partitions) and 6.5d (lane sharding) are optional
-  and deliberately deferred to the end of this document — pick them up only if
-  a real workload demands ordering or lane-level throughput.
+  cleanup). Phase 12 (FIFO partitions), 6.5d (lane sharding), and 7b
+  (header/content routing) are optional and deliberately deferred to the end
+  of this document — pick them up only if a real workload demands ordering,
+  lane-level throughput, or attribute-based routing a `routing_key` pattern
+  can't express.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.
