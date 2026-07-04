@@ -43,7 +43,7 @@ your design after each phase, and to see how the pieces compose at the end.
 | 5 fan-out | independent `cursors` rows per group |
 | 6 lifecycle-on-log (naive per-row) | the `deliveries`-row-per-(group,event) model — what you measure the write-amplification wall on |
 | 6.5 claim-from-log refactor | `pglog.go` `Claim`/`Commit` (range-claim, no per-event rows) + sparse `deliveries` exception window + `leases` + `Advance` waterline + `sharding.go` lanes |
-| 7 routing | `routing.go` — NATS topic regex (header JSONB `@>` deferred to optional Phase 7b) |
+| 7 routing | `routing.go` — NATS topic regex (this phase simplifies to a true `*` wildcard instead; header JSONB `@>` deferred to optional Phase 7b) |
 | 8 retention/compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe |
 | 12 FIFO partitions | `partitions.go` — at-most-one-in-flight-per-key, FIFO-through-retry |
 
@@ -74,7 +74,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 5 — Fan-out | ✅ done | `-group` flag → independent `cursors` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
 | 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
-| 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row); topic/NATS-wildcard matching only, header matching cut to **7b** |
+| 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b** |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 8 — Operational layer | ⬜ | retention, compaction, observability — **current focus after 7** |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
@@ -968,10 +968,10 @@ bindings decide who receives.
 - [ ] `message_log` gets a `routing_key text` column.
 - [ ] `bindings(consumer_group text, pattern text, display text)` — a group
       with **no** binding matches all events; a group **with** a binding only
-      receives events whose `routing_key` matches `pattern` (a NATS-style
-      `*`/`>` wildcard, translated to a POSIX regex). Routing is a **predicate
-      evaluated at read/fan-out time**, and it lands differently in the two
-      models:
+      receives events whose `routing_key` matches `pattern` (a **true
+      wildcard**: `*` matches any run of characters, any depth — translated
+      to a POSIX regex). Routing is a **predicate evaluated at read/fan-out
+      time**, and it lands differently in the two models:
   - *Per-row (Phase 6):* it gates row creation — only materialize a `deliveries`
     row for groups whose binding matches.
   - *Claim-from-log (Phase 6.5):* the cursor still advances over the **whole** log
@@ -979,24 +979,29 @@ bindings decide who receives.
     matching events — a non-matching offset is "resolved" with no work and no
     exception row. A binding added *after* events exist therefore only affects
     offsets at/above the group's current frontier; replay to route history.
-- [ ] Scoped down to one matcher style (topic/NATS-wildcard) on purpose —
-      header/content matching (`headers @> '{...}'` JSONB containment) is a
-      real alternative some systems offer (see Real systems below) but was cut
-      to keep the first pass simple. It would slot in later as a pure addition
-      (a `headers jsonb` column on `message_log`, a second predicate branch in
-      `bindings`) without touching anything built here.
+- [ ] Scoped down to one matcher style (a single greedy `*`) on purpose —
+      NATS-style selectors (`*` = exactly one dot-delimited token, `>` =
+      one-or-more trailing tokens) let you pin an exact hierarchy depth; a
+      true wildcard can't (`orders.*.central1` also matches
+      `orders.us.high.central1` — there's no way to say "one segment here,
+      not more"). Simpler to build and reason about; revisit only if
+      bindings actually need that depth precision (tracked in TODO.md).
+      Header/content matching (`headers @> '{...}'` JSONB containment) is a
+      separate real alternative some systems offer (see Real systems below)
+      but was cut too, for the same reason — see optional Phase 7b.
 
 *→ Reference (after you've built it): `reference/waterline/routing.go` — see
-`natsToRegex` for the `*`/`>` → POSIX-regex translation, and `readRange` in
-`pglog.go` for how the binding predicate is pushed into the read so a no-binding
-group matches all. The reference also builds a header/content matcher
-(`kind='header'`, JSONB containment) that this phase deliberately skips — read
-it there if you want to see the shape headers-matching would take.*
+`natsToRegex` for a NATS-style `*`/`>` → POSIX-regex translation (the
+reference builds the depth-precise version this phase deliberately
+simplifies away), and `readRange` in `pglog.go` for how the binding predicate
+is pushed into the read so a no-binding group matches all. The reference also
+builds a header/content matcher (`kind='header'`, JSONB containment) — see
+optional Phase 7b.*
 
 **Lab:**
-- [ ] Publish `orders.eu.created`; a group bound to `orders.*.created` receives it,
-      one bound to `orders.us.>` does not. Routing works without the producer
-      knowing any consumer exists.
+- [ ] Publish `orders.eu.created`; a group bound to `orders.*.created` receives
+      it, one bound to `payments.*` does not. Routing works without the
+      producer knowing any consumer exists.
 
 **The aha:** routing is just a predicate evaluated at fan-out time. RabbitMQ's
 "exchanges" are this; the flexibility lives in the matcher.
@@ -1004,14 +1009,15 @@ it there if you want to see the shape headers-matching would take.*
 **Explain it back:**
 1. Where does the routing decision execute, and why there rather than at claim
    time or produce time? What changes if a binding is added after events exist?
-2. Why doesn't a single `routing_key` string need a second, header-style
-   matcher to be useful — and what kind of matching question would eventually
-   force you to add one?
+2. What can a depth-precise selector (NATS-style `*`/`>`) express that a true
+   wildcard can't — and does this system's routing actually need that?
 
 **Done when:** lab passes, NOTES.md, `git tag phase-7`.
 
-**Real systems:** RabbitMQ exchanges — direct/**topic**/**headers**/fanout; NATS
-**subjects** with `*` and `>` wildcards; Pulsar regex subscriptions.
+**Real systems:** RabbitMQ exchanges — direct/**topic**/**headers**/fanout (topic
+patterns are depth-precise, `*`/`#`, closer to NATS than to this phase's true
+wildcard); NATS **subjects** with `*` and `>` wildcards; Pulsar regex
+subscriptions.
 
 ---
 

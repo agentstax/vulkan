@@ -136,6 +136,18 @@ lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
     - in-process we can only bound queue damage (stop renewing -> reclaim -> dead-letter), not kill the hung goroutine; accept the leak until process restart.
   depends on lease_token + lease_until (done); pairs with the existing workCtx (WithoutCancel+WorkTimeout) and attempts/dead-letter machinery.
 
+add a proper NATS-style topic selector for routing bindings (LATER, low priority)
+  today `bindings.pattern` is a true wildcard: `*` matches any run of characters
+  including dots, so it can span any number of hierarchy levels (`orders.*.central1`
+  matches `orders.us.central1` AND `orders.us.high.central1`). simple to implement
+  and reason about, but it can't pin an exact depth -- there's no way to say "match
+  this one segment, not deeper nesting" (e.g. distinguish a region-level event from
+  a datacenter-level sub-event at the same position). a NATS-style selector fixes
+  that by splitting `*` (exactly one dot-delimited token) from `>` (one-or-more
+  trailing tokens, tail-only) -- see reference/waterline/routing.go's natsToRegex
+  for the translation this would follow. revisit only if bindings actually need
+  that precision.
+
 EXPLAIN (ANALYZE, BUFFERS, TIMING) 
 UPDATE message_log
 SET 
