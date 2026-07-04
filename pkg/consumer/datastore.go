@@ -387,12 +387,7 @@ func (d *PostgresDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 	return err
 }
 
-// readMessages reads message_log rows in (low, high], ordered by id -- the cursor
-// is a high-water mark, so rows MUST come back in id order or a batch LIMIT could
-// return an arbitrary subset and the cursor would advance past unread offsets
-// (silent message loss). The binding predicate below only filters what's
-// returned here; it doesn't shrink the claimed range -- a non-matching row is
-// simply excluded and the cursor still advances over the WHOLE range regardless of match.
+// readMessages reads message_log rows in (low, high], ordered by id.
 func (d *PostgresDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx, consumerGroup string, low, high int64) ([]MessageRow, error) {
 	sql := `
 		SELECT m.id, m.payload, m.created_at FROM message_log m
@@ -401,7 +396,7 @@ func (d *PostgresDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM bindings b 
+					SELECT 1 FROM bindings b
 					WHERE b.consumer_group = $3
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
@@ -413,6 +408,8 @@ func (d *PostgresDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 				-- if bindings exist but our routing_key does not match any of them
 				-- we do not return anything
 			)
+		-- rows MUST come back in id order or a batch LIMIT could
+		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
 	`
 
