@@ -1079,3 +1079,115 @@ distinguishable once each resolves individually via `ClaimExceptions` +
   mean an invariant broke elsewhere; better to surface it loudly than build
   unreachable recovery machinery for it.
 
+---
+
+## Phase 7 — Routing
+
+**What it does, and the tradeoff:** producers publish with an attribute
+(`routing_key`) instead of addressing a consumer directly; a `bindings` row
+lets a `consumer_group` opt into only the events whose `routing_key` matches a
+`pattern` — a **true wildcard** (`*` matches any run of characters, any
+depth), translated to an anchored POSIX regex. A group with no binding still
+receives everything, so every earlier phase's behavior is unchanged by
+default. The same predicate is pushed into both existing consume models: the
+CURSOR path's `readMessages` excludes a non-match from what's *returned*, but
+the cursor still advances over the whole claimed range (`committed` stays a
+dense frontier, a non-match is "resolved" with no work, not parked); the
+LIFECYCLE path's `FanOut` puts the predicate in its `SELECT ... WHERE`, so a
+non-match never gets a `deliveries` row *materialized* at all. The tradeoff:
+the true wildcard can't pin an exact hierarchy depth (`orders.*.central1` also
+matches the deeper `orders.us.high.central1` — there's no way to say "this
+many segments, not more"), traded deliberately for simplicity.
+
+**The aha:** routing needed no new plumbing, just a `WHERE` clause bolted onto
+two reads that already existed (`readMessages`, `FanOut`'s `SELECT`). The
+producer never learns a consumer exists — it writes one attribute and walks
+away — and every consume model absorbs that attribute identically through one
+shared predicate string (`bindings.pattern`), not a separate matching engine
+per model.
+
+### Explain it back
+
+**1. Where does the routing decision execute, and why there rather than at
+claim time or produce time? What changes if a binding is added after events
+exist?**
+
+At claim/fan-out time: inside `readMessages`'s `WHERE`, evaluated as part of
+the claiming transaction, or inside `FanOut`'s `SELECT`, evaluated whenever
+`FanOut` runs — never at produce time. `AppendMessage` writes `routing_key`
+and never touches `bindings` at all; a consumer evaluates the predicate
+against whatever rows are in `bindings` *right now*, not whatever existed when
+the message was written. Consequence: a binding added after a message already
+exists still applies to it, as long as that message hasn't been claimed
+(CURSOR) or fanned out (LIFECYCLE) yet — verified live in `routinglab`, where
+a message published before any binding existed still correctly matched a
+binding added afterward. It has zero effect on anything already resolved:
+already-`committed` offsets or an already-materialized `deliveries` row don't
+get re-evaluated. Routing reach is bounded by what's still unclaimed/
+un-fanned-out, not by publish order relative to when the binding was created.
+
+**2. What can a depth-precise selector (NATS-style `*`/`>`) express that a
+true wildcard can't — and does this system's routing actually need that?**
+
+NATS-style splits `*` (exactly one dot-delimited token) from `>` (one-or-more
+trailing tokens), so `orders.*.created` matches *only* a single token in that
+slot — `orders.us.created` yes, `orders.us.central1.created` no (that needs
+`>` to absorb the variable-length tail). A true wildcard collapses every `*`
+to greedy `.*`, so there's no way to write "exactly this many segments, no
+more" — depth becomes unpinnable. Nothing this system currently does depends
+on that distinction (no phase needs to tell "this depth" from "any deeper"
+apart), so the simpler true wildcard covers every real need so far; the
+depth-precise upgrade path is documented and deferred in `TODO.md` rather than
+built speculatively.
+
+### Done
+
+- `message_log` gets `routing_key TEXT`, folded directly into its original
+  `CREATE TABLE` (`migrations/001_messages`) — not a same-table `ALTER TABLE`.
+- New `migrations/005_bindings`: `bindings(consumer_group, pattern, display)`
+  + an index on `consumer_group`. No `kind`/`header_match` columns — only one
+  matcher style exists, nothing to discriminate between.
+- Producer API: `Datastore.AppendMessage`/`WorkProducer.Produce` take a
+  `routingKey string`; `""` stores SQL `NULL`, not `''`.
+- `pkg/consumer/bindings.go`: `BindTopic`/`ClearBindings` (admin calls, not on
+  the `Datastore` interface) + `wildcardToRegex` (`*` → `.*`, literal segments
+  `regexp.QuoteMeta`-escaped).
+- CURSOR path: `readMessages` gained a `consumerGroup` param and the
+  `NOT EXISTS (binding) OR EXISTS (matching binding)` predicate; both call
+  sites (`ReclaimWithCursor`, `ClaimMessages`) updated.
+- LIFECYCLE path: `FanOut`'s `SELECT` gained the identical predicate in its
+  `WHERE`.
+- `examples/phase_1/routinglab`: self-seeding (publishes its own messages
+  under a run-unique routing-key namespace, so it never collides with
+  leftover routing keys from earlier runs) and self-isolating (fast-forwards
+  each group's cursor to the current log head first). Proves depth-crossing,
+  the retroactive-binding behavior from Q1, the CURSOR path's
+  filter-but-still-advance, and the LIFECYCLE path's gate-row-creation —
+  three groups, one file. `just routing-lab`.
+- Bug found and fixed along the way: `readMessages` was `SELECT *` against
+  `message_log`, which grew a `routing_key` column in chunk 1 that
+  `MessageRow` has no field for — `pgx.RowToStructByName` errors (doesn't
+  silently ignore) on an unmapped column, so the CURSOR read path was
+  silently broken from chunk 1 onward until this phase's own live
+  verification caught it. Fixed by selecting explicit columns instead of `*`.
+- Build + vet green across every touched package; `reclaim-lab`,
+  `exception-lab`, and the new `routing-lab` all pass with no regression.
+
+### Decisions
+
+- **Topic/`routing_key` matching only — no header/content matcher.** One
+  predicate is enough to learn the hard part (wiring it into both consume
+  models); header/content (JSONB containment) is cut, not abandoned — see
+  optional Phase 7b.
+- **A true wildcard, not NATS-style `*`/`>`.** Simpler to build and reason
+  about; the depth-precision gap is a documented, deliberate tradeoff
+  (`TODO.md`), not a silent loss.
+- **`bindings.kind` dropped entirely**, along with the `CHECK` constraint and
+  `header_match` column an earlier draft had — with a single matcher style,
+  there's nothing left to discriminate between.
+- **`FanOut`'s full-table rescan (no per-group high-water mark) is a known,
+  separate limitation**, logged in `TODO.md` rather than fixed here — this
+  phase only added the routing predicate to whatever `FanOut` already did;
+  giving the LIFECYCLE path its own cursor is a bigger scope decision than
+  this phase's job.
+

@@ -74,7 +74,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 5 — Fan-out | ✅ done | `-group` flag → independent `cursors` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
 | 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
-| 7 — Routing | ⬜ | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b** |
+| 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 8 — Operational layer | ⬜ | retention, compaction, observability — **current focus after 7** |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
@@ -965,8 +965,8 @@ table is the principled version of Kafka's "retry topic."
 bindings decide who receives.
 
 **Build:**
-- [ ] `message_log` gets a `routing_key text` column.
-- [ ] `bindings(consumer_group text, pattern text, display text)` — a group
+- [x] `message_log` gets a `routing_key text` column.
+- [x] `bindings(consumer_group text, pattern text, display text)` — a group
       with **no** binding matches all events; a group **with** a binding only
       receives events whose `routing_key` matches `pattern` (a **true
       wildcard**: `*` matches any run of characters, any depth — translated
@@ -979,7 +979,7 @@ bindings decide who receives.
     matching events — a non-matching offset is "resolved" with no work and no
     exception row. A binding added *after* events exist therefore only affects
     offsets at/above the group's current frontier; replay to route history.
-- [ ] Scoped down to one matcher style (a single greedy `*`) on purpose —
+- [x] Scoped down to one matcher style (a single greedy `*`) on purpose —
       NATS-style selectors (`*` = exactly one dot-delimited token, `>` =
       one-or-more trailing tokens) let you pin an exact hierarchy depth; a
       true wildcard can't (`orders.*.central1` also matches
@@ -999,7 +999,7 @@ builds a header/content matcher (`kind='header'`, JSONB containment) — see
 optional Phase 7b.*
 
 **Lab:**
-- [ ] Publish `orders.eu.created`; a group bound to `orders.*.created` receives
+- [x] Publish `orders.eu.created`; a group bound to `orders.*.created` receives
       it, one bound to `payments.*` does not. Routing works without the
       producer knowing any consumer exists.
 
