@@ -30,15 +30,17 @@ const (
 )
 
 type WorkConsumerConfig struct {
-	Type             ConsumerType
-	BatchLimit       int
-	MaxAttempts      int
-	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	PollRate         time.Duration
-	WorkTimeout      time.Duration // TODO - consider a better name
-	QueueTimeout     time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
-	AckMargin        time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
-	ShutdownTimeout  time.Duration
+	Type                  ConsumerType
+	BatchLimit            int
+	MaxAttempts           int
+	MaxRangeReclaims      int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
+	PollRate              time.Duration
+	WorkTimeout           time.Duration // TODO - consider a better name
+	QueueTimeout          time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
+	AckMargin             time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	ShutdownTimeout       time.Duration
+	PartitionSize         int64
+	PartitionSafetyBuffer int64
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -60,15 +62,17 @@ func NewWorkConsumer[WorkType any](group string, queue concurrency.Queue[Message
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
-			Type:             CURSOR,
-			BatchLimit:       1, // no batching by default
-			MaxAttempts:      3,
-			MaxRangeReclaims: 3,
-			PollRate:         5 * time.Second,
-			WorkTimeout:      30 * time.Second,
-			QueueTimeout:     5 * time.Second,
-			AckMargin:        2 * time.Second,
-			ShutdownTimeout:  35 * time.Second,
+			Type:                  CURSOR,
+			BatchLimit:            1, // no batching by default
+			MaxAttempts:           3,
+			MaxRangeReclaims:      3,
+			PollRate:              5 * time.Second,
+			WorkTimeout:           30 * time.Second,
+			QueueTimeout:          5 * time.Second,
+			AckMargin:             2 * time.Second,
+			ShutdownTimeout:       35 * time.Second,
+			PartitionSize:         1000000, // TODO - make configurable, TODO - determine sane default
+			PartitionSafetyBuffer: 50000,   // TODO - make configurable, TODO - determine sane default
 		},
 	}
 }
@@ -137,6 +141,10 @@ func (p *WorkConsumer[WorkType]) validate() error {
 
 func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 	if err := p.Datastore.UpsertCursor(ctx, p.Group); err != nil {
+		return err
+	}
+
+	if err := p.Datastore.EnsureNextPartition(ctx, p.Config.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 		return err
 	}
 

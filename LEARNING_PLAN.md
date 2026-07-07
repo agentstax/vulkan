@@ -76,7 +76,8 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
 | 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 8 — Operational layer | ⬜ | retention, compaction, observability — **current focus after 7** |
+| 8 — Operational layer | ⬜ | compaction, observability, LISTEN/NOTIFY — **current focus after 7**; retention split out into **8a** |
+| 8a — Retention | 🔨 **next** | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
@@ -1026,17 +1027,17 @@ subscriptions.
 **Concept:** what makes it survivable in production and observable enough to trust.
 
 **Build:**
-- [ ] **Retention policy:** a janitor that drops `events` older than X (and their
-      `done` deliveries). Learn it the cheap way with native time-partitioning
-      (`PARTITION BY RANGE (created_at)`) so retention is a partition `DROP`, not
-      a mass `DELETE`. **This is the real home of Phase 3.5's deferred lever 3
-      (archive terminal rows):** in the log model "don't let the table rot" is a
-      time-based retention/partition-drop, not a mid-stream archive — same concern,
-      correct mechanism for the topology. (In the *per-row* Phase 6 model, `done`
-      `deliveries` rows accumulate and are the one place the original archive idea
-      still applies; after the Phase 6.5 refactor the exception window self-cleans —
-      success is a DELETE — so only `dead` DLQ rows persist and need a retention
-      policy of their own.)
+- [ ] **Retention policy → split out into its own movement, 8a below.** The
+      design grew past a bullet: partition by `RANGE (id)` (not `created_at` —
+      the claim path prunes on id), a Go janitor instead of pg_partman, and a
+      hybrid drop + bounded-DELETE for the low-volume tail. **8a is the real
+      home of Phase 3.5's deferred lever 3 (archive terminal rows):** in the log
+      model "don't let the table rot" is time-based retention, not a mid-stream
+      archive — same concern, correct mechanism for the topology. (In the
+      *per-row* Phase 6 model, `done` `deliveries` rows accumulate and are the
+      one place the original archive idea still applies; after the Phase 6.5
+      refactor the exception window self-cleans — success is a DELETE — so only
+      `dead` DLQ rows persist and need a retention policy of their own.)
 - [ ] Optionally implement **log compaction** (keep only the latest event per
       `partition_key`) to see Kafka's compacted-topic idea.
 - [ ] **Observability:** expose backlog/lag per group (`head − committed`, the
@@ -1056,19 +1057,15 @@ partition-drop and the four observability numbers (lag = `head − committed`, D
 size, ready count, oldest unacked) are left for you to add.*
 
 **Lab:**
-- [ ] Drop a retention partition and confirm consumers past that point are
-      unaffected — and decide what happens to a consumer whose cursor is
-      *inside* the dropped range (this is the Phase 5 question coming home).
 - [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
       every failure mode you've built and watch each of the four metrics react.
       If a failure doesn't move a metric, you have a blind spot.
+      (The retention-drop lab moved to 8a with the rest of retention.)
 
 **Explain it back:**
-1. Why is partition-drop retention so much cheaper than `DELETE WHERE
-   created_at < X`? (Think WAL, vacuum, indexes.)
-2. Why must `LISTEN/NOTIFY` keep the fallback poll? Name both message classes
+1. Why must `LISTEN/NOTIFY` keep the fallback poll? Name both message classes
    it would otherwise lose.
-3. For each of the four metrics: which failure mode is it the early warning for?
+2. For each of the four metrics: which failure mode is it the early warning for?
 
 **Done when:** every induced failure is visible in a metric, NOTES.md,
 `git tag phase-8`. Core platform operability is done — FIFO ordering (Phase 12)
@@ -1076,6 +1073,105 @@ and lane sharding (6.5d) are optional add-ons from here, not prerequisites.
 
 **Real systems:** Kafka `retention.ms` + **log compaction**; consumer **lag**
 monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
+
+---
+
+### 8a — Retention: partition-drop, and the low-volume hybrid
+
+**Concept:** retention on an append-only log means old rows leave forever, and
+at volume a mass `DELETE WHERE created_at < X` is the wrong tool — every deleted
+row is WAL'd, every index entry has to be cleaned, and vacuum inherits the debt.
+The cheap mechanism is dropping a whole **partition**: one DDL statement, no
+per-row work. Two design decisions make it work here, and both cut against the
+"obvious" setup:
+
+- **Partition by `RANGE (id)`, not `created_at`** — even though retention is
+  time-based. Every hot query on `message_log` filters by **id** (the claim
+  range `id > lo AND id <= hi`, the head `MAX(id)`, the lifecycle join
+  `ON m.id = message_id`); none mentions `created_at`. Partition by time and
+  the planner can't prune *any* of them — a claim probes every partition's
+  index (365 daily partitions = 365 probes per claim). Partition by id and
+  each hot query prunes to 1–2 partitions. Retention stays time-based anyway,
+  because ids are append-ordered: partition boundaries are time-ordered too,
+  so "old enough to drop" is still decidable per partition. (Bonus: Postgres
+  requires the partition key inside any PK — by id, `PRIMARY KEY (id)`
+  survives unchanged; by time it would bloat to `(id, created_at)`.) This is
+  Kafka's segment model exactly: segments are *offset*-ranged files, and
+  `retention.ms` is enforced by checking a segment's last timestamp.
+- **Hybrid drop + bounded DELETE**, because fixed-width id partitions have a
+  weak end: a low-volume log (say 100 msgs/day with a 90-day TTL) never fills
+  a partition, so rows would sail past the TTL waiting on a drop that never
+  comes. Kafka rolls segments on **size OR time** (`segment.bytes` /
+  `segment.ms`), but that doesn't translate — Postgres range partitions
+  declare their bounds at *creation* and can't shrink at roll time. Instead:
+  drop partitions that are expired *whole*, and sweep the expired prefix of
+  the oldest surviving partition with a small `DELETE`. The DELETE's cost is
+  proportional to volume — cheap exactly when it's the mechanism in play; at
+  high volume the drop already took everything and the sweep deletes ~nothing.
+  The two mechanisms cover each other's weak ends.
+
+Constraint honored throughout: **no extensions** (no pg_partman — adoption/
+compatibility). Declarative partitioning is core Postgres; pg_partman is only
+automation around `CREATE TABLE … PARTITION OF` and `DROP TABLE`, and the
+janitor below *is* that automation, in Go, on a ticker.
+
+**Build:**
+- [ ] Convert `message_log` to `PARTITION BY RANGE (id)` with fixed-width id
+      partitions (width configurable — it's the retention granularity knob,
+      sized in rows, not days). The migration creates the first partition so
+      the table is insertable before the janitor ever runs; folded into
+      `001_messages`, per house style.
+- [ ] **Janitor: create-ahead.** When `MAX(id)` nears the active partition's
+      upper bound, create the next partition. A producer must never hit a
+      missing partition.
+- [ ] **Janitor: drop.** A partition is droppable when its *newest* row is past
+      the TTL. Read "newest" as `ORDER BY id DESC LIMIT 1` — rides the PK
+      index, no `created_at` index needed (id order ≈ time order).
+- [ ] **Janitor: sweep.** Delete the expired prefix of the oldest surviving
+      partition — walk `ORDER BY id ASC`, delete while `created_at < cutoff`,
+      stop at the first survivor. Index-backed, cost ∝ rows actually expired.
+- [ ] **Waterline-safe drop floor:** never drop a partition containing ids
+      above any group's `committed` (`min(committed)` across cursors), with an
+      explicit config knob to opt into Kafka's "lagging consumer falls off the
+      retention window" semantics instead. Either is defensible; it must be a
+      choice, not an accident.
+- [ ] Sweep orphaned references alongside the drop: `deliveries`/exception rows
+      pointing into a dropped id range would join to nothing and park forever.
+- [ ] Write down the non-goal: retention is **per-log**, not per-routing-key —
+      one shared log, one TTL. (Kafka's per-topic retention exists only because
+      each topic *is* its own log.)
+
+**Lab:**
+- [ ] Shrink the partition width and TTL to lab scale; publish across several
+      partitions; prove with `EXPLAIN` that a claim touches 1–2 partitions,
+      not all of them — the pruning payoff, observed rather than assumed.
+- [ ] Drop an expired partition: confirm consumers *past* it are unaffected,
+      and a consumer whose cursor is *inside* the dropped range claims an
+      empty batch and advances over the hole (the Phase 5 lag question coming
+      home). Then enable the drop floor and watch the same drop get refused.
+- [ ] The low-volume case: a half-full partition with an expired prefix —
+      confirm the sweep deletes exactly the prefix and the partition survives.
+
+**Explain it back:**
+1. Why is partition-drop retention so much cheaper than `DELETE WHERE
+   created_at < X`? (Think WAL, vacuum, indexes.)
+2. Retention is time-based — so why partition by `id` and not `created_at`?
+   What exactly goes wrong at claim time with 365 daily partitions?
+3. The hybrid reintroduces `DELETE` — why doesn't it reintroduce the problem
+   partition-drop exists to avoid?
+4. What does the drop floor protect, and what precisely happens to a consumer
+   group when you turn it off and drop past its `committed`? (Kafka's
+   "consumer fell off the retention window," now in your own system.)
+
+**Done when:** `EXPLAIN` shows claim-path pruning, a drop is refused by the
+floor and permitted without it, the sweep handles the low-volume tail, all
+three labs pass, NOTES.md, `git tag phase-8a`.
+
+**Real systems:** Kafka **segments** (offset-ranged files — the partition-by-id
+move; `retention.ms` checks a segment's *last* timestamp — the drop rule;
+`segment.ms`/`segment.bytes` roll — the gap the hybrid fills instead);
+pg_partman (the janitor, as the extension this project won't take); Timescale
+`drop_chunks`.
 
 ---
 

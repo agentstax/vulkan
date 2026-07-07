@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -22,6 +23,7 @@ var (
 
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
+	EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
@@ -154,6 +156,44 @@ func (d *PostgresDatastore[Message]) UpsertCursor(ctx context.Context, consumerG
 
 	_, err := d.Pool.Exec(ctx, sql, consumerGroup)
 	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *PostgresDatastore[Message]) EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error {
+	headSql := `
+		SELECT COALESCE(MAX(id), 0) FROM message_log;
+	`
+
+	var head int64
+	if err := d.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
+		return err
+	}
+
+	roomInPartition := partitionSize - (head % partitionSize)
+
+	// there is enough room in the current active partition
+	if roomInPartition > safetyBuffer {
+		return nil
+	}
+
+	nextPartition := head/partitionSize + 1
+
+	createPartitionSql := fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS message_log_%d
+			PARTITION OF message_log
+			FOR VALUES FROM (%d) TO (%d);
+	`, nextPartition, nextPartition*partitionSize, (nextPartition+1)*partitionSize)
+
+	_, err := d.Pool.Exec(ctx, createPartitionSql)
+	if err != nil {
+		// IF NOT EXISTS still races -- losing to a concurrent creator means it exists
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P07" {
+			return nil
+		}
 		return err
 	}
 
