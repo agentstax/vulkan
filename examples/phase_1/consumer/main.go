@@ -71,7 +71,7 @@ func main() {
 		WithType(consumer.CURSOR).
 		WithBatchLimit(10).
 		WithMaxAttempts(3).
-		WithPollRate(1 * time.Second).
+		WithClaimPollRate(1 * time.Second).
 		WithWorkTimeout(5 * time.Second).
 		WithQueueTimeout(2 * time.Second).
 		WithAckMargin(1 * time.Second)

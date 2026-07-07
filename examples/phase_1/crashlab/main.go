@@ -79,7 +79,7 @@ func main() {
 	// reclaim quickly after the crash. High MaxAttempts so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc.WithBatchLimit(100).WithMaxAttempts(100).
-		WithPollRate(200 * time.Millisecond).
+		WithClaimPollRate(200 * time.Millisecond).
 		WithWorkTimeout(2 * time.Second).
 		WithQueueTimeout(1 * time.Second).
 		WithAckMargin(1 * time.Second).

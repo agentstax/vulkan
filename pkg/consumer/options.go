@@ -32,7 +32,12 @@ func (c *WorkConsumer[WorkType]) WithAckMargin(ackMargin time.Duration) *WorkCon
 	return c
 }
 
-func (c *WorkConsumer[WorkType]) WithPollRate(pollRate time.Duration) *WorkConsumer[WorkType] {
-	c.Config.PollRate = pollRate
+func (c *WorkConsumer[WorkType]) WithClaimPollRate(claimPollRate time.Duration) *WorkConsumer[WorkType] {
+	c.Config.ClaimPollRate = claimPollRate
+	return c
+}
+
+func (c *WorkConsumer[WorkType]) WithJanitorPollRate(janitorPollRate time.Duration) *WorkConsumer[WorkType] {
+	c.Config.JanitorPollRate = janitorPollRate
 	return c
 }

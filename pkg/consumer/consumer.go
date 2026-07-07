@@ -30,17 +30,20 @@ const (
 )
 
 type WorkConsumerConfig struct {
-	Type                  ConsumerType
-	BatchLimit            int
-	MaxAttempts           int
-	MaxRangeReclaims      int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	PollRate              time.Duration
-	WorkTimeout           time.Duration // TODO - consider a better name
-	QueueTimeout          time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
-	AckMargin             time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
-	ShutdownTimeout       time.Duration
-	PartitionSize         int64
-	PartitionSafetyBuffer int64
+	Type                   ConsumerType
+	BatchLimit             int
+	MaxAttempts            int
+	MaxRangeReclaims       int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
+	ClaimPollRate          time.Duration
+	WorkTimeout            time.Duration // TODO - consider a better name
+	QueueTimeout           time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
+	AckMargin              time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	ShutdownTimeout        time.Duration
+	PartitionSize          int64
+	PartitionSafetyBuffer  int64
+	RetentionTTL           time.Duration // 0 disables retention (janitor drop/sweep no-op); create-ahead always runs regardless
+	AllowDropPastCommitted bool          // opt into Kafka's "lagging consumer falls off the retention window" semantics; false is the safe floor
+	JanitorPollRate        time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -62,17 +65,20 @@ func NewWorkConsumer[WorkType any](group string, queue concurrency.Queue[Message
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
-			Type:                  CURSOR,
-			BatchLimit:            1, // no batching by default
-			MaxAttempts:           3,
-			MaxRangeReclaims:      3,
-			PollRate:              5 * time.Second,
-			WorkTimeout:           30 * time.Second,
-			QueueTimeout:          5 * time.Second,
-			AckMargin:             2 * time.Second,
-			ShutdownTimeout:       35 * time.Second,
-			PartitionSize:         1000000, // TODO - make configurable, TODO - determine sane default
-			PartitionSafetyBuffer: 50000,   // TODO - make configurable, TODO - determine sane default
+			Type:                   CURSOR,
+			BatchLimit:             1, // no batching by default
+			MaxAttempts:            3,
+			MaxRangeReclaims:       3,
+			ClaimPollRate:          5 * time.Second,
+			WorkTimeout:            30 * time.Second,
+			QueueTimeout:           5 * time.Second,
+			AckMargin:              2 * time.Second,
+			ShutdownTimeout:        35 * time.Second,
+			PartitionSize:          1000000, // TODO - make configurable, TODO - determine sane default
+			PartitionSafetyBuffer:  50000,   // TODO - make configurable, TODO - determine sane default
+			RetentionTTL:           0,       // disabled by default
+			AllowDropPastCommitted: false,
+			JanitorPollRate:        0, // defaults to ClaimPollRate
 		},
 	}
 }
@@ -115,10 +121,10 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	}
 
 	// non-positive durations break their respective loops/timers:
-	// PollRate<=0 -> SleepWithContext/WaitForRoom timers fire immediately (busy loop),
+	// ClaimPollRate<=0 -> SleepWithContext/WaitForRoom timers fire immediately (busy loop),
 	// WorkTimeout/QueueTimeout/AckMargin<=0 -> the lease window math degenerates.
-	if p.Config.PollRate <= 0 {
-		return fmt.Errorf("PollRate must be > 0, got %v", p.Config.PollRate)
+	if p.Config.ClaimPollRate <= 0 {
+		return fmt.Errorf("ClaimPollRate must be > 0, got %v", p.Config.ClaimPollRate)
 	}
 	if p.Config.WorkTimeout <= 0 {
 		return fmt.Errorf("WorkTimeout must be > 0, got %v", p.Config.WorkTimeout)
@@ -128,6 +134,12 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	}
 	if p.Config.AckMargin <= 0 {
 		return fmt.Errorf("AckMargin must be > 0, got %v", p.Config.AckMargin)
+	}
+	if p.Config.RetentionTTL < 0 {
+		return fmt.Errorf("RetentionTTL must be >= 0, got %v", p.Config.RetentionTTL)
+	}
+	if p.Config.JanitorPollRate < 0 {
+		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", p.Config.JanitorPollRate)
 	}
 
 	// shutdown timeout > work timeout + AckMargin so in-flight work can finish AND ack
@@ -144,11 +156,38 @@ func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 		return err
 	}
 
+	// cold-start guarantee: the next partition exists before Janitor's first tick
 	if err := p.Datastore.EnsureNextPartition(ctx, p.Config.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// Janitor is the retention/partition-maintenance loop: create-ahead runs every
+// tick so a producer never outruns it for long. Drop and sweep (RetentionTTL)
+// are wired in here once implemented -- until then a zero RetentionTTL leaves
+// this loop doing create-ahead only.
+func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
+	janitorPollRate := p.Config.JanitorPollRate
+	// TODO - move below default setting this is not the correct place for it
+	if janitorPollRate == 0 {
+		janitorPollRate = p.Config.ClaimPollRate
+	}
+
+	ticker := time.NewTicker(janitorPollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := p.Datastore.EnsureNextPartition(ctx, p.Config.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
@@ -180,6 +219,11 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 		return p.DrainExceptions(ctx, consumerFunc)
 	})
 
+	fmt.Println("consumer janitor starting")
+	errGroup.Go(func() error {
+		return p.Janitor(ctx)
+	})
+
 	err := errGroup.Wait()
 	if errors.Is(err, context.Canceled) {
 		err = nil // requested shutdown, not a failure per say
@@ -197,7 +241,7 @@ func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
 		return nil // don't need projection for cursor only
 	}
 
-	ticker := time.NewTicker(p.Config.PollRate)
+	ticker := time.NewTicker(p.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -220,7 +264,7 @@ func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
 		return nil
 	}
 
-	ticker := time.NewTicker(p.Config.PollRate)
+	ticker := time.NewTicker(p.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -236,7 +280,7 @@ func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
 }
 
 func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
-	ticker := time.NewTicker(p.Config.PollRate)
+	ticker := time.NewTicker(p.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -309,7 +353,7 @@ func (p *WorkConsumer[WorkType]) DrainExceptions(ctx context.Context, consumerFu
 		return nil
 	}
 
-	ticker := time.NewTicker(p.Config.PollRate)
+	ticker := time.NewTicker(p.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -444,7 +488,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 // 	for {
 // 		// recursive block until cap - len of queue >= fetch threshold
 // 		// TODO - should have dedicated debounce timeout field not PollRate
-// 		batchSize, err := p.Queue.WaitForRoom(ctx, p.Config.PollRate, threshold)
+// 		batchSize, err := p.Queue.WaitForRoom(ctx, p.Config.ClaimPollRate, threshold)
 // 		if err != nil {
 // 			return err
 // 		}
@@ -465,7 +509,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 // 			}
 // 			// db network blips should be retried
 // 			// TODO - eventually add backoff with jitter to not spam a down DB or cause thundering herd from all consumers on db liveliness startup
-// 			if err := SleepWithContext(ctx, p.Config.PollRate); err != nil {
+// 			if err := SleepWithContext(ctx, p.Config.ClaimPollRate); err != nil {
 // 				return err
 // 			}
 // 			continue
@@ -473,7 +517,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 // 		if len(messages) == 0 {
 // 			// no claimable work, wait for a bit before trying to claim to not spam cpu / db with loop checks
 // 			// TODO - eventually add jitter to not cauase thundering herd from all consumers attempting to claim from db at same time
-// 			if err := SleepWithContext(ctx, p.Config.PollRate); err != nil {
+// 			if err := SleepWithContext(ctx, p.Config.ClaimPollRate); err != nil {
 // 				return err
 // 			}
 // 			continue
@@ -623,7 +667,7 @@ func (p *WorkConsumer[WorkType]) Drain(wg *sync.WaitGroup) {
 // }
 
 // func (p *WorkConsumer[WorkType]) Poll(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
-// 	ticker := time.NewTicker(p.Config.PollRate)
+// 	ticker := time.NewTicker(p.Config.ClaimPollRate)
 // 	defer ticker.Stop()
 
 // 	for {

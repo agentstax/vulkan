@@ -69,7 +69,7 @@ func main() {
 	wc := consumer.NewWorkConsumer[common.Work](pressureQueue, pool, datastore)
 	wc.WithBatchLimit(batch).
 		WithMaxAttempts(3).
-		WithPollRate(500 * time.Millisecond).
+		WithClaimPollRate(500 * time.Millisecond).
 		WithWorkTimeout(30 * time.Second).
 		WithQueueTimeout(10 * time.Second).
 		WithAckMargin(5 * time.Second).

@@ -65,7 +65,7 @@ func main() {
 
 	wc := consumer.NewWorkConsumer[common.Work](queue, pool, datastore)
 	wc.WithBatchLimit(100).WithMaxAttempts(3).
-		WithPollRate(500 * time.Millisecond).
+		WithClaimPollRate(500 * time.Millisecond).
 		WithWorkTimeout(10 * time.Second). // must exceed the slowest payload sleep
 		WithQueueTimeout(3 * time.Second).
 		WithAckMargin(2 * time.Second).
