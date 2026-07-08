@@ -14,6 +14,7 @@ Reconsider the lazy rollup (AdvanceWaterline)
 Consumer Consume's Project, Process and RollWaterline when error stop the consumer ie a database network blip crashes the consumer
   - we likley don't want this to happen and instead would want a retry backoff logic
 On graceful shutdown should update active inflight lease low to last processed work so it does not retry already processed work
+Consider further splitting the ClaimPollRate for each caller (project, process, rollup, drain)
 
 Commit's exception park is a loop of individual INSERTs inside one transaction (one Exec per failed message, one commit). switch to pgx.Batch: same per-row SQL, queued and sent together instead of one round-trip per row. deferred on purpose -- exceptions are the sparse/rare path by design, so the round-trip cost is unlikely to matter, and a plain loop is the simplest code to read while the exception-drain machinery around it is still being built. revisit once that's stable, since it's a small change (swap Exec-in-a-loop for Batch/SendBatch) that shouldn't touch the surrounding logic.
 
@@ -156,6 +157,18 @@ add a proper NATS-style topic selector for routing bindings (LATER, low priority
   trailing tokens, tail-only) -- see reference/waterline/routing.go's natsToRegex
   for the translation this would follow. revisit only if bindings actually need
   that precision.
+
+reconsider keeping every 'topic' in the same message_log table
+  today every routing_key shares one message_log and one partition set, so
+  retention's waterline floor (DropExpiredPartitions, pkg/consumer/datastore.go)
+  is MIN(committed) across ALL cursor groups, not scoped to whatever routing_key
+  a group actually consumes. one lagging group blocks partition drops for every
+  other topic sharing the log, even totally unrelated ones. Kafka avoids this
+  because retention.ms is per-topic and each topic already is its own log. a
+  real fix likely means introducing an actual topic concept (its own log and
+  partition set per topic) instead of filtering a shared log by routing_key --
+  a bigger structural change, not a quick fix. revisit alongside any future
+  routing/topic work (see the NATS-selector item above).
 
 EXPLAIN (ANALYZE, BUFFERS, TIMING) 
 UPDATE message_log

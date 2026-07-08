@@ -1137,9 +1137,15 @@ janitor below *is* that automation, in Go, on a ticker.
       choice, not an accident.
 - [ ] Sweep orphaned references alongside the drop: `deliveries`/exception rows
       pointing into a dropped id range would join to nothing and park forever.
-- [ ] Write down the non-goal: retention is **per-log**, not per-routing-key —
-      one shared log, one TTL. (Kafka's per-topic retention exists only because
-      each topic *is* its own log.)
+- [ ] **Open question, not settled:** retention today is **per-log**, not
+      per-routing-key — one shared log, one TTL, and the drop floor's
+      `MIN(committed)` spans every cursor regardless of what routing_key it
+      actually consumes, so one lagging group on an unrelated topic blocks
+      drops for everyone. Kafka avoids this because `retention.ms` is
+      per-topic and each topic *is* its own log. Reconsider keeping every
+      'topic' in the same `message_log` table — may need an actual topic
+      concept (its own log/partitions) rather than routing_key filtering over
+      a shared one. (TODO.md has the durable pointer.)
 
 **Lab:**
 - [ ] Shrink the partition width and TTL to lab scale; publish across several

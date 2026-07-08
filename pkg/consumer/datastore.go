@@ -24,6 +24,7 @@ var (
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
 	EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error
+	DropExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
@@ -198,6 +199,149 @@ func (d *PostgresDatastore[Message]) EnsureNextPartition(ctx context.Context, pa
 	}
 
 	return nil
+}
+
+// DropExpiredPartitions drops each surviving partition whose newest row is
+// past ttl, skipping the active partition and (unless overridden) anything a
+// lagging group hasn't committed past yet.
+func (d *PostgresDatastore[Message]) DropExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
+	if ttl <= 0 {
+		return nil // retention disabled - partitions kept forever
+	}
+
+	headSql := `
+		SELECT COALESCE(MAX(id), 0) FROM message_log;
+	`
+	var head int64
+	if err := d.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
+		return err
+	}
+	activePartition := head / partitionSize
+
+	partitions, err := d.existingPartitions(ctx)
+	if err != nil {
+		return err
+	}
+
+	// the waterline floor -- the most-lagging group across all cursors
+	// TODO - every routing_key shares one message_log, so this floor is global:
+	// one lagging group blocks retention for all others, even unrelated ones.
+	// Reconsider keeping every 'topic' in the same table -- may need an actual
+	// topic concept (its own log/partitions) instead of routing_key filtering.
+	floorSql := `
+		SELECT MIN(committed) FROM cursors;
+	`
+	var floor *int64
+	if err := d.Pool.QueryRow(ctx, floorSql).Scan(&floor); err != nil {
+		return err
+	}
+
+	for _, n := range partitions {
+		if n >= activePartition {
+			continue // never touch the active partition, or anything at/after it
+		}
+
+		expired, err := d.partitionExpired(ctx, n, ttl)
+		if err != nil {
+			return err
+		}
+		if !expired {
+			continue // not this partition's turn yet -- each partition is judged independently
+		}
+
+		lastIdInPartition := (n+1)*partitionSize - 1
+		if !allowDropPastCommitted && floor != nil && lastIdInPartition > *floor {
+			continue // a lagging group hasn't resolved this range yet
+		}
+
+		if err := d.dropPartition(ctx, n, partitionSize); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// existingPartitions lists surviving message_log_<n> partition numbers.
+func (d *PostgresDatastore[Message]) existingPartitions(ctx context.Context) ([]int64, error) {
+	sql := `
+		SELECT REPLACE(c.relname, 'message_log_', '')::bigint AS n
+		FROM pg_inherits i
+		JOIN pg_class c ON c.oid = i.inhrelid
+		WHERE i.inhparent = 'message_log'::regclass
+			AND c.relname LIKE 'message_log_%';
+	`
+
+	rows, err := d.Pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var partitions []int64
+	for rows.Next() {
+		var n int64
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+
+		partitions = append(partitions, n)
+	}
+
+	return partitions, rows.Err()
+}
+
+// partitionExpired reports whether a partition's newest row is past ttl.
+func (d *PostgresDatastore[Message]) partitionExpired(ctx context.Context, n int64, ttl time.Duration) (bool, error) {
+	sql := fmt.Sprintf(`
+		SELECT created_at FROM message_log_%d
+		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
+		LIMIT 1;
+	`, n)
+
+	var newest time.Time
+	err := d.Pool.QueryRow(ctx, sql).Scan(&newest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil // empty -- nothing to judge, so not expired
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return time.Since(newest) >= ttl, nil
+}
+
+// dropPartition removes the partition and its deliveries rows in one transaction.
+func (d *PostgresDatastore[Message]) dropPartition(ctx context.Context, n int64, partitionSize int64) error {
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	low := n * partitionSize
+	high := (n + 1) * partitionSize
+
+	// otherwise these deliveries rows (mostly 'dead' DLQ, since live ones are
+	// already floor-protected) would join to nothing and park forever
+	orphanSql := `
+		DELETE FROM deliveries
+		WHERE message_id >= $1
+			AND message_id < $2;
+	`
+	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
+		return err
+	}
+
+	dropSql := fmt.Sprintf(`
+		DROP TABLE message_log_%d;
+	`, n)
+
+	if _, err := tx.Exec(ctx, dropSql); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 // frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit

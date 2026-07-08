@@ -152,8 +152,13 @@ func (p *WorkConsumer[WorkType]) validate() error {
 }
 
 func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
-	if err := p.Datastore.UpsertCursor(ctx, p.Group); err != nil {
-		return err
+	// LIFECYCLE groups never read or advance a cursor row (RollWaterline is
+	// CURSOR-only) -- creating one anyway would sit at committed=0 forever and
+	// wrongly pin the retention floor computed off MIN(committed).
+	if p.Config.Type == CURSOR {
+		if err := p.Datastore.UpsertCursor(ctx, p.Group); err != nil {
+			return err
+		}
 	}
 
 	// cold-start guarantee: the next partition exists before Janitor's first tick
@@ -165,9 +170,8 @@ func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 }
 
 // Janitor is the retention/partition-maintenance loop: create-ahead runs every
-// tick so a producer never outruns it for long. Drop and sweep (RetentionTTL)
-// are wired in here once implemented -- until then a zero RetentionTTL leaves
-// this loop doing create-ahead only.
+// tick so a producer never outruns it for long; drop runs alongside it, a
+// no-op while RetentionTTL is zero (the default -- retention is opt-in).
 func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 	janitorPollRate := p.Config.JanitorPollRate
 	// TODO - move below default setting this is not the correct place for it
@@ -184,6 +188,9 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := p.Datastore.EnsureNextPartition(ctx, p.Config.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+				return err
+			}
+			if err := p.Datastore.DropExpiredPartitions(ctx, p.Config.PartitionSize, p.Config.RetentionTTL, p.Config.AllowDropPastCommitted); err != nil {
 				return err
 			}
 		}
