@@ -42,6 +42,25 @@ exception-lab:
 routing-lab:
   go run examples/phase_1/routinglab/main.go
 
+# Phase 8a lab (a): id-range partitioning prunes claim reads to 1-2 partitions.
+# Self-contained -- swaps message_log to a lab-scale partition width for the
+# run and restores migration 001's shape after, but this WIPES message_log's
+# existing rows permanently (no way to restore data, only schema).
+partition-lab:
+  go run examples/phase_1/partitionlab/main.go
+
+# Phase 8a lab (b): a dropped partition is a hole a lagging cursor walks over
+# empty, not a stall; the drop floor refuses the drop until committed past it
+# or waived. Same schema swap + data-wipe caveat as partition-lab.
+drop-floor-lab:
+  go run examples/phase_1/dropfloorlab/main.go
+
+# Phase 8a lab (c): the low-volume tail -- a partition too small to ever earn
+# a whole-partition drop still sheds its expired prefix via the sweep.
+# No schema swap, stays inside message_log_0 at its real migration width.
+sweep-lab:
+  go run examples/phase_1/sweeplab/main.go
+
 peek:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
     -c "SELECT * FROM message_log ORDER BY id;"
