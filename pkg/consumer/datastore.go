@@ -25,6 +25,7 @@ type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, consumerGroup string) error
 	EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error
 	DropExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
+	SweepExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
@@ -223,16 +224,8 @@ func (d *PostgresDatastore[Message]) DropExpiredPartitions(ctx context.Context, 
 		return err
 	}
 
-	// the waterline floor -- the most-lagging group across all cursors
-	// TODO - every routing_key shares one message_log, so this floor is global:
-	// one lagging group blocks retention for all others, even unrelated ones.
-	// Reconsider keeping every 'topic' in the same table -- may need an actual
-	// topic concept (its own log/partitions) instead of routing_key filtering.
-	floorSql := `
-		SELECT MIN(committed) FROM cursors;
-	`
-	var floor *int64
-	if err := d.Pool.QueryRow(ctx, floorSql).Scan(&floor); err != nil {
+	floor, err := d.cursorFloor(ctx)
+	if err != nil {
 		return err
 	}
 
@@ -291,6 +284,20 @@ func (d *PostgresDatastore[Message]) existingPartitions(ctx context.Context) ([]
 	return partitions, rows.Err()
 }
 
+// cursorFloor is the waterline floor: the most-lagging group's committed
+// offset across all cursors (nil if none exist yet).
+// TODO - global across every routing_key sharing this message_log; reconsider
+// a real per-topic log/partition set instead of routing_key filtering.
+func (d *PostgresDatastore[Message]) cursorFloor(ctx context.Context) (*int64, error) {
+	sql := `
+		SELECT MIN(committed) FROM cursors;
+	`
+
+	var floor *int64
+	err := d.Pool.QueryRow(ctx, sql).Scan(&floor)
+	return floor, err
+}
+
 // partitionExpired reports whether a partition's newest row is past ttl.
 func (d *PostgresDatastore[Message]) partitionExpired(ctx context.Context, n int64, ttl time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
@@ -309,6 +316,95 @@ func (d *PostgresDatastore[Message]) partitionExpired(ctx context.Context, n int
 	}
 
 	return time.Since(newest) >= ttl, nil
+}
+
+// SweepExpiredPartitions drains the ttl-expired prefix of every surviving
+// partition -- covers the low-volume tail that never fills a partition wide
+// enough to earn a whole-partition drop.
+func (d *PostgresDatastore[Message]) SweepExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
+	if ttl <= 0 {
+		return nil // retention disabled
+	}
+
+	partitions, err := d.existingPartitions(ctx)
+	if err != nil {
+		return err
+	}
+
+	floor, err := d.cursorFloor(ctx)
+	if err != nil {
+		return err
+	}
+	if allowDropPastCommitted {
+		floor = nil
+	}
+
+	cutoff := time.Now().Add(-ttl)
+
+	// caps a full drain to break any potential infinite loops
+	maxBatches := int((partitionSize + int64(batchSize) - 1) / int64(batchSize))
+
+	for _, n := range partitions { // every partition, independently -- one backlog can't block the rest
+		for range maxBatches {
+			swept, err := d.sweepBatch(ctx, n, cutoff, floor, batchSize)
+			if err != nil {
+				return err
+			}
+			if swept < batchSize {
+				break // ran out of expired rows (or hit the floor)
+			}
+		}
+	}
+
+	return nil
+}
+
+// sweepBatch deletes up to batchSize expired rows from the front of partition n,
+// plus their orphaned deliveries rows, in one transaction.
+func (d *PostgresDatastore[Message]) sweepBatch(ctx context.Context, n int64, cutoff time.Time, floor *int64, batchSize int) (int, error) {
+	tx, err := d.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	sweepSql := fmt.Sprintf(`
+		DELETE FROM message_log_%d
+		WHERE id IN (
+			SELECT id FROM message_log_%d
+			WHERE created_at < $1
+				AND ($3::bigint IS NULL OR id <= $3) -- nil floor (allowDropPastCommitted) skips the check
+			ORDER BY id ASC -- walk the expired prefix from the front, same PK-index ride as partitionExpired
+			LIMIT $2
+		)
+		RETURNING id;
+	`, n, n)
+
+	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
+	if err != nil {
+		return 0, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return 0, err
+	}
+
+	if len(ids) > 0 {
+		// otherwise these deliveries rows (mostly 'dead' DLQ) would join to nothing and park forever
+		orphanSql := `
+			DELETE FROM deliveries
+			WHERE message_id = ANY($1);
+		`
+		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+
+	return len(ids), nil
 }
 
 // dropPartition removes the partition and its deliveries rows in one transaction.

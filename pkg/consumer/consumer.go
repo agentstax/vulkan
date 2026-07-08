@@ -44,6 +44,7 @@ type WorkConsumerConfig struct {
 	RetentionTTL           time.Duration // 0 disables retention (janitor drop/sweep no-op); create-ahead always runs regardless
 	AllowDropPastCommitted bool          // opt into Kafka's "lagging consumer falls off the retention window" semantics; false is the safe floor
 	JanitorPollRate        time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
+	JanitorSweepBatchSize  int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -79,6 +80,7 @@ func NewWorkConsumer[WorkType any](group string, queue concurrency.Queue[Message
 			RetentionTTL:           0,       // disabled by default
 			AllowDropPastCommitted: false,
 			JanitorPollRate:        0, // defaults to ClaimPollRate
+			JanitorSweepBatchSize:  1000,
 		},
 	}
 }
@@ -141,6 +143,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	if p.Config.JanitorPollRate < 0 {
 		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", p.Config.JanitorPollRate)
 	}
+	if p.Config.JanitorSweepBatchSize < 1 {
+		return fmt.Errorf("JanitorSweepBatchSize must be >= 1, got %d", p.Config.JanitorSweepBatchSize)
+	}
 
 	// shutdown timeout > work timeout + AckMargin so in-flight work can finish AND ack
 	// before the pool is torn down (implies ShutdownTimeout > 0 given the guards above)
@@ -191,6 +196,9 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 				return err
 			}
 			if err := p.Datastore.DropExpiredPartitions(ctx, p.Config.PartitionSize, p.Config.RetentionTTL, p.Config.AllowDropPastCommitted); err != nil {
+				return err
+			}
+			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Config.PartitionSize, p.Config.RetentionTTL, p.Config.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize); err != nil {
 				return err
 			}
 		}
