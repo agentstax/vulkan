@@ -1191,3 +1191,165 @@ built speculatively.
   giving the LIFECYCLE path its own cursor is a bigger scope decision than
   this phase's job.
 
+## Phase 8a — Retention: partition-drop, and the low-volume hybrid
+
+**What it does, and the tradeoff:** `message_log` is `PARTITION BY RANGE (id)`,
+not `created_at`, even though retention is time-based — every hot query
+(claim range, `MAX(id)`, the lifecycle join) filters by `id`, none by
+`created_at`, so id-partitioning is what the planner can actually prune on.
+Retention still works because ids are append-ordered: "old enough to drop" is
+decidable per partition just from `id`. A janitor loop (`WorkConsumer.Janitor`,
+alongside `RollWaterline`/`Project` in `Consume`) does three things each tick:
+create-ahead (unchanged from Phase 6.5b, just moved into the recurring loop),
+drop every whole partition whose newest row is past `RetentionTTL`, and sweep
+the ttl-expired prefix off whatever partitions survive. The tradeoff: a
+low-volume log never fills a partition wide enough to earn a drop, so drop
+alone would let expired rows sit forever — the sweep's bounded `DELETE`
+covers exactly that gap, and only that gap, since a partition that *did* fill
+gets dropped whole before the sweep would ever find much left to delete in it.
+
+**The aha:** drop and sweep don't compete for the same rows — they compete
+for the same *gap*. At real volume, a partition ages out and gets dropped
+before the sweep ever walks far into it; at low volume, no partition ever
+fills, so drop never fires and the sweep is the only mechanism doing work.
+Neither one is a fallback for the other so much as each covers exactly the
+volume range where the other can't fire.
+
+### Explain it back
+
+**1. Why is partition-drop retention so much cheaper than `DELETE WHERE
+created_at < X`? (Think WAL, vacuum, indexes.)**
+
+Every `DELETE` is a transactional write to the WAL that has to be committed
+and flushed, plus every index entry for that row has to be cleaned up, plus
+the freed page adds pressure on vacuum. A partition drop is `DROP TABLE` — a
+catalog operation, no per-row WAL, no index maintenance, no vacuum debt. Just
+a disk-level removal of the whole relation.
+
+**2. Retention is time-based — so why partition by `id` and not
+`created_at`? What exactly goes wrong at claim time with 365 daily
+partitions?**
+
+`message_log` is append-only, so `id` is approximately time-ordered — retention
+stays decidable per partition using `id` alone. Partitioning by `created_at`
+instead would force the primary key to widen to `(id, created_at)` (Postgres
+requires the partition key inside any PK), adding write/delete overhead for
+no benefit, since nothing actually queries by `created_at`. Worse, every hot
+read (the claim range, `MAX(id)`) filters by `id`, and the planner can only
+prune partitions using columns in the `WHERE` — partition by `created_at` and
+a claim's `id`-range query can't be pruned at all, so with a year of daily
+partitions every claim probes all 365 of them instead of the 1–2 an
+id-partitioned claim touches.
+
+**3. The hybrid reintroduces `DELETE` — why doesn't it reintroduce the
+problem partition-drop exists to avoid?**
+
+Because the sweep never touches the active, high-volume partition —
+`SweepExpiredPartitions` only walks the oldest surviving *non-active*
+partition. At high volume, drop consumes whole partitions fast enough that by
+the time a partition is old enough to sweep, it's already been dropped whole
+— the sweep finds an empty prefix, not a `DELETE` under load. At low volume
+there's no whole partition to drop yet, so the `DELETE`'s cost is what's
+paying for correctness, and it's cheap exactly because the row count is small
+by definition. The two mechanisms cover each other's weak end instead of both
+running at once.
+
+**4. What does the drop floor protect, and what precisely happens to a
+consumer group when you turn it off and drop past its `committed`? (Kafka's
+"consumer fell off the retention window," now in your own system.)**
+
+The floor (`MIN(committed)` across `cursors`) protects a lagging group from
+having unprocessed messages deleted out from under it. With it off, nothing
+detects the gap — `FreshClaimMessagesWithCursor` advances `claimed` by pure
+id arithmetic against `MAX(id)` (`claimed = LEAST(claimed + limit, MAX(id))`),
+never checking whether rows still exist in that range. The lease still gets
+created for `(low, high]` and `readMessages` still runs its `SELECT`; if the
+partition backing that range is gone, the `SELECT` just returns fewer rows,
+even zero, with no error. `claimed` and then `committed` both advance past the
+hole exactly as they would for a normal batch — the group doesn't "jump
+ahead" via any special-cased skip, it was always going to advance on
+schedule. The dropped rows just silently never get delivered, and there's no
+in-band signal that it happened — only an external one, like the Phase 5 lag
+metric going quiet.
+
+### Done
+
+- `message_log` converted to `PARTITION BY RANGE (id)`, folded into its
+  original `CREATE TABLE` (`migrations/001_messages`) — the migration also
+  creates `message_log_0` so the table is insertable before the janitor ever
+  runs. Width is a config knob (`WorkConsumerConfig.PartitionSize`), not
+  hardcoded past the migration's own first-partition bound.
+- `WorkConsumer.Janitor(ctx)`: a ticker loop matching `RollWaterline`/
+  `Project`'s shape, spawned via `errGroup.Go` in `Consume`. Runs
+  `EnsureNextPartition` (create-ahead, moved here from being a one-shot in
+  `Register`), `DropExpiredPartitions`, `SweepExpiredPartitions` every tick.
+  `Register` still calls `EnsureNextPartition` once too, as the cold-start
+  guarantee that partition 0 exists before `Janitor`'s first tick.
+- New `WorkConsumerConfig` fields: `RetentionTTL time.Duration` (zero
+  disables retention entirely — both drop and sweep no-op) and
+  `AllowDropPastCommitted bool` (default `false`), the explicit opt-in to
+  Kafka's "lagging consumer falls off the retention window" semantics.
+- `DropExpiredPartitions(ctx, partitionSize, ttl, allowDropPastCommitted)`
+  (`pkg/consumer/datastore.go`): lists surviving partitions via
+  `existingPartitions` (`pg_inherits`/`pg_class`, parsed straight in SQL —
+  `REPLACE(c.relname, 'message_log_', '')::bigint`, no Go-side regex), judges
+  each independently with `continue` (never an early return/break), skips the
+  active partition, checks `partitionExpired` (newest row's `created_at`,
+  read via `ORDER BY id DESC LIMIT 1` — rides the PK index, no `created_at`
+  index needed), then the floor (`cursorFloor` = `MIN(committed)`) unless
+  overridden. `dropPartition` deletes the partition's orphaned `deliveries`
+  rows and the partition itself in one transaction.
+- `SweepExpiredPartitions(ctx, partitionSize, ttl, allowDropPastCommitted,
+  batchSize)`: walks every surviving partition independently, deleting its
+  ttl-expired prefix in `sweepBatch` calls (`DELETE ... WHERE created_at <
+  cutoff AND (floor IS NULL OR id <= floor) ORDER BY id ASC LIMIT batchSize`,
+  plus the same batch's orphaned `deliveries` rows, one transaction per
+  batch) until a batch returns fewer than `batchSize` rows — so an oversized
+  backlog drains over several ticks instead of one giant transaction.
+  `allowDropPastCommitted` nils the floor out rather than special-casing the
+  SQL.
+- Three lab programs under `examples/phase_1/` (`partitionlab`,
+  `dropfloorlab`, `sweeplab`; `just partition-lab` / `drop-floor-lab` /
+  `sweep-lab`), matching the existing reclaimlab/exceptionlab/routinglab
+  pattern — self-contained, deterministic, drive the real datastore methods
+  against the dev DB directly. `partitionlab`/`dropfloorlab` swap
+  `message_log` to a lab-scale partition width for their own run (drop +
+  recreate, same shape the migration leaves it in) and restore the
+  migration's exact shape on exit, since `message_log_0`'s real
+  1,000,000-row width makes multi-partition demos impractical at lab scale;
+  this permanently discards whatever rows were in `message_log` each time
+  either lab runs (schema is restored, data is not — safe because no FK ties
+  `message_log` to `cursors`/`deliveries`/`leases`). `sweeplab` needs no
+  swap, since staying inside one never-rolled partition is exactly the
+  condition the sweep exists to cover; it uses `AllowDropPastCommitted=true`
+  throughout to stay decoupled from whatever committed state other labs'
+  leftover cursor rows happen to be at, since the floor is global across
+  every group sharing `message_log`.
+- Real bug found and fixed along the way (not originally scoped): `Register`
+  called `UpsertCursor` unconditionally for every group. A LIFECYCLE group's
+  cursor row never advances `committed` (that's CURSOR-only), so it would sit
+  at 0 forever and permanently pin the drop floor, blocking every drop. Fixed
+  by gating `UpsertCursor` to `CURSOR` type only.
+- Build + vet green across every touched package; all three new labs and the
+  pre-existing `reclaim-lab`/`exception-lab`/`routing-lab` pass with no
+  regression.
+
+### Decisions
+
+- **Retention is per-log, not per-routing-key — an open question, not
+  settled.** One shared `message_log`, one `RetentionTTL`, and the drop
+  floor's `MIN(committed)` spans every cursor regardless of what
+  `routing_key` it actually consumes, so one lagging group on an unrelated
+  topic blocks drops for everyone. Kafka avoids this because `retention.ms`
+  is per-topic and each topic is its own log. Logged in `TODO.md`: may need
+  an actual topic concept (its own log/partition set) instead of
+  `routing_key` filtering over one shared table.
+- **No pg_partman, no extensions.** Declarative partitioning is core
+  Postgres; pg_partman is only automation around `CREATE TABLE ... PARTITION
+  OF` / `DROP TABLE`, and `Janitor` is that automation, in Go, on a ticker.
+- **Self-contained DDL swap-and-restore for the labs that need multiple
+  lab-scale partitions**, over deferring to a real migration-width config
+  knob or skipping the automated pruning proof outright — explicit tradeoff
+  accepted: `partition-lab`/`drop-floor-lab` permanently wipe `message_log`'s
+  existing rows (schema-only restoration) whenever they run.
+

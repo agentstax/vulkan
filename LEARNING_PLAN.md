@@ -1078,7 +1078,7 @@ monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
 
 ### 8a — Retention: partition-drop, and the low-volume hybrid
 
-**Concept:** retention on an append-only log means old rows leave forever, and
+**Concept:** retention on an append-only log means old rows live forever, and
 at volume a mass `DELETE WHERE created_at < X` is the wrong tool — every deleted
 row is WAL'd, every index entry has to be cleaned, and vacuum inherits the debt.
 The cheap mechanism is dropping a whole **partition**: one DDL statement, no
@@ -1116,28 +1116,28 @@ automation around `CREATE TABLE … PARTITION OF` and `DROP TABLE`, and the
 janitor below *is* that automation, in Go, on a ticker.
 
 **Build:**
-- [ ] Convert `message_log` to `PARTITION BY RANGE (id)` with fixed-width id
+- [x] Convert `message_log` to `PARTITION BY RANGE (id)` with fixed-width id
       partitions (width configurable — it's the retention granularity knob,
       sized in rows, not days). The migration creates the first partition so
       the table is insertable before the janitor ever runs; folded into
       `001_messages`, per house style.
-- [ ] **Janitor: create-ahead.** When `MAX(id)` nears the active partition's
+- [x] **Janitor: create-ahead.** When `MAX(id)` nears the active partition's
       upper bound, create the next partition. A producer must never hit a
       missing partition.
-- [ ] **Janitor: drop.** A partition is droppable when its *newest* row is past
+- [x] **Janitor: drop.** A partition is droppable when its *newest* row is past
       the TTL. Read "newest" as `ORDER BY id DESC LIMIT 1` — rides the PK
       index, no `created_at` index needed (id order ≈ time order).
-- [ ] **Janitor: sweep.** Delete the expired prefix of the oldest surviving
+- [x] **Janitor: sweep.** Delete the expired prefix of the oldest surviving
       partition — walk `ORDER BY id ASC`, delete while `created_at < cutoff`,
       stop at the first survivor. Index-backed, cost ∝ rows actually expired.
-- [ ] **Waterline-safe drop floor:** never drop a partition containing ids
+- [x] **Waterline-safe drop floor:** never drop a partition containing ids
       above any group's `committed` (`min(committed)` across cursors), with an
       explicit config knob to opt into Kafka's "lagging consumer falls off the
       retention window" semantics instead. Either is defensible; it must be a
       choice, not an accident.
-- [ ] Sweep orphaned references alongside the drop: `deliveries`/exception rows
+- [x] Sweep orphaned references alongside the drop: `deliveries`/exception rows
       pointing into a dropped id range would join to nothing and park forever.
-- [ ] **Open question, not settled:** retention today is **per-log**, not
+- [x] **Open question, not settled:** retention today is **per-log**, not
       per-routing-key — one shared log, one TTL, and the drop floor's
       `MIN(committed)` spans every cursor regardless of what routing_key it
       actually consumes, so one lagging group on an unrelated topic blocks
@@ -1148,26 +1148,46 @@ janitor below *is* that automation, in Go, on a ticker.
       a shared one. (TODO.md has the durable pointer.)
 
 **Lab:**
-- [ ] Shrink the partition width and TTL to lab scale; publish across several
+- [x] Shrink the partition width and TTL to lab scale; publish across several
       partitions; prove with `EXPLAIN` that a claim touches 1–2 partitions,
       not all of them — the pruning payoff, observed rather than assumed.
-- [ ] Drop an expired partition: confirm consumers *past* it are unaffected,
+- [x] Drop an expired partition: confirm consumers *past* it are unaffected,
       and a consumer whose cursor is *inside* the dropped range claims an
       empty batch and advances over the hole (the Phase 5 lag question coming
       home). Then enable the drop floor and watch the same drop get refused.
-- [ ] The low-volume case: a half-full partition with an expired prefix —
+- [x] The low-volume case: a half-full partition with an expired prefix —
       confirm the sweep deletes exactly the prefix and the partition survives.
 
 **Explain it back:**
 1. Why is partition-drop retention so much cheaper than `DELETE WHERE
    created_at < X`? (Think WAL, vacuum, indexes.)
+Answer: Every delete is a transactional write to the WAL which then has to be committed / flushed.
+Additionally indexes have to be cleaned up as well and then of course each page has to be deleted which is pressure on the vacuum.
+With partition drop none of those things happen it is just a pure disk delete.
 2. Retention is time-based — so why partition by `id` and not `created_at`?
    What exactly goes wrong at claim time with 365 daily partitions?
+Answer: because message_log is append only, id is approxametly time ordered. Because of that we can use id to our advantage.
+Time based partitions require our table primary key to include created_at which adds write/delete overhead.
+Additionally if we did time based partitions with a ttl of a year claim queries would have to scan 365 partitions which would slow down the hot path
+and degrade throughput quality.
 3. The hybrid reintroduces `DELETE` — why doesn't it reintroduce the problem
    partition-drop exists to avoid?
+Answer: Because the sweep never touches the active, high-volume partition — SweepExpiredPartitions only walks the oldest surviving *non-active*
+partition. At high volume, drop consumes whole partitions fast enough that by the time a partition is old enough to sweep, it's already been
+dropped whole — the sweep finds an empty prefix, not a DELETE under load. At low volume there's no whole partition to drop yet, so the DELETE's
+cost is what's paying for correctness, and it's cheap exactly because the row count is small by definition. The two mechanisms cover each other's
+weak end instead of both running at once.
 4. What does the drop floor protect, and what precisely happens to a consumer
    group when you turn it off and drop past its `committed`? (Kafka's
    "consumer fell off the retention window," now in your own system.)
+Answer: A drop floor protects against messages not being processed. If we didn't have floor protection partitions or messages could be deleted before a
+cursor / consumer group has reached them.
+Precisely: nothing detects the gap. FreshClaimMessagesWithCursor advances `claimed` by pure id arithmetic against MAX(id)
+(`claimed = LEAST(claimed + limit, MAX(id))`), never checking whether rows still exist in that range. The lease still gets created for
+`(low, high]` and readMessages still runs its SELECT — if the partition backing that range is gone, the SELECT just returns fewer rows, even
+zero, with no error. `claimed` and then `committed` advance past the hole exactly as they would for a normal batch. So a lagging group doesn't
+"jump ahead" via any special-cased skip — it was always going to advance on schedule; the dropped rows just silently never get delivered, and
+there's no in-band signal that it happened (only an external one, like the Phase 5 lag metric going quiet).
 
 **Done when:** `EXPLAIN` shows claim-path pruning, a drop is refused by the
 floor and permitted without it, the sweep handles the low-volume tail, all
