@@ -1285,18 +1285,55 @@ enables rather than automates.
       `message_log_<topic_id>_<n>`, and `EnsureNextPartition`'s (and
       `DropExpiredPartitions`'/`SweepExpiredPartitions`'/`existingPartitions`')
       `fmt.Sprintf` templates all need updating to match.
-- [ ] **Topic registration is explicit, not implicit.** Publishing to or
-      claiming from an unregistered topic name is an error. Unlike a
-      partition (which self-heals silently because it's cheap and
-      consequence-free) or a `routing_key` value (free text, no schema
-      weight), a topic carries real resource cost — creating one should be a
-      deliberate admin action, mirroring `BindTopic`'s existing pattern, not
-      a side effect of a typo in a producer call.
+- [ ] **Topic registration is explicit, not implicit — and its UX is the
+      idempotent declare (settled 2026-07-08).** Publishing to or claiming
+      from an unregistered topic name is an error. Unlike a partition (which
+      self-heals silently because it's cheap and consequence-free) or a
+      `routing_key` value (free text, no schema weight), a topic carries
+      real resource cost — creation never happens as a side effect of a
+      produce/claim call. The shape, picked after surveying
+      Kafka/NATS/RabbitMQ/SQS/pgmq/pg-boss: `topic.Register(ctx, ds,
+      topic.Config{Name, ...})` — `Register` because it matches
+      `consumer.Register`, the codebase's existing idempotent
+      startup-ceremony verb, while `Ensure*` stays reserved for silent
+      partition self-heal — called at the composition root, safe to run
+      on every boot. Missing → creates the catalog row + `message_log_<id>`
+      + first partition; exists with matching config → no-op returning the
+      existing topic; exists with different config → plain
+      `ErrTopicConfigMismatch`. That last case is SQS's
+      create-as-config-assertion, deliberately not RabbitMQ's
+      channel-killing 406 and not NATS `CreateOrUpdateStream`'s
+      declared-config-silently-wins — drift should be loud, and repairing it
+      a separate deliberate act.
 - [ ] Registering a topic creates `message_log_<id>` with its own local
       `BIGSERIAL`-equivalent sequence and its own first partition — same
       shape `001_messages` gives `message_log` today, same
       `CREATE TABLE IF NOT EXISTS` + catch-the-duplicate-race pattern
       `EnsureNextPartition` already uses for concurrency safety.
+- [ ] **Settled (2026-07-08) — evolving `message_log_<id>`'s own columns
+      (8c's `compaction_key`, Phase 12's `partition_key`, or any future
+      envelope field) is not a `migrations/` concern.** A migration file is
+      static, author-time DDL against a fixed set of table names; which
+      `message_log_<id>` tables exist is runtime state (`SELECT id FROM
+      topics`) that no `.sql` file can enumerate. This project's migrations
+      have zero precedent for dynamic/looping SQL (no `DO $$` blocks
+      anywhere), so the fix stays in Go, colocated with `CreateTopic`'s
+      table template in `pkg/topic/datastore.go` — same file owns both "what
+      does a topic's table look like" and "how do we bring an existing one
+      up to date," so the two can't drift apart. Mechanically: loop
+      `topics`, run one `ALTER TABLE message_log_%d ADD COLUMN IF NOT
+      EXISTS ...` per row — idempotent and self-healing, the same discipline
+      `EnsureNextPartition` already uses. The one thing that makes this
+      tractable at all: `message_log_<id>` is declaratively partitioned, and
+      Postgres cascades a parent's `ADD`/`DROP COLUMN` to every existing
+      *and future* partition automatically — so the real fan-out is one
+      statement per **topic**, not per partition. No generic "evolve all
+      topics" mechanism gets built ahead of need — 8c and 12 each write
+      their own small, purpose-named function
+      (`AddCompactionKeyColumn`/`AddPartitionKeyColumn`) when they actually
+      land, sharing a tiny `allTopicIds(ctx)` helper for the enumeration.
+      Down/rollback isn't one file either — same treatment, a paired
+      `Drop*Column` function, run once, by hand, when actually needed.
 - [ ] `cursors`, `deliveries`, and `leases` each gain a `topic_id` column,
       folded into their original migrations (`002_cursors`, `003_deliveries`,
       `004_leases`) per house style — each table's actual key changes
@@ -1322,8 +1359,9 @@ enables rather than automates.
       index to `(consumer_group, topic_id)`, since one topic's `routing_key`
       vocabulary has nothing to do with another's.
 - [ ] `WorkConsumer`/`WorkProducer` gain a `Topic` identity alongside the
-      existing `Group` — the name-to-id lookup happens once at construction,
-      cached, never re-resolved per message. Every dynamic-SQL call site that
+      existing `Group` — their constructors accept the resolved topic
+      `topic.Register` returns (id already looked up, cached, never
+      re-resolved per message). Every dynamic-SQL call site that
       hardcodes `message_log`/`message_log_%d` today interpolates the
       resolved `topic_id` instead.
 - [ ] The janitor (`EnsureNextPartition`, `DropExpiredPartitions`,
@@ -1332,15 +1370,22 @@ enables rather than automates.
       partitions. `cursorFloor` becomes `MIN(committed) FROM cursors WHERE
       topic_id = $1` — this is the actual fix for 8a's filed TODO, and the
       per-topic partition set is the fix for 8c's.
-- [ ] **Open question, not settled — per-topic independent config.** Today
+- [ ] **Settled (2026-07-08) — the topic owns its log-shape config.** Today
       each consumer group's `WorkConsumerConfig` (`RetentionTTL`,
       `PartitionSize`, ...) is set per `WorkConsumer` instance, so two groups
       reading the same table could already, oddly, run their janitors with
-      different settings against shared partitions — an existing quirk, not
-      something 8b introduces. Whether a topic should *own* its config
-      centrally (one source of truth all its consumers defer to) instead of
-      each consumer group configuring its own janitor by convention is left
-      for later.
+      different settings against shared partitions — an existing quirk 8b
+      inherits. The idempotent-declare UX resolves it: `topic.Config` at
+      `Register` time is where log-shape knobs live (`RetentionTTL`,
+      `PartitionSize`, plausibly `AllowDropPastCommitted` — properties of
+      the log itself), persisted as columns on the `topics` row (folded into
+      its migration per house style); janitors read them off the topic and
+      those fields leave `WorkConsumerConfig`. Genuinely per-consumer
+      runtime knobs (`JanitorPollRate`, `JanitorSweepBatchSize`, poll rates,
+      batch limits) stay. This is the convergence the ecosystem keeps
+      landing on — pg-boss v10 made `createQueue` mandatory and NATS takes a
+      full `StreamConfig` at declare precisely because per-topic config
+      needs a durable home.
 - [ ] **Open question, not settled — what happens to the original
       `message_log` and every existing lab/example built against it.**
       `examples/phase_1/{consumer,producer}/main.go` and every lab so far
