@@ -44,7 +44,7 @@ your design after each phase, and to see how the pieces compose at the end.
 | 6 lifecycle-on-log (naive per-row) | the `deliveries`-row-per-(group,event) model — what you measure the write-amplification wall on |
 | 6.5 claim-from-log refactor | `pglog.go` `Claim`/`Commit` (range-claim, no per-event rows) + sparse `deliveries` exception window + `leases` + `Advance` waterline + `sharding.go` lanes |
 | 7 routing | `routing.go` — NATS topic regex (this phase simplifies to a true `*` wildcard instead; header JSONB `@>` deferred to optional Phase 7b) |
-| 8 retention/compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe |
+| 8c compaction | `compaction.go` — keep-latest-per-key, tombstones, watermark-safe (this project takes a different, read-time-filtering approach instead — see 8c) |
 | 12 FIFO partitions | `partitions.go` — at-most-one-in-flight-per-key, FIFO-through-retry |
 
 One honest delta between this plan and the reference, worth knowing before you
@@ -76,8 +76,10 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
 | 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 8 — Operational layer | ⬜ | compaction, observability, LISTEN/NOTIFY — **current focus after 7**; retention split out into **8a** |
-| 8a — Retention | 🔨 **next** | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman |
+| 8 — Operational layer | ⬜ | observability, LISTEN/NOTIFY — retention split into **8a**, log compaction split into **8c** |
+| 8a — Retention | ✅ done | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman; answers in NOTES.md; tag `phase-8a` |
+| 8b — Per-topic tables | ⬜ | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost |
+| 8c — Log compaction | ⬜ | keep-latest-per-key, filtered at claim time (not a background delete pass); partial index, tombstone convention still to be decided |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
@@ -1027,7 +1029,7 @@ subscriptions.
 **Concept:** what makes it survivable in production and observable enough to trust.
 
 **Build:**
-- [ ] **Retention policy → split out into its own movement, 8a below.** The
+- [x] **Retention policy → split out into its own movement, 8a below.** The
       design grew past a bullet: partition by `RANGE (id)` (not `created_at` —
       the claim path prunes on id), a Go janitor instead of pg_partman, and a
       hybrid drop + bounded-DELETE for the low-volume tail. **8a is the real
@@ -1038,8 +1040,12 @@ subscriptions.
       one place the original archive idea still applies; after the Phase 6.5
       refactor the exception window self-cleans — success is a DELETE — so only
       `dead` DLQ rows persist and need a retention policy of their own.)
-- [ ] Optionally implement **log compaction** (keep only the latest event per
-      `partition_key`) to see Kafka's compacted-topic idea.
+- [x] **Log compaction → split out into its own movement, 8c below.** The
+      design departs from Kafka's own background/segment-based compaction:
+      instead of a janitor deleting superseded rows once a watermark floor
+      allows it, this project filters at claim time — the log stays
+      append-only and physically unmodified, and `readMessages`/`FanOut`
+      only ever return the latest row per key.
 - [ ] **Observability:** expose backlog/lag per group (`head − committed`, the
       waterline gap), the `ready` exception count (retry depth), DLQ size (`dead`
       count), and oldest-unacked age. These four numbers are how you operate any
@@ -1049,12 +1055,12 @@ subscriptions.
       notifies and delayed (`run_at`) messages. Knowing *why* you keep the
       fallback poll (NOTIFY is fire-and-forget, lost if no listener) is the lesson.
 
-*→ Reference (after you've built it): `reference/waterline/compaction.go` —
-`Compact`/`CompactSafe` implement keep-latest-per-`partition_key` with tombstones,
-and a watermark-safe floor so compaction never drops a value a consumer hasn't
-passed (nor an event a live/dead `deliveries` row still references). Retention by
-partition-drop and the four observability numbers (lag = `head − committed`, DLQ
-size, ready count, oldest unacked) are left for you to add.*
+*→ Reference (after you've built it): the four observability numbers (lag =
+`head − committed`, DLQ size, ready count, oldest unacked) are left for you
+to add — retention by partition-drop is 8a's territory, log compaction is
+8c's (where `reference/waterline/compaction.go`'s watermark-safe
+background-delete approach is worth comparing against the read-time-filtering
+path chosen there).*
 
 **Lab:**
 - [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
@@ -1071,8 +1077,8 @@ size, ready count, oldest unacked) are left for you to add.*
 `git tag phase-8`. Core platform operability is done — FIFO ordering (Phase 12)
 and lane sharding (6.5d) are optional add-ons from here, not prerequisites.
 
-**Real systems:** Kafka `retention.ms` + **log compaction**; consumer **lag**
-monitoring (Burrow); RabbitMQ queue-depth alarms; Pulsar tiered storage.
+**Real systems:** consumer **lag** monitoring (Burrow); RabbitMQ queue-depth
+alarms; Pulsar tiered storage.
 
 ---
 
@@ -1201,6 +1207,326 @@ pg_partman (the janitor, as the extension this project won't take); Timescale
 
 ---
 
+### 8b — Per-topic tables: independent logs, routing stays within them
+
+**Concept:** two problems this project already found and filed as TODOs turn
+out to be the same root cause: 8a's drop floor is `MIN(committed)` across
+*every* cursor sharing `message_log`, so one lagging group blocks retention
+for every unrelated topic riding along in the same table; 8c's compaction
+lookup has to probe every live partition up to a claim's high, because `id`
+is one `BIGSERIAL` shared by every topic, diluting how densely a rarely-used
+key's own writes cluster together. Both are symptoms of one table doing the
+job of many logs. Kafka's fix is that a topic *is* its own log — its own
+partitions, its own `retention.ms`. This phase does the same: each topic gets
+its own physical table, its own id sequence, its own partition set, its own
+janitor.
+
+Two decisions this phase turns on, both settled the hard way:
+
+- **A topic is a new, coarser concept above `routing_key` — not a
+  replacement for it.** The tempting simplification is to collapse them: one
+  routing_key value, one topic, one table — closer to how a Kafka consumer
+  subscribes to topics by name-pattern rather than filtering records
+  server-side within one topic. But `routing_key` today is free text a
+  producer can invent with zero ceremony (a new tenant id, a new region), and
+  a topic under this design carries real weight (its own sequence, partition
+  set, retention config) that shouldn't spin into existence from a producer
+  typo. Collapsing them would force a physical table for every fine-grained
+  slice — real per-topic janitor overhead multiplied by however many slices
+  the domain naturally has — and would throw away Phase 7's retroactive
+  binding application (a binding added after messages exist still applies to
+  them, as long as they're unclaimed), which only works because the log
+  those messages live in is already shared. So `routing_key`/`bindings`
+  survive this phase completely unchanged in mechanism, just newly scoped to
+  one topic's own table instead of the single system-wide one.
+- **Each topic's id sequence must be its own, not a shared global one.** A
+  shared sequence looks cheaper — `message_id` stays globally unique, so
+  `cursors`/`deliveries`/`leases` could keep their current keys untouched.
+  It doesn't actually work: `EnsureNextPartition` decides partition
+  boundaries by raw id arithmetic, and if a topic only receives a fraction of
+  the system's total id throughput, "1,000,000 raw ids of partition width"
+  no longer means "1,000,000 of this topic's own rows" — it means however
+  many happened to fall in that range, which drifts with total system
+  traffic and can't be reasoned about per topic. Worse, it makes *more*
+  physical partitions accumulate per unit of a topic's real data, which
+  makes 8c's fan-out problem worse, not better. A shared sequence also
+  doesn't dodge propagating "which topic" into `deliveries` either — a row
+  still needs to say which table its `message_id` lives in. So the honest
+  design accepts the full blast radius: each topic's table gets its own
+  dense sequence, and `cursors`/`deliveries`/`leases` become scoped to
+  `(consumer_group, topic_id)` rather than just `(consumer_group)`.
+
+**What this phase does *not* fully solve, on purpose:** a lagging group on
+one `routing_key` slice still shares its topic's drop floor with every other
+slice in that same topic — splitting by topic re-scopes the contamination
+from system-wide to within-one-topic, it doesn't eliminate it. If two slices
+within a topic diverge badly in consumer lag, that's the signal to split
+them into separate topics, a deliberate operational choice this phase
+enables rather than automates.
+
+**Build:**
+- [x] New `topics` table: `id BIGSERIAL PRIMARY KEY, name TEXT UNIQUE NOT
+      NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`. The physical
+      table for a topic is named `message_log_<id>` — a server-generated
+      integer, never the free-text `name`, gets interpolated into dynamic
+      DDL. Same discipline `EnsureNextPartition` already uses for partition
+      numbers, just one level up; a hashed or raw-name table suffix was
+      considered and rejected — the lookup table is needed regardless (app
+      code always refers to topics by name), so its own PK is the simplest
+      safe identifier available, no collision handling, no injection
+      surface.
+- [ ] **Partition names need a second suffix, or they collide.** A
+      partition of `message_log_<id>` would naturally want the same
+      `message_log_<n>` pattern `EnsureNextPartition` already uses today —
+      but that's the *same* naming scheme the topic table itself now uses
+      (`message_log_<id>`), so topic 3's table and what would have been
+      "partition 3" of some other topic are one collision away from
+      colliding. Partitions need their own two-part name,
+      `message_log_<topic_id>_<n>`, and `EnsureNextPartition`'s (and
+      `DropExpiredPartitions`'/`SweepExpiredPartitions`'/`existingPartitions`')
+      `fmt.Sprintf` templates all need updating to match.
+- [ ] **Topic registration is explicit, not implicit.** Publishing to or
+      claiming from an unregistered topic name is an error. Unlike a
+      partition (which self-heals silently because it's cheap and
+      consequence-free) or a `routing_key` value (free text, no schema
+      weight), a topic carries real resource cost — creating one should be a
+      deliberate admin action, mirroring `BindTopic`'s existing pattern, not
+      a side effect of a typo in a producer call.
+- [ ] Registering a topic creates `message_log_<id>` with its own local
+      `BIGSERIAL`-equivalent sequence and its own first partition — same
+      shape `001_messages` gives `message_log` today, same
+      `CREATE TABLE IF NOT EXISTS` + catch-the-duplicate-race pattern
+      `EnsureNextPartition` already uses for concurrency safety.
+- [ ] `cursors`, `deliveries`, and `leases` each gain a `topic_id` column,
+      folded into their original migrations (`002_cursors`, `003_deliveries`,
+      `004_leases`) per house style — each table's actual key changes
+      differently, not uniformly:
+      - `cursors`' PK today is the single column `consumer_group`
+        (`002_cursors.up.sql`) — it must become the composite
+        `(consumer_group, topic_id)`, since one group reading two topics
+        needs two distinct cursor rows.
+      - `deliveries`' PK today is already composite,
+        `(consumer_group, message_id)` — becomes
+        `(consumer_group, topic_id, message_id)`, since `message_id` is only
+        unique within a topic once each has its own sequence.
+      - `leases`' PK today is `(token, consumer_group)` — `token` (a random
+        UUID) already disambiguates, so the PK itself doesn't need to
+        change, but `low`/`high` are meaningless without knowing which
+        topic's id sequence they're a range of, so `leases` still needs the
+        `topic_id` column even though its key shape doesn't.
+- [ ] `bindings` gains a `topic_id` column too, folded into `005_bindings`.
+      Its actual schema today has a surrogate `id BIGSERIAL PRIMARY KEY` and
+      only an index on `consumer_group` (no compound key on
+      `consumer_group`/`pattern` exists to begin with) — this phase just
+      adds `topic_id` alongside `consumer_group`/`pattern` and widens that
+      index to `(consumer_group, topic_id)`, since one topic's `routing_key`
+      vocabulary has nothing to do with another's.
+- [ ] `WorkConsumer`/`WorkProducer` gain a `Topic` identity alongside the
+      existing `Group` — the name-to-id lookup happens once at construction,
+      cached, never re-resolved per message. Every dynamic-SQL call site that
+      hardcodes `message_log`/`message_log_%d` today interpolates the
+      resolved `topic_id` instead.
+- [ ] The janitor (`EnsureNextPartition`, `DropExpiredPartitions`,
+      `SweepExpiredPartitions`, and 8c's compaction pass once it exists)
+      all become topic-scoped, operating on `message_log_<topic_id>`'s own
+      partitions. `cursorFloor` becomes `MIN(committed) FROM cursors WHERE
+      topic_id = $1` — this is the actual fix for 8a's filed TODO, and the
+      per-topic partition set is the fix for 8c's.
+- [ ] **Open question, not settled — per-topic independent config.** Today
+      each consumer group's `WorkConsumerConfig` (`RetentionTTL`,
+      `PartitionSize`, ...) is set per `WorkConsumer` instance, so two groups
+      reading the same table could already, oddly, run their janitors with
+      different settings against shared partitions — an existing quirk, not
+      something 8b introduces. Whether a topic should *own* its config
+      centrally (one source of truth all its consumers defer to) instead of
+      each consumer group configuring its own janitor by convention is left
+      for later.
+- [ ] **Open question, not settled — what happens to the original
+      `message_log` and every existing lab/example built against it.**
+      `examples/phase_1/{consumer,producer}/main.go` and every lab so far
+      (`reclaimlab`, `exceptionlab`, `routinglab`, `partitionlab`,
+      `dropfloorlab`, `sweeplab`) all construct their datastore against one
+      fixed, topicless `message_log`. Once every table is `message_log_<id>`
+      behind an explicit-registration requirement, none of them compile
+      against reality unmodified. Options: migrate them all to register and
+      target a "default" topic (real work, touches every existing lab, but
+      keeps them runnable as regression checks for this phase's own labs);
+      or accept it as a deliberate breaking change and note which labs stop
+      working until touched. Not deciding this before starting risks
+      discovering it mid-phase the way `message_log_0`'s hardcoded width
+      blocked 8a's labs until it got its own `AskUserQuestion`.
+
+**Lab:**
+- [ ] Register two topics, publish to both, confirm each gets its own
+      physical table and its own dense id sequence — ids don't leak or
+      interleave across topics.
+- [ ] Confirm a badly-lagging group on topic B does not block a drop or
+      sweep on topic A — the exact cross-topic contamination 8a's TODO
+      flagged, proven fixed live, not just asserted.
+- [ ] Confirm `routing_key`/`bindings` still behave exactly as Phase 7
+      proved (retroactive binding application, CURSOR-path
+      filter-but-still-advance, LIFECYCLE-path gate-row-creation) — now
+      scoped within one topic's table, unchanged in behavior.
+- [ ] Confirm the re-scoping claim directly: two `routing_key` slices
+      sharing *one* topic still share that topic's drop floor — a lagging
+      group on one slice still blocks a drop that would otherwise free space
+      for the other slice in the same topic.
+- [ ] Confirm publishing or claiming against an unregistered topic name
+      fails clearly, rather than silently creating one.
+
+**Explain it back:**
+1. Why does each topic need its own dense id sequence rather than sharing
+   the system-wide one? What specifically breaks if they share it?
+2. Why do `cursors`/`deliveries`/`leases` need a `topic_id` added to their
+   keys, when they didn't need one before this phase?
+3. Why is topic registration explicit, when partition creation
+   (`EnsureNextPartition`) is allowed to self-heal silently?
+4. `routing_key`/`bindings` survive this phase with their matching logic
+   completely unchanged — so what did splitting into per-topic tables
+   actually fix, and what did it deliberately leave unfixed?
+
+**Done when:** two topics are physically separate with independent
+sequences/partitions (proven live), a lagging group on one topic is proven
+not to affect another topic's drop/sweep, `routing_key`/`bindings` behave
+identically to Phase 7 within a topic, `TODO.md`'s two filed pointers (8a's
+global floor, 8c's fan-out cost) are closed out or updated to reflect the
+fix, NOTES.md, `git tag phase-8b`.
+
+**Real systems:** Kafka topics (the direct analog — a topic *is* its own
+partition set, its own `retention.ms`, independent of every other topic);
+"topic sprawl" as a known anti-pattern in real Kafka deployments is the
+argument *against* going further and collapsing `routing_key` into topic
+identity too.
+
+---
+
+### 8c — Log compaction: latest-per-key, filtered at claim time
+
+**Concept:** Kafka's compacted topics keep only the latest event per key, but
+still get there by appending a new record per write and deleting older
+records for that key in the *background*, once a segment ages out — the log
+is mutated after the fact, never in place. The tempting shortcut is to skip
+the background step entirely: give the producer a `uniqueness_key` and have
+it `UPSERT` — insert if new, update in place if the key already exists. That
+breaks something the background-delete approach doesn't: a group that has
+already committed past a key's original `id` never revisits it, so an
+in-place update at that same `id` is invisible to that group *forever*, not
+merely delayed — the opposite of what a compacted topic is supposed to
+guarantee (every consumer eventually sees the latest value, however far
+behind it starts). It also collides with 8a: id order is retention's
+stand-in for time order, and an old `id` whose content keeps changing forever
+undermines the "safe to drop, nothing here will change again" assumption
+`partitionExpired` relies on.
+
+So the log stays append-only, exactly as every earlier phase built it — a
+write is always a new `id`, never a mutation. What changes is *where*
+duplicates get resolved. Instead of a background janitor physically deleting
+superseded rows once a watermark floor says it's safe (the approach
+`reference/waterline/compaction.go` takes), this phase filters **at claim
+time**: `readMessages`/`FanOut` only return the row that is *currently* the
+latest for its key, as of whatever high-water mark the claim itself is
+bounded by — older rows for that key still physically exist in
+`message_log`, just never selected again once a newer one exists. This
+trades a per-claim query cost (a correlated "is this the latest for its key"
+lookup) for removing the floor as a *correctness* requirement — nothing is
+ever deleted, so nothing can ever be deleted too early. The floor doesn't
+disappear, though: it downgrades from a correctness gate to an optional,
+whenever-convenient disk-space cleanup, decoupled entirely from what a claim
+is allowed to return.
+
+**Build:**
+- [ ] `message_log` gets `compaction_key TEXT`, folded into `001_messages`
+      per house style — `NULL` means "not compacted," same convention as
+      `routing_key`. A **partial** index,
+      `CREATE INDEX ON message_log (compaction_key, id) WHERE compaction_key
+      IS NOT NULL`, so unkeyed rows (the common case, if compaction is used
+      at all) pay zero index-maintenance cost, not just a small one.
+- [ ] Producer: `AppendMessage`/`WorkProducer.Produce` take a
+      `compactionKey string`, `""` → SQL `NULL`.
+- [ ] CURSOR path: `readMessages` gains one more predicate on its existing
+      `WHERE` — a row is eligible if it's unkeyed, or if it's the max `id`
+      for its `compaction_key` at or below the claim's own high bound (never
+      peek past what the claim is allowed to see). One change point: both
+      `ReclaimWithCursor` and `ClaimMessages` already route through
+      `readMessages`.
+- [ ] LIFECYCLE path: `FanOut`'s `SELECT ... WHERE` gets the identical
+      predicate, duplicated inline — same shape as the Phase 7 routing
+      predicate, no shared function between the two paths.
+- [ ] **Decide the tombstone representation.** `message_log.payload` is
+      `NOT NULL` today. Either relax it (`payload IS NULL` = tombstone,
+      matching Kafka and `reference/waterline/compaction.go` exactly), or add
+      a dedicated `is_tombstone BOOLEAN` and keep `payload` `NOT NULL`.
+      Whichever is chosen, the filter query itself needs no special-casing —
+      a tombstone is just "the latest row for its key," delivered like any
+      other message; only the consumer's own handling of it differs. (Unlike
+      the reference's `Compact`, there's no separate tombstone-deletion pass
+      needed here — nothing is ever deleted by this phase at all.)
+- [ ] **Open question, not settled — deferred to 8b.** The filter's cost is
+      (keyed rows in a claim) × (live partitions up to that claim's high),
+      because `id` is one `BIGSERIAL` shared by every topic — a quiet,
+      rarely-updated key still pays for however busy the *whole system* is,
+      since unrelated topics are what's actually advancing `id` between that
+      key's writes. 8b's per-topic tables (each with its own id sequence)
+      bound this to a topic's own volume instead of the whole system's — not
+      solved here, and this phase's own labs above (the width-tension and
+      planner-optimization checks) are worth re-running after 8b lands to
+      see the smaller, cleaner number.
+
+**Lab:**
+- [ ] Publish several versions of the same `compaction_key`; confirm a claim
+      spanning all of them returns only the latest, and that the older rows
+      still physically exist in `message_log` (filtered, not deleted).
+- [ ] Confirm two claims landing on either side of an update each see the
+      correct value as-of their own high bound — a version already delivered
+      to an earlier claim isn't retroactively unsent; only a *later* claim is
+      affected by a newer write.
+- [ ] Confirm a tombstoned key's latest row still gets delivered, not
+      silently dropped — the consumer decides what a tombstone means, not
+      the query.
+- [ ] `EXPLAIN` a claim over unkeyed traffic and confirm the compaction
+      predicate's subquery never executes (the `OR` short-circuits on
+      `compaction_key IS NULL`) — watch the plan, don't assume it.
+- [ ] **Partition-width tension with 8a, measured.** Run the same keyed-claim
+      workload (same total row count, same key cardinality) against a
+      lab-narrow `partitionSize` and a lab-wide one, an order of magnitude
+      apart. Compare `EXPLAIN`'s reported partition touches (or `EXPLAIN
+      ANALYZE` timing) between the two. 8a wants many small partitions for
+      fast drop granularity and tight claim-path pruning; this phase's
+      lookup wants few large ones for cheap per-key resolution — get the
+      actual number they're trading off against each other, not a guess.
+- [ ] **Does the planner actually optimize the lookup?** Once several
+      partitions are live, `EXPLAIN` the compaction subquery and read the
+      plan shape: does it show a `Merge Append` that stops at the first
+      match scanning partitions newest-to-oldest (Postgres's min/max-via-index
+      optimization applied per-partition, terminating early), or does it show
+      every live partition scanned regardless of where the actual latest row
+      lives? Same discipline as 8a's partition-pruning lab — check the plan,
+      don't assume the optimizer does the smart thing.
+
+**Explain it back:**
+1. Why doesn't this design need a watermark-safe floor to gate correctness,
+   unlike Kafka's own compacted topics (and this repo's
+   `reference/waterline/compaction.go`)? What does the floor become instead?
+2. Why can a brand-new consumer group get latest-per-key on its very first
+   claim under this design, when a background-delete design can't give it
+   that for free?
+3. Why does the filter bound its search with the claim's own high (`id <=
+   $hi`) instead of taking the unbounded latest write for a key?
+4. Why is the `compaction_key` index partial (`WHERE compaction_key IS NOT
+   NULL`) instead of covering every row?
+
+**Done when:** a claim over keyed traffic returns exactly one row per key
+(proven live, not assumed), unkeyed traffic shows zero added query cost via
+`EXPLAIN`, the tombstone convention is decided and documented, NOTES.md,
+`git tag phase-8c`.
+
+**Real systems:** Kafka compacted topics (same goal, different mechanism —
+Kafka's own compaction is still background/segment-based, not read-time
+filtering); Cassandra/DynamoDB-style last-write-wins resolved at read time is
+the closer analog to what this phase actually builds.
+
+---
+
 ## Phase 9 — Consumer fault isolation & recovery
 
 **Concept:** `consumerFunc` is a black box you don't control — it can return an
@@ -1215,17 +1541,36 @@ that calls `consumerFunc`, so there's nothing to compare against here; this
 phase is `pkg/consumer`-specific.
 
 **Build:**
-- [ ] **Datastore-blip retry backoff.** `Consume`'s `Project`/`Process`/
-      `RollWaterline` goroutines currently return a raw DB error straight to the
-      errgroup, killing the whole consumer on a transient network blip. Wrap
-      their DB-facing calls in a retry-with-backoff instead of propagating
-      immediately.
+- [ ] **Datastore-blip retry backoff.** `Consume` spawns five errgroup
+      goroutines (`consumer.go:208-240`) — `Project`, `Process`,
+      `RollWaterline`, `DrainExceptions`, and `Janitor` — every one of them
+      currently returns a raw DB error straight to the errgroup, killing the
+      whole consumer on a transient network blip. Wrap each goroutine's
+      DB-facing calls in a retry-with-backoff instead of propagating
+      immediately. `Janitor` is the sharpest case: a blip killing it doesn't
+      just stall one poll cycle, it silently stops create-ahead/retention/
+      compaction for that consumer group until the whole process restarts,
+      with nothing else noticing in the meantime. Scope the retry tightly to
+      each goroutine's actual DB round-trips, not the whole function body —
+      `CursorClaim`/`ExceptionClaim` interleave DB calls with the black-box
+      `consumerFunc` call in the same loop, and a `consumerFunc` failure is
+      not a blip; it's already correctly routed through the exception
+      window, so retrying it again here would double-handle it.
 - [ ] **Graceful-shutdown lease truncation.** `Consume` already calls a
-      pluggable `p.ShutdownFunc` on the way out (`Shutdown`, `consumer.go`), so
-      this is extending that hook, not building shutdown from scratch: before
-      releasing an in-flight lease, update its low bound to the last
-      successfully processed offset in that range, so a restart doesn't
-      reprocess work that already completed.
+      pluggable `p.ShutdownFunc` on the way out (`Shutdown`, `consumer.go`),
+      so the *hook* isn't new — but the mechanism this bullet actually needs
+      is bigger than "extend a hook." Today `CursorClaim`'s per-message loop
+      (`consumer.go:339-350`) never checks `ctx.Done()` — a shutdown signal
+      only takes effect between batches, at `Process`'s outer `select`,
+      never mid-batch — so there's no trigger point for "truncate the lease"
+      until the loop itself becomes interruptible per-message, which has to
+      be built first, not assumed. And "update its low bound" isn't an
+      existing capability to reach for: `Commit` frees a lease atomically
+      and has no partial/narrowing mode. Preserving a mid-batch shutdown's
+      already-resolved prefix needs a genuinely new datastore method — a
+      partial commit that persists the exceptions/terminals gathered so far
+      *and* narrows the still-open lease's `low` to where the interrupted
+      loop actually got to, distinct from today's all-or-nothing `Commit`.
 - [ ] **`recover()` around the `consumerFunc` call.** A bare Go panic (nil map
       write, index out of range, a bad type assertion on an unexpected payload)
       is indistinguishable from a real process crash today — it takes down the
@@ -1298,6 +1643,10 @@ phase is `pkg/consumer`-specific.
       the one message, not the whole range; the hang times out and retries
       while the abandoned goroutine shows up in the gauge; the DB blip doesn't
       kill the consumer and it recovers once the blip clears.
+- [ ] Trigger a shutdown signal mid-batch (a claimed range with several
+      messages still unresolved) and confirm the already-resolved prefix
+      isn't reprocessed after restart, while the unresolved suffix is —
+      the one Build item above with no other proof step in this lab.
 
 **Explain it back:**
 1. Why does a recovered panic have to go through the *exact same*
@@ -1339,14 +1688,22 @@ compare against — you're building past what the reference bothered with.
       something reasonable for free.
 - [ ] **Debug/metrics readout.** A debug mode or method that prints current
       queue state on demand: the `claimed`/`committed` gap per group, exception
-      counts (`ready`/`inflight`/`dead`), and open-lease count — an ad hoc,
-      inspectable version of Phase 8's four operational numbers, useful before
-      you've wired up a real metrics backend.
+      counts (`ready`/`inflight`/`dead`), and open-lease count — a human-readable
+      CLI companion to Phase 8's four operational numbers, not a prerequisite
+      for them (Phase 8 is numbered earlier and doesn't depend on this
+      existing first — the two overlap in what they surface, not in build
+      order). If 8b has landed by the time this is built, scope these
+      per-`(group, topic)`, not just per-group — a group can read more than
+      one topic once topics exist.
 - [ ] **Resolve the lazy-vs-synchronous rollup.** Decide, with measured
       numbers, whether `AdvanceWaterline` should stay a periodic lazy tick or
       become synchronous — advance right after a lease/batch resolves instead
       of waiting for the next tick. Record the latency-vs-overhead tradeoff you
-      measured, not just the decision.
+      measured, not just the decision. This isn't only an observability nicety:
+      `committed` is exactly what 8a's `cursorFloor` reads (`MIN(committed)
+      FROM cursors`) to decide whether a partition is safe to drop — a
+      synchronous rollup makes retention itself more responsive, a concrete,
+      already-shipped stake beyond "the debug numbers look fresher."
 - [ ] **Inflight/completed visibility.** Surface, per group, how many
       messages/batches are currently inflight vs. resolved — the metric gap the
       lazy-rollup question originally flagged (today you can infer this from
@@ -1387,9 +1744,13 @@ core was stable. This phase is cleanup, not new capability.
 defines a deliberately small `Log` interface (`Claim`/`Reclaim`/`Commit`/
 `ClaimExceptions`/`Ack`/`Nack`/`DeadLetter`/`Advance`/`Watermark` — 9 methods) as
 the target shape to compare `pkg/consumer`'s current `Datastore` interface
-against (`datastore.go` — 13 methods, since it supports **both** `CURSOR` and
-`LIFECYCLE` modes behind one interface, which the reference deliberately keeps
-separate — see the "honest delta" note near the top of this document). One
+against (`datastore.go` — 16 methods as of 8a, since it supports **both**
+`CURSOR` and `LIFECYCLE` modes behind one interface, which the reference
+deliberately keeps separate — see the "honest delta" note near the top of
+this document). The count grew from 13 to 16 with 8a's
+`EnsureNextPartition`/`DropExpiredPartitions`/`SweepExpiredPartitions` — as
+good a concrete example as any for the audit below, since "partition" and
+"TTL" are about as Postgres-specific as a method signature gets. One
 caveat worth knowing before you audit: the reference doesn't fully solve
 backend-agnosticism either — `Range.Token` is typed `pgtype.UUID` directly in
 its public struct, the same pgx-specific leak `Datastore.Commit`'s `token`
@@ -1406,8 +1767,17 @@ type — even the reference didn't bother.*
       types, `COPY`, etc.) — document the decision even if the answer is "keep
       pgx."
 - [ ] **Multi-target transactional enqueue.** Extend the producer so one call
-      can publish to multiple queues/topics within the same transaction
-      (today's `Produce(ctx, tx, work)` only targets one).
+      can publish to multiple queues/topics within the same transaction —
+      today's `WorkProducer.Produce(ctx, producerFunc, routingKey)` only
+      targets the one queue its `Datastore` was constructed against (the
+      caller's `producerFunc(ctx, tx)` closure runs inside a transaction
+      `Produce` opens and owns, but only one `AppendMessage` call is
+      possible per invocation). Note this gets materially harder, not just
+      bigger, once 8b lands: "multiple targets" today means multiple
+      `routing_key`s in one shared table, but post-8b it means multiple
+      physically separate `message_log_<topic_id>` tables, each with its own
+      sequence — likely multiple `WorkProducer` instances needing to share
+      one externally-managed transaction, inverting who currently owns it.
 - [ ] **Attempt audit trail.** An append-only table recording each attempt
       (`attempted_at`, error) per message, written but **never read by the hot
       path** — so it can't slow down claims — for debugging/auditing only.
@@ -1443,7 +1813,16 @@ deliberately which side of that tradeoff this project is on.
 **Concept:** ordering on demand, paid for only where you opt in.
 
 **Build:**
-- [ ] Add `partition_key text` to `events` (nullable = no ordering).
+- [ ] Add `partition_key text` to `message_log` (nullable = no ordering) —
+      not `events`, that's `reference/waterline`'s table name, not this
+      project's (folds into `001_messages` per house style; if 8b has landed
+      by the time this is built, it's per-topic on each `message_log_<id>`
+      instead). Worth naming plainly why this is a *second* key column
+      alongside 8c's `compaction_key` rather than reusing it: they answer
+      different questions at different times — `compaction_key` is a
+      read-time "what's current" filter, `partition_key` is a claim-time
+      "don't run two of these at once" gate — a message could reasonably
+      want one, the other, both, or neither.
 - [ ] **Decide which path carries ordering.** The bare claim-from-log happy path
       (Phase 6.5) is *unordered* under concurrent workers — it hands out contiguous
       ranges in parallel, so two workers can process two offsets of the same key at

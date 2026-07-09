@@ -170,6 +170,18 @@ reconsider keeping every 'topic' in the same message_log table
   a bigger structural change, not a quick fix. revisit alongside any future
   routing/topic work (see the NATS-selector item above).
 
+  a third motivation for the same fix, found while designing log compaction
+  (Phase 8, still unbuilt): a read-time-filtered claim (readMessages joins to
+  "latest row for this compaction_key up to $hi" instead of a background
+  delete pass) has to probe every still-live partition up to the claim's
+  high, because `id` is one global BIGSERIAL shared by every producer and
+  every topic -- a quiet, rarely-updated key still gets its rows smeared
+  across a huge id range purely because UNRELATED topics keep advancing the
+  shared sequence. per-topic tables (own log, own id sequence, own partition
+  set) would bound that probe cost to a topic's own write volume instead of
+  the whole system's, on top of fixing the floor issue above -- one
+  structural change would resolve both.
+
 EXPLAIN (ANALYZE, BUFFERS, TIMING) 
 UPDATE message_log
 SET 

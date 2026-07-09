@@ -1,3 +1,5 @@
+-- TODO - should consider if deliveries table should be per topic as well (probably)
+
 -- deliveries(consumer_group text, event_offset bigint, status, attempts, locked_at, last_error, PRIMARY KEY(consumer_group, event_offset))
 CREATE TABLE IF NOT EXISTS deliveries (
   consumer_group TEXT NOT NULL, -- PK
