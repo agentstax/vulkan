@@ -4,7 +4,8 @@
 CREATE TABLE IF NOT EXISTS bindings (
   id BIGSERIAL PRIMARY KEY,
   consumer_group TEXT NOT NULL,
+  topic_id BIGINT NOT NULL,
   pattern TEXT NOT NULL,   -- POSIX regex translated from the NATS-style pattern
   display TEXT             -- original NATS pattern, for humans
 );
-CREATE INDEX IF NOT EXISTS bindings_group ON bindings (consumer_group);
+CREATE INDEX IF NOT EXISTS bindings_group ON bindings (consumer_group, topic_id);

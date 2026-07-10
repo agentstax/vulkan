@@ -28,10 +28,10 @@ type Datastore[Message any] interface {
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error)
-	FanOut(ctx context.Context, consumerGroup string) error
+	FanOut(ctx context.Context, topicID int64, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
 	ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error)
-	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
+	ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error)
 	ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error)
 	RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error
 	RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error) error
@@ -528,33 +528,34 @@ func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topic
 }
 
 // FanOut materializes one deliveries row per message this group is bound to receive.
-func (d *consumerDatastore[Message]) FanOut(ctx context.Context, consumerGroup string) error {
-	sql := `
-		INSERT INTO deliveries (consumer_group, message_id, status)
+func (d *consumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, consumerGroup string) error {
+	sql := fmt.Sprintf(`
+		INSERT INTO deliveries (consumer_group, topic_id, message_id, status)
 		SELECT
 			$1,
+			$2,
 			m.id,
 			'ready'
-		FROM message_log m -- no need to batch / limit this is for demonstration purposes only
+		FROM %s m -- no need to batch / limit this is for demonstration purposes only
 		WHERE (
-			-- no bindings for consumer_group exists
+			-- no bindings for (consumer_group, topic_id) exists
 			NOT EXISTS (
 				SELECT 1 FROM bindings b
-				WHERE b.consumer_group = $1
+				WHERE b.consumer_group = $1 AND b.topic_id = $2
 			)
-			-- bindings for consumer_group exists and match routing_key pattern
+			-- bindings for (consumer_group, topic_id) exists and match routing_key pattern
 			OR EXISTS (
 				SELECT 1 FROM bindings b
-				WHERE b.consumer_group = $1
+				WHERE b.consumer_group = $1 AND b.topic_id = $2
 					AND m.routing_key ~ b.pattern
 			)
 			-- if bindings exist but our routing_key does not match any of them
 			-- no row is materialized for this message at all
 		)
 		ON CONFLICT DO NOTHING;
-	`
+	`, logTable(topicID))
 
-	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup)
+	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
 	if err != nil {
 		return err
 	}
@@ -805,45 +806,47 @@ func (d *consumerDatastore[Message]) ClaimMessages(
 	return &ClaimedRange{Lease: lease, Messages: msgs}, nil
 }
 
-func (d *consumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error) {
+func (d *consumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
-	// one statement (the Phase 2 state machine, now per-(group, message) instead of
-	// per-message). SKIP LOCKED keeps competing workers from grabbing the same row.
+	// one statement (the Phase 2 state machine, now per-(group, topic, message) instead
+	// of per-message). SKIP LOCKED keeps competing workers from grabbing the same row.
 	//
-	// deliveries only stores message_id, not the payload, so we join message_log
-	// back in -- the log stays immutable, all mutation lives in deliveries.
+	// deliveries only stores message_id, not the payload, so we join this topic's
+	// message_log back in -- the log stays immutable, all mutation lives in deliveries.
 	//
 	// Phase 6 deliberately has no lease: a 'processing' row that never gets resolved
 	// (consumer crash) just sits there. Visibility-timeout reclaim is Phase 6.5.
-	sql := `
+	sql := fmt.Sprintf(`
 		WITH claimed AS (
 			UPDATE deliveries
 			SET
 				status = 'processing',
 				attempts = attempts + 1,
 				updated_at = now()
-			WHERE (consumer_group, message_id) IN (
-				SELECT consumer_group, message_id FROM deliveries
+			WHERE (consumer_group, topic_id, message_id) IN (
+				SELECT consumer_group, topic_id, message_id FROM deliveries
 				WHERE consumer_group = $1
+					AND topic_id = $3
 					AND status = 'ready'
 				ORDER BY message_id
 				LIMIT $2
 				FOR UPDATE SKIP LOCKED
 			)
-			RETURNING consumer_group, message_id, status, attempts
+			RETURNING consumer_group, topic_id, message_id, status, attempts
 		)
 		SELECT
 			c.consumer_group,
+			c.topic_id,
 			c.message_id,
 			c.status,
 			c.attempts,
 			m.payload
 		FROM claimed c
-		JOIN message_log m ON m.id = c.message_id
+		JOIN %s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`
+	`, logTable(topicID))
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql, consumerGroup, limit)
+	rows, err := d.Datastore.Pool.Query(ctx, sql, consumerGroup, limit, topicID)
 	if err != nil {
 		return nil, err
 	}
