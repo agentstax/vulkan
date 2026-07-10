@@ -138,13 +138,17 @@ lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
   depends on lease_token + lease_until (done); pairs with the existing workCtx (WithoutCancel+WorkTimeout) and attempts/dead-letter machinery.
 
 FanOut rescans the entire message_log on every call instead of tracking a per-group
-high-water mark. `INSERT INTO deliveries ... SELECT ... FROM message_log` has no
-`WHERE id > <last fanned-out id>` and no LIMIT, so cost grows with total log size,
-not with new-messages-since-last-call -- `ON CONFLICT DO NOTHING` makes it correct
-regardless of how many times a row gets re-selected, just wasteful. fine at demo
-scale (the SQL comment already says so), but a real fix means giving the LIFECYCLE
-path its own per-group cursor, which is a bigger scope decision than a quick batch
-LIMIT -- revisit alongside any future work on the LIFECYCLE path itself.
+high-water mark. `INSERT INTO deliveries ... SELECT ... FROM message_log_<topic_id>`
+has no `WHERE id > <last fanned-out id>` and no LIMIT, so cost grows with total log
+size, not with new-messages-since-last-call -- `ON CONFLICT DO NOTHING` makes it
+correct regardless of how many times a row gets re-selected, just wasteful. fine at
+demo scale (the SQL comment already says so), but a real fix means giving the
+LIFECYCLE path its own per-group cursor, which is a bigger scope decision than a
+quick batch LIMIT -- revisit alongside any future work on the LIFECYCLE path itself.
+
+  narrowed by Phase 8b: each topic now has its own message_log_<id>, so the rescan
+  cost is bounded by ONE topic's volume instead of the whole system's -- still a
+  full rescan within that topic though, not actually fixed.
 
 add a proper NATS-style topic selector for routing bindings (LATER, low priority)
   today `bindings.pattern` is a true wildcard: `*` matches any run of characters
@@ -157,30 +161,6 @@ add a proper NATS-style topic selector for routing bindings (LATER, low priority
   trailing tokens, tail-only) -- see reference/waterline/routing.go's natsToRegex
   for the translation this would follow. revisit only if bindings actually need
   that precision.
-
-reconsider keeping every 'topic' in the same message_log table
-  today every routing_key shares one message_log and one partition set, so
-  retention's waterline floor (DropExpiredPartitions, pkg/consumer/datastore.go)
-  is MIN(committed) across ALL cursor groups, not scoped to whatever routing_key
-  a group actually consumes. one lagging group blocks partition drops for every
-  other topic sharing the log, even totally unrelated ones. Kafka avoids this
-  because retention.ms is per-topic and each topic already is its own log. a
-  real fix likely means introducing an actual topic concept (its own log and
-  partition set per topic) instead of filtering a shared log by routing_key --
-  a bigger structural change, not a quick fix. revisit alongside any future
-  routing/topic work (see the NATS-selector item above).
-
-  a third motivation for the same fix, found while designing log compaction
-  (Phase 8, still unbuilt): a read-time-filtered claim (readMessages joins to
-  "latest row for this compaction_key up to $hi" instead of a background
-  delete pass) has to probe every still-live partition up to the claim's
-  high, because `id` is one global BIGSERIAL shared by every producer and
-  every topic -- a quiet, rarely-updated key still gets its rows smeared
-  across a huge id range purely because UNRELATED topics keep advancing the
-  shared sequence. per-topic tables (own log, own id sequence, own partition
-  set) would bound that probe cost to a topic's own write volume instead of
-  the whole system's, on top of fixing the floor issue above -- one
-  structural change would resolve both.
 
 consider an index on deliveries.status if claim scans ever show up hot
   deliveries (Phase 8b) stays one shared table across every topic/group -- unlike

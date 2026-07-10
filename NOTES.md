@@ -1353,3 +1353,184 @@ metric going quiet.
   accepted: `partition-lab`/`drop-floor-lab` permanently wipe `message_log`'s
   existing rows (schema-only restoration) whenever they run.
 
+## Phase 8b — Per-topic tables: independent logs, routing stays within them
+
+**What it does, and the tradeoff:** two bugs already filed in `TODO.md` turned
+out to be the same root cause. 8a's drop floor is `MIN(committed)` across
+*every* cursor sharing one `message_log`, so a single lagging group blocks
+retention for every unrelated topic riding along in the same table; 8c's
+planned compaction lookup would have to probe every live partition up to a
+claim's `high`, because `id` was one `BIGSERIAL` shared by every topic,
+diluting how densely a rarely-used key's own writes cluster together. Kafka's
+own fix is that a topic *is* its own log, not a filter over a shared one —
+this phase does the same: each topic gets its own physical table
+(`message_log_<id>`), its own dense id sequence, its own partition set, its
+own janitor. `cursors`/`deliveries`/`bindings` all gained a `topic_id`
+column; `leases` gained the column without a key change, since `token`
+already disambiguates a lease on its own. The tradeoff, paid deliberately:
+`routing_key`/`bindings` are a *coarser* concept living above topics, not
+folded into them — collapsing the two would force a physical table into
+existence from a producer's routing-key typo, and would throw away Phase 7's
+retroactive binding application (only possible because the log a message
+lives in is already shared across every group reading it).
+
+**The aha:** the floor bug and the compaction-cost problem read like two
+unrelated performance issues, but they're the same sentence twice — one
+shared sequence/log doing the job of many. Once a topic is its own log, both
+problems disappear as a structural side effect of the fix, not as two
+separate patches bolted onto a shared table.
+
+### Explain it back
+
+**1. Why does each topic need its own dense id sequence rather than sharing
+the system-wide one? What specifically breaks if they share it?**
+
+Cursors and partitions. When many topics share one sequence, each topic only
+ever occupies a sparse subset of it — conflating what should be a per-topic
+concern into a cross-cutting one. Retention is the clearest case: partition
+drop decides "expired" by the timestamp of `MAX(id)` in a partition, and
+under a shared sequence that max id could belong to any topic. Worse, with
+the drop floor enabled, a single lagging consumer forces every topic to wait
+on it, because `MIN(committed)` across `cursors` was scoped to the whole
+datastore, not to the one topic that consumer actually lags on.
+
+**2. Why do `cursors`/`deliveries`/`leases` need a `topic_id` added to their
+keys, when they didn't need one before this phase?**
+
+`leases` technically doesn't need it in its *key* — the lease `token` is
+already a unique random id, so it disambiguates a row on its own. But every
+table needs the *column* to make what it's tracking unambiguous: `cursors`
+needs to know which `message_log_<id>` sequence a group's `claimed`/
+`committed` actually refer to; `deliveries` needs it because a bare
+`message_id` can point to completely different messages in two different
+topics' tables once each has its own sequence.
+
+**3. Why is topic registration explicit, when partition creation
+(`EnsureNextPartition`) is allowed to self-heal silently?**
+
+Topic registration creates a durable, lasting resource commitment — it
+constructs a physical table and locks in configuration, some of it
+immutable. Making that explicit forces a deliberate moment instead of
+letting it happen as an incidental side effect of a produce/claim call,
+lowering the chance of mistakes or drift. Partitions don't carry the same
+risk: their naming is a strictly computed value (`id / partitionSize`), not
+something a caller supplies, so there's no equivalent of a topic-name typo
+silently forking a whole new resource into existence. Partitions are also an
+implementation detail users generally shouldn't have to think about at all,
+where a topic name is a first-class thing an application deliberately
+chooses.
+
+**4. `routing_key`/`bindings` survive this phase with their matching logic
+completely unchanged — so what did splitting into per-topic tables actually
+fix, and what did it deliberately leave unfixed?**
+
+It fixed the cross-topic version of both problems named in the What/aha
+above: a lagging group's drop floor and a compaction lookup's probe cost are
+now bounded by one topic's own volume, not the whole system's. What it
+didn't fix, on purpose: retention and partitioning are topic-scoped now, not
+per-consumer or per-`routing_key`-slice — two slices sharing *one* topic
+still share that topic's one floor. A lagging group reading only
+`orders.us.*` still blocks a drop that `orders.eu.*` (same topic, different
+slice) would otherwise be free to have happen. Re-scoped from system-wide to
+within-one-topic, not eliminated; splitting into separate topics is the
+deliberate, manual escape hatch if that ever becomes a real problem.
+
+### Done
+
+- `topic.Config`/`Topic` gained `RetentionTTL`/`AllowDropPastCommitted`,
+  folded into `migrations/005_topics.up.sql` — the two remaining log-shape
+  knobs that belong on the topic (`PartitionSize` already lived there).
+- **Reversed mid-phase, deliberately:** topic identity was first threaded in
+  as a `Topic *topic.Topic` field on the consumer/producer datastore structs,
+  set once at construction. Reverted in favor of a `topicID int64` parameter
+  — placed right after `ctx` — on every `Datastore[Message]` method that
+  needs a topic-scoped table name or `WHERE topic_id = $N`, mirroring exactly
+  how `consumerGroup` is already passed on every call despite also being
+  fixed for a `WorkConsumer`'s whole lifetime. `WorkConsumer`/`WorkProducer`
+  themselves keep their own `Topic` field (legitimately fixed per instance,
+  same as `Group`) and pass `p.Topic.Id` in at each call site. This also lets
+  one datastore instance correctly serve multiple topics, which the
+  field-based design structurally couldn't do. Constructors renamed
+  `NewPostgresDatastore` → `NewConsumerDatastore`/`NewProducerDatastore`.
+- `cursors` (PK → `(consumer_group, topic_id)`), `deliveries` (PK →
+  `(consumer_group, topic_id, message_id)`), and `bindings` (`topic_id`
+  alongside `consumer_group`/`pattern`, index widened) all gained the
+  column, folded into each one's original migration. `leases` gained the
+  column without a key change.
+- Partition naming became two-part, `message_log_<topic_id>_<n>`, via
+  package-level `logTable(topicID)`/`partitionTable(topicID, n)` helpers —
+  duplicated once per package (`pkg/consumer`, `pkg/producer/datastore`)
+  rather than pulled into a shared package, per house style.
+- `cursorFloor` scoped to `WHERE topic_id = $1` — the literal fix for 8a's
+  filed TODO. `FanOut`/`ClaimMessagesWithLifecycle` and `Bind`/
+  `ClearBindings` all became topic-scoped too, covering the LIFECYCLE path
+  and routing end to end.
+- Producer datastore (`AppendMessage`) became topic-scoped; the module-level
+  `partitionSize` constant is gone, sourced from the topic instead.
+- The original global `message_log` table (`migrations/DELETE_001_messages`)
+  and the dead, unreferenced V1 consumer datastore package
+  (`pkg/consumer/datastore/`) were both deleted outright, by explicit
+  decision — nothing left depended on either.
+- All 11 pre-existing labs plus the `producer`/`consumer` binaries rewritten
+  against the current interface-based, topic-scoped API — they had drifted
+  across several earlier phases, not just this one (dead `With*` builder
+  methods, a `PostgresConnectionParams` type that no longer exists, methods
+  called with signatures years out of date). `reclaimlab`/`exceptionlab`/
+  `routinglab` now register and destroy their own disposable topic per run
+  instead of depending on shared external state; `partitionlab`/
+  `dropfloorlab`'s old DROP-and-recreate-`message_log` schema-swap hack is
+  gone entirely, since a lab-scale partition width is now just a
+  `PartitionSize` passed to `topic.Register`.
+- New `topiclab` (`just topic-lab`) proving 8b's own five-item lab
+  checklist end to end: independent per-topic sequences with no
+  leak/interleave; a badly-lagging group on topic B provably not blocking a
+  drop on topic A; routing/bindings behaving identically to Phase 7 within
+  one topic; two `routing_key` slices sharing one topic still sharing its
+  floor (the deliberately-unfixed case); an unregistered topic id failing
+  with a clean Postgres `42P01 undefined_table`, never silently
+  auto-creating one.
+- Two real multi-topic bugs found and fixed as a side effect of the
+  `topicID`-threading, not originally scoped: `ReclaimWithCursor`'s reclaim
+  query and `FreshClaimMessagesWithCursor`'s cursor-advance query both
+  lacked `topic_id` filters — without them, two `WorkConsumer`s sharing a
+  consumer-group name across two different topics could have
+  cross-contaminated each other's reclaim/cursor-advance behavior.
+- Build + vet green across the whole repo except `examples/simple/`,
+  confirmed pre-existing breakage unrelated to this phase (broke before this
+  phase's work started too).
+
+### Decisions
+
+- **`routing_key`/`bindings` are a coarser concept living above topics, not
+  folded into them.** Considered and rejected: collapsing `routing_key` into
+  topic identity, closer to how a Kafka consumer subscribes by topic
+  name-pattern. Rejected because `routing_key` is free text a producer can
+  invent with zero ceremony, while a topic carries real weight (its own
+  sequence, partition set, retention config) that shouldn't spin into
+  existence from a producer typo — and collapsing them would throw away
+  Phase 7's retroactive binding application, which only works because the
+  log a message lives in is already shared across every group reading it.
+- **`deliveries` stays one shared table across every topic, unlike
+  `message_log`.** `message_log` needs physical per-topic separation for two
+  structural reasons — its own `BIGSERIAL` sequence, and retention-by-
+  `DROP TABLE` needing topic-owned partition sets. `deliveries` has neither:
+  rows are ephemeral (deleted/resolved continuously, no retention-drop
+  mechanism) and aren't keyed by a shared sequence, so a plain `topic_id`
+  column plus a wider composite PK is enough — going further to per-topic
+  `deliveries` tables would add real DDL-lifecycle cost (every
+  `topic.Register`/`Destroy` creating/dropping N more tables) for no
+  matching benefit. A `deliveries.status` index was considered for the
+  throughput concern this raises at scale and deliberately not added
+  preemptively — `status` is touched on nearly every write, so today's
+  writes likely already get Postgres's HOT-update fast path, which an index
+  would end for every topic's every state transition to speed up a read
+  that's only expensive in an already-contained case. Filed in `TODO.md` to
+  revisit with real evidence instead of speculatively.
+- **Left unfixed, by design: two `routing_key` slices sharing one topic
+  still share that topic's one drop floor.** Splitting by topic re-scopes
+  the contamination from system-wide to within-one-topic; it doesn't
+  eliminate it. If two slices in one topic diverge badly enough in consumer
+  lag for that to matter, splitting them into separate topics is the
+  deliberate operational escape hatch this phase enables rather than
+  automates.
+
