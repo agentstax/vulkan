@@ -1275,7 +1275,7 @@ enables rather than automates.
       code always refers to topics by name), so its own PK is the simplest
       safe identifier available, no collision handling, no injection
       surface.
-- [ ] **Partition names need a second suffix, or they collide.** A
+- [x] **Partition names need a second suffix, or they collide.** A
       partition of `message_log_<id>` would naturally want the same
       `message_log_<n>` pattern `EnsureNextPartition` already uses today —
       but that's the *same* naming scheme the topic table itself now uses
@@ -1285,7 +1285,7 @@ enables rather than automates.
       `message_log_<topic_id>_<n>`, and `EnsureNextPartition`'s (and
       `DropExpiredPartitions`'/`SweepExpiredPartitions`'/`existingPartitions`')
       `fmt.Sprintf` templates all need updating to match.
-- [ ] **Topic registration is explicit, not implicit — and its UX is the
+- [x] **Topic registration is explicit, not implicit — and its UX is the
       idempotent declare (settled 2026-07-08).** Publishing to or claiming
       from an unregistered topic name is an error. Unlike a partition (which
       self-heals silently because it's cheap and consequence-free) or a
@@ -1305,12 +1305,12 @@ enables rather than automates.
       channel-killing 406 and not NATS `CreateOrUpdateStream`'s
       declared-config-silently-wins — drift should be loud, and repairing it
       a separate deliberate act.
-- [ ] Registering a topic creates `message_log_<id>` with its own local
+- [x] Registering a topic creates `message_log_<id>` with its own local
       `BIGSERIAL`-equivalent sequence and its own first partition — same
       shape `001_messages` gives `message_log` today, same
       `CREATE TABLE IF NOT EXISTS` + catch-the-duplicate-race pattern
       `EnsureNextPartition` already uses for concurrency safety.
-- [ ] **Settled (2026-07-08) — evolving `message_log_<id>`'s own columns
+- [x] **Settled (2026-07-08) — evolving `message_log_<id>`'s own columns
       (8c's `compaction_key`, Phase 12's `partition_key`, or any future
       envelope field) is not a `migrations/` concern.** A migration file is
       static, author-time DDL against a fixed set of table names; which
@@ -1334,7 +1334,7 @@ enables rather than automates.
       land, sharing a tiny `allTopicIds(ctx)` helper for the enumeration.
       Down/rollback isn't one file either — same treatment, a paired
       `Drop*Column` function, run once, by hand, when actually needed.
-- [ ] `cursors`, `deliveries`, and `leases` each gain a `topic_id` column,
+- [x] `cursors`, `deliveries`, and `leases` each gain a `topic_id` column,
       folded into their original migrations (`002_cursors`, `003_deliveries`,
       `004_leases`) per house style — each table's actual key changes
       differently, not uniformly:
@@ -1351,26 +1351,26 @@ enables rather than automates.
         change, but `low`/`high` are meaningless without knowing which
         topic's id sequence they're a range of, so `leases` still needs the
         `topic_id` column even though its key shape doesn't.
-- [ ] `bindings` gains a `topic_id` column too, folded into `005_bindings`.
+- [x] `bindings` gains a `topic_id` column too, folded into `005_bindings`.
       Its actual schema today has a surrogate `id BIGSERIAL PRIMARY KEY` and
       only an index on `consumer_group` (no compound key on
       `consumer_group`/`pattern` exists to begin with) — this phase just
       adds `topic_id` alongside `consumer_group`/`pattern` and widens that
       index to `(consumer_group, topic_id)`, since one topic's `routing_key`
       vocabulary has nothing to do with another's.
-- [ ] `WorkConsumer`/`WorkProducer` gain a `Topic` identity alongside the
+- [x] `WorkConsumer`/`WorkProducer` gain a `Topic` identity alongside the
       existing `Group` — their constructors accept the resolved topic
       `topic.Register` returns (id already looked up, cached, never
       re-resolved per message). Every dynamic-SQL call site that
       hardcodes `message_log`/`message_log_%d` today interpolates the
       resolved `topic_id` instead.
-- [ ] The janitor (`EnsureNextPartition`, `DropExpiredPartitions`,
+- [x] The janitor (`EnsureNextPartition`, `DropExpiredPartitions`,
       `SweepExpiredPartitions`, and 8c's compaction pass once it exists)
       all become topic-scoped, operating on `message_log_<topic_id>`'s own
       partitions. `cursorFloor` becomes `MIN(committed) FROM cursors WHERE
       topic_id = $1` — this is the actual fix for 8a's filed TODO, and the
       per-topic partition set is the fix for 8c's.
-- [ ] **Settled (2026-07-08) — the topic owns its log-shape config.** Today
+- [x] **Settled (2026-07-08) — the topic owns its log-shape config.** Today
       each consumer group's `WorkConsumerConfig` (`RetentionTTL`,
       `PartitionSize`, ...) is set per `WorkConsumer` instance, so two groups
       reading the same table could already, oddly, run their janitors with
@@ -1386,7 +1386,7 @@ enables rather than automates.
       landing on — pg-boss v10 made `createQueue` mandatory and NATS takes a
       full `StreamConfig` at declare precisely because per-topic config
       needs a durable home.
-- [ ] **Open question, not settled — what happens to the original
+- [x] **Open question, not settled — what happens to the original
       `message_log` and every existing lab/example built against it.**
       `examples/phase_1/{consumer,producer}/main.go` and every lab so far
       (`reclaimlab`, `exceptionlab`, `routinglab`, `partitionlab`,
@@ -1402,33 +1402,42 @@ enables rather than automates.
       blocked 8a's labs until it got its own `AskUserQuestion`.
 
 **Lab:**
-- [ ] Register two topics, publish to both, confirm each gets its own
+- [x] Register two topics, publish to both, confirm each gets its own
       physical table and its own dense id sequence — ids don't leak or
       interleave across topics.
-- [ ] Confirm a badly-lagging group on topic B does not block a drop or
+- [x] Confirm a badly-lagging group on topic B does not block a drop or
       sweep on topic A — the exact cross-topic contamination 8a's TODO
       flagged, proven fixed live, not just asserted.
-- [ ] Confirm `routing_key`/`bindings` still behave exactly as Phase 7
+- [x] Confirm `routing_key`/`bindings` still behave exactly as Phase 7
       proved (retroactive binding application, CURSOR-path
       filter-but-still-advance, LIFECYCLE-path gate-row-creation) — now
       scoped within one topic's table, unchanged in behavior.
-- [ ] Confirm the re-scoping claim directly: two `routing_key` slices
+- [x] Confirm the re-scoping claim directly: two `routing_key` slices
       sharing *one* topic still share that topic's drop floor — a lagging
       group on one slice still blocks a drop that would otherwise free space
       for the other slice in the same topic.
-- [ ] Confirm publishing or claiming against an unregistered topic name
+- [x] Confirm publishing or claiming against an unregistered topic name
       fails clearly, rather than silently creating one.
 
 **Explain it back:**
 1. Why does each topic need its own dense id sequence rather than sharing
    the system-wide one? What specifically breaks if they share it?
+Answer: Cursors and partitions. When many topics share a sequence id they each have a subset of the full sequence conflating what should be
+topic concerns to cross cutting concerns. For example retention: a system-wide id forcing retention to also by system-wide because of how we drop partitions
+by looking at the timestamp of the max(id) in a partition. that max(id) could come from any topic. Additionally if a lagging consumer exists and we have 'don't 
+drop past floor' functionality enabled we are forced to wait on that lagging consumer for EVERYTHING which is scoped to the entire datasource instead of just a
+topic due to min(id) of cursors being system wide.
 2. Why do `cursors`/`deliveries`/`leases` need a `topic_id` added to their
    keys, when they didn't need one before this phase?
+Answer: technically leases does not because they token is bound to whatever entity that claims it ie group/topic consumer. But in general it is to make these entities unambiguous. Cursors needs to know which message_log id sequence (ie topic) they are keeping track of. Deliveries needs to know the same because a message_id could be very different messages in different message_log tables.
 3. Why is topic registration explicit, when partition creation
    (`EnsureNextPartition`) is allowed to self-heal silently?
+Answer: topic registration creates durable lasting user concerns. It has to construct a table and manage configuration some of which is immutable. Making a topic creating explicit forces the user to take a second and think through what they want and lowers the chance of mistakes or mismanagement. Partitions are abstracted away
+constructs that users in general don't need to be concerned about and thier naming are strictly computed values while topic names are user defined.
 4. `routing_key`/`bindings` survive this phase with their matching logic
    completely unchanged — so what did splitting into per-topic tables
    actually fix, and what did it deliberately leave unfixed?
+Answer: It fixed most of what was explained in Q1. However retention / partitions are no longer system-wide they are topic scoped which is better but still a constraint ie you could not have per consumer retention / partition configuration.
 
 **Done when:** two topics are physically separate with independent
 sequences/partitions (proven live), a lagging group on one topic is proven
@@ -1559,6 +1568,10 @@ is allowed to return.
    $hi`) instead of taking the unbounded latest write for a key?
 4. Why is the `compaction_key` index partial (`WHERE compaction_key IS NOT
    NULL`) instead of covering every row?
+5. Phase 8b split every topic into its own physical table and its own dense
+   id sequence. Why does that help *this* phase's compaction lookup
+   specifically — what did a shared, system-wide `BIGSERIAL` cost a single
+   topic's own key-latest search before 8b existed?
 
 **Done when:** a claim over keyed traffic returns exactly one row per key
 (proven live, not assumed), unkeyed traffic shows zero added query cost via
