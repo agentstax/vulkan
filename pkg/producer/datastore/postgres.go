@@ -8,7 +8,6 @@ import (
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -17,24 +16,22 @@ const partitionSize int64 = 1_000_000
 
 type producerDatastore[Message any] struct {
 	Datastore *coredatastore.PostgresDatastore
-	Topic     *topic.Topic
 }
 
-func NewPostgresDatastore[Message any](ds *coredatastore.PostgresDatastore, t *topic.Topic) *producerDatastore[Message] {
+func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore) *producerDatastore[Message] {
 	return &producerDatastore[Message]{
 		Datastore: ds,
-		Topic:     t,
 	}
 }
 
-// logTable is this topic's own physical message log.
-func (d *producerDatastore[Message]) logTable() string {
-	return fmt.Sprintf("message_log_%d", d.Topic.Id)
+// logTable is topicID's own physical message log.
+func logTable(topicID int64) string {
+	return fmt.Sprintf("message_log_%d", topicID)
 }
 
 // partitionTable is logTable's nth partition -- message_log_<topic_id>_<n>.
-func (d *producerDatastore[Message]) partitionTable(n int64) string {
-	return fmt.Sprintf("%s_%d", d.logTable(), n)
+func partitionTable(topicID, n int64) string {
+	return fmt.Sprintf("%s_%d", logTable(topicID), n)
 }
 
 // AppendMessage self-heals a missing-partition insert: the janitor's

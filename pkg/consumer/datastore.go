@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -22,10 +21,10 @@ var (
 )
 
 type Datastore[Message any] interface {
-	UpsertCursor(ctx context.Context, consumerGroup string) error
+	UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error
 	EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error
-	DropExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
-	SweepExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
+	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
+	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
@@ -113,34 +112,32 @@ type DeliveryRow struct {
 
 type consumerDatastore[Message any] struct {
 	Datastore *datastore.PostgresDatastore
-	Topic     *topic.Topic
 }
 
-func NewPostgresDatastore[Message any](ds *datastore.PostgresDatastore, t *topic.Topic) *consumerDatastore[Message] {
+func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore) *consumerDatastore[Message] {
 	return &consumerDatastore[Message]{
 		Datastore: ds,
-		Topic:     t,
 	}
 }
 
-// logTable is this topic's own physical message log.
-func (d *consumerDatastore[Message]) logTable() string {
-	return fmt.Sprintf("message_log_%d", d.Topic.Id)
+// logTable is topicID's own physical message log.
+func logTable(topicID int64) string {
+	return fmt.Sprintf("message_log_%d", topicID)
 }
 
 // partitionTable is logTable's nth partition -- message_log_<topic_id>_<n>.
-func (d *consumerDatastore[Message]) partitionTable(n int64) string {
-	return fmt.Sprintf("%s_%d", d.logTable(), n)
+func partitionTable(topicID, n int64) string {
+	return fmt.Sprintf("%s_%d", logTable(topicID), n)
 }
 
-func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, consumerGroup string) error {
+func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := `
-		INSERT INTO cursors (consumer_group)
-		VALUES ($1)
+		INSERT INTO cursors (consumer_group, topic_id)
+		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING;
 	`
 
-	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup)
+	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
 	if err != nil {
 		return err
 	}
@@ -189,7 +186,7 @@ func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, pa
 // DropExpiredPartitions drops each surviving partition whose newest row is
 // past ttl, skipping the active partition and (unless overridden) anything a
 // lagging group hasn't committed past yet.
-func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
+func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
 	if ttl <= 0 {
 		return nil // retention disabled - partitions kept forever
 	}
@@ -208,7 +205,7 @@ func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, 
 		return err
 	}
 
-	floor, err := d.cursorFloor(ctx)
+	floor, err := d.cursorFloor(ctx, topicID)
 	if err != nil {
 		return err
 	}
@@ -269,16 +266,15 @@ func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context) ([]
 }
 
 // cursorFloor is the waterline floor: the most-lagging group's committed
-// offset across all cursors (nil if none exist yet).
-// TODO - global across every routing_key sharing this message_log; reconsider
-// a real per-topic log/partition set instead of routing_key filtering.
-func (d *consumerDatastore[Message]) cursorFloor(ctx context.Context) (*int64, error) {
+// offset within this topic (nil if none exist yet). Scoped to topic_id so a
+// lagging group on another topic can't block this topic's drops/sweeps.
+func (d *consumerDatastore[Message]) cursorFloor(ctx context.Context, topicID int64) (*int64, error) {
 	sql := `
-		SELECT MIN(committed) FROM cursors;
+		SELECT MIN(committed) FROM cursors WHERE topic_id = $1;
 	`
 
 	var floor *int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&floor)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, topicID).Scan(&floor)
 	return floor, err
 }
 
@@ -305,7 +301,7 @@ func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, n int
 // SweepExpiredPartitions drains the ttl-expired prefix of every surviving
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
-func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
+func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
 	if ttl <= 0 {
 		return nil // retention disabled
 	}
@@ -315,7 +311,7 @@ func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context,
 		return err
 	}
 
-	floor, err := d.cursorFloor(ctx)
+	floor, err := d.cursorFloor(ctx, topicID)
 	if err != nil {
 		return err
 	}

@@ -158,7 +158,7 @@ func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 	// CURSOR-only) -- creating one anyway would sit at committed=0 forever and
 	// wrongly pin the retention floor computed off MIN(committed).
 	if p.Config.Type == CURSOR {
-		if err := p.Datastore.UpsertCursor(ctx, p.Group); err != nil {
+		if err := p.Datastore.UpsertCursor(ctx, p.Topic.Id, p.Group); err != nil {
 			return err
 		}
 	}
@@ -192,10 +192,10 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 				return err
 			}
-			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted); err != nil {
+			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted); err != nil {
 				return err
 			}
-			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize); err != nil {
+			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize); err != nil {
 				return err
 			}
 		}
