@@ -29,7 +29,7 @@ func NewWorkProducer[WorkType any](t *topic.Topic, datastore Datastore[WorkType]
 }
 
 func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc ProducerFunc[WorkType], routingKey string) (*WorkType, error) {
-	message, err := p.datastore.AppendMessage(ctx, producerFunc, routingKey)
+	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, routingKey)
 	if err != nil {
 		return nil, err
 	}
