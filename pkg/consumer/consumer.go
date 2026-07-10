@@ -383,7 +383,7 @@ func (p *WorkConsumer[WorkType]) DrainExceptions(ctx context.Context, consumerFu
 func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
-	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration)
+	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration)
 	if err != nil {
 		return err
 	}

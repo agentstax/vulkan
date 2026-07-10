@@ -1,8 +1,7 @@
--- TODO - should consider if deliveries table should be per topic as well (probably)
-
 -- deliveries(consumer_group text, event_offset bigint, status, attempts, locked_at, last_error, PRIMARY KEY(consumer_group, event_offset))
 CREATE TABLE IF NOT EXISTS deliveries (
   consumer_group TEXT NOT NULL, -- PK
+  topic_id BIGINT NOT NULL,     -- PK
   message_id BIGINT NOT NULL,   -- PK
   status TEXT NOT NULL,
   attempts INT NOT NULL default 0,
@@ -12,5 +11,5 @@ CREATE TABLE IF NOT EXISTS deliveries (
   last_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (consumer_group, message_id)
+  PRIMARY KEY (consumer_group, topic_id, message_id)
 );
