@@ -284,7 +284,7 @@ func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if _, err := p.Datastore.AdvanceWaterline(ctx, p.Group); err != nil {
+			if _, err := p.Datastore.AdvanceWaterline(ctx, p.Topic.Id, p.Group); err != nil {
 				return err
 			}
 		}

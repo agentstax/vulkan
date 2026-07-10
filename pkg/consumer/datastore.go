@@ -27,7 +27,7 @@ type Datastore[Message any] interface {
 	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
-	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
+	AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error)
 	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
 	ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error)
@@ -493,7 +493,7 @@ func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, 
 //	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursors comes back fresh, leases stale.
-func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error) {
+func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
 	// 		earliest unresolved exception (dead doesn't count -- only ready/inflight block)
@@ -501,29 +501,29 @@ func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, consu
 	// LEAST ignores NULLs so any/all of those can be absent.
 	const targetSql = `
 		SELECT LEAST(
-			(SELECT MIN(low) FROM leases WHERE consumer_group = $1),
-			(SELECT MIN(message_id) - 1 FROM deliveries WHERE consumer_group = $1 AND status IN ('ready', 'inflight')),
+			(SELECT MIN(low) FROM leases WHERE consumer_group = $1 AND topic_id = $2),
+			(SELECT MIN(message_id) - 1 FROM deliveries WHERE consumer_group = $1 AND topic_id = $2 AND status IN ('ready', 'inflight')),
 			claimed
 		)
 		FROM cursors
-		WHERE consumer_group = $1;
+		WHERE consumer_group = $1 AND topic_id = $2;
 	`
 
 	var target int64
-	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, consumerGroup).Scan(&target); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, consumerGroup, topicID).Scan(&target); err != nil {
 		return 0, err
 	}
 
 	// 2. apply it. GREATEST -> committed only ever moves forward.
 	const rollSql = `
 		UPDATE cursors
-		SET committed = GREATEST(committed, $2)
-		WHERE consumer_group = $1
+		SET committed = GREATEST(committed, $3)
+		WHERE consumer_group = $1 AND topic_id = $2
 		RETURNING committed;
 	`
 
 	var committed int64
-	err := d.Datastore.Pool.QueryRow(ctx, rollSql, consumerGroup, target).Scan(&committed)
+	err := d.Datastore.Pool.QueryRow(ctx, rollSql, consumerGroup, topicID, target).Scan(&committed)
 	return committed, err
 }
 
