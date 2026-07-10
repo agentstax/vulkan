@@ -64,6 +64,13 @@ drop-floor-lab:
 sweep-lab:
   go run examples/phase_1/sweeplab/main.go
 
+# Phase 8b's own lab: proves per-topic tables/sequences are independent, a
+# lagging group's floor stays inside its own topic, routing still works
+# scoped to one topic, two slices sharing one topic still share its floor
+# (deliberately not fixed), and an unregistered topic id fails clearly.
+topic-lab:
+  go run examples/phase_1/topiclab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
