@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
@@ -21,14 +22,24 @@ func newTopicDatastore(datastore *datastore.PostgresDatastore) *topicDatastore {
 
 func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {
 	sql := `
-		SELECT id, name, partition_size FROM topics WHERE name = $1;
+		SELECT 
+			id, 
+			name, 
+			partition_size, 
+			retention_ttl_ns, 
+			allow_drop_past_committed 
+		FROM topics 
+		WHERE name = $1;
 	`
 
 	var t Topic
+	var retentionTTLNs int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(
 		&t.Id,
 		&t.Name,
 		&t.PartitionSize,
+		&retentionTTLNs,
+		&t.AllowDropPastCommitted,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -36,6 +47,7 @@ func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, err
 		}
 		return nil, err
 	}
+	t.RetentionTTL = time.Duration(retentionTTLNs)
 
 	return &t, nil
 }
@@ -49,14 +61,14 @@ func (d *topicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topics (name, partition_size)
-		VALUES ($1, $2)
+		INSERT INTO topics (name, partition_size, retention_ttl_ns, allow_drop_past_committed)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id;
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize).Scan(&id)
+	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted).Scan(&id)
 
 	switch {
 	case insertErr == nil:
