@@ -182,6 +182,29 @@ reconsider keeping every 'topic' in the same message_log table
   the whole system's, on top of fixing the floor issue above -- one
   structural change would resolve both.
 
+consider an index on deliveries.status if claim scans ever show up hot
+  deliveries (Phase 8b) stays one shared table across every topic/group -- unlike
+  message_log it doesn't need per-topic physical separation, since rows are
+  ephemeral (deleted/resolved continuously, no retention-drop mechanism) and
+  aren't keyed by a shared sequence. today it has only the PK (consumer_group,
+  topic_id, message_id); ClaimMessagesWithLifecycle/ClaimExceptions filter further
+  by status, which isn't indexed, so they scan every row under a (group, topic)
+  key to find the ones that match.
+  deliberately NOT adding a status index preemptively: status is the single most
+  frequently written column in the table -- every recording function (Record*,
+  ClaimExceptions' kill/claim, Commit's park) sets it, so it's touched on nearly
+  every write. because none of today's UPDATEs touch an indexed column (PK
+  columns never change), those writes likely already get Postgres's HOT
+  (heap-only-tuple) fast path -- no index maintenance at all. adding a status
+  index would end that for every single state transition, on every topic, to
+  speed up a read that's only expensive in an already-contained case: a badly
+  lagging group/topic piling up rows under one key, which MaxAttempts/backoff/
+  dead-lettering already bound.
+  revisit with real evidence (pg_stat_user_tables / EXPLAIN ANALYZE on a lagging
+  group) rather than speculatively. if it's needed, prefer a PARTIAL index
+  (WHERE status IN ('ready', 'inflight')) over a full one -- terminal done/dead
+  rows drop out of upkeep instead of bloating the index forever.
+
 EXPLAIN (ANALYZE, BUFFERS, TIMING) 
 UPDATE message_log
 SET 
