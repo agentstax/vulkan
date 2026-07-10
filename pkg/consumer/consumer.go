@@ -321,7 +321,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
-	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Group, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration)
+	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration)
 	if err != nil {
 		return err
 	}
@@ -347,7 +347,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 
 	// range always frees -- the lazy roller (RollWaterline) advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	if err := p.Datastore.Commit(ctx, p.Group, claimed.Lease.Token, exceptions, terminals); err != nil {
+	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}

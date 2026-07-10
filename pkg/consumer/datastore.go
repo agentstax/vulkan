@@ -26,11 +26,11 @@ type Datastore[Message any] interface {
 	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
 	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
-	Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
+	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, consumerGroup string) (int64, error)
 	FanOut(ctx context.Context, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
-	ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error)
+	ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error)
 	ClaimMessagesWithLifecycle(ctx context.Context, consumerGroup string, limit int) ([]DeliveryRow, error)
 	ClaimExceptions(ctx context.Context, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error)
 	RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error
@@ -57,6 +57,7 @@ type MessageRow struct {
 type LeaseRow struct {
 	Token         pgtype.UUID `db:"token"`
 	ConsumerGroup string      `db:"consumer_group"`
+	TopicID       int64       `db:"topic_id"`
 	Low           int64       `db:"low"`
 	High          int64       `db:"high"`
 	Until         time.Time   `db:"until"`
@@ -421,20 +422,23 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 
 // frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit
 // bails before parking any phantom exception rows.
-func (d *consumerDatastore[Message]) Commit(ctx context.Context, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
+func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
+	// topic_id isn't load-bearing here -- token alone already disambiguates a
+	// lease row -- but every leases query stays topic-scoped by convention.
 	freeSql := `
 		DELETE FROM leases
 		WHERE consumer_group = $1
-			AND token = $2;
+			AND token = $2
+			AND topic_id = $3;
 	`
 
-	tag, err := tx.Exec(ctx, freeSql, consumerGroup, token)
+	tag, err := tx.Exec(ctx, freeSql, consumerGroup, token, topicID)
 	if err != nil {
 		return err
 	}
@@ -556,8 +560,8 @@ func (d *consumerDatastore[Message]) FanOut(ctx context.Context, consumerGroup s
 
 // try to pick up a crashed range (an expired lease) and only claims fresh work
 // from the frontier if there's nothing to reclaim -- so crashed ranges drain first.
-func (d *consumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error) {
-	reclaimed, err := d.ReclaimWithCursor(ctx, consumerGroup, limit, maxRangeReclaims, leaseDuration)
+func (d *consumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error) {
+	reclaimed, err := d.ReclaimWithCursor(ctx, topicID, consumerGroup, limit, maxRangeReclaims, leaseDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -567,14 +571,14 @@ func (d *consumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context
 
 	// nothing to reclaim, or the one reclaimable range was poisoned and just got
 	// quarantined instead -> try standard fresh claim (nil when caught up)
-	return d.FreshClaimMessagesWithCursor(ctx, consumerGroup, limit, leaseDuration)
+	return d.FreshClaimMessagesWithCursor(ctx, topicID, consumerGroup, limit, leaseDuration)
 }
 
 // grab ONE expired lease and re-reads its exact range so a worker that crashed
 // mid-range doesn't strand those offsets. past maxRangeReclaims the range is
 // POISON -- quarantine it into the sparse exception window instead of handing it
 // out again, so one bad message can't crash-loop the whole range forever.
-func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error) {
+func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -593,6 +597,7 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, cons
 		WHERE (token, consumer_group) IN (
 			SELECT token, consumer_group FROM leases
 			WHERE consumer_group = $1
+				AND topic_id = $3
 				AND until < now()
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -600,7 +605,7 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, cons
 		RETURNING *;
 	`
 
-	leaseRows, err := tx.Query(ctx, reclaimSql, consumerGroup, leaseDuration.Seconds())
+	leaseRows, err := tx.Query(ctx, reclaimSql, consumerGroup, leaseDuration.Seconds(), topicID)
 	if err != nil {
 		return nil, err
 	}
@@ -622,7 +627,7 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, cons
 		return nil, tx.Commit(ctx)
 	}
 
-	msgs, err := d.readMessages(ctx, tx, consumerGroup, lease.Low, lease.High)
+	msgs, err := d.readMessages(ctx, tx, topicID, consumerGroup, lease.Low, lease.High)
 	if err != nil {
 		return nil, err
 	}
@@ -642,13 +647,13 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, cons
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, consumerGroup string, lease LeaseRow) error {
-	parkSql := `
+	parkSql := fmt.Sprintf(`
 		INSERT INTO deliveries (consumer_group, message_id, status, attempts, last_error)
 		SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
-		FROM message_log
+		FROM %s
 		WHERE id > $2
 			AND id <= $3;
-	`
+	`, logTable(lease.TopicID))
 	if _, err := tx.Exec(ctx, parkSql, consumerGroup, lease.Low, lease.High); err != nil {
 		return err
 	}
@@ -656,16 +661,17 @@ func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 	freeSql := `
 		DELETE FROM leases
 		WHERE consumer_group = $1
-			AND token = $2;
+			AND token = $2
+			AND topic_id = $3;
 	`
-	_, err := tx.Exec(ctx, freeSql, consumerGroup, lease.Token)
+	_, err := tx.Exec(ctx, freeSql, consumerGroup, lease.Token, lease.TopicID)
 	return err
 }
 
-// readMessages reads message_log rows in (low, high], ordered by id.
-func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx, consumerGroup string, low, high int64) ([]MessageRow, error) {
-	sql := `
-		SELECT m.id, m.payload, m.created_at FROM message_log m
+// readMessages reads topicID's message_log rows in (low, high], ordered by id.
+func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx, topicID int64, consumerGroup string, low, high int64) ([]MessageRow, error) {
+	sql := fmt.Sprintf(`
+		SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
@@ -686,7 +692,7 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`
+	`, logTable(topicID))
 
 	rows, err := tx.Query(ctx, sql, low, high, consumerGroup)
 	if err != nil {
@@ -696,7 +702,7 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
 }
 
-func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
+func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -705,23 +711,24 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 
 	// TODO - projector could likely tracked head in a RWMutex such that it doesn't need to be calculated here
 	// TODO - consider if we should lock any rows like claimed cursor during this tx
-	cursorSql := `
+	cursorSql := fmt.Sprintf(`
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
 			SELECT * FROM cursors
-			WHERE consumer_group = $1
+			WHERE consumer_group = $1 AND topic_id = $3
 		)
 		UPDATE cursors
 		SET
-			claimed = LEAST(cursors.claimed + $2, (SELECT MAX(id) FROM message_log)) -- move claimed frontier forward by max(batchLimit)
+			claimed = LEAST(cursors.claimed + $2, (SELECT MAX(id) FROM %s)) -- move claimed frontier forward by max(batchLimit)
 		FROM old_values
 		WHERE cursors.consumer_group = $1
-			AND cursors.claimed < (SELECT MAX(id) FROM message_log)
+			AND cursors.topic_id = $3
+			AND cursors.claimed < (SELECT MAX(id) FROM %s)
 		RETURNING
 			old_values.claimed AS low,
 			cursors.claimed AS high;
-	`
+	`, logTable(topicID), logTable(topicID))
 
-	cursorRows, err := tx.Query(ctx, cursorSql, consumerGroup, limit)
+	cursorRows, err := tx.Query(ctx, cursorSql, consumerGroup, limit, topicID)
 	if err != nil {
 		return nil, err
 	}
@@ -740,13 +747,14 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 	}
 
 	return d.ClaimMessages(
-		ctx, tx, consumerGroup, claimedRange.Low, claimedRange.High, limit, leaseDuration,
+		ctx, tx, topicID, consumerGroup, claimedRange.Low, claimedRange.High, limit, leaseDuration,
 	)
 }
 
 func (d *consumerDatastore[Message]) ClaimMessages(
 	ctx context.Context,
 	tx pgx.Tx,
+	topicID int64,
 	consumerGroup string,
 	low int64,
 	high int64,
@@ -760,17 +768,18 @@ func (d *consumerDatastore[Message]) ClaimMessages(
 
 	// get new lease associated with range
 	leaseSql := `
-		INSERT INTO leases (consumer_group, low, high, until)
+		INSERT INTO leases (consumer_group, topic_id, low, high, until)
 		VALUES (
-			$1, 
-			$2, 
-			$3, 
-			now() + make_interval(secs => $4)
+			$1,
+			$2,
+			$3,
+			$4,
+			now() + make_interval(secs => $5)
 		)
 		RETURNING *;
 	`
 
-	leaseRows, err := tx.Query(ctx, leaseSql, consumerGroup, low, high, leaseDuration.Seconds())
+	leaseRows, err := tx.Query(ctx, leaseSql, consumerGroup, topicID, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -780,7 +789,7 @@ func (d *consumerDatastore[Message]) ClaimMessages(
 		return nil, err
 	}
 
-	msgs, err := d.readMessages(ctx, tx, consumerGroup, low, high)
+	msgs, err := d.readMessages(ctx, tx, topicID, consumerGroup, low, high)
 	if err != nil {
 		return nil, err
 	}
