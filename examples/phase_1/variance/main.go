@@ -21,6 +21,8 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type completion struct {
@@ -32,6 +34,8 @@ func main() {
 	concurrencyPtr := flag.Int("concurrency", 8, "worker pool size")
 	countPtr := flag.Int("count", 0, "total messages to expect, then stop")
 	slowMsPtr := flag.Int("slow-threshold-ms", 1000, "payload sleep >= this counts as 'slow' in the report")
+	groupPtr := flag.String("group", "phase3.variance", "consumer group name")
+	topicPtr := flag.String("topic", "learning.v1", "topic to drain (must already have a seeded backlog, e.g. via `just produce`)")
 	flag.Parse()
 
 	conc := *concurrencyPtr
@@ -55,7 +59,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	datastore, err := consumer.NewPostgresDatastore[common.Work](ctx, &consumer.PostgresConnectionParams{
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password", Host: "localhost", Port: 5432, Database: "example_db", MaxConns: 20,
 	})
 	if err != nil {
@@ -63,13 +67,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc := consumer.NewWorkConsumer[common.Work](queue, pool, datastore)
-	wc.WithBatchLimit(100).WithMaxAttempts(3).
-		WithClaimPollRate(500 * time.Millisecond).
-		WithWorkTimeout(10 * time.Second). // must exceed the slowest payload sleep
-		WithQueueTimeout(3 * time.Second).
-		WithAckMargin(2 * time.Second).
-		WithShutdownTimeout(15 * time.Second)
+	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+
+	wc := consumer.NewWorkConsumer[common.Work](*groupPtr, t, queue, pool, datastore)
+	wc.Config.BatchLimit = 100
+	wc.Config.MaxAttempts = 3
+	wc.Config.ClaimPollRate = 500 * time.Millisecond
+	wc.Config.WorkTimeout = 10 * time.Second // must exceed the slowest payload sleep
+	wc.Config.QueueTimeout = 3 * time.Second
+	wc.Config.AckMargin = 2 * time.Second
+	wc.WithShutdownTimeout(15 * time.Second)
+
+	if err := wc.Register(ctx); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	var mu sync.Mutex
 	comps := make([]completion, 0, target)

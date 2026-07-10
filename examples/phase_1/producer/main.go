@@ -8,8 +8,10 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/producer/datastore"
+	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -22,29 +24,37 @@ func main() {
 	// -routing-key key
 	routingKeyPtr := flag.String("routing-key", "", "routing key attached to each message (optional)")
 
+	// -topic name
+	topicPtr := flag.String("topic", "learning.v1", "topic to publish to (auto-registered if new)")
+
 	// must always parse
 	flag.Parse()
 
-	fmt.Printf("count: %d, routing-key: %q\n", *countPtr, *routingKeyPtr)
+	fmt.Printf("count: %d, routing-key: %q, topic: %q\n", *countPtr, *routingKeyPtr, *topicPtr)
 
 	// SETUP
 	ctx := context.Background()
 
-	pgConnectionParams := &datastore.PostgresConnectionParams{
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User:     "example_user",
 		Pass:     "example_password",
 		Host:     "localhost",
 		Port:     5432,
 		Database: "example_db",
-	}
-
-	datastore, err := datastore.NewPostgresDatastore[common.Work](ctx, pgConnectionParams)
+	})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	producer := producer.NewWorkProducer(datastore)
+	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	datastore := prodstore.NewProducerDatastore[common.Work](ds)
+	producer := producer.NewWorkProducer(t, datastore)
 
 	// WORK
 	for range *countPtr {

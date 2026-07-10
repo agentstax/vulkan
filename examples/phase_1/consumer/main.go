@@ -15,12 +15,15 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func main() {
 	// FLAGS
 
 	groupPtr := flag.String("group", "learning.v1", "consumer group name")
+	topicPtr := flag.String("topic", "learning.v1", "topic to consume from (auto-registered if new)")
 	processorSleepPtr := flag.Float64("processor-sleep", 0.1, "artifical sleep in consumer func for testing (in seconds)")
 	shutdownSleepPtr := flag.Float64("shutdown-sleep", 1.0, "artifical sleep on graceful shutdown for testing (in seconds)")
 	failRatePtr := flag.Float64("fail-rate", 0.0, "artifical fail rate in consumer func for testing")
@@ -30,6 +33,7 @@ func main() {
 	flag.Parse()
 
 	fmt.Printf("flag group: %s\n", *groupPtr)
+	fmt.Printf("flag topic: %s\n", *topicPtr)
 	fmt.Printf("flag processor sleep: %f\n", *processorSleepPtr)
 	fmt.Printf("flag shutdown sleep: %f\n", *shutdownSleepPtr)
 	fmt.Printf("flag fail rate: %f\n", *failRatePtr)
@@ -52,29 +56,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	pgParams := &consumer.PostgresConnectionParams{
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User:     "example_user",
 		Pass:     "example_password",
 		Host:     "localhost",
 		Port:     5432,
 		Database: "example_db",
-	}
-
-	datastore, err := consumer.NewPostgresDatastore[common.Work](ctx, pgParams)
+	})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	workConsumer := consumer.NewWorkConsumer[common.Work](*groupPtr, pressureQueue, workerPoolLimiter, datastore)
-	workConsumer.
-		WithType(consumer.CURSOR).
-		WithBatchLimit(10).
-		WithMaxAttempts(3).
-		WithClaimPollRate(1 * time.Second).
-		WithWorkTimeout(5 * time.Second).
-		WithQueueTimeout(2 * time.Second).
-		WithAckMargin(1 * time.Second)
+	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+
+	workConsumer := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, datastore)
+	workConsumer.Config.Type = consumer.CURSOR
+	workConsumer.Config.BatchLimit = 10
+	workConsumer.Config.MaxAttempts = 3
+	workConsumer.Config.ClaimPollRate = 1 * time.Second
+	workConsumer.Config.WorkTimeout = 5 * time.Second
+	workConsumer.Config.QueueTimeout = 2 * time.Second
+	workConsumer.Config.AckMargin = 1 * time.Second
 	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err

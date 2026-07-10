@@ -19,6 +19,8 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func main() {
@@ -26,6 +28,8 @@ func main() {
 	batchPtr := flag.Int("batch", 100, "claim batch limit (held constant across the sweep)")
 	countPtr := flag.Int("count", 20000, "messages to process before stopping (should be <= seeded rows)")
 	maxConnsPtr := flag.Int("maxconns", 25, "pgxpool max connections (must exceed concurrency+1)")
+	groupPtr := flag.String("group", "phase3.bench", "consumer group name")
+	topicPtr := flag.String("topic", "learning.v1", "topic to drain (must already have a seeded backlog, e.g. via `just produce`)")
 	flag.Parse()
 
 	conc := *concurrencyPtr
@@ -52,28 +56,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	pgParams := &consumer.PostgresConnectionParams{
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User:     "example_user",
 		Pass:     "example_password",
 		Host:     "localhost",
 		Port:     5432,
 		Database: "example_db",
 		MaxConns: *maxConnsPtr,
-	}
-	datastore, err := consumer.NewPostgresDatastore[common.Work](ctx, pgParams)
+	})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	wc := consumer.NewWorkConsumer[common.Work](pressureQueue, pool, datastore)
-	wc.WithBatchLimit(batch).
-		WithMaxAttempts(3).
-		WithClaimPollRate(500 * time.Millisecond).
-		WithWorkTimeout(30 * time.Second).
-		WithQueueTimeout(10 * time.Second).
-		WithAckMargin(5 * time.Second).
-		WithShutdownTimeout(40 * time.Second)
+	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+
+	wc := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, pool, datastore)
+	wc.Config.BatchLimit = batch
+	wc.Config.MaxAttempts = 3
+	wc.Config.ClaimPollRate = 500 * time.Millisecond
+	wc.Config.WorkTimeout = 30 * time.Second
+	wc.Config.QueueTimeout = 10 * time.Second
+	wc.Config.AckMargin = 5 * time.Second
+	wc.WithShutdownTimeout(40 * time.Second)
+
+	if err := wc.Register(ctx); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	var counter atomic.Int64
 	var firstNs, lastNs atomic.Int64

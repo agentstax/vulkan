@@ -2,16 +2,19 @@ package main
 
 // routing lab: confirms bindings gate what a group receives, not what gets claimed.
 //
-// Drives the real datastore methods directly (BindTopic, ClaimMessagesWithCursor,
+// Registers its own topic, destroyed on exit, so every run starts from a
+// genuinely empty log -- no routing-key namespacing needed to dodge leftover
+// rows from earlier runs (a trick the pre-8b shared-message_log version needed
+// and this one doesn't).
+//
+// Drives the real datastore methods directly (Bind, ClaimMessagesWithCursor,
 // FanOut, ClaimMessagesWithLifecycle) so matching is deterministic and asserted on
-// exact returned rows, not inferred from timing. Publishes its own messages under
-// a run-unique routing-key namespace so its assertions never collide with routing
-// keys left behind by earlier runs of this or any other lab.
+// exact returned rows, not inferred from timing.
 //
 // Confirms: a binding added AFTER a message already exists still applies to it the
 // next time it's read (the predicate runs at claim/fan-out time, not publish
-// time); a true wildcard crosses hierarchy depth (`ns.orders.*.created` also
-// matches `ns.orders.us.central1.created`); the CURSOR path excludes
+// time); a true wildcard crosses hierarchy depth (`orders.*.created` also
+// matches `orders.us.central1.created`); the CURSOR path excludes
 // non-matching rows from what's returned but still advances committed over the
 // whole range; the LIFECYCLE path excludes them from ever getting a deliveries
 // row at all; and one group's binding has zero effect on another group reading
@@ -25,8 +28,10 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -36,43 +41,51 @@ const (
 	lifecycleGroup = "phase7.lifecycle.lab"
 )
 
+// bindable is consumer.Datastore plus Bind/ClearBindings, which aren't part of
+// that interface (they're admin operations, not something WorkConsumer itself
+// calls) -- a small local interface is enough to accept the concrete (unexported)
+// datastore struct as a helper param without naming its type.
+type bindable interface {
+	consumer.Datastore[common.Work]
+	Bind(ctx context.Context, topicID int64, consumerGroup, pattern string) error
+	ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error
+}
+
 func main() {
 	ctx := context.Background()
 
-	cd, err := consumer.NewPostgresDatastore[common.Work](ctx, &consumer.PostgresConnectionParams{
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
 
-	pd, err := prodstore.NewPostgresDatastore[common.Work](ctx, &prodstore.PostgresConnectionParams{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	topicName := fmt.Sprintf("phase7.routinglab.%d", time.Now().UnixNano())
+	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
 	must(err)
-	wp := producer.NewWorkProducer(pd)
+	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	// every routing key this lab uses is namespaced under ns, so it can never
-	// match a binding built from a prior run's leftover message_log rows.
-	ns := fmt.Sprintf("routinglab%d", time.Now().UnixNano())
+	cd := consumer.NewConsumerDatastore[common.Work](ds)
+	pd := prodstore.NewProducerDatastore[common.Work](ds)
+	wp := producer.NewWorkProducer(tp, pd)
 
-	head := reset(ctx, cd, cursorGroup, controlGroup, lifecycleGroup)
-	fmt.Printf("message_log head = %d, namespace = %q\n", head, ns)
+	head := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
+	fmt.Printf("topic=%q id=%d message_log head = %d\n", topicName, tp.Id, head)
 
 	// ===== publish msg1 BEFORE any binding exists =====
 	step("publish msg1, no binding exists for any group yet")
-	msg1 := publish(ctx, wp, ns+".orders.us.created")
+	msg1 := publish(ctx, wp, "orders.us.created")
 	fmt.Printf("  published %s\n", msg1)
 
 	// ===== bind cursorGroup and lifecycleGroup, THEN publish the rest =====
 	step("bind cursorGroup to orders.*.created, lifecycleGroup to payments.*")
-	must(cd.BindTopic(ctx, cursorGroup, ns+".orders.*.created"))
-	must(cd.BindTopic(ctx, lifecycleGroup, ns+".payments.*"))
+	must(cd.Bind(ctx, tp.Id, cursorGroup, "orders.*.created"))
+	must(cd.Bind(ctx, tp.Id, lifecycleGroup, "payments.*"))
 
-	msg2 := publish(ctx, wp, ns+".orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
-	msg3 := publish(ctx, wp, ns+".orders.eu.updated")          // wrong tail, does not match
-	msg4 := publish(ctx, wp, ns+".payments.charge")            // matches lifecycleGroup only
-	msg5 := publish(ctx, wp, "")                               // NULL routing_key, matches nothing bound
+	msg2 := publish(ctx, wp, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
+	msg3 := publish(ctx, wp, "orders.eu.updated")           // wrong tail, does not match
+	msg4 := publish(ctx, wp, "payments.charge")             // matches lifecycleGroup only
+	msg5 := publish(ctx, wp, "")                            // NULL routing_key, matches nothing bound
 	fmt.Printf("  published %s\n  published %s\n  published %s\n  published %s\n", msg2, msg3, msg4, msg5)
 
 	const lease = 5 * time.Second
@@ -81,7 +94,7 @@ func main() {
 
 	// ===== CURSOR path: cursorGroup only sees the 2 matching messages =====
 	step("cursorGroup claims (head, head+5] -- expect only msg1 and msg2 back")
-	claim, err := cd.ClaimMessagesWithCursor(ctx, cursorGroup, limit, maxRangeReclaims, lease)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, limit, maxRangeReclaims, lease)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -92,13 +105,13 @@ func main() {
 	assertIDs("only msg1 (published before the binding existed) and msg2 (deeper hierarchy) match",
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
-	must(cd.Commit(ctx, cursorGroup, claim.Lease.Token, nil, nil))
-	committed := advance(ctx, cd, cursorGroup)
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil))
+	committed := advance(ctx, cd, tp.Id, cursorGroup)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
 	step("controlGroup claims the identical range -- expect all 5 back, unaffected by cursorGroup's binding")
-	claim, err = cd.ClaimMessagesWithCursor(ctx, controlGroup, limit, maxRangeReclaims, lease)
+	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, controlGroup, limit, maxRangeReclaims, lease)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -107,13 +120,13 @@ func main() {
 	assertIDs("an unbound group receives every message, including the NULL routing_key one",
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
-	must(cd.Commit(ctx, controlGroup, claim.Lease.Token, nil, nil))
-	advance(ctx, cd, controlGroup)
+	must(cd.Commit(ctx, tp.Id, controlGroup, claim.Lease.Token, nil, nil))
+	advance(ctx, cd, tp.Id, controlGroup)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a deliveries row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 deliveries row (msg4, payments.charge)")
-	must(cd.FanOut(ctx, lifecycleGroup))
-	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, lifecycleGroup, limit)
+	must(cd.FanOut(ctx, tp.Id, lifecycleGroup))
+	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroup, limit)
 	must(err)
 	fmt.Printf("  claimed deliveries: %v\n", deliveryIDs(deliveries))
 	assertIDs("payments.charge is the only message materialized as a delivery",
@@ -136,36 +149,36 @@ func publish(ctx context.Context, wp *producer.WorkProducer[common.Work], routin
 }
 
 // resets all three groups to a clean slate and fast-forwards their cursors to
-// the current message_log head, so a fresh CURSOR claim only ever sees messages
-// this lab itself publishes -- not whatever accumulated from earlier runs.
-func reset(ctx context.Context, cd *consumer.PostgresDatastore[common.Work], groups ...string) int64 {
-	head := scalar(ctx, cd, `SELECT COALESCE(max(id),0) FROM message_log`)
+// the current log head, so a fresh CURSOR claim only ever sees messages this
+// lab itself publishes.
+func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd bindable, topicID int64, groups ...string) int64 {
+	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
 	for _, g := range groups {
 		for _, q := range []string{
-			`DELETE FROM leases WHERE consumer_group=$1`,
-			`DELETE FROM deliveries WHERE consumer_group=$1`,
-			`DELETE FROM cursors WHERE consumer_group=$1`,
+			`DELETE FROM leases WHERE consumer_group=$1 AND topic_id=$2`,
+			`DELETE FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`,
+			`DELETE FROM cursors WHERE consumer_group=$1 AND topic_id=$2`,
 		} {
-			_, err := cd.Pool.Exec(ctx, q, g)
+			_, err := ds.Pool.Exec(ctx, q, g, topicID)
 			must(err)
 		}
-		must(cd.ClearBindings(ctx, g))
-		must(cd.UpsertCursor(ctx, g))
-		_, err := cd.Pool.Exec(ctx, `UPDATE cursors SET claimed=$2, committed=$2 WHERE consumer_group=$1`, g, head)
+		must(cd.ClearBindings(ctx, topicID, g))
+		must(cd.UpsertCursor(ctx, topicID, g))
+		_, err := ds.Pool.Exec(ctx, `UPDATE cursors SET claimed=$3, committed=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
 		must(err)
 	}
 	return head
 }
 
-func advance(ctx context.Context, cd *consumer.PostgresDatastore[common.Work], group string) int64 {
-	c, err := cd.AdvanceWaterline(ctx, group)
+func advance(ctx context.Context, cd consumer.Datastore[common.Work], topicID int64, group string) int64 {
+	c, err := cd.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c
 }
 
-func scalar(ctx context.Context, cd *consumer.PostgresDatastore[common.Work], q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
-	must(cd.Pool.QueryRow(ctx, q, args...).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v
 }
 

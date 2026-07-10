@@ -2,7 +2,7 @@
 //
 // It drains a pre-seeded backlog and appends every processed message id to a log
 // file — the *application's durable record of what it believed it processed*.
-// The orchestration script (crashlab.sh) kills Postgres mid-run with
+// An external orchestration script kills Postgres mid-run with
 // synchronous_commit=off, restarts it, and runs this harness again to drain the
 // reclaimed backlog. Comparing the app log to the recovered DB state proves:
 //   - no message is lost (every seeded id appears >=1 time)  -> at-least-once holds
@@ -12,7 +12,7 @@
 // reprocessed set collapses to just the in-flight-at-crash messages.
 //
 // The log id is the payload "id" field, which the seed sets equal to the
-// message_log row id (TRUNCATE ... RESTART IDENTITY), so app log and DB align.
+// topic's message_log row id (TRUNCATE ... RESTART IDENTITY), so app log and DB align.
 package main
 
 import (
@@ -28,6 +28,8 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func main() {
@@ -35,6 +37,8 @@ func main() {
 	countPtr := flag.Int("count", 0, "messages to process before a clean stop")
 	logPtr := flag.String("log", "/tmp/crashlab_processed.log", "append each processed id here (the app's record)")
 	maxConnsPtr := flag.Int("maxconns", 20, "pgxpool max connections")
+	groupPtr := flag.String("group", "phase3_5.crashlab", "consumer group name")
+	topicPtr := flag.String("topic", "learning.v1", "topic to drain (must already have a seeded backlog, e.g. via `just produce`)")
 	flag.Parse()
 
 	conc := *concurrencyPtr
@@ -66,7 +70,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	datastore, err := consumer.NewPostgresDatastore[common.Work](ctx, &consumer.PostgresConnectionParams{
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password", Host: "localhost", Port: 5432, Database: "example_db", MaxConns: *maxConnsPtr,
 	})
 	if err != nil {
@@ -74,16 +78,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc := consumer.NewWorkConsumer[common.Work](queue, pool, datastore)
+	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+
+	wc := consumer.NewWorkConsumer[common.Work](*groupPtr, t, queue, pool, datastore)
 	// Short lease (= WorkTimeout+QueueTimeout+AckMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxAttempts so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
-	wc.WithBatchLimit(100).WithMaxAttempts(100).
-		WithClaimPollRate(200 * time.Millisecond).
-		WithWorkTimeout(2 * time.Second).
-		WithQueueTimeout(1 * time.Second).
-		WithAckMargin(1 * time.Second).
-		WithShutdownTimeout(8 * time.Second)
+	wc.Config.BatchLimit = 100
+	wc.Config.MaxAttempts = 100
+	wc.Config.ClaimPollRate = 200 * time.Millisecond
+	wc.Config.WorkTimeout = 2 * time.Second
+	wc.Config.QueueTimeout = 1 * time.Second
+	wc.Config.AckMargin = 1 * time.Second
+	wc.WithShutdownTimeout(8 * time.Second)
+
+	if err := wc.Register(ctx); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	var mu sync.Mutex
 	var counter atomic.Int64
