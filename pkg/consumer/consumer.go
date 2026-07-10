@@ -164,7 +164,7 @@ func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 	}
 
 	// cold-start guarantee: the next partition exists before Janitor's first tick
-	if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+	if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 		return err
 	}
 
@@ -189,7 +189,7 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 				return err
 			}
 			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted); err != nil {

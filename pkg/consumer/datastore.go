@@ -22,7 +22,7 @@ var (
 
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error
-	EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error
+	EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error
 	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
 	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
@@ -145,10 +145,10 @@ func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID i
 	return nil
 }
 
-func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, partitionSize int64, safetyBuffer int64) error {
-	headSql := `
-		SELECT COALESCE(MAX(id), 0) FROM message_log;
-	`
+func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error {
+	headSql := fmt.Sprintf(`
+		SELECT COALESCE(MAX(id), 0) FROM %s;
+	`, logTable(topicID))
 
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
@@ -165,10 +165,10 @@ func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, pa
 	nextPartition := head/partitionSize + 1
 
 	createPartitionSql := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS message_log_%d
-			PARTITION OF message_log
+		CREATE TABLE IF NOT EXISTS %s
+			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, nextPartition, nextPartition*partitionSize, (nextPartition+1)*partitionSize)
+	`, partitionTable(topicID, nextPartition), logTable(topicID), nextPartition*partitionSize, (nextPartition+1)*partitionSize)
 
 	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
 	if err != nil {
@@ -191,16 +191,16 @@ func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, 
 		return nil // retention disabled - partitions kept forever
 	}
 
-	headSql := `
-		SELECT COALESCE(MAX(id), 0) FROM message_log;
-	`
+	headSql := fmt.Sprintf(`
+		SELECT COALESCE(MAX(id), 0) FROM %s;
+	`, logTable(topicID))
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
 	}
 	activePartition := head / partitionSize
 
-	partitions, err := d.existingPartitions(ctx)
+	partitions, err := d.existingPartitions(ctx, topicID)
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, 
 			continue // never touch the active partition, or anything at/after it
 		}
 
-		expired, err := d.partitionExpired(ctx, n, ttl)
+		expired, err := d.partitionExpired(ctx, topicID, n, ttl)
 		if err != nil {
 			return err
 		}
@@ -228,7 +228,7 @@ func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, 
 			continue // a lagging group hasn't resolved this range yet
 		}
 
-		if err := d.dropPartition(ctx, n, partitionSize); err != nil {
+		if err := d.dropPartition(ctx, topicID, n, partitionSize); err != nil {
 			return err
 		}
 	}
@@ -236,15 +236,14 @@ func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, 
 	return nil
 }
 
-// existingPartitions lists surviving message_log_<n> partition numbers.
-func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context) ([]int64, error) {
-	sql := `
-		SELECT REPLACE(c.relname, 'message_log_', '')::bigint AS n
+// existingPartitions lists surviving message_log_<topic_id>_<n> partition numbers.
+func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context, topicID int64) ([]int64, error) {
+	sql := fmt.Sprintf(`
+		SELECT REPLACE(c.relname, '%s_', '')::bigint AS n
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
-		WHERE i.inhparent = 'message_log'::regclass
-			AND c.relname LIKE 'message_log_%';
-	`
+		WHERE i.inhparent = '%s'::regclass;
+	`, logTable(topicID), logTable(topicID))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -279,12 +278,12 @@ func (d *consumerDatastore[Message]) cursorFloor(ctx context.Context, topicID in
 }
 
 // partitionExpired reports whether a partition's newest row is past ttl.
-func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, n int64, ttl time.Duration) (bool, error) {
+func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, topicID int64, n int64, ttl time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
-		SELECT created_at FROM message_log_%d
+		SELECT created_at FROM %s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
 		LIMIT 1;
-	`, n)
+	`, partitionTable(topicID, n))
 
 	var newest time.Time
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&newest)
@@ -306,7 +305,7 @@ func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context,
 		return nil // retention disabled
 	}
 
-	partitions, err := d.existingPartitions(ctx)
+	partitions, err := d.existingPartitions(ctx, topicID)
 	if err != nil {
 		return err
 	}
@@ -326,7 +325,7 @@ func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context,
 
 	for _, n := range partitions { // every partition, independently -- one backlog can't block the rest
 		for range maxBatches {
-			swept, err := d.sweepBatch(ctx, n, cutoff, floor, batchSize)
+			swept, err := d.sweepBatch(ctx, topicID, n, cutoff, floor, batchSize)
 			if err != nil {
 				return err
 			}
@@ -341,7 +340,7 @@ func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context,
 
 // sweepBatch deletes up to batchSize expired rows from the front of partition n,
 // plus their orphaned deliveries rows, in one transaction.
-func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, n int64, cutoff time.Time, floor *int64, batchSize int) (int, error) {
+func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int) (int, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
@@ -349,16 +348,16 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, n int64, cu
 	defer tx.Rollback(ctx)
 
 	sweepSql := fmt.Sprintf(`
-		DELETE FROM message_log_%d
+		DELETE FROM %s
 		WHERE id IN (
-			SELECT id FROM message_log_%d
+			SELECT id FROM %s
 			WHERE created_at < $1
 				AND ($3::bigint IS NULL OR id <= $3) -- nil floor (allowDropPastCommitted) skips the check
 			ORDER BY id ASC -- walk the expired prefix from the front, same PK-index ride as partitionExpired
 			LIMIT $2
 		)
 		RETURNING id;
-	`, n, n)
+	`, partitionTable(topicID, n), partitionTable(topicID, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
@@ -388,7 +387,7 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, n int64, cu
 }
 
 // dropPartition removes the partition and its deliveries rows in one transaction.
-func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, n int64, partitionSize int64) error {
+func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -410,8 +409,8 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, n int64,
 	}
 
 	dropSql := fmt.Sprintf(`
-		DROP TABLE message_log_%d;
-	`, n)
+		DROP TABLE %s;
+	`, partitionTable(topicID, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
 		return err
