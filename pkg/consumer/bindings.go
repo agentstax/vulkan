@@ -15,7 +15,7 @@ import (
 //
 // TODO - this is a true wildcard, not a NATS-style selector -- it can't pin an
 // exact token depth (see TODO.md).
-func (d *PostgresDatastore[Message]) BindTopic(ctx context.Context, consumerGroup, pattern string) error {
+func (d *consumerDatastore[Message]) Bind(ctx context.Context, consumerGroup, pattern string) error {
 	rx, err := wildcardToRegex(pattern)
 	if err != nil {
 		return err
@@ -26,18 +26,18 @@ func (d *PostgresDatastore[Message]) BindTopic(ctx context.Context, consumerGrou
 		VALUES ($1, $2, $3);
 	`
 
-	_, err = d.Pool.Exec(ctx, sql, consumerGroup, rx, pattern)
+	_, err = d.Datastore.Pool.Exec(ctx, sql, consumerGroup, rx, pattern)
 	return err
 }
 
 // removes every binding for a group -> it goes back to matching all events.
-func (d *PostgresDatastore[Message]) ClearBindings(ctx context.Context, consumerGroup string) error {
+func (d *consumerDatastore[Message]) ClearBindings(ctx context.Context, consumerGroup string) error {
 	sql := `
 		DELETE FROM bindings
 		WHERE consumer_group = $1;
 	`
 
-	_, err := d.Pool.Exec(ctx, sql, consumerGroup)
+	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup)
 	return err
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -30,26 +31,24 @@ const (
 )
 
 type WorkConsumerConfig struct {
-	Type                   ConsumerType
-	BatchLimit             int
-	MaxAttempts            int
-	MaxRangeReclaims       int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	ClaimPollRate          time.Duration
-	WorkTimeout            time.Duration // TODO - consider a better name
-	QueueTimeout           time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
-	AckMargin              time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
-	ShutdownTimeout        time.Duration
-	PartitionSize          int64
-	PartitionSafetyBuffer  int64
-	RetentionTTL           time.Duration // 0 disables retention (janitor drop/sweep no-op); create-ahead always runs regardless
-	AllowDropPastCommitted bool          // opt into Kafka's "lagging consumer falls off the retention window" semantics; false is the safe floor
-	JanitorPollRate        time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
-	JanitorSweepBatchSize  int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+	Type                  ConsumerType
+	BatchLimit            int
+	MaxAttempts           int
+	MaxRangeReclaims      int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
+	ClaimPollRate         time.Duration
+	WorkTimeout           time.Duration // TODO - consider a better name
+	QueueTimeout          time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
+	AckMargin             time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	ShutdownTimeout       time.Duration
+	PartitionSafetyBuffer int64
+	JanitorPollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
+	JanitorSweepBatchSize int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
 type WorkConsumer[WorkType any] struct {
 	Group        string
+	Topic        *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
 	Queue        concurrency.Queue[MessageRow]
 	PoolLimiter  concurrency.PoolLimiter
 	Datastore    Datastore[WorkType]
@@ -58,29 +57,27 @@ type WorkConsumer[WorkType any] struct {
 }
 
 // only required params here
-func NewWorkConsumer[WorkType any](group string, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType]) *WorkConsumer[WorkType] {
+func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType]) *WorkConsumer[WorkType] {
 	return &WorkConsumer[WorkType]{
 		Group:        group,
+		Topic:        t,
 		Queue:        queue,
 		PoolLimiter:  poolLimiter,
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
-			Type:                   CURSOR,
-			BatchLimit:             1, // no batching by default
-			MaxAttempts:            3,
-			MaxRangeReclaims:       3,
-			ClaimPollRate:          5 * time.Second,
-			WorkTimeout:            30 * time.Second,
-			QueueTimeout:           5 * time.Second,
-			AckMargin:              2 * time.Second,
-			ShutdownTimeout:        35 * time.Second,
-			PartitionSize:          1000000, // TODO - make configurable, TODO - determine sane default
-			PartitionSafetyBuffer:  50000,   // TODO - make configurable, TODO - determine sane default
-			RetentionTTL:           0,       // disabled by default
-			AllowDropPastCommitted: false,
-			JanitorPollRate:        0, // defaults to ClaimPollRate
-			JanitorSweepBatchSize:  1000,
+			Type:                  CURSOR,
+			BatchLimit:            1, // no batching by default
+			MaxAttempts:           3,
+			MaxRangeReclaims:      3,
+			ClaimPollRate:         5 * time.Second,
+			WorkTimeout:           30 * time.Second,
+			QueueTimeout:          5 * time.Second,
+			AckMargin:             2 * time.Second,
+			ShutdownTimeout:       35 * time.Second,
+			PartitionSafetyBuffer: 50000, // TODO - make configurable, TODO - determine sane default
+			JanitorPollRate:       0,     // defaults to ClaimPollRate
+			JanitorSweepBatchSize: 1000,
 		},
 	}
 }
@@ -91,6 +88,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	// nil deps first -- everything below dereferences these, so guard before any access
 	if p.Config == nil {
 		return errors.New("Config must not be nil")
+	}
+	if p.Topic == nil {
+		return errors.New("Topic must not be nil")
 	}
 	if p.Queue == nil {
 		return errors.New("Queue must not be nil")
@@ -137,9 +137,6 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	if p.Config.AckMargin <= 0 {
 		return fmt.Errorf("AckMargin must be > 0, got %v", p.Config.AckMargin)
 	}
-	if p.Config.RetentionTTL < 0 {
-		return fmt.Errorf("RetentionTTL must be >= 0, got %v", p.Config.RetentionTTL)
-	}
 	if p.Config.JanitorPollRate < 0 {
 		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", p.Config.JanitorPollRate)
 	}
@@ -167,7 +164,7 @@ func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 	}
 
 	// cold-start guarantee: the next partition exists before Janitor's first tick
-	if err := p.Datastore.EnsureNextPartition(ctx, p.Config.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+	if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 		return err
 	}
 
@@ -192,13 +189,13 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.EnsureNextPartition(ctx, p.Config.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
 				return err
 			}
-			if err := p.Datastore.DropExpiredPartitions(ctx, p.Config.PartitionSize, p.Config.RetentionTTL, p.Config.AllowDropPastCommitted); err != nil {
+			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted); err != nil {
 				return err
 			}
-			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Config.PartitionSize, p.Config.RetentionTTL, p.Config.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize); err != nil {
+			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize); err != nil {
 				return err
 			}
 		}

@@ -3,6 +3,7 @@ package producer
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,11 +17,13 @@ type Producer[WorkType any] interface {
 }
 
 type WorkProducer[WorkType any] struct {
+	Topic     *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
 	datastore Datastore[WorkType]
 }
 
-func NewWorkProducer[WorkType any](datastore Datastore[WorkType]) *WorkProducer[WorkType] {
+func NewWorkProducer[WorkType any](t *topic.Topic, datastore Datastore[WorkType]) *WorkProducer[WorkType] {
 	return &WorkProducer[WorkType]{
+		Topic:     t,
 		datastore: datastore,
 	}
 }
