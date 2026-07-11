@@ -106,11 +106,23 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		CREATE TABLE IF NOT EXISTS message_log_%d (
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent
 			routing_key TEXT,
+			compaction_key TEXT,
 			payload JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);
 	`, id)
 	if _, err := tx.Exec(ctx, createTableSql); err != nil {
+		return err
+	}
+
+	// partial: NULL compaction_key is the common case (unkeyed traffic), and it
+	// should pay zero index-maintenance cost.
+	createIndexSql := fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS message_log_%d_compaction_key_idx
+			ON message_log_%d (compaction_key, id)
+			WHERE compaction_key IS NOT NULL;
+	`, id, id)
+	if _, err := tx.Exec(ctx, createIndexSql); err != nil {
 		return err
 	}
 
