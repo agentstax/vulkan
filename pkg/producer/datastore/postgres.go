@@ -36,8 +36,8 @@ func partitionTable(topicID, n int64) string {
 // that outran it. Rerunning producerFunc is safe because its writes all go
 // through the tx that just rolled back -- that's the transactional-enqueue
 // contract, not a new constraint.
-func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc producer.ProducerFunc[Message], routingKey string) (*Message, error) {
-	message, err := d.appendMessage(ctx, topicID, producerFunc, routingKey)
+func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc producer.ProducerFunc[Message], opts producer.ProduceOptions) (*Message, error) {
+	message, err := d.appendMessage(ctx, topicID, producerFunc, opts)
 	if err == nil || !isMissingPartition(err) {
 		return message, err
 	}
@@ -45,7 +45,7 @@ func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID 
 	if err := d.ensureCoveringPartition(ctx, topicID, partitionSize); err != nil {
 		return nil, err
 	}
-	return d.appendMessage(ctx, topicID, producerFunc, routingKey)
+	return d.appendMessage(ctx, topicID, producerFunc, opts)
 }
 
 // isMissingPartition matches an insert routed to a partition that doesn't exist yet.
@@ -89,7 +89,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 	return nil
 }
 
-func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID int64, producerFunc producer.ProducerFunc[Message], routingKey string) (*Message, error) {
+func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID int64, producerFunc producer.ProducerFunc[Message], opts producer.ProduceOptions) (*Message, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -105,14 +105,15 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	}
 
 	sql := fmt.Sprintf(`
-		INSERT INTO %s (payload, routing_key)
+		INSERT INTO %s (payload, routing_key, compaction_key)
 		VALUES (
 			$1,
-			NULLIF($2, '') -- if routing_key is empty string '' insert as NULL
+			NULLIF($2, ''), -- if routing_key is empty string '' insert as NULL
+			NULLIF($3, '')  -- same convention for compaction_key
 		);
 	`, logTable(topicID))
 
-	_, err = tx.Exec(ctx, sql, message, routingKey)
+	_, err = tx.Exec(ctx, sql, message, opts.RoutingKey, opts.CompactionKey)
 	if err != nil {
 		return nil, err
 	}

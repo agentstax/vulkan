@@ -57,7 +57,7 @@ func main() {
 	for range seedRows {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, "")
+		}, producer.ProduceOptions{})
 		must(err)
 	}
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, tp.Id))

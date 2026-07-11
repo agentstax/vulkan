@@ -189,7 +189,7 @@ func main() {
 func publish(ctx context.Context, wp *producer.WorkProducer[common.Work], routingKey string) {
 	_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, routingKey)
+	}, producer.ProduceOptions{RoutingKey: routingKey})
 	must(err)
 }
 

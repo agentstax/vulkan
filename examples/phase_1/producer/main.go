@@ -54,18 +54,18 @@ func main() {
 	}
 
 	datastore := prodstore.NewProducerDatastore[common.Work](ds)
-	producer := producer.NewWorkProducer(t, datastore)
+	wp := producer.NewWorkProducer(t, datastore)
 
 	// WORK
 	for range *countPtr {
-		work, err := producer.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
+		work, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err
 			}
 
 			return work, nil
-		}, *routingKeyPtr)
+		}, producer.ProduceOptions{RoutingKey: *routingKeyPtr})
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
