@@ -595,16 +595,16 @@ func (d *consumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, 
 		AND (
 			-- unkeyed rows are never compacted
 			m.compaction_key IS NULL
-			-- keyed rows materialize a delivery only if nothing newer exists for
-			-- the same key
-			OR NOT EXISTS (
-				SELECT 1 FROM %s newer
-				WHERE newer.compaction_key = m.compaction_key
-					AND newer.id > m.id
+			-- keyed rows materialize a delivery only if they're latest_keys'
+			-- current pointer for their key -- O(1) lookup, no per-row scan
+			OR m.id = (
+				SELECT latest_id FROM latest_keys
+				WHERE topic_id = $2 
+					AND compaction_key = m.compaction_key
 			)
 		)
 		ON CONFLICT DO NOTHING;
-	`, logTable(topicID), logTable(topicID))
+	`, logTable(topicID))
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
 	if err != nil {
@@ -748,23 +748,20 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 			AND (
 				-- unkeyed rows are never compacted
 				m.compaction_key IS NULL
-				-- keyed rows are eligible only if nothing newer exists for the same
-				-- key -- unbounded on purpose: what this owes is at-least-once
-				-- delivery of a key's CURRENT latest value, not of every version
-				-- ever written, so a superseded row can be dropped even outside
-				-- this claim's own (low, high]
-				OR NOT EXISTS (
-					SELECT 1 FROM %s newer
-					WHERE newer.compaction_key = m.compaction_key
-						AND newer.id > m.id
+				-- keyed rows are eligible only if they're latest_keys' current
+				-- pointer for their key -- O(1) lookup, no per-row scan
+				OR m.id = (
+					SELECT latest_id FROM latest_keys
+					WHERE topic_id = $4 
+						AND compaction_key = m.compaction_key
 				)
 			)
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, logTable(topicID), logTable(topicID))
+	`, logTable(topicID))
 
-	rows, err := tx.Query(ctx, sql, low, high, consumerGroup)
+	rows, err := tx.Query(ctx, sql, low, high, consumerGroup, topicID)
 	if err != nil {
 		return nil, err
 	}
