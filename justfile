@@ -112,6 +112,14 @@ latest-keys-race-lab:
 latest-keys-retention-lab:
   go run examples/phase_1/latestkeysretentionlab/main.go
 
+# latest_keys write-cost lab: quantifies the tradeoff -- an O(1) read path
+# cost a second write on every keyed publish. Sequential/uncontended cost vs.
+# an unkeyed baseline, hot-key lock contention under concurrency (many
+# distinct keys vs. all publishers hammering ONE key), and the dead-tuple
+# growth that contention leaves behind for autovacuum.
+latest-keys-write-lab:
+  go run examples/phase_1/latestkeyswritelab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

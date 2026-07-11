@@ -1791,12 +1791,24 @@ matter, not a patch bolted on after a scaling surprise.
         history predating this table, so a migration mechanism for one
         would be designing for a user that doesn't exist. The old unbounded
         `NOT EXISTS` predicate is deleted outright once this lookup lands.
-      - **Known tradeoff, not a blocker:** the `ON CONFLICT DO UPDATE` takes
-        a row lock, so publishes to the SAME hot key now serialize on that
-        key's `latest_keys` row (they didn't before — plain `message_log`
-        appends never contended). A non-issue for many-distinct-keys
-        workloads (this phase's whole design target); worth knowing if a
-        workload ever concentrates writes on one screamingly hot key.
+      - **Known tradeoff, not a blocker — now measured, not just reasoned
+        about.** The `ON CONFLICT DO UPDATE` takes a row lock, so publishes
+        to the SAME hot key now serialize on that key's `latest_keys` row
+        (they didn't before — plain `message_log` appends never contended).
+        `latestkeyswritelab` (`just latest-keys-write-lab`) quantifies it:
+        sequential, uncontended publishes showed no measurable fixed cost
+        (unkeyed vs. keyed differed within noise, both ±10-20%, no
+        consistent direction — the extra statement itself is cheap). 50
+        concurrent goroutines each publishing to their OWN key vs. all 50
+        hammering ONE key showed the real cost: 2.5-2.9x slower under full
+        serialization, reproduced across repeated runs. A follow-on burst
+        of ~1,000 same-key updates left ~500 dead tuples on `latest_keys`,
+        pending autovacuum — real but bounded bloat, not unbounded growth,
+        since the table only ever holds one row per (topic, key) regardless
+        of how many times that key is republished. A non-issue for
+        many-distinct-keys workloads (this phase's whole design target);
+        worth knowing if a workload ever concentrates writes on one
+        screamingly hot key.
       - **Chunk shape** (own plan file, `~/.claude/plans/` — same convention
         as every other phase's chunk breakdown): (1) schema + migration, (2)
         write-path UPSERT, (3) retention/janitor cleanup in `dropPartition`/
