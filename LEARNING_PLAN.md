@@ -1506,15 +1506,49 @@ is allowed to return.
 - [ ] LIFECYCLE path: `FanOut`'s `SELECT ... WHERE` gets the identical
       predicate, duplicated inline — same shape as the Phase 7 routing
       predicate, no shared function between the two paths.
-- [ ] **Decide the tombstone representation.** `message_log.payload` is
-      `NOT NULL` today. Either relax it (`payload IS NULL` = tombstone,
-      matching Kafka and `reference/waterline/compaction.go` exactly), or add
-      a dedicated `is_tombstone BOOLEAN` and keep `payload` `NOT NULL`.
-      Whichever is chosen, the filter query itself needs no special-casing —
-      a tombstone is just "the latest row for its key," delivered like any
-      other message; only the consumer's own handling of it differs. (Unlike
-      the reference's `Compact`, there's no separate tombstone-deletion pass
-      needed here — nothing is ever deleted by this phase at all.)
+- [x] **Decided: no schema-level tombstone at all — pure application
+      convention.** Considered relaxing `payload` to nullable (`payload IS
+      NULL` = tombstone, matching Kafka and
+      `reference/waterline/compaction.go` exactly) or adding a dedicated
+      `is_tombstone BOOLEAN` column. Rejected both: Kafka's own reason for a
+      *protocol-level* tombstone marker is so its background compactor —
+      which physically deletes rows — can recognize a deletion generically
+      across every topic without understanding that topic's payload schema,
+      and eventually purge the tombstone itself after a retention window.
+      This phase never physically deletes anything (that's the entire point
+      of filtering at claim time instead of background-deleting), so that
+      motivating reason doesn't apply here. The filter query already
+      delivers "whatever the latest row for this key is" with zero
+      special-casing regardless of what's inside it — a tombstone is not a
+      distinct case at the log layer at all, just an ordinary row whose
+      *payload* the application has chosen to give a deletion meaning to.
+      So "how do I delete a key" is answered entirely by what the producer
+      puts in `payload`, not by anything this framework provides:
+      ```go
+      // application-defined convention, not a framework field
+      type UserProfile struct {
+          UserID  string `json:"user_id"`
+          Deleted bool   `json:"deleted"` // true = tombstone, by this app's own convention
+          // ... other fields, zeroed/omitted when Deleted
+      }
+
+      // publishing a deletion is just publishing a normal message
+      wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*UserProfile, error) {
+          return &UserProfile{UserID: "123", Deleted: true}, nil
+      }, routingKey, "user:123" /* compactionKey */)
+
+      // the consumer checks the convention it defined, not a log-level flag
+      if profile.Deleted {
+          cache.Delete(profile.UserID)
+      } else {
+          cache.Set(profile.UserID, profile)
+      }
+      ```
+      A future generic disk-space cleanup pass (already noted below as
+      optional/deferred, not part of this phase) would lose the ability to
+      recognize "this key is fully dead, purge every row for it" without
+      understanding each topic's schema — accepted as a real but currently
+      unneeded cost, revisit if that cleanup pass ever gets built.
 - [ ] **Open question, not settled — deferred to 8b.** The filter's cost is
       (keyed rows in a claim) × (live partitions up to that claim's high),
       because `id` is one `BIGSERIAL` shared by every topic — a quiet,
