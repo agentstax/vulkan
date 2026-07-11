@@ -8,6 +8,7 @@ import (
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -110,12 +111,20 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 			$1,
 			NULLIF($2, ''), -- if routing_key is empty string '' insert as NULL
 			NULLIF($3, '')  -- same convention for compaction_key
-		);
+		)
+		RETURNING id;
 	`, logTable(topicID))
 
-	_, err = tx.Exec(ctx, sql, message, opts.RoutingKey, opts.CompactionKey)
-	if err != nil {
+	var id int64
+	if err := tx.QueryRow(ctx, sql, message, opts.RoutingKey, opts.CompactionKey).Scan(&id); err != nil {
 		return nil, err
+	}
+
+	// zero write-amplification for unkeyed traffic -- the common case skips this entirely
+	if opts.CompactionKey != "" {
+		if err := d.upsertLatestKey(ctx, tx, topicID, opts.CompactionKey, id); err != nil {
+			return nil, err
+		}
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -123,4 +132,17 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	}
 
 	return message, nil
+}
+
+// upsertLatestKey keeps latest_keys pointed at the highest id seen for this compaction key
+func (d *producerDatastore[Message]) upsertLatestKey(ctx context.Context, tx pgx.Tx, topicID int64, compactionKey string, id int64) error {
+	sql := `
+		INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (topic_id, compaction_key) DO UPDATE
+		SET latest_id = EXCLUDED.latest_id
+		WHERE latest_keys.latest_id < EXCLUDED.latest_id;
+	`
+	_, err := tx.Exec(ctx, sql, topicID, compactionKey, id)
+	return err
 }
