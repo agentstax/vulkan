@@ -78,8 +78,8 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 8 — Operational layer | ⬜ | observability, LISTEN/NOTIFY — retention split into **8a**, log compaction split into **8c** |
 | 8a — Retention | ✅ done | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman; answers in NOTES.md; tag `phase-8a` |
-| 8b — Per-topic tables | ⬜ | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost |
-| 8c — Log compaction | ⬜ | keep-latest-per-key, filtered at claim time (not a background delete pass); partial index, tombstone convention still to be decided |
+| 8b — Per-topic tables | ✅ done | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost; answers in NOTES.md; tag `phase-8b` |
+| 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_keys` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |

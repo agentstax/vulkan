@@ -1545,12 +1545,23 @@ append-only exactly as every earlier phase built it (a write is always a new
 instead — `readMessages`/`FanOut` only return the row that's currently the
 latest for its `compaction_key`. Older rows still physically exist in
 `message_log_<topic_id>`, just never selected again once a newer one exists.
-The tradeoff: this trades a per-claim query cost (a correlated "is this the
-latest for its key" lookup) for removing the retention floor as a
-*correctness* requirement — nothing is ever deleted, so nothing can ever be
-deleted too early. The floor doesn't disappear, it downgrades to an
-optional, whenever-convenient disk-space cleanup, fully decoupled from what
-a claim is allowed to return.
+This removes the retention floor as a *correctness* requirement — nothing is
+ever deleted, so nothing can ever be deleted too early — and downgrades it to
+an optional, whenever-convenient disk-space cleanup, fully decoupled from
+what a claim is allowed to return.
+
+The correlated "is this the latest for its key" scan is the ground-truth
+*definition* of latest, but costs O(partitions since the row) to evaluate
+directly — measured, not assumed, at roughly linear growth with no early
+termination for a never-superseded key. `latest_keys(topic_id,
+compaction_key, latest_id)`, upserted synchronously in the same transaction
+as every keyed write, turns that into an O(1) lookup once built — the actual
+tradeoff this phase landed on: an O(1) read path, paid for with a second
+write on every keyed publish. That write cost was measured too, not just
+reasoned about: uncontended, it's noise-level; concentrated on one
+screamingly hot key under concurrency, it's a real, quantified 2.5-2.9x
+slowdown from lock serialization — a non-issue for the many-distinct-keys
+workloads this design targets, a known cost for the pathological one.
 
 **The aha:** the predicate was originally planned as *bounded* — the max
 `id` for a key at or below the claim's own `high`, mirroring how a claim's
@@ -1569,43 +1580,123 @@ predicate, not just same-shaped ones.
 
 ### Explain it back
 
-*(pending — answer from memory in `LEARNING_PLAN.md`'s 8c section first,
-then carry the answers here.)*
+**1. Why doesn't this design need a watermark-safe floor to gate
+correctness, unlike Kafka's own compacted topics (and this repo's
+`reference/waterline/compaction.go`)? What does the floor become instead?**
+
+Because correctness is guaranteed at produce/write time — it's not an async
+process that needs an additional correctness gate due to potential lag. The
+floor for us is just the standard cursor `committed` value (not `claimed` —
+`claimed` can regress on a crash/reclaim, `committed` is the crash-safe
+frontier), and it's no longer a correctness gate: it downgrades to an
+optional, whenever-convenient disk-space cleanup, decoupled from what a
+claim can return.
+
+**2. Why can a brand-new consumer group get latest-per-key on its very
+first claim under this design, when a background-delete design can't give
+it that for free?**
+
+Because "latest" is guaranteed the moment the producer's transaction
+completes, so the claim query always gets the latest id for a
+`compaction_key`. A background-delete design has some amount of lag before
+compaction is actually complete, so it has no strong guarantee you'll see
+the latest — that depends on the size of the background-delete lag.
+
+**3. Why does the filter search unboundedly for a key's latest write
+instead of pinning to the claim's own high (`id <= $hi`)?**
+
+Because the guarantee held for a compacted topic isn't "at-least-once per
+message," it's "at-least-once per latest `compaction_key`." A bounded check
+would only be wrong on reclaim specifically: a lease's `high` is pinned once
+and reused on every retry, so after a crash a newer write landing outside
+that fixed window would be invisible to a bounded check — the reclaimed row
+would look "locally latest" within the stale window even though it's
+actually been superseded. Unbounded means the check re-evaluates live
+against current state every time, not the state pinned at claim time.
+
+**4. Why is the `compaction_key` index partial (`WHERE compaction_key IS
+NOT NULL`) instead of covering every row?**
+
+Because `compaction_key` isn't the standard consumer setup, and a full index
+would incur write overhead for no reason. (This index was dropped entirely
+later in this same phase, once `latest_keys` made it a dead consumer — this
+answers why it *was* partial, not what exists in the final schema.)
+
+**5. Phase 8b split every topic into its own physical table and its own
+dense id sequence. Why does that help *this* phase's compaction lookup
+specifically — what did a shared, system-wide `BIGSERIAL` cost a single
+topic's own key-latest search before 8b existed?**
+
+It doesn't matter for `latest_keys` itself — that lookup is O(1) regardless
+of partition count or sequence density by construction. It still matters
+for the ground-truth scan underneath it, though: before 8b, proving a
+negative meant scanning across every *other* topic's interleaved traffic
+sharing the same `BIGSERIAL`, not just this topic's own volume. 8b bounds
+that scan to one topic's own history — it just doesn't buy the index
+anything, since the index sidesteps the scan entirely.
 
 ### Done
 
 - Each topic's `message_log_<id>` gained a `compaction_key TEXT` column
-  (`NULL` = not compacted) plus a partial index,
-  `(compaction_key, id) WHERE compaction_key IS NOT NULL`, landed in
-  `createTopicLog` — per-topic tables are created dynamically per 8b, not
-  via a static migration file.
+  (`NULL` = not compacted), landed in `createTopicLog` — per-topic tables
+  are created dynamically per 8b, not via a static migration file. A
+  partial index, `(compaction_key, id) WHERE compaction_key IS NOT NULL`,
+  was added alongside it to keep the ground-truth scan's per-partition
+  lookup cheap, then dropped later in this same phase once `latest_keys`
+  made it a dead consumer (see Decisions).
 - Producer: `ProduceOptions{RoutingKey, CompactionKey string}` struct (not
   positional strings, matching this codebase's existing `*Config`
   convention), threaded through `Produce` → `AppendMessage` →
   `appendMessage`'s INSERT.
 - `readMessages` (CURSOR, shared by `ReclaimWithCursor` and
   `ClaimMessages`/`FreshClaimMessagesWithCursor`) and `FanOut` (LIFECYCLE)
-  both carry the identical unbounded predicate: `m.compaction_key IS NULL OR
-  NOT EXISTS (SELECT 1 FROM <logTable> newer WHERE newer.compaction_key =
-  m.compaction_key AND newer.id > m.id)`.
+  originally carried the identical unbounded `NOT EXISTS` predicate, later
+  swapped for the `latest_keys` lookup (see Decisions) — the two paths
+  still carry an identical predicate, just a cheaper one.
 - No schema-level tombstone concept — "how do I delete a key" is answered
   entirely by what the producer puts in `payload` (e.g. an app-defined
   `Deleted bool` field), not by anything this framework provides.
-- New `compactionlab` (`just compaction-lab`) proving latest-per-key
-  survives a claim while older rows stay physically present; a delivered
-  version stays delivered once superseded; the crash/reclaim race directly
-  (a superseded row gets zero delivery, its successor still gets its own);
-  a tombstoned key still delivers normally on both paths; unkeyed traffic
-  pays zero compaction query cost (`EXPLAIN` shows the subquery `never
-  executed`).
-- New `compactionwidthlab` (`just compaction-width-lab`) and
-  `compactionscalelab` (`just compaction-scale-lab`) measuring the unbounded
-  predicate's actual cost: a never-superseded key forces a genuine full scan
-  to the current tail (no early termination possible for a true negative),
-  growing linearly at roughly 10µs of fixed cost per partition with zero
-  amortization as a topic's history accumulates — confirmed, with numbers,
-  as a real backlog-replay cost for a long-lived, high-volume, low-
-  duplication topic, not just a theoretical shape.
+- **`latest_keys(topic_id, compaction_key, latest_id)`** — new migration
+  `006_latest_keys`, a single table shared across every topic (scales with
+  distinct-key count, not message volume, matching `cursors`/`deliveries`/
+  `bindings`'s post-8b shape rather than `message_log`'s per-topic one).
+  Write path: `appendMessage`'s INSERT gained `RETURNING id`; a keyed
+  publish follows it with `INSERT ... ON CONFLICT (topic_id,
+  compaction_key) DO UPDATE SET latest_id = EXCLUDED.latest_id WHERE
+  latest_keys.latest_id < EXCLUDED.latest_id` in the same transaction — the
+  guard compares by id *value*, not commit order, since `BIGSERIAL`
+  allocates at INSERT time not commit time and concurrent same-key
+  publishes can commit out of order under READ COMMITTED. Read path:
+  `readMessages`/`FanOut` swapped to `m.compaction_key IS NULL OR m.id =
+  (SELECT latest_id FROM latest_keys WHERE topic_id = $N AND
+  compaction_key = m.compaction_key)` — O(1) regardless of partition count,
+  the old unbounded scan deleted outright, no fallback path.
+- **Retention (8a) janitor cleanup.** `dropPartition`/`sweepBatch` both
+  garbage-collect the now-dangling `latest_keys` row when they reap a
+  dormant key's last surviving version, mirroring each function's existing
+  `deliveries`-cleanup precedent exactly (range-based delete for
+  `dropPartition`, `ANY(ids)`-based for `sweepBatch`). No new gate needed
+  in either function itself (see Decisions).
+- **A backfill chunk (`BackfillLatestKeys`) was built, verified live, then
+  reverted** — this project has no live deployment with compacted-topic
+  history predating `latest_keys` to migrate, so it was solving a problem
+  that doesn't exist here (see Decisions).
+- Six labs: `compactionlab` (`just compaction-lab`) proves latest-per-key
+  survives a claim while older rows stay physically present, a delivered
+  version stays delivered once superseded, the crash/reclaim race directly,
+  a tombstoned key still delivers on both paths, and unkeyed traffic pays
+  zero compaction query cost. `compactionwidthlab`/`compactionscalelab`
+  (`just compaction-width-lab`/`compaction-scale-lab`) measure the OLD
+  scan's cost as a frozen historical due-diligence record — linear growth,
+  ~10µs/partition, no amortization, extrapolated to ~1s/surviving-key on a
+  100K-partition topic's backlog replay. `latestkeysracelab` (`just
+  latest-keys-race-lab`) proves the write-path guard converges under real
+  concurrent same-key races and re-runs the scale curve against the NEW
+  lookup, flat at every checkpoint. `latestkeysretentionlab` (`just
+  latest-keys-retention-lab`) proves both janitor paths correctly expire a
+  dormant key's `latest_keys` row while a key touched inside the TTL
+  window survives. `latestkeyswritelab` (`just latest-keys-write-lab`)
+  quantifies the write-side tradeoff (see What it does above).
 
 ### Decisions
 
@@ -1626,22 +1717,67 @@ then carry the answers here.)*
   already scans current state each call), so this ended up a better fit for
   it than a bounded version would have been, and makes the two paths'
   predicates exactly identical rather than merely same-shaped.
-- **The unbounded predicate's read cost was measured, not assumed, after
-  push-back that the "prove a negative" case could become a real drain at
-  scale.** `compactionwidthlab` showed the shape (a never-superseded key's
+- **`latest_keys` was sized before it was built, not assumed necessary.**
+  `compactionwidthlab` showed the shape (a never-superseded key's
   negative-proof touches every partition; a just-superseded key's
   positive-proof benefits from runtime partition pruning and early
   termination); `compactionscalelab` showed the growth curve is linear with
-  no amortization, and extrapolated that a topic with ~100K lifetime
-  partitions could cost roughly a second per surviving key during a backlog
-  replay. This is a real, evidence-backed open question, not a closed one —
-  a companion `latest_keys(topic_id, compaction_key, latest_id)` table,
-  upserted in the same transaction as each keyed publish, is the leading
-  candidate fix if this project's compacted topics are ever expected to run
-  long-lived at real volume with backlog-replay consumers, but building it
-  is deferred, not part of this phase's own chunk sequence — full design
-  sketch recorded in `LEARNING_PLAN.md`'s 8c section for whenever it's
-  picked up.
+  no amortization, extrapolating to roughly a second per surviving key on a
+  ~100K-partition topic's backlog replay — real due-diligence evidence, not
+  a guess, before committing to the schema/write-path/read-path chunk
+  sequence that built the index.
+- **Retention (8a) needs no compaction-awareness — a dormant key's last
+  surviving row aging out is intentional expiration, not a bug.** Matches
+  the mental model anyone combining `RetentionTTL` with compaction already
+  has, and what every other TTL'd key-value system already does (Kafka's
+  own `cleanup.policy=compact,delete`, DynamoDB TTL): "retention" means "a
+  key untouched longer than the TTL window ages out," not "keep this
+  forever, delete everything else." Falls out for free from an existing
+  invariant — id order tracks time order, and compaction always keeps the
+  highest-id row for a key, so a key touched inside the TTL window keeps
+  landing in fresh partitions immune to both retention gates. Adding a
+  compaction-aware gate to `dropPartition`/`sweepBatch` was considered and
+  rejected — it would make `RetentionTTL` mean two different things
+  depending on whether a message carries a `compaction_key`. The one real
+  gap was `latest_keys` cleanup (not prevention), handled by extending each
+  janitor function's existing `deliveries`-cleanup pattern.
+- **Backfill built, verified, then reverted — no compatibility requirement
+  to conserve.** A per-topic backfill (`INSERT INTO latest_keys ... SELECT
+  ..., MAX(id) ... GROUP BY compaction_key ON CONFLICT DO NOTHING`) was
+  implemented and proven correct live (reconstructs history, idempotent,
+  never clobbers a live write mid-race) before being reverted outright:
+  this project has no live deployment with compacted-topic history
+  predating `latest_keys`, so a migration mechanism for one was designing
+  for a user that doesn't exist. Consequence: the read path's
+  fallback-vs-require-backfill sub-decision became moot — `latest_keys` is
+  authoritative from the moment the write path lands, no fallback, old
+  scan deleted outright.
+- **The `compaction_key` partial index was dropped once `latest_keys` made
+  it a dead consumer.** Verified via `EXPLAIN` (twice — a keyed row
+  present, and a pure-unkeyed range matching `compactionlab`'s own shape)
+  that the index doesn't appear in the new predicate's plan at all, not
+  even as a rejected candidate, and that the unkeyed-row short-circuit
+  holds identically against `latest_keys` instead. Caught a real staleness
+  bug along the way: `compactionlab`'s own `EXPLAIN` check had silently
+  drifted to testing the OLD query after the read-path swap, its comment
+  still claiming to test "the exact shape `readMessages` runs" — fixed to
+  test the real current predicate before deciding to drop the index. Its
+  only remaining consumers, `compactionwidthlab`/`compactionscalelab`, are
+  deliberately frozen historical measurements whose job was already done;
+  losing their ability to exactly reproduce those recorded numbers on a
+  future re-run was an acceptable, not a blocking, cost.
+- **The write-side tradeoff was measured, not just flagged.**
+  `latestkeyswritelab`: sequential/uncontended publishes showed no
+  measurable fixed cost (unkeyed vs. keyed within ±10-20% noise, no
+  consistent direction). 50 concurrent goroutines each to their own key vs.
+  all 50 hammering one key showed the real cost — 2.5-2.9x slower under
+  full serialization on the `ON CONFLICT DO UPDATE` row lock, reproduced
+  across repeated runs. A ~1,000-update hot-key burst left ~500 dead tuples
+  pending autovacuum — real but *bounded* bloat, since the table holds
+  exactly one row per (topic, key) regardless of republish count. A
+  non-issue for the many-distinct-keys workloads this design targets; a
+  known, quantified cost for a workload that concentrates writes on one
+  screamingly hot key.
 - **Two side findings, filed rather than fixed here.** Running
   `compactionscalelab` at 2000 partitions made `topic.Destroy` fail with
   Postgres's "out of shared memory" — dropping a partitioned parent needs an
@@ -1653,5 +1789,8 @@ then carry the answers here.)*
   `dropPartition`/`sweepBatch` already use. That, plus the read-cost finding
   above, also motivated a second `TODO.md` entry: a built-in, overridable
   "default alerts" concept for surfacing this kind of silent-until-it-
-  happens operational cliff before a user hits it blind.
+  happens operational cliff before a user hits it blind. Separately: the
+  pre-existing `DeleteTopic` gap (doesn't clean up `cursors`/`deliveries`/
+  `bindings`/`leases` on topic destroy) was confirmed to apply identically
+  to `latest_keys` — not a new problem, same gap, one more table.
 
