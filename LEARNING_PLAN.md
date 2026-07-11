@@ -1583,77 +1583,273 @@ is allowed to return.
       recognize "this key is fully dead, purge every row for it" without
       understanding each topic's schema — accepted as a real but currently
       unneeded cost, revisit if that cleanup pass ever gets built.
-- [ ] **Open question, not settled — measure before deciding whether to
-      act.** 8b landed (each topic has its own id sequence and partition
-      set), which already bounds the filter's cost to one topic's own
-      volume instead of the whole system's. What's still unmeasured, made
-      sharper by the unbounded-predicate decision above: proving a row IS
-      the latest for its key (`NOT EXISTS`, the common case for a caught-up
-      consumer) means proving a negative — there's no early termination the
-      way finding a match gets, so it costs (keyed rows in a claim) × (every
-      partition from that row's own partition through the topic's *current*
-      last partition, not capped at the claim's own high anymore). The width
-      -tension and planner-optimization labs below give the actual number.
+- [x] **Open question, measured.** 8b landed (each topic has its own id
+      sequence and partition set), which already bounds the filter's cost to
+      one topic's own volume instead of the whole system's. `compactionwidthlab`
+      (`just compaction-width-lab`) measured the unbounded predicate's actual
+      cost via `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)`, counting partitions
+      the correlated `newer` subplan's `Append` node *actually executed*
+      against (distinct from partitions merely *listed* in the plan — Append
+      always lists every child; Postgres tags a skipped one `(never
+      executed)`, and only non-tagged lines count as a real touch):
 
-      Mitigations considered, not adopted without evidence they're needed:
+      - **Narrow topic (`PartitionSize=4`, 40 rows, 11 partitions):**
+        proving id 1 ("stale", never superseded) is the latest touched
+        **all 11 partitions** — genuinely a full scan, not a missing
+        optimization: with the row in the very first partition, every other
+        partition's range could theoretically hold a newer id, so nothing is
+        statically excludable. Proving id 39 ("fresh" v1, superseded by v2 at
+        id 40, one partition over) touched **only 2 partitions** (9 and 10)
+        — Postgres's runtime partition pruning skipped every partition
+        strictly before the row's own, then the anti-join stopped as soon as
+        partition 10 produced a match.
+      - **Wide topic (`PartitionSize=50`, same 40 rows, 1 partition):** both
+        cases touched **1 partition** — the tension disappears entirely once
+        everything fits in one partition, not because the query changed.
+
+      So the earlier worry was correctly shaped but the "proving a negative"
+      case is worse in the worst case (a stale, near-the-start key never
+      superseded: full scan to the tail) than "finding a match" typically is
+      — but a match's actual cost isn't free either, it's bounded by how far
+      the row's own partition sits from wherever (in partition order) the
+      superseding write landed, which can be just as bad as the negative
+      case if that write is old. In this project's own labs (small, bursty
+      workloads, single-digit-millisecond `Execution Time` even at the
+      11-partition full scan), the absolute cost was negligible — but the
+      *shape* of the tradeoff (full-scan-to-tail is real, not a formality)
+      is confirmed, not just theorized.
+
+      **Follow-up, `compactionscalelab` (`just compaction-scale-lab`):**
+      the width lab above only had 11 total partitions, so "full scan"
+      looked small. This lab grows ONE topic's history in checkpoints (10 →
+      50 → 200 → 500 → 1000 partitions, extending the same topic rather than
+      reseeding) and re-measures the SAME never-superseded row's negative
+      -proof cost fresh at each step — the actual shape of a backlog
+      consumer replaying an old, never-superseded key on a topic that keeps
+      growing underneath it:
+
+      ```
+      partitions   rows       touched    exec_ms
+      10           99         10         0.120
+      50           499        50         0.353
+      200          1999       200        1.071
+      500          4999       500        4.213
+      1000         9999       1000       9.953
+      ```
+
+      Growth is linear, no amortization: roughly **10µs of fixed cost per
+      partition**, and every single checkpoint re-touches every partition
+      from the row's own through the current tail — nothing about proving
+      this same row's status gets cheaper as history piles up behind it,
+      it gets strictly more expensive, forever, for as long as that key is
+      never superseded.
+
+      **This corrects the read of mitigation (3) below.** `PartitionSize`
+      only sets the *constant* for a topic's total row count at a point in
+      time — it does not cap the partition count a long-lived topic
+      accumulates over its *lifetime*. A topic that runs for a year has
+      however many partitions a year of writes produced, regardless of how
+      wide each one is; a backlog consumer replaying that topic from offset
+      0 pays the scan-to-current-tail cost for every never-superseded key it
+      walks past, and the tail keeps moving further away as the topic keeps
+      aging underneath the replay. Extrapolating the measured ~10µs/partition
+      linear rate: a topic that's accumulated on the order of 100K partitions
+      over its life would cost roughly **1 second per surviving key** touched
+      during a full backlog replay — a replay touching thousands of such
+      keys adds minutes of pure query overhead, independent of and on top of
+      whatever the consumer's own processing does. That's the "massive drain
+      at extremes" scale, confirmed with a number, not just a shape.
+
+      **Side finding, unrelated to read cost but found while running this
+      lab at scale:** `compaction-width-lab`'s cleanup (`topic.Destroy` on a
+      2000-partition topic) failed with Postgres's own "out of shared
+      memory" — dropping a partitioned parent needs an `ACCESS EXCLUSIVE`
+      lock on every partition and every object each one owns (measured: 5
+      lockable relations per partition — table, pkey index, partial
+      `compaction_key` index, TOAST table, TOAST index), and Postgres's
+      lock table is fixed-size at server start
+      (`max_locks_per_transaction × (max_connections + max_prepared_transactions)`
+      — 6400 on this dev Postgres's stock defaults). ~1000 partitions
+      (~5000 locks) destroyed fine; ~2000 (~10000 locks) didn't. Not
+      specific to compaction — any topic that accumulates enough partitions
+      hits this on `Destroy`. Filed as its own `TODO.md` entry (batch the
+      drop the way 8a's `dropPartition`/`sweepBatch` already do, instead of
+      one giant transaction) rather than fixed here — out of this phase's
+      scope. This, plus the read-cost finding above, also motivated a
+      second `TODO.md` entry: a built-in "default alerts" concept for
+      surfacing exactly this kind of silent-until-it-happens operational
+      cliff before a user hits it blind.
+
+      Mitigations considered:
       1. **A companion `latest_keys(compaction_key, latest_id)` table**,
-         upserted on every keyed publish — read cost drops to one PK lookup
-         instead of a partition-spanning search. Biggest lever, but a real
-         design reversal: moves "who's latest" from a stateless read-time
-         computation to write-time-maintained state, which is the exact
-         thing this phase's read-time-filter approach was built to avoid
-         (Kafka's background-cleaner problem, reintroduced in miniature).
+         upserted on every keyed publish in the SAME transaction as the
+         publish itself — read cost drops to one PK lookup (O(1)) instead of
+         a partition-spanning search (O(partitions since the row)). Originally
+         filed as "Kafka's background-cleaner problem reintroduced in
+         miniature" and set aside on that basis — on reconsideration that
+         comparison doesn't hold up: Kafka's compactor is asynchronous
+         (an eventual-consistency window, its own crash-recovery story) and
+         physically deletes data (reintroducing a correctness-critical
+         floor). A synchronous, same-transaction UPSERT has neither property
+         — it doesn't delete anything, and there's no window where it's
+         stale relative to what's committed. This is now the leading
+         candidate if the scale numbers above are judged to matter for a
+         real deployment.
       2. **A per-claim aggregate CTE** (`GROUP BY compaction_key` once,
          join the claim's candidate rows against it) instead of one
          correlated subquery per row — better for a claim touching many
          distinct keys at once, worse for small/frequent claims since it
          forces scanning the whole key space regardless of how few keys the
-         claim actually touches. Workload-dependent, not a clear win.
-      3. **Coarser `PartitionSize` for compacted topics** — fewer, wider
-         partitions mean fewer partition boundaries to rule out proving a
-         negative. A per-topic config choice, not a code change — directly
-         what the width-tension lab below measures.
+         claim actually touches. Workload-dependent, not a clear win, and
+         doesn't change the underlying O(partitions) shape per key the way
+         (1) does — still not adopted.
+      3. **Coarser `PartitionSize` for compacted topics** — helps the
+         *current-snapshot* tension (confirmed: 11 partitions → 1 collapsed
+         both cases to the trivial floor) but, per the correction above,
+         does NOT bound the *lifetime* backlog-replay case, since partition
+         count keeps growing with a long-lived topic's total volume
+         regardless of width. Still free and worth doing, just not a fix for
+         the scenario that actually worried the numbers above.
 
-      Don't add (1) or (2) pre-emptively — they're real architectural
-      changes, not tuning knobs. Revisit only if the labs show the cost is
-      actually bad in practice, not on suspicion alone.
+      **Not implemented yet — this is now a real, evidence-backed design
+      question, not a closed one.** (1) is the credible fix if this
+      project's compacted topics are ever expected to run long-lived at
+      real volume with backlog-replay consumers; whether to build it is a
+      decision for whoever owns that tradeoff, not something to add
+      speculatively inside this phase's own chunk sequence.
+
+      **`latest_keys` design sketch (deferred — not built, for whenever this
+      gets picked up):**
+
+      - **Table shape, and a decision it needs:** `message_log` went
+        per-topic-table in 8b because its row count scales with every
+        message ever published. `latest_keys` scales with DISTINCT
+        `compaction_key` count instead — usually orders of magnitude
+        smaller — so the better default is a single SHARED table with a
+        `topic_id` column, matching `cursors`/`deliveries`/`leases`/
+        `bindings`'s post-8b shape, not `message_log`'s per-topic-table one:
+        ```sql
+        CREATE TABLE latest_keys (
+            topic_id       BIGINT NOT NULL,
+            compaction_key TEXT   NOT NULL,
+            latest_id      BIGINT NOT NULL,
+            PRIMARY KEY (topic_id, compaction_key)
+        );
+        ```
+        This is a real architectural call the way 8b's chunk 2 `Topic`
+        -as-field-vs-param question was — flag it for explicit review
+        before building, don't just assume the shared-table default is
+        right.
+      - **Write path — same transaction, not a background job.** This is
+        the property that makes it NOT a version of Kafka's background
+        compactor: `pkg/producer/datastore/postgres.go`'s `appendMessage`
+        gains a second statement in the SAME transaction as the
+        `message_log` INSERT, only when `CompactionKey != ""` (mirrors the
+        `NULLIF` convention — zero write-amplification for unkeyed traffic,
+        the common case):
+        ```sql
+        INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (topic_id, compaction_key) DO UPDATE
+        SET latest_id = EXCLUDED.latest_id
+        WHERE latest_keys.latest_id < EXCLUDED.latest_id;
+        ```
+        The `WHERE latest_id < EXCLUDED.latest_id` guard is load-bearing:
+        `BIGSERIAL` allocates an id at `INSERT` time, not commit time, so
+        two concurrent publishes to the SAME key can commit out of id
+        order under READ COMMITTED. The guard compares by id VALUE, not
+        commit order, so it converges to the true max regardless of which
+        transaction's UPSERT lands first — same discipline as this phase's
+        crash/reclaim reasoning: don't trust arrival order, trust the id.
+        Same-transaction atomicity also means there's never a window where
+        `message_log` has a row `latest_keys` doesn't know about yet — no
+        eventual-consistency gap the read path has to account for.
+      - **Read path.** `readMessages` and `FanOut` swap the unbounded `NOT
+        EXISTS` scan for a direct lookup:
+        ```sql
+        m.compaction_key IS NULL
+        OR m.id = (SELECT latest_id FROM latest_keys
+                   WHERE topic_id = $N AND compaction_key = m.compaction_key)
+        ```
+        O(1) instead of O(partitions since the row) — the whole point.
+      - **Backfill.** Any compacted topic with existing history predates
+        `latest_keys` and needs one, per-topic, before its read path can
+        safely switch over:
+        ```sql
+        INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+        SELECT <topic_id>, compaction_key, MAX(id)
+        FROM message_log_<topic_id>
+        WHERE compaction_key IS NOT NULL
+        GROUP BY compaction_key;
+        ```
+        Whether the read path should fall back to the old `NOT EXISTS` scan
+        for a key with no `latest_keys` row (tolerating an incomplete
+        backfill) or require the backfill to complete first is an open sub
+        -decision — don't resolve it speculatively, decide it when this is
+        actually being built.
+      - **Known tradeoff, not a blocker:** the `ON CONFLICT DO UPDATE` takes
+        a row lock, so publishes to the SAME hot key now serialize on that
+        key's `latest_keys` row (they didn't before — plain `message_log`
+        appends never contended). A non-issue for many-distinct-keys
+        workloads (this phase's whole design target); worth knowing if a
+        workload ever concentrates writes on one screamingly hot key.
+      - **Rough chunk shape whenever this starts:** (1) schema + migration,
+        (2) write-path UPSERT, (3) backfill for pre-existing compacted
+        topics, (4) read-path swap in `readMessages`/`FanOut`, (5) lab
+        proving correctness under concurrent same-key races (the id-guard
+        invariant) and re-running `compactionscalelab`'s growth curve
+        against the NEW read path to confirm it stays flat regardless of
+        partition count, (6) decide whether the old unbounded predicate is
+        deleted outright or kept as a documented fallback.
 
 **Lab:**
-- [ ] Publish several versions of the same `compaction_key`; confirm a claim
+- [x] Publish several versions of the same `compaction_key`; confirm a claim
       spanning all of them returns only the latest, and that the older rows
       still physically exist in `message_log` (filtered, not deleted).
-- [ ] Confirm a message superseded *after* it was already delivered isn't
+      Verified in `compactionlab` (`just compaction-lab`): 6 published rows,
+      claim returns `[3,4,6]`, physical row count stays 6.
+- [x] Confirm a message superseded *after* it was already delivered isn't
       retroactively unsent — a version already delivered stays delivered,
       compaction only ever affects what a not-yet-resolved read returns.
-- [ ] Confirm the crash/reclaim race directly: claim a range containing a
+      Verified: `user:3` v1 delivered+committed, v2 published after, v1
+      stays physically present and `committed` never regresses.
+- [x] Confirm the crash/reclaim race directly: claim a range containing a
       keyed row, let its lease expire without committing, publish a newer
       version of that same key, then reclaim the same range and confirm the
       superseded row is now correctly excluded — proving the predicate is
       unbounded (re-checked live on reclaim) rather than pinned to what
       existed at original claim time, and that this is safe because the
-      newer row still owes its own delivery.
-- [ ] Confirm a tombstoned key's latest row still gets delivered, not
+      newer row still owes its own delivery. Verified: `WORKER 1` crashes
+      holding `user:4` v1, `WORKER 2`'s reclaim of the identical range
+      returns zero messages once v2 supersedes it, v2 still delivers on its
+      own claim afterward.
+- [x] Confirm a tombstoned key's latest row still gets delivered, not
       silently dropped — the consumer decides what a tombstone means, not
-      the query.
-- [ ] `EXPLAIN` a claim over unkeyed traffic and confirm the compaction
+      the query. Verified on both CURSOR and LIFECYCLE paths with a
+      `Deleted: true` payload.
+- [x] `EXPLAIN` a claim over unkeyed traffic and confirm the compaction
       predicate's subquery never executes (the `OR` short-circuits on
-      `compaction_key IS NULL`) — watch the plan, don't assume it.
-- [ ] **Partition-width tension with 8a, measured.** Run the same keyed-claim
-      workload (same total row count, same key cardinality) against a
-      lab-narrow `partitionSize` and a lab-wide one, an order of magnitude
-      apart. Compare `EXPLAIN`'s reported partition touches (or `EXPLAIN
-      ANALYZE` timing) between the two. 8a wants many small partitions for
-      fast drop granularity and tight claim-path pruning; this phase's
-      lookup wants few large ones for cheap per-key resolution — get the
-      actual number they're trading off against each other, not a guess.
-- [ ] **Does the planner actually optimize the lookup?** Once several
-      partitions are live, `EXPLAIN` the compaction subquery and read the
-      plan shape: does it show a `Merge Append` that stops at the first
-      match scanning partitions newest-to-oldest (Postgres's min/max-via-index
-      optimization applied per-partition, terminating early), or does it show
-      every live partition scanned regardless of where the actual latest row
-      lives? Same discipline as 8a's partition-pruning lab — check the plan,
-      don't assume the optimizer does the smart thing.
+      `compaction_key IS NULL`) — watch the plan, don't assume it. Verified
+      via `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)`: plan shows `SubPlan
+      ... on message_log_<id> newer (never executed)`.
+- [x] **Partition-width tension with 8a, measured.** `compactionwidthlab`
+      (`just compaction-width-lab`) ran the identical 40-row, same-key-shape
+      workload against `PartitionSize=4` (11 partitions) and `PartitionSize=50`
+      (1 partition). Narrow: proving a never-superseded row is latest touched
+      all 11 partitions, proving a just-superseded one touched 2. Wide: both
+      cases touched the single partition. 8a wants many small partitions for
+      drop granularity; this phase's lookup wants few large ones for cheap
+      resolution — confirmed as a real, measured tension, not a guess, with
+      (3) above (coarser `PartitionSize`) as the direct lever.
+- [x] **Does the planner actually optimize the lookup?** Verified: no `Merge
+      Append` (there's no ordering requirement for an existence check, so
+      Postgres plans a plain `Append` under a `Nested Loop Anti Join`), but it
+      does NOT scan every live partition regardless — runtime partition
+      pruning skips everything strictly before the row's own partition, and
+      the anti-join stops as soon as any partition in scan order produces a
+      match (proven via `(never executed)` tags on the skipped children in
+      `EXPLAIN ANALYZE`'s output). Proving a negative gets no such benefit:
+      with nothing to match, every unprunable partition genuinely executes.
 
 **Explain it back:**
 1. Why doesn't this design need a watermark-safe floor to gate correctness,

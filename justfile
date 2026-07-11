@@ -79,6 +79,23 @@ topic-lab:
 compaction-lab:
   go run examples/phase_1/compactionlab/main.go
 
+# log compaction width/planner lab: measures whether proving a row IS the
+# latest for its key (no early termination) actually costs more partition
+# scans than proving it ISN'T (can stop at the first match) -- and whether a
+# coarser PartitionSize collapses that cost. Registers two identically-seeded
+# topics differing only in PartitionSize, EXPLAIN ANALYZEs both cases on each.
+compaction-width-lab:
+  go run examples/phase_1/compactionwidthlab/main.go
+
+# log compaction SCALE lab: how bad "prove a negative" gets as a topic's
+# history grows -- the backlog-replay worst case, not the small A/B width
+# comparison compaction-width-lab runs. One never-superseded row is
+# re-measured fresh at each checkpoint as more partitions/rows pile up
+# behind it, tracking a genuine growth curve (partitions touched + wall
+# clock) instead of one snapshot.
+compaction-scale-lab:
+  go run examples/phase_1/compactionscalelab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

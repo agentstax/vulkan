@@ -185,6 +185,79 @@ consider an index on deliveries.status if claim scans ever show up hot
   (WHERE status IN ('ready', 'inflight')) over a full one -- terminal done/dead
   rows drop out of upkeep instead of bloating the index forever.
 
+topic.Destroy can exhaust Postgres's lock table on a topic with enough partitions
+  problem: DeleteTopic (pkg/topic/datastore.go) wraps `DELETE FROM topics` +
+  `DROP TABLE message_log_<id>` in ONE transaction. message_log_<id> is
+  partitioned, so dropping the parent requires an ACCESS EXCLUSIVE lock on every
+  partition AND every object each partition owns -- confirmed empirically each
+  partition owns 5 lockable relations (the partition table, its pkey index, its
+  partial compaction_key index, its TOAST table, and the TOAST table's own
+  index). Postgres's shared lock table is fixed-size at server start
+  (max_locks_per_transaction * (max_connections + max_prepared_transactions) --
+  6400 on this dev Postgres's stock defaults, 64*100). Measured directly while
+  building Phase 8c's compaction-width-lab: a topic with ~1000 partitions
+  destroyed fine (~5000 locks needed), ~2000 partitions failed with "out of
+  shared memory" (~10000 locks needed, past the 6400-slot ceiling). Not
+  compaction-specific -- any topic (compacted or not) that accumulates enough
+  partitions hits this on Destroy. 8a's own retention janitor (dropPartition,
+  sweepBatch) already avoids this exact trap by dropping ONE partition per call
+  in small batches; Destroy never got that treatment because it's a full-topic
+  teardown, not an incremental janitor.
+  decision: reimplement DeleteTopic using the same batched-drop shape as 8a's
+  dropPartition/sweepBatch -- DETACH + DROP each partition individually, batched
+  across multiple transactions (e.g. 50-100 at a time), THEN drop the
+  now-empty parent + delete the topics row in one final small transaction.
+  Raising max_locks_per_transaction server-side is NOT a fix by itself -- it
+  requires a restart, and a topic can always eventually outgrow whatever new
+  ceiling gets picked; batching removes the ceiling instead of just raising it.
+  full mechanism + the exact math above is in LEARNING_PLAN.md's 8c section
+  (search "out of shared memory").
+
+Default alerts: a built-in layer for "approaching an operational limit" conditions
+  problem: several failure modes in this project are silent until they happen --
+  nothing warns a user before they cross an operational cliff, and the only way
+  to know one is coming is to independently derive the math (the way this
+  session had to, twice, in one sitting). Two concrete examples that motivated
+  this, both from Phase 8c:
+    - partition count climbing high enough that Destroying/dropping a whole
+      topic in one transaction risks exhausting Postgres's shared lock table
+      (see the topic.Destroy entry directly above) -- ~1000 partitions was fine,
+      ~2000 wasn't, on stock Postgres settings.
+    - a compacted topic's unbounded "is this key still the latest" read cost
+      growing LINEARLY with the topic's accumulated partition history (measured
+      ~10us/partition, no early termination -- LEARNING_PLAN.md's 8c "Open
+      question" bullet) -- a backlog replay against an old, high-history topic
+      can silently become minutes of pure query overhead with no signal telling
+      the operator why.
+  neither of these is a correctness bug -- both "work fine until they don't."
+  decision (concept only, not designed in detail yet): a `default alerts` layer
+  shipped with built-in opinions about known cliffs (partition count past N,
+  compaction history depth past N partitions since a key's oldest surviving
+  version, etc). each alert, when it fires:
+    - explains WHY it matters -- the actual mechanism (e.g. "dropping this topic
+      in one transaction risks exhausting Postgres's shared lock table"), never
+      just "value > threshold".
+    - lists the LEVERS available to address it, each with enough context to
+      judge, not a generic "raise your limits" instruction (e.g. for partition
+      count: widen PartitionSize, switch to batched drops, shorten retention).
+    - is OVERRIDABLE per-check -- a user who's made an informed call that a
+      check doesn't apply to them (bigger max_locks_per_transaction,
+      intentionally short-lived topics) can raise or disable it.
+  open questions, deliberately not resolved speculatively:
+    - delivery mechanism -- log line, a metric/gauge, a health-check endpoint,
+      or an active check the Janitor/Consume loop runs each tick? this needs
+      the SAME logger/metrics extension point the "internal pkg logging" and
+      "track abandoned goroutines" TODO items above already call for, not a
+      separate one -- don't build a second one.
+    - where defaults live -- hardcoded thresholds, computed live from the
+      user's actual Postgres settings (e.g. query max_locks_per_transaction and
+      derive a real partition-count ceiling), or user-configured per deployment?
+    - v1 scope -- start with the two concrete, already-measured triggers above
+      rather than designing a general-purpose rule engine up front.
+  depends on: a common logger/metrics interface (already a TODO above); natural
+  home is probably pkg/topic's Janitor loop once it exists, since that already
+  runs periodically per topic.
+
 EXPLAIN (ANALYZE, BUFFERS, TIMING) 
 UPDATE message_log
 SET 
