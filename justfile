@@ -96,6 +96,22 @@ compaction-width-lab:
 compaction-scale-lab:
   go run examples/phase_1/compactionscalelab/main.go
 
+# latest_keys correctness lab: N goroutines publish to the SAME key at once,
+# proving the write path's id-guard converges to the true max regardless of
+# commit order -- plus the O(1) counterpart to compaction-scale-lab's linear
+# curve, same checkpoints, EXPLAIN ANALYZEing the NEW latest_keys lookup
+# instead of the old scan. Touched partitions must stay flat at every size.
+latest-keys-race-lab:
+  go run examples/phase_1/latestkeysracelab/main.go
+
+# latest_keys + retention lab: does 8a's retention correctly garbage collect
+# latest_keys when it reaps a compacted key's last surviving row? Covers both
+# janitor paths (dropPartition's whole-partition removal, sweepBatch's
+# individually-expired-row reap) and confirms a key touched inside the ttl
+# window survives every pass untouched, either path.
+latest-keys-retention-lab:
+  go run examples/phase_1/latestkeysretentionlab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

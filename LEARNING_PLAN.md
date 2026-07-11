@@ -1922,21 +1922,27 @@ matter, not a patch bolted on after a scaling surprise.
       match (proven via `(never executed)` tags on the skipped children in
       `EXPLAIN ANALYZE`'s output). Proving a negative gets no such benefit:
       with nothing to match, every unprunable partition genuinely executes.
-- [ ] **`latest_keys` correctness under concurrent same-key races.**
-      Concurrent publishes to the same `compaction_key` committing out of
-      `id` order under READ COMMITTED must still converge to the true max —
-      proving the `WHERE latest_id < EXCLUDED.latest_id` guard holds, not
-      just reading it off the SQL. Re-run `compactionscalelab`'s growth
-      curve against the new lookup-based read path and confirm it stays
-      flat (no partition-count dependence) where the ground-truth scan grew
-      linearly.
-- [ ] **Retention expiring a compacted key's last surviving row.** Publish
-      a keyed row old enough to fall outside `RetentionTTL`, run
-      `dropPartition`/`sweepBatch`, and confirm both the row AND its
-      `latest_keys` entry are gone afterward (no ghost row left behind) —
-      then confirm a fresh claim over that key's old range returns nothing,
-      not a resurrected stale version. Separately, confirm a key that keeps
-      getting touched inside the TTL window survives repeated sweeps.
+- [x] **`latest_keys` correctness under concurrent same-key races.**
+      `latestkeysracelab` (`just latest-keys-race-lab`) fired 50 goroutines
+      publishing to the SAME `compaction_key` at once; `latest_keys`
+      converged to the true `MAX(id)` afterward, proving the `WHERE
+      latest_id < EXCLUDED.latest_id` guard live, not just read off the
+      SQL. Same lab re-ran `compactionscalelab`'s exact checkpoints (10 →
+      1000 partitions) against the new lookup: touched message_log
+      partitions stayed at 1 and execution time stayed flat
+      (~0.015-0.023ms) at every checkpoint, where the old `NOT EXISTS` scan
+      grew linearly with history size — because the new lookup never scans
+      message_log's history at all, it's a single PK lookup on
+      `latest_keys` plus the row's own id.
+- [x] **Retention expiring a compacted key's last surviving row.**
+      `latestkeysretentionlab` (`just latest-keys-retention-lab`) covers
+      both janitor paths: `dropPartition` rolling a dormant key's sole
+      partition out of active use, and `sweepBatch` reaping an
+      individually-expired row from a partition that never rolls. Both
+      confirm the row AND its `latest_keys` entry are gone afterward (no
+      ghost row) while a key touched inside the TTL window survives —
+      `sweepBatch`'s case specifically re-touches and re-sweeps 3 times to
+      confirm it isn't a first-pass fluke.
 
 **Explain it back:**
 1. Why doesn't this design need a watermark-safe floor to gate correctness,
