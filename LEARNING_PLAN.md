@@ -1784,21 +1784,13 @@ matter, not a patch bolted on after a scaling surprise.
                    WHERE topic_id = $N AND compaction_key = m.compaction_key)
         ```
         O(1) instead of O(partitions since the row) — the whole point.
-      - **Backfill.** Any compacted topic with existing history predates
-        `latest_keys` and needs one, per-topic, before its read path can
-        safely switch over:
-        ```sql
-        INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
-        SELECT <topic_id>, compaction_key, MAX(id)
-        FROM message_log_<topic_id>
-        WHERE compaction_key IS NOT NULL
-        GROUP BY compaction_key;
-        ```
-        Whether the read path should fall back to the old `NOT EXISTS` scan
-        for a key with no `latest_keys` row (tolerating an incomplete
-        backfill) or require the backfill to complete first is an open sub
-        -decision, resolved during that chunk sequence itself, not
-        speculatively here.
+        `latest_keys` is authoritative for every keyed row from the moment
+        the write path lands: no backfill, no fallback path for a key with
+        no `latest_keys` row. This project has no compatibility requirement
+        to conserve — there is no live deployment with compacted-topic
+        history predating this table, so a migration mechanism for one
+        would be designing for a user that doesn't exist. The old unbounded
+        `NOT EXISTS` predicate is deleted outright once this lookup lands.
       - **Known tradeoff, not a blocker:** the `ON CONFLICT DO UPDATE` takes
         a row lock, so publishes to the SAME hot key now serialize on that
         key's `latest_keys` row (they didn't before — plain `message_log`
@@ -1808,14 +1800,12 @@ matter, not a patch bolted on after a scaling surprise.
       - **Chunk shape** (own plan file, `~/.claude/plans/` — same convention
         as every other phase's chunk breakdown): (1) schema + migration, (2)
         write-path UPSERT, (3) retention/janitor cleanup in `dropPartition`/
-        `sweepBatch` (below), (4) backfill for pre-existing compacted
-        topics, (5) read-path swap in `readMessages`/`FanOut`, (6) lab
-        proving correctness under concurrent same-key races (the id-guard
+        `sweepBatch` (below), (4) read-path swap in `readMessages`/`FanOut`
+        — deletes the old unbounded predicate outright, (5) lab proving
+        correctness under concurrent same-key races (the id-guard
         invariant) and re-running `compactionscalelab`'s growth curve
         against the NEW read path to confirm it stays flat regardless of
-        partition count. The old unbounded predicate's fate (deleted
-        outright or kept as a documented fallback) is decided as part of
-        (5), not separately.
+        partition count.
 - [ ] **Decided: 8a's retention needs no compaction-awareness — dropping or
       sweeping a compacted key's last surviving row is intentional
       expiration, not a bug.** Raised as an open question: what happens
