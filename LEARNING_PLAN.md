@@ -1489,23 +1489,57 @@ whenever-convenient disk-space cleanup, decoupled entirely from what a claim
 is allowed to return.
 
 **Build:**
-- [ ] `message_log` gets `compaction_key TEXT`, folded into `001_messages`
-      per house style — `NULL` means "not compacted," same convention as
-      `routing_key`. A **partial** index,
-      `CREATE INDEX ON message_log (compaction_key, id) WHERE compaction_key
-      IS NOT NULL`, so unkeyed rows (the common case, if compaction is used
-      at all) pay zero index-maintenance cost, not just a small one.
-- [ ] Producer: `AppendMessage`/`WorkProducer.Produce` take a
-      `compactionKey string`, `""` → SQL `NULL`.
-- [ ] CURSOR path: `readMessages` gains one more predicate on its existing
-      `WHERE` — a row is eligible if it's unkeyed, or if it's the max `id`
-      for its `compaction_key` at or below the claim's own high bound (never
-      peek past what the claim is allowed to see). One change point: both
-      `ReclaimWithCursor` and `ClaimMessages` already route through
-      `readMessages`.
-- [ ] LIFECYCLE path: `FanOut`'s `SELECT ... WHERE` gets the identical
-      predicate, duplicated inline — same shape as the Phase 7 routing
-      predicate, no shared function between the two paths.
+- [x] Each topic's own `message_log_<id>` gets `compaction_key TEXT` (landed
+      in `createTopicLog`, not a `migrations/` file -- per-topic tables are
+      created dynamically per Phase 8b). `NULL` means "not compacted," same
+      convention as `routing_key`. A **partial** index,
+      `... (compaction_key, id) WHERE compaction_key IS NOT NULL`, so
+      unkeyed rows (the common case, if compaction is used at all) pay zero
+      index-maintenance cost, not just a small one.
+- [x] Producer: `WorkProducer.Produce`/`AppendMessage` take a
+      `ProduceOptions{RoutingKey, CompactionKey string}` struct (not two
+      positional strings -- matches this codebase's existing `*Config`
+      convention for optional per-call knobs, e.g. `topic.Config`). `""` →
+      SQL `NULL`, same as `routing_key`.
+- [x] **CURSOR and LIFECYCLE paths, decided: the predicate is unbounded, not
+      bounded by the claim's own high.** Originally planned as "the max `id`
+      for its `compaction_key` at or below the claim's own high bound" --
+      revised after working through a concrete failure case. A claim's
+      `high` is pinned once (stored on its `leases` row) and reused
+      identically on every reclaim of that lease -- so a *bounded* check
+      would need to look ahead, or risk this exact race: claim `(0,2]` reads
+      row1 (`user:1`) before a competing write; the worker crashes before
+      `Commit()`; a newer row for `user:1` is published; `ReclaimWithCursor`
+      re-reads the identical `(0,2]` range and now excludes row1, since it's
+      no longer the max within that fixed window. Row1 gets zero completed
+      delivery attempts, not at-least-one -- looked like a real at-least-once
+      violation.
+
+      The resolution: at-least-once for a *compacted* key was never a
+      per-message guarantee to begin with -- it's at-least-once delivery of
+      that key's *current latest value*, exactly what Kafka's own compacted
+      topics document (a caught-up consumer sees the final value; nothing is
+      promised about every intermediate one). Row1 being superseded and
+      dropped is correct, not a gap: row5 (the row that superseded it) still
+      owes its own at-least-once delivery, and if row5 crashes and gets
+      raced too, that obligation just carries forward again, converging once
+      writes to the key stop outpacing successful delivery. So the predicate
+      is simply "nothing with a higher `id` and the same `compaction_key`
+      exists, anywhere" -- unbounded, re-checked live on every read,
+      including reclaims. `readMessages` (CURSOR, shared by
+      `ReclaimWithCursor` and `ClaimMessages`) and `FanOut` (LIFECYCLE) carry
+      the identical predicate. `FanOut` was never bounded by a claim high to
+      begin with (it already scans current state each call), so this is
+      actually a better fit for it than a bounded version would have been --
+      and it makes the two paths' predicates *exactly* identical, not just
+      same-shaped.
+
+      Note this predicate is NOT itself racy the way the original
+      lease-reclaim concern was: `FanOut`'s decision to materialize a
+      `deliveries` row is one-time and durable (once inserted it's retried
+      via `ClaimMessagesWithLifecycle`'s own machinery, never re-decided),
+      and `readMessages`' re-evaluation on reclaim is fine now that the
+      guarantee it's held to is per-key, not per-message.
 - [x] **Decided: no schema-level tombstone at all — pure application
       convention.** Considered relaxing `payload` to nullable (`payload IS
       NULL` = tombstone, matching Kafka and
@@ -1549,25 +1583,55 @@ is allowed to return.
       recognize "this key is fully dead, purge every row for it" without
       understanding each topic's schema — accepted as a real but currently
       unneeded cost, revisit if that cleanup pass ever gets built.
-- [ ] **Open question, not settled — deferred to 8b.** The filter's cost is
-      (keyed rows in a claim) × (live partitions up to that claim's high),
-      because `id` is one `BIGSERIAL` shared by every topic — a quiet,
-      rarely-updated key still pays for however busy the *whole system* is,
-      since unrelated topics are what's actually advancing `id` between that
-      key's writes. 8b's per-topic tables (each with its own id sequence)
-      bound this to a topic's own volume instead of the whole system's — not
-      solved here, and this phase's own labs above (the width-tension and
-      planner-optimization checks) are worth re-running after 8b lands to
-      see the smaller, cleaner number.
+- [ ] **Open question, not settled — measure before deciding whether to
+      act.** 8b landed (each topic has its own id sequence and partition
+      set), which already bounds the filter's cost to one topic's own
+      volume instead of the whole system's. What's still unmeasured, made
+      sharper by the unbounded-predicate decision above: proving a row IS
+      the latest for its key (`NOT EXISTS`, the common case for a caught-up
+      consumer) means proving a negative — there's no early termination the
+      way finding a match gets, so it costs (keyed rows in a claim) × (every
+      partition from that row's own partition through the topic's *current*
+      last partition, not capped at the claim's own high anymore). The width
+      -tension and planner-optimization labs below give the actual number.
+
+      Mitigations considered, not adopted without evidence they're needed:
+      1. **A companion `latest_keys(compaction_key, latest_id)` table**,
+         upserted on every keyed publish — read cost drops to one PK lookup
+         instead of a partition-spanning search. Biggest lever, but a real
+         design reversal: moves "who's latest" from a stateless read-time
+         computation to write-time-maintained state, which is the exact
+         thing this phase's read-time-filter approach was built to avoid
+         (Kafka's background-cleaner problem, reintroduced in miniature).
+      2. **A per-claim aggregate CTE** (`GROUP BY compaction_key` once,
+         join the claim's candidate rows against it) instead of one
+         correlated subquery per row — better for a claim touching many
+         distinct keys at once, worse for small/frequent claims since it
+         forces scanning the whole key space regardless of how few keys the
+         claim actually touches. Workload-dependent, not a clear win.
+      3. **Coarser `PartitionSize` for compacted topics** — fewer, wider
+         partitions mean fewer partition boundaries to rule out proving a
+         negative. A per-topic config choice, not a code change — directly
+         what the width-tension lab below measures.
+
+      Don't add (1) or (2) pre-emptively — they're real architectural
+      changes, not tuning knobs. Revisit only if the labs show the cost is
+      actually bad in practice, not on suspicion alone.
 
 **Lab:**
 - [ ] Publish several versions of the same `compaction_key`; confirm a claim
       spanning all of them returns only the latest, and that the older rows
       still physically exist in `message_log` (filtered, not deleted).
-- [ ] Confirm two claims landing on either side of an update each see the
-      correct value as-of their own high bound — a version already delivered
-      to an earlier claim isn't retroactively unsent; only a *later* claim is
-      affected by a newer write.
+- [ ] Confirm a message superseded *after* it was already delivered isn't
+      retroactively unsent — a version already delivered stays delivered,
+      compaction only ever affects what a not-yet-resolved read returns.
+- [ ] Confirm the crash/reclaim race directly: claim a range containing a
+      keyed row, let its lease expire without committing, publish a newer
+      version of that same key, then reclaim the same range and confirm the
+      superseded row is now correctly excluded — proving the predicate is
+      unbounded (re-checked live on reclaim) rather than pinned to what
+      existed at original claim time, and that this is safe because the
+      newer row still owes its own delivery.
 - [ ] Confirm a tombstoned key's latest row still gets delivered, not
       silently dropped — the consumer decides what a tombstone means, not
       the query.

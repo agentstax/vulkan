@@ -552,8 +552,19 @@ func (d *consumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, 
 			-- if bindings exist but our routing_key does not match any of them
 			-- no row is materialized for this message at all
 		)
+		AND (
+			-- unkeyed rows are never compacted
+			m.compaction_key IS NULL
+			-- keyed rows materialize a delivery only if nothing newer exists for
+			-- the same key
+			OR NOT EXISTS (
+				SELECT 1 FROM %s newer
+				WHERE newer.compaction_key = m.compaction_key
+					AND newer.id > m.id
+			)
+		)
 		ON CONFLICT DO NOTHING;
-	`, logTable(topicID))
+	`, logTable(topicID), logTable(topicID))
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
 	if err != nil {
@@ -694,10 +705,24 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 				-- if bindings exist but our routing_key does not match any of them
 				-- we do not return anything
 			)
+			AND (
+				-- unkeyed rows are never compacted
+				m.compaction_key IS NULL
+				-- keyed rows are eligible only if nothing newer exists for the same
+				-- key -- unbounded on purpose: what this owes is at-least-once
+				-- delivery of a key's CURRENT latest value, not of every version
+				-- ever written, so a superseded row can be dropped even outside
+				-- this claim's own (low, high]
+				OR NOT EXISTS (
+					SELECT 1 FROM %s newer
+					WHERE newer.compaction_key = m.compaction_key
+						AND newer.id > m.id
+				)
+			)
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, logTable(topicID))
+	`, logTable(topicID), logTable(topicID))
 
 	rows, err := tx.Query(ctx, sql, low, high, consumerGroup)
 	if err != nil {
