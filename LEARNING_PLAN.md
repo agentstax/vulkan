@@ -1478,15 +1478,33 @@ duplicates get resolved. Instead of a background janitor physically deleting
 superseded rows once a watermark floor says it's safe (the approach
 `reference/waterline/compaction.go` takes), this phase filters **at claim
 time**: `readMessages`/`FanOut` only return the row that is *currently* the
-latest for its key, as of whatever high-water mark the claim itself is
-bounded by — older rows for that key still physically exist in
+latest for its key — older rows for that key still physically exist in
 `message_log`, just never selected again once a newer one exists. This
-trades a per-claim query cost (a correlated "is this the latest for its key"
-lookup) for removing the floor as a *correctness* requirement — nothing is
-ever deleted, so nothing can ever be deleted too early. The floor doesn't
-disappear, though: it downgrades from a correctness gate to an optional,
-whenever-convenient disk-space cleanup, decoupled entirely from what a claim
-is allowed to return.
+removes the floor as a *correctness* requirement — nothing is ever deleted,
+so nothing can ever be deleted too early. The floor doesn't disappear,
+though: it downgrades from a correctness gate to an optional, whenever
+-convenient disk-space cleanup, decoupled entirely from what a claim is
+allowed to return.
+
+"Currently the latest for its key" is itself an unbounded question — nothing
+statically rules out a newer row existing anywhere ahead of it in the log —
+so this phase resolves it two ways, deliberately, not by accident. The
+*definition* is a correlated existence check ("nothing with a higher `id`
+and the same key exists, anywhere"), evaluated directly against
+`message_log`; that's ground truth, and cheap enough for a key whose own
+writes cluster close together. But for an old, never-superseded key in a
+long-lived topic, evaluating that definition directly means a scan to the
+current tail, and the cost only grows as the topic keeps accumulating
+history behind it. So the plan pairs the definition with a companion index
+table, `latest_keys(topic_id, compaction_key, latest_id)`, upserted
+synchronously in the same transaction as every keyed write — turning "what's
+the latest for this key" from an O(partitions since the row) scan into an
+O(1) lookup once it's in place. The correlated scan lands first (it's the
+spec this phase has to satisfy regardless of how it's made fast, and its
+cost is measured with real labs before the index is built, to size what the
+index actually buys); `latest_keys` is the performance layer the design
+always intended to carry the read path once that cost is confirmed to
+matter, not a patch bolted on after a scaling surprise.
 
 **Build:**
 - [x] Each topic's own `message_log_<id>` gets `compaction_key TEXT` (landed
@@ -1583,12 +1601,14 @@ is allowed to return.
       recognize "this key is fully dead, purge every row for it" without
       understanding each topic's schema — accepted as a real but currently
       unneeded cost, revisit if that cleanup pass ever gets built.
-- [x] **Open question, measured.** 8b landed (each topic has its own id
-      sequence and partition set), which already bounds the filter's cost to
-      one topic's own volume instead of the whole system's. `compactionwidthlab`
-      (`just compaction-width-lab`) measured the unbounded predicate's actual
-      cost via `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)`, counting partitions
-      the correlated `newer` subplan's `Append` node *actually executed*
+- [x] **Sizing the case for `latest_keys`.** 8b landed (each topic has its
+      own id sequence and partition set), which already bounds the ground
+      -truth scan's cost to one topic's own volume instead of the whole
+      system's. Before spending a schema/write-path/read-path chunk sequence
+      building the index, `compactionwidthlab` (`just compaction-width-lab`)
+      measured what the scan costs *without* it, via
+      `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF)`, counting partitions the
+      correlated `newer` subplan's `Append` node *actually executed*
       against (distinct from partitions merely *listed* in the plan — Append
       always lists every child; Postgres tags a skipped one `(never
       executed)`, and only non-tagged lines count as a real touch):
@@ -1644,21 +1664,26 @@ is allowed to return.
       it gets strictly more expensive, forever, for as long as that key is
       never superseded.
 
-      **This corrects the read of mitigation (3) below.** `PartitionSize`
-      only sets the *constant* for a topic's total row count at a point in
-      time — it does not cap the partition count a long-lived topic
-      accumulates over its *lifetime*. A topic that runs for a year has
-      however many partitions a year of writes produced, regardless of how
-      wide each one is; a backlog consumer replaying that topic from offset
-      0 pays the scan-to-current-tail cost for every never-superseded key it
-      walks past, and the tail keeps moving further away as the topic keeps
-      aging underneath the replay. Extrapolating the measured ~10µs/partition
-      linear rate: a topic that's accumulated on the order of 100K partitions
-      over its life would cost roughly **1 second per surviving key** touched
-      during a full backlog replay — a replay touching thousands of such
-      keys adds minutes of pure query overhead, independent of and on top of
-      whatever the consumer's own processing does. That's the "massive drain
-      at extremes" scale, confirmed with a number, not just a shape.
+      **Confirms `latest_keys` is the right layer, not a coarser
+      `PartitionSize`.** A coarser partition width helps the *current
+      -snapshot* tension (11 partitions → 1 collapses both cases to the
+      trivial floor) but doesn't bound the *lifetime* case: it sets the
+      constant for a topic's total row count at a point in time, not the
+      partition count a long-lived topic accumulates over its life. A topic
+      that runs for a year has however many partitions a year of writes
+      produced, regardless of how wide each one is; a backlog consumer
+      replaying that topic from offset 0 pays the scan-to-current-tail cost
+      for every never-superseded key it walks past, and the tail keeps
+      moving further away as the topic keeps aging underneath the replay.
+      Extrapolating the measured ~10µs/partition linear rate: a topic that's
+      accumulated on the order of 100K partitions over its life would cost
+      roughly **1 second per surviving key** touched during a full backlog
+      replay — a replay touching thousands of such keys adds minutes of pure
+      query overhead, independent of and on top of whatever the consumer's
+      own processing does. `latest_keys` collapses this to a flat O(1)
+      lookup regardless of partition count or topic age — the numbers above
+      are why that index, not a wider partition, is the layer this design
+      relies on for the lifetime case.
 
       **Side finding, unrelated to read cost but found while running this
       lab at scale:** `compaction-width-lab`'s cleanup (`topic.Destroy` on a
@@ -1680,46 +1705,33 @@ is allowed to return.
       surfacing exactly this kind of silent-until-it-happens operational
       cliff before a user hits it blind.
 
-      Mitigations considered:
-      1. **A companion `latest_keys(compaction_key, latest_id)` table**,
-         upserted on every keyed publish in the SAME transaction as the
-         publish itself — read cost drops to one PK lookup (O(1)) instead of
-         a partition-spanning search (O(partitions since the row)). Originally
-         filed as "Kafka's background-cleaner problem reintroduced in
-         miniature" and set aside on that basis — on reconsideration that
-         comparison doesn't hold up: Kafka's compactor is asynchronous
-         (an eventual-consistency window, its own crash-recovery story) and
-         physically deletes data (reintroducing a correctness-critical
-         floor). A synchronous, same-transaction UPSERT has neither property
-         — it doesn't delete anything, and there's no window where it's
-         stale relative to what's committed. This is now the leading
-         candidate if the scale numbers above are judged to matter for a
-         real deployment.
-      2. **A per-claim aggregate CTE** (`GROUP BY compaction_key` once,
-         join the claim's candidate rows against it) instead of one
-         correlated subquery per row — better for a claim touching many
-         distinct keys at once, worse for small/frequent claims since it
-         forces scanning the whole key space regardless of how few keys the
-         claim actually touches. Workload-dependent, not a clear win, and
-         doesn't change the underlying O(partitions) shape per key the way
-         (1) does — still not adopted.
-      3. **Coarser `PartitionSize` for compacted topics** — helps the
+      Alternatives considered and rejected in favor of the index:
+      1. **A per-claim aggregate CTE** (`GROUP BY compaction_key` once, join
+         the claim's candidate rows against it) instead of one correlated
+         subquery per row — better for a claim touching many distinct keys
+         at once, worse for small/frequent claims since it forces scanning
+         the whole key space regardless of how few keys the claim actually
+         touches. Workload-dependent, not a clear win, and doesn't change
+         the underlying O(partitions) shape per key the way the index does.
+      2. **Coarser `PartitionSize` for compacted topics alone** — helps the
          *current-snapshot* tension (confirmed: 11 partitions → 1 collapsed
-         both cases to the trivial floor) but, per the correction above,
-         does NOT bound the *lifetime* backlog-replay case, since partition
-         count keeps growing with a long-lived topic's total volume
-         regardless of width. Still free and worth doing, just not a fix for
-         the scenario that actually worried the numbers above.
+         both cases to the trivial floor) but, per the numbers above, does
+         NOT bound the *lifetime* backlog-replay case, since partition count
+         keeps growing with a long-lived topic's total volume regardless of
+         width. Still free and worth doing alongside the index, just not a
+         substitute for it.
 
-      **Not implemented yet — this is now a real, evidence-backed design
-      question, not a closed one.** (1) is the credible fix if this
-      project's compacted topics are ever expected to run long-lived at
-      real volume with backlog-replay consumers; whether to build it is a
-      decision for whoever owns that tradeoff, not something to add
-      speculatively inside this phase's own chunk sequence.
-
-      **`latest_keys` design sketch (deferred — not built, for whenever this
-      gets picked up):**
+      An earlier pass at this design flagged the companion table as "Kafka's
+      background-cleaner problem reintroduced in miniature" — that
+      comparison doesn't hold: Kafka's compactor is asynchronous (an
+      eventual-consistency window, its own crash-recovery story) and
+      physically deletes data (reintroducing a correctness-critical floor).
+      A synchronous, same-transaction UPSERT has neither property — it
+      doesn't delete anything, and there's no window where it's stale
+      relative to what's committed. That's what makes `latest_keys` the
+      right shape for this design specifically, not Kafka's approach in a
+      smaller costume.
+- [ ] **`latest_keys` — the O(1) index the read path resolves against.**
 
       - **Table shape, and a decision it needs:** `message_log` went
         per-topic-table in 8b because its row count scales with every
@@ -1785,22 +1797,90 @@ is allowed to return.
         Whether the read path should fall back to the old `NOT EXISTS` scan
         for a key with no `latest_keys` row (tolerating an incomplete
         backfill) or require the backfill to complete first is an open sub
-        -decision — don't resolve it speculatively, decide it when this is
-        actually being built.
+        -decision, resolved during that chunk sequence itself, not
+        speculatively here.
       - **Known tradeoff, not a blocker:** the `ON CONFLICT DO UPDATE` takes
         a row lock, so publishes to the SAME hot key now serialize on that
         key's `latest_keys` row (they didn't before — plain `message_log`
         appends never contended). A non-issue for many-distinct-keys
         workloads (this phase's whole design target); worth knowing if a
         workload ever concentrates writes on one screamingly hot key.
-      - **Rough chunk shape whenever this starts:** (1) schema + migration,
-        (2) write-path UPSERT, (3) backfill for pre-existing compacted
-        topics, (4) read-path swap in `readMessages`/`FanOut`, (5) lab
+      - **Chunk shape** (own plan file, `~/.claude/plans/` — same convention
+        as every other phase's chunk breakdown): (1) schema + migration, (2)
+        write-path UPSERT, (3) retention/janitor cleanup in `dropPartition`/
+        `sweepBatch` (below), (4) backfill for pre-existing compacted
+        topics, (5) read-path swap in `readMessages`/`FanOut`, (6) lab
         proving correctness under concurrent same-key races (the id-guard
         invariant) and re-running `compactionscalelab`'s growth curve
         against the NEW read path to confirm it stays flat regardless of
-        partition count, (6) decide whether the old unbounded predicate is
-        deleted outright or kept as a documented fallback.
+        partition count. The old unbounded predicate's fate (deleted
+        outright or kept as a documented fallback) is decided as part of
+        (5), not separately.
+- [ ] **Decided: 8a's retention needs no compaction-awareness — dropping or
+      sweeping a compacted key's last surviving row is intentional
+      expiration, not a bug.** Raised as an open question: what happens
+      when `DropExpiredPartitions`/`SweepExpiredPartitions` removes the
+      partition (or row) holding the CURRENT latest row for some
+      `compaction_key`? Both functions judge purely by age
+      (`partitionExpired`'s partition-level `created_at` check,
+      `sweepBatch`'s per-row `created_at < cutoff` check) with zero
+      awareness of `compaction_key`/`latest_keys` today.
+
+      The resolution follows from the mental model anyone combining
+      `RetentionTTL` with compaction on the same topic already has:
+      "retention" already means "a key that hasn't been touched in longer
+      than the TTL window ages out" in every TTL'd key-value system (Kafka's
+      own `cleanup.policy=compact,delete`, DynamoDB TTL, an expiring cache).
+      Nobody expects "retention" to mean "keep this forever no matter what,
+      except delete literally everything else" just because a message
+      happened to carry a `compaction_key`.
+
+      This composition already falls out correctly from an invariant this
+      design already relies on elsewhere — id order tracks time order, and
+      compaction always keeps the highest-id row for a key. As long as a
+      key keeps getting written to inside the TTL window, its current
+      -latest row keeps landing in a fresh, young partition, immune to both
+      gates. The ONLY way a key's sole surviving row ends up old enough to
+      expire is if that key genuinely hasn't been written to in longer than
+      `RetentionTTL` — at which point letting it go is retention doing
+      exactly what it was configured to do. A row that's merely superseded
+      (not a key's current latest) was already always safe to drop/sweep
+      regardless of age, no interaction with retention at all.
+
+      So `dropPartition`/`sweepBatch` need no new gate — adding one (make a
+      compacted key's latest row immune to retention entirely) was
+      considered and rejected: it would make `RetentionTTL` mean two
+      different things depending on whether a message happens to carry a
+      `compaction_key`, which is the actually-surprising behavior, not the
+      thing to guard against.
+
+      **What DOES need handling: `latest_keys` cleanup, not prevention.**
+      When a key expires this way, its `latest_keys` row becomes a
+      permanent ghost — pointing at an `id` that no longer exists, with
+      nothing left to ever supersede it. Both janitor paths already have
+      the exact precedent for this (each already cleans up orphaned
+      `deliveries` rows in the same transaction as its own delete) — extend
+      the same pattern to `latest_keys`:
+      - `dropPartition` (range-based, matching its existing `deliveries`
+        cleanup's shape): `DELETE FROM latest_keys WHERE topic_id = $1 AND
+        latest_id >= $2 AND latest_id < $3` (the partition's `[low, high)`).
+      - `sweepBatch` (exact-id-based, matching its existing `deliveries`
+        cleanup's shape): `DELETE FROM latest_keys WHERE topic_id = $1 AND
+        latest_id = ANY($2)` — reusing the same `ids` slice already
+        collected via `sweepBatch`'s own `RETURNING id`.
+
+      Both are safe and precise without any extra correctness check:
+      `latest_keys.latest_id` only ever equals a key's CURRENT latest id
+      (by construction of the write-path UPSERT's guard), so these deletes
+      only ever match when the row being reaped genuinely was that key's
+      last surviving version — a superseded row's id was never pointed to
+      by `latest_keys` in the first place, so sweeping/dropping it can
+      never accidentally orphan a still-live key. An earlier idea to
+      instead *alert* on this (tying into the "default alerts" TODO
+      concept) was considered and dropped — alerting on retention doing
+      exactly what it was configured to do would be noise, not signal;
+      that concept is for genuinely unexpected operational cliffs, not
+      routine expiration.
 
 **Lab:**
 - [x] Publish several versions of the same `compaction_key`; confirm a claim
@@ -1838,9 +1918,11 @@ is allowed to return.
       (1 partition). Narrow: proving a never-superseded row is latest touched
       all 11 partitions, proving a just-superseded one touched 2. Wide: both
       cases touched the single partition. 8a wants many small partitions for
-      drop granularity; this phase's lookup wants few large ones for cheap
-      resolution — confirmed as a real, measured tension, not a guess, with
-      (3) above (coarser `PartitionSize`) as the direct lever.
+      drop granularity; this phase's ground-truth scan wants few large ones
+      for cheap resolution — confirmed as a real, measured tension, not a
+      guess, with a coarser `PartitionSize` as the direct lever for the
+      current-snapshot case (`latest_keys` is the lever for the lifetime
+      case, since it removes the scan — and the tension with it — entirely).
 - [x] **Does the planner actually optimize the lookup?** Verified: no `Merge
       Append` (there's no ordering requirement for an existence check, so
       Postgres plans a plain `Append` under a `Nested Loop Anti Join`), but it
@@ -1850,6 +1932,21 @@ is allowed to return.
       match (proven via `(never executed)` tags on the skipped children in
       `EXPLAIN ANALYZE`'s output). Proving a negative gets no such benefit:
       with nothing to match, every unprunable partition genuinely executes.
+- [ ] **`latest_keys` correctness under concurrent same-key races.**
+      Concurrent publishes to the same `compaction_key` committing out of
+      `id` order under READ COMMITTED must still converge to the true max —
+      proving the `WHERE latest_id < EXCLUDED.latest_id` guard holds, not
+      just reading it off the SQL. Re-run `compactionscalelab`'s growth
+      curve against the new lookup-based read path and confirm it stays
+      flat (no partition-count dependence) where the ground-truth scan grew
+      linearly.
+- [ ] **Retention expiring a compacted key's last surviving row.** Publish
+      a keyed row old enough to fall outside `RetentionTTL`, run
+      `dropPartition`/`sweepBatch`, and confirm both the row AND its
+      `latest_keys` entry are gone afterward (no ghost row left behind) —
+      then confirm a fresh claim over that key's old range returns nothing,
+      not a resurrected stale version. Separately, confirm a key that keeps
+      getting touched inside the TTL window survives repeated sweeps.
 
 **Explain it back:**
 1. Why doesn't this design need a watermark-safe floor to gate correctness,
@@ -1869,8 +1966,10 @@ is allowed to return.
 
 **Done when:** a claim over keyed traffic returns exactly one row per key
 (proven live, not assumed), unkeyed traffic shows zero added query cost via
-`EXPLAIN`, the tombstone convention is decided and documented, NOTES.md,
-`git tag phase-8c`.
+`EXPLAIN`, the tombstone convention is decided and documented, `latest_keys`
+lands and the read path resolves against it in O(1) regardless of partition
+count, retention (8a) correctly expires a genuinely-dormant compacted key
+with no `latest_keys` ghost rows left behind, NOTES.md, `git tag phase-8c`.
 
 **Real systems:** Kafka compacted topics (same goal, different mechanism —
 Kafka's own compaction is still background/segment-based, not read-time

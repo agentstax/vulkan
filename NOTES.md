@@ -1534,3 +1534,124 @@ deliberate, manual escape hatch if that ever becomes a real problem.
   deliberate operational escape hatch this phase enables rather than
   automates.
 
+## Phase 8c — Log compaction: latest-per-key, filtered at claim time
+
+**What it does, and the tradeoff:** Kafka's compacted topics keep only the
+latest event per key, but get there by appending a new record per write and
+deleting older records for that key in the *background*, once a segment ages
+out. This phase skips the background step entirely: the log stays
+append-only exactly as every earlier phase built it (a write is always a new
+`id`, never a mutation), and duplicates get resolved **at claim time**
+instead — `readMessages`/`FanOut` only return the row that's currently the
+latest for its `compaction_key`. Older rows still physically exist in
+`message_log_<topic_id>`, just never selected again once a newer one exists.
+The tradeoff: this trades a per-claim query cost (a correlated "is this the
+latest for its key" lookup) for removing the retention floor as a
+*correctness* requirement — nothing is ever deleted, so nothing can ever be
+deleted too early. The floor doesn't disappear, it downgrades to an
+optional, whenever-convenient disk-space cleanup, fully decoupled from what
+a claim is allowed to return.
+
+**The aha:** the predicate was originally planned as *bounded* — the max
+`id` for a key at or below the claim's own `high`, mirroring how a claim's
+range is already fixed. Working through the crash/reclaim race in review
+showed this was wrong: a lease's `high` is pinned once and reused
+identically on every reclaim, so a bounded check re-evaluated against that
+frozen window could exclude a row a newer write superseded outside it,
+handing that row zero completed delivery attempts instead of at-least-one.
+The fix was realizing the guarantee being built was never "every version of
+a key gets delivered" — it's "the current latest value gets delivered,
+eventually," exactly what Kafka's own compacted topics document. Once that's
+the actual target, the predicate can be simply *unbounded* — "nothing with a
+higher `id` and the same key exists, anywhere," re-checked live on every
+read including reclaims — and CURSOR/LIFECYCLE end up with the *identical*
+predicate, not just same-shaped ones.
+
+### Explain it back
+
+*(pending — answer from memory in `LEARNING_PLAN.md`'s 8c section first,
+then carry the answers here.)*
+
+### Done
+
+- Each topic's `message_log_<id>` gained a `compaction_key TEXT` column
+  (`NULL` = not compacted) plus a partial index,
+  `(compaction_key, id) WHERE compaction_key IS NOT NULL`, landed in
+  `createTopicLog` — per-topic tables are created dynamically per 8b, not
+  via a static migration file.
+- Producer: `ProduceOptions{RoutingKey, CompactionKey string}` struct (not
+  positional strings, matching this codebase's existing `*Config`
+  convention), threaded through `Produce` → `AppendMessage` →
+  `appendMessage`'s INSERT.
+- `readMessages` (CURSOR, shared by `ReclaimWithCursor` and
+  `ClaimMessages`/`FreshClaimMessagesWithCursor`) and `FanOut` (LIFECYCLE)
+  both carry the identical unbounded predicate: `m.compaction_key IS NULL OR
+  NOT EXISTS (SELECT 1 FROM <logTable> newer WHERE newer.compaction_key =
+  m.compaction_key AND newer.id > m.id)`.
+- No schema-level tombstone concept — "how do I delete a key" is answered
+  entirely by what the producer puts in `payload` (e.g. an app-defined
+  `Deleted bool` field), not by anything this framework provides.
+- New `compactionlab` (`just compaction-lab`) proving latest-per-key
+  survives a claim while older rows stay physically present; a delivered
+  version stays delivered once superseded; the crash/reclaim race directly
+  (a superseded row gets zero delivery, its successor still gets its own);
+  a tombstoned key still delivers normally on both paths; unkeyed traffic
+  pays zero compaction query cost (`EXPLAIN` shows the subquery `never
+  executed`).
+- New `compactionwidthlab` (`just compaction-width-lab`) and
+  `compactionscalelab` (`just compaction-scale-lab`) measuring the unbounded
+  predicate's actual cost: a never-superseded key forces a genuine full scan
+  to the current tail (no early termination possible for a true negative),
+  growing linearly at roughly 10µs of fixed cost per partition with zero
+  amortization as a topic's history accumulates — confirmed, with numbers,
+  as a real backlog-replay cost for a long-lived, high-volume, low-
+  duplication topic, not just a theoretical shape.
+
+### Decisions
+
+- **No schema-level tombstone, considered and rejected.** Kafka's reason for
+  a protocol-level tombstone marker is so its background compactor — which
+  physically deletes rows — can recognize a deletion generically across any
+  topic without understanding that topic's payload schema, and eventually
+  purge the tombstone itself. This phase never physically deletes anything,
+  so that motivating reason doesn't apply; the filter query already returns
+  "whatever the latest row is" with zero special-casing regardless of what's
+  inside it. A future generic disk-space cleanup pass would lose the ability
+  to recognize "this key is fully dead, purge every row for it" without
+  understanding each topic's schema — accepted as a real but currently
+  unneeded cost.
+- **The predicate is unbounded, not bounded by the claim's own high** — see
+  the aha and Explain-it-back Q3 above for the crash/reclaim race that
+  forced this. `FanOut` was never bounded by a claim high to begin with (it
+  already scans current state each call), so this ended up a better fit for
+  it than a bounded version would have been, and makes the two paths'
+  predicates exactly identical rather than merely same-shaped.
+- **The unbounded predicate's read cost was measured, not assumed, after
+  push-back that the "prove a negative" case could become a real drain at
+  scale.** `compactionwidthlab` showed the shape (a never-superseded key's
+  negative-proof touches every partition; a just-superseded key's
+  positive-proof benefits from runtime partition pruning and early
+  termination); `compactionscalelab` showed the growth curve is linear with
+  no amortization, and extrapolated that a topic with ~100K lifetime
+  partitions could cost roughly a second per surviving key during a backlog
+  replay. This is a real, evidence-backed open question, not a closed one —
+  a companion `latest_keys(topic_id, compaction_key, latest_id)` table,
+  upserted in the same transaction as each keyed publish, is the leading
+  candidate fix if this project's compacted topics are ever expected to run
+  long-lived at real volume with backlog-replay consumers, but building it
+  is deferred, not part of this phase's own chunk sequence — full design
+  sketch recorded in `LEARNING_PLAN.md`'s 8c section for whenever it's
+  picked up.
+- **Two side findings, filed rather than fixed here.** Running
+  `compactionscalelab` at 2000 partitions made `topic.Destroy` fail with
+  Postgres's "out of shared memory" — dropping a partitioned parent needs an
+  `ACCESS EXCLUSIVE` lock on every partition and every object each one owns
+  (5 lockable relations per partition on this schema), and Postgres's lock
+  table is fixed-size at server start. Not specific to compaction — any
+  topic that accumulates enough partitions hits this on `Destroy`. Filed in
+  `TODO.md` to reimplement `Destroy` with the same batched-drop shape 8a's
+  `dropPartition`/`sweepBatch` already use. That, plus the read-cost finding
+  above, also motivated a second `TODO.md` entry: a built-in, overridable
+  "default alerts" concept for surfacing this kind of silent-until-it-
+  happens operational cliff before a user hits it blind.
+
