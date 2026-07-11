@@ -115,17 +115,6 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		return err
 	}
 
-	// partial: NULL compaction_key is the common case (unkeyed traffic), and it
-	// should pay zero index-maintenance cost.
-	createIndexSql := fmt.Sprintf(`
-		CREATE INDEX IF NOT EXISTS message_log_%d_compaction_key_idx
-			ON message_log_%d (compaction_key, id)
-			WHERE compaction_key IS NOT NULL;
-	`, id, id)
-	if _, err := tx.Exec(ctx, createIndexSql); err != nil {
-		return err
-	}
-
 	// message_log_<id>_<n> -- two-part name avoids colliding with another topic's table
 	createPartitionSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS message_log_%d_0

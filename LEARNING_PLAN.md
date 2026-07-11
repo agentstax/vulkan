@@ -1510,10 +1510,25 @@ matter, not a patch bolted on after a scaling surprise.
 - [x] Each topic's own `message_log_<id>` gets `compaction_key TEXT` (landed
       in `createTopicLog`, not a `migrations/` file -- per-topic tables are
       created dynamically per Phase 8b). `NULL` means "not compacted," same
-      convention as `routing_key`. A **partial** index,
-      `... (compaction_key, id) WHERE compaction_key IS NOT NULL`, so
-      unkeyed rows (the common case, if compaction is used at all) pay zero
-      index-maintenance cost, not just a small one.
+      convention as `routing_key`.
+      **A partial index, `(compaction_key, id) WHERE compaction_key IS NOT
+      NULL`, was added here to make the ground-truth scan's per-partition
+      `newer` lookup cheap -- then dropped once `latest_keys` landed and
+      the read path stopped querying `message_log` by `compaction_key`
+      altogether.** Verified via `EXPLAIN`: `message_log`'s own primary key
+      index is all the new lookup needs (it queries `latest_keys` by its
+      own PK instead), so the partial index had zero live consumers left --
+      confirmed by checking it doesn't appear in the new predicate's plan
+      at all, not even as a rejected candidate. Its only remaining
+      consumers were `compactionwidthlab`/`compactionscalelab`, which
+      deliberately keep the OLD `NOT EXISTS` query alive as a frozen
+      historical measurement -- dropping the index changes their absolute
+      numbers (already recorded above) but not their pass/fail, since
+      those assertions are about partition-touch-*count* relationships,
+      not the access method. `compactionlab`'s own `EXPLAIN` check
+      (`explainNoCompactionSubplan`) had silently drifted to testing this
+      stale query shape after the read-path swap -- caught and fixed to
+      test the real current predicate before deciding to drop the index.
 - [x] Producer: `WorkProducer.Produce`/`AppendMessage` take a
       `ProduceOptions{RoutingKey, CompactionKey string}` struct (not two
       positional strings -- matches this codebase's existing `*Config`
@@ -1731,7 +1746,7 @@ matter, not a patch bolted on after a scaling surprise.
       relative to what's committed. That's what makes `latest_keys` the
       right shape for this design specifically, not Kafka's approach in a
       smaller costume.
-- [ ] **`latest_keys` — the O(1) index the read path resolves against.**
+- [x] **`latest_keys` — the O(1) index the read path resolves against.**
 
       - **Table shape, and a decision it needs:** `message_log` went
         per-topic-table in 8b because its row count scales with every
@@ -1818,7 +1833,7 @@ matter, not a patch bolted on after a scaling surprise.
         invariant) and re-running `compactionscalelab`'s growth curve
         against the NEW read path to confirm it stays flat regardless of
         partition count.
-- [ ] **Decided: 8a's retention needs no compaction-awareness — dropping or
+- [x] **Decided: 8a's retention needs no compaction-awareness — dropping or
       sweeping a compacted key's last surviving row is intentional
       expiration, not a bug.** Raised as an open question: what happens
       when `DropExpiredPartitions`/`SweepExpiredPartitions` removes the
@@ -1960,17 +1975,27 @@ matter, not a patch bolted on after a scaling surprise.
 1. Why doesn't this design need a watermark-safe floor to gate correctness,
    unlike Kafka's own compacted topics (and this repo's
    `reference/waterline/compaction.go`)? What does the floor become instead?
+Answer: Because correctness is garenteed at produce / write time it is not an async process that needs an additional correctness gate due to potential lag.
+The floor for us is just the standard cursor claimed value.
 2. Why can a brand-new consumer group get latest-per-key on its very first
    claim under this design, when a background-delete design can't give it
    that for free?
-3. Why does the filter bound its search with the claim's own high (`id <=
-   $hi`) instead of taking the unbounded latest write for a key?
+Answer: Because 'latest' is garenteed after producer transaction is complete. So the claim query will always get lastest id for compaction_key
+A background delete design has some amount of lag before compaction is complete and as such has not strong garentee you will get latest, it is dependent on
+size of background-delete lag
+3. Why does the filter search unboundedly for a key's latest write instead
+   of pinning to the claim's own high (`id <= $hi`)?
+Answer: Because the gaurentee we hold by for a compacted topic is not 'at-least-once per message' it is 'at-least-once per latest compacted_key'.
+Additionally b/c previous non-latest compaction_key messages are not immediately deleted (only be retention policies) a lagging consumer could process
+outdated messages if that outdated message is the 'latest' within the claim range but that is not the point of a compacted topic
 4. Why is the `compaction_key` index partial (`WHERE compaction_key IS NOT
    NULL`) instead of covering every row?
+Answer: Because compaction_key is not the standard consumer setup and we would incur write overhead for no reason
 5. Phase 8b split every topic into its own physical table and its own dense
    id sequence. Why does that help *this* phase's compaction lookup
    specifically — what did a shared, system-wide `BIGSERIAL` cost a single
    topic's own key-latest search before 8b existed?
+Answer: with the latest_keys table I'm not sure it matters anymore? but previously we had to do a scan over entire id range to prove a negative that current id was latest
 
 **Done when:** a claim over keyed traffic returns exactly one row per key
 (proven live, not assumed), unkeyed traffic shows zero added query cost via

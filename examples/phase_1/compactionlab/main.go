@@ -225,8 +225,8 @@ func decode(payload json.RawMessage) KeyedRecord {
 
 // explainNoCompactionSubplan EXPLAIN ANALYZEs the exact shape readMessages runs
 // over an id range that only contains unkeyed rows, then checks the plan for
-// the "newer" correlated subquery being marked never executed -- proof the
-// OR's left disjunct (compaction_key IS NULL) short-circuited it for every row.
+// the latest_keys lookup being marked never executed -- proof the OR's left
+// disjunct (compaction_key IS NULL) short-circuited it for every row.
 func explainNoCompactionSubplan(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, low, high int64) {
 	logTable := fmt.Sprintf("message_log_%d", topicID)
 	sql := fmt.Sprintf(`
@@ -239,14 +239,11 @@ func explainNoCompactionSubplan(ctx context.Context, ds *coredatastore.PostgresD
 			)
 			AND (
 				m.compaction_key IS NULL
-				OR NOT EXISTS (
-					SELECT 1 FROM %s newer
-					WHERE newer.compaction_key = m.compaction_key
-						AND newer.id > m.id
-				)
+				OR m.id = (SELECT latest_id FROM latest_keys
+					WHERE topic_id = %d AND compaction_key = m.compaction_key)
 			)
 		ORDER BY m.id;
-	`, logTable, logTable)
+	`, logTable, topicID)
 
 	rows, err := ds.Pool.Query(ctx, sql, low, high, cursorGroup)
 	must(err)
@@ -262,9 +259,9 @@ func explainNoCompactionSubplan(ctx context.Context, ds *coredatastore.PostgresD
 	must(rows.Err())
 	fmt.Print(plan.String())
 
-	matched, err := regexp.MatchString(`(?i)newer.*never executed`, plan.String())
+	matched, err := regexp.MatchString(`(?i)latest_keys.*never executed`, plan.String())
 	must(err)
-	assertTrue("the compaction subplan scanning \"newer\" never executed against unkeyed-only rows", matched)
+	assertTrue("the latest_keys lookup never executed against unkeyed-only rows", matched)
 }
 
 func rowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
