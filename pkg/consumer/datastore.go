@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -351,6 +352,13 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 	}
 	defer tx.Rollback(ctx)
 
+	// sweptRow is sweepBatch's own RETURNING shape -- CompactionKey only exists
+	// to tell whether the latest_keys cleanup is worth running at all.
+	type sweptRow struct {
+		Id            int64   `db:"id"`
+		CompactionKey *string `db:"compaction_key"`
+	}
+
 	sweepSql := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE id IN (
@@ -360,16 +368,21 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 			ORDER BY id ASC -- walk the expired prefix from the front, same PK-index ride as partitionExpired
 			LIMIT $2
 		)
-		RETURNING id;
+		RETURNING id, compaction_key;
 	`, partitionTable(topicID, n), partitionTable(topicID, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
 		return 0, err
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	swept, err := pgx.CollectRows(rows, pgx.RowToStructByName[sweptRow])
 	if err != nil {
 		return 0, err
+	}
+
+	ids := make([]int64, len(swept))
+	for i, r := range swept {
+		ids[i] = r.Id
 	}
 
 	if len(ids) > 0 {
@@ -379,6 +392,21 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 			WHERE message_id = ANY($1);
 		`
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
+			return 0, err
+		}
+	}
+
+	// most topics never use compaction at all, so most sweeps would
+	// otherwise pay a delete that can never match anything
+	anyKeyed := slices.ContainsFunc(swept, func(r sweptRow) bool { return r.CompactionKey != nil })
+
+	if anyKeyed {
+		orphanKeySql := `
+			DELETE FROM latest_keys
+			WHERE topic_id = $1
+				AND latest_id = ANY($2);
+		`
+		if _, err := tx.Exec(ctx, orphanKeySql, topicID, ids); err != nil {
 			return 0, err
 		}
 	}
@@ -409,6 +437,18 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 			AND message_id < $2;
 	`
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
+		return err
+	}
+
+	// a dropped partition holding a key's latest row is a dormant key expiring
+	// drop the now-dangling pointer rather than leave it forever
+	orphanKeySql := `
+		DELETE FROM latest_keys
+		WHERE topic_id = $1
+			AND latest_id >= $2
+			AND latest_id < $3;
+	`
+	if _, err := tx.Exec(ctx, orphanKeySql, topicID, low, high); err != nil {
 		return err
 	}
 
