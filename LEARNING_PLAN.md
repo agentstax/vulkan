@@ -1976,7 +1976,8 @@ matter, not a patch bolted on after a scaling surprise.
    unlike Kafka's own compacted topics (and this repo's
    `reference/waterline/compaction.go`)? What does the floor become instead?
 Answer: Because correctness is garenteed at produce / write time it is not an async process that needs an additional correctness gate due to potential lag.
-The floor for us is just the standard cursor claimed value.
+The floor for us is just the standard cursor committed value (not claimed -- claimed can regress on a crash/reclaim, committed is the crash-safe frontier),
+and it's no longer a correctness gate -- it downgrades to an optional, whenever-convenient disk-space cleanup, decoupled from what a claim can return.
 2. Why can a brand-new consumer group get latest-per-key on its very first
    claim under this design, when a background-delete design can't give it
    that for free?
@@ -1986,16 +1987,21 @@ size of background-delete lag
 3. Why does the filter search unboundedly for a key's latest write instead
    of pinning to the claim's own high (`id <= $hi`)?
 Answer: Because the gaurentee we hold by for a compacted topic is not 'at-least-once per message' it is 'at-least-once per latest compacted_key'.
-Additionally b/c previous non-latest compaction_key messages are not immediately deleted (only be retention policies) a lagging consumer could process
-outdated messages if that outdated message is the 'latest' within the claim range but that is not the point of a compacted topic
+A bounded check would only be wrong on reclaim specifically: a lease's high is pinned once and reused on every retry, so after a crash a newer write
+landing outside that fixed window would be invisible to a bounded check -- the reclaimed row would look 'locally latest' within the stale window even
+though it's actually been superseded. Unbounded means the check re-evaluates live against current state every time, not the state pinned at claim time.
 4. Why is the `compaction_key` index partial (`WHERE compaction_key IS NOT
    NULL`) instead of covering every row?
-Answer: Because compaction_key is not the standard consumer setup and we would incur write overhead for no reason
+Answer: Because compaction_key is not the standard consumer setup and we would incur write overhead for no reason.
+(Note: this index was dropped entirely later in 8c once latest_keys made it a dead consumer -- this answers why it WAS partial, not what exists today.)
 5. Phase 8b split every topic into its own physical table and its own dense
    id sequence. Why does that help *this* phase's compaction lookup
    specifically — what did a shared, system-wide `BIGSERIAL` cost a single
    topic's own key-latest search before 8b existed?
-Answer: with the latest_keys table I'm not sure it matters anymore? but previously we had to do a scan over entire id range to prove a negative that current id was latest
+Answer: It doesn't matter for latest_keys itself -- that lookup is O(1) regardless of partition count or sequence density by construction. It still matters
+for the scan though, which is still the spec this phase's read path has to satisfy underneath latest_keys: before 8b, proving a negative meant scanning
+across every OTHER topic's interleaved traffic sharing the same BIGSERIAL, not just this topic's own volume. 8b bounds that scan to one topic's own
+history -- it just doesn't buy the index anything, since the index sidesteps the scan entirely.
 
 **Done when:** a claim over keyed traffic returns exactly one row per key
 (proven live, not assumed), unkeyed traffic shows zero added query cost via
