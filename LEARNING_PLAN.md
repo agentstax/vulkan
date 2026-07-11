@@ -76,10 +76,11 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
 | 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 8 — Operational layer | ⬜ | observability, LISTEN/NOTIFY — retention split into **8a**, log compaction split into **8c** |
+| 8 — Operational layer | ⬜ | retention split into **8a**, log compaction split into **8c**; observability moved to **10**, LISTEN/NOTIFY moved to **8d** |
 | 8a — Retention | ✅ done | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman; answers in NOTES.md; tag `phase-8a` |
 | 8b — Per-topic tables | ✅ done | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost; answers in NOTES.md; tag `phase-8b` |
 | 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_keys` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
+| 8d — Latency: LISTEN/NOTIFY | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
@@ -1046,36 +1047,20 @@ subscriptions.
       allows it, this project filters at claim time — the log stays
       append-only and physically unmodified, and `readMessages`/`FanOut`
       only ever return the latest row per key.
-- [ ] **Observability:** expose backlog/lag per group (`head − committed`, the
-      waterline gap), the `ready` exception count (retry depth), DLQ size (`dead`
-      count), and oldest-unacked age. These four numbers are how you operate any
-      queue.
-- [ ] **Latency (optional):** add `LISTEN/NOTIFY` so producers wake idle workers
-      instead of relying on poll interval, with a fallback poll for missed
-      notifies and delayed (`run_at`) messages. Knowing *why* you keep the
-      fallback poll (NOTIFY is fire-and-forget, lost if no listener) is the lesson.
 
-*→ Reference (after you've built it): the four observability numbers (lag =
-`head − committed`, DLQ size, ready count, oldest unacked) are left for you
-to add — retention by partition-drop is 8a's territory, log compaction is
-8c's (where `reference/waterline/compaction.go`'s watermark-safe
-background-delete approach is worth comparing against the read-time-filtering
-path chosen there).*
+*→ Reference (after you've built it): retention by partition-drop is 8a's
+territory, log compaction is 8c's (where `reference/waterline/compaction.go`'s
+watermark-safe background-delete approach is worth comparing against the
+read-time-filtering path chosen there) — the four observability numbers
+themselves moved to Phase 10, and `LISTEN/NOTIFY` latency moved to 8d.*
 
-**Lab:**
-- [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
-      every failure mode you've built and watch each of the four metrics react.
-      If a failure doesn't move a metric, you have a blind spot.
-      (The retention-drop lab moved to 8a with the rest of retention.)
+**Lab:** (The retention-drop lab moved to 8a with the rest of retention; the
+failure-mode/metrics lab moved to Phase 10 with observability.)
 
-**Explain it back:**
-1. Why must `LISTEN/NOTIFY` keep the fallback poll? Name both message classes
-   it would otherwise lose.
-2. For each of the four metrics: which failure mode is it the early warning for?
-
-**Done when:** every induced failure is visible in a metric, NOTES.md,
-`git tag phase-8`. Core platform operability is done — FIFO ordering (Phase 12)
-and lane sharding (6.5d) are optional add-ons from here, not prerequisites.
+**Done when:** retention (8a), per-topic tables (8b), and compaction (8c) are
+done and tagged, NOTES.md, `git tag phase-8`. Core platform operability is
+done — `LISTEN/NOTIFY` (8d), FIFO ordering (Phase 12), and lane sharding
+(6.5d) are optional add-ons from here, not prerequisites.
 
 **Real systems:** consumer **lag** monitoring (Burrow); RabbitMQ queue-depth
 alarms; Pulsar tiered storage.
@@ -2176,15 +2161,17 @@ compare against — you're building past what the reference bothered with.
 - [ ] **Writer-based default logger.** Provide a default implementation that
       takes an arbitrary `io.Writer`, so a caller with no opinions gets
       something reasonable for free.
+- [ ] **Operational metrics.** Expose backlog/lag per group (`head −
+      committed`, the waterline gap), the `ready` exception count (retry
+      depth), DLQ size (`dead` count), and oldest-unacked age. These four
+      numbers are how you operate any queue.
 - [ ] **Debug/metrics readout.** A debug mode or method that prints current
       queue state on demand: the `claimed`/`committed` gap per group, exception
-      counts (`ready`/`inflight`/`dead`), and open-lease count — a human-readable
-      CLI companion to Phase 8's four operational numbers, not a prerequisite
-      for them (Phase 8 is numbered earlier and doesn't depend on this
-      existing first — the two overlap in what they surface, not in build
-      order). If 8b has landed by the time this is built, scope these
-      per-`(group, topic)`, not just per-group — a group can read more than
-      one topic once topics exist.
+      counts (`ready`/`inflight`/`dead`), and open-lease count — the
+      human-readable CLI surface for the four operational metrics above. If
+      8b has landed by the time this is built, scope these per-`(group,
+      topic)`, not just per-group — a group can read more than one topic once
+      topics exist.
 - [ ] **Resolve the lazy-vs-synchronous rollup.** Decide, with measured
       numbers, whether `AdvanceWaterline` should stay a periodic lazy tick or
       become synchronous — advance right after a lease/batch resolves instead
@@ -2200,6 +2187,9 @@ compare against — you're building past what the reference bothered with.
       `claimed − committed`, but it's not exposed as a first-class number).
 
 **Lab:**
+- [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
+      every failure mode you've built and watch each of the four operational
+      metrics react. If a failure doesn't move a metric, you have a blind spot.
 - [ ] Run the consumer under load with the new debug output on; watch the
       `claimed`/`committed` gap and exception counts move in real time as you
       inject failures with the existing harness (`--fail-rate`, `--crash-after`).
@@ -2211,10 +2201,12 @@ compare against — you're building past what the reference bothered with.
    what do you gain and what do you pay for each?
 2. Why does a live debug readout of claimed/committed/exception-count matter
    even though the underlying data was always queryable in Postgres directly?
+3. For each of the four operational metrics: which failure mode is it the
+   early warning for?
 
-**Done when:** the pluggable logger and debug readout work end-to-end, the
-lazy-vs-synchronous rollup decision is made and recorded with measured
-reasoning, NOTES.md, `git tag phase-10`.
+**Done when:** the pluggable logger, operational metrics, and debug readout
+work end-to-end, the lazy-vs-synchronous rollup decision is made and recorded
+with measured reasoning, NOTES.md, `git tag phase-10`.
 
 **Real systems:** Kafka consumer-group lag exporters; the `slog` interface
 pattern (Go's own answer to "pluggable logger"); Temporal/Sidekiq dashboards
@@ -2467,6 +2459,37 @@ the one this phase revisits.
 
 ---
 
+## 8d — Latency: LISTEN/NOTIFY (deferred, optional)
+
+*Deprioritized for now — cut from Phase 8 to keep that phase's own scope to
+what's already shipped (retention, per-topic tables, compaction). Revisit
+only if poll-interval latency is actually a measured problem, not a
+theoretical one.*
+
+**Concept:** the consumer's poll loop bounds message-pickup latency to the
+poll interval. `LISTEN/NOTIFY` lets producers wake idle workers immediately
+instead of waiting for the next tick — but `NOTIFY` is fire-and-forget: a
+notification sent while no one is listening (or during a reconnect) is lost
+forever, so a fallback poll has to stay in place underneath it.
+
+**Build:**
+- [ ] Add `LISTEN/NOTIFY` so producers wake idle workers instead of relying
+      on poll interval, with a fallback poll for missed notifies and delayed
+      (`run_at`) messages. Knowing *why* you keep the fallback poll (NOTIFY
+      is fire-and-forget, lost if no listener) is the lesson.
+
+**Explain it back:**
+1. Why must `LISTEN/NOTIFY` keep the fallback poll? Name both message classes
+   it would otherwise lose.
+
+**Done when:** lab passes, NOTES.md, `git tag phase-8d`.
+
+**Real systems:** Postgres `LISTEN`/`NOTIFY` itself; this is the same
+at-least-one-fallback-poller pattern most Postgres-backed queues (River,
+Oban) use underneath their own notify-based wakeups.
+
+---
+
 ## How to use this
 
 - **Do the phases in order.** Resist jumping to the synthesis (Phases 6–6.5).
@@ -2484,11 +2507,12 @@ the one this phase revisits.
   TODO.md — do them in order too, they build on each other the same way.
 - **Current focus:** Phase 7 (Routing), then Phase 8 (Operational layer), then
   Phases 9–11 (TODO.md-derived: fault isolation, observability, architecture
-  cleanup). Phase 12 (FIFO partitions), 6.5d (lane sharding), and 7b
-  (header/content routing) are optional and deliberately deferred to the end
-  of this document — pick them up only if a real workload demands ordering,
-  lane-level throughput, or attribute-based routing a `routing_key` pattern
-  can't express.
+  cleanup). Phase 12 (FIFO partitions), 6.5d (lane sharding), 7b
+  (header/content routing), and 8d (`LISTEN/NOTIFY` latency) are optional and
+  deliberately deferred to the end of this document — pick them up only if a
+  real workload demands ordering, lane-level throughput, attribute-based
+  routing a `routing_key` pattern can't express, or poll-interval latency
+  actually matters.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.
