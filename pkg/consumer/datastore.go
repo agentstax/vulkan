@@ -28,8 +28,14 @@ type Datastore[Message any] interface {
 	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
 	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
 	SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error
-	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
-	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
+	// Commit frees the range's lease, then parks any failures as sparse deliveries
+	// rows -- initialBackoff sets how long a freshly parked row waits before it's
+	// first eligible for ClaimExceptions (backoff() takes over on later retries).
+	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration) error
+	// PartialCommit narrows a still-open lease to lastProcessed and parks whatever
+	// resolved before an interruption. The lease token isnt freed, it
+	// naturally expires and gets reclaimed.
+	PartialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration) error
 	AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error)
 	FanOut(ctx context.Context, topicID int64, consumerGroup string) error
 	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
@@ -547,13 +553,13 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 
 // frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit
 // bails before parking any phantom exception rows.
-func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
+func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration) error {
 	return d.DBRetry.Wrap(ctx, func() error {
-		return d.commit(ctx, topicID, consumerGroup, token, exceptions, terminals)
+		return d.commit(ctx, topicID, consumerGroup, token, exceptions, terminals, initialBackoff)
 	})
 }
 
-func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
+func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -579,7 +585,7 @@ func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 
 	// no ON CONFLICT needed: only the worker whose token still matches the lease
 	// reaches this INSERT -- a stale worker's DELETE above matches 0 rows and
-	// returns before ever parking.
+	// returns before ever running parkSql.
 	parkSql := `
 		INSERT INTO deliveries (consumer_group, topic_id, message_id, status, attempts, can_run_after, last_error)
 		VALUES (
@@ -588,18 +594,77 @@ func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 			$3,
 			$4,
 			0,
-			now() + interval '5 seconds',
+			now() + make_interval(secs => $6),
 			$5
 		);
 	`
 
 	for _, e := range exceptions {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, topicID, e.MessageId, "ready", e.Err); err != nil {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, topicID, e.MessageId, "ready", e.Err, initialBackoff.Seconds()); err != nil {
 			return err
 		}
 	}
 	for _, t := range terminals {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, topicID, t.MessageId, "dead", t.Err); err != nil {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, topicID, t.MessageId, "dead", t.Err, initialBackoff.Seconds()); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (d *consumerDatastore[Message]) PartialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.partialCommit(ctx, topicID, consumerGroup, token, lastProcessed, exceptions, terminals, initialBackoff)
+	})
+}
+
+func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration) error {
+	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// narrow lease range -- the untouched suffix (lastProcessed, high] stays
+	// leased under the same token until it expires and is reclaimed.
+	truncateSql := `
+		UPDATE leases
+		SET low = $4
+		WHERE consumer_group = $1
+			AND token = $2
+			AND topic_id = $3;
+	`
+
+	tag, err := tx.Exec(ctx, truncateSql, consumerGroup, token, topicID, lastProcessed)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+
+	// same parking shape as commit -- only the lease-side effect differs.
+	parkSql := `
+		INSERT INTO deliveries (consumer_group, topic_id, message_id, status, attempts, can_run_after, last_error)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			0,
+			now() + make_interval(secs => $6),
+			$5
+		);
+	`
+
+	for _, e := range exceptions {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, topicID, e.MessageId, "ready", e.Err, initialBackoff.Seconds()); err != nil {
+			return err
+		}
+	}
+	for _, t := range terminals {
+		if _, err := tx.Exec(ctx, parkSql, consumerGroup, topicID, t.MessageId, "dead", t.Err, initialBackoff.Seconds()); err != nil {
 			return err
 		}
 	}

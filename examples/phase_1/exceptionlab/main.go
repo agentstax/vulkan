@@ -78,7 +78,7 @@ func main() {
 
 	const failingId = int64(3)
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "simulated processing failure"}}
-	must(cd.Commit(ctx, tp.Id, group, claim1.Lease.Token, exceptions, nil))
+	must(cd.Commit(ctx, tp.Id, group, claim1.Lease.Token, exceptions, nil, 5*time.Second))
 	assert("one parked exception", deliveries(ctx, ds, tp.Id), 1)
 
 	committed := advance(ctx, cd, tp.Id)
@@ -92,7 +92,7 @@ func main() {
 	if claim2 == nil {
 		die("expected a fresh claim, got nil")
 	}
-	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil))
+	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second))
 	committed = advance(ctx, cd, tp.Id)
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
@@ -129,7 +129,7 @@ func main() {
 		if c == nil {
 			break // caught up
 		}
-		must(cd.Commit(ctx, tp.Id, group, c.Lease.Token, nil, nil))
+		must(cd.Commit(ctx, tp.Id, group, c.Lease.Token, nil, nil, 5*time.Second))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, cd, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)

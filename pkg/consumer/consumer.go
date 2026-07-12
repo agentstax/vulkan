@@ -31,18 +31,19 @@ const (
 )
 
 type WorkConsumerConfig struct {
-	Type                  ConsumerType
-	BatchLimit            int
-	MaxAttempts           int
-	MaxRangeReclaims      int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	ClaimPollRate         time.Duration
-	WorkTimeout           time.Duration // TODO - consider a better name
-	QueueTimeout          time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
-	AckMargin             time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
-	ShutdownTimeout       time.Duration
-	PartitionSafetyBuffer int64
-	JanitorPollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
-	JanitorSweepBatchSize int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+	Type                    ConsumerType
+	BatchLimit              int
+	MaxAttempts             int
+	MaxRangeReclaims        int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
+	ClaimPollRate           time.Duration
+	WorkTimeout             time.Duration // TODO - consider a better name
+	QueueTimeout            time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
+	AckMargin               time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- backoff() takes over on later retries
+	ShutdownTimeout         time.Duration
+	PartitionSafetyBuffer   int64
+	JanitorPollRate         time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
+	JanitorSweepBatchSize   int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -66,18 +67,19 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Config: &WorkConsumerConfig{
-			Type:                  CURSOR,
-			BatchLimit:            1, // no batching by default
-			MaxAttempts:           3,
-			MaxRangeReclaims:      3,
-			ClaimPollRate:         5 * time.Second,
-			WorkTimeout:           30 * time.Second,
-			QueueTimeout:          5 * time.Second,
-			AckMargin:             2 * time.Second,
-			ShutdownTimeout:       35 * time.Second,
-			PartitionSafetyBuffer: 50000, // TODO - make configurable, TODO - determine sane default
-			JanitorPollRate:       0,     // defaults to ClaimPollRate
-			JanitorSweepBatchSize: 1000,
+			Type:                    CURSOR,
+			BatchLimit:              1, // no batching by default
+			MaxAttempts:             3,
+			MaxRangeReclaims:        3,
+			ClaimPollRate:           5 * time.Second,
+			WorkTimeout:             30 * time.Second,
+			QueueTimeout:            5 * time.Second,
+			AckMargin:               2 * time.Second,
+			ExceptionInitialBackoff: 5 * time.Second,
+			ShutdownTimeout:         35 * time.Second,
+			PartitionSafetyBuffer:   50000, // TODO - make configurable, TODO - determine sane default
+			JanitorPollRate:         0,     // defaults to ClaimPollRate
+			JanitorSweepBatchSize:   1000,
 		},
 	}
 }
@@ -136,6 +138,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	}
 	if p.Config.AckMargin <= 0 {
 		return fmt.Errorf("AckMargin must be > 0, got %v", p.Config.AckMargin)
+	}
+	if p.Config.ExceptionInitialBackoff <= 0 {
+		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", p.Config.ExceptionInitialBackoff)
 	}
 	if p.Config.JanitorPollRate < 0 {
 		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", p.Config.JanitorPollRate)
@@ -334,7 +339,17 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 
 	var exceptions []MessageException
 	var terminals []MessageTerminal
+	lastProcessed := claimed.Lease.Low // partial commit stays at Low if interrupted before any message is reached
+
 	for _, message := range claimed.Messages {
+		if ctx.Err() != nil {
+			// graceful shutdown mid-range -- stop taking on new messages.
+			// everything up to lastProcessed is already resolved below.
+			return p.CursorPartialCommit(ctx, lastProcessed, claimed, exceptions, terminals)
+		}
+
+		lastProcessed = message.Id
+
 		var work WorkType
 		if err := json.Unmarshal(message.Payload, &work); err != nil {
 			// bad payload will never deserialize -- no point retrying it
@@ -350,7 +365,28 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 
 	// range always frees -- the lazy roller (RollWaterline) advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals); err != nil {
+	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff); err != nil {
+		if errors.Is(err, ErrLeaseLost) {
+			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
+		}
+		return err
+	}
+	return nil
+}
+
+func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastProcessed int64, claimed *ClaimedRange, exceptions []MessageException, terminals []MessageTerminal) error {
+	if lastProcessed == claimed.Lease.Low && len(exceptions) == 0 && len(terminals) == 0 {
+		return nil // interrupted before resolving anything -- leave the lease exactly as claimed
+	}
+
+	// the ctx that got us here is already Done -- the commit needs its own
+	// bounded, uncancelled window to actually reach the DB, same as Shutdown
+	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.AckMargin)
+	defer cancel()
+
+	// narrow the lease to the untouched suffix instead of leaving the WHOLE
+	// range (including the already-resolved prefix) to sit out a full reclaim.
+	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
