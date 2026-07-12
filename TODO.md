@@ -275,6 +275,5 @@ WHERE id IN (
 )
 RETURNING *;
 
-topic config comments
 idempotency_keys labs and stress test
-db retries for producer / topics datastore code
+deleteTopic cursors/deliveries/bindings/leases/latest_keys have this same gap already and are NOT fixed here
