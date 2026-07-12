@@ -155,6 +155,19 @@ delete-topic-lab:
 shutdown-truncation-lab:
   go run examples/phase_1/shutdowntruncationlab/main.go
 
+# Phase 9 lab: induces all three failure modes through the real CursorClaim
+# path -- a panicking consumerFunc, one that hangs past WorkTimeout, and a
+# forced pkg/retry transient blip. Confirms each is isolated to the one
+# message/call it happened on: the panic and the hang each dead-letter/retry
+# just that message without blocking the other two in the same batch, the
+# abandoned-goroutine gauge tracks the hang while it's still running in the
+# background and self-clears once it finishes, and a DB blip that clears
+# within MaxRetries is fully invisible to the caller (building this lab
+# surfaced and fixed a real bug in pkg/retry.Wrap swallowing a successful
+# retry behind its own prior failures).
+fault-isolation-lab:
+  go run examples/phase_1/faultisolationlab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

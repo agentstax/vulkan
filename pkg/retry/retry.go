@@ -41,6 +41,10 @@ func (r *Retry) Wrap(ctx context.Context, retryableFunc RetryableFunc) error {
 
 		err := retryableFunc()
 
+		if err == nil {
+			return nil // success -- prior (now-irrelevant) retry errors don't belong in the result
+		}
+
 		// recieved PermanentError -> exit early
 		if !IsRetryable(err) {
 			return errors.Join(append(retryErrs, err)...)
