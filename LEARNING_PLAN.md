@@ -81,7 +81,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 8b — Per-topic tables | ✅ done | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost; answers in NOTES.md; tag `phase-8b` |
 | 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_keys` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
 | 8d — Latency: LISTEN/NOTIFY | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 9 — Consumer fault isolation & recovery | ⬜ | panics, hard timeouts, DB-blip retry, graceful shutdown (from TODO.md) |
+| 9 — Consumer fault isolation & recovery | 🔨 in progress | DB-blip retry done (`pkg/retry`, idempotency_keys, `idempotency-keys-lab`); panics, hard timeouts, graceful shutdown still open (from TODO.md) |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
 | 12 — FIFO partitions | ⬜ | deprioritized — ordering opt-in on the lifecycle path, not current focus |
@@ -2016,21 +2016,38 @@ that calls `consumerFunc`, so there's nothing to compare against here; this
 phase is `pkg/consumer`-specific.
 
 **Build:**
-- [ ] **Datastore-blip retry backoff.** `Consume` spawns five errgroup
-      goroutines (`consumer.go:208-240`) — `Project`, `Process`,
-      `RollWaterline`, `DrainExceptions`, and `Janitor` — every one of them
-      currently returns a raw DB error straight to the errgroup, killing the
-      whole consumer on a transient network blip. Wrap each goroutine's
-      DB-facing calls in a retry-with-backoff instead of propagating
-      immediately. `Janitor` is the sharpest case: a blip killing it doesn't
-      just stall one poll cycle, it silently stops create-ahead/retention/
-      compaction for that consumer group until the whole process restarts,
-      with nothing else noticing in the meantime. Scope the retry tightly to
-      each goroutine's actual DB round-trips, not the whole function body —
-      `CursorClaim`/`ExceptionClaim` interleave DB calls with the black-box
-      `consumerFunc` call in the same loop, and a `consumerFunc` failure is
-      not a blip; it's already correctly routed through the exception
-      window, so retrying it again here would double-handle it.
+- [x] **Datastore-blip retry backoff.** New `pkg/retry` package: `Retry`
+      (generic, explicit-wrap `RetryableError`/`PermanentError` classification,
+      context-aware exponential backoff, no wasted sleep after the last
+      attempt) and `DatastoreRetry` (embeds `Retry`, auto-classifies raw pgx
+      errors via `pgClassify` — default-deny: only `pgconn.SafeToRetry`/
+      `pgconn.Timeout`/`net.Error` are retryable, everything else (a
+      `*pgconn.PgError`, context cancellation, an unrecognized app sentinel)
+      is permanent by default, which is what keeps `pkg/retry` free of any
+      import on `pkg/consumer`). Every `Datastore[Message]` interface method
+      `pkg/consumer`/`pkg/producer`/`pkg/topic` actually call got a
+      public/private split — the public method wraps a call to the identically
+      named private one in `DBRetry.Wrap`, so call sites (`consumer.go`,
+      `Janitor`'s five goroutines included) read exactly as before, no retry
+      plumbing visible at the call site.
+
+      This surfaced a real correctness gap beyond "just retry": `AppendMessage`
+      re-runs the caller's `producerFunc` on retry, and if a commit's ack is
+      lost after it actually landed (the classic ambiguous-commit problem),
+      blindly retrying would double-publish. Fixed with an idempotency key —
+      `ProducerFunc` takes one, `ProduceOptions.IdempotencyKey` lets a caller
+      supply their own (cross-restart protection) or leave it unset (a fresh
+      `uuid.NewV7()` per call, same-call-only protection) — claimed against a
+      new `idempotency_keys` table (`ON CONFLICT DO NOTHING`, checked *before*
+      the `message_log` insert) the same way Kafka's idempotent producer uses
+      a broker-assigned PID + monotonic per-partition sequence number to let
+      the broker silently no-op a duplicate resend. Can't be a unique
+      constraint on `message_log` itself (Postgres requires a partitioned
+      table's unique constraints to include the partition key) — same reason
+      `latest_keys` exists as its own table for compaction. Swept by the
+      janitor on `Topic.IdempotencyKeyTTL` (DB-persisted, defaults to 24h,
+      *not* "0 = keep forever" like `RetentionTTL` — an unbounded
+      `idempotency_keys` table is a bug, not a policy anyone should opt into).
 - [ ] **Graceful-shutdown lease truncation.** `Consume` already calls a
       pluggable `p.ShutdownFunc` on the way out (`Shutdown`, `consumer.go`),
       so the *hook* isn't new — but the mechanism this bullet actually needs
@@ -2112,6 +2129,16 @@ phase is `pkg/consumer`-specific.
       out. Opt-in; short jobs ignore it and rely on the fixed lease window.
 
 **Lab:**
+- [x] `just idempotency-keys-lab` — mechanism-level proof for the retry
+      backoff item above, not harness-level fault injection (that's the next
+      bullet, still open): a retried `AppendMessage` under the same key lands
+      exactly once even though `producerFunc` re-runs every time (the
+      documented contract); distinct keys never collide; an unset key
+      protects only within one call, not across separate publishes; the
+      sweep drains expired claims in bounded batches while a live one
+      survives; `IdempotencyKeyTTL` round-trips through a topic
+      re-registration without falsely tripping `ErrTopicConfigMismatch` (the
+      exact bug an earlier, unpersisted version of this field had).
 - [ ] Induce each failure mode with the existing harness (or new flags): a
       `consumerFunc` that panics, one that hangs past `WorkTimeout`, and a
       forced DB error mid-loop. Confirm: the panic retries/dead-letters just

@@ -120,6 +120,16 @@ latest-keys-retention-lab:
 latest-keys-write-lab:
   go run examples/phase_1/latestkeyswritelab/main.go
 
+# idempotency_keys lab: does AppendMessage's retry-safety claim gate actually
+# prevent a double-publish, and does its cleanup actually drain it? Covers a
+# retried AppendMessage under the same key (must land exactly once), distinct
+# keys (must never collide), an unset key (must protect only within one
+# call, not dedupe separate publishes), the sweep (expired claims drained in
+# bounded batches, live ones survive), and IdempotencyKeyTTL surviving a
+# topic re-registration unchanged.
+idempotency-keys-lab:
+  go run examples/phase_1/idempotencykeyslab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

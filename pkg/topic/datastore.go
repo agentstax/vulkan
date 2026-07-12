@@ -170,6 +170,16 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 		return err
 	}
 
+	// otherwise these rows are permanently orphaned -- nothing else ever
+	// deletes an idempotency_keys row by topic_id alone (the janitor's own
+	// sweep is TTL-driven, not topic-lifecycle-driven, so a destroyed topic's
+	// still-fresh claims would outlive it). cursors/deliveries/bindings/
+	// leases/latest_keys have this same gap already and are NOT fixed here --
+	// that's a separate, pre-existing, larger cleanup this doesn't attempt.
+	if _, err := tx.Exec(ctx, `DELETE FROM idempotency_keys WHERE topic_id = $1;`, topic.Id); err != nil {
+		return err
+	}
+
 	// drops every message_log_<id>_N partition with it
 	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS message_log_%d;`, topic.Id)
 	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
