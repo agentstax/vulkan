@@ -1,4 +1,3 @@
-graceful shutdown
 graceful database recovery (handles it fine now but could be done better with a retry backoff policy and better error messages)
 debug field option which prints queue metrics like, how many are left
 consider using database/sql from stdlib to remove pgx dependency (might be a bad idea)
@@ -13,7 +12,6 @@ Reconsider the lazy rollup (AdvanceWaterline)
   - on the metrics side of things how will users track and see when a message or batch is inflight and completed
 Consumer Consume's Project, Process and RollWaterline when error stop the consumer ie a database network blip crashes the consumer
   - we likley don't want this to happen and instead would want a retry backoff logic
-On graceful shutdown should update active inflight lease low to last processed work so it does not retry already processed work
 Consider further splitting the ClaimPollRate for each caller (project, process, rollup, drain)
 
 Commit's exception park is a loop of individual INSERTs inside one transaction (one Exec per failed message, one commit). switch to pgx.Batch: same per-row SQL, queued and sent together instead of one round-trip per row. deferred on purpose -- exceptions are the sparse/rare path by design, so the round-trip cost is unlikely to matter, and a plain loop is the simplest code to read while the exception-drain machinery around it is still being built. revisit once that's stable, since it's a small change (swap Exec-in-a-loop for Batch/SendBatch) that shouldn't touch the surrounding logic.

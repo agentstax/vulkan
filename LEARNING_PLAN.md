@@ -2091,25 +2091,43 @@ phase is `pkg/consumer`-specific.
       re-`INSERT`s the same parked `deliveries` row and hits its `PRIMARY KEY`
       (a real, uncaught error, not the survivable false `ErrLeaseLost` its own
       lease `DELETE` produces on retry). Fixed by unifying the mechanism
-      instead of special-casing consumer too: `DatastoreRetry` is now
-      `DBRetry`, used identically by `producer`/`consumer`/`topic`, and its
-      default `Wrap` classification *is* what `classifyTransient` used to be
-      (retry anything blip-shaped) — except it passes an already-classified
+      instead of special-casing consumer too: `DatastoreRetry`'s default
+      `Wrap` classification *is* what `classifyTransient` used to be (retry
+      anything blip-shaped) — except it now passes an already-classified
       `RetryableError`/`PermanentError` through untouched instead of
-      re-deciding it. That pass-through is what makes the split work with one
-      shared `Wrap`: a package only needs its own `classifyCommit` at the one
-      `tx.Commit()` call site that's genuinely ambiguous, and every other
-      error return goes back to being a plain `return err`, no manual
-      wrapping. `consumer` got its own `classifyCommit(err, hasParkedRows)`
-      (never retry when there's something to park, since `deliveries` has no
-      `ON CONFLICT DO NOTHING` the way `idempotency_keys` does). `topic`
-      needed no `classifyCommit` at all — both its transactions
-      (`upsertTopic`, `deleteTopic`) are `ON CONFLICT DO NOTHING`/`IF
-      EXISTS`/no-match-safe-`DELETE` throughout, so re-running either one
-      whole after an ambiguous commit was already safe, and stays safe under
-      the shared default. `pkg/retry` still exports `IsTransientPgError` as
-      the one "does this look like a blip" primitive every `classifyCommit`
-      and the default classifier both build on.
+      re-deciding it. That pass-through is what lets one shared `Wrap`
+      coexist with a package classifying its own `tx.Commit()` inline, right
+      at the call site (an `if`/`else` returning `retry.NewPermanentError`/
+      `retry.NewRetryableError`/a plain `err`) — no standalone
+      `classifyCommit` helper needed, and every other error return goes back
+      to being a plain `return err`.
+
+      `consumer` classifies inline in both `commit` and `partialCommit`, but
+      *asymmetrically* — a distinction that only fell out once the two were
+      compared side by side. `commit`'s lease `DELETE` is self-consuming: a
+      retry after an already-landed-but-unacked commit finds the lease row
+      gone and bails via `ErrLeaseLost` *before ever reaching the `parkSql`
+      inserts* — so `commit` is unconditionally safe to retry, no guard
+      needed. `partialCommit`'s lease `UPDATE` (narrowing `low`) is *not*
+      self-consuming — the row survives, so a retry's `UPDATE` matches it
+      again and reaches `parkSql` a second time. That's the one branch that
+      actually needs the `hasParkedRows` check (never retry when there's
+      something to park, since `deliveries` has no `ON CONFLICT DO NOTHING`
+      the way `idempotency_keys` does). Considered and declined: adding `ON
+      CONFLICT DO NOTHING` to `partialCommit`'s `parkSql` insert instead,
+      which would let it drop the guard entirely — safe today (ranges never
+      overlap, so the only way to hit that `PRIMARY KEY` is a retry of this
+      exact call), but that safety leans on an invariant enforced elsewhere
+      in the file rather than being locally provable the way `commit`'s
+      `DELETE`-based guard is; a future regression in range-disjointness
+      would silently no-op instead of crashing loudly. `topic` needed no
+      inline classification at all — both its transactions (`upsertTopic`,
+      `deleteTopic`) are `ON CONFLICT DO NOTHING`/`IF EXISTS`/no-match-safe-
+      `DELETE` throughout, so re-running either one whole after an ambiguous
+      commit was already safe, and stays safe under the shared default.
+      `pkg/retry` still exports `IsTransientPgError` as the one "does this
+      look like a blip" primitive every inline classification and the
+      default classifier both build on.
 - [x] **Graceful-shutdown lease truncation.** `CursorClaim`'s per-message loop
       now checks `ctx.Done()` between messages (not mid-message — a hard
       per-message timeout is the separate, still-open item below): each
