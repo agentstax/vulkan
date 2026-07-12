@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -30,15 +31,25 @@ const (
 	LIFECYCLE ConsumerType = "LIFECYCLE"
 )
 
+// TODO - better comments for each field. Should follow structure of producer.Options and topic.Config
 type WorkConsumerConfig struct {
-	Type                    ConsumerType
-	BatchLimit              int
-	MaxAttempts             int
-	MaxRangeReclaims        int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	ClaimPollRate           time.Duration
-	WorkTimeout             time.Duration // TODO - consider a better name
-	QueueTimeout            time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
-	AckMargin               time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	Type             ConsumerType
+	BatchLimit       int
+	MaxAttempts      int
+	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
+	ClaimPollRate    time.Duration
+	WorkTimeout      time.Duration // TODO - consider a better name
+	QueueTimeout     time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
+	AckMargin        time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	// WorkTimeoutGrace is scheduling slack for a consumerFunc that DID respect
+	// ctx.Done() to actually unwind and send on the result channel before the
+	// hard cutoff abandons it -- not extra time to keep working. Go's own
+	// scheduler wakeup after a context deadline fires is sub-millisecond at p99
+	// even under load (measured); this budget is really covering the caller's
+	// own cancellation-response time (e.g. a DB driver's cancel-request round
+	// trip), which pkg/consumer can't know in general. Default assumes one
+	// same-region network round trip's worth of slack.
+	WorkTimeoutGrace        time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- backoff() takes over on later retries
 	ShutdownTimeout         time.Duration
 	PartitionSafetyBuffer   int64
@@ -75,6 +86,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 			WorkTimeout:             30 * time.Second,
 			QueueTimeout:            5 * time.Second,
 			AckMargin:               2 * time.Second,
+			WorkTimeoutGrace:        100 * time.Millisecond,
 			ExceptionInitialBackoff: 5 * time.Second,
 			ShutdownTimeout:         35 * time.Second,
 			PartitionSafetyBuffer:   50000, // TODO - make configurable, TODO - determine sane default
@@ -139,6 +151,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	if p.Config.AckMargin <= 0 {
 		return fmt.Errorf("AckMargin must be > 0, got %v", p.Config.AckMargin)
 	}
+	if p.Config.WorkTimeoutGrace <= 0 {
+		return fmt.Errorf("WorkTimeoutGrace must be > 0, got %v", p.Config.WorkTimeoutGrace)
+	}
 	if p.Config.ExceptionInitialBackoff <= 0 {
 		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", p.Config.ExceptionInitialBackoff)
 	}
@@ -149,10 +164,11 @@ func (p *WorkConsumer[WorkType]) validate() error {
 		return fmt.Errorf("JanitorSweepBatchSize must be >= 1, got %d", p.Config.JanitorSweepBatchSize)
 	}
 
-	// shutdown timeout > work timeout + AckMargin so in-flight work can finish AND ack
-	// before the pool is torn down (implies ShutdownTimeout > 0 given the guards above)
-	if p.Config.ShutdownTimeout <= p.Config.WorkTimeout+p.Config.AckMargin {
-		return fmt.Errorf("ShutdownTimeout must be > WorkTimeout + AckMargin")
+	// shutdown timeout > work timeout + its grace buffer + AckMargin so in-flight
+	// work can finish (or get abandoned) AND ack before the pool is torn down
+	// (implies ShutdownTimeout > 0 given the guards above)
+	if p.Config.ShutdownTimeout <= p.Config.WorkTimeout+p.Config.WorkTimeoutGrace+p.Config.AckMargin {
+		return fmt.Errorf("ShutdownTimeout must be > WorkTimeout + WorkTimeoutGrace + AckMargin")
 	}
 
 	return nil
@@ -357,7 +373,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 			continue
 		}
 
-		if err := consumerFunc(ctx, &work); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &work, message.Id); err != nil {
 			exceptions = append(exceptions, MessageException{MessageId: message.Id, Err: err.Error()})
 			continue
 		}
@@ -437,7 +453,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 			return err
 		}
 
-		if err := consumerFunc(ctx, &work); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
 					continue // reclaimed by the kill backstop or another worker -- not ours anymore
@@ -485,7 +501,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 			continue
 		}
 
-		if err := consumerFunc(ctx, &work); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
 			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, &delivery, err); recordErr != nil {
 				return recordErr
@@ -499,6 +515,41 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 	}
 
 	return nil
+}
+
+// callSafely catches an in-process Go panic  and turns it into an ordinary error.
+// Handles: nil map write, index out of range, bad type assertion
+// Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
+func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[WorkType], work *WorkType, messageID int64) error {
+	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
+	// instead attempt to finish inflight requests bounded by timeout
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.WorkTimeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// done is buffered -- always deliverable, even if the select below
+				// already gave up on this goroutine via the timeout branch.
+				done <- fmt.Errorf("recovered from consumerFunc panic: %v\n%s", r, debug.Stack())
+			}
+		}()
+		done <- consumerFunc(ctx, work)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
+	// if this hard timeout is called go thread will be left hanging / abandoned
+	case <-time.After(p.Config.WorkTimeout + p.Config.WorkTimeoutGrace):
+		// don't print out work in case of sensitive values
+		// TODO - documentation should have this known error mesage and how to help prevent it
+		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
+		// it has bad side effects
+		return fmt.Errorf("configured work timeout reached for message %d", messageID)
+	}
 }
 
 // func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {

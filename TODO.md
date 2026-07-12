@@ -280,3 +280,5 @@ message schema evolution
 rethink producer having both idempotencyKey AND skipIdempotency. Feels weird like ideally we should only have one. It is b/c our default is opt out
 which I like however that causes this problem which I don't like
 we have a lot of seperate round-trip queries that would benefit from pgx.Batch
+
+consider using named return function params for User public functions to be clear in what they mean

@@ -2165,7 +2165,7 @@ phase is `pkg/consumer`-specific.
       ordinary complete run as an interruption. Fixed with an explicit
       `interrupted` bool set only inside the `ctx.Done()` case, independent
       of where `lastProcessed` lands.
-- [ ] **`recover()` around the `consumerFunc` call.** A bare Go panic (nil map
+- [x] **`recover()` around the `consumerFunc` call.** A bare Go panic (nil map
       write, index out of range, a bad type assertion on an unexpected payload)
       is indistinguishable from a real process crash today — it takes down the
       *whole claimed range* (lease expires, gets reclaimed, re-reads the exact
@@ -2188,28 +2188,53 @@ phase is `pkg/consumer`-specific.
       `context.WithTimeout` isn't enough on its own anyway: it's cooperative
       (just closes `ctx.Done()`), so it does nothing for a call that never checks
       its context (blocking cgo, a tight CPU loop, a library that ignores ctx).
-      Instead race completion against a timer with a buffered channel so the
-      *caller* can give up independent of the callee — and fold this into the
-      same shared helper as the `recover()` item above, since both wrap the exact
-      same three call sites:
-      ```go
-      done := make(chan error, 1) // buffered so a late send never blocks
-      go func() { done <- consumerFunc(ctx, &work) }()
-      select {
-      case err := <-done:
-          // finished in time
-      case <-time.After(p.Config.WorkTimeout):
-          err = ErrWorkTimeout
-          // consumerFunc's goroutine is NOT killed — it's abandoned, not stopped
-      }
-      ```
-      Go has no goroutine kill: this converts "one message hangs the whole
-      range, worker gets externally killed, whole range reclaimed and
+      Built into `callSafely` — the same shared helper the `recover()` bullet
+      above added, all three call sites unchanged — rather than a separate
+      wrapper: `consumerFunc` now runs in its own goroutine, racing a buffered
+      `done` channel against a timer so the *caller* can give up independent of
+      the callee. Go has no goroutine kill: this converts "one message hangs the
+      whole range, worker gets externally killed, whole range reclaimed and
       re-crashes" into "one message leaks one goroutine" — better containment,
-      not a full fix. Route the timeout through the retry/dead path like any
-      other failure. If reusing `errgroup` for structural consistency, do NOT
-      call `Wait()` synchronously on this — `Wait()` blocks until every
-      goroutine returns, so it hangs right alongside a genuinely stuck call.
+      not a full fix.
+
+      Moving `consumerFunc` into its own goroutine broke the `recover()`
+      bullet's own guarantee in a way that only showed up on review:
+      `recover()` only catches a panic on the same goroutine's call stack, so
+      the panic-recovery `defer` has to live *inside* the spawned goroutine, not
+      in `callSafely`'s own frame. An earlier draft had it in the wrong place —
+      assigning straight into `callSafely`'s named return from the child
+      goroutine — which was both a data race (an unsynchronized write racing
+      the parent's own `return`) and functionally silent: `done` never received
+      anything on a panic, so `callSafely` waited out the *entire* `WorkTimeout
+      + grace` before returning, and the real panic message was discarded in
+      favor of the generic timeout error. Fixed by having the goroutine's own
+      `recover()` send into `done` like any other result. Verified with
+      `-race`: a throwaway test panicking `consumerFunc` returned in ~120µs
+      with the panic message and stack trace intact, no race detected.
+
+      The race needs a grace period past `ctx`'s own deadline — without one,
+      `ctx.Done()` firing and the hard timeout firing at the same instant would
+      make the `select` a coin-flip that can discard even a `consumerFunc` that
+      respected cancellation and returned in time. Exposed as
+      `WorkTimeoutGrace` (config, not hardcoded), since the right size is a
+      property of the *caller's* `consumerFunc` — `pkg/consumer` can't know how
+      long someone else's cleanup takes. Measured the one part it *can* know:
+      Go's own scheduler wakeup latency from a context deadline firing to a
+      blocked goroutine sending on a channel, at p99 < 1ms even under
+      artificial GC/scheduler pressure (2000 trials, occasional OS-level jitter
+      outliers into the tens of ms). That means almost none of the default
+      100ms default is scheduling risk — it's discretionary slack for the
+      caller's own cancellation-response time (e.g. a `pgx` cancel-request
+      round trip), sized to roughly one same-region network round trip since
+      that's this project's own deployment shape. Folded into the
+      `ShutdownTimeout` validation inequality alongside `WorkTimeout`/
+      `AckMargin`.
+
+      Timeout errors report `messageID`, never `work` itself — `last_error` is
+      DB-persisted (`deliveries.last_error`), so formatting the raw payload
+      into it (`%v`/`%+v` on a generic `*WorkType`) would leak message contents
+      into a column with far wider read access than an in-process error ever
+      had.
 - [ ] **Track abandoned goroutines.** Once calls can be abandoned, a small
       in-process registry — keyed per **(message, attempt)**, not per-message,
       since the same message can time out on more than one attempt and a
