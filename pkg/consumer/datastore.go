@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -117,11 +118,13 @@ type DeliveryRow struct {
 
 type consumerDatastore[Message any] struct {
 	Datastore *datastore.PostgresDatastore
+	DBRetry   *retry.DatastoreRetry // shared across every exported method's DB round-trips -- cushions transient blips without masking a real outage
 }
 
 func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore) *consumerDatastore[Message] {
 	return &consumerDatastore[Message]{
 		Datastore: ds,
+		DBRetry:   retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
 	}
 }
 
@@ -151,6 +154,12 @@ func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID i
 }
 
 func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.ensureNextPartition(ctx, topicID, partitionSize, safetyBuffer)
+	})
+}
+
+func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
 	`, logTable(topicID))
@@ -192,6 +201,12 @@ func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, to
 // past ttl, skipping the active partition and (unless overridden) anything a
 // lagging group hasn't committed past yet.
 func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted)
+	})
+}
+
+func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
 	if ttl <= 0 {
 		return nil // retention disabled - partitions kept forever
 	}
@@ -306,6 +321,12 @@ func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, topic
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
 func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize)
+	})
+}
+
+func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
 	if ttl <= 0 {
 		return nil // retention disabled
 	}
@@ -466,6 +487,12 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 // frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit
 // bails before parking any phantom exception rows.
 func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.commit(ctx, topicID, consumerGroup, token, exceptions, terminals)
+	})
+}
+
+func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -534,6 +561,16 @@ func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, 
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursors comes back fresh, leases stale.
 func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
+	var committed int64
+	err := d.DBRetry.Wrap(ctx, func() error {
+		var err error
+		committed, err = d.advanceWaterline(ctx, topicID, consumerGroup)
+		return err
+	})
+	return committed, err
+}
+
+func (d *consumerDatastore[Message]) advanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
 	// 		earliest unresolved exception (dead doesn't count -- only ready/inflight block)
@@ -569,6 +606,12 @@ func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topic
 
 // FanOut materializes one deliveries row per message this group is bound to receive.
 func (d *consumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, consumerGroup string) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.fanOut(ctx, topicID, consumerGroup)
+	})
+}
+
+func (d *consumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := fmt.Sprintf(`
 		INSERT INTO deliveries (consumer_group, topic_id, message_id, status)
 		SELECT
@@ -617,6 +660,16 @@ func (d *consumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, 
 // try to pick up a crashed range (an expired lease) and only claims fresh work
 // from the frontier if there's nothing to reclaim -- so crashed ranges drain first.
 func (d *consumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error) {
+	var claimed *ClaimedRange
+	err := d.DBRetry.Wrap(ctx, func() error {
+		var err error
+		claimed, err = d.claimMessagesWithCursor(ctx, topicID, consumerGroup, limit, maxRangeReclaims, leaseDuration)
+		return err
+	})
+	return claimed, err
+}
+
+func (d *consumerDatastore[Message]) claimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	reclaimed, err := d.ReclaimWithCursor(ctx, topicID, consumerGroup, limit, maxRangeReclaims, leaseDuration)
 	if err != nil {
 		return nil, err
@@ -869,6 +922,16 @@ func (d *consumerDatastore[Message]) ClaimMessages(
 }
 
 func (d *consumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
+	var deliveries []DeliveryRow
+	err := d.DBRetry.Wrap(ctx, func() error {
+		var err error
+		deliveries, err = d.claimMessagesWithLifecycle(ctx, topicID, consumerGroup, limit)
+		return err
+	})
+	return deliveries, err
+}
+
+func (d *consumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
 	// one statement (the Phase 2 state machine, now per-(group, topic, message) instead
 	// of per-message). SKIP LOCKED keeps competing workers from grabbing the same row.
@@ -918,6 +981,16 @@ func (d *consumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Cont
 
 // ClaimExceptions drains the sparse exception window: kill exhausted deliveries, then claim.
 func (d *consumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error) {
+	var claimed []ClaimedException
+	err := d.DBRetry.Wrap(ctx, func() error {
+		var err error
+		claimed, err = d.claimExceptions(ctx, topicID, consumerGroup, limit, maxAttempts, leaseDuration)
+		return err
+	})
+	return claimed, err
+}
+
+func (d *consumerDatastore[Message]) claimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration) ([]ClaimedException, error) {
 	// an exception that causes a crash loop never resolves normally -- without this
 	// backstop it would reclaim forever, pinning committed below it forever.
 	killSql := `
@@ -989,6 +1062,12 @@ func (d *consumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicI
 
 // success pop-deletes the row -- same sparse convention as never parking it: no row means resolved.
 func (d *consumerDatastore[Message]) RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.recordExceptionSuccess(ctx, exception)
+	})
+}
+
+func (d *consumerDatastore[Message]) recordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
 	sql := `
 		DELETE FROM deliveries
 		WHERE consumer_group = $1
@@ -1011,6 +1090,12 @@ func (d *consumerDatastore[Message]) RecordExceptionSuccess(ctx context.Context,
 // RecordExceptionFailure handles a retried exception's failure: attempts was already
 // incremented at claim time, so >= maxAttempts means this was the last try.
 func (d *consumerDatastore[Message]) RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.recordExceptionFailure(ctx, maxAttempts, exception, failureErr)
+	})
+}
+
+func (d *consumerDatastore[Message]) recordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error) error {
 	if exception.Attempts >= maxAttempts {
 		sql := `
 			UPDATE deliveries
@@ -1067,6 +1152,12 @@ func (d *consumerDatastore[Message]) RecordExceptionFailure(ctx context.Context,
 // RecordSuccess marks a claimed delivery 'done'. Terminal success for this
 // (group, message); the log row is untouched and other groups are unaffected.
 func (d *consumerDatastore[Message]) RecordSuccess(ctx context.Context, delivery *DeliveryRow) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.recordSuccess(ctx, delivery)
+	})
+}
+
+func (d *consumerDatastore[Message]) recordSuccess(ctx context.Context, delivery *DeliveryRow) error {
 	sql := `
 		UPDATE deliveries
 		SET
@@ -1088,8 +1179,17 @@ func (d *consumerDatastore[Message]) RecordSuccess(ctx context.Context, delivery
 // Phase 6 has no backoff (the deliveries table carries no can_run_after) -- a
 // 'ready' row is simply re-claimed on the next poll.
 func (d *consumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.recordFailure(ctx, maxAttempts, delivery, failureErr)
+	})
+}
+
+func (d *consumerDatastore[Message]) recordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error) error {
 	if delivery.Attempts >= maxAttempts {
-		return d.RecordTerminal(ctx, delivery, failureErr)
+		// private call, not the exported RecordTerminal -- this already runs
+		// inside RecordFailure's own DBRetry.Wrap, calling the exported one
+		// would nest a second retry loop around the same round-trip.
+		return d.recordTerminal(ctx, delivery, failureErr)
 	}
 
 	sql := `
@@ -1111,6 +1211,12 @@ func (d *consumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttem
 // just `WHERE consumer_group = $1 AND status = 'dead'`; one group can dead-letter a
 // message while another processes the same offset fine.
 func (d *consumerDatastore[Message]) RecordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.recordTerminal(ctx, delivery, terminalErr)
+	})
+}
+
+func (d *consumerDatastore[Message]) recordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error) error {
 	sql := `
 		UPDATE deliveries
 		SET

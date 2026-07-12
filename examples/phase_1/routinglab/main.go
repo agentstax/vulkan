@@ -32,6 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -83,9 +84,9 @@ func main() {
 	must(cd.Bind(ctx, tp.Id, lifecycleGroup, "payments.*"))
 
 	msg2 := publish(ctx, wp, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
-	msg3 := publish(ctx, wp, "orders.eu.updated")           // wrong tail, does not match
-	msg4 := publish(ctx, wp, "payments.charge")             // matches lifecycleGroup only
-	msg5 := publish(ctx, wp, "")                            // NULL routing_key, matches nothing bound
+	msg3 := publish(ctx, wp, "orders.eu.updated")          // wrong tail, does not match
+	msg4 := publish(ctx, wp, "payments.charge")            // matches lifecycleGroup only
+	msg5 := publish(ctx, wp, "")                           // NULL routing_key, matches nothing bound
 	fmt.Printf("  published %s\n  published %s\n  published %s\n  published %s\n", msg2, msg3, msg4, msg5)
 
 	const lease = 5 * time.Second
@@ -141,7 +142,7 @@ func main() {
 // ---- helpers ----
 
 func publish(ctx context.Context, wp *producer.WorkProducer[common.Work], routingKey string) string {
-	work, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
+	work, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})
 	must(err)

@@ -4,13 +4,15 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
 // TODO - Consider using struct {} instead of generics
 
 // TODO - the pgx.Tx here couples this datastore-agnostic package to pgx should try to decouple if we ever want many datastores (probably not)
-type ProducerFunc[WorkType any] func(ctx context.Context, tx pgx.Tx) (*WorkType, error)
+
+type ProducerFunc[WorkType any] func(ctx context.Context, tx pgx.Tx, idempotencyKey uuid.UUID) (*WorkType, error)
 
 type Producer[WorkType any] interface {
 	Produce(ctx context.Context, work *WorkType) error
@@ -36,6 +38,14 @@ type ProduceOptions struct {
 	// every message with "" is delivered independently, never superseded.
 	// Ex: "user:123", "session:abc-def"
 	CompactionKey string
+
+	// IdempotencyKey protects a retried AppendMessage (after a blip) from
+	// double-publishing. Supply your own if you need protection across your
+	// OWN retries too -- e.g. your process crashes and restarts before
+	// learning whether a publish landed, and you call Produce again with the
+	// same key. Leave unset (uuid.Nil) and one is generated fresh per
+	// AppendMessage call, protecting only against retries within that one call.
+	IdempotencyKey uuid.UUID
 }
 
 type WorkProducer[WorkType any] struct {

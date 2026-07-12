@@ -27,6 +27,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -55,7 +56,7 @@ func main() {
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	for range seedRows {
-		_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
+		_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

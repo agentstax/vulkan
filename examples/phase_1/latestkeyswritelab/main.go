@@ -31,6 +31,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -120,7 +121,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 func timeSequential(ctx context.Context, wp *producer.WorkProducer[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
-		_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
+		_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{CompactionKey: keyFn(i)})
 		must(err)
@@ -144,7 +145,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	for g := range goroutines {
 		wg.Go(func() {
 			for i := range perGoroutine {
-				_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx) (*common.Work, error) {
+				_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{CompactionKey: keyFn(g, i)})
 				must(err)

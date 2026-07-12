@@ -7,20 +7,33 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
 )
 
 type topicDatastore struct {
 	Datastore *datastore.PostgresDatastore
+	DBRetry   *retry.DatastoreRetry // shared across every exported method's DB round-trips -- cushions transient blips without masking a real outage
 }
 
 func newTopicDatastore(datastore *datastore.PostgresDatastore) *topicDatastore {
 	return &topicDatastore{
 		Datastore: datastore,
+		DBRetry:   retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
 	}
 }
 
 func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {
+	var topic *Topic
+	err := d.DBRetry.Wrap(ctx, func() error {
+		var err error
+		topic, err = d.getTopic(ctx, name)
+		return err
+	})
+	return topic, err
+}
+
+func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, error) {
 	sql := `
 		SELECT 
 			id, 
@@ -54,6 +67,16 @@ func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, err
 
 // UpsertTopic resolves cfg.Name to its db identity, creating it if it doesn't exist.
 func (d *topicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
+	var topic *Topic
+	err := d.DBRetry.Wrap(ctx, func() error {
+		var err error
+		topic, err = d.upsertTopic(ctx, cfg)
+		return err
+	})
+	return topic, err
+}
+
+func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -77,8 +100,9 @@ func (d *topicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, e
 			return nil, err
 		}
 	case errors.Is(insertErr, pgx.ErrNoRows):
-		// not writing here, so reading via the plain pool (not tx) is fine
-		found, err := d.GetTopic(ctx, cfg.Name)
+		// not writing here, so reading via the plain pool (not tx) is fine.
+		// private getTopic, not GetTopic -- otherwise would have nested retries.
+		found, err := d.getTopic(ctx, cfg.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -126,6 +150,12 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 }
 
 func (d *topicDatastore) DeleteTopic(ctx context.Context, topic *Topic) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.deleteTopic(ctx, topic)
+	})
+}
+
+func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err
