@@ -2180,7 +2180,7 @@ phase is `pkg/consumer`-specific.
       `recover()` does *not* catch: OS-level faults (stack overflow, SIGSEGV via
       cgo, OOM-kill, an external kill) — those still need the range-level
       quarantine cap (6.5c) as the backstop.
-- [ ] **Hard per-message timeout via a detached-goroutine race.** `WorkTimeout`
+- [x] **Hard per-message timeout via a detached-goroutine race.** `WorkTimeout`
       is validated today but never enforced as a deadline — it only feeds the
       lease-duration math (an *earlier* version of this code did wrap the call in
       `context.WithTimeout`, still visible commented-out around `consumer.go`'s
@@ -2235,7 +2235,7 @@ phase is `pkg/consumer`-specific.
       into it (`%v`/`%+v` on a generic `*WorkType`) would leak message contents
       into a column with far wider read access than an in-process error ever
       had.
-- [ ] **Track abandoned goroutines.** Once calls can be abandoned, a small
+- [x] **Track abandoned goroutines.** Once calls can be abandoned, a small
       in-process registry — keyed per **(message, attempt)**, not per-message,
       since the same message can time out on more than one attempt and a
       per-message key would let the second overwrite the first's entry. Expose
@@ -2245,15 +2245,17 @@ phase is `pkg/consumer`-specific.
       ones that do eventually return). Tag `last_error` distinctly for a
       hard-timeout abort (e.g. `"hard timeout after Ns, goroutine abandoned"`)
       so it's queryable without extra infra.
-- [ ] **(Stretch, low priority) lease heartbeat/renewal.** For long-running jobs
-      whose runtime legitimately exceeds `WorkTimeout` but still want fast
-      reclaim on a real crash: hand `consumerFunc` a `heartbeat()`/`touch()`
-      handle; the lease only extends when touched
-      (`UPDATE ... SET lease_until = now()+ext WHERE id=$1 AND lease_token=$2`).
-      `RowsAffected==0` on a renew means the lease was already reclaimed —
-      cancel the work context. Keep a hard max-duration ceiling regardless, so
-      a buggy progress loop that keeps touching forever still eventually caps
-      out. Opt-in; short jobs ignore it and rely on the fixed lease window.
+
+      Split from Phase 10's "Operational metrics" bullet on purpose: the
+      registry (the `(message, attempt)`-keyed map + raw counters) is built
+      here, as plain in-process state — just enough for this phase's own lab
+      to read directly and assert against (that lab bullet already assumes a
+      gauge exists: "the abandoned goroutine shows up in the gauge"). Treat
+      counter/gauge/histogram as informal values for now, not a commitment to
+      any metrics library. Phase 10 wires these already-built numbers into
+      whatever pluggable logger/metrics interface it settles on, instead of
+      designing the tracking logic from scratch — avoids inventing a one-off
+      metrics shape now that gets redone once Phase 10 lands.
 
 **Lab:**
 - [x] `just idempotency-keys-lab` — mechanism-level proof for the retry
@@ -2317,7 +2319,7 @@ demonstrated in the lab, NOTES.md, `git tag phase-9`.
 
 **Real systems:** this is the same isolation problem every worker framework
 solves — Sidekiq's `retry` + `death_handlers`, Temporal's activity heartbeats
-(the model for the stretch lease-heartbeat item), Kubernetes liveness probes as
+(the model for `9b`'s deferred lease-heartbeat item), Kubernetes liveness probes as
 the outer backstop for faults nothing in-process can catch.
 
 ---
@@ -2344,6 +2346,14 @@ compare against — you're building past what the reference bothered with.
       committed`, the waterline gap), the `ready` exception count (retry
       depth), DLQ size (`dead` count), and oldest-unacked age. These four
       numbers are how you operate any queue.
+
+      Not starting from zero here: Phase 9's "Track abandoned goroutines"
+      bullet already built the raw numbers for hard-timeout tracking
+      (`hard_timeouts_total`, `abandoned_outstanding`, late-finish latency) as
+      plain in-process state, deliberately deferring the metrics-library
+      wiring to here rather than inventing a one-off shape early. Wire those
+      into whatever pluggable interface this bullet settles on alongside the
+      four numbers above, instead of designing the tracking logic fresh.
 - [ ] **Debug/metrics readout.** A debug mode or method that prints current
       queue state on demand: the `claimed`/`committed` gap per group, exception
       counts (`ready`/`inflight`/`dead`), and open-lease count — the
@@ -2669,6 +2679,47 @@ Oban) use underneath their own notify-based wakeups.
 
 ---
 
+## 9b — Lease heartbeat/renewal (deferred, optional)
+
+*Deprioritized for now — cut from Phase 9 to keep that phase's build limited
+to correctness backstops that apply to every `consumerFunc` regardless of
+workload shape (a panic or a hang breaks any range, no matter how long or
+short the job). Heartbeat only matters for one specific shape: a job whose
+*legitimate* runtime exceeds `WorkTimeout`. No workload in this project
+needs that yet, and building it now means landing a new datastore method
+(the renew `UPDATE`) right before Phase 11 redraws the consumer/datastore
+boundary — real risk of redoing it. Revisit after Phase 11, once that
+boundary has settled and Phase 10's debug readout (open-lease count,
+per-group lag) exists to actually observe heartbeat behavior instead of
+validating it blind. Pick this up only if a real long-running workload shows
+up that needs fast crash-reclaim without a huge fixed `WorkTimeout`.*
+
+**Concept:** for long-running jobs whose runtime legitimately exceeds
+`WorkTimeout` but still want fast reclaim on a real crash: hand
+`consumerFunc` a `heartbeat()`/`touch()` handle; the lease only extends when
+touched (`UPDATE ... SET lease_until = now()+ext WHERE id=$1 AND
+lease_token=$2`). `RowsAffected==0` on a renew means the lease was already
+reclaimed — cancel the work context. Keep a hard max-duration ceiling
+regardless, so a buggy progress loop that keeps touching forever still
+eventually caps out. Opt-in; short jobs ignore it and rely on the fixed
+lease window.
+
+**Explain it back:**
+1. Without heartbeat, how does a long-running job avoid getting reclaimed
+   mid-flight by another worker? What has to change about `WorkTimeout` to
+   make that work, and what does that cost every *other*, short-running job?
+2. Why does a missed heartbeat renew (`RowsAffected==0`) mean "cancel the
+   work context" rather than "retry the renew"?
+
+**Done when:** lab passes, NOTES.md, `git tag phase-9b`.
+
+**Real systems:** Temporal's activity heartbeats are the direct model here —
+an activity worker calls `RecordHeartbeat` periodically, and the server
+times out the activity if heartbeats stop arriving, independent of the
+activity's own configured timeout.
+
+---
+
 ## How to use this
 
 - **Do the phases in order.** Resist jumping to the synthesis (Phases 6–6.5).
@@ -2687,11 +2738,13 @@ Oban) use underneath their own notify-based wakeups.
 - **Current focus:** Phase 7 (Routing), then Phase 8 (Operational layer), then
   Phases 9–11 (TODO.md-derived: fault isolation, observability, architecture
   cleanup). Phase 12 (FIFO partitions), 6.5d (lane sharding), 7b
-  (header/content routing), and 8d (`LISTEN/NOTIFY` latency) are optional and
-  deliberately deferred to the end of this document — pick them up only if a
-  real workload demands ordering, lane-level throughput, attribute-based
-  routing a `routing_key` pattern can't express, or poll-interval latency
-  actually matters.
+  (header/content routing), 8d (`LISTEN/NOTIFY` latency), and 9b (lease
+  heartbeat/renewal) are optional and deliberately deferred to the end of
+  this document — pick them up only if a real workload demands ordering,
+  lane-level throughput, attribute-based routing a `routing_key` pattern
+  can't express, poll-interval latency actually matters, or (9b,
+  specifically after Phase 11 lands) a long-running job needs fast
+  crash-reclaim without a huge fixed `WorkTimeout`.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.

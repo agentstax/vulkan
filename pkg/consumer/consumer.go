@@ -65,6 +65,7 @@ type WorkConsumer[WorkType any] struct {
 	PoolLimiter  concurrency.PoolLimiter
 	Datastore    Datastore[WorkType]
 	ShutdownFunc ShutdownFunc[WorkType]
+	Metrics      *ConsumerMetrics
 	Config       *WorkConsumerConfig
 }
 
@@ -77,6 +78,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		PoolLimiter:  poolLimiter,
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
+		Metrics:      NewConsumerMetrics(),
 		Config: &WorkConsumerConfig{
 			Type:                    CURSOR,
 			BatchLimit:              1, // no batching by default
@@ -117,6 +119,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	}
 	if p.ShutdownFunc == nil {
 		return errors.New("ShutdownFunc must not be nil")
+	}
+	if p.Metrics == nil {
+		return errors.New("Metrics must not be nil")
 	}
 
 	if p.Config.BatchLimit < 1 {
@@ -373,7 +378,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 			continue
 		}
 
-		if err := p.callSafely(ctx, consumerFunc, &work, message.Id); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &work, message.Id, 0); err != nil {
 			exceptions = append(exceptions, MessageException{MessageId: message.Id, Err: err.Error()})
 			continue
 		}
@@ -453,7 +458,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 			return err
 		}
 
-		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
 					continue // reclaimed by the kill backstop or another worker -- not ours anymore
@@ -501,7 +506,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 			continue
 		}
 
-		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId, delivery.Attempts); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
 			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, &delivery, err); recordErr != nil {
 				return recordErr
@@ -520,7 +525,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 // callSafely catches an in-process Go panic  and turns it into an ordinary error.
 // Handles: nil map write, index out of range, bad type assertion
 // Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
-func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[WorkType], work *WorkType, messageID int64) error {
+func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[WorkType], work *WorkType, messageID int64, attempt int) error {
 	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
 	// instead attempt to finish inflight requests bounded by timeout
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.WorkTimeout)
@@ -534,6 +539,9 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 				// already gave up on this goroutine via the timeout branch.
 				done <- fmt.Errorf("recovered from consumerFunc panic: %v\n%s", r, debug.Stack())
 			}
+			// order specific to allow recover to always handle err for consumerFunc not metrics call
+			// safe to always call here, if routine was not abandoned it will not be found and skipped
+			p.Metrics.AbandonedRoutines.Remove(messageID, attempt)
 		}()
 		done <- consumerFunc(ctx, work)
 	}()
@@ -544,11 +552,12 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
 	// if this hard timeout is called go thread will be left hanging / abandoned
 	case <-time.After(p.Config.WorkTimeout + p.Config.WorkTimeoutGrace):
+		p.Metrics.AbandonedRoutines.Add(messageID, attempt)
 		// don't print out work in case of sensitive values
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
 		// it has bad side effects
-		return fmt.Errorf("configured work timeout reached for message %d", messageID)
+		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace, messageID)
 	}
 }
 
