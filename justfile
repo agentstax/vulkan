@@ -130,6 +130,22 @@ latest-keys-write-lab:
 idempotency-keys-lab:
   go run examples/phase_1/idempotencykeyslab/main.go
 
+# idempotency_keys growth lab: the sustained-throughput/storage axis of the
+# claim-gate tradeoff. Measures relative storage overhead vs. message_log
+# with no sweep running, then proves the janitor's real sweep cadence keeps
+# the table's steady-state size bounded near Little's Law's rate*ttl instead
+# of growing toward the full published count, and drains to zero afterward.
+idempotency-keys-growth-lab:
+  go run examples/phase_1/idempotencykeysgrowthlab/main.go
+
+# DeleteTopic cascade lab: seeds a row in every topic-scoped table
+# (cursors, leases, deliveries, bindings, latest_keys, idempotency_keys) --
+# including a still-open lease and an unclaimed deliveries row, not just the
+# already-resolved case -- then confirms Destroy cleans up all six, not just
+# message_log and the topics row itself.
+delete-topic-lab:
+  go run examples/phase_1/deletetopiclab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

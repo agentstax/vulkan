@@ -2048,6 +2048,43 @@ phase is `pkg/consumer`-specific.
       janitor on `Topic.IdempotencyKeyTTL` (DB-persisted, defaults to 24h,
       *not* "0 = keep forever" like `RetentionTTL` — an unbounded
       `idempotency_keys` table is a bug, not a policy anyone should opt into).
+
+      Unlike `latest_keys` (opt-in per keyed message), the claim gate was
+      paid on *every* publish — measured (`idempotency-keys-growth-lab`) at
+      20-36%+ extra disk vs. `message_log` itself, and (a throwaway
+      benchmark, not a lab) 15-30% lower sustained throughput and 56-70%
+      higher CPU per message on the DB server, from the second network round
+      trip and the second index-maintaining write. Two fixes:
+      - **Batching:** the claim INSERT and the `message_log` INSERT collapsed
+        into one round trip via a data-modifying CTE
+        (`WITH claim AS (... RETURNING 1) INSERT ... WHERE EXISTS (SELECT 1
+        FROM claim) RETURNING id`) — the log insert only fires if the claim
+        actually landed a row, same "already committed" semantics as before,
+        `pgx.ErrNoRows` replacing the old `RowsAffected() == 0` check. Cut
+        the throughput hit to ~0-19% and the CPU-per-message hit to ~19-30%.
+      - **`ProduceOptions.SkipIdempotency`:** a per-call opt-out (default
+        `false`) — mirrors Kafka's own move from opt-in to default-on
+        idempotence (3.0+) rather than the reverse, since the caller can't
+        control whether `DBRetry` itself retries an ambiguously-committed
+        attempt. Per-call, not per-topic, since `IdempotencyKey` was already
+        per-call and mixed traffic (critical + high-volume telemetry) is
+        realistic within one topic.
+
+      `SkipIdempotency` forced a deeper fix: `DatastoreRetry`'s blanket
+      "retry anything blip-shaped" can't stay safe once retry-safety depends
+      on caller context. Only `Commit()` is genuinely ambiguous (every
+      earlier statement fails inside an uncommitted, atomically-rolled-back
+      transaction, so retrying those is always safe); retrying an ambiguous
+      `Commit()` is only safe when `idempotency_keys` can catch the
+      duplicate. So `producerDatastore` now takes the base `retry.Retry`
+      instead of `DatastoreRetry`, and classifies its own errors:
+      `classifyTransient` (everything pre-`Commit`, always retryable if
+      blip-shaped) and `classifyCommit(err, skipIdempotency)` (retryable
+      only when protected). `pkg/retry` exported the underlying mechanism as
+      `IsTransientPgError` so `pgClassify`/`DatastoreRetry` (still used
+      as-is by `consumer`/`topic`, which have no equivalent ambiguity) and
+      producer's own policy share one "does this look like a blip"
+      implementation instead of two.
 - [ ] **Graceful-shutdown lease truncation.** `Consume` already calls a
       pluggable `p.ShutdownFunc` on the way out (`Shutdown`, `consumer.go`),
       so the *hook* isn't new — but the mechanism this bullet actually needs
@@ -2138,7 +2175,24 @@ phase is `pkg/consumer`-specific.
       sweep drains expired claims in bounded batches while a live one
       survives; `IdempotencyKeyTTL` round-trips through a topic
       re-registration without falsely tripping `ErrTopicConfigMismatch` (the
-      exact bug an earlier, unpersisted version of this field had).
+      exact bug an earlier, unpersisted version of this field had);
+      `SkipIdempotency=true` writes zero claim rows and genuinely
+      double-publishes under a repeated key (the honest cost, not hidden),
+      while a protected call right after in the same topic is unaffected.
+- [x] `just idempotency-keys-growth-lab` — the storage/throughput axis, not
+      mechanism correctness: `idempotency_keys` size vs. `message_log` size
+      at increasing checkpoints with no sweep running (the 20-36%+ overhead
+      number above), and a sustained-load scenario running the real janitor
+      sweep cadence concurrently, confirming steady-state size stays bounded
+      near Little's Law's `rate * ttl` instead of growing toward the full
+      published count, and drains to zero once ttl passes.
+- [x] `just delete-topic-lab` — not a Phase 9 mechanism, but this phase's own
+      `idempotency_keys` was the last of six tables `DeleteTopic` needed to
+      cascade-clean (cursors/leases/deliveries/bindings/latest_keys joined
+      it). Seeds one row in all six via the real datastore methods,
+      deliberately leaving a lease OPEN and a deliveries row unclaimed (the
+      messiest mid-flight state, not the already-resolved case), and
+      confirms `Destroy` drains every one of them plus `message_log` itself.
 - [ ] Induce each failure mode with the existing harness (or new flags): a
       `consumerFunc` that panics, one that hangs past `WorkTimeout`, and a
       forced DB error mid-loop. Confirm: the panic retries/dead-letters just
