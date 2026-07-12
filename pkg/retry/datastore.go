@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// DatastoreRetry is Retry specialized for Postgres: same backoff/attempt machinery,
-// but the error returned from retryableFunc is classified automatically
-// instead of every call site wrapping it by hand.
+// DatastoreRetry is Retry specialized for Postgres, shared by producer/consumer/topic:
+// same backoff/attempt machinery, but the error returned from retryableFunc is
+// classified automatically instead of every call site wrapping it by hand.
 type DatastoreRetry struct {
 	*Retry
 }
@@ -26,18 +26,25 @@ func NewDatastoreRetry(maxRetries int, baseDelay time.Duration, maxDelay time.Du
 // writing the real DB call with no manual classification.
 func (d *DatastoreRetry) Wrap(ctx context.Context, retryableFunc RetryableFunc) error {
 	return d.Retry.Wrap(ctx, func() error {
-		return pgClassify(retryableFunc())
+		return classify(retryableFunc())
 	})
 }
 
-// pgClassify wraps IsTransientPgError into the RetryableError/PermanentError shape Wrap expects.
-func pgClassify(err error) error {
+// classify wraps IsTransientPgError into the RetryableError/PermanentError shape
+func classify(err error) error {
 	if err == nil {
 		return nil
+	}
+	if _, ok := errors.AsType[*RetryableError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*PermanentError](err); ok {
+		return err
 	}
 	if IsTransientPgError(err) {
 		return NewRetryableError(err)
 	}
+	// dont retry if not classify-able
 	return NewPermanentError(err)
 }
 

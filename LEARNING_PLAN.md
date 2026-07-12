@@ -2076,15 +2076,40 @@ phase is `pkg/consumer`-specific.
       earlier statement fails inside an uncommitted, atomically-rolled-back
       transaction, so retrying those is always safe); retrying an ambiguous
       `Commit()` is only safe when `idempotency_keys` can catch the
-      duplicate. So `producerDatastore` now takes the base `retry.Retry`
-      instead of `DatastoreRetry`, and classifies its own errors:
-      `classifyTransient` (everything pre-`Commit`, always retryable if
-      blip-shaped) and `classifyCommit(err, skipIdempotency)` (retryable
-      only when protected). `pkg/retry` exported the underlying mechanism as
-      `IsTransientPgError` so `pgClassify`/`DatastoreRetry` (still used
-      as-is by `consumer`/`topic`, which have no equivalent ambiguity) and
-      producer's own policy share one "does this look like a blip"
-      implementation instead of two.
+      duplicate. First cut: `producerDatastore` took the base `retry.Retry`
+      instead of `DatastoreRetry` and classified every error by hand
+      (`classifyTransient` pre-`Commit`, `classifyCommit(err,
+      skipIdempotency)` at `Commit`) — correct, but it meant every non-`Commit`
+      call site had to remember to wrap its own error, and `consumer`/`topic`
+      were assumed to have "no equivalent ambiguity" so they kept the old
+      blanket `DatastoreRetry` untouched.
+
+      That assumption turned out wrong: reviewing the graceful-shutdown work
+      below surfaced that `consumer`'s `commit`/`partialCommit` have the exact
+      same ambiguous-`Commit` shape, just without an `idempotency_keys`-style
+      guard to make a retry safe — a retried `Commit` that already landed
+      re-`INSERT`s the same parked `deliveries` row and hits its `PRIMARY KEY`
+      (a real, uncaught error, not the survivable false `ErrLeaseLost` its own
+      lease `DELETE` produces on retry). Fixed by unifying the mechanism
+      instead of special-casing consumer too: `DatastoreRetry` is now
+      `DBRetry`, used identically by `producer`/`consumer`/`topic`, and its
+      default `Wrap` classification *is* what `classifyTransient` used to be
+      (retry anything blip-shaped) — except it passes an already-classified
+      `RetryableError`/`PermanentError` through untouched instead of
+      re-deciding it. That pass-through is what makes the split work with one
+      shared `Wrap`: a package only needs its own `classifyCommit` at the one
+      `tx.Commit()` call site that's genuinely ambiguous, and every other
+      error return goes back to being a plain `return err`, no manual
+      wrapping. `consumer` got its own `classifyCommit(err, hasParkedRows)`
+      (never retry when there's something to park, since `deliveries` has no
+      `ON CONFLICT DO NOTHING` the way `idempotency_keys` does). `topic`
+      needed no `classifyCommit` at all — both its transactions
+      (`upsertTopic`, `deleteTopic`) are `ON CONFLICT DO NOTHING`/`IF
+      EXISTS`/no-match-safe-`DELETE` throughout, so re-running either one
+      whole after an ambiguous commit was already safe, and stays safe under
+      the shared default. `pkg/retry` still exports `IsTransientPgError` as
+      the one "does this look like a blip" primitive every `classifyCommit`
+      and the default classifier both build on.
 - [x] **Graceful-shutdown lease truncation.** `CursorClaim`'s per-message loop
       now checks `ctx.Done()` between messages (not mid-message — a hard
       per-message timeout is the separate, still-open item below): each

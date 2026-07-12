@@ -277,8 +277,6 @@ RETURNING *;
 
 do we need idempotency_keys_topic_created_at (adds further write overhead to only benefit the janitor process)
 
-consumer/topic still use DatastoreRetry's blanket blip-retry -- check consumer.commit specifically: if its ambiguous Commit retries, the second attempt's lease DELETE matches 0 rows and returns ErrLeaseLost even though the first attempt actually succeeded (false failure, not a duplicate). producer just got its own Commit-aware classifyCommit for the equivalent problem; unconfirmed whether consumer/topic need the same treatment.
-
 message schema evolution
 
 rethink producer having both idempotencyKey AND skipIdempotency. Feels weird like ideally we should only have one. It is b/c our default is opt out

@@ -13,19 +13,19 @@ import (
 
 type topicDatastore struct {
 	Datastore *datastore.PostgresDatastore
-	DBRetry   *retry.DatastoreRetry // shared across every exported method's DB round-trips -- cushions transient blips without masking a real outage
+	Retry     *retry.DatastoreRetry
 }
 
 func newTopicDatastore(datastore *datastore.PostgresDatastore) *topicDatastore {
 	return &topicDatastore{
 		Datastore: datastore,
-		DBRetry:   retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
+		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
 	}
 }
 
 func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {
 	var topic *Topic
-	err := d.DBRetry.Wrap(ctx, func() error {
+	err := d.Retry.Wrap(ctx, func() error {
 		var err error
 		topic, err = d.getTopic(ctx, name)
 		return err
@@ -72,7 +72,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 // UpsertTopic resolves cfg.Name to its db identity, creating it if it doesn't exist.
 func (d *topicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
 	var topic *Topic
-	err := d.DBRetry.Wrap(ctx, func() error {
+	err := d.Retry.Wrap(ctx, func() error {
 		var err error
 		topic, err = d.upsertTopic(ctx, cfg)
 		return err
@@ -154,7 +154,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 }
 
 func (d *topicDatastore) DeleteTopic(ctx context.Context, topic *Topic) error {
-	return d.DBRetry.Wrap(ctx, func() error {
+	return d.Retry.Wrap(ctx, func() error {
 		return d.deleteTopic(ctx, topic)
 	})
 }
