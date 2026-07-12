@@ -30,28 +30,33 @@ func (d *DatastoreRetry) Wrap(ctx context.Context, retryableFunc RetryableFunc) 
 	})
 }
 
-// pgClassify is default-deny: only errors that look like a genuine
-// transport-level blip (never reached the server, or a timeout) are
-// retryable. Everything else -- a *pgconn.PgError (the server rejected the
-// query outright, deterministic), context cancellation, or any app-level
-// sentinel this package has no knowledge of (e.g. consumer.ErrLeaseLost) --
-// defaults to permanent.
+// pgClassify wraps IsTransientPgError into the RetryableError/PermanentError shape Wrap expects.
 func pgClassify(err error) error {
 	if err == nil {
 		return nil
 	}
+	if IsTransientPgError(err) {
+		return NewRetryableError(err)
+	}
+	return NewPermanentError(err)
+}
+
+// IsTransientPgError reports whether err looks like a transport-level blip
+// (never reached the server, or a timeout) rather than a deterministic
+// rejection (a *pgconn.PgError, consumer.ErrLeaseLost).
+func IsTransientPgError(err error) bool {
+	if err == nil {
+		return false
+	}
 
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return NewPermanentError(err)
+		return false
 	}
 
 	if pgconn.SafeToRetry(err) || pgconn.Timeout(err) {
-		return NewRetryableError(err)
+		return true
 	}
 
-	if _, ok := errors.AsType[net.Error](err); ok {
-		return NewRetryableError(err)
-	}
-
-	return NewPermanentError(err)
+	_, ok := errors.AsType[net.Error](err)
+	return ok
 }

@@ -17,14 +17,35 @@ import (
 
 type producerDatastore[Message any] struct {
 	Datastore *coredatastore.PostgresDatastore
-	DBRetry   *retry.DatastoreRetry // shared across every exported method's DB round-trips -- cushions transient blips without masking a real outage
+	DBRetry   *retry.Retry // base Retry, not DatastoreRetry -- Commit's ambiguity needs SkipIdempotency-aware policy (classifyCommit), not blanket auto-classification
 }
 
 func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore) *producerDatastore[Message] {
 	return &producerDatastore[Message]{
 		Datastore: ds,
-		DBRetry:   retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
+		DBRetry:   retry.NewRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
 	}
+}
+
+// classifyTransient retries anything blip-shaped -- nothing before Commit is durable yet.
+func classifyTransient(err error) error {
+	if retry.IsTransientPgError(err) {
+		return retry.NewRetryableError(err)
+	}
+	return retry.NewPermanentError(err)
+}
+
+// classifyCommit only retries a blip AT Commit when idempotency_keys can
+// catch the duplicate -- never when SkipIdempotency, since nothing would.
+//
+// blips that occur during a commit are tricky not b/c the commit could fail
+// or not but because we could lose the Acknowledgment of the commit
+// meaning we don't know whether things were committed or not.
+func classifyCommit(err error, skipIdempotency bool) error {
+	if !skipIdempotency && retry.IsTransientPgError(err) {
+		return retry.NewRetryableError(err)
+	}
+	return retry.NewPermanentError(err)
 }
 
 // logTable is topicID's own physical message log.
@@ -37,19 +58,19 @@ func partitionTable(topicID, n int64) string {
 	return fmt.Sprintf("%s_%d", logTable(topicID), n)
 }
 
-// AppendMessage resolves the idempotency key once -- the caller's own if they
-// supplied one (protects across their own retries, e.g. a process restart),
-// otherwise a fresh one generated here (protects only against the retries
-// DBRetry itself performs below). Never regenerated on retry: that's what
-// makes a retried appendMessageWithPartitionRetry -- including its re-run of
-// producerFunc -- safe after an ambiguous commit instead of a double-publish.
+// AppendMessage resolves the idempotency key once and never regenerates it on
+// retry -- that's what makes a retried attempt safe after an ambiguous commit
+// instead of a double-publish. SkipIdempotency leaves it uuid.Nil.
 func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc producer.ProducerFunc[Message], opts producer.ProduceOptions) (*Message, error) {
-	idempotencyKey := opts.IdempotencyKey
-	if idempotencyKey == uuid.Nil {
-		var err error
-		idempotencyKey, err = uuid.NewV7()
-		if err != nil {
-			return nil, err
+	var idempotencyKey uuid.UUID
+	if !opts.SkipIdempotency {
+		idempotencyKey = opts.IdempotencyKey
+		if idempotencyKey == uuid.Nil {
+			var err error
+			idempotencyKey, err = uuid.NewV7()
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -96,7 +117,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
-		return err
+		return classifyTransient(err) // a read, not part of any tx -- safe to retry if it blips
 	}
 
 	next := head/partitionSize + 1
@@ -114,7 +135,8 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 		if errors.As(err, &pgErr) && pgErr.Code == "42P07" {
 			return nil
 		}
-		return err
+		// idempotent either way (IF NOT EXISTS) -- safe to retry if it blips
+		return classifyTransient(err)
 	}
 
 	return nil
@@ -123,7 +145,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID int64, producerFunc producer.ProducerFunc[Message], opts producer.ProduceOptions, idempotencyKey uuid.UUID) (*Message, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, classifyTransient(err) // never reached the server in a stateful way
 	}
 
 	// If Commit() is called successfully, Rollback() becomes a no-op and returns pgx.ErrTxClosed.
@@ -132,27 +154,42 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	// let user do transactional enqueue and return work/message
 	message, err := producerFunc(ctx, tx, idempotencyKey)
 	if err != nil {
-		return nil, err
+		return nil, classifyTransient(err) // uncommitted -- nothing durable yet regardless of what failed
 	}
 
-	// claim the idempotency key BEFORE inserting the message
-	claimSql := `
-		INSERT INTO idempotency_keys (topic_id, idempotency_key)
-		VALUES ($1, $2)
-		ON CONFLICT (topic_id, idempotency_key) DO NOTHING;
-	`
-	tag, err := tx.Exec(ctx, claimSql, topicID, idempotencyKey)
-	if err != nil {
-		return nil, err
-	}
-	// 0 rows affected -> the INSERT no-op'd on conflict -> idempotency_key already committed
-	if tag.RowsAffected() == 0 {
-		if err := tx.Commit(ctx); err != nil {
+	// TODO - really don't like this insertUnprotected/Protected code need to think through if we can develop
+	// some standard patterns that make it easier to follow while giving the same benefits of CTEs
+
+	if opts.SkipIdempotency {
+		if _, err := d.insertUnprotected(ctx, tx, topicID, message, opts); err != nil {
 			return nil, err
 		}
-		return message, nil
+	} else {
+		_, landed, err := d.insertProtected(ctx, tx, topicID, idempotencyKey, message, opts)
+		if err != nil {
+			return nil, err
+		}
+		if !landed {
+			// claim already existed -- a retried call under the same key that's
+			// already durable. Nothing new to commit, but the transaction we
+			// opened above still needs closing.
+			if err := tx.Commit(ctx); err != nil { // protected branch -- classifyCommit can still retry
+				return nil, classifyCommit(err, false)
+			}
+			return message, nil
+		}
 	}
 
+	// the one genuinely ambiguous point -- see classifyCommit
+	if err = tx.Commit(ctx); err != nil {
+		return nil, classifyCommit(err, opts.SkipIdempotency)
+	}
+
+	return message, nil
+}
+
+// insertUnprotected writes the message with no idempotency claim gate
+func (d *producerDatastore[Message]) insertUnprotected(ctx context.Context, tx pgx.Tx, topicID int64, message *Message, opts producer.ProduceOptions) (int64, error) {
 	sql := fmt.Sprintf(`
 		INSERT INTO %s (payload, routing_key, compaction_key)
 		VALUES (
@@ -165,21 +202,77 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 
 	var id int64
 	if err := tx.QueryRow(ctx, sql, message, opts.RoutingKey, opts.CompactionKey).Scan(&id); err != nil {
-		return nil, err
+		return 0, classifyTransient(err) // still pre-commit
 	}
 
-	// zero write-amplification for unkeyed traffic -- the common case skips this entirely
+	// zero write-amplification for unkeyed traffic
 	if opts.CompactionKey != "" {
 		if err := d.upsertLatestKey(ctx, tx, topicID, opts.CompactionKey, id); err != nil {
-			return nil, err
+			return 0, classifyTransient(err) // still pre-commit
 		}
 	}
+	return id, nil
+}
 
-	if err = tx.Commit(ctx); err != nil {
-		return nil, err
+// insertProtected runs the idempotency claim + message insert (+ latest_keys
+// upsert when keyed) in one round trip. landed=false means the claim already
+// existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
+func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts producer.ProduceOptions) (id int64, landed bool, err error) {
+	args := []any{topicID, idempotencyKey, message, opts.RoutingKey}
+
+	var sql string
+	if opts.CompactionKey != "" {
+		// claim + insert + latest_keys upsert in one round trip -- inserted
+		// stays empty when the claim already existed, so latest never fires either.
+		sql = fmt.Sprintf(`
+			WITH claim AS (
+				INSERT INTO idempotency_keys (topic_id, idempotency_key)
+				VALUES ($1, $2)
+				ON CONFLICT (topic_id, idempotency_key) DO NOTHING
+				RETURNING 1
+			), inserted AS (
+				INSERT INTO %s (payload, routing_key, compaction_key)
+				SELECT $3, NULLIF($4, ''), $5 -- if routing_key $4 is empty string '' insert as NULL
+				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
+				RETURNING id
+			), latest AS (
+				INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+				SELECT $1, $5, id FROM inserted
+				ON CONFLICT (topic_id, compaction_key) DO UPDATE
+				SET latest_id = EXCLUDED.latest_id
+				WHERE latest_keys.latest_id < EXCLUDED.latest_id
+			)
+			SELECT id FROM inserted;
+		`, logTable(topicID))
+		args = append(args, opts.CompactionKey)
+	} else {
+		// claim + insert in one round trip -- WHERE EXISTS only fires if the
+		// claim CTE landed a row, so a conflict makes both match zero rows.
+		sql = fmt.Sprintf(`
+			WITH claim AS (
+				INSERT INTO idempotency_keys (topic_id, idempotency_key)
+				VALUES ($1, $2)
+				ON CONFLICT (topic_id, idempotency_key) DO NOTHING
+				RETURNING 1
+			)
+			INSERT INTO %s (payload, routing_key, compaction_key)
+			SELECT
+				$3,
+				NULLIF($4, ''), -- if routing_key is empty string '' insert as NULL
+				NULL
+			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
+			RETURNING id;
+		`, logTable(topicID))
 	}
 
-	return message, nil
+	err = tx.QueryRow(ctx, sql, args...).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil // claim already existed -- already committed
+	}
+	if err != nil {
+		return 0, false, classifyTransient(err) // still pre-commit
+	}
+	return id, true, nil
 }
 
 // upsertLatestKey keeps latest_keys pointed at the highest id seen for this compaction key
