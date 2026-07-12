@@ -35,24 +35,27 @@ func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, err
 
 func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, error) {
 	sql := `
-		SELECT 
-			id, 
-			name, 
-			partition_size, 
-			retention_ttl_ns, 
-			allow_drop_past_committed 
-		FROM topics 
+		SELECT
+			id,
+			name,
+			partition_size,
+			retention_ttl_ns,
+			allow_drop_past_committed,
+			idempotency_key_ttl_ns
+		FROM topics
 		WHERE name = $1;
 	`
 
 	var t Topic
 	var retentionTTLNs int64
+	var idempotencyKeyTTLNs int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(
 		&t.Id,
 		&t.Name,
 		&t.PartitionSize,
 		&retentionTTLNs,
 		&t.AllowDropPastCommitted,
+		&idempotencyKeyTTLNs,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -61,6 +64,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 		return nil, err
 	}
 	t.RetentionTTL = time.Duration(retentionTTLNs)
+	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
 
 	return &t, nil
 }
@@ -84,14 +88,14 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topics (name, partition_size, retention_ttl_ns, allow_drop_past_committed)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO topics (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id;
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted).Scan(&id)
+	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL)).Scan(&id)
 
 	switch {
 	case insertErr == nil:

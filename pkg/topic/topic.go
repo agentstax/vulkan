@@ -19,6 +19,7 @@ type Topic struct {
 	PartitionSize          int64
 	RetentionTTL           time.Duration
 	AllowDropPastCommitted bool
+	IdempotencyKeyTTL      time.Duration
 }
 
 func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (bool, error) {

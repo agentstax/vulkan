@@ -27,6 +27,7 @@ type Datastore[Message any] interface {
 	EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error
 	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
 	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
+	SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse deliveries rows.
 	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal) error
 	AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error)
@@ -437,6 +438,66 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 	}
 
 	return len(ids), nil
+}
+
+// SweepExpiredIdempotencyKeys drains idempotency_keys rows older than ttl for this topic.
+func (d *consumerDatastore[Message]) SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
+	return d.DBRetry.Wrap(ctx, func() error {
+		return d.sweepExpiredIdempotencyKeys(ctx, topicID, ttl, batchSize)
+	})
+}
+
+func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
+	// unlike RetentionTTL, ttl <= 0 isn't a real "keep forever" choice here --
+	// topic.Config.SetDefaults resolves an unset (zero) IdempotencyKeyTTL to
+	// 24h before a topic is ever registered, so p.Topic.IdempotencyKeyTTL
+	// should never actually be <= 0 by the time this runs. This is a
+	// defensive no-op for that case, not the intended way to disable
+	// cleanup -- there's no supported way to opt an idempotency_keys row
+	// out of eventually being swept.
+	if ttl <= 0 {
+		return nil
+	}
+
+	cutoff := time.Now().Add(-ttl)
+
+	// protect against any potential infinite loops
+	const maxIdempotencyKeySweepBatches = 1000
+	for range maxIdempotencyKeySweepBatches {
+		swept, err := d.sweepIdempotencyKeysBatch(ctx, topicID, cutoff, batchSize)
+		if err != nil {
+			return err
+		}
+		if swept < batchSize {
+			break // ran out of expired rows
+		}
+	}
+
+	return nil
+}
+
+// sweepIdempotencyKeysBatch deletes up to batchSize expired rows for this
+// topic. created_at (not idempotency_key) is the cutoff column -- a
+// caller-supplied key isn't guaranteed to be a time-ordered UUIDv7 the way
+// the auto-generated default is, so only the server-assigned timestamp is
+// trustworthy for this.
+func (d *consumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Context, topicID int64, cutoff time.Time, batchSize int) (int, error) {
+	sql := `
+		DELETE FROM idempotency_keys
+		WHERE (topic_id, idempotency_key) IN (
+			SELECT topic_id, idempotency_key FROM idempotency_keys
+			WHERE topic_id = $1
+				AND created_at < $2
+			LIMIT $3
+		);
+	`
+
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, topicID, cutoff, batchSize)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(tag.RowsAffected()), nil
 }
 
 // dropPartition removes the partition and its deliveries rows in one transaction.

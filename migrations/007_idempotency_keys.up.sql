@@ -8,12 +8,14 @@
 -- impossible -- same reason latest_keys exists as its own table rather than
 -- a constraint on message_log for compaction_key.
 --
--- No retention/cleanup yet -- this grows one row per publish, unbounded.
--- Known follow-up, not solved here (same staged sequencing latest_keys used:
--- land the mechanism first, wire retention awareness into it later).
+-- Swept by the Janitor on IdempotencyKeyTTL, independent of message_log
+-- retention -- created_at (not idempotency_key) is the sweep's cutoff column
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   topic_id        BIGINT    NOT NULL, -- PK
   idempotency_key UUID      NOT NULL, -- PK
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (topic_id, idempotency_key)
 );
+
+CREATE INDEX IF NOT EXISTS idempotency_keys_topic_created_at
+  ON idempotency_keys (topic_id, created_at);

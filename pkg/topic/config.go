@@ -39,11 +39,25 @@ type Config struct {
 	// Ex: false for most topics, true for a metrics topic where staleness
 	// beats unbounded disk growth.
 	AllowDropPastCommitted bool
+
+	// IdempotencyKeyTTL - how long an AppendMessage idempotency claim survives
+	// in idempotency_keys table before the janitor sweeps it. Unlike RetentionTTL,
+	// zero is not "keep forever" -- it means "unset," and SetDefaults resolves
+	// it to 24h before the topic is ever registered. idempotency_keys exists
+	// only to protect retries (a blip's DBRetry attempts, or a caller's own
+	// cross-restart retry via a supplied IdempotencyKey)
+	//
+	// Ex: 24 * time.Hour (the default), 10 * time.Minute for a topic whose
+	// producers never retry across a restart.
+	IdempotencyKeyTTL time.Duration
 }
 
 func (c *Config) SetDefaults() {
 	if c.PartitionSize == 0 {
 		c.PartitionSize = 1_000_000
+	}
+	if c.IdempotencyKeyTTL == 0 {
+		c.IdempotencyKeyTTL = 24 * time.Hour
 	}
 }
 
@@ -53,6 +67,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RetentionTTL < 0 {
 		return errors.New("RetentionTTL must be >= 0")
+	}
+	if c.IdempotencyKeyTTL < 0 {
+		return errors.New("IdempotencyKeyTTL must be >= 0")
 	}
 	return nil
 }
@@ -64,5 +81,6 @@ func (c *Config) ToTopic(id int64) *Topic {
 		PartitionSize:          c.PartitionSize,
 		RetentionTTL:           c.RetentionTTL,
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
+		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
 	}
 }

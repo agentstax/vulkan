@@ -198,6 +198,9 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize); err != nil {
 				return err
 			}
+			if err := p.Datastore.SweepExpiredIdempotencyKeys(ctx, p.Topic.Id, p.Topic.IdempotencyKeyTTL, p.Config.JanitorSweepBatchSize); err != nil {
+				return err
+			}
 		}
 	}
 }
