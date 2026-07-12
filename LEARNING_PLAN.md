@@ -81,7 +81,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 8b — Per-topic tables | ✅ done | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost; answers in NOTES.md; tag `phase-8b` |
 | 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_keys` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
 | 8d — Latency: LISTEN/NOTIFY | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 9 — Consumer fault isolation & recovery | 🔨 in progress | DB-blip retry done (`pkg/retry`, idempotency_keys, `idempotency-keys-lab`); panics, hard timeouts, graceful shutdown still open (from TODO.md) |
+| 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_keys), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
 | 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
 | 12 — FIFO partitions | ⬜ | deprioritized — ordering opt-in on the lifecycle path, not current focus |
@@ -2285,12 +2285,40 @@ phase is `pkg/consumer`-specific.
       deliberately leaving a lease OPEN and a deliveries row unclaimed (the
       messiest mid-flight state, not the already-resolved case), and
       confirms `Destroy` drains every one of them plus `message_log` itself.
-- [ ] Induce each failure mode with the existing harness (or new flags): a
-      `consumerFunc` that panics, one that hangs past `WorkTimeout`, and a
-      forced DB error mid-loop. Confirm: the panic retries/dead-letters just
-      the one message, not the whole range; the hang times out and retries
-      while the abandoned goroutine shows up in the gauge; the DB blip doesn't
-      kill the consumer and it recovers once the blip clears.
+- [x] `just fault-isolation-lab` — induces all three failure modes through the
+      real `CursorClaim` path (not the interactive `--fail-rate`/`--crash-after`
+      harness — a dedicated deterministic lab, same convention as every other
+      Phase 6.5c+ lab) plus a direct check of `pkg/retry`: a panicking
+      `consumerFunc` and one that hangs past `WorkTimeout+WorkTimeoutGrace`
+      each isolate to the one message in a 3-message batch (the other two
+      process normally, the range still fully commits), the hang's
+      abandoned-goroutine gauge shows exactly 1 outstanding immediately after
+      `CursorClaim` returns and self-clears once that detached goroutine
+      actually finishes sleeping, and a forced transient failure that clears
+      within `MaxRetries` is fully invisible to the caller.
+
+      That last check caught a real, previously-undiscovered bug in
+      `pkg/retry.Retry.Wrap`, unrelated to anything built this phase:
+      `IsRetryable(nil)` correctly returns `false` for a successful call, but
+      the code treated "not retryable" as synonymous with "permanent failure,
+      return the joined error" — so a call that succeeded on, say, its 3rd
+      attempt still returned `errors.Join(err1, err2, nil)`, which
+      `errors.Join` collapses to a **non-nil** error (it only discards nils,
+      not the whole result) wrapping the two already-resolved prior failures.
+      Every caller's `if err != nil { return err }` (literally every call
+      site in `producer`/`consumer`/`topic`) would treat a successful
+      retry-then-recover as a hard failure — for `CursorClaim` specifically,
+      that would have propagated up through `Process`'s own `if err :=
+      p.CursorClaim(...); err != nil { return err }` and killed the whole
+      polling loop, the exact opposite of "a DB blip doesn't kill the
+      consumer." Verified with a standalone repro before and after: before
+      the fix, 2 injected failures + a 3rd successful call returned a
+      non-nil error; after adding an explicit `if err == nil { return nil }`
+      short-circuit ahead of the retryable/permanent classification (which is
+      meaningless for a nil result anyway), all four cases (retry-then-
+      succeed, immediate success, exhausted retries, immediate permanent
+      failure) behave correctly. Confirmed no regression by re-running every
+      existing lab that exercises `DatastoreRetry` end-to-end.
 - [x] `just shutdown-truncation-lab` — drives `CursorClaim` directly (not
       `Consume`) so cancellation timing is deterministic: a `consumerFunc`
       closure cancels the shared context after message 2 of 3. Confirms
@@ -2308,11 +2336,20 @@ phase is `pkg/consumer`-specific.
 1. Why does a recovered panic have to go through the *exact same*
    retry/backoff/dead path as an ordinary error, instead of its own
    special-cased handling?
+Answer: recovered panics are not necessarily permanent errors (nil map write, index out of range, bad type assertion). The fact is we don't know if a 
+retry will help or not b/c we don't know the consumerFuncs code. So it is better to go on side of caution and follow standard expected path instead
+of making assumptions
 2. Why is `context.WithTimeout` alone insufficient to enforce `WorkTimeout`,
    and what does the detached-goroutine race actually buy you given Go has no
    goroutine kill?
+Answer: context timeouts expect to be explicitily handled. Normally via a call to ctx.Err or ctx.Done. Our own internal code we can do that for. However
+we cannot gauruntee that the user does that within their consumerFunc. Because of that we have a detached-goroutine race that allows us to internally exit
+the consumerFunc work such that we may retry or mark dead within the users expected WorkTimeout + Grace period. The one caveat this brings is that the goroutine
+that was raced is still running and as such we have a abanonded routine which we track via metrics
 3. Why key the abandoned-goroutine registry by (message, attempt) rather than
    by message alone?
+Answer: If first and second attempt of a message was abandoned. The second attempt would overwrite the first within registry despite their potentially being two
+real live abandoned go routines. message & attempt is the uniquness identifier for the goroutine and as such should be the key
 
 **Done when:** all three induced failure modes recover correctly and are
 demonstrated in the lab, NOTES.md, `git tag phase-9`.

@@ -1794,3 +1794,208 @@ anything, since the index sidesteps the scan entirely.
   `bindings`/`leases` on topic destroy) was confirmed to apply identically
   to `latest_keys` — not a new problem, same gap, one more table.
 
+## Phase 9 — Consumer fault isolation & recovery
+
+**What it does, and the tradeoff:** before this phase, only one of
+`consumerFunc`'s four possible failure shapes was handled — an ordinary
+returned error, routed through 6.5c's retry/backoff/dead-letter exception
+window. A panic, a hang, or a datastore blip mid-claim each took down more
+than the one message: a panic crashed the whole claimed range (lease
+expires, gets reclaimed, re-reads the identical range, panics again,
+forever); a hang blocked the batch with no way to give up since Go has no
+goroutine kill; a transient DB error propagated straight up through
+`Process`'s poll loop and killed the consumer outright. This phase closes
+all three by making each one land in the *same* place the ordinary-error
+path already does — one message dead-lettered or retried, never the whole
+range — rather than inventing a bespoke recovery mechanism per failure
+shape. The unifying move is `callSafely`, one shared helper all three claim
+paths (`CursorClaim`/`ExceptionClaim`/`LifecycleClaim`) now call instead of
+invoking `consumerFunc` raw: it recovers a panic into an ordinary error, and
+races `consumerFunc` in its own goroutine against a hard timeout so a call
+that never checks its context still returns control to the caller. Go's
+lack of a goroutine-kill primitive is the one failure mode this phase only
+*contains* rather than fully fixes — an abandoned goroutine keeps running
+in the background, tracked (not eliminated) via a small in-process
+registry.
+
+**The aha:** the DB-blip fault-isolation lab was written to *confirm* an
+already-working guarantee, not find a new bug — and found one anyway, in
+code none of this phase touched. `pkg/retry.Retry.Wrap` correctly
+classified a nil error as non-retryable, but conflated "not retryable" with
+"permanent failure, return the joined error": a call that succeeded after
+N retries still returned `errors.Join(err1, ..., nil)`, and `errors.Join`
+only discards the nil element — it does not collapse the whole result to
+nil. Every caller's `if err != nil { return err }` (every call site in
+`producer`/`consumer`/`topic`) would treat a successful retry-then-recover
+as a hard failure, which for `CursorClaim` specifically meant a DB blip
+that cleared on retry still killed `Process`'s poll loop — the exact
+opposite of the guarantee this phase's own "Datastore-blip retry backoff"
+bullet had already shipped. The lab exists precisely so a claim like that
+gets exercised end-to-end instead of trusted on inspection.
+
+### Explain it back
+
+**1. Why does a recovered panic have to go through the *exact same*
+retry/backoff/dead path as an ordinary error, instead of its own
+special-cased handling?**
+
+Answer: recovered panics are not necessarily permanent errors (nil map
+write, index out of range, bad type assertion). The fact is we don't know
+if a retry will help or not b/c we don't know the consumerFuncs code. So it
+is better to go on side of caution and follow standard expected path
+instead of making assumptions
+
+**2. Why is `context.WithTimeout` alone insufficient to enforce
+`WorkTimeout`, and what does the detached-goroutine race actually buy you
+given Go has no goroutine kill?**
+
+Answer: context timeouts expect to be explicitily handled. Normally via a
+call to ctx.Err or ctx.Done. Our own internal code we can do that for.
+However we cannot gauruntee that the user does that within their
+consumerFunc. Because of that we have a detached-goroutine race that allows
+us to internally exit the consumerFunc work such that we may retry or mark
+dead within the users expected WorkTimeout + Grace period. The one caveat
+this brings is that the goroutine that was raced is still running and as
+such we have a abanonded routine which we track via metrics
+
+**3. Why key the abandoned-goroutine registry by (message, attempt) rather
+than by message alone?**
+
+Answer: If first and second attempt of a message was abandoned. The second
+attempt would overwrite the first within registry despite their
+potentially being two real live abandoned go routines. message & attempt
+is the uniquness identifier for the goroutine and as such should be the key
+
+### Done
+
+- **Datastore-blip retry backoff.** New `pkg/retry` package —
+  `Retry`/`DatastoreRetry`, explicit `RetryableError`/`PermanentError`
+  classification, context-aware exponential backoff. Every
+  `Datastore[Message]` method got a public/private split so retry plumbing
+  stays invisible at call sites. Surfaced a correctness gap beyond "just
+  retry": a retried `AppendMessage` could double-publish on an
+  ambiguous-commit-ack. Fixed with an `idempotency_keys` claim table
+  (`ON CONFLICT DO NOTHING`, checked before the `message_log` insert),
+  swept on `Topic.IdempotencyKeyTTL` (defaults 24h, no "0 = forever").
+  Measured the naive version's cost (20-36%+ extra disk,
+  15-30% lower throughput) and cut it with a batched data-modifying CTE
+  (one round trip instead of two) plus a per-call `SkipIdempotency`
+  opt-out. `SkipIdempotency` forced a deeper fix: retry-safety now depends
+  on caller context, not just error shape, so `Commit()` classification
+  moved inline at each package's own call site
+  (`classifyTransient`/`classifyCommit`-shaped `if`/`else`), with
+  `DatastoreRetry.Wrap`'s default classifier changed to pass an
+  already-classified error through untouched instead of re-deciding it —
+  the one shared `Wrap` that lets every package coexist with its own
+  inline `Commit()` classification.
+- **Graceful-shutdown lease truncation.** `CursorClaim`'s per-message loop
+  checks `ctx.Done()` between messages (not mid-message — that's the hard
+  per-message timeout, a separate mechanism below). A new datastore method,
+  `PartialCommit`, narrows the interrupted lease's `low` bound (`UPDATE
+  leases SET low = $lastProcessed`) instead of freeing it outright —
+  same-token, same-`until`, so the untouched suffix rides the existing
+  crash-recovery reclaim path rather than needing a new expiry mechanism.
+  Written through `context.WithTimeout(context.WithoutCancel(ctx),
+  AckMargin)`, the same "extra time to record outcomes" pattern
+  `ShutdownFunc` already uses, since the ctx that triggered the
+  interruption is already `Done`.
+- **`recover()` around `consumerFunc`.** `callSafely(ctx, consumerFunc,
+  work, messageID, attempt) error` — one shared helper all three claim
+  paths call instead of tripling defer/recover logic. A recovered panic
+  becomes an ordinary error (panic value + `runtime/debug.Stack()`) routed
+  through the same per-message path as any other failure. Does not catch
+  OS-level faults (stack overflow, SIGSEGV via cgo, OOM-kill, external
+  kill) — those still need 6.5c's range-level quarantine as the backstop.
+- **Hard per-message timeout via a detached-goroutine race.** Built into
+  `callSafely`: `consumerFunc` now runs in its own goroutine, racing a
+  buffered `done` channel against `time.After(WorkTimeout +
+  WorkTimeoutGrace)` so the caller can give up independent of the callee.
+  `WorkTimeoutGrace` (new config field, default 100ms, validated `> 0`,
+  folded into the `ShutdownTimeout` inequality) is sized from a real
+  measurement, not a guess: Go's own scheduler wakeup latency from a
+  context deadline to a blocked goroutine's channel send is p99 < 1ms even
+  under artificial scheduler pressure (2000 trials) — almost none of the
+  default 100ms is scheduling risk, it's discretionary slack for the
+  caller's own cancellation-response time (e.g. a `pgx` cancel-request
+  round trip), sized to roughly one same-region network hop. Timeout
+  errors tag `last_error` with `messageID`, never the raw `work` payload —
+  `last_error` is DB-persisted with far wider read access than an
+  in-process error ever had.
+- **Track abandoned goroutines.** `ConsumerMetrics.AbandonedRoutines` — a
+  `map[abandonedKey]time.Time` keyed by `(MessageId, Attempt)`, guarded by
+  a `sync.Mutex` (not `sync.Map` — the access pattern is one
+  Add/Remove/CurrentTotal call each per event, not enough concurrent
+  contention to justify `sync.Map`'s striped-lock complexity).
+  `TrackingTotal()` (atomic counter), `CurrentTotal()` (gauge, mutex-read
+  map length), `ReclaimLatency()` (average over a
+  `ConcurrentBoundedRingBuffer[time.Duration]`, capacity 256 — a
+  self-synchronizing generic ring buffer with its own internal mutex,
+  `Add`/`Len`/`Values` all self-locking, `Values()` returning a defensive
+  copy). Deliberately informal (no metrics-library commitment yet) — Phase
+  10's "Operational metrics" bullet wires these already-built numbers into
+  whatever pluggable interface it settles on.
+- **Five labs:** `idempotency-keys-lab` (retry-safety mechanism: exactly-once
+  under a retried key, distinct keys never collide, sweep drains expired
+  claims, `SkipIdempotency` genuinely double-publishes), `idempotency
+  -keys-growth-lab` (storage/throughput axis — 20-36%+ overhead with no
+  sweep running, bounded steady-state size with the real janitor cadence),
+  `delete-topic-lab` (`Destroy` cascades all six topic-scoped tables, not
+  just `message_log`/`topics`), `shutdown-truncation-lab` (a mid-range
+  cancellation narrows the lease, never redelivers the resolved prefix, the
+  waterline's exception-blocker and lease-narrowing terms combine via
+  `LEAST`), `fault-isolation-lab` (all three induced failure modes through
+  the real `CursorClaim` path — panic and hang each isolate to one message
+  in a 3-message batch, the abandoned-goroutine gauge shows exactly 1
+  outstanding and self-clears, a forced transient failure clearing within
+  `MaxRetries` is invisible to the caller; this last check is what caught
+  the `pkg/retry.Wrap` bug in the aha above).
+
+### Decisions
+
+- **One shared `callSafely`, not a separate wrapper per failure mode.**
+  Panic recovery and the hard timeout both needed a goroutine boundary
+  around `consumerFunc` for different reasons (catch a same-stack panic;
+  give the caller an exit door independent of the callee) — building them
+  as one helper instead of two meant the panic-recovery `defer` only had
+  to be threaded through the timeout race once, not duplicated.
+- **The panic-recovery `defer` moved from `callSafely`'s own frame into the
+  spawned goroutine, mid-review, once the timeout race landed.**
+  `recover()` only catches a panic on the same goroutine's call stack. An
+  earlier draft assigned a recovered panic straight into `callSafely`'s
+  named return from the child goroutine — both a data race (unsynchronized
+  write racing the parent's own `return`) and functionally silent
+  (`done` never received anything on a panic, so `callSafely` waited out
+  the *entire* timeout+grace before returning the wrong, generic timeout
+  error instead of the real one). Fixed by having the goroutine's own
+  `recover()` send into `done` like any other result — verified with
+  `-race`: a throwaway test panicking `consumerFunc` returned in ~120µs
+  with the panic message and stack intact, no race.
+- **`AbandonedRoutines.Remove` runs after `recover()` in the same defer,
+  not before.** If `Remove` panicked first (e.g. a nil `Metrics`), it would
+  prevent `recover()` from ever running, undoing the panic-recovery
+  guarantee entirely. Considered and declined: a nil-guard on `Metrics`
+  inside `callSafely` itself, or a second nested `defer`/`recover` around
+  just the `Remove` call — declined because `validate()` already guarantees
+  `Metrics != nil` before a `WorkConsumer` can be used, and this codebase's
+  convention is to trust that guarantee once, at construction, rather than
+  re-checking it at every call site downstream.
+- **"Track abandoned goroutines" stayed in Phase 9; lease heartbeat/renewal
+  moved to a new deferred `9b`.** The registry (the `(message,
+  attempt)`-keyed map + raw counters) is this phase's own lab dependency —
+  the lab already asserts against a live gauge — so it stayed here as
+  plain in-process state, with the metrics-library wiring deliberately
+  deferred to Phase 10 instead of inventing a one-off shape early. Lease
+  heartbeat/renewal has no such dependency on anything already shipped and
+  is its own substantial mechanism (Temporal-style activity heartbeats),
+  so it was cut to its own section rather than padding this phase's scope
+  for a "while we're in here" reason.
+- **The `pkg/retry.Wrap` bug fix is a plain early-return, not a rewrite of
+  the classification logic.** `if err == nil { return nil }` ahead of the
+  `IsRetryable` check — success was always meant to short-circuit before
+  classification even runs, since "is this permanent" is a meaningless
+  question for a nil result. Verified across all four shapes (retry-then-
+  succeed, immediate success, exhausted retries, immediate permanent
+  failure) and against the full existing lab suite with no other changes
+  needed anywhere — the bug was purely local to `Wrap`'s own early-return
+  branch, not a design flaw in the retryable/permanent split itself.
+
