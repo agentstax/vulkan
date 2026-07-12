@@ -146,6 +146,15 @@ idempotency-keys-growth-lab:
 delete-topic-lab:
   go run examples/phase_1/deletetopiclab/main.go
 
+# Phase 9 lab: graceful-shutdown lease truncation. A shutdown signal mid-range
+# stops CursorClaim from taking on new messages, but everything already
+# resolved (successes + a parked exception) survives and the lease narrows to
+# just the untouched suffix -- confirms the resolved prefix is never
+# redelivered, the waterline's exception-blocker and lease-narrowing terms
+# combine correctly via LEAST, and the untouched suffix reclaims on its own.
+shutdown-truncation-lab:
+  go run examples/phase_1/shutdowntruncationlab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

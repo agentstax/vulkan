@@ -10,7 +10,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -54,7 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	datastore := prodstore.NewProducerDatastore[common.Work](ds)
+	datastore := producer.NewProducerDatastore[common.Work](ds)
 	wp := producer.NewWorkProducer(t, datastore)
 
 	// WORK

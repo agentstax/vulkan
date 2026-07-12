@@ -30,7 +30,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -55,7 +54,7 @@ func main() {
 	must(err)
 
 	cd := consumer.NewConsumerDatastore[Record](ds)
-	pd := prodstore.NewProducerDatastore[Record](ds)
+	pd := producer.NewProducerDatastore[Record](ds)
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
 	narrow, err := topic.Register(ctx, ds, topic.Config{Name: narrowName, PartitionSize: narrowPartitionSize})

@@ -2085,21 +2085,43 @@ phase is `pkg/consumer`-specific.
       as-is by `consumer`/`topic`, which have no equivalent ambiguity) and
       producer's own policy share one "does this look like a blip"
       implementation instead of two.
-- [ ] **Graceful-shutdown lease truncation.** `Consume` already calls a
-      pluggable `p.ShutdownFunc` on the way out (`Shutdown`, `consumer.go`),
-      so the *hook* isn't new — but the mechanism this bullet actually needs
-      is bigger than "extend a hook." Today `CursorClaim`'s per-message loop
-      (`consumer.go:339-350`) never checks `ctx.Done()` — a shutdown signal
-      only takes effect between batches, at `Process`'s outer `select`,
-      never mid-batch — so there's no trigger point for "truncate the lease"
-      until the loop itself becomes interruptible per-message, which has to
-      be built first, not assumed. And "update its low bound" isn't an
-      existing capability to reach for: `Commit` frees a lease atomically
-      and has no partial/narrowing mode. Preserving a mid-batch shutdown's
-      already-resolved prefix needs a genuinely new datastore method — a
-      partial commit that persists the exceptions/terminals gathered so far
-      *and* narrows the still-open lease's `low` to where the interrupted
-      loop actually got to, distinct from today's all-or-nothing `Commit`.
+- [x] **Graceful-shutdown lease truncation.** `CursorClaim`'s per-message loop
+      now checks `ctx.Done()` between messages (not mid-message — a hard
+      per-message timeout is the separate, still-open item below): each
+      iteration selects on `ctx.Done()` before attempting the next message,
+      so a shutdown signal stops the batch from taking on new work without
+      needing `context.WithTimeout`'s cooperative-cancellation help mid-call.
+
+      "Update its low bound" wasn't an existing capability — `Commit` frees a
+      lease atomically with no partial/narrowing mode — so a new datastore
+      method, `PartialCommit`, does the actual work: same `deliveries`-parking
+      shape as `commit`, but instead of `DELETE FROM leases`, an `UPDATE
+      leases SET low = $lastProcessed` narrows the *same* lease (same token,
+      `until`, `reclaims`) rather than freeing it. The untouched suffix
+      `(lastProcessed, high]` stays leased under that worker's now-dead token
+      until it naturally expires and reclaims normally — no new expiry
+      mechanism, it rides the existing crash-recovery path, just over a
+      shorter range than the original claim.
+
+      The commit call itself needed its own context: the `ctx` that triggered
+      the interruption is already `Done`, so writing `PartialCommit` through
+      it would fail immediately. Same fix as `Shutdown` already uses for
+      `ShutdownFunc` — `context.WithTimeout(context.WithoutCancel(ctx), ...)`
+      — reusing `AckMargin` as the bound, since that's already the config
+      knob for "extra time to record outcomes after processing." An
+      interruption before any message resolves (`lastProcessed` still at the
+      lease's original `low`, no exceptions/terminals) skips the call
+      entirely rather than issuing a no-op `UPDATE`.
+
+      One correctness subtlety caught before it became a bug: the interrupted
+      branch can't be detected by comparing `lastProcessed` against the
+      lease's `high` — `claimed.Messages` is already filtered by routing/
+      compaction, so a fully-successful, *uninterrupted* range routinely ends
+      with `lastProcessed < high` whenever the tail of the raw id range
+      contains non-matching ids. Branching on that would misclassify an
+      ordinary complete run as an interruption. Fixed with an explicit
+      `interrupted` bool set only inside the `ctx.Done()` case, independent
+      of where `lastProcessed` lands.
 - [ ] **`recover()` around the `consumerFunc` call.** A bare Go panic (nil map
       write, index out of range, a bad type assertion on an unexpected payload)
       is indistinguishable from a real process crash today — it takes down the
@@ -2199,10 +2221,18 @@ phase is `pkg/consumer`-specific.
       the one message, not the whole range; the hang times out and retries
       while the abandoned goroutine shows up in the gauge; the DB blip doesn't
       kill the consumer and it recovers once the blip clears.
-- [ ] Trigger a shutdown signal mid-batch (a claimed range with several
-      messages still unresolved) and confirm the already-resolved prefix
-      isn't reprocessed after restart, while the unresolved suffix is —
-      the one Build item above with no other proof step in this lab.
+- [x] `just shutdown-truncation-lab` — drives `CursorClaim` directly (not
+      `Consume`) so cancellation timing is deterministic: a `consumerFunc`
+      closure cancels the shared context after message 2 of 3. Confirms
+      message 3 is never attempted; the lease survives narrowed to `(2,3]`
+      with one parked exception at message 2; `AdvanceWaterline` stays
+      correctly pinned at message 1 by the *unresolved exception* even though
+      the lease is already narrowed past it (the two blockers combine via
+      `LEAST`, neither short-circuits the other); once the exception resolves
+      the waterline jumps straight to the narrowed low without waiting on the
+      untouched suffix's lease; and once that (now-shorter) lease naturally
+      expires, reclaiming it returns exactly the one untouched message, never
+      re-delivering the already-resolved prefix.
 
 **Explain it back:**
 1. Why does a recovered panic have to go through the *exact same*

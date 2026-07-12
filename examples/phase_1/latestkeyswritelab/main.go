@@ -29,7 +29,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -66,7 +65,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := prodstore.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	unkeyedMs := timeSequential(ctx, wp, n, func(i int) string { return "" })
@@ -137,7 +136,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	tp, err := topic.Register(ctx, ds, topic.Config{Name: name, PartitionSize: largePartitionSize})
 	must(err)
 
-	pd := prodstore.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	start := time.Now()

@@ -33,7 +33,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -72,7 +71,7 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := prodstore.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	var wg sync.WaitGroup

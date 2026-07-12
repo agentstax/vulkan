@@ -25,7 +25,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	prodstore "github.com/agentstax/vulkan/pkg/producer/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -51,7 +50,7 @@ func main() {
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds)
-	pd := prodstore.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
