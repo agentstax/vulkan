@@ -2402,7 +2402,7 @@ compare against — you're building past what the reference bothered with.
       8b has landed by the time this is built, scope these per-`(group,
       topic)`, not just per-group — a group can read more than one topic once
       topics exist.
-- [ ] **Resolve the lazy-vs-synchronous rollup.** Decide, with measured
+- [x] **Resolve the lazy-vs-synchronous rollup.** Decide, with measured
       numbers, whether `AdvanceWaterline` should stay a periodic lazy tick or
       become synchronous — advance right after a lease/batch resolves instead
       of waiting for the next tick. Record the latency-vs-overhead tradeoff you
@@ -2411,6 +2411,40 @@ compare against — you're building past what the reference bothered with.
       FROM cursors`) to decide whether a partition is safe to drop — a
       synchronous rollup makes retention itself more responsive, a concrete,
       already-shipped stake beyond "the debug numbers look fresher."
+
+      **Decided: stay lazy.** New permanent lab, `examples/phase_1/rolluplab`
+      (`just rollup-lab`), drives the real `ClaimMessagesWithCursor`/
+      `Commit`/`AdvanceWaterline` datastore methods directly across three
+      scenarios, numbers below representative of several runs:
+
+      | Metric | Lazy (150ms poll) | Synchronous |
+      |---|---|---|
+      | Staleness — avg | ~77ms | ~2ms |
+      | Staleness — max | ~145ms | ~3–11ms |
+      | Fixed cost, uncontended | ~1.9ms/op (baseline) | ~2.7ms/op (+30–50%) |
+      | Concurrent (20 workers, same cursor row) | ~1.3–1.5ms/op (baseline) | ~1.7–2.8ms/op (1.3x–1.9x slower) |
+
+      Staleness scales linearly with poll interval — at the real default
+      `ClaimPollRate` (5s) that's avg ~2.5s / max ~5s under the lazy roller,
+      not the 150ms-poll numbers above (150ms was chosen only to keep the lab
+      fast; the mechanism under test doesn't depend on the specific interval).
+      The synchronous option collapses that to ~2ms, but `Commit` today
+      touches only `leases` (DELETE by token) and `deliveries` (INSERT) — it
+      never touches `cursors`, so concurrent workers holding separate leases
+      on the same `(group, topic)` commit in full parallel right now. A
+      synchronous `AdvanceWaterline` adds an `UPDATE cursors` to that path,
+      which *is* new lock contention on a row every concurrent committer in
+      the group shares — measured at 1.3x–1.9x slower with 20 concurrent
+      committers, a cost that doesn't exist at all in the current design.
+
+      That's a bad trade: retention drop decisions and a debug readout
+      tolerate multi-second staleness fine, but a synchronous rollup taxes
+      every single commit's latency, permanently, for every consumer group,
+      to buy a sub-5-second wait down to a few milliseconds. Kept
+      `RollWaterline` lazy and added `WorkConsumerConfig.WaterlinePollRate`
+      (0 defaults to `ClaimPollRate`, same pattern as `JanitorPollRate`) so
+      staleness is tunable independently of the commit hot path when a
+      shorter wait is actually needed, without introducing contention.
 
 **Lab:**
 - [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce

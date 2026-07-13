@@ -57,6 +57,7 @@ type WorkConsumerConfig struct {
 	PartitionSafetyBuffer   int64
 	JanitorPollRate         time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
 	JanitorSweepBatchSize   int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 }
 
@@ -100,7 +101,7 @@ func (c *WorkConsumerConfig) withDefaults() *WorkConsumerConfig {
 	if c.PartitionSafetyBuffer == 0 {
 		c.PartitionSafetyBuffer = 50000 // TODO - determine sane default
 	}
-	// JanitorPollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
+	// JanitorPollRate, WaterlinePollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
 	if c.JanitorSweepBatchSize == 0 {
 		c.JanitorSweepBatchSize = 1000
 	}
@@ -213,6 +214,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	}
 	if p.Config.JanitorPollRate < 0 {
 		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", p.Config.JanitorPollRate)
+	}
+	if p.Config.WaterlinePollRate < 0 {
+		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", p.Config.WaterlinePollRate)
 	}
 	if p.Config.JanitorSweepBatchSize < 1 {
 		return fmt.Errorf("JanitorSweepBatchSize must be >= 1, got %d", p.Config.JanitorSweepBatchSize)
@@ -349,12 +353,22 @@ func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
 // RollWaterline is the lazy waterline roller: off the hot path, it periodically
 // rolls committed up to the lowest open lease (or claimed when none are open). Only
 // the cursor path has a waterline; the lifecycle path tracks state per delivery row.
+//
+// Deliberately lazy, not synchronous-on-Commit -- a synchronous call after
+// every Commit adds new lock contention on the shared cursors row. Lower
+// WaterlinePollRate instead if committed needs to catch up faster.
 func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
 	if p.Config.Type != CURSOR {
 		return nil
 	}
 
-	ticker := time.NewTicker(p.Config.ClaimPollRate)
+	// TODO - this is a strange place to set a default, need to reconsider it
+	waterlinePollRate := p.Config.WaterlinePollRate
+	if waterlinePollRate == 0 {
+		waterlinePollRate = p.Config.ClaimPollRate
+	}
+
+	ticker := time.NewTicker(waterlinePollRate)
 	defer ticker.Stop()
 
 	for {

@@ -168,6 +168,15 @@ shutdown-truncation-lab:
 fault-isolation-lab:
   go run examples/phase_1/faultisolationlab/main.go
 
+# Phase 10 lab: measures the lazy-vs-synchronous AdvanceWaterline tradeoff.
+# Staleness (time from Commit to `committed` reflecting it: periodic roller
+# tick vs. calling AdvanceWaterline synchronously right after Commit), fixed
+# per-op cost of the extra round trip uncontended, and the contention cost of
+# a synchronous call hammering the same (group, topic) cursors row Commit
+# itself never touches today.
+rollup-lab:
+  go run examples/phase_1/rolluplab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

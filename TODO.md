@@ -175,3 +175,5 @@ which I like however that causes this problem which I don't like
 we have a lot of seperate round-trip queries that would benefit from pgx.Batch
 
 consider using named return function params for User public functions to be clear in what they mean
+
+need to relook at what should be consumer vs topic vs producer config. Probably a decent amount of consumer config that should be topic config ie janitor stuff
