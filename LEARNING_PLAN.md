@@ -2391,6 +2391,10 @@ compare against — you're building past what the reference bothered with.
       wiring to here rather than inventing a one-off shape early. Wire those
       into whatever pluggable interface this bullet settles on alongside the
       four numbers above, instead of designing the tracking logic fresh.
+- [ ] **Inflight/completed visibility.** Surface, per group, how many
+      messages/batches are currently inflight vs. resolved — the metric gap the
+      lazy-rollup question originally flagged (today you can infer this from
+      `claimed − committed`, but it's not exposed as a first-class number).
 - [ ] **Debug/metrics readout.** A debug mode or method that prints current
       queue state on demand: the `claimed`/`committed` gap per group, exception
       counts (`ready`/`inflight`/`dead`), and open-lease count — the
@@ -2407,10 +2411,6 @@ compare against — you're building past what the reference bothered with.
       FROM cursors`) to decide whether a partition is safe to drop — a
       synchronous rollup makes retention itself more responsive, a concrete,
       already-shipped stake beyond "the debug numbers look fresher."
-- [ ] **Inflight/completed visibility.** Surface, per group, how many
-      messages/batches are currently inflight vs. resolved — the metric gap the
-      lazy-rollup question originally flagged (today you can infer this from
-      `claimed − committed`, but it's not exposed as a first-class number).
 
 **Lab:**
 - [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
