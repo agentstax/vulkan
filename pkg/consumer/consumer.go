@@ -287,27 +287,27 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 
 	errGroup, ctx := errgroup.WithContext(ctx)
 
-	fmt.Println("consumer deliveries projector starting")
+	p.Config.Logger.Info("consumer deliveries projector starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Project(ctx)
 	})
 
-	fmt.Println("consumer starting")
+	p.Config.Logger.Info("consumer starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Process(ctx, consumerFunc)
 	})
 
-	fmt.Println("consumer waterline roller starting")
+	p.Config.Logger.Info("consumer waterline roller starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.RollWaterline(ctx)
 	})
 
-	fmt.Println("consumer exception drain starting")
+	p.Config.Logger.Info("consumer exception drain starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.DrainExceptions(ctx, consumerFunc)
 	})
 
-	fmt.Println("consumer janitor starting")
+	p.Config.Logger.Info("consumer janitor starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Janitor(ctx)
 	})
@@ -794,7 +794,7 @@ func (p *WorkConsumer[WorkType]) Drain(wg *sync.WaitGroup) {
 	case <-doneSignal:
 		return // wg has successfully finished ie all in-flight work has finished / drained
 	case <-timer.C:
-		fmt.Println("in-flight work did not complete before shutdown timeout. In-flight work will be reclaimed after lease period has expired.")
+		p.Config.Logger.Warn("in-flight work did not complete before shutdown timeout, work will be reclaimed after lease expires", "group", p.Group, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
 		return // in-flight work did not finish within timeout, exit early to start shutdown process
 	}
 

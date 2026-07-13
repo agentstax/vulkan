@@ -2373,10 +2373,10 @@ teaching artifact meant to be read, not operated), so there's nothing to
 compare against — you're building past what the reference bothered with.
 
 **Build:**
-- [ ] **Common logger interface.** The internal `pkg` logging should accept a
+- [x] **Common logger interface.** The internal `pkg` logging should accept a
       logger *interface*, not a hardcoded implementation, so callers can plug
       in their own structured or unstructured logger.
-- [ ] **Writer-based default logger.** Provide a default implementation that
+- [x] **Writer-based default logger.** Provide a default implementation that
       takes an arbitrary `io.Writer`, so a caller with no opinions gets
       something reasonable for free.
 - [ ] **Operational metrics.** Expose backlog/lag per group (`head −
