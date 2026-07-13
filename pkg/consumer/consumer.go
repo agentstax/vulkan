@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
@@ -55,6 +58,57 @@ type WorkConsumerConfig struct {
 	PartitionSafetyBuffer   int64
 	JanitorPollRate         time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
 	JanitorSweepBatchSize   int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+	Logger                  *slog.Logger  // swap behavior via the slog.Handler inside it -- see pkg/logger's doc for wiring a custom backend
+}
+
+// withDefaults fills every unset (zero) field so a caller can pass a sparse
+// config holding only what they care about -- same contract as river's
+// Config.WithDefaults. Mutates and returns c for construction-time chaining.
+func (c *WorkConsumerConfig) withDefaults() *WorkConsumerConfig {
+	if c.Type == "" {
+		c.Type = CURSOR
+	}
+	if c.BatchLimit == 0 {
+		c.BatchLimit = 1 // no batching by default
+	}
+	if c.MaxAttempts == 0 {
+		c.MaxAttempts = 3
+	}
+	if c.MaxRangeReclaims == 0 {
+		c.MaxRangeReclaims = 3
+	}
+	if c.ClaimPollRate == 0 {
+		c.ClaimPollRate = 5 * time.Second
+	}
+	if c.WorkTimeout == 0 {
+		c.WorkTimeout = 30 * time.Second
+	}
+	if c.QueueTimeout == 0 {
+		c.QueueTimeout = 5 * time.Second
+	}
+	if c.AckMargin == 0 {
+		c.AckMargin = 2 * time.Second
+	}
+	if c.WorkTimeoutGrace == 0 {
+		c.WorkTimeoutGrace = 100 * time.Millisecond
+	}
+	if c.ExceptionInitialBackoff == 0 {
+		c.ExceptionInitialBackoff = 5 * time.Second
+	}
+	if c.ShutdownTimeout == 0 {
+		c.ShutdownTimeout = 35 * time.Second
+	}
+	if c.PartitionSafetyBuffer == 0 {
+		c.PartitionSafetyBuffer = 50000 // TODO - determine sane default
+	}
+	// JanitorPollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
+	if c.JanitorSweepBatchSize == 0 {
+		c.JanitorSweepBatchSize = 1000
+	}
+	if c.Logger == nil {
+		c.Logger = logger.NewLogger(os.Stdout)
+	}
+	return c
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -69,8 +123,13 @@ type WorkConsumer[WorkType any] struct {
 	Config       *WorkConsumerConfig
 }
 
-// only required params here
-func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType]) *WorkConsumer[WorkType] {
+// required deps as params, everything else through cfg -- pass nil (or a
+// sparse config holding only the fields you care about) and withDefaults
+// fills the rest
+func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType], cfg *WorkConsumerConfig) *WorkConsumer[WorkType] {
+	if cfg == nil {
+		cfg = &WorkConsumerConfig{}
+	}
 	return &WorkConsumer[WorkType]{
 		Group:        group,
 		Topic:        t,
@@ -79,22 +138,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Metrics:      NewConsumerMetrics(),
-		Config: &WorkConsumerConfig{
-			Type:                    CURSOR,
-			BatchLimit:              1, // no batching by default
-			MaxAttempts:             3,
-			MaxRangeReclaims:        3,
-			ClaimPollRate:           5 * time.Second,
-			WorkTimeout:             30 * time.Second,
-			QueueTimeout:            5 * time.Second,
-			AckMargin:               2 * time.Second,
-			WorkTimeoutGrace:        100 * time.Millisecond,
-			ExceptionInitialBackoff: 5 * time.Second,
-			ShutdownTimeout:         35 * time.Second,
-			PartitionSafetyBuffer:   50000, // TODO - make configurable, TODO - determine sane default
-			JanitorPollRate:         0,     // defaults to ClaimPollRate
-			JanitorSweepBatchSize:   1000,
-		},
+		Config:       cfg.withDefaults(),
 	}
 }
 
@@ -122,6 +166,9 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	}
 	if p.Metrics == nil {
 		return errors.New("Metrics must not be nil")
+	}
+	if p.Config.Logger == nil {
+		return errors.New("Config.Logger must not be nil")
 	}
 
 	if p.Config.BatchLimit < 1 {

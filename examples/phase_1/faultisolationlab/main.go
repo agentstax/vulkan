@@ -84,10 +84,11 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd)
-	wc.Config.BatchLimit = 3
-	wc.Config.WorkTimeout = 5 * time.Second
-	wc.Config.WorkTimeoutGrace = 100 * time.Millisecond
+	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+		BatchLimit:       3,
+		WorkTimeout:      5 * time.Second,
+		WorkTimeoutGrace: 100 * time.Millisecond,
+	})
 
 	calls := 0
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
@@ -141,10 +142,11 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd)
-	wc.Config.BatchLimit = 3
-	wc.Config.WorkTimeout = 1 * time.Second
-	wc.Config.WorkTimeoutGrace = 100 * time.Millisecond
+	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+		BatchLimit:       3,
+		WorkTimeout:      1 * time.Second,
+		WorkTimeoutGrace: 100 * time.Millisecond,
+	})
 	// leaseDuration = WorkTimeout+QueueTimeout+AckMargin (defaults: 1s+5s+2s=8s)
 	// stays well above hangFor below, so the lease itself never expires mid-test.
 

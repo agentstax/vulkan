@@ -76,14 +76,15 @@ func main() {
 
 	datastore := consumer.NewConsumerDatastore[common.Work](ds)
 
-	workConsumer := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, datastore)
-	workConsumer.Config.Type = consumer.CURSOR
-	workConsumer.Config.BatchLimit = 10
-	workConsumer.Config.MaxAttempts = 3
-	workConsumer.Config.ClaimPollRate = 1 * time.Second
-	workConsumer.Config.WorkTimeout = 5 * time.Second
-	workConsumer.Config.QueueTimeout = 2 * time.Second
-	workConsumer.Config.AckMargin = 1 * time.Second
+	workConsumer := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, datastore, &consumer.WorkConsumerConfig{
+		Type:          consumer.CURSOR,
+		BatchLimit:    10,
+		MaxAttempts:   3,
+		ClaimPollRate: 1 * time.Second,
+		WorkTimeout:   5 * time.Second,
+		QueueTimeout:  2 * time.Second,
+		AckMargin:     1 * time.Second,
+	})
 	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err
