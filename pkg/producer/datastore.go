@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -21,12 +23,29 @@ type Datastore[Message any] interface {
 type producerDatastore[Message any] struct {
 	Datastore *coredatastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry // default Wrap classification covers everything except Commit -- classified inline at that call site
+	Logger    logger.Logger
 }
 
-func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore) *producerDatastore[Message] {
+type ProducerDatastoreConfig struct {
+	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+}
+
+func (c *ProducerDatastoreConfig) withDefaults() *ProducerDatastoreConfig {
+	if c.Logger == nil {
+		c.Logger = logger.NewDefaultLogger(os.Stdout)
+	}
+	return c
+}
+
+func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerDatastoreConfig) *producerDatastore[Message] {
+	if cfg == nil {
+		cfg = &ProducerDatastoreConfig{}
+	}
+	cfg.withDefaults()
 	return &producerDatastore[Message]{
 		Datastore: ds,
-		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
+		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, cfg.Logger), // TODO - make this user config driven eventually
+		Logger:    cfg.Logger,
 	}
 }
 
@@ -74,6 +93,7 @@ func (d *producerDatastore[Message]) appendMessageWithPartitionRetry(ctx context
 		return message, err
 	}
 
+	d.Logger.WarnContext(ctx, "publish outran janitor create-ahead, self-healing missing partition", "topic_id", topicID)
 	if err := d.ensureCoveringPartition(ctx, topicID, partitionSize); err != nil {
 		return nil, err
 	}
@@ -252,6 +272,7 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 
 	err = tx.QueryRow(ctx, sql, args...).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
+		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicID, "idempotency_key", idempotencyKey)
 		return 0, false, nil // claim already existed -- already committed
 	}
 	if err != nil {

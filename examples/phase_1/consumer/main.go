@@ -74,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+	datastore := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	workConsumer := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, datastore, &consumer.WorkConsumerConfig{
 		Type:          consumer.CURSOR,

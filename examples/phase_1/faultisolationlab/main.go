@@ -35,6 +35,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -72,8 +73,8 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
@@ -130,8 +131,8 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
@@ -208,7 +209,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 func runDBBlipRecovery(ctx context.Context) {
 	step("DB BLIP -- pkg/retry absorbs transient failures transparently; the caller never sees an error once it clears")
 
-	r := retry.NewDatastoreRetry(6, 10*time.Millisecond, 200*time.Millisecond, 2)
+	r := retry.NewDatastoreRetry(6, 10*time.Millisecond, 200*time.Millisecond, 2, logger.NewDefaultLogger(os.Stdout))
 
 	calls := 0
 	err := r.Wrap(ctx, func() error {

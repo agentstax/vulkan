@@ -53,8 +53,8 @@ func main() {
 	})
 	must(err)
 
-	cd := consumer.NewConsumerDatastore[Record](ds)
-	pd := producer.NewProducerDatastore[Record](ds)
+	cd := consumer.NewConsumerDatastore[Record](ds, nil)
+	pd := producer.NewProducerDatastore[Record](ds, nil)
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
 	narrow, err := topic.Register(ctx, ds, topic.Config{Name: narrowName, PartitionSize: narrowPartitionSize})

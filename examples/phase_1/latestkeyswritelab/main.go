@@ -65,7 +65,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	unkeyedMs := timeSequential(ctx, wp, n, func(i int) string { return "" })
@@ -136,7 +136,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	tp, err := topic.Register(ctx, ds, topic.Config{Name: name, PartitionSize: largePartitionSize})
 	must(err)
 
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	start := time.Now()

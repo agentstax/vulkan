@@ -66,9 +66,9 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	// fill partition 0 with a dormant key + filler, then age past ttl
 	publish(ctx, wp, "dormant-key")
@@ -101,9 +101,9 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	publish(ctx, wp, "dormant-key")
 	time.Sleep(ttl + ttlMargin)

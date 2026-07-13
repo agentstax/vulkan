@@ -49,8 +49,8 @@ func main() {
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))

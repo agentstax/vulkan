@@ -84,7 +84,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+	datastore := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	// Short lease (= WorkTimeout+QueueTimeout+AckMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxAttempts so reprocessing never

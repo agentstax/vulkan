@@ -43,8 +43,8 @@ func main() {
 	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000})
 	must(err)
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
 	step("seed a row in every topic-scoped table")

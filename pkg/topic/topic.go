@@ -22,12 +22,17 @@ type Topic struct {
 	IdempotencyKeyTTL      time.Duration
 }
 
+// TODO - consider constructing an admin object which gets passed ds
+// then these Exists, Register, Destroy commands only get ctx, name/topic
+// and we no longer have to construct newTopicDatastore in each
+// but might be slightly worse ux for devs
+
 func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (bool, error) {
 	if err := validateName(name); err != nil {
 		return false, err
 	}
 
-	td := newTopicDatastore(ds)
+	td := newTopicDatastore(ds, nil)
 
 	found, err := td.GetTopic(ctx, name)
 	if err != nil {
@@ -43,7 +48,7 @@ func Register(ctx context.Context, ds *datastore.PostgresDatastore, cfg Config) 
 	}
 	cfg.SetDefaults()
 
-	td := newTopicDatastore(ds)
+	td := newTopicDatastore(ds, cfg.Logger)
 	return td.UpsertTopic(ctx, cfg)
 }
 
@@ -52,7 +57,7 @@ func Destroy(ctx context.Context, ds *datastore.PostgresDatastore, name string) 
 		return err
 	}
 
-	td := newTopicDatastore(ds)
+	td := newTopicDatastore(ds, nil)
 
 	found, err := td.GetTopic(ctx, name)
 	if err != nil {

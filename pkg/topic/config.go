@@ -2,7 +2,10 @@ package topic
 
 import (
 	"errors"
+	"os"
 	"time"
+
+	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 // Config is separate from Topic so Register can grow (retention, etc.) without a signature change.
@@ -50,6 +53,14 @@ type Config struct {
 	// retry across a restart.
 	// Ex: 10 * time.Minute.
 	IdempotencyKeyTTL time.Duration
+
+	// Logger - pass your own *slog.Logger (own Handler) or anything satisfying
+	// logger.Logger.
+	// Default: a text logger to os.Stdout at warn level and up.
+	//
+	// Only takes effect for Register -- Destroy and Exists have no Config
+	// parameter to carry one, so they always use that same default.
+	Logger logger.Logger
 }
 
 func (c *Config) SetDefaults() {
@@ -58,6 +69,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.IdempotencyKeyTTL == 0 {
 		c.IdempotencyKeyTTL = 24 * time.Hour
+	}
+	if c.Logger == nil {
+		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 }
 

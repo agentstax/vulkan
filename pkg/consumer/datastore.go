@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -126,12 +128,29 @@ type DeliveryRow struct {
 type consumerDatastore[Message any] struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
+	Logger    logger.Logger
 }
 
-func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore) *consumerDatastore[Message] {
+type ConsumerDatastoreConfig struct {
+	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+}
+
+func (c *ConsumerDatastoreConfig) withDefaults() *ConsumerDatastoreConfig {
+	if c.Logger == nil {
+		c.Logger = logger.NewDefaultLogger(os.Stdout)
+	}
+	return c
+}
+
+func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerDatastoreConfig) *consumerDatastore[Message] {
+	if cfg == nil {
+		cfg = &ConsumerDatastoreConfig{}
+	}
+	cfg.withDefaults()
 	return &consumerDatastore[Message]{
 		Datastore: ds,
-		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
+		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, cfg.Logger), // TODO - make this user config driven eventually
+		Logger:    cfg.Logger,
 	}
 }
 
@@ -201,6 +220,7 @@ func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, to
 		return err
 	}
 
+	d.Logger.InfoContext(ctx, "partition created", "topic_id", topicID, "partition", nextPartition)
 	return nil
 }
 
@@ -258,6 +278,7 @@ func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, 
 		if err := d.dropPartition(ctx, topicID, n, partitionSize); err != nil {
 			return err
 		}
+		d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicID, "partition", n)
 	}
 
 	return nil
@@ -443,6 +464,10 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 		return 0, err
 	}
 
+	if len(ids) > 0 {
+		d.Logger.DebugContext(ctx, "swept expired rows", "topic_id", topicID, "partition", n, "swept", len(ids), "batch_size", batchSize)
+	}
+
 	return len(ids), nil
 }
 
@@ -613,6 +638,10 @@ func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 	if err := tx.Commit(ctx); err != nil {
 		return err // safe for Retry to auto-classify
 	}
+
+	if len(terminals) > 0 {
+		d.Logger.WarnContext(ctx, "message(s) dead-lettered (unrecoverable, will not be retried)", "group", consumerGroup, "topic_id", topicID, "count", len(terminals))
+	}
 	return nil
 }
 
@@ -684,6 +713,10 @@ func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 			return retry.NewPermanentError(err)
 		}
 		return err // nothing parked -- safe for Retry to auto-classify
+	}
+
+	if len(terminals) > 0 {
+		d.Logger.WarnContext(ctx, "message(s) dead-lettered (unrecoverable, will not be retried)", "group", consumerGroup, "topic_id", topicID, "count", len(terminals))
 	}
 	return nil
 }
@@ -871,6 +904,8 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 		return nil, err
 	}
 
+	d.Logger.InfoContext(ctx, "lease reclaimed from expired worker", "group", consumerGroup, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+
 	if lease.Reclaims >= maxRangeReclaims {
 		if err := d.quarantine(ctx, tx, consumerGroup, lease); err != nil {
 			return nil, err
@@ -898,6 +933,8 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, consumerGroup string, lease LeaseRow) error {
+	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group", consumerGroup, "topic_id", lease.TopicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+
 	parkSql := fmt.Sprintf(`
 		INSERT INTO deliveries (consumer_group, message_id, status, attempts, last_error)
 		SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
@@ -1149,8 +1186,12 @@ func (d *consumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 			AND lease_until < now()
 			AND attempts >= $2;
 	`
-	if _, err := d.Datastore.Pool.Exec(ctx, killSql, consumerGroup, maxAttempts, topicID); err != nil {
+	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, consumerGroup, maxAttempts, topicID)
+	if err != nil {
 		return nil, err
+	}
+	if killTag.RowsAffected() > 0 {
+		d.Logger.WarnContext(ctx, "crash-loop kill backstop fired, exception(s) marked dead", "group", consumerGroup, "topic_id", topicID, "count", killTag.RowsAffected())
 	}
 
 	// joins to this topic's own message_log, since deliveries stores no payload of its own.
@@ -1261,6 +1302,7 @@ func (d *consumerDatastore[Message]) recordExceptionFailure(ctx context.Context,
 			return ErrLeaseLost
 		}
 
+		d.Logger.WarnContext(ctx, "exception dead-lettered after max attempts", "group", exception.ConsumerGroup, "topic_id", exception.TopicID, "message_id", exception.MessageId, "attempts", exception.Attempts)
 		return nil
 	}
 
@@ -1370,8 +1412,12 @@ func (d *consumerDatastore[Message]) recordTerminal(ctx context.Context, deliver
 			AND message_id = $3;
 	`
 
-	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroup, delivery.TopicID, delivery.MessageId, terminalErr.Error())
-	return err
+	if _, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroup, delivery.TopicID, delivery.MessageId, terminalErr.Error()); err != nil {
+		return err
+	}
+
+	d.Logger.WarnContext(ctx, "message dead-lettered", "group", delivery.ConsumerGroup, "topic_id", delivery.TopicID, "message_id", delivery.MessageId, "error", terminalErr)
+	return nil
 }
 
 // func (d *consumerDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {

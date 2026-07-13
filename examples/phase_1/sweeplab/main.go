@@ -54,9 +54,9 @@ func main() {
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds)
+	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds)
+	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	step("publish 4 'old' messages, then let them age past ttl")
 	head0 := head(ctx, ds, tp.Id)

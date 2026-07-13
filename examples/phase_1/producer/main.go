@@ -53,7 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	datastore := producer.NewProducerDatastore[common.Work](ds)
+	datastore := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(t, datastore)
 
 	// WORK

@@ -75,7 +75,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	datastore := consumer.NewConsumerDatastore[common.Work](ds)
+	datastore := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	wc := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, pool, datastore, &consumer.WorkConsumerConfig{
 		BatchLimit:      batch,

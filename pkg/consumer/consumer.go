@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime/debug"
 	"sync"
@@ -58,7 +57,7 @@ type WorkConsumerConfig struct {
 	PartitionSafetyBuffer   int64
 	JanitorPollRate         time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
 	JanitorSweepBatchSize   int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
-	Logger                  *slog.Logger  // swap behavior via the slog.Handler inside it -- see pkg/logger's doc for wiring a custom backend
+	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 }
 
 // withDefaults fills every unset (zero) field so a caller can pass a sparse
@@ -106,7 +105,7 @@ func (c *WorkConsumerConfig) withDefaults() *WorkConsumerConfig {
 		c.JanitorSweepBatchSize = 1000
 	}
 	if c.Logger == nil {
-		c.Logger = logger.NewLogger(os.Stdout)
+		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 	return c
 }
@@ -121,6 +120,7 @@ type WorkConsumer[WorkType any] struct {
 	ShutdownFunc ShutdownFunc[WorkType]
 	Metrics      *ConsumerMetrics
 	Config       *WorkConsumerConfig
+	Logger       logger.Logger // copied from Config.Logger at construction
 }
 
 // required deps as params, everything else through cfg -- pass nil (or a
@@ -130,6 +130,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 	if cfg == nil {
 		cfg = &WorkConsumerConfig{}
 	}
+	cfg.withDefaults()
 	return &WorkConsumer[WorkType]{
 		Group:        group,
 		Topic:        t,
@@ -138,7 +139,8 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Metrics:      NewConsumerMetrics(),
-		Config:       cfg.withDefaults(),
+		Config:       cfg,
+		Logger:       cfg.Logger,
 	}
 }
 
@@ -167,8 +169,8 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	if p.Metrics == nil {
 		return errors.New("Metrics must not be nil")
 	}
-	if p.Config.Logger == nil {
-		return errors.New("Config.Logger must not be nil")
+	if p.Logger == nil {
+		return errors.New("Logger must not be nil")
 	}
 
 	if p.Config.BatchLimit < 1 {
@@ -287,27 +289,27 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 
 	errGroup, ctx := errgroup.WithContext(ctx)
 
-	p.Config.Logger.Info("consumer deliveries projector starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer deliveries projector starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Project(ctx)
 	})
 
-	p.Config.Logger.Info("consumer starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Process(ctx, consumerFunc)
 	})
 
-	p.Config.Logger.Info("consumer waterline roller starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer waterline roller starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.RollWaterline(ctx)
 	})
 
-	p.Config.Logger.Info("consumer exception drain starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer exception drain starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.DrainExceptions(ctx, consumerFunc)
 	})
 
-	p.Config.Logger.Info("consumer janitor starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer janitor starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Janitor(ctx)
 	})
@@ -435,6 +437,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 	// past it; failures ride along as parked exceptions, not a blocked range.
 	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
+			p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		return err
@@ -456,6 +459,7 @@ func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastPr
 	// range (including the already-resolved prefix) to sit out a full reclaim.
 	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
+			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		return err
@@ -508,6 +512,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
+					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.Group, "topic", p.Topic.Id, "message_id", exception.MessageId)
 					continue // reclaimed by the kill backstop or another worker -- not ours anymore
 				}
 				return recordErr
@@ -517,6 +522,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 
 		if err := p.Datastore.RecordExceptionSuccess(ctx, &exception); err != nil {
 			if errors.Is(err, ErrLeaseLost) {
+				p.Logger.DebugContext(ctx, "lease lost recording exception success, ceded to new owner", "group", p.Group, "topic", p.Topic.Id, "message_id", exception.MessageId)
 				continue
 			}
 			return err
@@ -604,6 +610,7 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
 		// it has bad side effects
+		p.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", p.Group, "message_id", messageID, "attempt", attempt, "timeout", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace)
 		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace, messageID)
 	}
 }
@@ -779,7 +786,7 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 // 	return nil
 // }
 
-func (p *WorkConsumer[WorkType]) Drain(wg *sync.WaitGroup) {
+func (p *WorkConsumer[WorkType]) Drain(ctx context.Context, wg *sync.WaitGroup) {
 	doneSignal := make(chan struct{})
 
 	go func() {
@@ -794,7 +801,7 @@ func (p *WorkConsumer[WorkType]) Drain(wg *sync.WaitGroup) {
 	case <-doneSignal:
 		return // wg has successfully finished ie all in-flight work has finished / drained
 	case <-timer.C:
-		p.Config.Logger.Warn("in-flight work did not complete before shutdown timeout, work will be reclaimed after lease expires", "group", p.Group, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
+		p.Logger.WarnContext(ctx, "in-flight work did not complete before shutdown timeout, work will be reclaimed after lease expires", "group", p.Group, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
 		return // in-flight work did not finish within timeout, exit early to start shutdown process
 	}
 

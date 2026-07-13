@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
 )
@@ -14,12 +16,17 @@ import (
 type topicDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
+	Logger    logger.Logger
 }
 
-func newTopicDatastore(datastore *datastore.PostgresDatastore) *topicDatastore {
+func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger) *topicDatastore {
+	if log == nil {
+		log = logger.NewDefaultLogger(os.Stdout)
+	}
 	return &topicDatastore{
 		Datastore: datastore,
-		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2), // TODO - make this user config driven eventually
+		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, log), // TODO - make this user config driven eventually
+		Logger:    log,
 	}
 }
 
@@ -103,6 +110,7 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize); err != nil {
 			return nil, err
 		}
+		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", cfg.Name, "topic_id", id)
 	case errors.Is(insertErr, pgx.ErrNoRows):
 		// not writing here, so reading via the plain pool (not tx) is fine.
 		// private getTopic, not GetTopic -- otherwise would have nested retries.
@@ -117,6 +125,7 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 		if want := cfg.ToTopic(id); *found != *want {
 			return nil, fmt.Errorf("%w: topic %s: existing=%+v got=%+v", ErrTopicConfigMismatch, cfg.Name, *found, *want)
 		}
+		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", cfg.Name, "topic_id", id)
 	default:
 		return nil, insertErr
 	}
@@ -184,5 +193,10 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 		return err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	d.Logger.WarnContext(ctx, "topic destroyed", "topic", topic.Name, "topic_id", topic.Id)
+	return nil
 }

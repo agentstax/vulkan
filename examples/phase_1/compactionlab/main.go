@@ -68,8 +68,8 @@ func main() {
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[KeyedRecord](ds)
-	pd := producer.NewProducerDatastore[KeyedRecord](ds)
+	cd := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
+	pd := producer.NewProducerDatastore[KeyedRecord](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))
 
