@@ -6,22 +6,24 @@ import (
 )
 
 type ConsumerMetrics struct {
-	datastore         *consumerMetricsDatastore
-	group             string
-	topicID           int64
+	QueueState        *QueueState
 	AbandonedRoutines *AbandonedRoutines
 }
 
 func NewConsumerMetrics(meter metric.Meter, group string, topicID int64, topicName string, ds *datastore.PostgresDatastore, cfg *ConsumerMetricsDatastoreConfig) (*ConsumerMetrics, error) {
+	consumerDatastore := NewConsumerDatastore(ds, cfg)
+	queueState, err := NewQueueState(meter, group, topicID, topicName, consumerDatastore)
+	if err != nil {
+		return nil, err
+	}
+
 	abandonedRoutines, err := NewAbandonedRoutines(meter, group, topicName)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ConsumerMetrics{
-		datastore:         NewConsumerDatastore(ds, cfg),
-		group:             group,
-		topicID:           topicID,
+		QueueState:        queueState,
 		AbandonedRoutines: abandonedRoutines,
 	}, nil
 }

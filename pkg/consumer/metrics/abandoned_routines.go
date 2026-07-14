@@ -109,9 +109,9 @@ func (a *AbandonedRoutines) Add(ctx context.Context, messageId int64, attempt in
 	a.data[key] = time.Now()
 }
 
+// Remove is safe to call on every callSafely completion, abandoned or not --
+// a non-abandoned messageId/attempt simply isn't found and is skipped, no-op.
 func (a *AbandonedRoutines) Remove(ctx context.Context, messageId int64, attempt int) {
-	a.outstanding.Add(ctx, -1, a.attrs)
-
 	key := abandonedKey{MessageId: messageId, Attempt: attempt}
 
 	a.mu.Lock()
@@ -125,6 +125,7 @@ func (a *AbandonedRoutines) Remove(ctx context.Context, messageId int64, attempt
 		return // not abandoned -- ordinary completion, nothing to do
 	}
 
+	a.outstanding.Add(ctx, -1, a.attrs)
 	a.selfClearLatency.Record(ctx, time.Since(abandonedAt).Abs().Milliseconds(), a.attrs)
 	a.selfClearLatencies.Add(time.Since(abandonedAt))
 }

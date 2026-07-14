@@ -4,12 +4,12 @@ import "context"
 
 // Snapshot is the full current picture of this consumer's metrics.
 type Snapshot struct {
-	QueueState        QueueState
+	QueueState        QueueStateSnapshot
 	AbandonedRoutines AbandonedRoutinesSnapshot
 }
 
 func (m *ConsumerMetrics) Snapshot(ctx context.Context) (*Snapshot, error) {
-	queueState, err := m.datastore.QueueState(ctx, m.topicID, m.group)
+	queueState, err := m.QueueState.Snapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
