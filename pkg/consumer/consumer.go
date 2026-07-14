@@ -148,7 +148,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		Logger: cfg.Logger,
 	})
 
-	metrics, err := metrics.NewConsumerMetrics(cfg.Meter, group, t.Name, ds, &metrics.ConsumerMetricsDatastoreConfig{
+	metrics, err := metrics.NewConsumerMetrics(cfg.Meter, group, t.Id, t.Name, ds, &metrics.ConsumerMetricsDatastoreConfig{
 		Logger: cfg.Logger,
 	})
 	if err != nil {
