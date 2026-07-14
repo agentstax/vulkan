@@ -85,11 +85,12 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      5 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,
 	})
+	must(err)
 
 	calls := 0
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
@@ -143,11 +144,12 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      1 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,
 	})
+	must(err)
 	// leaseDuration = WorkTimeout+QueueTimeout+AckMargin (defaults: 1s+5s+2s=8s)
 	// stays well above hangFor below, so the lease itself never expires mid-test.
 
@@ -185,17 +187,17 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "hard timeout")
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "goroutine abandoned")
 
-	assert("abandoned-goroutine gauge shows exactly 1 outstanding right after CursorClaim returns", int64(wc.Metrics.AbandonedRoutines.CurrentTotal()), 1)
-	assert("tracking total reflects exactly 1 abandonment ever", int64(wc.Metrics.AbandonedRoutines.TrackingTotal()), 1)
+	assert("abandoned-goroutine gauge shows exactly 1 outstanding right after CursorClaim returns", int64(wc.Metrics.AbandonedRoutines.Snapshot().Outstanding), 1)
+	assert("tracking total reflects exactly 1 abandonment ever", int64(wc.Metrics.AbandonedRoutines.Snapshot().Total), 1)
 
 	step("waiting for the abandoned goroutine to actually finish its sleep and self-reclaim")
 	deadline := time.Now().Add(5 * time.Second)
-	for wc.Metrics.AbandonedRoutines.CurrentTotal() > 0 && time.Now().Before(deadline) {
+	for wc.Metrics.AbandonedRoutines.Snapshot().Outstanding > 0 && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}
-	assert("gauge drops back to 0 once the abandoned goroutine finishes on its own", int64(wc.Metrics.AbandonedRoutines.CurrentTotal()), 0)
+	assert("gauge drops back to 0 once the abandoned goroutine finishes on its own", int64(wc.Metrics.AbandonedRoutines.Snapshot().Outstanding), 0)
 
-	if lat := wc.Metrics.AbandonedRoutines.ReclaimLatency(); lat <= 0 {
+	if lat := wc.Metrics.AbandonedRoutines.Snapshot().SelfClearLatencyAvg; lat <= 0 {
 		die(fmt.Sprintf("expected a positive reclaim latency once the abandoned goroutine finished, got %s", lat))
 	} else {
 		fmt.Printf("  ✓ reclaim latency recorded: %s\n", lat)

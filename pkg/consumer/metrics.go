@@ -1,9 +1,13 @@
 package consumer
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type ConsumerMetrics struct {
@@ -16,26 +20,93 @@ type abandonedKey struct {
 	Attempt   int
 }
 
+// AbandonedRoutinesSnapshot is the locally-readable picture of AbandonedRoutines
+// state -- everything the otel instruments accept but can't hand back, mirrored
+// here so a caller can read it with no exporter/backend attached.
+type AbandonedRoutinesSnapshot struct {
+	Total               int
+	Outstanding         int
+	SelfClearLatencyAvg time.Duration
+}
+
 type AbandonedRoutines struct {
+	// otel instruments
+	total            metric.Int64Counter
+	outstanding      metric.Int64UpDownCounter
+	selfClearLatency metric.Int64Histogram
+	// group/topic identity, precomputed once so every Add/Remove call reuses
+	// the same option instead of rebuilding an attribute slice per event.
+	attrs metric.MeasurementOption
+
+	// local mirror -- Snapshot reads these, never the instruments above
 	mu sync.Mutex
 	// TODO - data map can grow unbound, should eventually bound like ConcurrentBoundedRingBuffer but less likely to matter
-	data             map[abandonedKey]time.Time // abandonedKey -> AbandonedAt.
-	monotonicTotal   atomic.Uint32              // sure fucking hope we don't need Uint64 here
-	reclaimLatencies *ConcurrentBoundedRingBuffer[time.Duration]
+	data               map[abandonedKey]time.Time // abandonedKey -> AbandonedAt.
+	monotonicTotal     atomic.Uint32              // sure fucking hope we don't need Uint64 here
+	selfClearLatencies *ConcurrentBoundedRingBuffer[time.Duration]
 }
 
-func NewConsumerMetrics() *ConsumerMetrics {
+func NewConsumerMetrics(meter metric.Meter, group string, topicName string) (*ConsumerMetrics, error) {
+	total, err := meter.Int64Counter(
+		"vulkan.consumer.abandoned_routines.total",
+		metric.WithDescription("Total consumerFunc invocations abandoned after exceeding WorkTimeout + WorkTimeoutGrace. Monotonic, never decreases."),
+		metric.WithUnit("{routine}"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	outstanding, err := meter.Int64UpDownCounter(
+		"vulkan.consumer.abandoned_routines.outstanding",
+		metric.WithDescription("Abandoned goroutines currently still running in the background, not yet self-cleared."),
+		metric.WithUnit("{routine}"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	selfClearLatency, err := meter.Int64Histogram(
+		"vulkan.consumer.abandoned_routines.self_clear_latency",
+		metric.WithDescription("Time between a routine being abandoned and it self-clearing, for the ones that do eventually return."),
+		metric.WithUnit("ms"),
+		// default buckets (0-10s) are shaped for request latency, not this --
+		// the clock only starts once a routine already blew past WorkTimeout+
+		// Grace, so "late" here means anywhere from milliseconds to minutes.
+		// Advisory only -- a caller's own SDK View can still override it.
+		metric.WithExplicitBucketBoundaries(10, 50, 100, 500, 1000, 2500, 5000, 10000, 30000, 60000, 300000),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// WithAttributeSet over WithAttributes -- the latter defensively copies
+	// the slice on every call (for concurrent callers), which is wasted work
+	// here since this set is built once, non-concurrently, and reused.
+	attrs := metric.WithAttributeSet(attribute.NewSet(
+		attribute.String("messaging.consumer.group.name", group),
+		attribute.String("messaging.destination.name", topicName),
+	))
+
 	return &ConsumerMetrics{
 		AbandonedRoutines: AbandonedRoutines{
+			// otel instruments
+			total:            total,
+			outstanding:      outstanding,
+			selfClearLatency: selfClearLatency,
+			attrs:            attrs,
+
+			// local mirror
 			data: make(map[abandonedKey]time.Time),
 			// TODO - expose capacity size as consumer config option eventually
-			reclaimLatencies: NewConcurrentBoundedRingBuffer[time.Duration](256),
+			selfClearLatencies: NewConcurrentBoundedRingBuffer[time.Duration](256),
 		},
-	}
+	}, nil
 }
 
-func (a *AbandonedRoutines) Add(messageId int64, attempt int) {
-	a.monotonicTotal.Add(1)
+func (a *AbandonedRoutines) Add(ctx context.Context, messageId int64, attempt int) {
+	a.total.Add(ctx, 1, a.attrs)
+	a.outstanding.Add(ctx, 1, a.attrs)
+	a.monotonicTotal.Add(1) // otel counters are write-only -- this is what Snapshot reads back
 
 	key := abandonedKey{MessageId: messageId, Attempt: attempt}
 
@@ -44,7 +115,9 @@ func (a *AbandonedRoutines) Add(messageId int64, attempt int) {
 	a.data[key] = time.Now()
 }
 
-func (a *AbandonedRoutines) Remove(messageId int64, attempt int) {
+func (a *AbandonedRoutines) Remove(ctx context.Context, messageId int64, attempt int) {
+	a.outstanding.Add(ctx, -1, a.attrs)
+
 	key := abandonedKey{MessageId: messageId, Attempt: attempt}
 
 	a.mu.Lock()
@@ -57,25 +130,29 @@ func (a *AbandonedRoutines) Remove(messageId int64, attempt int) {
 	if !ok {
 		return // not abandoned -- ordinary completion, nothing to do
 	}
-	a.reclaimLatencies.Add(time.Since(abandonedAt))
+
+	a.selfClearLatency.Record(ctx, time.Since(abandonedAt).Abs().Milliseconds(), a.attrs)
+	a.selfClearLatencies.Add(time.Since(abandonedAt))
 }
 
-// TrackingTotal - amount of Routines that were ever abandoned, never decreases.
-func (a *AbandonedRoutines) TrackingTotal() int {
-	return int(a.monotonicTotal.Load())
-}
-
-// CurrentTotal - current amount of hanging abandoned routines.
-// If an abandoned routine closes by itself this total will decrease.
-func (a *AbandonedRoutines) CurrentTotal() int {
+// Snapshot is the current picture of AbandonedRoutines state, read entirely
+// from the local mirror -- works with no otel exporter/backend attached.
+func (a *AbandonedRoutines) Snapshot() AbandonedRoutinesSnapshot {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.data)
+	outstanding := len(a.data)
+	a.mu.Unlock()
+
+	return AbandonedRoutinesSnapshot{
+		Total:               int(a.monotonicTotal.Load()),
+		Outstanding:         outstanding,
+		SelfClearLatencyAvg: a.selfClearLatencyAvg(),
+	}
 }
 
-// ReclaimLatency - Average amount of time it takes for abandoned routines to reclaim itself ie close out (if it ever does)
-func (a *AbandonedRoutines) ReclaimLatency() time.Duration {
-	values := a.reclaimLatencies.Values()
+// selfClearLatencyAvg - average time it takes an abandoned routine to self-
+// clear, i.e. close out on its own (if it ever does).
+func (a *AbandonedRoutines) selfClearLatencyAvg() time.Duration {
+	values := a.selfClearLatencies.Values()
 
 	// 0 infinity guard
 	if len(values) == 0 {
@@ -83,8 +160,8 @@ func (a *AbandonedRoutines) ReclaimLatency() time.Duration {
 	}
 
 	var total time.Duration
-	for _, reclaimLatency := range values {
-		total += reclaimLatency
+	for _, latency := range values {
+		total += latency
 	}
 
 	return total / time.Duration(len(values))

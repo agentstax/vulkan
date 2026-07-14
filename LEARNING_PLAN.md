@@ -2365,7 +2365,9 @@ the outer backstop for faults nothing in-process can catch.
 
 **Concept:** right now the only way to see consumer health is to query
 Postgres directly. This phase adds the operator-facing surface — a pluggable
-logger and a live debug readout — and settles the lazy-vs-synchronous waterline
+logger, a metrics snapshot any Prometheus- or OTel-compatible backend can
+consume with zero vendor code living in this repo, and a live debug readout
+built on the same data — and settles the lazy-vs-synchronous waterline
 question this plan deliberately deferred back in 6.5b ("make this a lazy roller
 off the hot path — staleness only delays GC"). No `reference/waterline`
 counterpart either: it has no logger and no debug surface of its own (it's a
@@ -2379,29 +2381,46 @@ compare against — you're building past what the reference bothered with.
 - [x] **Writer-based default logger.** Provide a default implementation that
       takes an arbitrary `io.Writer`, so a caller with no opinions gets
       something reasonable for free.
-- [ ] **Operational metrics.** Expose backlog/lag per group (`head −
-      committed`, the waterline gap), the `ready` exception count (retry
-      depth), DLQ size (`dead` count), and oldest-unacked age. These four
-      numbers are how you operate any queue.
-
-      Not starting from zero here: Phase 9's "Track abandoned goroutines"
-      bullet already built the raw numbers for hard-timeout tracking
-      (`hard_timeouts_total`, `abandoned_outstanding`, late-finish latency) as
-      plain in-process state, deliberately deferring the metrics-library
-      wiring to here rather than inventing a one-off shape early. Wire those
-      into whatever pluggable interface this bullet settles on alongside the
-      four numbers above, instead of designing the tracking logic fresh.
-- [ ] **Inflight/completed visibility.** Surface, per group, how many
-      messages/batches are currently inflight vs. resolved — the metric gap the
-      lazy-rollup question originally flagged (today you can infer this from
-      `claimed − committed`, but it's not exposed as a first-class number).
-- [ ] **Debug/metrics readout.** A debug mode or method that prints current
-      queue state on demand: the `claimed`/`committed` gap per group, exception
-      counts (`ready`/`inflight`/`dead`), and open-lease count — the
-      human-readable CLI surface for the four operational metrics above. If
-      8b has landed by the time this is built, scope these per-`(group,
-      topic)`, not just per-group — a group can read more than one topic once
-      topics exist.
+- [ ] **Queue-state query.** A datastore method that computes, live, per
+      `(group, topic)`: backlog/lag (`head − committed`, the waterline gap),
+      the `claimed − committed` inflight gap (how many messages/batches are
+      currently outstanding vs. resolved — the metric gap the lazy-rollup
+      question originally flagged), `ready`/`inflight`/`dead` exception
+      counts (retry depth and DLQ size), oldest-unacked age, and open-lease
+      count. These numbers are DB-truth, not in-process state — multiple
+      consumer processes share one `cursors`/`deliveries` state, so nothing
+      short of a live query can answer "what's true right now." This is the
+      direct generalization of the `just lag` Justfile recipe, which already
+      does this ad hoc for one topic. Everything below is built on top of
+      this one query — nothing else in this phase invents a second way to
+      compute these numbers.
+- [ ] **Metrics snapshot.** Merge the query above with the in-process
+      counters Phase 9's "Track abandoned goroutines" bullet already built
+      (`hard_timeouts_total`, `abandoned_outstanding`, reclaim latency —
+      still living on `ConsumerMetrics`, deliberately left as informal values
+      until this phase) into one struct/method: a single call returning the
+      full current picture, DB-truth and in-process numbers together. The
+      debug readout and the OTel instruments below both read from this one
+      snapshot, not from the query or `ConsumerMetrics` separately.
+- [ ] **OpenTelemetry metrics integration.** Accept a `metric.Meter`
+      (`go.opentelemetry.io/otel/metric` — the API package only, never the
+      SDK or a specific exporter) as a config option, defaulting to the
+      global no-op provider so a caller who supplies nothing pays zero cost.
+      Register one instrument per snapshot number: `ObservableGauge` for the
+      DB-truth numbers (the callback re-runs the query above), `Counter`/
+      `UpDownCounter` for the in-process ones. This is the interoperability
+      layer: the moment a caller wires up the OTel Prometheus exporter or a
+      Datadog OTLP exporter in their *own* app, every instrument registered
+      here shows up there — with zero Prometheus- or Datadog-specific code
+      ever living in this repo. (Precedent: River's `rivercontrib/otelriver`
+      — API-only in the core module, the actual vendor wiring lives in a
+      separate, opt-in package.)
+- [ ] **Debug/metrics readout.** A `String()`/print method that formats the
+      snapshot for a human on demand — the free, zero-dependency consumer of
+      the exact same data the OTel instruments expose to machines. This is
+      the "query Postgres directly" replacement the phase's concept note
+      promised, scoped per `(group, topic)` since a group can read more than
+      one topic.
 - [x] **Resolve the lazy-vs-synchronous rollup.** Decide, with measured
       numbers, whether `AdvanceWaterline` should stay a periodic lazy tick or
       become synchronous — advance right after a lease/batch resolves instead
@@ -2448,29 +2467,41 @@ compare against — you're building past what the reference bothered with.
 
 **Lab:**
 - [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
-      every failure mode you've built and watch each of the four operational
-      metrics react. If a failure doesn't move a metric, you have a blind spot.
-- [ ] Run the consumer under load with the new debug output on; watch the
+      every failure mode you've built and watch the metrics snapshot react.
+      If a failure doesn't move a number, you have a blind spot.
+- [ ] Run the consumer under load with the debug readout on; watch the
       `claimed`/`committed` gap and exception counts move in real time as you
-      inject failures with the existing harness (`--fail-rate`, `--crash-after`).
-      Compare how quickly `committed` reflects reality under the lazy roller vs.
-      the synchronous option.
+      inject failures with the existing harness. Confirm lowering
+      `WaterlinePollRate` (added by the lazy-vs-synchronous decision above)
+      visibly narrows how fast `committed` catches up, without needing the
+      synchronous path.
+- [ ] Point a real OTel Prometheus (or OTLP) exporter at the `metric.Meter`
+      you pass in and confirm every instrument shows up on the other end —
+      proof the integration works end-to-end, not just that it compiles
+      against the API.
 
 **Explain it back:**
 1. What's the tradeoff between a lazy periodic rollup and a synchronous one —
    what do you gain and what do you pay for each?
 2. Why does a live debug readout of claimed/committed/exception-count matter
    even though the underlying data was always queryable in Postgres directly?
-3. For each of the four operational metrics: which failure mode is it the
+3. For each number in the metrics snapshot: which failure mode is it the
    early warning for?
+4. Why does the OTel integration depend on `go.opentelemetry.io/otel/metric`
+   (the API package) but never the SDK or a specific exporter like
+   Prometheus's or Datadog's client?
 
-**Done when:** the pluggable logger, operational metrics, and debug readout
-work end-to-end, the lazy-vs-synchronous rollup decision is made and recorded
-with measured reasoning, NOTES.md, `git tag phase-10`.
+**Done when:** the pluggable logger, the queue-state query, the metrics
+snapshot, the OTel instrument integration, and the debug readout all work
+end-to-end; the lazy-vs-synchronous rollup decision is made and recorded with
+measured reasoning; NOTES.md, `git tag phase-10`.
 
 **Real systems:** Kafka consumer-group lag exporters; the `slog` interface
 pattern (Go's own answer to "pluggable logger"); Temporal/Sidekiq dashboards
-built on exactly these counters (backlog, in-flight, dead-letter, oldest-unacked).
+built on exactly these counters (backlog, in-flight, dead-letter,
+oldest-unacked); River's `rivercontrib/otelriver` package is the direct
+precedent for this phase's OTel split — API-only in the core module, the
+actual Prometheus/Datadog wiring lives in a separate, opt-in package.
 
 ---
 

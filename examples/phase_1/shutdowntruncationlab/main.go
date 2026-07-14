@@ -77,12 +77,13 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
 		BatchLimit:   3,
 		WorkTimeout:  1 * time.Second,
 		QueueTimeout: 500 * time.Millisecond,
 		AckMargin:    500 * time.Millisecond, // also PartialCommit's own detached-ctx budget
 	})
+	must(err)
 
 	step("WORKER claims all 3, shutdown fires after message 2 -- message 3 never attempted")
 	runCtx, cancel := context.WithCancel(ctx)

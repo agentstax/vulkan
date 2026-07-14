@@ -75,7 +75,7 @@ func main() {
 
 	datastore := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
-	wc := consumer.NewWorkConsumer[common.Work](*groupPtr, t, queue, pool, datastore, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](*groupPtr, t, queue, pool, datastore, &consumer.WorkConsumerConfig{
 		BatchLimit:      100,
 		MaxAttempts:     3,
 		ClaimPollRate:   500 * time.Millisecond,
@@ -84,6 +84,10 @@ func main() {
 		AckMargin:       2 * time.Second,
 		ShutdownTimeout: 15 * time.Second,
 	})
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	if err := wc.Register(ctx); err != nil {
 		fmt.Println(err)

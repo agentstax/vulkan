@@ -13,6 +13,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,6 +61,7 @@ type WorkConsumerConfig struct {
 	JanitorSweepBatchSize   int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
 	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Meter                   metric.Meter
 }
 
 // withDefaults fills every unset (zero) field so a caller can pass a sparse
@@ -108,6 +111,12 @@ func (c *WorkConsumerConfig) withDefaults() *WorkConsumerConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
+	if c.Meter == nil {
+		// metric/noop, not the global otel.GetMeterProvider() -- reading the
+		// global registry requires the top-level otel package, which is
+		// bring the trace/baggage/go-logr dependencies ie bloat.
+		c.Meter = noop.NewMeterProvider().Meter("github.com/agentstax/vulkan/pkg/consumer")
+	}
 	return c
 }
 
@@ -126,12 +135,18 @@ type WorkConsumer[WorkType any] struct {
 
 // required deps as params, everything else through cfg -- pass nil (or a
 // sparse config holding only the fields you care about) and withDefaults
-// fills the rest
-func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType], cfg *WorkConsumerConfig) *WorkConsumer[WorkType] {
+// fills the rest.
+func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType], cfg *WorkConsumerConfig) (*WorkConsumer[WorkType], error) {
 	if cfg == nil {
 		cfg = &WorkConsumerConfig{}
 	}
 	cfg.withDefaults()
+
+	metrics, err := NewConsumerMetrics(cfg.Meter, group, t.Name)
+	if err != nil {
+		return nil, err
+	}
+
 	return &WorkConsumer[WorkType]{
 		Group:        group,
 		Topic:        t,
@@ -139,10 +154,10 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		PoolLimiter:  poolLimiter,
 		Datastore:    datastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
-		Metrics:      NewConsumerMetrics(),
+		Metrics:      metrics,
 		Config:       cfg,
 		Logger:       cfg.Logger,
-	}
+	}, nil
 }
 
 // ### CONSUME V2 ###
@@ -608,7 +623,7 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 			}
 			// order specific to allow recover to always handle err for consumerFunc not metrics call
 			// safe to always call here, if routine was not abandoned it will not be found and skipped
-			p.Metrics.AbandonedRoutines.Remove(messageID, attempt)
+			p.Metrics.AbandonedRoutines.Remove(ctx, messageID, attempt)
 		}()
 		done <- consumerFunc(ctx, work)
 	}()
@@ -619,7 +634,7 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
 	// if this hard timeout is called go thread will be left hanging / abandoned
 	case <-time.After(p.Config.WorkTimeout + p.Config.WorkTimeoutGrace):
-		p.Metrics.AbandonedRoutines.Add(messageID, attempt)
+		p.Metrics.AbandonedRoutines.Add(ctx, messageID, attempt)
 		// don't print out work in case of sensitive values
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
