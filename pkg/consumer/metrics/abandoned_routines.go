@@ -1,4 +1,4 @@
-package consumer
+package metrics
 
 import (
 	"context"
@@ -9,10 +9,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
-
-type ConsumerMetrics struct {
-	AbandonedRoutines AbandonedRoutines
-}
 
 // abandonedKey identifies one callSafely invocation that was abandoned
 type abandonedKey struct {
@@ -46,7 +42,7 @@ type AbandonedRoutines struct {
 	selfClearLatencies *ConcurrentBoundedRingBuffer[time.Duration]
 }
 
-func NewConsumerMetrics(meter metric.Meter, group string, topicName string) (*ConsumerMetrics, error) {
+func NewAbandonedRoutines(meter metric.Meter, group string, topicName string) (*AbandonedRoutines, error) {
 	total, err := meter.Int64Counter(
 		"vulkan.consumer.abandoned_routines.total",
 		metric.WithDescription("Total consumerFunc invocations abandoned after exceeding WorkTimeout + WorkTimeoutGrace. Monotonic, never decreases."),
@@ -87,19 +83,17 @@ func NewConsumerMetrics(meter metric.Meter, group string, topicName string) (*Co
 		attribute.String("messaging.destination.name", topicName),
 	))
 
-	return &ConsumerMetrics{
-		AbandonedRoutines: AbandonedRoutines{
-			// otel instruments
-			total:            total,
-			outstanding:      outstanding,
-			selfClearLatency: selfClearLatency,
-			attrs:            attrs,
+	return &AbandonedRoutines{
+		// otel instruments
+		total:            total,
+		outstanding:      outstanding,
+		selfClearLatency: selfClearLatency,
+		attrs:            attrs,
 
-			// local mirror
-			data: make(map[abandonedKey]time.Time),
-			// TODO - expose capacity size as consumer config option eventually
-			selfClearLatencies: NewConcurrentBoundedRingBuffer[time.Duration](256),
-		},
+		// local mirror
+		data: make(map[abandonedKey]time.Time),
+		// TODO - expose capacity size as consumer config option eventually
+		selfClearLatencies: NewConcurrentBoundedRingBuffer[time.Duration](256),
 	}, nil
 }
 
@@ -165,54 +159,4 @@ func (a *AbandonedRoutines) selfClearLatencyAvg() time.Duration {
 	}
 
 	return total / time.Duration(len(values))
-}
-
-// TODO - move ConcurrentBoundedRingBuffer into its own file once file refactoring is underway / complete
-
-// Why did I create this over complicated ConcurrentBoundedRingBuffer?
-// to not allow metrics data to grow unbounded
-// and it was fun
-// And also fuck you
-// thats why
-
-// ConcurrentBoundedRingBuffer is safe for concurrent use
-// Zero value is not usable -- always construct via NewConcurrentBoundedRingBuffer.
-type ConcurrentBoundedRingBuffer[Data any] struct {
-	mu          sync.Mutex
-	boundedData []Data
-	head        int
-}
-
-func NewConcurrentBoundedRingBuffer[Data any](capacity int) *ConcurrentBoundedRingBuffer[Data] {
-	return &ConcurrentBoundedRingBuffer[Data]{
-		boundedData: make([]Data, 0, capacity),
-		head:        0,
-	}
-}
-
-func (b *ConcurrentBoundedRingBuffer[Data]) Add(data Data) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if len(b.boundedData) < cap(b.boundedData) {
-		b.boundedData = append(b.boundedData, data)
-	} else { // reached capacity wrap around now following head
-		b.boundedData[b.head] = data
-		b.head = (b.head + 1) % cap(b.boundedData) // continue to move head along -> wrap at edge
-	}
-}
-
-func (b *ConcurrentBoundedRingBuffer[Data]) Len() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.boundedData)
-}
-
-func (b *ConcurrentBoundedRingBuffer[Data]) Values() []Data {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	values := make([]Data, len(b.boundedData))
-	copy(values, b.boundedData)
-	return values
 }

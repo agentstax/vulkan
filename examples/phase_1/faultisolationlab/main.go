@@ -85,7 +85,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      5 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,
@@ -144,7 +144,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      1 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,

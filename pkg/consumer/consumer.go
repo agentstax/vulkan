@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"github.com/agentstax/vulkan/pkg/consumer/metrics"
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"go.opentelemetry.io/otel/metric"
@@ -128,7 +130,7 @@ type WorkConsumer[WorkType any] struct {
 	PoolLimiter  concurrency.PoolLimiter
 	Datastore    Datastore[WorkType]
 	ShutdownFunc ShutdownFunc[WorkType]
-	Metrics      *ConsumerMetrics
+	Metrics      *metrics.ConsumerMetrics
 	Config       *WorkConsumerConfig
 	Logger       logger.Logger // copied from Config.Logger at construction
 }
@@ -136,13 +138,19 @@ type WorkConsumer[WorkType any] struct {
 // required deps as params, everything else through cfg -- pass nil (or a
 // sparse config holding only the fields you care about) and withDefaults
 // fills the rest.
-func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, datastore Datastore[WorkType], cfg *WorkConsumerConfig) (*WorkConsumer[WorkType], error) {
+func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *WorkConsumerConfig) (*WorkConsumer[WorkType], error) {
 	if cfg == nil {
 		cfg = &WorkConsumerConfig{}
 	}
 	cfg.withDefaults()
 
-	metrics, err := NewConsumerMetrics(cfg.Meter, group, t.Name)
+	consumerDatastore := NewConsumerDatastore[WorkType](ds, &ConsumerDatastoreConfig{
+		Logger: cfg.Logger,
+	})
+
+	metrics, err := metrics.NewConsumerMetrics(cfg.Meter, group, t.Name, ds, &metrics.ConsumerMetricsDatastoreConfig{
+		Logger: cfg.Logger,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +160,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		Topic:        t,
 		Queue:        queue,
 		PoolLimiter:  poolLimiter,
-		Datastore:    datastore,
+		Datastore:    consumerDatastore,
 		ShutdownFunc: DefaultShutdownFunc[WorkType],
 		Metrics:      metrics,
 		Config:       cfg,

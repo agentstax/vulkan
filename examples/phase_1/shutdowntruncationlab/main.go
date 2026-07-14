@@ -77,7 +77,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, cd, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
 		BatchLimit:   3,
 		WorkTimeout:  1 * time.Second,
 		QueueTimeout: 500 * time.Millisecond,
