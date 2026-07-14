@@ -179,3 +179,12 @@ consider using named return function params for User public functions to be clea
 need to relook at what should be consumer vs topic vs producer config. Probably a decent amount of consumer config that should be topic config ie janitor stuff
 
 consider putting logTable on base postgres datastore instead of redefining everywhere
+
+consider adding a testing suite ie can easily add messages in 'inflight', 'ready' with attempts or 'dead' state. Be able to inject failures easily for chaos testing etc
+
+cleanup go.mod file aftering factoring out examples into seperate project (they bring in excess deps that core lib doesn't need)
+
+docs should mention that ProducerFunc's tx IS the transactional outbox pattern collapsed
+into one hop -- the caller's business-row write and the message_log insert commit
+together with no separate outbox table or relay process, as long as both live in the
+same Postgres. worth calling out explicitly since it's a pattern people search for.

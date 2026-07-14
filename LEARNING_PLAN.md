@@ -2381,7 +2381,7 @@ compare against — you're building past what the reference bothered with.
 - [x] **Writer-based default logger.** Provide a default implementation that
       takes an arbitrary `io.Writer`, so a caller with no opinions gets
       something reasonable for free.
-- [ ] **Queue-state query.** A datastore method that computes, live, per
+- [x] **Queue-state query.** A datastore method that computes, live, per
       `(group, topic)`: backlog/lag (`head − committed`, the waterline gap),
       the `claimed − committed` inflight gap (how many messages/batches are
       currently outstanding vs. resolved — the metric gap the lazy-rollup
@@ -2394,7 +2394,7 @@ compare against — you're building past what the reference bothered with.
       does this ad hoc for one topic. Everything below is built on top of
       this one query — nothing else in this phase invents a second way to
       compute these numbers.
-- [ ] **Metrics snapshot.** Merge the query above with the in-process
+- [x] **Metrics snapshot.** Merge the query above with the in-process
       counters Phase 9's "Track abandoned goroutines" bullet already built
       (`hard_timeouts_total`, `abandoned_outstanding`, reclaim latency —
       still living on `ConsumerMetrics`, deliberately left as informal values
@@ -2402,7 +2402,7 @@ compare against — you're building past what the reference bothered with.
       full current picture, DB-truth and in-process numbers together. The
       debug readout and the OTel instruments below both read from this one
       snapshot, not from the query or `ConsumerMetrics` separately.
-- [ ] **OpenTelemetry metrics integration.** Accept a `metric.Meter`
+- [x] **OpenTelemetry metrics integration.** Accept a `metric.Meter`
       (`go.opentelemetry.io/otel/metric` — the API package only, never the
       SDK or a specific exporter) as a config option, defaulting to the
       global no-op provider so a caller who supplies nothing pays zero cost.
@@ -2415,7 +2415,7 @@ compare against — you're building past what the reference bothered with.
       ever living in this repo. (Precedent: River's `rivercontrib/otelriver`
       — API-only in the core module, the actual vendor wiring lives in a
       separate, opt-in package.)
-- [ ] **Debug/metrics readout.** A `String()`/print method that formats the
+- [x] **Debug/metrics readout.** A `String()`/print method that formats the
       snapshot for a human on demand — the free, zero-dependency consumer of
       the exact same data the OTel instruments expose to machines. This is
       the "query Postgres directly" replacement the phase's concept note
@@ -2466,19 +2466,68 @@ compare against — you're building past what the reference bothered with.
       shorter wait is actually needed, without introducing contention.
 
 **Lab:**
-- [ ] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
+- [x] Use the harness (`--fail-rate`, `--sleep`, `--crash-after`) to induce
       every failure mode you've built and watch the metrics snapshot react.
       If a failure doesn't move a number, you have a blind spot.
-- [ ] Run the consumer under load with the debug readout on; watch the
+
+      New permanent lab, `examples/phase_1/metricsreactionlab`
+      (`just metrics-reaction-lab`): drives each harness failure mode through
+      the real `WorkConsumer`/`Datastore` paths and diffs the metrics
+      snapshot before/after, asserting each induced failure moves EXACTLY
+      the number(s) it should and nothing else — the executable form of this
+      bullet's own check. Four scenarios in sequence: a retryable failure
+      (`ready` exception), sustained failure exhausting retries
+      (`ready`→`inflight`→`dead`), a hard timeout/hang (abandoned goroutine,
+      then a `ready` exception, then self-clear), and a crash mid-range —
+      claimed but never committed (an orphaned lease, then reclaimed once it
+      expires). All six tracked numbers (`ReadyExceptions`,
+      `InflightExceptions`, `DeadExceptions`, `OpenLeases`,
+      `AbandonedRoutines.Outstanding`/`.Total`) move at least once, each
+      attributable to a distinct trigger — no blind spots.
+- [x] Run the consumer under load with the debug readout on; watch the
       `claimed`/`committed` gap and exception counts move in real time as you
       inject failures with the existing harness. Confirm lowering
       `WaterlinePollRate` (added by the lazy-vs-synchronous decision above)
       visibly narrows how fast `committed` catches up, without needing the
       synchronous path.
-- [ ] Point a real OTel Prometheus (or OTLP) exporter at the `metric.Meter`
+
+      New permanent lab, `examples/phase_1/metricsloadlab`
+      (`just metrics-load-lab`): runs the real `Consume` loop (not direct
+      datastore calls — the live, end-to-end counterpart to rollup-lab's
+      measurement) under a pre-seeded burst, once at a slow `WaterlinePollRate`
+      (2s) and once fast (100ms), printing the debug readout as `committed`
+      catches up to `head`. Measured a 15.6x cut in catch-up time (2.03s →
+      130ms) in one representative run — consistent with rollup-lab's own
+      staleness-scales-with-poll-interval finding, now proven through the
+      real ticker-driven goroutines. A second scenario injects retryable
+      failures into a live run: the readout shows `ready` exceptions climb
+      (0→10→3→0) and `committed` close the gap on `head`, fully draining with
+      zero dead-letters and no manual intervention — `DrainExceptions`
+      retrying live through the same loop.
+- [x] Point a real OTel Prometheus (or OTLP) exporter at the `metric.Meter`
       you pass in and confirm every instrument shows up on the other end —
       proof the integration works end-to-end, not just that it compiles
       against the API.
+
+      New permanent lab, `examples/phase_1/otelexportlab`
+      (`just otel-export-lab`): the only place in the repo that imports
+      `otel/sdk` or a specific exporter — wires a real
+      `sdkmetric.MeterProvider` backed by `otel/exporters/prometheus`'s
+      Reader (its own registry, not the global `DefaultRegisterer`), drives
+      real consumer activity (a retryable failure and a hard-timeout
+      abandon+self-clear, so the synchronous `AbandonedRoutines` instruments
+      have an actual data point, not just the always-live `QueueState`
+      gauges), then scrapes over a real `httptest` HTTP server via
+      `promhttp.HandlerFor` — exactly how Prometheus itself would collect it.
+      All 13 instruments (10 `QueueState` gauges + 3 `AbandonedRoutines`)
+      confirmed present in the scraped body. First run caught a real gap in
+      the lab itself, not the product: `AbandonedRoutines`' synchronous
+      instruments (`Counter`/`UpDownCounter`/`Histogram`) only emit a data
+      point once actually recorded to — unlike `QueueState`'s
+      `ObservableGauge`s, which report every collection via their callback
+      regardless — so a run that never abandons a goroutine correctly never
+      shows them on a scrape. Fixed by driving a real abandon+self-clear
+      before scraping, not a product bug.
 
 **Explain it back:**
 1. What's the tradeoff between a lazy periodic rollup and a synchronous one —
