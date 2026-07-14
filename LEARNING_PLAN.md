@@ -2532,13 +2532,37 @@ compare against — you're building past what the reference bothered with.
 **Explain it back:**
 1. What's the tradeoff between a lazy periodic rollup and a synchronous one —
    what do you gain and what do you pay for each?
+Answer: for lazy - its an async rollup so you have some lag between what has actually been processed vs where committed sits.
+This lag causes partition drop and deliveries sweep to have a few seconds of lag. However b/c it is lazy the committed movement is off the hot path and so that cursor
+movement does not slow or degrage throughput.
+for synchronous - it is mostly the opposite. Partition drops and delivery sweeps happen nearly right after committed changes (no lag) which better shows exactly where
+committed is. but it is at the cost of an extra query on the claim release hot path which slows down throughput. Specifically this isn't just an extra query's fixed cost --
+`Commit` today never touches `cursors` at all (only `leases`/`deliveries`), so concurrent committers in the same group commit fully in parallel right now. A synchronous
+rollup adds an `UPDATE cursors` that those same committers now serialize on, which is why the 20-worker case measured 1.3x-1.9x slower, not just the flat +30-50% fixed-cost hit.
 2. Why does a live debug readout of claimed/committed/exception-count matter
    even though the underlying data was always queryable in Postgres directly?
+Answer: its a better developer experience, they don't have to know the underlying typology they just call a method
 3. For each number in the metrics snapshot: which failure mode is it the
    early warning for?
+		"queue:      head=%d claimed=%d committed=%d  (backlog=%d, inflight=%d)\n"+
+			"exceptions: ready=%d inflight=%d dead=%d  (oldest unacked: %s)\n"+
+			"leases:     open=%d\n"+
+			"abandoned:  total=%d outstanding=%d  (avg self-clear: %s)",
+Answer: 
+backlog - the classic consumer lag metrics. Means you are trailing behind head which is normally not good.
+exceptions dead - how many messages have truly failed, how numbers normally indicate a bug or outage
+abandoned total / self-clear - number of routine timeouts and how long they take to resolve if they do. Can indicate not handled ctx close or async code hanging
+inflight (claimed-committed gap) - batches out for processing right now; distinguishes rollup lag from real backlog
+ready exceptions - retry queue depth building up
+inflight exceptions - currently mid-retry
+oldest unacked age - flags a single stuck message even when the counts otherwise look fine
+open leases - a crashed/never-committed consumer, exactly what scenarioCrash in metricsreactionlab exercises
+abandoned outstanding - goroutines hung right now, vs. total's lifetime count
 4. Why does the OTel integration depend on `go.opentelemetry.io/otel/metric`
    (the API package) but never the SDK or a specific exporter like
    Prometheus's or Datadog's client?
+Answer: go.opentelemetry.io/otel/metric is only api code ie very light not many dependencies
+go.opentelemetry.io/otel has a lot of extra code and dependencies that make this library heavier
 
 **Done when:** the pluggable logger, the queue-state query, the metrics
 snapshot, the OTel instrument integration, and the debug readout all work
