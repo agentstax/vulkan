@@ -435,12 +435,13 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 	}
 
 	if len(ids) > 0 {
-		// otherwise these deliveries rows (mostly 'dead' DLQ) would join to nothing and park forever
+		// otherwise these deliveries rows (mostly 'dead' DLQ) would join to nothing and park forever.
 		orphanSql := `
 			DELETE FROM deliveries
-			WHERE message_id = ANY($1);
+			WHERE topic_id = $1
+				AND message_id = ANY($2);
 		`
-		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
+		if _, err := tx.Exec(ctx, orphanSql, topicID, ids); err != nil {
 			return 0, err
 		}
 	}
@@ -543,13 +544,14 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 	high := (n + 1) * partitionSize
 
 	// otherwise these deliveries rows (mostly 'dead' DLQ, since live ones are
-	// already floor-protected) would join to nothing and park forever
+	// already floor-protected) would join to nothing and park forever.
 	orphanSql := `
 		DELETE FROM deliveries
-		WHERE message_id >= $1
-			AND message_id < $2;
+		WHERE topic_id = $1
+			AND message_id >= $2
+			AND message_id < $3;
 	`
-	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
+	if _, err := tx.Exec(ctx, orphanSql, topicID, low, high); err != nil {
 		return err
 	}
 

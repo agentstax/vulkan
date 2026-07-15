@@ -82,8 +82,9 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_keys` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
 | 8d — Latency: LISTEN/NOTIFY | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_keys), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
-| 10 — Observability: logging & rollup model | ⬜ | pluggable logger, debug readout, lazy-vs-sync waterline (from TODO.md) |
-| 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md) |
+| 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
+| 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md); `pgx` vs. `database/sql` cut to **11b** |
+| 11b — pgx vs. database/sql | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 12 — FIFO partitions | ⬜ | deprioritized — ordering opt-in on the lifecycle path, not current focus |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
@@ -2584,7 +2585,10 @@ actual Prometheus/Datadog wiring lives in a separate, opt-in package.
 the consumer knows more about Postgres-specific datastore internals than it
 should, the producer can't fan out to multiple queues in one transactional
 write, and a couple of small polish items were deliberately deferred until the
-core was stable. This phase is cleanup, not new capability.
+core was stable. This phase is cleanup, not new capability. (Evaluating
+`database/sql` vs. `pgx` was cut from this phase's build — pgx is already
+light and already-shipped code leans on pgx-specific features; see
+optional **11b**.)
 
 *→ Reference (partial, for the first item only): `reference/waterline/types.go`
 defines a deliberately small `Log` interface (`Claim`/`Reclaim`/`Commit`/
@@ -2608,10 +2612,6 @@ type — even the reference didn't bother.*
 - [ ] **Abstract the datastore boundary.** Audit `pkg/consumer` for places that
       assume more than the `Datastore` interface promises, so swapping the
       backing store wouldn't require touching consumer logic.
-- [ ] **Evaluate `database/sql` vs. `pgx`.** Decide whether removing the
-      `pgx`-specific dependency is worth losing pgx-only features (native
-      types, `COPY`, etc.) — document the decision even if the answer is "keep
-      pgx."
 - [ ] **Multi-target transactional enqueue.** Extend the producer so one call
       can publish to multiple queues/topics within the same transaction —
       today's `WorkProducer.Produce(ctx, producerFunc, routingKey)` only
@@ -2895,6 +2895,44 @@ activity's own configured timeout.
 
 ---
 
+## 11b — pgx vs. `database/sql` (deferred, optional)
+
+*Deprioritized for now — cut from Phase 11 to keep that phase's build scoped
+to the two items with real design work behind them (the datastore-boundary
+audit, multi-target enqueue). The pgx dependency is already light, and
+already-shipped code leans on pgx-specific features — `pgx.Tx` is threaded
+through every `producerFunc` closure in `pkg/producer`/`pkg/consumer`, and
+`Range.Token`/`LeaseToken` are typed `pgtype.UUID` directly in public
+structs — plus two still-open bullets elsewhere in this plan (`pgx.Batch`
+pipelining in Phase 11's own "Small polish," `LISTEN/NOTIFY` in 8d) plan to
+lean on more. `database/sql`'s generic driver interface doesn't expose any
+of that cleanly — swapping now would mean re-deriving it all for
+portability nobody's asked for yet. Revisit once the platform is closer to
+feature-complete and dependency weight is a concrete concern, not a
+theoretical one.*
+
+**Concept:** decide whether removing the `pgx`-specific dependency in favor
+of `database/sql` is worth losing pgx-only features (native types, `COPY`,
+`pgx.Batch` pipelining, and the `LISTEN/NOTIFY` support 8d depends on) —
+document the decision even if the answer stays "keep pgx."
+
+**Explain it back:**
+1. What would actually break, concretely, if `pkg/` were rewritten against
+   `database/sql` instead of `pgx` — name the specific pgx feature each
+   already-shipped mechanism depends on.
+2. What's the actual argument for `database/sql` here, given this project
+   intentionally commits to Postgres as its one backing store (per Phase
+   11's own "Real systems" note on River/Oban)?
+
+**Done when:** the evaluation is written down (decision + reasoning),
+NOTES.md, `git tag phase-11b`.
+
+**Real systems:** River and Oban both commit to pgx directly rather than
+`database/sql`, for the same reason — `LISTEN/NOTIFY`, `COPY`, and batch
+pipelining aren't expressible through the generic driver interface.
+
+---
+
 ## How to use this
 
 - **Do the phases in order.** Resist jumping to the synthesis (Phases 6–6.5).
@@ -2913,13 +2951,15 @@ activity's own configured timeout.
 - **Current focus:** Phase 7 (Routing), then Phase 8 (Operational layer), then
   Phases 9–11 (TODO.md-derived: fault isolation, observability, architecture
   cleanup). Phase 12 (FIFO partitions), 6.5d (lane sharding), 7b
-  (header/content routing), 8d (`LISTEN/NOTIFY` latency), and 9b (lease
-  heartbeat/renewal) are optional and deliberately deferred to the end of
-  this document — pick them up only if a real workload demands ordering,
-  lane-level throughput, attribute-based routing a `routing_key` pattern
-  can't express, poll-interval latency actually matters, or (9b,
-  specifically after Phase 11 lands) a long-running job needs fast
-  crash-reclaim without a huge fixed `WorkTimeout`.
+  (header/content routing), 8d (`LISTEN/NOTIFY` latency), 9b (lease
+  heartbeat/renewal), and 11b (`pgx` vs. `database/sql`) are optional and
+  deliberately deferred to the end of this document — pick them up only if
+  a real workload demands ordering, lane-level throughput, attribute-based
+  routing a `routing_key` pattern can't express, poll-interval latency
+  actually matters, (9b, specifically after Phase 11 lands) a long-running
+  job needs fast crash-reclaim without a huge fixed `WorkTimeout`, or (11b)
+  dependency weight becomes a concrete concern once the platform is closer
+  to feature-complete.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.
