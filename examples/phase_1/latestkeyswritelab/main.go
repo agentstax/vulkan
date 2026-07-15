@@ -1,20 +1,20 @@
 package main
 
-// latest_keys write-cost lab: quantifies the tradeoff this phase's design
+// latest_key write-cost lab: quantifies the tradeoff this phase's design
 // made deliberately but never measured -- read-path scans got O(1), at the
-// cost of a second write (an UPSERT into latest_keys, same transaction) on
+// cost of a second write (an UPSERT into latest_key, same transaction) on
 // every keyed publish. Three scenarios:
 //
 //   - Fixed cost: sequential, uncontended publishes -- unkeyed vs. a fresh
-//     key each time (pure INSERT into latest_keys) vs. the SAME key every
+//     key each time (pure INSERT into latest_key) vs. the SAME key every
 //     time (the ON CONFLICT DO UPDATE branch). Isolates the extra
 //     statement's own cost from any lock contention.
 //   - Hot-key contention: G goroutines concurrently publish -- each to its
-//     OWN distinct key (parallel latest_keys rows, no contention) vs. all G
+//     OWN distinct key (parallel latest_key rows, no contention) vs. all G
 //     to the SAME single key (serialized on that one row, the "known
 //     tradeoff" flagged back in the design but never measured under load).
 //   - Dead-tuple growth: the hot-key scenario repeatedly UPDATEs ONE row --
-//     n_dead_tup/n_tup_upd on latest_keys before and after the burst shows
+//     n_dead_tup/n_tup_upd on latest_key before and after the burst shows
 //     what that does to table bloat, separate from the latency question.
 //
 // Registers its own topics (destroyed on exit), self-seeded, self-verifying.
@@ -73,13 +73,13 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	sameKeyMs := timeSequential(ctx, wp, n, func(i int) string { return "same-key" })
 
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op\n", "unkeyed (baseline)", unkeyedMs, unkeyedMs/n)
-	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "fresh key (latest_keys INSERT)", freshKeyMs, freshKeyMs/n, pctOver(freshKeyMs, unkeyedMs))
-	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "same key (latest_keys UPDATE)", sameKeyMs, sameKeyMs/n, pctOver(sameKeyMs, unkeyedMs))
+	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "fresh key (latest_key INSERT)", freshKeyMs, freshKeyMs/n, pctOver(freshKeyMs, unkeyedMs))
+	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "same key (latest_key UPDATE)", sameKeyMs, sameKeyMs/n, pctOver(sameKeyMs, unkeyedMs))
 }
 
 // hotKeyContentionScenario: the design's own flagged-but-unmeasured tradeoff
 // -- concurrent publishes to the SAME key now serialize on that key's
-// latest_keys row, where plain message_log appends never contended before.
+// latest_key row, where plain message_log appends never contended before.
 func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("hot-key contention: G concurrent publishers, each to its OWN key vs. all G to ONE key")
 
@@ -91,7 +91,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 	})
 	defer func() { must(topic.Destroy(ctx, ds, manyKeysTopic)) }()
 
-	before := dumpTableStats(ctx, ds, "latest_keys")
+	before := dumpTableStats(ctx, ds, "latest_key")
 
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
@@ -99,7 +99,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 	defer func() { must(topic.Destroy(ctx, ds, oneKeyTopic)) }()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
-	after := dumpTableStats(ctx, ds, "latest_keys")
+	after := dumpTableStats(ctx, ds, "latest_key")
 
 	total := goroutines * perGoroutine
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op (%d ops, %d goroutines)\n", "many distinct keys", manyKeysMs, manyKeysMs/float64(total), total, goroutines)

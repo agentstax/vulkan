@@ -166,7 +166,7 @@ func partitionTable(topicID, n int64) string {
 
 func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := `
-		INSERT INTO cursors (consumer_group, topic_id)
+		INSERT INTO cursor (consumer_group, topic_id)
 		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING;
 	`
@@ -317,7 +317,7 @@ func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context, top
 // lagging group on another topic can't block this topic's drops/sweeps.
 func (d *consumerDatastore[Message]) cursorFloor(ctx context.Context, topicID int64) (*int64, error) {
 	sql := `
-		SELECT MIN(committed) FROM cursors WHERE topic_id = $1;
+		SELECT MIN(committed) FROM cursor WHERE topic_id = $1;
 	`
 
 	var floor *int64
@@ -402,7 +402,7 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 	defer tx.Rollback(ctx)
 
 	// sweptRow is sweepBatch's own RETURNING shape -- CompactionKey only exists
-	// to tell whether the latest_keys cleanup is worth running at all.
+	// to tell whether the latest_key cleanup is worth running at all.
 	type sweptRow struct {
 		Id            int64   `db:"id"`
 		CompactionKey *string `db:"compaction_key"`
@@ -452,7 +452,7 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 
 	if anyKeyed {
 		orphanKeySql := `
-			DELETE FROM latest_keys
+			DELETE FROM latest_key
 			WHERE topic_id = $1
 				AND latest_id = ANY($2);
 		`
@@ -472,7 +472,7 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 	return len(ids), nil
 }
 
-// SweepExpiredIdempotencyKeys drains idempotency_keys rows older than ttl for this topic.
+// SweepExpiredIdempotencyKeys drains idempotency_key rows older than ttl for this topic.
 func (d *consumerDatastore[Message]) SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.sweepExpiredIdempotencyKeys(ctx, topicID, ttl, batchSize)
@@ -485,7 +485,7 @@ func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Con
 	// 24h before a topic is ever registered, so p.Topic.IdempotencyKeyTTL
 	// should never actually be <= 0 by the time this runs. This is a
 	// defensive no-op for that case, not the intended way to disable
-	// cleanup -- there's no supported way to opt an idempotency_keys row
+	// cleanup -- there's no supported way to opt an idempotency_key row
 	// out of eventually being swept.
 	if ttl <= 0 {
 		return nil
@@ -515,9 +515,9 @@ func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Con
 // trustworthy for this.
 func (d *consumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Context, topicID int64, cutoff time.Time, batchSize int) (int, error) {
 	sql := `
-		DELETE FROM idempotency_keys
+		DELETE FROM idempotency_key
 		WHERE (topic_id, idempotency_key) IN (
-			SELECT topic_id, idempotency_key FROM idempotency_keys
+			SELECT topic_id, idempotency_key FROM idempotency_key
 			WHERE topic_id = $1
 				AND created_at < $2
 			LIMIT $3
@@ -558,7 +558,7 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 	// a dropped partition holding a key's latest row is a dormant key expiring
 	// drop the now-dangling pointer rather than leave it forever
 	orphanKeySql := `
-		DELETE FROM latest_keys
+		DELETE FROM latest_key
 		WHERE topic_id = $1
 			AND latest_id >= $2
 			AND latest_id < $3;
@@ -594,9 +594,9 @@ func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 	defer tx.Rollback(ctx)
 
 	// topic_id isn't load-bearing here -- token alone already disambiguates a
-	// lease row -- but every leases query stays topic-scoped by convention.
+	// lease row -- but every lease query stays topic-scoped by convention.
 	freeSql := `
-		DELETE FROM leases
+		DELETE FROM lease
 		WHERE consumer_group = $1
 			AND token = $2
 			AND topic_id = $3;
@@ -666,7 +666,7 @@ func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 	// UPDATE still matches it, so it reaches parkSql again. See the
 	// hasParkedRows guard below.
 	truncateSql := `
-		UPDATE leases
+		UPDATE lease
 		SET low = $4
 		WHERE consumer_group = $1
 			AND token = $2
@@ -729,14 +729,14 @@ func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 // Race Condition:
 //
 //	Because our claiming transaction in FreshClaimMessagesWithCursor advances
-//	cursors.claimed AND inserts a lease we must read both cursors and leases
+//	cursor.claimed AND inserts a lease we must read both cursor and lease
 //	tables back in one SELECT, then write separately. Read them inside a single
 //	UPDATE instead and postgres hands back the new claimed row but not the new
 //	lease, so committed can advance past a range that is still being processed.
 //
 //	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
 //	newest version, but its subqueries keep the snapshot from when the statement
-//	began -- so cursors comes back fresh, leases stale.
+//	began -- so cursor comes back fresh, lease stale.
 func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
 	var committed int64
 	err := d.Retry.Wrap(ctx, func() error {
@@ -755,11 +755,11 @@ func (d *consumerDatastore[Message]) advanceWaterline(ctx context.Context, topic
 	// LEAST ignores NULLs so any/all of those can be absent.
 	const targetSql = `
 		SELECT LEAST(
-			(SELECT MIN(low) FROM leases WHERE consumer_group = $1 AND topic_id = $2),
+			(SELECT MIN(low) FROM lease WHERE consumer_group = $1 AND topic_id = $2),
 			(SELECT MIN(message_id) - 1 FROM deliveries WHERE consumer_group = $1 AND topic_id = $2 AND status IN ('ready', 'inflight')),
 			claimed
 		)
-		FROM cursors
+		FROM cursor
 		WHERE consumer_group = $1 AND topic_id = $2;
 	`
 
@@ -770,7 +770,7 @@ func (d *consumerDatastore[Message]) advanceWaterline(ctx context.Context, topic
 
 	// 2. apply it. GREATEST -> committed only ever moves forward.
 	const rollSql = `
-		UPDATE cursors
+		UPDATE cursor
 		SET committed = GREATEST(committed, $3)
 		WHERE consumer_group = $1 AND topic_id = $2
 		RETURNING committed;
@@ -800,12 +800,12 @@ func (d *consumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 		WHERE (
 			-- no bindings for (consumer_group, topic_id) exists
 			NOT EXISTS (
-				SELECT 1 FROM bindings b
+				SELECT 1 FROM binding b
 				WHERE b.consumer_group = $1 AND b.topic_id = $2
 			)
 			-- bindings for (consumer_group, topic_id) exists and match routing_key pattern
 			OR EXISTS (
-				SELECT 1 FROM bindings b
+				SELECT 1 FROM binding b
 				WHERE b.consumer_group = $1 AND b.topic_id = $2
 					AND m.routing_key ~ b.pattern
 			)
@@ -815,11 +815,11 @@ func (d *consumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 		AND (
 			-- unkeyed rows are never compacted
 			m.compaction_key IS NULL
-			-- keyed rows materialize a delivery only if they're latest_keys'
+			-- keyed rows materialize a delivery only if they're latest_key's
 			-- current pointer for their key -- O(1) lookup, no per-row scan
 			OR m.id = (
-				SELECT latest_id FROM latest_keys
-				WHERE topic_id = $2 
+				SELECT latest_id FROM latest_key
+				WHERE topic_id = $2
 					AND compaction_key = m.compaction_key
 			)
 		)
@@ -875,13 +875,13 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 	// SAME row instead of resetting to 0 every time. token still rotates, so a
 	// dead worker's stale commit still no-ops the same as before.
 	reclaimSql := `
-		UPDATE leases
+		UPDATE lease
 		SET
 			reclaims = reclaims + 1,
 			until = now() + make_interval(secs => $2),
 			token = gen_random_uuid()
 		WHERE (token, consumer_group) IN (
-			SELECT token, consumer_group FROM leases
+			SELECT token, consumer_group FROM lease
 			WHERE consumer_group = $1
 				AND topic_id = $3
 				AND until < now()
@@ -949,7 +949,7 @@ func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 	}
 
 	freeSql := `
-		DELETE FROM leases
+		DELETE FROM lease
 		WHERE consumer_group = $1
 			AND token = $2
 			AND topic_id = $3;
@@ -967,12 +967,12 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM bindings b
+					SELECT 1 FROM binding b
 					WHERE b.consumer_group = $3
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
-					SELECT 1 FROM bindings b
+					SELECT 1 FROM binding b
 					WHERE b.consumer_group = $3
 						AND m.routing_key ~ b.pattern
 				)
@@ -982,11 +982,11 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 			AND (
 				-- unkeyed rows are never compacted
 				m.compaction_key IS NULL
-				-- keyed rows are eligible only if they're latest_keys' current
+				-- keyed rows are eligible only if they're latest_key's current
 				-- pointer for their key -- O(1) lookup, no per-row scan
 				OR m.id = (
-					SELECT latest_id FROM latest_keys
-					WHERE topic_id = $4 
+					SELECT latest_id FROM latest_key
+					WHERE topic_id = $4
 						AND compaction_key = m.compaction_key
 				)
 			)
@@ -1014,19 +1014,19 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 	// TODO - consider if we should lock any rows like claimed cursor during this tx
 	cursorSql := fmt.Sprintf(`
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
-			SELECT * FROM cursors
+			SELECT * FROM cursor
 			WHERE consumer_group = $1 AND topic_id = $3
 		)
-		UPDATE cursors
+		UPDATE cursor
 		SET
-			claimed = LEAST(cursors.claimed + $2, (SELECT MAX(id) FROM %s)) -- move claimed frontier forward by max(batchLimit)
+			claimed = LEAST(cursor.claimed + $2, (SELECT MAX(id) FROM %s)) -- move claimed frontier forward by max(batchLimit)
 		FROM old_values
-		WHERE cursors.consumer_group = $1
-			AND cursors.topic_id = $3
-			AND cursors.claimed < (SELECT MAX(id) FROM %s)
+		WHERE cursor.consumer_group = $1
+			AND cursor.topic_id = $3
+			AND cursor.claimed < (SELECT MAX(id) FROM %s)
 		RETURNING
 			old_values.claimed AS low,
-			cursors.claimed AS high;
+			cursor.claimed AS high;
 	`, logTable(topicID), logTable(topicID))
 
 	cursorRows, err := tx.Query(ctx, cursorSql, consumerGroup, limit, topicID)
@@ -1069,7 +1069,7 @@ func (d *consumerDatastore[Message]) ClaimMessages(
 
 	// get new lease associated with range
 	leaseSql := `
-		INSERT INTO leases (consumer_group, topic_id, low, high, until)
+		INSERT INTO lease (consumer_group, topic_id, low, high, until)
 		VALUES (
 			$1,
 			$2,

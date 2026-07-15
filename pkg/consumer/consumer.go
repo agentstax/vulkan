@@ -378,7 +378,7 @@ func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
 // the cursor path has a waterline; the lifecycle path tracks state per delivery row.
 //
 // Deliberately lazy, not synchronous-on-Commit -- a synchronous call after
-// every Commit adds new lock contention on the shared cursors row. Lower
+// every Commit adds new lock contention on the shared cursor row. Lower
 // WaterlinePollRate instead if committed needs to catch up faster.
 func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
 	if p.Config.Type != CURSOR {

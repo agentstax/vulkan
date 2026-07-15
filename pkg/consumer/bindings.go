@@ -22,7 +22,7 @@ func (d *consumerDatastore[Message]) Bind(ctx context.Context, topicID int64, co
 	}
 
 	sql := `
-		INSERT INTO bindings (consumer_group, topic_id, pattern, display)
+		INSERT INTO binding (consumer_group, topic_id, pattern, display)
 		VALUES ($1, $2, $3, $4);
 	`
 
@@ -33,7 +33,7 @@ func (d *consumerDatastore[Message]) Bind(ctx context.Context, topicID int64, co
 // removes every binding for a group on this topic -> it goes back to matching all events on this topic.
 func (d *consumerDatastore[Message]) ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := `
-		DELETE FROM bindings
+		DELETE FROM binding
 		WHERE consumer_group = $1 AND topic_id = $2;
 	`
 

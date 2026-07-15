@@ -11,10 +11,10 @@ package main
 //     trip a synchronous call chains onto every Commit, isolated from any
 //     lock contention.
 //   - Concurrent contention: G goroutines committing against the SAME
-//     (group, topic) cursors row -- Commit itself never touches that row
-//     today (only leases + deliveries), so a synchronous AdvanceWaterline
+//     (group, topic) cursor row -- Commit itself never touches that row
+//     today (only lease + deliveries), so a synchronous AdvanceWaterline
 //     call is new contention on it, not a cost that already existed. Same
-//     shape as latestkeyswritelab's hot-key scenario, applied to cursors.
+//     shape as latestkeyswritelab's hot-key scenario, applied to cursor.
 //
 // Registers its own topics (destroyed on exit), self-seeded.
 
@@ -266,7 +266,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 // ---- scenario 3: concurrent contention ----
 
 func contentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("concurrent contention: G goroutines committing against the SAME cursors row")
+	step("concurrent contention: G goroutines committing against the SAME cursor row")
 
 	const goroutines = 20
 	const perGoroutine = 10
@@ -328,7 +328,7 @@ func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
 
 func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, consumerGroup string, topicID int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursors WHERE consumer_group=$1 AND topic_id=$2`, consumerGroup, topicID).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group=$1 AND topic_id=$2`, consumerGroup, topicID).Scan(&v))
 	return v
 }
 

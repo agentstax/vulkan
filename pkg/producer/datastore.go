@@ -185,9 +185,9 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	// ack, not whether it landed.
 	if err = tx.Commit(ctx); err != nil {
 		if opts.SkipIdempotency {
-			return nil, retry.NewPermanentError(err) // no idempotency_keys guard to catch a retried duplicate
+			return nil, retry.NewPermanentError(err) // no idempotency_key guard to catch a retried duplicate
 		}
-		return nil, err // idempotency_keys' ON CONFLICT DO NOTHING makes a retry safe
+		return nil, err // idempotency_key's ON CONFLICT DO NOTHING makes a retry safe
 	}
 
 	return message, nil
@@ -219,7 +219,7 @@ func (d *producerDatastore[Message]) insertUnprotected(ctx context.Context, tx p
 	return id, nil
 }
 
-// insertProtected runs the idempotency claim + message insert (+ latest_keys
+// insertProtected runs the idempotency claim + message insert (+ latest_key
 // upsert when keyed) in one round trip. landed=false means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
 func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) (id int64, landed bool, err error) {
@@ -227,11 +227,11 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 
 	var sql string
 	if opts.CompactionKey != "" {
-		// claim + insert + latest_keys upsert in one round trip -- inserted
+		// claim + insert + latest_key upsert in one round trip -- inserted
 		// stays empty when the claim already existed, so latest never fires either.
 		sql = fmt.Sprintf(`
 			WITH claim AS (
-				INSERT INTO idempotency_keys (topic_id, idempotency_key)
+				INSERT INTO idempotency_key (topic_id, idempotency_key)
 				VALUES ($1, $2)
 				ON CONFLICT (topic_id, idempotency_key) DO NOTHING
 				RETURNING 1
@@ -241,11 +241,11 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
-				INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+				INSERT INTO latest_key (topic_id, compaction_key, latest_id)
 				SELECT $1, $5, id FROM inserted
 				ON CONFLICT (topic_id, compaction_key) DO UPDATE
 				SET latest_id = EXCLUDED.latest_id
-				WHERE latest_keys.latest_id < EXCLUDED.latest_id
+				WHERE latest_key.latest_id < EXCLUDED.latest_id
 			)
 			SELECT id FROM inserted;
 		`, logTable(topicID))
@@ -255,7 +255,7 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 		// claim CTE landed a row, so a conflict makes both match zero rows.
 		sql = fmt.Sprintf(`
 			WITH claim AS (
-				INSERT INTO idempotency_keys (topic_id, idempotency_key)
+				INSERT INTO idempotency_key (topic_id, idempotency_key)
 				VALUES ($1, $2)
 				ON CONFLICT (topic_id, idempotency_key) DO NOTHING
 				RETURNING 1
@@ -281,14 +281,14 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 	return id, true, nil
 }
 
-// upsertLatestKey keeps latest_keys pointed at the highest id seen for this compaction key
+// upsertLatestKey keeps latest_key pointed at the highest id seen for this compaction key
 func (d *producerDatastore[Message]) upsertLatestKey(ctx context.Context, tx pgx.Tx, topicID int64, compactionKey string, id int64) error {
 	sql := `
-		INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+		INSERT INTO latest_key (topic_id, compaction_key, latest_id)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (topic_id, compaction_key) DO UPDATE
 		SET latest_id = EXCLUDED.latest_id
-		WHERE latest_keys.latest_id < EXCLUDED.latest_id;
+		WHERE latest_key.latest_id < EXCLUDED.latest_id;
 	`
 	_, err := tx.Exec(ctx, sql, topicID, compactionKey, id)
 	return err

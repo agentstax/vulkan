@@ -1,5 +1,5 @@
 -- consumer group cursors for tracking offset in message_log
-CREATE TABLE IF NOT EXISTS cursors (
+CREATE TABLE IF NOT EXISTS cursor (
   consumer_group TEXT NOT NULL,
   topic_id BIGINT NOT NULL, -- a group tracks an independent cursor per topic
   claimed BIGINT NOT NULL DEFAULT 0, -- the read frontier 'inflight' work

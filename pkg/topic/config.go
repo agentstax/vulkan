@@ -45,7 +45,7 @@ type Config struct {
 	AllowDropPastCommitted bool
 
 	// IdempotencyKeyTTL - how long a produce-retry claim survives in
-	// idempotency_keys before the janitor sweeps it.
+	// idempotency_key before the janitor sweeps it.
 	// Default: 24h.
 	//
 	// Zero is invalid, not "forever" -- SetDefaults resolves it before the

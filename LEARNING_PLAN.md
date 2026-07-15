@@ -71,17 +71,17 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 3 — Competing consumers | ✅ done | answers in NOTES.md; tag `phase-3` |
 | 3.5 — Throughput / the commit wall | ✅ done | answers in NOTES.md; tag `phase-3.5` |
 | 4 — Log/queue split | ✅ done | `message_log` + per-group cursor; **`ORDER BY id`** is load-bearing (high-water mark must be ordered); answers in NOTES.md; tag `phase-4` |
-| 5 — Fan-out | ✅ done | `-group` flag → independent `cursors` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
+| 5 — Fan-out | ✅ done | `-group` flag → independent `cursor` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
 | 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
 | 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 8 — Operational layer | ⬜ | retention split into **8a**, log compaction split into **8c**; observability moved to **10**, LISTEN/NOTIFY moved to **8d** |
 | 8a — Retention | ✅ done | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman; answers in NOTES.md; tag `phase-8a` |
-| 8b — Per-topic tables | ✅ done | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`bindings` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost; answers in NOTES.md; tag `phase-8b` |
-| 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_keys` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
+| 8b — Per-topic tables | ✅ done | each topic gets its own table/id sequence/partition set/janitor; `routing_key`/`binding` kept, now scoped per topic; fixes 8a's global floor + 8c's fan-out cost; answers in NOTES.md; tag `phase-8b` |
+| 8c — Log compaction | ✅ done | keep-latest-per-key, filtered at claim time; `latest_key` O(1) index landed (write-cost measured), no schema tombstone, retention needs no compaction-awareness; answers in NOTES.md; tag `phase-8c` |
 | 8d — Latency: LISTEN/NOTIFY | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_keys), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
+| 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_key), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
 | 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
 | 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md); `pgx` vs. `database/sql` cut to **11b** |
 | 11b — pgx vs. database/sql | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
@@ -162,7 +162,7 @@ every later phase, and in Phase 8 they're how you exercise the metrics.
     message that fell off the happy path (retry / dead-letter / out-of-order).
     Per-message lifecycle (ack/retry/DLQ) lives here, for the small exceptional
     fraction — not for every message.
-  - `leases` — a crash-safe reservation of an in-flight claimed range, so a
+  - `lease` — a crash-safe reservation of an in-flight claimed range, so a
     crashed worker's range is reclaimable.
 - [x] You reach this in two moves, and **the refactor between them is the lesson**:
       first the *naive* split where EVERY (group, message) gets a `deliveries` row
@@ -768,10 +768,10 @@ lowest **open lease**; 6.5c also below the lowest **unresolved exception**; 6.5d
 makes that pin **lane-scoped** and defines the contiguous `Watermark` across lanes.
 Watching that one formula accrete is the through-line of the phase.
 
-*Schema for all four movements:* `cursors(consumer_group, lane, committed,
+*Schema for all four movements:* `cursor(consumer_group, lane, committed,
 claimed, block_hi)` (Phase 5's `consumers`/`position` renamed and extended;
 `lane`/`block_hi` lie dormant until 6.5d — start with one lane, `block_hi` NULL);
-a `leases` table (6.5b); a **sparse** `deliveries` collapsed to
+a `lease` table (6.5b); a **sparse** `deliveries` collapsed to
 `ready | inflight | dead` (6.5c).
 
 ---
@@ -785,14 +785,14 @@ the headline throughput result; everything after it is about surviving what goes
 wrong.
 
 **Build:**
-- [x] **Evolve the cursor (a rename + two adds).** `consumers` → `cursors`;
+- [x] **Evolve the cursor (a rename + two adds).** `consumers` → `cursor`;
       Phase 5's `position` becomes `claimed` (the read frontier) and you add
       `committed` (the waterline — every offset ≤ it is resolved):
-      `cursors(consumer_group, lane, committed, claimed, block_hi)`. Start with one
+      `cursor(consumer_group, lane, committed, claimed, block_hi)`. Start with one
       lane, `block_hi` NULL (those two columns wake up in 6.5d).
 - [x] **Claim a range, not a row.** In one statement advance the read frontier and
       capture the window:
-      `UPDATE cursors SET claimed = LEAST(claimed + $batch, head) WHERE … AND
+      `UPDATE cursor SET claimed = LEAST(claimed + $batch, head) WHERE … AND
       claimed < head RETURNING old.claimed AS lo, new.claimed AS hi;` then read
       `events WHERE "offset" > lo AND "offset" <= hi`. **No per-event row is
       written.** (`head` = `max("offset")`; PG18 has `old`/`new` in RETURNING.)
@@ -836,7 +836,7 @@ over a *range* instead of a row. A crash now leaves an expired lease another wor
 reclaims and re-reads.
 
 **Build:**
-- [x] **Lease the range (crash safety).** Insert a `leases(consumer_group, lane,
+- [x] **Lease the range (crash safety).** Insert a `lease(consumer_group, lane,
       lo, hi, lease_until, lease_token, reclaims)` row at claim time, in the **same
       transaction** as the `claimed` advance.
 - [x] **Reclaim before Claim.** Workers try **Reclaim** first: grab one expired
@@ -971,7 +971,7 @@ bindings decide who receives.
 
 **Build:**
 - [x] `message_log` gets a `routing_key text` column.
-- [x] `bindings(consumer_group text, pattern text, display text)` — a group
+- [x] `binding(consumer_group text, pattern text, display text)` — a group
       with **no** binding matches all events; a group **with** a binding only
       receives events whose `routing_key` matches `pattern` (a **true
       wildcard**: `*` matches any run of characters, any depth — translated
@@ -1222,12 +1222,12 @@ Two decisions this phase turns on, both settled the hard way:
   the domain naturally has — and would throw away Phase 7's retroactive
   binding application (a binding added after messages exist still applies to
   them, as long as they're unclaimed), which only works because the log
-  those messages live in is already shared. So `routing_key`/`bindings`
+  those messages live in is already shared. So `routing_key`/`binding`
   survive this phase completely unchanged in mechanism, just newly scoped to
   one topic's own table instead of the single system-wide one.
 - **Each topic's id sequence must be its own, not a shared global one.** A
   shared sequence looks cheaper — `message_id` stays globally unique, so
-  `cursors`/`deliveries`/`leases` could keep their current keys untouched.
+  `cursor`/`deliveries`/`lease` could keep their current keys untouched.
   It doesn't actually work: `EnsureNextPartition` decides partition
   boundaries by raw id arithmetic, and if a topic only receives a fraction of
   the system's total id throughput, "1,000,000 raw ids of partition width"
@@ -1239,7 +1239,7 @@ Two decisions this phase turns on, both settled the hard way:
   doesn't dodge propagating "which topic" into `deliveries` either — a row
   still needs to say which table its `message_id` lives in. So the honest
   design accepts the full blast radius: each topic's table gets its own
-  dense sequence, and `cursors`/`deliveries`/`leases` become scoped to
+  dense sequence, and `cursor`/`deliveries`/`lease` become scoped to
   `(consumer_group, topic_id)` rather than just `(consumer_group)`.
 
 **What this phase does *not* fully solve, on purpose:** a lagging group on
@@ -1251,7 +1251,7 @@ them into separate topics, a deliberate operational choice this phase
 enables rather than automates.
 
 **Build:**
-- [x] New `topics` table: `id BIGSERIAL PRIMARY KEY, name TEXT UNIQUE NOT
+- [x] New `topic` table: `id BIGSERIAL PRIMARY KEY, name TEXT UNIQUE NOT
       NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`. The physical
       table for a topic is named `message_log_<id>` — a server-generated
       integer, never the free-text `name`, gets interpolated into dynamic
@@ -1301,13 +1301,13 @@ enables rather than automates.
       envelope field) is not a `migrations/` concern.** A migration file is
       static, author-time DDL against a fixed set of table names; which
       `message_log_<id>` tables exist is runtime state (`SELECT id FROM
-      topics`) that no `.sql` file can enumerate. This project's migrations
+      topic`) that no `.sql` file can enumerate. This project's migrations
       have zero precedent for dynamic/looping SQL (no `DO $$` blocks
       anywhere), so the fix stays in Go, colocated with `CreateTopic`'s
       table template in `pkg/topic/datastore.go` — same file owns both "what
       does a topic's table look like" and "how do we bring an existing one
       up to date," so the two can't drift apart. Mechanically: loop
-      `topics`, run one `ALTER TABLE message_log_%d ADD COLUMN IF NOT
+      `topic`, run one `ALTER TABLE message_log_%d ADD COLUMN IF NOT
       EXISTS ...` per row — idempotent and self-healing, the same discipline
       `EnsureNextPartition` already uses. The one thing that makes this
       tractable at all: `message_log_<id>` is declaratively partitioned, and
@@ -1320,24 +1320,24 @@ enables rather than automates.
       land, sharing a tiny `allTopicIds(ctx)` helper for the enumeration.
       Down/rollback isn't one file either — same treatment, a paired
       `Drop*Column` function, run once, by hand, when actually needed.
-- [x] `cursors`, `deliveries`, and `leases` each gain a `topic_id` column,
-      folded into their original migrations (`002_cursors`, `003_deliveries`,
-      `004_leases`) per house style — each table's actual key changes
+- [x] `cursor`, `deliveries`, and `lease` each gain a `topic_id` column,
+      folded into their original migrations (`002_cursor`, `003_deliveries`,
+      `004_lease`) per house style — each table's actual key changes
       differently, not uniformly:
-      - `cursors`' PK today is the single column `consumer_group`
-        (`002_cursors.up.sql`) — it must become the composite
+      - `cursor`'s PK today is the single column `consumer_group`
+        (`002_cursor.up.sql`) — it must become the composite
         `(consumer_group, topic_id)`, since one group reading two topics
         needs two distinct cursor rows.
       - `deliveries`' PK today is already composite,
         `(consumer_group, message_id)` — becomes
         `(consumer_group, topic_id, message_id)`, since `message_id` is only
         unique within a topic once each has its own sequence.
-      - `leases`' PK today is `(token, consumer_group)` — `token` (a random
+      - `lease`'s PK today is `(token, consumer_group)` — `token` (a random
         UUID) already disambiguates, so the PK itself doesn't need to
         change, but `low`/`high` are meaningless without knowing which
-        topic's id sequence they're a range of, so `leases` still needs the
+        topic's id sequence they're a range of, so `lease` still needs the
         `topic_id` column even though its key shape doesn't.
-- [x] `bindings` gains a `topic_id` column too, folded into `005_bindings`.
+- [x] `binding` gains a `topic_id` column too, folded into `005_binding`.
       Its actual schema today has a surrogate `id BIGSERIAL PRIMARY KEY` and
       only an index on `consumer_group` (no compound key on
       `consumer_group`/`pattern` exists to begin with) — this phase just
@@ -1353,7 +1353,7 @@ enables rather than automates.
 - [x] The janitor (`EnsureNextPartition`, `DropExpiredPartitions`,
       `SweepExpiredPartitions`, and 8c's compaction pass once it exists)
       all become topic-scoped, operating on `message_log_<topic_id>`'s own
-      partitions. `cursorFloor` becomes `MIN(committed) FROM cursors WHERE
+      partitions. `cursorFloor` becomes `MIN(committed) FROM cursor WHERE
       topic_id = $1` — this is the actual fix for 8a's filed TODO, and the
       per-topic partition set is the fix for 8c's.
 - [x] **Settled (2026-07-08) — the topic owns its log-shape config.** Today
@@ -1364,7 +1364,7 @@ enables rather than automates.
       inherits. The idempotent-declare UX resolves it: `topic.Config` at
       `Register` time is where log-shape knobs live (`RetentionTTL`,
       `PartitionSize`, plausibly `AllowDropPastCommitted` — properties of
-      the log itself), persisted as columns on the `topics` row (folded into
+      the log itself), persisted as columns on the `topic` row (folded into
       its migration per house style); janitors read them off the topic and
       those fields leave `WorkConsumerConfig`. Genuinely per-consumer
       runtime knobs (`JanitorPollRate`, `JanitorSweepBatchSize`, poll rates,
@@ -1394,7 +1394,7 @@ enables rather than automates.
 - [x] Confirm a badly-lagging group on topic B does not block a drop or
       sweep on topic A — the exact cross-topic contamination 8a's TODO
       flagged, proven fixed live, not just asserted.
-- [x] Confirm `routing_key`/`bindings` still behave exactly as Phase 7
+- [x] Confirm `routing_key`/`binding` still behave exactly as Phase 7
       proved (retroactive binding application, CURSOR-path
       filter-but-still-advance, LIFECYCLE-path gate-row-creation) — now
       scoped within one topic's table, unchanged in behavior.
@@ -1413,21 +1413,21 @@ topic concerns to cross cutting concerns. For example retention: a system-wide i
 by looking at the timestamp of the max(id) in a partition. that max(id) could come from any topic. Additionally if a lagging consumer exists and we have 'don't 
 drop past floor' functionality enabled we are forced to wait on that lagging consumer for EVERYTHING which is scoped to the entire datasource instead of just a
 topic due to min(id) of cursors being system wide.
-2. Why do `cursors`/`deliveries`/`leases` need a `topic_id` added to their
+2. Why do `cursor`/`deliveries`/`lease` need a `topic_id` added to their
    keys, when they didn't need one before this phase?
 Answer: technically leases does not because they token is bound to whatever entity that claims it ie group/topic consumer. But in general it is to make these entities unambiguous. Cursors needs to know which message_log id sequence (ie topic) they are keeping track of. Deliveries needs to know the same because a message_id could be very different messages in different message_log tables.
 3. Why is topic registration explicit, when partition creation
    (`EnsureNextPartition`) is allowed to self-heal silently?
 Answer: topic registration creates durable lasting user concerns. It has to construct a table and manage configuration some of which is immutable. Making a topic creating explicit forces the user to take a second and think through what they want and lowers the chance of mistakes or mismanagement. Partitions are abstracted away
 constructs that users in general don't need to be concerned about and thier naming are strictly computed values while topic names are user defined.
-4. `routing_key`/`bindings` survive this phase with their matching logic
+4. `routing_key`/`binding` survive this phase with their matching logic
    completely unchanged — so what did splitting into per-topic tables
    actually fix, and what did it deliberately leave unfixed?
 Answer: It fixed most of what was explained in Q1. However retention / partitions are no longer system-wide they are topic scoped which is better but still a constraint ie you could not have per consumer retention / partition configuration.
 
 **Done when:** two topics are physically separate with independent
 sequences/partitions (proven live), a lagging group on one topic is proven
-not to affect another topic's drop/sweep, `routing_key`/`bindings` behave
+not to affect another topic's drop/sweep, `routing_key`/`binding` behave
 identically to Phase 7 within a topic, `TODO.md`'s two filed pointers (8a's
 global floor, 8c's fan-out cost) are closed out or updated to reflect the
 fix, NOTES.md, `git tag phase-8b`.
@@ -1482,13 +1482,13 @@ writes cluster close together. But for an old, never-superseded key in a
 long-lived topic, evaluating that definition directly means a scan to the
 current tail, and the cost only grows as the topic keeps accumulating
 history behind it. So the plan pairs the definition with a companion index
-table, `latest_keys(topic_id, compaction_key, latest_id)`, upserted
+table, `latest_key(topic_id, compaction_key, latest_id)`, upserted
 synchronously in the same transaction as every keyed write — turning "what's
 the latest for this key" from an O(partitions since the row) scan into an
 O(1) lookup once it's in place. The correlated scan lands first (it's the
 spec this phase has to satisfy regardless of how it's made fast, and its
 cost is measured with real labs before the index is built, to size what the
-index actually buys); `latest_keys` is the performance layer the design
+index actually buys); `latest_key` is the performance layer the design
 always intended to carry the read path once that cost is confirmed to
 matter, not a patch bolted on after a scaling surprise.
 
@@ -1499,10 +1499,10 @@ matter, not a patch bolted on after a scaling surprise.
       convention as `routing_key`.
       **A partial index, `(compaction_key, id) WHERE compaction_key IS NOT
       NULL`, was added here to make the ground-truth scan's per-partition
-      `newer` lookup cheap -- then dropped once `latest_keys` landed and
+      `newer` lookup cheap -- then dropped once `latest_key` landed and
       the read path stopped querying `message_log` by `compaction_key`
       altogether.** Verified via `EXPLAIN`: `message_log`'s own primary key
-      index is all the new lookup needs (it queries `latest_keys` by its
+      index is all the new lookup needs (it queries `latest_key` by its
       own PK instead), so the partial index had zero live consumers left --
       confirmed by checking it doesn't appear in the new predicate's plan
       at all, not even as a rejected candidate. Its only remaining
@@ -1524,7 +1524,7 @@ matter, not a patch bolted on after a scaling surprise.
       bounded by the claim's own high.** Originally planned as "the max `id`
       for its `compaction_key` at or below the claim's own high bound" --
       revised after working through a concrete failure case. A claim's
-      `high` is pinned once (stored on its `leases` row) and reused
+      `high` is pinned once (stored on its `lease` row) and reused
       identically on every reclaim of that lease -- so a *bounded* check
       would need to look ahead, or risk this exact race: claim `(0,2]` reads
       row1 (`user:1`) before a competing write; the worker crashes before
@@ -1602,7 +1602,7 @@ matter, not a patch bolted on after a scaling surprise.
       recognize "this key is fully dead, purge every row for it" without
       understanding each topic's schema — accepted as a real but currently
       unneeded cost, revisit if that cleanup pass ever gets built.
-- [x] **Sizing the case for `latest_keys`.** 8b landed (each topic has its
+- [x] **Sizing the case for `latest_key`.** 8b landed (each topic has its
       own id sequence and partition set), which already bounds the ground
       -truth scan's cost to one topic's own volume instead of the whole
       system's. Before spending a schema/write-path/read-path chunk sequence
@@ -1665,7 +1665,7 @@ matter, not a patch bolted on after a scaling surprise.
       it gets strictly more expensive, forever, for as long as that key is
       never superseded.
 
-      **Confirms `latest_keys` is the right layer, not a coarser
+      **Confirms `latest_key` is the right layer, not a coarser
       `PartitionSize`.** A coarser partition width helps the *current
       -snapshot* tension (11 partitions → 1 collapses both cases to the
       trivial floor) but doesn't bound the *lifetime* case: it sets the
@@ -1681,7 +1681,7 @@ matter, not a patch bolted on after a scaling surprise.
       roughly **1 second per surviving key** touched during a full backlog
       replay — a replay touching thousands of such keys adds minutes of pure
       query overhead, independent of and on top of whatever the consumer's
-      own processing does. `latest_keys` collapses this to a flat O(1)
+      own processing does. `latest_key` collapses this to a flat O(1)
       lookup regardless of partition count or topic age — the numbers above
       are why that index, not a wider partition, is the layer this design
       relies on for the lifetime case.
@@ -1729,20 +1729,20 @@ matter, not a patch bolted on after a scaling surprise.
       physically deletes data (reintroducing a correctness-critical floor).
       A synchronous, same-transaction UPSERT has neither property — it
       doesn't delete anything, and there's no window where it's stale
-      relative to what's committed. That's what makes `latest_keys` the
+      relative to what's committed. That's what makes `latest_key` the
       right shape for this design specifically, not Kafka's approach in a
       smaller costume.
-- [x] **`latest_keys` — the O(1) index the read path resolves against.**
+- [x] **`latest_key` — the O(1) index the read path resolves against.**
 
       - **Table shape, and a decision it needs:** `message_log` went
         per-topic-table in 8b because its row count scales with every
-        message ever published. `latest_keys` scales with DISTINCT
+        message ever published. `latest_key` scales with DISTINCT
         `compaction_key` count instead — usually orders of magnitude
         smaller — so the better default is a single SHARED table with a
-        `topic_id` column, matching `cursors`/`deliveries`/`leases`/
-        `bindings`'s post-8b shape, not `message_log`'s per-topic-table one:
+        `topic_id` column, matching `cursor`/`deliveries`/`lease`/
+        `binding`'s post-8b shape, not `message_log`'s per-topic-table one:
         ```sql
-        CREATE TABLE latest_keys (
+        CREATE TABLE latest_key (
             topic_id       BIGINT NOT NULL,
             compaction_key TEXT   NOT NULL,
             latest_id      BIGINT NOT NULL,
@@ -1761,11 +1761,11 @@ matter, not a patch bolted on after a scaling surprise.
         `NULLIF` convention — zero write-amplification for unkeyed traffic,
         the common case):
         ```sql
-        INSERT INTO latest_keys (topic_id, compaction_key, latest_id)
+        INSERT INTO latest_key (topic_id, compaction_key, latest_id)
         VALUES ($1, $2, $3)
         ON CONFLICT (topic_id, compaction_key) DO UPDATE
         SET latest_id = EXCLUDED.latest_id
-        WHERE latest_keys.latest_id < EXCLUDED.latest_id;
+        WHERE latest_key.latest_id < EXCLUDED.latest_id;
         ```
         The `WHERE latest_id < EXCLUDED.latest_id` guard is load-bearing:
         `BIGSERIAL` allocates an id at `INSERT` time, not commit time, so
@@ -1775,26 +1775,26 @@ matter, not a patch bolted on after a scaling surprise.
         transaction's UPSERT lands first — same discipline as this phase's
         crash/reclaim reasoning: don't trust arrival order, trust the id.
         Same-transaction atomicity also means there's never a window where
-        `message_log` has a row `latest_keys` doesn't know about yet — no
+        `message_log` has a row `latest_key` doesn't know about yet — no
         eventual-consistency gap the read path has to account for.
       - **Read path.** `readMessages` and `FanOut` swap the unbounded `NOT
         EXISTS` scan for a direct lookup:
         ```sql
         m.compaction_key IS NULL
-        OR m.id = (SELECT latest_id FROM latest_keys
+        OR m.id = (SELECT latest_id FROM latest_key
                    WHERE topic_id = $N AND compaction_key = m.compaction_key)
         ```
         O(1) instead of O(partitions since the row) — the whole point.
-        `latest_keys` is authoritative for every keyed row from the moment
+        `latest_key` is authoritative for every keyed row from the moment
         the write path lands: no backfill, no fallback path for a key with
-        no `latest_keys` row. This project has no compatibility requirement
+        no `latest_key` row. This project has no compatibility requirement
         to conserve — there is no live deployment with compacted-topic
         history predating this table, so a migration mechanism for one
         would be designing for a user that doesn't exist. The old unbounded
         `NOT EXISTS` predicate is deleted outright once this lookup lands.
       - **Known tradeoff, not a blocker — now measured, not just reasoned
         about.** The `ON CONFLICT DO UPDATE` takes a row lock, so publishes
-        to the SAME hot key now serialize on that key's `latest_keys` row
+        to the SAME hot key now serialize on that key's `latest_key` row
         (they didn't before — plain `message_log` appends never contended).
         `latestkeyswritelab` (`just latest-keys-write-lab`) quantifies it:
         sequential, uncontended publishes showed no measurable fixed cost
@@ -1803,7 +1803,7 @@ matter, not a patch bolted on after a scaling surprise.
         concurrent goroutines each publishing to their OWN key vs. all 50
         hammering ONE key showed the real cost: 2.5-2.9x slower under full
         serialization, reproduced across repeated runs. A follow-on burst
-        of ~1,000 same-key updates left ~500 dead tuples on `latest_keys`,
+        of ~1,000 same-key updates left ~500 dead tuples on `latest_key`,
         pending autovacuum — real but bounded bloat, not unbounded growth,
         since the table only ever holds one row per (topic, key) regardless
         of how many times that key is republished. A non-issue for
@@ -1827,7 +1827,7 @@ matter, not a patch bolted on after a scaling surprise.
       `compaction_key`? Both functions judge purely by age
       (`partitionExpired`'s partition-level `created_at` check,
       `sweepBatch`'s per-row `created_at < cutoff` check) with zero
-      awareness of `compaction_key`/`latest_keys` today.
+      awareness of `compaction_key`/`latest_key` today.
 
       The resolution follows from the mental model anyone combining
       `RetentionTTL` with compaction on the same topic already has:
@@ -1857,27 +1857,27 @@ matter, not a patch bolted on after a scaling surprise.
       `compaction_key`, which is the actually-surprising behavior, not the
       thing to guard against.
 
-      **What DOES need handling: `latest_keys` cleanup, not prevention.**
-      When a key expires this way, its `latest_keys` row becomes a
+      **What DOES need handling: `latest_key` cleanup, not prevention.**
+      When a key expires this way, its `latest_key` row becomes a
       permanent ghost — pointing at an `id` that no longer exists, with
       nothing left to ever supersede it. Both janitor paths already have
       the exact precedent for this (each already cleans up orphaned
       `deliveries` rows in the same transaction as its own delete) — extend
-      the same pattern to `latest_keys`:
+      the same pattern to `latest_key`:
       - `dropPartition` (range-based, matching its existing `deliveries`
-        cleanup's shape): `DELETE FROM latest_keys WHERE topic_id = $1 AND
+        cleanup's shape): `DELETE FROM latest_key WHERE topic_id = $1 AND
         latest_id >= $2 AND latest_id < $3` (the partition's `[low, high)`).
       - `sweepBatch` (exact-id-based, matching its existing `deliveries`
-        cleanup's shape): `DELETE FROM latest_keys WHERE topic_id = $1 AND
+        cleanup's shape): `DELETE FROM latest_key WHERE topic_id = $1 AND
         latest_id = ANY($2)` — reusing the same `ids` slice already
         collected via `sweepBatch`'s own `RETURNING id`.
 
       Both are safe and precise without any extra correctness check:
-      `latest_keys.latest_id` only ever equals a key's CURRENT latest id
+      `latest_key.latest_id` only ever equals a key's CURRENT latest id
       (by construction of the write-path UPSERT's guard), so these deletes
       only ever match when the row being reaped genuinely was that key's
       last surviving version — a superseded row's id was never pointed to
-      by `latest_keys` in the first place, so sweeping/dropping it can
+      by `latest_key` in the first place, so sweeping/dropping it can
       never accidentally orphan a still-live key. An earlier idea to
       instead *alert* on this (tying into the "default alerts" TODO
       concept) was considered and dropped — alerting on retention doing
@@ -1924,7 +1924,7 @@ matter, not a patch bolted on after a scaling surprise.
       drop granularity; this phase's ground-truth scan wants few large ones
       for cheap resolution — confirmed as a real, measured tension, not a
       guess, with a coarser `PartitionSize` as the direct lever for the
-      current-snapshot case (`latest_keys` is the lever for the lifetime
+      current-snapshot case (`latest_key` is the lever for the lifetime
       case, since it removes the scan — and the tension with it — entirely).
 - [x] **Does the planner actually optimize the lookup?** Verified: no `Merge
       Append` (there's no ordering requirement for an existence check, so
@@ -1935,9 +1935,9 @@ matter, not a patch bolted on after a scaling surprise.
       match (proven via `(never executed)` tags on the skipped children in
       `EXPLAIN ANALYZE`'s output). Proving a negative gets no such benefit:
       with nothing to match, every unprunable partition genuinely executes.
-- [x] **`latest_keys` correctness under concurrent same-key races.**
+- [x] **`latest_key` correctness under concurrent same-key races.**
       `latestkeysracelab` (`just latest-keys-race-lab`) fired 50 goroutines
-      publishing to the SAME `compaction_key` at once; `latest_keys`
+      publishing to the SAME `compaction_key` at once; `latest_key`
       converged to the true `MAX(id)` afterward, proving the `WHERE
       latest_id < EXCLUDED.latest_id` guard live, not just read off the
       SQL. Same lab re-ran `compactionscalelab`'s exact checkpoints (10 →
@@ -1946,13 +1946,13 @@ matter, not a patch bolted on after a scaling surprise.
       (~0.015-0.023ms) at every checkpoint, where the old `NOT EXISTS` scan
       grew linearly with history size — because the new lookup never scans
       message_log's history at all, it's a single PK lookup on
-      `latest_keys` plus the row's own id.
+      `latest_key` plus the row's own id.
 - [x] **Retention expiring a compacted key's last surviving row.**
       `latestkeysretentionlab` (`just latest-keys-retention-lab`) covers
       both janitor paths: `dropPartition` rolling a dormant key's sole
       partition out of active use, and `sweepBatch` reaping an
       individually-expired row from a partition that never rolls. Both
-      confirm the row AND its `latest_keys` entry are gone afterward (no
+      confirm the row AND its `latest_key` entry are gone afterward (no
       ghost row) while a key touched inside the TTL window survives —
       `sweepBatch`'s case specifically re-touches and re-sweeps 3 times to
       confirm it isn't a first-pass fluke.
@@ -1991,10 +1991,10 @@ history -- it just doesn't buy the index anything, since the index sidesteps the
 
 **Done when:** a claim over keyed traffic returns exactly one row per key
 (proven live, not assumed), unkeyed traffic shows zero added query cost via
-`EXPLAIN`, the tombstone convention is decided and documented, `latest_keys`
+`EXPLAIN`, the tombstone convention is decided and documented, `latest_key`
 lands and the read path resolves against it in O(1) regardless of partition
 count, retention (8a) correctly expires a genuinely-dormant compacted key
-with no `latest_keys` ghost rows left behind, NOTES.md, `git tag phase-8c`.
+with no `latest_key` ghost rows left behind, NOTES.md, `git tag phase-8c`.
 
 **Real systems:** Kafka compacted topics (same goal, different mechanism —
 Kafka's own compaction is still background/segment-based, not read-time
@@ -2039,18 +2039,18 @@ phase is `pkg/consumer`-specific.
       `ProducerFunc` takes one, `ProduceOptions.IdempotencyKey` lets a caller
       supply their own (cross-restart protection) or leave it unset (a fresh
       `uuid.NewV7()` per call, same-call-only protection) — claimed against a
-      new `idempotency_keys` table (`ON CONFLICT DO NOTHING`, checked *before*
+      new `idempotency_key` table (`ON CONFLICT DO NOTHING`, checked *before*
       the `message_log` insert) the same way Kafka's idempotent producer uses
       a broker-assigned PID + monotonic per-partition sequence number to let
       the broker silently no-op a duplicate resend. Can't be a unique
       constraint on `message_log` itself (Postgres requires a partitioned
       table's unique constraints to include the partition key) — same reason
-      `latest_keys` exists as its own table for compaction. Swept by the
+      `latest_key` exists as its own table for compaction. Swept by the
       janitor on `Topic.IdempotencyKeyTTL` (DB-persisted, defaults to 24h,
       *not* "0 = keep forever" like `RetentionTTL` — an unbounded
-      `idempotency_keys` table is a bug, not a policy anyone should opt into).
+      `idempotency_key` table is a bug, not a policy anyone should opt into).
 
-      Unlike `latest_keys` (opt-in per keyed message), the claim gate was
+      Unlike `latest_key` (opt-in per keyed message), the claim gate was
       paid on *every* publish — measured (`idempotency-keys-growth-lab`) at
       20-36%+ extra disk vs. `message_log` itself, and (a throwaway
       benchmark, not a lab) 15-30% lower sustained throughput and 56-70%
@@ -2076,7 +2076,7 @@ phase is `pkg/consumer`-specific.
       on caller context. Only `Commit()` is genuinely ambiguous (every
       earlier statement fails inside an uncommitted, atomically-rolled-back
       transaction, so retrying those is always safe); retrying an ambiguous
-      `Commit()` is only safe when `idempotency_keys` can catch the
+      `Commit()` is only safe when `idempotency_key` can catch the
       duplicate. First cut: `producerDatastore` took the base `retry.Retry`
       instead of `DatastoreRetry` and classified every error by hand
       (`classifyTransient` pre-`Commit`, `classifyCommit(err,
@@ -2087,7 +2087,7 @@ phase is `pkg/consumer`-specific.
 
       That assumption turned out wrong: reviewing the graceful-shutdown work
       below surfaced that `consumer`'s `commit`/`partialCommit` have the exact
-      same ambiguous-`Commit` shape, just without an `idempotency_keys`-style
+      same ambiguous-`Commit` shape, just without an `idempotency_key`-style
       guard to make a retry safe — a retried `Commit` that already landed
       re-`INSERT`s the same parked `deliveries` row and hits its `PRIMARY KEY`
       (a real, uncaught error, not the survivable false `ErrLeaseLost` its own
@@ -2114,7 +2114,7 @@ phase is `pkg/consumer`-specific.
       again and reaches `parkSql` a second time. That's the one branch that
       actually needs the `hasParkedRows` check (never retry when there's
       something to park, since `deliveries` has no `ON CONFLICT DO NOTHING`
-      the way `idempotency_keys` does). Considered and declined: adding `ON
+      the way `idempotency_key` does). Considered and declined: adding `ON
       CONFLICT DO NOTHING` to `partialCommit`'s `parkSql` insert instead,
       which would let it drop the guard entirely — safe today (ranges never
       overlap, so the only way to hit that `PRIMARY KEY` is a retry of this
@@ -2139,8 +2139,8 @@ phase is `pkg/consumer`-specific.
       "Update its low bound" wasn't an existing capability — `Commit` frees a
       lease atomically with no partial/narrowing mode — so a new datastore
       method, `PartialCommit`, does the actual work: same `deliveries`-parking
-      shape as `commit`, but instead of `DELETE FROM leases`, an `UPDATE
-      leases SET low = $lastProcessed` narrows the *same* lease (same token,
+      shape as `commit`, but instead of `DELETE FROM lease`, an `UPDATE
+      lease SET low = $lastProcessed` narrows the *same* lease (same token,
       `until`, `reclaims`) rather than freeing it. The untouched suffix
       `(lastProcessed, high]` stays leased under that worker's now-dead token
       until it naturally expires and reclaims normally — no new expiry
@@ -2273,15 +2273,15 @@ phase is `pkg/consumer`-specific.
       double-publishes under a repeated key (the honest cost, not hidden),
       while a protected call right after in the same topic is unaffected.
 - [x] `just idempotency-keys-growth-lab` — the storage/throughput axis, not
-      mechanism correctness: `idempotency_keys` size vs. `message_log` size
+      mechanism correctness: `idempotency_key` size vs. `message_log` size
       at increasing checkpoints with no sweep running (the 20-36%+ overhead
       number above), and a sustained-load scenario running the real janitor
       sweep cadence concurrently, confirming steady-state size stays bounded
       near Little's Law's `rate * ttl` instead of growing toward the full
       published count, and drains to zero once ttl passes.
 - [x] `just delete-topic-lab` — not a Phase 9 mechanism, but this phase's own
-      `idempotency_keys` was the last of six tables `DeleteTopic` needed to
-      cascade-clean (cursors/leases/deliveries/bindings/latest_keys joined
+      `idempotency_key` was the last of six tables `DeleteTopic` needed to
+      cascade-clean (cursor/lease/deliveries/binding/latest_key joined
       it). Seeds one row in all six via the real datastore methods,
       deliberately leaving a lease OPEN and a deliveries row unclaimed (the
       messiest mid-flight state, not the already-resolved case), and
@@ -2389,7 +2389,7 @@ compare against — you're building past what the reference bothered with.
       question originally flagged), `ready`/`inflight`/`dead` exception
       counts (retry depth and DLQ size), oldest-unacked age, and open-lease
       count. These numbers are DB-truth, not in-process state — multiple
-      consumer processes share one `cursors`/`deliveries` state, so nothing
+      consumer processes share one `cursor`/`deliveries` state, so nothing
       short of a live query can answer "what's true right now." This is the
       direct generalization of the `just lag` Justfile recipe, which already
       does this ad hoc for one topic. Everything below is built on top of
@@ -2428,7 +2428,7 @@ compare against — you're building past what the reference bothered with.
       of waiting for the next tick. Record the latency-vs-overhead tradeoff you
       measured, not just the decision. This isn't only an observability nicety:
       `committed` is exactly what 8a's `cursorFloor` reads (`MIN(committed)
-      FROM cursors`) to decide whether a partition is safe to drop — a
+      FROM cursor`) to decide whether a partition is safe to drop — a
       synchronous rollup makes retention itself more responsive, a concrete,
       already-shipped stake beyond "the debug numbers look fresher."
 
@@ -2449,10 +2449,10 @@ compare against — you're building past what the reference bothered with.
       not the 150ms-poll numbers above (150ms was chosen only to keep the lab
       fast; the mechanism under test doesn't depend on the specific interval).
       The synchronous option collapses that to ~2ms, but `Commit` today
-      touches only `leases` (DELETE by token) and `deliveries` (INSERT) — it
-      never touches `cursors`, so concurrent workers holding separate leases
+      touches only `lease` (DELETE by token) and `deliveries` (INSERT) — it
+      never touches `cursor`, so concurrent workers holding separate leases
       on the same `(group, topic)` commit in full parallel right now. A
-      synchronous `AdvanceWaterline` adds an `UPDATE cursors` to that path,
+      synchronous `AdvanceWaterline` adds an `UPDATE cursor` to that path,
       which *is* new lock contention on a row every concurrent committer in
       the group shares — measured at 1.3x–1.9x slower with 20 concurrent
       committers, a cost that doesn't exist at all in the current design.
@@ -2538,8 +2538,8 @@ This lag causes partition drop and deliveries sweep to have a few seconds of lag
 movement does not slow or degrage throughput.
 for synchronous - it is mostly the opposite. Partition drops and delivery sweeps happen nearly right after committed changes (no lag) which better shows exactly where
 committed is. but it is at the cost of an extra query on the claim release hot path which slows down throughput. Specifically this isn't just an extra query's fixed cost --
-`Commit` today never touches `cursors` at all (only `leases`/`deliveries`), so concurrent committers in the same group commit fully in parallel right now. A synchronous
-rollup adds an `UPDATE cursors` that those same committers now serialize on, which is why the 20-worker case measured 1.3x-1.9x slower, not just the flat +30-50% fixed-cost hit.
+`Commit` today never touches `cursor` at all (only `lease`/`deliveries`), so concurrent committers in the same group commit fully in parallel right now. A synchronous
+rollup adds an `UPDATE cursor` that those same committers now serialize on, which is why the 20-worker case measured 1.3x-1.9x slower, not just the flat +30-50% fixed-cost hit.
 2. Why does a live debug readout of claimed/committed/exception-count matter
    even though the underlying data was always queryable in Postgres directly?
 Answer: its a better developer experience, they don't have to know the underlying typology they just call a method
@@ -2729,14 +2729,14 @@ only if a single group's frontier is provably contended. Originally the fourth
 movement of Phase 6.5; kept labeled `6.5d` rather than folded into the main
 numbered sequence, since it's still conceptually part of that refactor.*
 
-**Concept:** a single group's frontier is one `cursors` row, so many concurrent
+**Concept:** a single group's frontier is one `cursor` row, so many concurrent
 workers contend on it. Give the group **K lanes**, each owning a **frozen,
 contiguous block** of the log, and let them drain independently. Keep K=1 until a
 group is *provably* frontier-bound — don't shard speculatively. This is the
 optional capstone; skip it unless you want to feel the contention and lift it.
 
 **Build:**
-- [ ] **Freeze K contiguous blocks.** From a frozen head H, seed K `cursors` rows,
+- [ ] **Freeze K contiguous blocks.** From a frozen head H, seed K `cursor` rows,
       lane `s` owning block `(H·s/k, H·(s+1)/k]` via `block_hi`. The claim caps at
       the lane's `block_hi` instead of `head`:
       `LEAST(claimed + $batch, COALESCE(block_hi, head))`. Frozen + contiguous ⇒
@@ -2790,7 +2790,7 @@ containment instead of a regex.
 
 **Build:**
 - [ ] Add `headers jsonb not null default '{}'` to `message_log`.
-- [ ] `bindings` needs a way to carry a header-match alongside the existing
+- [ ] `binding` needs a way to carry a header-match alongside the existing
       `pattern` column — reintroduce a discriminator (a `kind` column or
       similar) once there are two matcher shapes to choose between; Phase 7
       dropped it because with only one shape it had nothing to discriminate.

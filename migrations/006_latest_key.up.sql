@@ -3,7 +3,7 @@
 -- never a background job. Shared across topics (not per-topic like
 -- message_log) since it scales with DISTINCT compaction_key count, not
 -- total message volume.
-CREATE TABLE IF NOT EXISTS latest_keys (
+CREATE TABLE IF NOT EXISTS latest_key (
   topic_id       BIGINT NOT NULL, -- PK
   compaction_key TEXT   NOT NULL, -- PK
   latest_id      BIGINT NOT NULL, -- highest message_log id seen for this key so far

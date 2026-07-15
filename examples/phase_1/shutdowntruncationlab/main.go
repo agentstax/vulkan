@@ -176,12 +176,12 @@ type leaseBounds struct{ low, high int64 }
 
 func onlyLease(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) leaseBounds {
 	var lb leaseBounds
-	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM leases WHERE consumer_group=$1 AND topic_id=$2`, group, topicID).Scan(&lb.low, &lb.high))
+	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID).Scan(&lb.low, &lb.high))
 	return lb
 }
 
 func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM leases WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
 	return scalar(ctx, ds, `SELECT count(*) FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)

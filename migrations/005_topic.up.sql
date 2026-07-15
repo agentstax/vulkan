@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS topics (
+CREATE TABLE IF NOT EXISTS topic (
   id BIGSERIAL PRIMARY KEY, -- corresponding id for table interpolation ie message_log_<id>
   name TEXT UNIQUE NOT NULL, -- user defined and displayed name
   partition_size BIGINT NOT NULL, -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed

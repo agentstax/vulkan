@@ -52,7 +52,7 @@ type ProduceOptions struct {
 	// SkipIdempotency - opts this one call out of the idempotency claim gate entirely.
 	// Default: false (protected; IdempotencyKey is honored).
 	//
-	// No idempotency_keys row is written. An ambiguous commit failure is never
+	// No idempotency_key row is written. An ambiguous commit failure is never
 	// retried internally -- it surfaces as an error, leaving the caller to
 	// choose: retry (risk a duplicate) or don't (risk a lost message).
 	// Ex: true for high-volume telemetry published into an otherwise-protected topic.

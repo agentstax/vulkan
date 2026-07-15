@@ -1,6 +1,6 @@
 package main
 
-// latest_keys correctness lab: concurrent-write convergence, plus the O(1)
+// latest_key correctness lab: concurrent-write convergence, plus the O(1)
 // counterpart to compactionscalelab's linear growth curve.
 //
 // Part 1 -- concurrent same-key race. Every other lab in this phase only
@@ -9,15 +9,15 @@ package main
 // It's load-bearing because BIGSERIAL allocates an id at INSERT time, not
 // commit time, so concurrent publishes to the SAME key can commit out of id
 // order under READ COMMITTED. N goroutines publish to the same key at once;
-// latest_keys must converge to the TRUE max id afterward regardless of which
+// latest_key must converge to the TRUE max id afterward regardless of which
 // transaction's UPSERT happened to commit last.
 //
 // Part 2 -- the O(1) rerun. compactionscalelab proved the old NOT EXISTS
 // scan grows linearly with a topic's history (no early termination for a
 // never-superseded key). Same checkpoints, same never-superseded row, but
-// EXPLAIN ANALYZEs the NEW latest_keys lookup instead: touched partitions
+// EXPLAIN ANALYZEs the NEW latest_key lookup instead: touched partitions
 // must stay flat at every checkpoint, because the lookup no longer scans
-// message_log at all -- it's a single PK lookup on latest_keys plus the
+// message_log at all -- it's a single PK lookup on latest_key plus the
 // row's own id.
 
 import (
@@ -60,7 +60,7 @@ func main() {
 }
 
 // concurrentRaceScenario: N goroutines publish to the SAME key at once --
-// latest_keys must land on the true max id, not whichever transaction
+// latest_key must land on the true max id, not whichever transaction
 // happened to commit last in wall-clock time.
 func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("concurrent same-key publishes converge to the true max id")
@@ -87,15 +87,15 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 	var trueMax, latestKeysValue int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT MAX(id) FROM message_log_%d WHERE compaction_key='hot-key';`, tp.Id)).Scan(&trueMax))
-	must(ds.Pool.QueryRow(ctx, `SELECT latest_id FROM latest_keys WHERE topic_id=$1 AND compaction_key='hot-key';`, tp.Id).Scan(&latestKeysValue))
+	must(ds.Pool.QueryRow(ctx, `SELECT latest_id FROM latest_key WHERE topic_id=$1 AND compaction_key='hot-key';`, tp.Id).Scan(&latestKeysValue))
 
-	assertInt64(fmt.Sprintf("latest_keys converged to the true max id across %d concurrent publishes", n), latestKeysValue, trueMax)
+	assertInt64(fmt.Sprintf("latest_key converged to the true max id across %d concurrent publishes", n), latestKeysValue, trueMax)
 }
 
 // scaleCurveScenario: identical seeding shape to compactionscalelab, but
 // EXPLAINs the NEW lookup instead of the old scan at each checkpoint.
 func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("O(1) rerun: the same never-superseded row, re-measured against latest_keys as history grows")
+	step("O(1) rerun: the same never-superseded row, re-measured against latest_key as history grows")
 
 	topicName := fmt.Sprintf("phase8c.latestkeysracelab.scale.%d", time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: scalePartitionSize})
@@ -129,7 +129,7 @@ func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	}
 	fmt.Println("  -> unlike compactionscalelab's old NOT EXISTS scan (touched grew with history size,")
 	fmt.Println("     no early termination possible), this lookup never scans message_log's history at")
-	fmt.Println("     all -- it's a single PK lookup on latest_keys plus the row's own id, flat by")
+	fmt.Println("     all -- it's a single PK lookup on latest_key plus the row's own id, flat by")
 	fmt.Println("     construction regardless of how much history piles up behind it")
 }
 
@@ -137,11 +137,11 @@ func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 // insertStaleRow bypasses the write path (like compactionscalelab's bulk
 // seeding, this cares about query cost at scale, not seeding realism) so
-// its own latest_keys row is set directly alongside it.
+// its own latest_key row is set directly alongside it.
 func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) {
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicID))
 	must(err)
-	_, err = ds.Pool.Exec(ctx, `INSERT INTO latest_keys (topic_id, compaction_key, latest_id) VALUES ($1, 'stale', 1);`, topicID)
+	_, err = ds.Pool.Exec(ctx, `INSERT INTO latest_key (topic_id, compaction_key, latest_id) VALUES ($1, 'stale', 1);`, topicID)
 	must(err)
 }
 
@@ -163,7 +163,7 @@ func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 }
 
 // bulkInsertFiller adds `count` unkeyed rows in one set-based INSERT --
-// unkeyed traffic never touches latest_keys, so it's free filler for
+// unkeyed traffic never touches latest_key, so it's free filler for
 // growing the topic's row count/tail position without affecting what's
 // being measured.
 func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, count int64) {
@@ -188,7 +188,7 @@ func explainLatestKeyLookup(ctx context.Context, ds *coredatastore.PostgresDatas
 		WHERE m.id = 1
 			AND (
 				m.compaction_key IS NULL
-				OR m.id = (SELECT latest_id FROM latest_keys
+				OR m.id = (SELECT latest_id FROM latest_key
 					WHERE topic_id = %d AND compaction_key = m.compaction_key)
 			);
 	`, logTable, topicID)

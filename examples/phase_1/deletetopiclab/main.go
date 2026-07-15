@@ -1,9 +1,9 @@
 package main
 
 // DeleteTopic cascade lab: confirms Destroy doesn't just drop message_log and
-// the topics row -- it also has to clean up every other table scoped by
-// topic_id (cursors, leases, deliveries, bindings, latest_keys,
-// idempotency_keys), or those rows are permanently orphaned (nothing else
+// the topic row -- it also has to clean up every other table scoped by
+// topic_id (cursor, lease, deliveries, binding, latest_key,
+// idempotency_key), or those rows are permanently orphaned (nothing else
 // ever deletes them by topic_id alone).
 //
 // Seeds one row in each of the six tables via the real datastore methods,
@@ -28,7 +28,7 @@ import (
 
 const group = "phase9.deletetopiclab.group"
 
-var scopedTables = []string{"cursors", "leases", "deliveries", "bindings", "latest_keys", "idempotency_keys"}
+var scopedTables = []string{"cursor", "lease", "deliveries", "binding", "latest_key", "idempotency_key"}
 
 func main() {
 	ctx := context.Background()
@@ -55,8 +55,8 @@ func main() {
 	fn := func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
-	// CompactionKey seeds latest_keys; the default (protected) idempotency
-	// claim seeds idempotency_keys -- one Produce call, two tables.
+	// CompactionKey seeds latest_key; the default (protected) idempotency
+	// claim seeds idempotency_key -- one Produce call, two tables.
 	_, err = wp.Produce(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
@@ -83,7 +83,7 @@ func main() {
 	assertLogTableExists(ctx, ds, tp.Id, false)
 
 	fmt.Println("\n✅ DELETE TOPIC CASCADE LAB PASSED")
-	fmt.Println("   cursors/leases/deliveries/bindings/latest_keys/idempotency_keys are all")
+	fmt.Println("   cursor/lease/deliveries/binding/latest_key/idempotency_key are all")
 	fmt.Println("   cleaned up on Destroy, including a still-open lease and an unclaimed")
 	fmt.Println("   deliveries row -- not just the conveniently-already-resolved case.")
 }

@@ -155,16 +155,16 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd bindable
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
 	for _, g := range groups {
 		for _, q := range []string{
-			`DELETE FROM leases WHERE consumer_group=$1 AND topic_id=$2`,
+			`DELETE FROM lease WHERE consumer_group=$1 AND topic_id=$2`,
 			`DELETE FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`,
-			`DELETE FROM cursors WHERE consumer_group=$1 AND topic_id=$2`,
+			`DELETE FROM cursor WHERE consumer_group=$1 AND topic_id=$2`,
 		} {
 			_, err := ds.Pool.Exec(ctx, q, g, topicID)
 			must(err)
 		}
 		must(cd.ClearBindings(ctx, topicID, g))
 		must(cd.UpsertCursor(ctx, topicID, g))
-		_, err := ds.Pool.Exec(ctx, `UPDATE cursors SET claimed=$3, committed=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
+		_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
 		must(err)
 	}
 	return head

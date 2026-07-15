@@ -49,7 +49,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns
-		FROM topics
+		FROM topic
 		WHERE name = $1;
 	`
 
@@ -95,7 +95,7 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topics (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns)
+		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id;
@@ -175,12 +175,12 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `DELETE FROM topics WHERE id = $1;`, topic.Id); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM topic WHERE id = $1;`, topic.Id); err != nil {
 		return err
 	}
 
 	// every other table scoped by topic_id
-	for _, table := range []string{"cursors", "deliveries", "leases", "bindings", "latest_keys", "idempotency_keys"} {
+	for _, table := range []string{"cursor", "deliveries", "lease", "binding", "latest_key", "idempotency_key"} {
 		deleteSql := fmt.Sprintf(`DELETE FROM %s WHERE topic_id = $1;`, table)
 		if _, err := tx.Exec(ctx, deleteSql, topic.Id); err != nil {
 			return err

@@ -1,6 +1,6 @@
 package main
 
-// idempotency_keys growth lab: quantifies the sustained-throughput/storage
+// idempotency_key growth lab: quantifies the sustained-throughput/storage
 // axis of the claim-gate tradeoff -- distinct from a per-call fixed-cost/
 // round-trip measurement (that's a separate question), this asks: does the
 // claim gate's steady-state size become a real production concern, and can
@@ -8,7 +8,7 @@ package main
 //
 // Two scenarios:
 //   - Accumulation & relative overhead: publish with no sweep running,
-//     snapshot idempotency_keys' size (delta against a pre-scenario
+//     snapshot idempotency_key' size (delta against a pre-scenario
 //     baseline, since it's a table shared across every topic) against this
 //     topic's own message_log size at the same checkpoints -- puts "how
 //     much extra storage" in concrete, relative terms instead of raw bytes.
@@ -54,16 +54,16 @@ func main() {
 	accumulationScenario(ctx, ds)
 	sweepKeepUpScenario(ctx, ds)
 
-	fmt.Println("\n✅ IDEMPOTENCY KEYS GROWTH LAB -- numbers gathered, see the idempotency_keys")
+	fmt.Println("\n✅ IDEMPOTENCY KEYS GROWTH LAB -- numbers gathered, see the idempotency_key")
 	fmt.Println("   tradeoff discussion for what they mean and whether they change anything.")
 }
 
 // accumulationScenario: publish with the janitor never running, snapshot
-// idempotency_keys' size against message_log's own size at the same
+// idempotency_key' size against message_log's own size at the same
 // checkpoints -- isolates "how much extra storage does the claim gate cost"
 // from the separate question (next scenario) of whether the sweep keeps up.
 func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("accumulation: idempotency_keys size vs. message_log size, no sweep running")
+	step("accumulation: idempotency_key size vs. message_log size, no sweep running")
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
@@ -73,10 +73,10 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
 	wp := producer.NewWorkProducer(tp, pd)
 
-	// idempotency_keys is shared across every topic (unlike message_log) --
+	// idempotency_key is shared across every topic (unlike message_log) --
 	// baseline it before publishing so cruft from other topics/labs in this
 	// dev db doesn't leak into the delta being measured.
-	baseline := tableByteSize(ctx, ds, "idempotency_keys")
+	baseline := tableByteSize(ctx, ds, "idempotency_key")
 
 	checkpoints := []int{500, 2000, 5000}
 	published := 0
@@ -84,13 +84,13 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 		publishConcurrent(ctx, wp, target-published, 20)
 		published = target
 
-		idkDelta := tableByteSize(ctx, ds, "idempotency_keys") - baseline
+		idkDelta := tableByteSize(ctx, ds, "idempotency_key") - baseline
 		// message_log_<id> is a partitioned parent with no storage of its own --
 		// its data lives in message_log_<id>_0 (largePartitionSize never rolls).
 		logSize := tableByteSize(ctx, ds, fmt.Sprintf("message_log_%d_0", tp.Id))
-		idkRows := tableRowCountForTopic(ctx, ds, "idempotency_keys", tp.Id)
+		idkRows := tableRowCountForTopic(ctx, ds, "idempotency_key", tp.Id)
 
-		fmt.Printf("  %6d msgs: idempotency_keys=+%-8s (%6d rows)  message_log=%8s  overhead=%.1f%%\n",
+		fmt.Printf("  %6d msgs: idempotency_key=+%-8s (%6d rows)  message_log=%8s  overhead=%.1f%%\n",
 			published, humanBytes(idkDelta), idkRows, humanBytes(logSize), pctOf(idkDelta, logSize))
 	}
 }
@@ -152,7 +152,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 				return
 			case <-ticker.C:
 				must(cd.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
-				if rows := tableRowCountForTopic(ctx, ds, "idempotency_keys", tp.Id); rows > peakRows.Load() {
+				if rows := tableRowCountForTopic(ctx, ds, "idempotency_key", tp.Id); rows > peakRows.Load() {
 					peakRows.Store(rows)
 				}
 			}
@@ -168,7 +168,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	// sweep -- not just the test ending -- is what kept it bounded
 	time.Sleep(ttl + 100*time.Millisecond)
 	must(cd.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
-	finalRows := tableRowCountForTopic(ctx, ds, "idempotency_keys", tp.Id)
+	finalRows := tableRowCountForTopic(ctx, ds, "idempotency_key", tp.Id)
 
 	total := published.Load()
 	peak := peakRows.Load()
@@ -180,11 +180,11 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 
 	fmt.Printf("  published %d messages over %v (%.0f msg/sec)\n", total, duration, rate)
 	fmt.Printf("  Little's Law estimate (rate * ttl): ~%.0f rows steady-state if the sweep keeps pace\n", littlesLawEstimate)
-	fmt.Printf("  peak idempotency_keys rows observed during the run: %d (vs. %d total published)\n", peak, total)
-	fmt.Printf("  final idempotency_keys rows after one more pass past ttl: %d\n", finalRows)
+	fmt.Printf("  peak idempotency_key rows observed during the run: %d (vs. %d total published)\n", peak, total)
+	fmt.Printf("  final idempotency_key rows after one more pass past ttl: %d\n", finalRows)
 
 	if finalRows != 0 {
-		die(fmt.Sprintf("idempotency_keys[topic %d] has %d rows after a full sweep pass past ttl, want 0", tp.Id, finalRows))
+		die(fmt.Sprintf("idempotency_key[topic %d] has %d rows after a full sweep pass past ttl, want 0", tp.Id, finalRows))
 	}
 	// generous slop factor -- poll interval, batch granularity, and goroutine
 	// scheduling jitter all push peak above the exact Little's Law point

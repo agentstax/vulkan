@@ -539,7 +539,7 @@ also archive *relocates* rather than purely vanishing.
 
 **What it does, and the tradeoff:** stop deleting on consume. The data splits in
 two: `message_log` (append-only — `id BIGSERIAL`, `payload`, `created_at`; rows are
-never mutated or deleted) and `cursors` (`consumer_group`, `position`) — one
+never mutated or deleted) and `cursor` (`consumer_group`, `position`) — one
 high-water mark per group. Claiming stops being an `UPDATE` that mutates row state
 and becomes a pure read: `SELECT * FROM message_log WHERE id > position ORDER BY id
 LIMIT N`. After processing, the consumer advances its cursor (`MoveCursor`). The
@@ -570,7 +570,7 @@ with a sparse exception side-table.
 **2. Why does replay cost nothing?**
 
 Reading position is decoupled from the data, and the log is append-only, so any
-position is valid — replay is just `UPDATE cursors SET position = 0` (or to a
+position is valid — replay is just `UPDATE cursor SET position = 0` (or to a
 timestamp's offset) and the consumer re-reads history. Phase 1 could never do this:
 it *deleted* on consume, so there was no history to replay. Replay is free because I
 stopped destroying the thing I'd want to replay.
@@ -638,7 +638,7 @@ it.)
 
 **What it does, and the tradeoff:** many consumers, each with its own cursor over
 the *same* `message_log`, each at its own pace. The schema already supported it —
-`cursors` is keyed by `consumer_group`, so two groups are two rows with two
+`cursor` is keyed by `consumer_group`, so two groups are two rows with two
 independent `position` values. The work was to *formalize* it: a `-group` flag on
 the consumer (`just consume group=…`) so I can run several groups side by side over
 one log. `Register` → `UpsertCursor(group)` lazily creates a group's cursor at
@@ -674,7 +674,7 @@ any consumer — a one-to-one mapping. The instant one worker finishes, the row 
 gone (or `done`) and every other consumer sees it as handled; there's nowhere to
 record that consumer B still hasn't read it. Fan-out needs one-to-many: the log
 holds the facts immutably and each consumer carries its *own* position. That's
-exactly the Phase 4 split — independent `cursors` rows over an append-only log.
+exactly the Phase 4 split — independent `cursor` rows over an append-only log.
 
 **2. Operational risk of a permanently-slow consumer group once retention (Phase 9)
 exists?**
@@ -707,7 +707,7 @@ race, and you have to guarantee retention wins by a margin.
 ### Decisions
 
 - **Naming drift accepted (again).** The plan's Phase 5 talks `events`/`consumers`;
-  I'm still on Phase 4's `message_log`/`cursors`/`position`. Same shapes, different
+  I'm still on Phase 4's `message_log`/`cursor`/`position`. Same shapes, different
   names — noted so a future reader maps the plan's terms to mine.
 - **One consumer per group in this phase — so `MoveCursor` stays non-monotonic
   (`SET position = $1`), and that's still safe.** Correcting my Phase 4 forecast: I
@@ -738,7 +738,7 @@ read frontier) and `committed` (the waterline). One `UPDATE … RETURNING` advan
 `message_log`, process it, and record success by advancing `committed`. **No
 per-message row is written.** Where Phase 6 paid O(N) `deliveries` writes (an INSERT
 + status UPDATEs per message per group), N successes now collapse into advancing two
-integers on one `cursors` row.
+integers on one `cursor` row.
 
 **The aha:** the write amplification didn't move somewhere cheaper — on the happy
 path it *vanished*. The cursor was the happy path all along (it's the Phase 4
@@ -755,7 +755,7 @@ The `committed` waterline carries it: every offset **≤ committed** is in a ter
 state (success-only for now). The amplification didn't relocate — on the happy path
 it's *gone*. Phase 6 wrote O(N) `deliveries` rows; now a successful message writes
 **no row at all**, and N successes collapse into advancing one integer (`committed`)
-on one `cursors` row. O(N) row writes → O(1) integer advance.
+on one `cursor` row. O(N) row writes → O(1) integer advance.
 
 **2. What do `claimed` and `committed` mean, and how do they relate in the
 single-worker, no-failure happy path?**
@@ -774,7 +774,7 @@ in 6.5b (open leases pin it) and 6.5c (unresolved exceptions pin it).
   NULL DEFAULT 0`). `lane`/`block_hi` deliberately deferred to 6.5d.
 - `ClaimMessagesWithCursor`: one txn — `claimed = LEAST(claimed + $batch, MAX(id))`,
   capturing the window via a CTE (`old_values`) joined back in `FROM` so `RETURNING
-  old_values.claimed AS low, cursors.claimed AS high` returns `(low, high]` on PG
+  old_values.claimed AS low, cursor.claimed AS high` returns `(low, high]` on PG
   <18 too (not relying on PG18's built-in `old`/`new`). Empty result (claimed at
   head, or group missing) ⇒ `pgx.ErrNoRows` ⇒ `nil, nil` (caught up). Then `SELECT *
   FROM message_log WHERE id > low AND id <= high ORDER BY id` — **no per-message row
@@ -825,7 +825,7 @@ claims a range and crashes *before* finishing strands `(committed, claimed]`: th
 next claim reads above `claimed` and skips them, and a naive waterline would sail
 right over the gap. 6.5b closes it with a **lease per claimed range** — Phase 2's
 visibility timeout, but over a *range* instead of a row. Claim now INSERTs a
-`leases(token, consumer_group, low, high, until)` row in the **same transaction**
+`lease(token, consumer_group, low, high, until)` row in the **same transaction**
 as the `claimed` advance; a crash leaves an *expired* lease another worker reclaims
 and re-reads. No new `deliveries` rows — crash recovery rides entirely on the lease
 + the two cursor frontiers.
@@ -843,13 +843,13 @@ instead of just refreshing `lease_until`?**
 
 Worker claims `(lo, hi]` (lease inserted, token T) → crashes before `CommitRange` →
 lease just sits there → its `until` passes → on a later poll another worker's
-**Reclaim-before-Claim** scans `leases WHERE until < now()`, grabs it
+**Reclaim-before-Claim** scans `lease WHERE until < now()`, grabs it
 `FOR UPDATE SKIP LOCKED`, and re-reads the exact `(lo, hi]` under a **new** lease
 (new token T′). It reprocesses (at-least-once → processing must be idempotent).
 
 Rotating the token defends against the **zombie**: the original worker can resurrect
 (GC pause, slow syscall) and call `CommitRange`, which is token-guarded
-(`DELETE FROM leases WHERE consumer_group=$1 AND token=$2`). If reclaim had merely
+(`DELETE FROM lease WHERE consumer_group=$1 AND token=$2`). If reclaim had merely
 bumped `until` and kept token T, the zombie's commit would match T and free the
 **live** lease the reclaimer now holds — double-free, and the waterline would
 advance over a range still being processed. With T′, the zombie's `DELETE` hits 0
@@ -866,12 +866,12 @@ terminally resolved.** Let it pass an in-flight range and that promise is a lie:
 the worker then crashes, those offsets were never processed, but everything that
 trusts the waterline (compaction/GC, "caught up", the durability guarantee) already
 counts them done → **silent loss.** (Reclaim itself doesn't depend on where
-`committed` sits — it scans the `leases` table — so the failure is the broken
+`committed` sits — it scans the `lease` table — so the failure is the broken
 *guarantee*, not a broken reclaim.)
 
 ### Done
 
-- Migration `004_leases`: `leases(token UUID DEFAULT gen_random_uuid(),
+- Migration `004_lease`: `lease(token UUID DEFAULT gen_random_uuid(),
   consumer_group, low, high, until)`, PK `(token, consumer_group)`. Lease covers
   `(low, high]`.
 - `ClaimMessages` (shared by fresh + reclaim): INSERTs the lease in the **same tx**
@@ -882,11 +882,11 @@ counts them done → **silent loss.** (Reclaim itself doesn't depend on where
   SKIP LOCKED) RETURNING *`, then re-read the exact range under a fresh lease);
   fall through to `FreshClaimMessagesWithCursor` only when nothing's reclaimable.
   Crashed ranges therefore drain before new frontier work.
-- `CommitRange(group, token)`: token-guarded `DELETE FROM leases` — frees a finished
+- `CommitRange(group, token)`: token-guarded `DELETE FROM lease` — frees a finished
   range, no-ops if the worker was reclaimed. Replaced 6.5a's per-message `MoveCursor`.
 - `AdvanceWaterline`: the **lazy roller** (own goroutine `RollWaterline`, ticks on
   `PollRate`, off the hot path). **Two statements** — `SELECT LEAST((SELECT MIN(low)
-  FROM leases), claimed)` then `UPDATE … SET committed = GREATEST(committed,
+  FROM lease), claimed)` then `UPDATE … SET committed = GREATEST(committed,
   $target)`. See Decisions for why it can't be one statement.
 - `CursorClaim` rewritten: claim a `ClaimedRange`, process the whole range, then
   `CommitRange(token)`; the roller advances `committed` separately. `nil` claim ⇒
@@ -900,13 +900,13 @@ counts them done → **silent loss.** (Reclaim itself doesn't depend on where
 ### Decisions
 
 - **`AdvanceWaterline` must be two statements, not one — the EPQ snapshot trap.** The
-  obvious single `UPDATE cursors SET committed = LEAST((SELECT MIN(low) FROM
-  leases), claimed) … RETURNING` is **buggy under concurrency** and was caught by the
+  obvious single `UPDATE cursor SET committed = LEAST((SELECT MIN(low) FROM
+  lease), claimed) … RETURNING` is **buggy under concurrency** and was caught by the
   real-consumer run (the deterministic lab missed it — it's single-threaded). The
   roller and a claim race: a claim advances `claimed` and inserts its lease in one
-  tx. Under READ COMMITTED the roller's UPDATE blocks on the claim's `cursors` row
+  tx. Under READ COMMITTED the roller's UPDATE blocks on the claim's `cursor` row
   lock; when it proceeds, **EvalPlanQual** re-reads the *target row* (`claimed`) at
-  its newest version but runs the `leases` subquery on the statement's **original**
+  its newest version but runs the `lease` subquery on the statement's **original**
   snapshot — so it sees the new `claimed=10` but **not** the new lease → `LEAST(NULL,
   10) = 10` → `committed` sails past the in-flight range. Fix: read `claimed` + `MIN(low)`
   in **one plain SELECT** (one consistent snapshot, no EPQ), then `UPDATE … GREATEST`
@@ -1006,8 +1006,8 @@ distinguishable once each resolves individually via `ClaimExceptions` +
 
 ### Done
 
-- Schema: `can_run_after` (`deliveries`) + `reclaims` (`leases`) folded directly
-  into the existing `003_deliveries`/`004_leases` migrations — no new migration
+- Schema: `can_run_after` (`deliveries`) + `reclaims` (`lease`) folded directly
+  into the existing `003_deliveries`/`004_lease` migrations — no new migration
   file, per this project's no-migration-compat-concerns-yet stance.
 - `Commit(group, token, []MessageException, []MessageTerminal)`: frees the lease
   token-guarded first (`ErrLeaseLost` + bail if stale), then parks exceptions as
@@ -1084,7 +1084,7 @@ distinguishable once each resolves individually via `ClaimExceptions` +
 ## Phase 7 — Routing
 
 **What it does, and the tradeoff:** producers publish with an attribute
-(`routing_key`) instead of addressing a consumer directly; a `bindings` row
+(`routing_key`) instead of addressing a consumer directly; a `binding` row
 lets a `consumer_group` opt into only the events whose `routing_key` matches a
 `pattern` — a **true wildcard** (`*` matches any run of characters, any
 depth), translated to an anchored POSIX regex. A group with no binding still
@@ -1103,7 +1103,7 @@ many segments, not more"), traded deliberately for simplicity.
 two reads that already existed (`readMessages`, `FanOut`'s `SELECT`). The
 producer never learns a consumer exists — it writes one attribute and walks
 away — and every consume model absorbs that attribute identically through one
-shared predicate string (`bindings.pattern`), not a separate matching engine
+shared predicate string (`binding.pattern`), not a separate matching engine
 per model.
 
 ### Explain it back
@@ -1115,8 +1115,8 @@ exist?**
 At claim/fan-out time: inside `readMessages`'s `WHERE`, evaluated as part of
 the claiming transaction, or inside `FanOut`'s `SELECT`, evaluated whenever
 `FanOut` runs — never at produce time. `AppendMessage` writes `routing_key`
-and never touches `bindings` at all; a consumer evaluates the predicate
-against whatever rows are in `bindings` *right now*, not whatever existed when
+and never touches `binding` at all; a consumer evaluates the predicate
+against whatever rows are in `binding` *right now*, not whatever existed when
 the message was written. Consequence: a binding added after a message already
 exists still applies to it, as long as that message hasn't been claimed
 (CURSOR) or fanned out (LIFECYCLE) yet — verified live in `routinglab`, where
@@ -1144,7 +1144,7 @@ built speculatively.
 
 - `message_log` gets `routing_key TEXT`, folded directly into its original
   `CREATE TABLE` (`migrations/001_messages`) — not a same-table `ALTER TABLE`.
-- New `migrations/005_bindings`: `bindings(consumer_group, pattern, display)`
+- New `migrations/005_binding`: `binding(consumer_group, pattern, display)`
   + an index on `consumer_group`. No `kind`/`header_match` columns — only one
   matcher style exists, nothing to discriminate between.
 - Producer API: `Datastore.AppendMessage`/`WorkProducer.Produce` take a
@@ -1182,7 +1182,7 @@ built speculatively.
 - **A true wildcard, not NATS-style `*`/`>`.** Simpler to build and reason
   about; the depth-precision gap is a documented, deliberate tradeoff
   (`TODO.md`), not a silent loss.
-- **`bindings.kind` dropped entirely**, along with the `CHECK` constraint and
+- **`binding.kind` dropped entirely**, along with the `CHECK` constraint and
   `header_match` column an earlier draft had — with a single matcher style,
   there's nothing left to discriminate between.
 - **`FanOut`'s full-table rescan (no per-group high-water mark) is a known,
@@ -1258,7 +1258,7 @@ running at once.
 consumer group when you turn it off and drop past its `committed`? (Kafka's
 "consumer fell off the retention window," now in your own system.)**
 
-The floor (`MIN(committed)` across `cursors`) protects a lagging group from
+The floor (`MIN(committed)` across `cursor`) protects a lagging group from
 having unprocessed messages deleted out from under it. With it off, nothing
 detects the gap — `FreshClaimMessagesWithCursor` advances `claimed` by pure
 id arithmetic against `MAX(id)` (`claimed = LEAST(claimed + limit, MAX(id))`),
@@ -1319,7 +1319,7 @@ metric going quiet.
   1,000,000-row width makes multi-partition demos impractical at lab scale;
   this permanently discards whatever rows were in `message_log` each time
   either lab runs (schema is restored, data is not — safe because no FK ties
-  `message_log` to `cursors`/`deliveries`/`leases`). `sweeplab` needs no
+  `message_log` to `cursor`/`deliveries`/`lease`). `sweeplab` needs no
   swap, since staying inside one never-rolled partition is exactly the
   condition the sweep exists to cover; it uses `AllowDropPastCommitted=true`
   throughout to stay decoupled from whatever committed state other labs'
@@ -1365,8 +1365,8 @@ diluting how densely a rarely-used key's own writes cluster together. Kafka's
 own fix is that a topic *is* its own log, not a filter over a shared one —
 this phase does the same: each topic gets its own physical table
 (`message_log_<id>`), its own dense id sequence, its own partition set, its
-own janitor. `cursors`/`deliveries`/`bindings` all gained a `topic_id`
-column; `leases` gained the column without a key change, since `token`
+own janitor. `cursor`/`deliveries`/`binding` all gained a `topic_id`
+column; `lease` gained the column without a key change, since `token`
 already disambiguates a lease on its own. The tradeoff, paid deliberately:
 `routing_key`/`bindings` are a *coarser* concept living above topics, not
 folded into them — collapsing the two would force a physical table into
@@ -1391,15 +1391,15 @@ concern into a cross-cutting one. Retention is the clearest case: partition
 drop decides "expired" by the timestamp of `MAX(id)` in a partition, and
 under a shared sequence that max id could belong to any topic. Worse, with
 the drop floor enabled, a single lagging consumer forces every topic to wait
-on it, because `MIN(committed)` across `cursors` was scoped to the whole
+on it, because `MIN(committed)` across `cursor` was scoped to the whole
 datastore, not to the one topic that consumer actually lags on.
 
-**2. Why do `cursors`/`deliveries`/`leases` need a `topic_id` added to their
+**2. Why do `cursor`/`deliveries`/`lease` need a `topic_id` added to their
 keys, when they didn't need one before this phase?**
 
-`leases` technically doesn't need it in its *key* — the lease `token` is
+`lease` technically doesn't need it in its *key* — the lease `token` is
 already a unique random id, so it disambiguates a row on its own. But every
-table needs the *column* to make what it's tracking unambiguous: `cursors`
+table needs the *column* to make what it's tracking unambiguous: `cursor`
 needs to know which `message_log_<id>` sequence a group's `claimed`/
 `committed` actually refer to; `deliveries` needs it because a bare
 `message_id` can point to completely different messages in two different
@@ -1438,7 +1438,7 @@ deliberate, manual escape hatch if that ever becomes a real problem.
 ### Done
 
 - `topic.Config`/`Topic` gained `RetentionTTL`/`AllowDropPastCommitted`,
-  folded into `migrations/005_topics.up.sql` — the two remaining log-shape
+  folded into `migrations/005_topic.up.sql` — the two remaining log-shape
   knobs that belong on the topic (`PartitionSize` already lived there).
 - **Reversed mid-phase, deliberately:** topic identity was first threaded in
   as a `Topic *topic.Topic` field on the consumer/producer datastore structs,
@@ -1452,10 +1452,10 @@ deliberate, manual escape hatch if that ever becomes a real problem.
   one datastore instance correctly serve multiple topics, which the
   field-based design structurally couldn't do. Constructors renamed
   `NewPostgresDatastore` → `NewConsumerDatastore`/`NewProducerDatastore`.
-- `cursors` (PK → `(consumer_group, topic_id)`), `deliveries` (PK →
-  `(consumer_group, topic_id, message_id)`), and `bindings` (`topic_id`
+- `cursor` (PK → `(consumer_group, topic_id)`), `deliveries` (PK →
+  `(consumer_group, topic_id, message_id)`), and `binding` (`topic_id`
   alongside `consumer_group`/`pattern`, index widened) all gained the
-  column, folded into each one's original migration. `leases` gained the
+  column, folded into each one's original migration. `lease` gained the
   column without a key change.
 - Partition naming became two-part, `message_log_<topic_id>_<n>`, via
   package-level `logTable(topicID)`/`partitionTable(topicID, n)` helpers —
@@ -1553,7 +1553,7 @@ what a claim is allowed to return.
 The correlated "is this the latest for its key" scan is the ground-truth
 *definition* of latest, but costs O(partitions since the row) to evaluate
 directly — measured, not assumed, at roughly linear growth with no early
-termination for a never-superseded key. `latest_keys(topic_id,
+termination for a never-superseded key. `latest_key(topic_id,
 compaction_key, latest_id)`, upserted synchronously in the same transaction
 as every keyed write, turns that into an O(1) lookup once built — the actual
 tradeoff this phase landed on: an O(1) read path, paid for with a second
@@ -1619,7 +1619,7 @@ NOT NULL`) instead of covering every row?**
 
 Because `compaction_key` isn't the standard consumer setup, and a full index
 would incur write overhead for no reason. (This index was dropped entirely
-later in this same phase, once `latest_keys` made it a dead consumer — this
+later in this same phase, once `latest_key` made it a dead consumer — this
 answers why it *was* partial, not what exists in the final schema.)
 
 **5. Phase 8b split every topic into its own physical table and its own
@@ -1627,7 +1627,7 @@ dense id sequence. Why does that help *this* phase's compaction lookup
 specifically — what did a shared, system-wide `BIGSERIAL` cost a single
 topic's own key-latest search before 8b existed?**
 
-It doesn't matter for `latest_keys` itself — that lookup is O(1) regardless
+It doesn't matter for `latest_key` itself — that lookup is O(1) regardless
 of partition count or sequence density by construction. It still matters
 for the ground-truth scan underneath it, though: before 8b, proving a
 negative meant scanning across every *other* topic's interleaved traffic
@@ -1642,7 +1642,7 @@ anything, since the index sidesteps the scan entirely.
   are created dynamically per 8b, not via a static migration file. A
   partial index, `(compaction_key, id) WHERE compaction_key IS NOT NULL`,
   was added alongside it to keep the ground-truth scan's per-partition
-  lookup cheap, then dropped later in this same phase once `latest_keys`
+  lookup cheap, then dropped later in this same phase once `latest_key`
   made it a dead consumer (see Decisions).
 - Producer: `ProduceOptions{RoutingKey, CompactionKey string}` struct (not
   positional strings, matching this codebase's existing `*Config`
@@ -1651,35 +1651,35 @@ anything, since the index sidesteps the scan entirely.
 - `readMessages` (CURSOR, shared by `ReclaimWithCursor` and
   `ClaimMessages`/`FreshClaimMessagesWithCursor`) and `FanOut` (LIFECYCLE)
   originally carried the identical unbounded `NOT EXISTS` predicate, later
-  swapped for the `latest_keys` lookup (see Decisions) — the two paths
+  swapped for the `latest_key` lookup (see Decisions) — the two paths
   still carry an identical predicate, just a cheaper one.
 - No schema-level tombstone concept — "how do I delete a key" is answered
   entirely by what the producer puts in `payload` (e.g. an app-defined
   `Deleted bool` field), not by anything this framework provides.
-- **`latest_keys(topic_id, compaction_key, latest_id)`** — new migration
-  `006_latest_keys`, a single table shared across every topic (scales with
-  distinct-key count, not message volume, matching `cursors`/`deliveries`/
-  `bindings`'s post-8b shape rather than `message_log`'s per-topic one).
+- **`latest_key(topic_id, compaction_key, latest_id)`** — new migration
+  `006_latest_key`, a single table shared across every topic (scales with
+  distinct-key count, not message volume, matching `cursor`/`deliveries`/
+  `binding`'s post-8b shape rather than `message_log`'s per-topic one).
   Write path: `appendMessage`'s INSERT gained `RETURNING id`; a keyed
   publish follows it with `INSERT ... ON CONFLICT (topic_id,
   compaction_key) DO UPDATE SET latest_id = EXCLUDED.latest_id WHERE
-  latest_keys.latest_id < EXCLUDED.latest_id` in the same transaction — the
+  latest_key.latest_id < EXCLUDED.latest_id` in the same transaction — the
   guard compares by id *value*, not commit order, since `BIGSERIAL`
   allocates at INSERT time not commit time and concurrent same-key
   publishes can commit out of order under READ COMMITTED. Read path:
   `readMessages`/`FanOut` swapped to `m.compaction_key IS NULL OR m.id =
-  (SELECT latest_id FROM latest_keys WHERE topic_id = $N AND
+  (SELECT latest_id FROM latest_key WHERE topic_id = $N AND
   compaction_key = m.compaction_key)` — O(1) regardless of partition count,
   the old unbounded scan deleted outright, no fallback path.
 - **Retention (8a) janitor cleanup.** `dropPartition`/`sweepBatch` both
-  garbage-collect the now-dangling `latest_keys` row when they reap a
+  garbage-collect the now-dangling `latest_key` row when they reap a
   dormant key's last surviving version, mirroring each function's existing
   `deliveries`-cleanup precedent exactly (range-based delete for
   `dropPartition`, `ANY(ids)`-based for `sweepBatch`). No new gate needed
   in either function itself (see Decisions).
 - **A backfill chunk (`BackfillLatestKeys`) was built, verified live, then
   reverted** — this project has no live deployment with compacted-topic
-  history predating `latest_keys` to migrate, so it was solving a problem
+  history predating `latest_key` to migrate, so it was solving a problem
   that doesn't exist here (see Decisions).
 - Six labs: `compactionlab` (`just compaction-lab`) proves latest-per-key
   survives a claim while older rows stay physically present, a delivered
@@ -1694,7 +1694,7 @@ anything, since the index sidesteps the scan entirely.
   concurrent same-key races and re-runs the scale curve against the NEW
   lookup, flat at every checkpoint. `latestkeysretentionlab` (`just
   latest-keys-retention-lab`) proves both janitor paths correctly expire a
-  dormant key's `latest_keys` row while a key touched inside the TTL
+  dormant key's `latest_key` row while a key touched inside the TTL
   window survives. `latestkeyswritelab` (`just latest-keys-write-lab`)
   quantifies the write-side tradeoff (see What it does above).
 
@@ -1717,7 +1717,7 @@ anything, since the index sidesteps the scan entirely.
   already scans current state each call), so this ended up a better fit for
   it than a bounded version would have been, and makes the two paths'
   predicates exactly identical rather than merely same-shaped.
-- **`latest_keys` was sized before it was built, not assumed necessary.**
+- **`latest_key` was sized before it was built, not assumed necessary.**
   `compactionwidthlab` showed the shape (a never-superseded key's
   negative-proof touches every partition; a just-superseded key's
   positive-proof benefits from runtime partition pruning and early
@@ -1739,25 +1739,25 @@ anything, since the index sidesteps the scan entirely.
   compaction-aware gate to `dropPartition`/`sweepBatch` was considered and
   rejected — it would make `RetentionTTL` mean two different things
   depending on whether a message carries a `compaction_key`. The one real
-  gap was `latest_keys` cleanup (not prevention), handled by extending each
+  gap was `latest_key` cleanup (not prevention), handled by extending each
   janitor function's existing `deliveries`-cleanup pattern.
 - **Backfill built, verified, then reverted — no compatibility requirement
-  to conserve.** A per-topic backfill (`INSERT INTO latest_keys ... SELECT
+  to conserve.** A per-topic backfill (`INSERT INTO latest_key ... SELECT
   ..., MAX(id) ... GROUP BY compaction_key ON CONFLICT DO NOTHING`) was
   implemented and proven correct live (reconstructs history, idempotent,
   never clobbers a live write mid-race) before being reverted outright:
   this project has no live deployment with compacted-topic history
-  predating `latest_keys`, so a migration mechanism for one was designing
+  predating `latest_key`, so a migration mechanism for one was designing
   for a user that doesn't exist. Consequence: the read path's
-  fallback-vs-require-backfill sub-decision became moot — `latest_keys` is
+  fallback-vs-require-backfill sub-decision became moot — `latest_key` is
   authoritative from the moment the write path lands, no fallback, old
   scan deleted outright.
-- **The `compaction_key` partial index was dropped once `latest_keys` made
+- **The `compaction_key` partial index was dropped once `latest_key` made
   it a dead consumer.** Verified via `EXPLAIN` (twice — a keyed row
   present, and a pure-unkeyed range matching `compactionlab`'s own shape)
   that the index doesn't appear in the new predicate's plan at all, not
   even as a rejected candidate, and that the unkeyed-row short-circuit
-  holds identically against `latest_keys` instead. Caught a real staleness
+  holds identically against `latest_key` instead. Caught a real staleness
   bug along the way: `compactionlab`'s own `EXPLAIN` check had silently
   drifted to testing the OLD query after the read-path swap, its comment
   still claiming to test "the exact shape `readMessages` runs" — fixed to
@@ -1790,9 +1790,9 @@ anything, since the index sidesteps the scan entirely.
   above, also motivated a second `TODO.md` entry: a built-in, overridable
   "default alerts" concept for surfacing this kind of silent-until-it-
   happens operational cliff before a user hits it blind. Separately: the
-  pre-existing `DeleteTopic` gap (doesn't clean up `cursors`/`deliveries`/
-  `bindings`/`leases` on topic destroy) was confirmed to apply identically
-  to `latest_keys` — not a new problem, same gap, one more table.
+  pre-existing `DeleteTopic` gap (doesn't clean up `cursor`/`deliveries`/
+  `binding`/`lease` on topic destroy) was confirmed to apply identically
+  to `latest_key` — not a new problem, same gap, one more table.
 
 ## Phase 9 — Consumer fault isolation & recovery
 
@@ -1874,7 +1874,7 @@ is the uniquness identifier for the goroutine and as such should be the key
   `Datastore[Message]` method got a public/private split so retry plumbing
   stays invisible at call sites. Surfaced a correctness gap beyond "just
   retry": a retried `AppendMessage` could double-publish on an
-  ambiguous-commit-ack. Fixed with an `idempotency_keys` claim table
+  ambiguous-commit-ack. Fixed with an `idempotency_key` claim table
   (`ON CONFLICT DO NOTHING`, checked before the `message_log` insert),
   swept on `Topic.IdempotencyKeyTTL` (defaults 24h, no "0 = forever").
   Measured the naive version's cost (20-36%+ extra disk,
@@ -1892,7 +1892,7 @@ is the uniquness identifier for the goroutine and as such should be the key
   checks `ctx.Done()` between messages (not mid-message — that's the hard
   per-message timeout, a separate mechanism below). A new datastore method,
   `PartialCommit`, narrows the interrupted lease's `low` bound (`UPDATE
-  leases SET low = $lastProcessed`) instead of freeing it outright —
+  lease SET low = $lastProcessed`) instead of freeing it outright —
   same-token, same-`until`, so the untouched suffix rides the existing
   crash-recovery reclaim path rather than needing a new expiry mechanism.
   Written through `context.WithTimeout(context.WithoutCancel(ctx),
@@ -1940,7 +1940,7 @@ is the uniquness identifier for the goroutine and as such should be the key
   -keys-growth-lab` (storage/throughput axis — 20-36%+ overhead with no
   sweep running, bounded steady-state size with the real janitor cadence),
   `delete-topic-lab` (`Destroy` cascades all six topic-scoped tables, not
-  just `message_log`/`topics`), `shutdown-truncation-lab` (a mid-range
+  just `message_log`/`topic`), `shutdown-truncation-lab` (a mid-range
   cancellation narrows the lease, never redelivers the resolved prefix, the
   waterline's exception-blocker and lease-narrowing terms combine via
   `LEAST`), `fault-isolation-lab` (all three induced failure modes through
@@ -2016,8 +2016,8 @@ its own dedicated bullet settling the lazy-vs-synchronous `AdvanceWaterline`
 question deliberately deferred back in 6.5b. The tradeoff decided there:
 lazy costs staleness (a few seconds under the real default `ClaimPollRate`)
 in exchange for zero throughput cost, since `Commit` today never touches
-`cursors` at all; synchronous buys near-zero staleness but adds an `UPDATE
-cursors` that serializes every concurrent committer in a group on a row
+`cursor` at all; synchronous buys near-zero staleness but adds an `UPDATE
+cursor` that serializes every concurrent committer in a group on a row
 `Commit` currently never contends on. Measured, not assumed: 1.3x-1.9x
 slower at 20 concurrent committers is a permanent tax on every commit to
 buy a sub-5-second wait down to a few milliseconds — a bad trade for what
@@ -2054,9 +2054,9 @@ sweeps happen nearly right after committed changes (no lag) which better
 shows exactly where committed is. but it is at the cost of an extra query
 on the claim release hot path which slows down throughput. Specifically
 this isn't just an extra query's fixed cost -- `Commit` today never touches
-`cursors` at all (only `leases`/`deliveries`), so concurrent committers in
+`cursor` at all (only `lease`/`deliveries`), so concurrent committers in
 the same group commit fully in parallel right now. A synchronous rollup
-adds an `UPDATE cursors` that those same committers now serialize on, which
+adds an `UPDATE cursor` that those same committers now serialize on, which
 is why the 20-worker case measured 1.3x-1.9x slower, not just the flat
 +30-50% fixed-cost hit.
 

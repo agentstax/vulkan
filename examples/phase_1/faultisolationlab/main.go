@@ -266,7 +266,7 @@ func advance(ctx context.Context, cd consumer.Datastore[common.Work], topicID in
 }
 
 func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM leases WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
 }
 
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string) int64 {

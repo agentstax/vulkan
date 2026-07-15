@@ -200,7 +200,7 @@ func advance(ctx context.Context, cd consumer.Datastore[common.Work], topicID in
 }
 
 func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursors SET claimed=$3, committed=$4 WHERE consumer_group=$1 AND topic_id=$2`, group, topicID, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group=$1 AND topic_id=$2`, group, topicID, claimed, committed)
 	must(err)
 }
 

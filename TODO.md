@@ -42,7 +42,7 @@ quick batch LIMIT -- revisit alongside any future work on the LIFECYCLE path its
   full rescan within that topic though, not actually fixed.
 
 add a proper NATS-style topic selector for routing bindings (LATER, low priority)
-  today `bindings.pattern` is a true wildcard: `*` matches any run of characters
+  today `binding.pattern` is a true wildcard: `*` matches any run of characters
   including dots, so it can span any number of hierarchy levels (`orders.*.central1`
   matches `orders.us.central1` AND `orders.us.high.central1`). simple to implement
   and reason about, but it can't pin an exact depth -- there's no way to say "match
@@ -85,7 +85,7 @@ consider an index on deliveries.status if claim scans ever show up hot
   message_log's own designed-for volume, not the trickle this entry assumed.
   because deliveries is shared, that one topic's vacuum/bloat/buffer-cache
   pressure degrades every OTHER topic's exception-window queries too -- the
-  exact blast-radius problem 8b already fixed for message_log/cursors, just
+  exact blast-radius problem 8b already fixed for message_log/cursor, just
   never revisited here. conclusion: deliveries needs the same per-topic
   physical split message_log got in 8b. the same per-topic requirement
   applies to the new delivery_log audit table this discussion is designing
@@ -101,7 +101,7 @@ consider an index on deliveries.status if claim scans ever show up hot
   real evidence, don't add speculatively" verdict stands.
 
 topic.Destroy can exhaust Postgres's lock table on a topic with enough partitions
-  problem: DeleteTopic (pkg/topic/datastore.go) wraps `DELETE FROM topics` +
+  problem: DeleteTopic (pkg/topic/datastore.go) wraps `DELETE FROM topic` +
   `DROP TABLE message_log_<id>` in ONE transaction. message_log_<id> is
   partitioned, so dropping the parent requires an ACCESS EXCLUSIVE lock on every
   partition AND every object each partition owns -- confirmed empirically each
@@ -121,7 +121,7 @@ topic.Destroy can exhaust Postgres's lock table on a topic with enough partition
   decision: reimplement DeleteTopic using the same batched-drop shape as 8a's
   dropPartition/sweepBatch -- DETACH + DROP each partition individually, batched
   across multiple transactions (e.g. 50-100 at a time), THEN drop the
-  now-empty parent + delete the topics row in one final small transaction.
+  now-empty parent + delete the topic row in one final small transaction.
   Raising max_locks_per_transaction server-side is NOT a fix by itself -- it
   requires a restart, and a topic can always eventually outgrow whatever new
   ceiling gets picked; batching removes the ceiling instead of just raising it.

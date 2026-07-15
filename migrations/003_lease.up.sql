@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS leases (
+CREATE TABLE IF NOT EXISTS lease (
   token UUID NOT NULL DEFAULT gen_random_uuid(),
   consumer_group TEXT NOT NULL,
   topic_id BIGINT NOT NULL, -- this is for range interpretation (which message_log_<id>)

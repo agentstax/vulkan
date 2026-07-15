@@ -11,11 +11,11 @@ import (
 
 // QueueStateSnapshot is the live, DB-truth picture of one (group, topic)'s
 // queue -- answers "what's true right now" for state that multiple consumer
-// processes share (cursors/deliveries/leases), which no in-process counter can.
+// processes share (cursor/deliveries/lease), which no in-process counter can.
 type QueueStateSnapshot struct {
 	Head      int64 // highest message id ever appended -- the log frontier
-	Claimed   int64 // cursors.claimed -- the read frontier
-	Committed int64 // cursors.committed -- everything <= this is done/dead
+	Claimed   int64 // cursor.claimed -- the read frontier
+	Committed int64 // cursor.committed -- everything <= this is done/dead
 
 	Backlog  int64 // Head - Committed -- the waterline gap
 	Inflight int64 // Claimed - Committed -- claimed but not yet resolved
@@ -63,7 +63,7 @@ func NewQueueState(meter metric.Meter, group string, topicID int64, topicName st
 
 	claimed, err := meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.claimed",
-		metric.WithDescription("cursors.claimed -- this group's read frontier."),
+		metric.WithDescription("cursor.claimed -- this group's read frontier."),
 		metric.WithUnit("{message}"),
 	)
 	if err != nil {
@@ -72,7 +72,7 @@ func NewQueueState(meter metric.Meter, group string, topicID int64, topicName st
 
 	committed, err := meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.committed",
-		metric.WithDescription("cursors.committed -- everything at or below this id is done or dead."),
+		metric.WithDescription("cursor.committed -- everything at or below this id is done or dead."),
 		metric.WithUnit("{message}"),
 	)
 	if err != nil {
@@ -247,10 +247,10 @@ func (d *consumerMetricsDatastore) queueStateSnapshot(ctx context.Context, topic
 			) AS oldest_unacked_at,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM leases
+				FROM lease
 				WHERE consumer_group = $1 AND topic_id = $2
 			), 0) AS open_leases
-		FROM cursors c
+		FROM cursor c
 		WHERE c.consumer_group = $1 AND c.topic_id = $2;
 	`, logTable(topicID))
 

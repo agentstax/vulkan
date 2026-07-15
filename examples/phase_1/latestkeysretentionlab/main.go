@@ -1,17 +1,17 @@
 package main
 
 // log compaction + retention lab: does 8a's retention correctly garbage
-// collect latest_keys when it reaps a compacted key's last surviving row?
+// collect latest_key when it reaps a compacted key's last surviving row?
 //
 // Two scenarios, one per janitor path a topic's PartitionSize routes it
 // through:
 //   - dropPartition: a small PartitionSize rolls a dormant key's sole
 //     partition out of active use and past ttl; DropExpiredPartitions
-//     removes the whole partition and must take latest_keys's now-dangling
+//     removes the whole partition and must take latest_key's now-dangling
 //     pointer with it.
 //   - sweepBatch: a large PartitionSize keeps everything in partition 0
 //     forever; SweepExpiredPartitions reaps the individually-expired row
-//     from the front and must do the identical latest_keys cleanup.
+//     from the front and must do the identical latest_key cleanup.
 //
 // A key touched again inside the ttl window proves the opposite case in
 // each scenario too: retention doing nothing to a key that's still alive --
@@ -52,7 +52,7 @@ func main() {
 	sweepBatchScenario(ctx, ds)
 
 	fmt.Println("\n✅ LATEST KEYS RETENTION LAB PASSED")
-	fmt.Println("   a dormant key's last row aging out takes its latest_keys pointer with it,")
+	fmt.Println("   a dormant key's last row aging out takes its latest_key pointer with it,")
 	fmt.Println("   exactly like Kafka's own cleanup.policy=compact,delete -- a key touched")
 	fmt.Println("   inside the ttl window survives every pass untouched, either path.")
 }
@@ -137,12 +137,12 @@ func publish(ctx context.Context, wp *producer.WorkProducer[common.Work], key st
 
 func assertLatestExists(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, key string, want bool) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM latest_keys WHERE topic_id=$1 AND compaction_key=$2;`, topicID, key).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM latest_key WHERE topic_id=$1 AND compaction_key=$2;`, topicID, key).Scan(&count))
 	got := count > 0
 	if got != want {
-		die(fmt.Sprintf("latest_keys[%s] exists=%v, want %v", key, got, want))
+		die(fmt.Sprintf("latest_key[%s] exists=%v, want %v", key, got, want))
 	}
-	fmt.Printf("  ✓ latest_keys[%s] exists=%v\n", key, got)
+	fmt.Printf("  ✓ latest_key[%s] exists=%v\n", key, got)
 }
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
