@@ -76,6 +76,30 @@ consider an index on deliveries.status if claim scans ever show up hot
   (WHERE status IN ('ready', 'inflight')) over a full one -- terminal done/dead
   rows drop out of upkeep instead of bloating the index forever.
 
+  revisited during the delivery_log design discussion (Phase 11's attempt
+  audit trail): the "stays sparse, already bound by MaxAttempts" assumption
+  above holds for the AVERAGE case but not a correlated failure burst. Worked
+  through concretely at 30k-500k msg/s: a single downstream dependency (e.g.
+  AWS) going down for an hour pushes close to 100% of that window's traffic
+  into deliveries at once -- ~100M+ rows for one topic, comparable to
+  message_log's own designed-for volume, not the trickle this entry assumed.
+  because deliveries is shared, that one topic's vacuum/bloat/buffer-cache
+  pressure degrades every OTHER topic's exception-window queries too -- the
+  exact blast-radius problem 8b already fixed for message_log/cursors, just
+  never revisited here. conclusion: deliveries needs the same per-topic
+  physical split message_log got in 8b. the same per-topic requirement
+  applies to the new delivery_log audit table this discussion is designing
+  -- see LEARNING_PLAN.md's Phase 11 "Attempt audit trail" bullet once it's
+  updated with the finalized design.
+
+  the status/can_run_after index idea above was reconsidered once more,
+  further into the same discussion, and dropped rather than made per-topic
+  opt-in as first proposed -- see the "circuit breaker for a known-dead
+  downstream dependency" TODO entry's own addendum below for why a faster
+  exception-claim scan is actively counterproductive during exactly the
+  burst scenario that motivated it. this entry's original "revisit with
+  real evidence, don't add speculatively" verdict stands.
+
 topic.Destroy can exhaust Postgres's lock table on a topic with enough partitions
   problem: DeleteTopic (pkg/topic/datastore.go) wraps `DELETE FROM topics` +
   `DROP TABLE message_log_<id>` in ONE transaction. message_log_<id> is
@@ -188,3 +212,43 @@ docs should mention that ProducerFunc's tx IS the transactional outbox pattern c
 into one hop -- the caller's business-row write and the message_log insert commit
 together with no separate outbox table or relay process, as long as both live in the
 same Postgres. worth calling out explicitly since it's a pattern people search for.
+
+circuit breaker for a known-dead downstream dependency
+  raised during the delivery_log design discussion (Phase 11's attempt audit
+  trail): a high-throughput topic whose consumerFunc all calls out to one
+  external dependency (e.g. AWS) that goes down for an hour keeps retrying at
+  full claim throughput the whole time -- every claimed message fails, gets
+  parked/retried/dead-lettered, hammering deliveries (and message_id-log
+  volume in general) at close to peak system throughput for the entire
+  outage, worst-case exactly when the datastore is least able to absorb it
+  (see the deliveries-per-topic TODO above for the write/vacuum/WAL cost this
+  produces). a circuit breaker would stop the retry storm at its source
+  instead of making the datastore layer absorb it better: after enough
+  consecutive/recent failures against the same dependency, stop claiming (or
+  fail fast without even attempting consumerFunc) until a cooldown or a
+  health probe says it's safe again. this is a consumerFunc/retry-policy
+  concern, not a pkg/consumer datastore concern -- likely lives as an
+  optional wrapper around consumerFunc itself, or a new WorkConsumerConfig
+  hook, not a new datastore method. not designed in detail yet -- open
+  questions: per-topic or per-group, what counts as "the same dependency"
+  (consumerFunc is opaque to this library), and how a breaker's open/closed
+  state interacts with the existing backoff() formula.
+
+  why this is the right layer to fix it at, not a faster ClaimExceptions
+  query: worked through adding an index to speed up the exception-claim scan
+  during exactly this outage, and concluded it would make things WORSE, not
+  better. Commit's parkSql (fresh happy-path failures) isn't gated by
+  ClaimExceptions' cost at all -- it parks new 'ready' rows at full
+  production throughput regardless. ClaimExceptions' own retry-claim path IS
+  gated by that query, but every retry against a dependency that's provably
+  down for the next 50 minutes is guaranteed-wasted work -- going faster
+  there just burns through maxAttempts sooner, permanently dead-lettering
+  messages that would have succeeded fine once the dependency recovered,
+  exactly counter to what backoff()'s increasing-delay design is trying to
+  do. a slow, unindexed scan during a burst is closer to an accidental,
+  crude backpressure on the one path where speed is actively undesirable
+  right now than it is a bug -- so the deliveries.status/can_run_after index
+  idea explored alongside this was dropped; TODO.md's original "revisit with
+  real evidence, don't add speculatively" stance on that index holds. the
+  actual fix is not letting the backlog get pointlessly huge in the first
+  place (this breaker), not making the datastore survive scanning it fast.
