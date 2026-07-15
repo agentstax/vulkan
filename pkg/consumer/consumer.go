@@ -576,7 +576,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 // Unlike CursorClaim, a single message's failure does NOT stop the batch: each
 // delivery resolves independently, so group A can dead-letter message 5 while it
 // keeps draining 6, 7, 8. That per-message isolation is the whole point of the
-// deliveries table -- the cursor model can't do it (one bad message blocks the line).
+// delivery table -- the cursor model can't do it (one bad message blocks the line).
 //
 // No lease handling here: Phase 6 doesn't do crash recovery, so a delivery left in
 // 'processing' (consumer died mid-process) just sits there until Phase 6.5's reclaim.

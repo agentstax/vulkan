@@ -2,14 +2,14 @@ package main
 
 // DeleteTopic cascade lab: confirms Destroy doesn't just drop message_log and
 // the topic row -- it also has to clean up every other table scoped by
-// topic_id (cursor, lease, deliveries, binding, latest_key,
-// idempotency_key), or those rows are permanently orphaned (nothing else
-// ever deletes them by topic_id alone).
+// topic_id (cursor, lease, binding, latest_key, idempotency_key) and drop
+// the per-topic delivery_<id> table outright, or that state is permanently
+// orphaned (nothing else ever deletes it).
 //
-// Seeds one row in each of the six tables via the real datastore methods,
-// deliberately leaving a lease OPEN and a deliveries row unclaimed -- the
-// messiest state a topic could be destroyed in mid-flight, not a
-// conveniently-already-resolved one.
+// Seeds one row in each of the shared tables plus the per-topic delivery
+// table via the real datastore methods, deliberately leaving a lease OPEN
+// and a delivery row unclaimed -- the messiest state a topic could be
+// destroyed in mid-flight, not a conveniently-already-resolved one.
 
 import (
 	"context"
@@ -28,7 +28,7 @@ import (
 
 const group = "phase9.deletetopiclab.group"
 
-var scopedTables = []string{"cursor", "lease", "deliveries", "binding", "latest_key", "idempotency_key"}
+var scopedTables = []string{"cursor", "lease", "binding", "latest_key", "idempotency_key"}
 
 func main() {
 	ctx := context.Background()
@@ -67,12 +67,13 @@ func main() {
 	}
 	// deliberately never Commit -- leaves the lease open
 
-	must(cd.FanOut(ctx, tp.Id, group)) // materializes a 'ready' deliveries row, left unclaimed
+	must(cd.FanOut(ctx, tp.Id, group)) // materializes a 'ready' delivery row, left unclaimed
 
 	for _, table := range scopedTables {
 		assertRowCount(ctx, ds, table, tp.Id, 1, "before Destroy")
 	}
-	assertLogTableExists(ctx, ds, tp.Id, true)
+	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), true)
+	assertDeliveryRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
 	must(topic.Destroy(ctx, ds, topicName))
@@ -80,12 +81,13 @@ func main() {
 	for _, table := range scopedTables {
 		assertRowCount(ctx, ds, table, tp.Id, 0, "after Destroy")
 	}
-	assertLogTableExists(ctx, ds, tp.Id, false)
+	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), false)
+	assertTableExists(ctx, ds, fmt.Sprintf("delivery_%d", tp.Id), false)
 
 	fmt.Println("\n✅ DELETE TOPIC CASCADE LAB PASSED")
-	fmt.Println("   cursor/lease/deliveries/binding/latest_key/idempotency_key are all")
-	fmt.Println("   cleaned up on Destroy, including a still-open lease and an unclaimed")
-	fmt.Println("   deliveries row -- not just the conveniently-already-resolved case.")
+	fmt.Println("   cursor/lease/binding/latest_key/idempotency_key are all cleaned up on")
+	fmt.Println("   Destroy, the per-topic delivery table is dropped outright, and neither")
+	fmt.Println("   the still-open lease nor the unclaimed delivery row survive.")
 }
 
 // ---- helpers ----
@@ -99,14 +101,26 @@ func assertRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, ta
 	fmt.Printf("  ✓ %s has %d row(s) %s\n", table, count, when)
 }
 
-func assertLogTableExists(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want bool) {
+// assertDeliveryRowCount counts delivery_<topicID>'s rows directly -- unlike
+// scopedTables, this table has no topic_id column to filter by (it's implicit
+// in the table name), so it can't go through assertRowCount's generic form.
+func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int, when string) {
+	var count int
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicID)).Scan(&count))
+	if count != want {
+		die(fmt.Sprintf("delivery_%d has %d rows %s, want %d", topicID, count, when, want))
+	}
+	fmt.Printf("  ✓ delivery_%d has %d row(s) %s\n", topicID, count, when)
+}
+
+func assertTableExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want bool) {
 	var exists *string
-	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("message_log_%d", topicID)).Scan(&exists))
+	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, table).Scan(&exists))
 	got := exists != nil
 	if got != want {
-		die(fmt.Sprintf("message_log_%d exists=%v, want %v", topicID, got, want))
+		die(fmt.Sprintf("%s exists=%v, want %v", table, got, want))
 	}
-	fmt.Printf("  ✓ message_log_%d exists=%v\n", topicID, got)
+	fmt.Printf("  ✓ %s exists=%v\n", table, got)
 }
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }

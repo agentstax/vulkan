@@ -12,7 +12,7 @@ package main
 //     lock contention.
 //   - Concurrent contention: G goroutines committing against the SAME
 //     (group, topic) cursor row -- Commit itself never touches that row
-//     today (only lease + deliveries), so a synchronous AdvanceWaterline
+//     today (only lease + delivery), so a synchronous AdvanceWaterline
 //     call is new contention on it, not a cost that already existed. Same
 //     shape as latestkeyswritelab's hot-key scenario, applied to cursor.
 //

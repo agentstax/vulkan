@@ -11,6 +11,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -47,16 +48,6 @@ func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg 
 		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, cfg.Logger), // TODO - make this user config driven eventually
 		Logger:    cfg.Logger,
 	}
-}
-
-// logTable is topicID's own physical message log.
-func logTable(topicID int64) string {
-	return fmt.Sprintf("message_log_%d", topicID)
-}
-
-// partitionTable is logTable's nth partition -- message_log_<topic_id>_<n>.
-func partitionTable(topicID, n int64) string {
-	return fmt.Sprintf("%s_%d", logTable(topicID), n)
 }
 
 // AppendMessage resolves the idempotency key once and never regenerates it on
@@ -115,7 +106,7 @@ func isMissingPartition(err error) bool {
 func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, logTable(topicID))
+	`, topic.LogTable(topicID))
 
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
@@ -128,7 +119,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, partitionTable(topicID, next), logTable(topicID), next*partitionSize, (next+1)*partitionSize)
+	`, topic.PartitionTable(topicID, next), topic.LogTable(topicID), next*partitionSize, (next+1)*partitionSize)
 
 	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
 	if err != nil {
@@ -203,7 +194,7 @@ func (d *producerDatastore[Message]) insertUnprotected(ctx context.Context, tx p
 			NULLIF($3, '')  -- same convention for compaction_key
 		)
 		RETURNING id;
-	`, logTable(topicID))
+	`, topic.LogTable(topicID))
 
 	var id int64
 	if err := tx.QueryRow(ctx, sql, message, opts.RoutingKey, opts.CompactionKey).Scan(&id); err != nil {
@@ -248,7 +239,7 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 				WHERE latest_key.latest_id < EXCLUDED.latest_id
 			)
 			SELECT id FROM inserted;
-		`, logTable(topicID))
+		`, topic.LogTable(topicID))
 		args = append(args, opts.CompactionKey)
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
@@ -267,7 +258,7 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 				NULL
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
-		`, logTable(topicID))
+		`, topic.LogTable(topicID))
 	}
 
 	err = tx.QueryRow(ctx, sql, args...).Scan(&id)

@@ -137,28 +137,70 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	return cfg.ToTopic(id), nil
 }
 
-// createTopicLog creates this topic's own message_log_<id>, plus its first partition.
+// createTopicLog creates:
+//
+// - message_log_<id>
+// - delivery_<id>
+//
+// Split one per topic instead of shared because:
+// - Drop Partition functionality -- DropExpiredPartitions/SweepExpiredPartitions only expire a
+// partition once every cursor reading it has committed past it.
+// Shared across topics, that cursor floor was computed over every topic's
+// cursors at once, so one lagging consumer group on topic A blocked
+// partition drops for a completely unrelated topic B riding along in the
+// same table. Per-topic tables scope the floor to that topic's own cursors.
+// - Per topic retention -- Identifying when to drop a partition requires
+// looking at max(id) created_at > ttl for that partition. Under a shared topic table;
+// topic 1 or topic 2 could be that max(id) and as such would drive when a
+// partition is dropped ie would not have per topic retention it would be global retention.
+// - Blast Radius -- If message processing has high failure rate (say in the event of an outage)
+// delivery_<id> gets hit with a ton of churn (insert+delete). If shared, a topic with a high failure
+// rate would bloat that singular shared table and slow down every OTHER topic's claim
+// queries hitting the same physical disk pages. Per-topic contains that churn to
+// the noisy topic alone.
+// - Dense ID sequence -- A shared BIGSERIAL would leave each topic's ids scattered
+// across a sparse subset of it, which breaks the head/partitionSize math
+// EnsureNextPartition uses to create partitions when they are needed
 func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
 	createTableSql := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS message_log_%d (
+		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent
 			routing_key TEXT,
 			compaction_key TEXT,
 			payload JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);
-	`, id)
+	`, LogTable(id))
 	if _, err := tx.Exec(ctx, createTableSql); err != nil {
 		return err
 	}
 
-	// message_log_<id>_<n> -- two-part name avoids colliding with another topic's table
+	// message_log_<id>_0 -- two-part name avoids colliding with another topic's table
 	createPartitionSql := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS message_log_%d_0
-			PARTITION OF message_log_%d
+		CREATE TABLE IF NOT EXISTS %s
+			PARTITION OF %s
 			FOR VALUES FROM (0) TO (%d);
-	`, id, id, partitionSize)
-	_, err := tx.Exec(ctx, createPartitionSql)
+	`, PartitionTable(id, 0), LogTable(id), partitionSize)
+	if _, err := tx.Exec(ctx, createPartitionSql); err != nil {
+		return err
+	}
+
+	createDeliverySql := fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			consumer_group TEXT NOT NULL, -- PK
+			message_id BIGINT NOT NULL,   -- PK
+			status TEXT NOT NULL,
+			attempts INT NOT NULL default 0,
+			lease_until TIMESTAMPTZ,
+			lease_token UUID,
+			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries
+			last_error TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (consumer_group, message_id)
+		);
+	`, DeliveryTable(id))
+	_, err := tx.Exec(ctx, createDeliverySql)
 	return err
 }
 
@@ -180,16 +222,20 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 
 	// every other table scoped by topic_id
-	for _, table := range []string{"cursor", "deliveries", "lease", "binding", "latest_key", "idempotency_key"} {
+	for _, table := range []string{"cursor", "lease", "binding", "latest_key", "idempotency_key"} {
 		deleteSql := fmt.Sprintf(`DELETE FROM %s WHERE topic_id = $1;`, table)
 		if _, err := tx.Exec(ctx, deleteSql, topic.Id); err != nil {
 			return err
 		}
 	}
 
-	// drops every message_log_<id>_N partition with it
-	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS message_log_%d;`, topic.Id)
+	// drops every message_log_<id>_N partition and delivery_<id>
+	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, LogTable(topic.Id))
 	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
+		return err
+	}
+	dropDeliverySql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, DeliveryTable(topic.Id))
+	if _, err := tx.Exec(ctx, dropDeliverySql); err != nil {
 		return err
 	}
 

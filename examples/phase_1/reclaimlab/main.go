@@ -146,11 +146,11 @@ func main() {
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
-	assert("deliveries stayed empty the whole lab", deliveries(ctx, ds, tp.Id), 0)
+	assert("delivery table stayed empty the whole lab", deliveries(ctx, ds, tp.Id), 0)
 
 	fmt.Println("\n✅ PHASE 6.5b LAB PASSED")
 	fmt.Println("   crash mid-range -> lease expired -> exact range reclaimed (token rotated) ->")
-	fmt.Println("   reprocessed -> waterline pinned at lo then jumped to head -> deliveries empty.")
+	fmt.Println("   reprocessed -> waterline pinned at lo then jumped to head -> delivery table empty.")
 }
 
 // ---- helpers ----
@@ -176,7 +176,7 @@ func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID in
 	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {

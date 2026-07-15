@@ -155,7 +155,7 @@ func claimedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicI
 	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {

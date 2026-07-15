@@ -135,12 +135,13 @@ func publish(ctx context.Context, wp *producer.WorkProducer[common.Work]) {
 func reset(ctx context.Context, cd consumer.Datastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
 	for _, q := range []string{
 		`DELETE FROM lease WHERE consumer_group=$1 AND topic_id=$2`,
-		`DELETE FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`,
 		`DELETE FROM cursor WHERE consumer_group=$1 AND topic_id=$2`,
 	} {
 		_, err := ds.Pool.Exec(ctx, q, group, topicID)
 		must(err)
 	}
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
+	must(err)
 	must(cd.UpsertCursor(ctx, topicID, group))
 }
 

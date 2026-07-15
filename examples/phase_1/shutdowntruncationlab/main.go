@@ -184,7 +184,7 @@ func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID in
 	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
@@ -195,7 +195,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 
 func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, messageID int64, want string) {
 	var got string
-	must(ds.Pool.QueryRow(ctx, `SELECT status FROM deliveries WHERE consumer_group=$1 AND topic_id=$2 AND message_id=$3`, group, topicID, messageID).Scan(&got))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group=$1 AND message_id=$2`, topicID), group, messageID).Scan(&got))
 	if got != want {
 		die(fmt.Sprintf("message %d status: got %q, want %q", messageID, got, want))
 	}

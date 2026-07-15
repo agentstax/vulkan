@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/topic"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
 // QueueStateSnapshot is the live, DB-truth picture of one (group, topic)'s
 // queue -- answers "what's true right now" for state that multiple consumer
-// processes share (cursor/deliveries/lease), which no in-process counter can.
+// processes share (cursor/delivery/lease), which no in-process counter can.
 type QueueStateSnapshot struct {
 	Head      int64 // highest message id ever appended -- the log frontier
 	Claimed   int64 // cursor.claimed -- the read frontier
@@ -99,7 +100,7 @@ func NewQueueState(meter metric.Meter, group string, topicID int64, topicName st
 
 	readyExceptions, err := meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.ready_exceptions",
-		metric.WithDescription("Parked deliveries waiting to be retried."),
+		metric.WithDescription("Parked delivery rows waiting to be retried."),
 		metric.WithUnit("{exception}"),
 	)
 	if err != nil {
@@ -108,7 +109,7 @@ func NewQueueState(meter metric.Meter, group string, topicID int64, topicName st
 
 	inflightExceptions, err := meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.inflight_exceptions",
-		metric.WithDescription("Parked deliveries currently leased out to a retry attempt."),
+		metric.WithDescription("Parked delivery rows currently leased out to a retry attempt."),
 		metric.WithUnit("{exception}"),
 	)
 	if err != nil {
@@ -117,7 +118,7 @@ func NewQueueState(meter metric.Meter, group string, topicID int64, topicName st
 
 	deadExceptions, err := meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.dead_exceptions",
-		metric.WithDescription("Dead-lettered deliveries -- DLQ size."),
+		metric.WithDescription("Dead-lettered delivery rows -- DLQ size."),
 		metric.WithUnit("{exception}"),
 	)
 	if err != nil {
@@ -223,27 +224,27 @@ func (d *consumerMetricsDatastore) queueStateSnapshot(ctx context.Context, topic
 			c.committed,
 			COALESCE((
 				SELECT MAX(id)
-				FROM %s
+				FROM %[1]s
 			), 0) AS head,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM deliveries
-				WHERE consumer_group = $1 AND topic_id = $2 AND status = 'ready'
+				FROM %[2]s
+				WHERE consumer_group = $1 AND status = 'ready'
 			), 0) AS ready_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM deliveries
-				WHERE consumer_group = $1 AND topic_id = $2 AND status = 'inflight'
+				FROM %[2]s
+				WHERE consumer_group = $1 AND status = 'inflight'
 			), 0) AS inflight_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM deliveries
-				WHERE consumer_group = $1 AND topic_id = $2 AND status = 'dead'
+				FROM %[2]s
+				WHERE consumer_group = $1 AND status = 'dead'
 			), 0) AS dead_exceptions,
 			(
 				SELECT MIN(created_at)
-				FROM deliveries
-				WHERE consumer_group = $1 AND topic_id = $2 AND status IN ('ready', 'inflight')
+				FROM %[2]s
+				WHERE consumer_group = $1 AND status IN ('ready', 'inflight')
 			) AS oldest_unacked_at,
 			COALESCE((
 				SELECT COUNT(*)
@@ -252,7 +253,7 @@ func (d *consumerMetricsDatastore) queueStateSnapshot(ctx context.Context, topic
 			), 0) AS open_leases
 		FROM cursor c
 		WHERE c.consumer_group = $1 AND c.topic_id = $2;
-	`, logTable(topicID))
+	`, topic.LogTable(topicID), topic.DeliveryTable(topicID))
 
 	var s QueueStateSnapshot
 	var oldestUnackedAt *time.Time
@@ -277,11 +278,4 @@ func (d *consumerMetricsDatastore) queueStateSnapshot(ctx context.Context, topic
 	}
 
 	return &s, nil
-}
-
-// logTable is topicID's own physical message log -- duplicated from
-// pkg/consumer/datastore.go's unexported helper of the same name rather than
-// shared, same as this whole package's postgres access.
-func logTable(topicID int64) string {
-	return fmt.Sprintf("message_log_%d", topicID)
 }

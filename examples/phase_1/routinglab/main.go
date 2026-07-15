@@ -16,7 +16,7 @@ package main
 // time); a true wildcard crosses hierarchy depth (`orders.*.created` also
 // matches `orders.us.central1.created`); the CURSOR path excludes
 // non-matching rows from what's returned but still advances committed over the
-// whole range; the LIFECYCLE path excludes them from ever getting a deliveries
+// whole range; the LIFECYCLE path excludes them from ever getting a delivery
 // row at all; and one group's binding has zero effect on another group reading
 // the identical range.
 
@@ -123,8 +123,8 @@ func main() {
 	must(cd.Commit(ctx, tp.Id, controlGroup, claim.Lease.Token, nil, nil, 5*time.Second))
 	advance(ctx, cd, tp.Id, controlGroup)
 
-	// ===== LIFECYCLE path: only a matching message ever gets a deliveries row =====
-	step("FanOut lifecycleGroup -- expect exactly 1 deliveries row (msg4, payments.charge)")
+	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
+	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
 	must(cd.FanOut(ctx, tp.Id, lifecycleGroup))
 	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroup, limit)
 	must(err)
@@ -156,15 +156,16 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd bindable
 	for _, g := range groups {
 		for _, q := range []string{
 			`DELETE FROM lease WHERE consumer_group=$1 AND topic_id=$2`,
-			`DELETE FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`,
 			`DELETE FROM cursor WHERE consumer_group=$1 AND topic_id=$2`,
 		} {
 			_, err := ds.Pool.Exec(ctx, q, g, topicID)
 			must(err)
 		}
+		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group=$1`, topicID), g)
+		must(err)
 		must(cd.ClearBindings(ctx, topicID, g))
 		must(cd.UpsertCursor(ctx, topicID, g))
-		_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
+		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
 		must(err)
 	}
 	return head

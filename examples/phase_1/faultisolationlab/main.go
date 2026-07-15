@@ -270,7 +270,7 @@ func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID in
 }
 
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM deliveries WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
@@ -281,7 +281,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 
 func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string, messageID int64, want string) {
 	var got string
-	must(ds.Pool.QueryRow(ctx, `SELECT status FROM deliveries WHERE consumer_group=$1 AND topic_id=$2 AND message_id=$3`, group, topicID, messageID).Scan(&got))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group=$1 AND message_id=$2`, topicID), group, messageID).Scan(&got))
 	if got != want {
 		die(fmt.Sprintf("message %d status: got %q, want %q", messageID, got, want))
 	}
@@ -290,7 +290,7 @@ func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topi
 
 func assertLastErrorContains(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string, messageID int64, substr string) {
 	var got string
-	must(ds.Pool.QueryRow(ctx, `SELECT last_error FROM deliveries WHERE consumer_group=$1 AND topic_id=$2 AND message_id=$3`, group, topicID, messageID).Scan(&got))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT last_error FROM delivery_%d WHERE consumer_group=$1 AND message_id=$2`, topicID), group, messageID).Scan(&got))
 	if !strings.Contains(got, substr) {
 		die(fmt.Sprintf("message %d last_error %q does not contain %q", messageID, got, substr))
 	}
