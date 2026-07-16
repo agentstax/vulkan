@@ -19,6 +19,7 @@ import (
 
 type Datastore[Message any] interface {
 	AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error)
+	AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error)
 }
 
 type producerDatastore[Message any] struct {
@@ -54,24 +55,31 @@ func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg 
 // retry -- that's what makes a retried attempt safe after an ambiguous commit
 // instead of a double-publish. SkipIdempotency leaves it uuid.Nil.
 func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
-	var idempotencyKey uuid.UUID
-	if !opts.SkipIdempotency {
-		idempotencyKey = opts.IdempotencyKey
-		if idempotencyKey == uuid.Nil {
-			var err error
-			idempotencyKey, err = uuid.NewV7()
-			if err != nil {
-				return nil, err
-			}
-		}
+	idempotencyKey, err := resolveIdempotencyKey(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	var message *Message
-	err := d.Retry.Wrap(ctx, func() error {
+	err = d.Retry.Wrap(ctx, func() error {
 		var err error
 		message, err = d.appendMessageWithPartitionRetry(ctx, topicID, partitionSize, producerFunc, opts, idempotencyKey)
 		return err
 	})
+	return message, err
+}
+
+// AppendMessageInTx runs producerFunc + the message insert against a
+// caller-supplied tx -- no Begin/Commit/Rollback here, that's owned by
+// whoever opened tx (producer.InTransaction). Lets multiple WorkProducer
+// instances publish to different topics atomically in one transaction.
+func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+	idempotencyKey, err := resolveIdempotencyKey(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	message, _, err := d.runInsert(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
 	return message, err
 }
 
@@ -143,33 +151,19 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	// If Commit() is called successfully, Rollback() becomes a no-op and returns pgx.ErrTxClosed.
 	defer tx.Rollback(ctx)
 
-	// let user do transactional enqueue and return work/message
-	message, err := producerFunc(ctx, tx, idempotencyKey)
+	message, landed, err := d.runInsert(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO - really don't like this insertUnprotected/Protected code need to think through if we can develop
-	// some standard patterns that make it easier to follow while giving the same benefits of CTEs
-
-	if opts.SkipIdempotency {
-		if _, err := d.insertUnprotected(ctx, tx, topicID, message, opts); err != nil {
-			return nil, err
+	if !landed {
+		// claim already existed -- a retried call under the same key that's
+		// already durable. Nothing new to commit, but the transaction we
+		// opened above still needs closing.
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err // nothing new was written -- safe for Retry to auto-classify
 		}
-	} else {
-		_, landed, err := d.insertProtected(ctx, tx, topicID, idempotencyKey, message, opts)
-		if err != nil {
-			return nil, err
-		}
-		if !landed {
-			// claim already existed -- a retried call under the same key that's
-			// already durable. Nothing new to commit, but the transaction we
-			// opened above still needs closing.
-			if err := tx.Commit(ctx); err != nil {
-				return nil, err // nothing new was written -- safe for Retry to auto-classify
-			}
-			return message, nil
-		}
+		return message, nil
 	}
 
 	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
@@ -182,6 +176,32 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	}
 
 	return message, nil
+}
+
+// runInsert runs producerFunc + the protected/unprotected message insert
+// against an already-open tx
+func (d *producerDatastore[Message]) runInsert(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (message *Message, landed bool, err error) {
+	// let user do transactional enqueue and return work/message
+	message, err = producerFunc(ctx, tx, idempotencyKey)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// TODO - really don't like this insertUnprotected/Protected code need to think through if we can develop
+	// some standard patterns that make it easier to follow while giving the same benefits of CTEs
+
+	if opts.SkipIdempotency {
+		if _, err := d.insertUnprotected(ctx, tx, topicID, message, opts); err != nil {
+			return nil, false, err
+		}
+		return message, true, nil
+	}
+
+	_, landed, err = d.insertProtected(ctx, tx, topicID, idempotencyKey, message, opts)
+	if err != nil {
+		return nil, false, err
+	}
+	return message, landed, nil
 }
 
 // insertUnprotected writes the message with no idempotency claim gate
@@ -283,4 +303,16 @@ func (d *producerDatastore[Message]) upsertLatestKey(ctx context.Context, tx pgx
 	`
 	_, err := tx.Exec(ctx, sql, topicID, compactionKey, id)
 	return err
+}
+
+// resolveIdempotencyKey generates a fresh UUIDv7 unless the caller supplied
+// one or opted out entirely
+func resolveIdempotencyKey(opts ProduceOptions) (uuid.UUID, error) {
+	if opts.SkipIdempotency {
+		return uuid.Nil, nil
+	}
+	if opts.IdempotencyKey != uuid.Nil {
+		return opts.IdempotencyKey, nil
+	}
+	return uuid.NewV7()
 }
