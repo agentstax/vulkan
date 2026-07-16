@@ -2712,7 +2712,7 @@ type — even the reference didn't bother.*
       deadline exceeded: partial commit exceeded AckMargin (-1s) for group
       \"contextcausecheck\" topic 163"` — still satisfying `errors.Is(err,
       context.DeadlineExceeded)`.
-- [ ] **Batch write-path round trips — audited per function, not assumed.**
+- [x] **Batch write-path round trips — audited per function, not assumed.**
       Originally filed here as one line ("batch `Commit`'s per-row
       exception-park `INSERT`s via `pgx.Batch` instead of a loop," deferred
       from 6.5c) — reconsidered as its own item once the delivery_log work
@@ -2721,12 +2721,21 @@ type — even the reference didn't bother.*
       - `Commit`/`PartialCommit`'s exception+terminal park loop is the real
         candidate: it runs *after* every `consumerFunc` call in the claimed
         range already finished (outcomes sitting in memory), inside one
-        transaction that's already open. Currently 2 sequential round trips
-        per parked message (`parkSql` then `delivery_log`'s `logSql`) —
-        collapsing both statements for every exception/terminal into one
-        `pgx.Batch` call turns Nx2 round trips into ~1, a pure latency/lock-
-        duration win with no semantic change. This is the case actually
-        worth building.
+        transaction that's already open. Was 2 sequential round trips per
+        parked message (`parkSql` then `delivery_log`'s `logSql`) —
+        collapsed both statements for every exception/terminal into one
+        `pgx.Batch`, sent via a small shared `execBatch` helper (queue,
+        `tx.SendBatch`, drain every result, surface the first error —
+        Postgres aborts the rest of the transaction on that first error
+        either way, same outcome as the sequential loop it replaced, no
+        semantic change). Measured (throwaway check, not a permanent lab —
+        Phase 11's own Lab section already calls this refactor-and-verify
+        against the existing suite, not a new failure mode): parking N
+        exceptions in one `Commit` call went from 3.16ms at N=1 to 9.3ms at
+        N=1000 — total wall-clock grew ~3x while N grew 1000x, per-message
+        cost dropping from 3.16ms to 0.009ms. A sequential-round-trip loop
+        at ~0.2-0.3ms/statement would have projected to 600ms+ at N=1000;
+        actual was 9.3ms.
       - `RecordExceptionFailure`/`RecordFailure`/`RecordTerminal`/
         `RecordSuccess`/`RecordExceptionSuccess` are called one message at a
         time from `ExceptionClaim`/`LifecycleClaim`, *interleaved* with that

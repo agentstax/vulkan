@@ -646,25 +646,22 @@ func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 		VALUES ($1, $2, 0, $3);
 	`, topic.DeliveryLogTable(topicID))
 
+	// queued and sent as one pipelined round trip
+	batch := &pgx.Batch{}
 	for _, e := range exceptions {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, e.MessageId, "ready", e.Err, initialBackoff.Seconds()); err != nil {
-			return err
-		}
+		batch.Queue(parkSql, consumerGroup, e.MessageId, "ready", e.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			if _, err := tx.Exec(ctx, logSql, consumerGroup, e.MessageId, e.Err); err != nil {
-				return err
-			}
+			batch.Queue(logSql, consumerGroup, e.MessageId, e.Err)
 		}
 	}
 	for _, t := range terminals {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, t.MessageId, "dead", t.Err, initialBackoff.Seconds()); err != nil {
-			return err
-		}
+		batch.Queue(parkSql, consumerGroup, t.MessageId, "dead", t.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			if _, err := tx.Exec(ctx, logSql, consumerGroup, t.MessageId, t.Err); err != nil {
-				return err
-			}
+			batch.Queue(logSql, consumerGroup, t.MessageId, t.Err)
 		}
+	}
+	if err := execBatch(ctx, tx, batch); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -730,25 +727,22 @@ func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 		VALUES ($1, $2, 0, $3);
 	`, topic.DeliveryLogTable(topicID))
 
+	// queued and sent as one pipelined round trip
+	batch := &pgx.Batch{}
 	for _, e := range exceptions {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, e.MessageId, "ready", e.Err, initialBackoff.Seconds()); err != nil {
-			return err
-		}
+		batch.Queue(parkSql, consumerGroup, e.MessageId, "ready", e.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			if _, err := tx.Exec(ctx, logSql, consumerGroup, e.MessageId, e.Err); err != nil {
-				return err
-			}
+			batch.Queue(logSql, consumerGroup, e.MessageId, e.Err)
 		}
 	}
 	for _, t := range terminals {
-		if _, err := tx.Exec(ctx, parkSql, consumerGroup, t.MessageId, "dead", t.Err, initialBackoff.Seconds()); err != nil {
-			return err
-		}
+		batch.Queue(parkSql, consumerGroup, t.MessageId, "dead", t.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			if _, err := tx.Exec(ctx, logSql, consumerGroup, t.MessageId, t.Err); err != nil {
-				return err
-			}
+			batch.Queue(logSql, consumerGroup, t.MessageId, t.Err)
 		}
+	}
+	if err := execBatch(ctx, tx, batch); err != nil {
+		return err
 	}
 
 	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
@@ -1596,6 +1590,23 @@ func (d *consumerDatastore[Message]) recordTerminal(ctx context.Context, deliver
 
 	d.Logger.WarnContext(ctx, "message dead-lettered", "group", delivery.ConsumerGroup, "topic_id", delivery.TopicID, "message_id", delivery.MessageId, "error", terminalErr)
 	return nil
+}
+
+// execBatch sends every queued statement as one pipelined round trip instead
+// of N sequential ones, surfacing the first failure
+func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
+	if batch.Len() == 0 {
+		return nil
+	}
+
+	br := tx.SendBatch(ctx, batch)
+	for range batch.Len() {
+		if _, err := br.Exec(); err != nil {
+			br.Close()
+			return err
+		}
+	}
+	return br.Close()
 }
 
 // func (d *consumerDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
