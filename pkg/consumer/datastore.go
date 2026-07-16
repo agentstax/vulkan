@@ -28,8 +28,9 @@ var (
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error
 	EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error
-	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error
-	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error
+	// disableDeliveryLog skips the delivery_log_<topic_id> half of each drop's orphan cleanup.
+	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error
+	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error
 	SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error
 	// Commit frees the range's lease, then parks any failures as sparse delivery
 	// rows -- initialBackoff sets how long a freshly parked row waits before it's
@@ -221,13 +222,13 @@ func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, to
 // DropExpiredPartitions drops each surviving partition whose newest row is
 // past ttl, skipping the active partition and (unless overridden) anything a
 // lagging group hasn't committed past yet.
-func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
+func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
 	return d.Retry.Wrap(ctx, func() error {
-		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted)
+		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool) error {
+func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
 	if ttl <= 0 {
 		return nil // retention disabled - partitions kept forever
 	}
@@ -269,7 +270,7 @@ func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, 
 			continue // a lagging group hasn't resolved this range yet
 		}
 
-		if err := d.dropPartition(ctx, topicID, n, partitionSize); err != nil {
+		if err := d.dropPartition(ctx, topicID, n, partitionSize, disableDeliveryLog); err != nil {
 			return err
 		}
 		d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicID, "partition", n)
@@ -342,13 +343,13 @@ func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, topic
 // SweepExpiredPartitions drains the ttl-expired prefix of every surviving
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
-func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
+func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
 	return d.Retry.Wrap(ctx, func() error {
-		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize)
+		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int) error {
+func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
 	if ttl <= 0 {
 		return nil // retention disabled
 	}
@@ -373,7 +374,7 @@ func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context,
 
 	for _, n := range partitions { // every partition, independently -- one backlog can't block the rest
 		for range maxBatches {
-			swept, err := d.sweepBatch(ctx, topicID, n, cutoff, floor, batchSize)
+			swept, err := d.sweepBatch(ctx, topicID, n, cutoff, floor, batchSize, disableDeliveryLog)
 			if err != nil {
 				return err
 			}
@@ -387,8 +388,8 @@ func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context,
 }
 
 // sweepBatch deletes up to batchSize expired rows from the front of partition n,
-// plus their orphaned delivery rows, in one transaction.
-func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int) (int, error) {
+// plus their orphaned delivery/delivery_log rows, in one transaction.
+func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int, disableDeliveryLog bool) (int, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
@@ -436,6 +437,16 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 		`, topic.DeliveryTable(topicID))
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
 			return 0, err
+		}
+
+		if !disableDeliveryLog {
+			orphanLogSql := fmt.Sprintf(`
+				DELETE FROM %s
+				WHERE message_id = ANY($1);
+			`, topic.DeliveryLogTable(topicID))
+			if _, err := tx.Exec(ctx, orphanLogSql, ids); err != nil {
+				return 0, err
+			}
 		}
 	}
 
@@ -525,8 +536,9 @@ func (d *consumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Conte
 	return int(tag.RowsAffected()), nil
 }
 
-// dropPartition removes the partition and its delivery rows in one transaction.
-func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64) error {
+// dropPartition removes the partition and its delivery/delivery_log rows in
+// one transaction.
+func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64, disableDeliveryLog bool) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -545,6 +557,17 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 	`, topic.DeliveryTable(topicID))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
 		return err
+	}
+
+	if !disableDeliveryLog {
+		orphanLogSql := fmt.Sprintf(`
+			DELETE FROM %s
+			WHERE message_id >= $1
+				AND message_id < $2;
+		`, topic.DeliveryLogTable(topicID))
+		if _, err := tx.Exec(ctx, orphanLogSql, low, high); err != nil {
+			return err
+		}
 	}
 
 	// a dropped partition holding a key's latest row is a dormant key expiring

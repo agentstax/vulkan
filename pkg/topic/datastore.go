@@ -259,6 +259,10 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	if _, err := tx.Exec(ctx, dropDeliverySql); err != nil {
 		return err
 	}
+	dropDeliveryLogSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, DeliveryLogTable(topic.Id))
+	if _, err := tx.Exec(ctx, dropDeliveryLogSql); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return err

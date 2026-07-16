@@ -9,10 +9,13 @@ package main
 // Seeds one row in each of the shared tables plus the per-topic delivery
 // table via the real datastore methods, deliberately leaving a lease OPEN
 // and a delivery row unclaimed -- the messiest state a topic could be
-// destroyed in mid-flight, not a conveniently-already-resolved one.
+// destroyed in mid-flight, not a conveniently-already-resolved one. Also
+// records one failed lifecycle attempt so delivery_log_<id> is exercised and
+// confirmed dropped outright, same as delivery_<id>.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -69,11 +72,23 @@ func main() {
 
 	must(cd.FanOut(ctx, tp.Id, group)) // materializes a 'ready' delivery row, left unclaimed
 
+	// claim it via the lifecycle path and fail it once -- status flips
+	// ready->inflight->ready in place (still 1 delivery row) while parking one
+	// delivery_log row, without touching cursor/lease (lifecycle path skips both).
+	claimedLifecycle, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, group, 10)
+	must(err)
+	if len(claimedLifecycle) != 1 {
+		die(fmt.Sprintf("expected 1 lifecycle claim, got %d", len(claimedLifecycle)))
+	}
+	must(cd.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DisableDeliveryLog))
+
 	for _, table := range scopedTables {
 		assertRowCount(ctx, ds, table, tp.Id, 1, "before Destroy")
 	}
 	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), true)
 	assertDeliveryRowCount(ctx, ds, tp.Id, 1, "before Destroy")
+	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), true)
+	assertDeliveryLogRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
 	must(topic.Destroy(ctx, ds, topicName))
@@ -83,11 +98,13 @@ func main() {
 	}
 	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), false)
 	assertTableExists(ctx, ds, fmt.Sprintf("delivery_%d", tp.Id), false)
+	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), false)
 
 	fmt.Println("\n✅ DELETE TOPIC CASCADE LAB PASSED")
 	fmt.Println("   cursor/lease/binding/latest_key/idempotency_key are all cleaned up on")
-	fmt.Println("   Destroy, the per-topic delivery table is dropped outright, and neither")
-	fmt.Println("   the still-open lease nor the unclaimed delivery row survive.")
+	fmt.Println("   Destroy, the per-topic delivery and delivery_log tables are both dropped")
+	fmt.Println("   outright, and neither the still-open lease nor the unclaimed delivery row")
+	fmt.Println("   survive.")
 }
 
 // ---- helpers ----
@@ -111,6 +128,17 @@ func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatas
 		die(fmt.Sprintf("delivery_%d has %d rows %s, want %d", topicID, count, when, want))
 	}
 	fmt.Printf("  ✓ delivery_%d has %d row(s) %s\n", topicID, count, when)
+}
+
+// assertDeliveryLogRowCount counts delivery_log_<topicID>'s rows directly --
+// same no-topic_id-column reason as assertDeliveryRowCount.
+func assertDeliveryLogRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int, when string) {
+	var count int
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d;`, topicID)).Scan(&count))
+	if count != want {
+		die(fmt.Sprintf("delivery_log_%d has %d rows %s, want %d", topicID, count, when, want))
+	}
+	fmt.Printf("  ✓ delivery_log_%d has %d row(s) %s\n", topicID, count, when)
 }
 
 func assertTableExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want bool) {

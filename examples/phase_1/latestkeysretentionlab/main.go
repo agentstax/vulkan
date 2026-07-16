@@ -86,7 +86,7 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true))
+	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -112,7 +112,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize))
+	must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -121,7 +121,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	for range 3 {
 		publish(ctx, wp, "alive-key")
 		time.Sleep(ttl / 4)
-		must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize))
+		must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 	}
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 }

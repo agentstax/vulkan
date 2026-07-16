@@ -104,7 +104,7 @@ func main() {
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
 	must(cd.UpsertCursor(ctx, topicB.Id, groupB))
 
-	must(cd.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false))
+	must(cd.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
 	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1})
 	fmt.Println("  -> this is the exact cross-topic contamination 8a's floor bug caused; each topic's floor is now its own")
 
@@ -160,7 +160,7 @@ func main() {
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,
 	// simulating a slice consumer that's stuck or never started.
 
-	must(cd.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false))
+	must(cd.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false, topicD.DisableDeliveryLog))
 	assertPartitions(ctx, ds, topicD.Id, "partition 0 SURVIVES -- groupY's slice, though it has zero actual traffic, still pins this topic's one shared floor", []int64{0, 1})
 	fmt.Println("  -> this is the case 8b deliberately leaves unfixed: split into separate topics if slices need independent floors")
 

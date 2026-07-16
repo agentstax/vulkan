@@ -85,7 +85,7 @@ func main() {
 	setCursor(ctx, ds, tp.Id, groupPast, 4, 4)
 
 	step("drop -- floor sits at groupPast's committed=4, exactly partition 0's last id, so it's not blocked")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false))
+	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
 	assertPartitions("partition 0 dropped", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2})
 
 	step("groupPast claims on -- unaffected by the drop, reads real messages from partition 1")
@@ -111,11 +111,11 @@ func main() {
 	assertPartitions("partitions 1/2/3 exist (3 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 
 	step("drop attempt -- groupInside's committed is still 0, floor blocks partition 1 (last id 9 > floor 0)")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false))
+	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
 	assertPartitions("partition 1 survives -- refused by the floor", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 
 	step("same drop, AllowDropPastCommitted=true -- the floor check is waived outright")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true))
+	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 	assertPartitions("partition 1 dropped once the floor is overridden", partitionNumbers(ctx, ds, tp.Id), []int64{2, 3})
 
 	fmt.Println("\n✅ DROP FLOOR LAB PASSED")
