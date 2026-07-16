@@ -85,7 +85,7 @@ func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc Produ
 
 // TODO - make good doc comments
 func (p *WorkProducer[WorkType]) ProduceInTx(ctx context.Context, tx pgx.Tx, producerFunc ProducerFunc[WorkType], opts ProduceOptions) (*WorkType, error) {
-	return p.datastore.AppendMessageInTx(ctx, tx, p.Topic.Id, producerFunc, opts)
+	return p.datastore.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }
 
 // TODO - make good doc comments

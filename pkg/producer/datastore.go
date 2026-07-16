@@ -17,9 +17,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// TODO - we need to split this file up
+// TODO - this code needs a lot of work to read better it is currently jibberish
+
 type Datastore[Message any] interface {
 	AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error)
-	AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error)
+	AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error)
 }
 
 type producerDatastore[Message any] struct {
@@ -70,16 +73,26 @@ func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID 
 }
 
 // AppendMessageInTx runs producerFunc + the message insert against a
-// caller-supplied tx -- no Begin/Commit/Rollback here, that's owned by
-// whoever opened tx (producer.InTransaction). Lets multiple WorkProducer
-// instances publish to different topics atomically in one transaction.
-func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+// caller-supplied tx -- no Begin/Commit/Rollback, that's owned by whoever
+// opened tx (producer.InTransaction). Self-heals a missing partition inside
+// its own SAVEPOINT (runInsertSavepoint), so retrying here can't undo an
+// earlier target's insert or rerun a caller side effect between calls.
+func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	idempotencyKey, err := resolveIdempotencyKey(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	message, _, err := d.runInsert(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
+	message, err := d.runInsertSavepoint(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
+	if err == nil || !isMissingPartition(err) {
+		return message, err
+	}
+
+	d.Logger.WarnContext(ctx, "publish outran janitor create-ahead, self-healing missing partition", "topic_id", topicID)
+	if err := d.ensureCoveringPartition(ctx, topicID, partitionSize); err != nil {
+		return nil, err
+	}
+	message, err = d.runInsertSavepoint(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
 	return message, err
 }
 
@@ -204,20 +217,125 @@ func (d *producerDatastore[Message]) runInsert(ctx context.Context, tx pgx.Tx, t
 	return message, landed, nil
 }
 
-// insertUnprotected writes the message with no idempotency claim gate
-func (d *producerDatastore[Message]) insertUnprotected(ctx context.Context, tx pgx.Tx, topicID int64, message *Message, opts ProduceOptions) (int64, error) {
-	sql := fmt.Sprintf(`
-		INSERT INTO %s (payload, routing_key, compaction_key)
-		VALUES (
-			$1,
-			NULLIF($2, ''), -- if routing_key is empty string '' insert as NULL
-			NULLIF($3, '')  -- same convention for compaction_key
-		)
-		RETURNING id;
-	`, topic.LogTable(topicID))
+// produceInTxSavepoint is a fixed name, not per-call unique -- safe because
+// calls only ever run sequentially against one tx (pgx.Tx isn't safe for
+// concurrent use), so each use is released before the next begins.
+const produceInTxSavepoint = "sp_produce_in_tx"
+
+// runInsertSavepoint wraps producerFunc + the message insert in a SAVEPOINT
+// scoped to just this call, so a missing-partition retry can't touch
+// anything else already done in tx.
+func (d *producerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (message *Message, err error) {
+	if err := commitToSavepoint(ctx, tx, produceInTxSavepoint); err != nil {
+		return nil, err
+	}
+
+	message, err = producerFunc(ctx, tx, idempotencyKey)
+	if err != nil {
+		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
+		return nil, err
+	}
+
+	if opts.SkipIdempotency {
+		err = d.insertUnprotectedSavepoint(ctx, tx, topicID, message, opts)
+	} else {
+		err = d.insertProtectedSavepoint(ctx, tx, topicID, idempotencyKey, message, opts)
+	}
+	if err != nil {
+		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
+		return nil, err
+	}
+	return message, nil
+}
+
+func commitToSavepoint(ctx context.Context, tx pgx.Tx, savepointName string) error {
+	_, err := tx.Exec(ctx, "SAVEPOINT "+savepointName+";")
+	return err
+}
+
+func attemptRollbackToSavepoint(ctx context.Context, tx pgx.Tx, savepointName string) {
+	_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT "+savepointName+";")
+}
+
+// insertProtectedSavepoint pipelines the claim+insert CTE with RELEASE
+// SAVEPOINT as one round trip -- always a single statement regardless of
+// CompactionKey, so it always fully batches.
+func (d *producerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) error {
+	sql, args := protectedInsertSQL(topicID, idempotencyKey, message, opts)
+
+	batch := &pgx.Batch{}
+	batch.Queue(sql, args...)
+	batch.Queue("RELEASE SAVEPOINT " + produceInTxSavepoint + ";")
+
+	br := tx.SendBatch(ctx, batch)
+	var id int64
+	err := br.QueryRow().Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// claim already existed -- inserted CTE never ran. Not a failure:
+		// RELEASE SAVEPOINT is still queued next and still needs reading.
+		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicID, "idempotency_key", idempotencyKey)
+	} else if err != nil {
+		br.Close()
+		return err
+	}
+
+	if _, err := br.Exec(); err != nil { // RELEASE SAVEPOINT
+		br.Close()
+		return err
+	}
+	return br.Close()
+}
+
+// insertUnprotectedSavepoint pipelines the message insert with RELEASE SAVEPOINT.
+func (d *producerDatastore[Message]) insertUnprotectedSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, message *Message, opts ProduceOptions) error {
+	insertSQL, insertArgs := unprotectedInsertSQL(topicID, message, opts)
+
+	if opts.CompactionKey == "" {
+		batch := &pgx.Batch{}
+		batch.Queue(insertSQL, insertArgs...)
+		batch.Queue("RELEASE SAVEPOINT " + produceInTxSavepoint + ";")
+
+		br := tx.SendBatch(ctx, batch)
+		var id int64
+		if err := br.QueryRow().Scan(&id); err != nil {
+			br.Close()
+			return err
+		}
+		if _, err := br.Exec(); err != nil { // RELEASE SAVEPOINT
+			br.Close()
+			return err
+		}
+		return br.Close()
+	}
 
 	var id int64
-	if err := tx.QueryRow(ctx, sql, message, opts.RoutingKey, opts.CompactionKey).Scan(&id); err != nil {
+	if err := tx.QueryRow(ctx, insertSQL, insertArgs...).Scan(&id); err != nil {
+		return err
+	}
+
+	latestSQL, latestArgs := upsertLatestKeySQL(topicID, opts.CompactionKey, id)
+	batch := &pgx.Batch{}
+	batch.Queue(latestSQL, latestArgs...)
+	batch.Queue("RELEASE SAVEPOINT " + produceInTxSavepoint + ";")
+
+	br := tx.SendBatch(ctx, batch)
+	if _, err := br.Exec(); err != nil { // latest_key upsert
+		br.Close()
+		return err
+	}
+	if _, err := br.Exec(); err != nil { // RELEASE SAVEPOINT
+		br.Close()
+		return err
+	}
+	return br.Close()
+}
+
+// insertUnprotected writes the message with no idempotency claim gate
+func (d *producerDatastore[Message]) insertUnprotected(ctx context.Context, tx pgx.Tx, topicID int64, message *Message, opts ProduceOptions) (int64, error) {
+	sql, args := unprotectedInsertSQL(topicID, message, opts)
+
+	var id int64
+	if err := tx.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
 		return 0, err
 	}
 
@@ -230,10 +348,42 @@ func (d *producerDatastore[Message]) insertUnprotected(ctx context.Context, tx p
 	return id, nil
 }
 
+// unprotectedInsertSQL builds the plain message insert -- shared with the
+// savepoint-batched path so both run the exact same statement.
+func unprotectedInsertSQL(topicID int64, message any, opts ProduceOptions) (string, []any) {
+	sql := fmt.Sprintf(`
+		INSERT INTO %s (payload, routing_key, compaction_key)
+		VALUES (
+			$1,
+			NULLIF($2, ''), -- if routing_key is empty string '' insert as NULL
+			NULLIF($3, '')  -- same convention for compaction_key
+		)
+		RETURNING id;
+	`, topic.LogTable(topicID))
+	return sql, []any{message, opts.RoutingKey, opts.CompactionKey}
+}
+
 // insertProtected runs the idempotency claim + message insert (+ latest_key
 // upsert when keyed) in one round trip. landed=false means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
 func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) (id int64, landed bool, err error) {
+	sql, args := protectedInsertSQL(topicID, idempotencyKey, message, opts)
+
+	err = tx.QueryRow(ctx, sql, args...).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicID, "idempotency_key", idempotencyKey)
+		return 0, false, nil // claim already existed -- already committed
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
+}
+
+// protectedInsertSQL builds the claim+insert(+latest_key upsert when keyed)
+// CTE -- shared with the savepoint-batched path so both run the exact same
+// statement.
+func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, opts ProduceOptions) (string, []any) {
 	args := []any{topicID, idempotencyKey, message, opts.RoutingKey}
 
 	var sql string
@@ -281,19 +431,19 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 		`, topic.LogTable(topicID))
 	}
 
-	err = tx.QueryRow(ctx, sql, args...).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicID, "idempotency_key", idempotencyKey)
-		return 0, false, nil // claim already existed -- already committed
-	}
-	if err != nil {
-		return 0, false, err
-	}
-	return id, true, nil
+	return sql, args
 }
 
 // upsertLatestKey keeps latest_key pointed at the highest id seen for this compaction key
 func (d *producerDatastore[Message]) upsertLatestKey(ctx context.Context, tx pgx.Tx, topicID int64, compactionKey string, id int64) error {
+	sql, args := upsertLatestKeySQL(topicID, compactionKey, id)
+	_, err := tx.Exec(ctx, sql, args...)
+	return err
+}
+
+// upsertLatestKeySQL builds the latest_key upsert -- shared with the
+// savepoint-batched path so both run the exact same statement.
+func upsertLatestKeySQL(topicID int64, compactionKey string, id int64) (string, []any) {
 	sql := `
 		INSERT INTO latest_key (topic_id, compaction_key, latest_id)
 		VALUES ($1, $2, $3)
@@ -301,8 +451,7 @@ func (d *producerDatastore[Message]) upsertLatestKey(ctx context.Context, tx pgx
 		SET latest_id = EXCLUDED.latest_id
 		WHERE latest_key.latest_id < EXCLUDED.latest_id;
 	`
-	_, err := tx.Exec(ctx, sql, topicID, compactionKey, id)
-	return err
+	return sql, []any{topicID, compactionKey, id}
 }
 
 // resolveIdempotencyKey generates a fresh UUIDv7 unless the caller supplied
