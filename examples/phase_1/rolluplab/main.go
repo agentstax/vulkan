@@ -140,7 +140,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var events []rangeEvent
 	for i := range numRanges {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, int(batchSize), maxRangeReclaims, lease)
+		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, int(batchSize), maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
@@ -174,7 +174,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var stalenesses []float64
 	for i := range numRanges {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, int(batchSize), maxRangeReclaims, lease)
+		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, int(batchSize), maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
@@ -249,7 +249,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	start := time.Now()
 	for range int(n) {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, maxRangeReclaims, lease)
+		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
@@ -298,7 +298,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	for range goroutines {
 		wg.Go(func() {
 			for range perGoroutine {
-				claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, maxRangeReclaims, lease)
+				claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, maxRangeReclaims, lease, false)
 				must(err)
 				if claim == nil {
 					return

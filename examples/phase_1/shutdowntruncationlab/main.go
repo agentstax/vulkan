@@ -133,7 +133,7 @@ func main() {
 	// the narrowed lease's 2s duration already elapsed during the 5.5s backoff
 	// sleep above -- no separate wait needed before reclaiming it.
 	step("reclaim: only the untouched suffix comes back, not the resolved prefix")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 3, 3, lease)
+	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 3, 3, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")

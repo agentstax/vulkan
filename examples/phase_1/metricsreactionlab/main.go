@@ -176,7 +176,7 @@ func scenarioCrash(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) 
 	step("SCENARIO 4: crash mid-range (--crash-after equivalent, never Commit) -> orphaned lease")
 	before := snapshotCounts(ctx, wc)
 
-	claim, err := wc.Datastore.ClaimMessagesWithCursor(ctx, wc.Topic.Id, group, batch, 3, lease)
+	claim, err := wc.Datastore.ClaimMessagesWithCursor(ctx, wc.Topic.Id, group, batch, 3, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim for scenario 4, got nil")
@@ -189,7 +189,7 @@ func scenarioCrash(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) 
 	step(fmt.Sprintf("sleep %s -- let the crashed lease expire", lease+500*time.Millisecond))
 	time.Sleep(lease + 500*time.Millisecond)
 
-	reclaim, err := wc.Datastore.ClaimMessagesWithCursor(ctx, wc.Topic.Id, group, batch, 3, lease)
+	reclaim, err := wc.Datastore.ClaimMessagesWithCursor(ctx, wc.Topic.Id, group, batch, 3, lease, false)
 	must(err)
 	if reclaim == nil {
 		die("expected a reclaim, got nil")

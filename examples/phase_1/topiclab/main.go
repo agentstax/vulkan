@@ -122,7 +122,7 @@ func main() {
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
 		headBefore+1, headBefore+2, headBefore+3, headBefore+1, headBefore+1, headBefore+2)
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, topicC.Id, groupRoute, 10, 3, 30*time.Second)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, topicC.Id, groupRoute, 10, 3, 30*time.Second, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
@@ -149,7 +149,7 @@ func main() {
 	must(cd.EnsureNextPartition(ctx, topicD.Id, partitionSize, 1))
 	time.Sleep(ttl + ttlMargin)
 
-	claimX, err := cd.ClaimMessagesWithCursor(ctx, topicD.Id, groupX, 10, 3, 30*time.Second)
+	claimX, err := cd.ClaimMessagesWithCursor(ctx, topicD.Id, groupX, 10, 3, 30*time.Second, false)
 	must(err)
 	if claimX == nil {
 		die("expected groupX to claim a fresh range")

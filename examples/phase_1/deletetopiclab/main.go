@@ -60,7 +60,7 @@ func main() {
 	_, err = wp.Produce(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 10, 3, 5*time.Second)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 10, 3, 5*time.Second, false)
 	must(err)
 	if claim == nil {
 		die("expected a claim, got nil")

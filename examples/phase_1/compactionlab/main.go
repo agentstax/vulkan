@@ -85,7 +85,7 @@ func main() {
 	publish(ctx, wp, "user:2", 1, false) // id 5
 	publish(ctx, wp, "user:2", 2, false) // id 6 <- latest for user:2
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 10, maxRangeReclaims, lease)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 10, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -101,7 +101,7 @@ func main() {
 	// ===== a delivered version isn't retroactively unsent once superseded (ids 7-8) =====
 	step("user:3 v1 delivered, THEN v2 is published and delivered on its own later read")
 	publish(ctx, wp, "user:3", 1, false) // id 7
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
+	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
@@ -109,7 +109,7 @@ func main() {
 	assertInt("committed", committed, 7)
 
 	publish(ctx, wp, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
+	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
@@ -120,7 +120,7 @@ func main() {
 	// ===== the crash/reclaim race (ids 9-10) =====
 	step("WORKER 1 claims user:4 v1, then crashes before Commit")
 	publish(ctx, wp, "user:4", 1, false) // id 9
-	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
+	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease, false)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil")
@@ -136,7 +136,7 @@ func main() {
 	time.Sleep(lease + 500*time.Millisecond)
 
 	step("WORKER 2 polls: reclaims the exact expired range -- v1 is now superseded")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
+	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -156,7 +156,7 @@ func main() {
 	assertInt("committed moves past the (empty) reclaimed range", committed, 9)
 
 	step("v2 still gets its own, independent delivery -- the obligation carried forward")
-	claim3, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
+	claim3, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:4 v2 delivered", ids(claim3.Messages), []int64{10})
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim3.Lease.Token, nil, nil, 5*time.Second, false))
@@ -166,7 +166,7 @@ func main() {
 	// ===== tombstones are a pure app convention (ids 11-12) =====
 	step("a message marked deleted in its OWN payload is delivered normally on both paths")
 	publish(ctx, wp, "user:5", 1, true) // id 11, CURSOR path
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
+	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
 	assertTrue("payload's own Deleted field survives -- the query never special-cases it", decode(claim.Messages[0].Payload).Deleted)

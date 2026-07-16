@@ -436,7 +436,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
-	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration)
+	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
 		return err
 	}

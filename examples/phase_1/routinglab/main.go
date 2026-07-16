@@ -94,7 +94,7 @@ func main() {
 
 	// ===== CURSOR path: cursorGroup only sees the 2 matching messages =====
 	step("cursorGroup claims (head, head+5] -- expect only msg1 and msg2 back")
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, limit, maxRangeReclaims, lease)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, limit, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -111,7 +111,7 @@ func main() {
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
 	step("controlGroup claims the identical range -- expect all 5 back, unaffected by cursorGroup's binding")
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, controlGroup, limit, maxRangeReclaims, lease)
+	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, controlGroup, limit, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
