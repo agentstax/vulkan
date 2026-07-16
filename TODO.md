@@ -257,3 +257,5 @@ we need to refactor our migration scripts into code -- ie we can't ask users to 
   - we need to decided if it should be automatic or something like Register or Ensure with Topic
 
 this can be later but we need to think through security. Ideally we can easily setup and create users with least privledge AND easily enable / disable row level security on these tables or per topic
+
+we need to review and see if adding DELETE CASCADES for related tables make sense and would simplify code. If it does, does that come with any tradeoffs mainly throughput. Biggest issue I see with this is drop partitions

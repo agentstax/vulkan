@@ -2681,11 +2681,65 @@ type — even the reference didn't bother.*
       table creation and every write, and both retention paths
       (`dropPartition`, `sweepBatch`) drain `delivery_log` the same way they
       already drain `delivery_<topic_id>`.
-- [ ] **Small polish.** Swap `context.WithTimeout`/`WithDeadline` for their
-      `*Cause` variants where it improves error messages; batch `Commit`'s
-      per-row exception-park `INSERT`s via `pgx.Batch` instead of a loop (this
-      was deferred on purpose back in 6.5c — revisit now that the surrounding
-      exception machinery is stable).
+- [x] **Small polish: `context.Cause` on nested timeouts.** Swapped the three
+      live `context.WithTimeout` call sites in `pkg/consumer/consumer.go` for
+      `context.WithTimeoutCause`, each with a cause naming the specific
+      budget and enough identifying detail to act on (message id + attempt
+      for `callSafely`'s `WorkTimeout` ctx passed into `consumerFunc`; group
+      + topic for `CursorPartialCommit`'s `AckMargin` `commitCtx` and
+      `Shutdown`'s `ShutdownTimeout` ctx passed into `ShutdownFunc`) instead
+      of a generic `context.DeadlineExceeded` that gives no hint which of
+      `WorkTimeout`/`QueueTimeout`/`AckMargin`/`ShutdownTimeout` actually
+      fired. `CursorPartialCommit` additionally wraps its returned error with
+      `context.Cause(commitCtx)` when `commitCtx.Err() != nil` — the one
+      site where the improved message is surfaced directly in the returned
+      error rather than left for the ctx's own receiver to inspect. The other
+      two (`callSafely`'s ctx, `Shutdown`'s ctx) only attach the cause; it's
+      up to `consumerFunc`/`ShutdownFunc` — user-supplied, arbitrary code —
+      to decide whether to call `context.Cause(ctx)` themselves, same as it's
+      already up to them whether to check `ctx.Err()` at all. `errors.Is`
+      classification (`ErrLeaseLost`, `pkg/retry`'s transient/permanent
+      split) is unaffected — `Cause()` is a separate accessor from `Err()`,
+      which still returns the same `context.DeadlineExceeded`/
+      `context.Canceled` sentinel either way.
+
+      Verified with a throwaway check (not a permanent lab — this is a pure
+      error-message improvement, nothing to regression-test going forward):
+      a `consumerFunc` that blocks on `<-ctx.Done()` past `WorkTimeout`
+      observed `context.Cause(ctx)` = `"WorkTimeout (300ms) exceeded for
+      message 1 attempt 0"`; a `CursorPartialCommit` call forced against a
+      synchronously-pre-expired (`-1s`) `AckMargin` returned `"context
+      deadline exceeded: partial commit exceeded AckMargin (-1s) for group
+      \"contextcausecheck\" topic 163"` — still satisfying `errors.Is(err,
+      context.DeadlineExceeded)`.
+- [ ] **Batch write-path round trips — audited per function, not assumed.**
+      Originally filed here as one line ("batch `Commit`'s per-row
+      exception-park `INSERT`s via `pgx.Batch` instead of a loop," deferred
+      from 6.5c) — reconsidered as its own item once the delivery_log work
+      surfaced how different the datastore's per-message write sites actually
+      are:
+      - `Commit`/`PartialCommit`'s exception+terminal park loop is the real
+        candidate: it runs *after* every `consumerFunc` call in the claimed
+        range already finished (outcomes sitting in memory), inside one
+        transaction that's already open. Currently 2 sequential round trips
+        per parked message (`parkSql` then `delivery_log`'s `logSql`) —
+        collapsing both statements for every exception/terminal into one
+        `pgx.Batch` call turns Nx2 round trips into ~1, a pure latency/lock-
+        duration win with no semantic change. This is the case actually
+        worth building.
+      - `RecordExceptionFailure`/`RecordFailure`/`RecordTerminal`/
+        `RecordSuccess`/`RecordExceptionSuccess` are called one message at a
+        time from `ExceptionClaim`/`LifecycleClaim`, *interleaved* with that
+        message's own `consumerFunc` call. Batching these would mean
+        deferring the durable write until after N `consumerFunc` calls, so a
+        crash mid-batch loses already-resolved outcomes and redelivers/
+        re-runs messages that already succeeded or failed — a durability/
+        idempotency tradeoff, not a free perf win. **Decided: leave these
+        as-is** unless a future need explicitly reopens that guarantee.
+      - `sweepBatch`/`dropPartition`'s orphan cleanup, `ClaimExceptions`'
+        kill backstop, `quarantine`, and `FanOut` already operate on a whole
+        set in one statement (`WHERE x = ANY($1)` or a range predicate) — no
+        loop, nothing to batch.
 
 **Lab:** no new failure mode to induce — this is refactor-and-verify. Re-run
 the full existing lab suite (`just reclaim-lab`, `just exception-lab`, and the

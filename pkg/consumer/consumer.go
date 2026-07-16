@@ -489,7 +489,8 @@ func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastPr
 
 	// the ctx that got us here is already Done -- the commit needs its own
 	// bounded, uncancelled window to actually reach the DB, same as Shutdown
-	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.AckMargin)
+	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
+		fmt.Errorf("partial commit exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.Group, p.Topic.Id))
 	defer cancel()
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
@@ -498,6 +499,11 @@ func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastPr
 		if errors.Is(err, ErrLeaseLost) {
 			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
+		}
+		// commitCtx expiring mid-call and PartialCommit's own DB error are
+		// otherwise indistinguishable from the wire error alone
+		if commitCtx.Err() != nil {
+			return fmt.Errorf("%w: %w", err, context.Cause(commitCtx))
 		}
 		return err
 	}
@@ -618,7 +624,8 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[WorkType], work *WorkType, messageID int64, attempt int) error {
 	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
 	// instead attempt to finish inflight requests bounded by timeout
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.WorkTimeout)
+	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.WorkTimeout,
+		fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d", p.Config.WorkTimeout, messageID, attempt))
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -906,7 +913,8 @@ func (p *WorkConsumer[WorkType]) Shutdown(ctx context.Context) error {
 	// graceful shutdown:
 	// - cannot pass cancel context otherwise any functionality that uses ctx will immediately fail which is not what we want
 	// - need to pass timeout as well so shutdown cannot hang forever
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.Config.ShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.ShutdownTimeout,
+		fmt.Errorf("ShutdownTimeout (%s) exceeded for group %q topic %d", p.Config.ShutdownTimeout, p.Group, p.Topic.Id))
 	defer cancel()
 
 	return p.ShutdownFunc(shutdownCtx, p)
