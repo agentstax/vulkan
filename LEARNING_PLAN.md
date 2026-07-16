@@ -2624,9 +2624,63 @@ type — even the reference didn't bother.*
       physically separate `message_log_<topic_id>` tables, each with its own
       sequence — likely multiple `WorkProducer` instances needing to share
       one externally-managed transaction, inverting who currently owns it.
-- [ ] **Attempt audit trail.** An append-only table recording each attempt
-      (`attempted_at`, error) per message, written but **never read by the hot
-      path** — so it can't slow down claims — for debugging/auditing only.
+- [x] **Attempt audit trail.** New per-topic `delivery_log_<topic_id>` table
+      (`consumer_group, message_id, attempt, attempted_at, error`, PK
+      `(consumer_group, message_id, attempt)`) recording only FAILED
+      attempts — a row's absence for a given attempt number IS the "it
+      succeeded" signal, so no `updated_at`/pointer bookkeeping is needed
+      and nothing on any hot path ever reads it. Written in the same
+      transaction/statement as the `delivery_<topic_id>` mutation it shadows
+      (a plain second `tx.Exec` where one already existed, a `WITH ...
+      RETURNING ... INSERT ... SELECT ...` CTE everywhere else) so the two
+      tables can never drift. Opt-out via `Topic.DisableDeliveryLog` (default
+      false), threaded through every write site — disabled, the table is
+      never even created, and every write path silently skips its second
+      statement.
+
+      What looked like "just add one table" surfaced three prerequisite
+      decisions first: (1) a genuinely append-only log can't serve
+      `deliveries`' claim-queue access pattern ("give me the set of keys in
+      state X") the way `delivery_<topic_id>` already does, so the mutable
+      table stays and the log is a pure companion, not a replacement; (2) at
+      real throughput (a saturated topic whose downstream dependency dies for
+      an hour, ~100M+ failures) a SHARED audit table would blast-radius every
+      other topic's queries the same way pre-8b `message_log` did, so this
+      table had to be per-topic from the start — which meant singularizing
+      the six remaining shared tables (`cursors→cursor`,
+      `leases→lease`, `bindings→binding`, `topics→topic`,
+      `latest_keys→latest_key`, `idempotency_keys→idempotency_key`) and
+      making `deliveries` itself per-topic (`delivery_<topic_id>`) as
+      prerequisite chunks, matching Postgres's own catalog naming and
+      River's convention over pluralizing the `_log` suffix instead; (3) a
+      partial index proposed to speed the exception-claim scan during that
+      same outage burst was deliberately rejected — a slow scan during a
+      provably-dead-dependency burst is closer to accidental backpressure on
+      the one path where speed is actively undesirable (faster retries just
+      dead-letter messages sooner) than a bug, recorded in `TODO.md` instead
+      of built.
+
+      One write site — `quarantine` (a poisoned range's give-up park after
+      `maxRangeReclaims`) — wasn't in the original explicit write-path list;
+      added deliberately (not silently) once raised, wired through the same
+      CTE pattern as every other park.
+
+      Also fixed along the way (already committed, not part of this
+      table's own chunks): `dropPartition`/`sweepBatch`'s `deliveries`
+      cleanup deleted rows by `message_id` range with no `topic_id` filter —
+      since `deliveries` was shared and every topic's `message_id` sequence
+      independently starts at 1, one topic's partition drop could silently
+      delete an unrelated topic's live rows. Structurally impossible to
+      reintroduce now that `delivery`/`delivery_log` are both per-topic.
+
+      `just delivery-log-lab`: a fresh failure logs exactly one row (the
+      right `attempt`/`error`), a success logs none, two retries of the same
+      message append two MORE distinct rows (`attempt=1`, `attempt=2`)
+      rather than overwriting — structural, not incidental, since the PK is
+      `(consumer_group, message_id, attempt)` — `DisableDeliveryLog` skips
+      table creation and every write, and both retention paths
+      (`dropPartition`, `sweepBatch`) drain `delivery_log` the same way they
+      already drain `delivery_<topic_id>`.
 - [ ] **Small polish.** Swap `context.WithTimeout`/`WithDeadline` for their
       `*Cause` variants where it improves error messages; batch `Commit`'s
       per-row exception-park `INSERT`s via `pgx.Batch` instead of a loop (this

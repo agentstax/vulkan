@@ -146,6 +146,16 @@ idempotency-keys-growth-lab:
 delete-topic-lab:
   go run examples/phase_1/deletetopiclab/main.go
 
+# delivery_log lab: a fresh failure logs exactly one row (right attempt
+# number + error), a success logs none, and two retries of the same message
+# append two MORE distinct rows (attempt=1, attempt=2) rather than
+# overwriting -- the (consumer_group, message_id, attempt) PK makes that
+# structural, not incidental. Also covers the opt-out (DisableDeliveryLog
+# skips table creation and every write) and retention (dropPartition/
+# sweepBatch drain delivery_log the same as they already drain delivery_<id>).
+delivery-log-lab:
+  go run examples/phase_1/deliveryloglab/main.go
+
 # Phase 9 lab: graceful-shutdown lease truncation. A shutdown signal mid-range
 # stops CursorClaim from taking on new messages, but everything already
 # resolved (successes + a parked exception) survives and the lease narrows to

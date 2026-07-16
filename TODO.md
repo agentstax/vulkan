@@ -252,3 +252,8 @@ circuit breaker for a known-dead downstream dependency
   real evidence, don't add speculatively" stance on that index holds. the
   actual fix is not letting the backlog get pointlessly huge in the first
   place (this breaker), not making the datastore survive scanning it fast.
+
+we need to refactor our migration scripts into code -- ie we can't ask users to run a migration script to setup tables and relations
+  - we need to decided if it should be automatic or something like Register or Ensure with Topic
+
+this can be later but we need to think through security. Ideally we can easily setup and create users with least privledge AND easily enable / disable row level security on these tables or per topic
