@@ -20,6 +20,7 @@ type Topic struct {
 	RetentionTTL           time.Duration
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTL      time.Duration
+	DisableDeliveryLog     bool
 }
 
 // TODO - consider constructing an admin object which gets passed ds

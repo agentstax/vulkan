@@ -120,7 +120,7 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, group, 10, 3, lease)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, group, 10, 3, lease, false)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
@@ -143,7 +143,7 @@ func main() {
 	assert("reclaimed exactly the untouched suffix (1 message)", int64(len(claim2.Messages)), 1)
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
-	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, cd, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)

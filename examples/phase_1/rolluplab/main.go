@@ -146,7 +146,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 			break
 		}
 		time.Sleep(jitter(i))
-		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second))
+		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 		events = append(events, rangeEvent{commitTime: time.Now(), high: claim.Lease.High})
 	}
 
@@ -180,7 +180,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 			break
 		}
 		time.Sleep(jitter(i))
-		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second))
+		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 
 		start := time.Now()
 		_, err = cd.AdvanceWaterline(ctx, tp.Id, group)
@@ -254,7 +254,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 		if claim == nil {
 			break
 		}
-		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second))
+		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 		if syncAdvance {
 			_, err := cd.AdvanceWaterline(ctx, tp.Id, group)
 			must(err)
@@ -303,7 +303,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 				if claim == nil {
 					return
 				}
-				must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second))
+				must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 				if syncAdvance {
 					_, err := cd.AdvanceWaterline(ctx, tp.Id, group)
 					must(err)

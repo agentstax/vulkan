@@ -54,6 +54,14 @@ type Config struct {
 	// Ex: 10 * time.Minute.
 	IdempotencyKeyTTL time.Duration
 
+	// DisableDeliveryLog - opt out of delivery_log_<id>, the per-attempt
+	// failure audit trail written alongside every delivery_<id> failure.
+	// Default: false (enabled).
+	//
+	// Set true for a topic whose failure volume would make the extra
+	// per-attempt write not worth paying for.
+	DisableDeliveryLog bool
+
 	// Logger - pass your own *slog.Logger (own Handler) or anything satisfying
 	// logger.Logger.
 	// Default: a text logger to os.Stdout at warn level and up.
@@ -96,5 +104,6 @@ func (c *Config) ToTopic(id int64) *Topic {
 		RetentionTTL:           c.RetentionTTL,
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
+		DisableDeliveryLog:     c.DisableDeliveryLog,
 	}
 }

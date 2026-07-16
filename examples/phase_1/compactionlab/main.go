@@ -94,7 +94,7 @@ func main() {
 	assertIDs("only the latest version of each key, plus the unkeyed row, come back", ids(claim.Messages), []int64{3, 4, 6})
 	assertInt("all 6 rows still physically exist -- compaction filters, never deletes", rowCount(ctx, ds, tp.Id), 6)
 
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
 	committed := advance(ctx, cd, tp.Id)
 	assertInt("committed advances over the whole range regardless of compaction", committed, 6)
 
@@ -104,7 +104,7 @@ func main() {
 	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, cd, tp.Id)
 	assertInt("committed", committed, 7)
 
@@ -112,7 +112,7 @@ func main() {
 	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, cd, tp.Id)
 	assertInt("committed only ever moves forward", committed, 8)
 	assertTrue("v1 (id 7) is still physically present -- compaction never rewrites history", rowExists(ctx, ds, tp.Id, 7))
@@ -151,7 +151,7 @@ func main() {
 	fmt.Println("     value eventually arrives), not a per-message one -- v1 owed nothing further")
 	fmt.Println("     once v2 superseded it, exactly like Kafka's own compacted-topic contract")
 
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim2.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim2.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, cd, tp.Id)
 	assertInt("committed moves past the (empty) reclaimed range", committed, 9)
 
@@ -159,7 +159,7 @@ func main() {
 	claim3, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, 1, maxRangeReclaims, lease)
 	must(err)
 	assertIDs("user:4 v2 delivered", ids(claim3.Messages), []int64{10})
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim3.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim3.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, cd, tp.Id)
 	assertInt("committed", committed, 10)
 
@@ -170,7 +170,7 @@ func main() {
 	must(err)
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
 	assertTrue("payload's own Deleted field survives -- the query never special-cases it", decode(claim.Messages[0].Payload).Deleted)
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second))
+	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, cd, tp.Id)
 	assertInt("committed", committed, 11)
 

@@ -472,7 +472,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 
 	// range always frees -- the lazy roller (RollWaterline) advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff); err != nil {
+	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
@@ -494,7 +494,7 @@ func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastPr
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff); err != nil {
+	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
@@ -531,7 +531,7 @@ func (p *WorkConsumer[WorkType]) DrainExceptions(ctx context.Context, consumerFu
 func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
-	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration)
+	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
 		return err
 	}
@@ -547,7 +547,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 		}
 
 		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
-			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err); recordErr != nil {
+			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
 					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.Group, "topic", p.Topic.Id, "message_id", exception.MessageId)
 					continue // reclaimed by the kill backstop or another worker -- not ours anymore
@@ -590,7 +590,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 		var work WorkType
 		if err := json.Unmarshal(delivery.Payload, &work); err != nil {
 			// a bad payload will never deserialize -> straight to the DLQ, no retries
-			if recordErr := p.Datastore.RecordTerminal(ctx, &delivery, err); recordErr != nil {
+			if recordErr := p.Datastore.RecordTerminal(ctx, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
 			}
 			continue
@@ -598,7 +598,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 
 		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId, delivery.Attempts); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
-			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, &delivery, err); recordErr != nil {
+			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.MaxAttempts, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
 			}
 			continue

@@ -48,7 +48,8 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
-			idempotency_key_ttl_ns
+			idempotency_key_ttl_ns,
+			disable_delivery_log
 		FROM topic
 		WHERE name = $1;
 	`
@@ -63,6 +64,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 		&retentionTTLNs,
 		&t.AllowDropPastCommitted,
 		&idempotencyKeyTTLNs,
+		&t.DisableDeliveryLog,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -95,19 +97,19 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id;
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL)).Scan(&id)
+	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog).Scan(&id)
 
 	switch {
 	case insertErr == nil:
 		// we won the insert -- stand up this topic's own log
-		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize); err != nil {
+		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize, cfg.DisableDeliveryLog); err != nil {
 			return nil, err
 		}
 		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", cfg.Name, "topic_id", id)
@@ -141,6 +143,7 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 //
 // - message_log_<id>
 // - delivery_<id>
+// - delivery_log_<id> (unless disableDeliveryLog)
 //
 // Split one per topic instead of shared because:
 // - Drop Partition functionality -- DropExpiredPartitions/SweepExpiredPartitions only expire a
@@ -161,7 +164,7 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 // - Dense ID sequence -- A shared BIGSERIAL would leave each topic's ids scattered
 // across a sparse subset of it, which breaks the head/partitionSize math
 // EnsureNextPartition uses to create partitions when they are needed
-func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
+func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64, disableDeliveryLog bool) error {
 	createTableSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent
@@ -200,7 +203,25 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			PRIMARY KEY (consumer_group, message_id)
 		);
 	`, DeliveryTable(id))
-	_, err := tx.Exec(ctx, createDeliverySql)
+	if _, err := tx.Exec(ctx, createDeliverySql); err != nil {
+		return err
+	}
+
+	if disableDeliveryLog {
+		return nil
+	}
+
+	createDeliveryLogSql := fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			consumer_group TEXT NOT NULL,        -- PK
+			message_id BIGINT NOT NULL,          -- PK
+			attempt INT NOT NULL,                -- PK
+			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			error TEXT NOT NULL,                 -- always populated -- a row only ever exists for a failed attempt
+			PRIMARY KEY (consumer_group, message_id, attempt)
+		);
+	`, DeliveryLogTable(id))
+	_, err := tx.Exec(ctx, createDeliveryLogSql)
 	return err
 }
 

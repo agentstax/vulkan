@@ -117,7 +117,7 @@ func scenarioExhaustedRetries(ctx context.Context, wc *consumer.WorkConsumer[com
 	// maxAttempts=1 -- the claim's own Attempts (already >=1 from scenario 1's
 	// park) immediately satisfies it, so this dead-letters on the first retry
 	// instead of requiring a real multi-attempt backoff sequence.
-	claimed, err := wc.Datastore.ClaimExceptions(ctx, wc.Topic.Id, group, batch, 1, lease)
+	claimed, err := wc.Datastore.ClaimExceptions(ctx, wc.Topic.Id, group, batch, 1, lease, false)
 	must(err)
 	if len(claimed) != 1 || claimed[0].MessageId != failingId1 {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId1, claimed))
@@ -129,7 +129,7 @@ func scenarioExhaustedRetries(ctx context.Context, wc *consumer.WorkConsumer[com
 	mid := snapshotCounts(ctx, wc)
 	assertDelta("claiming the exception for retry moves it from ready to inflight", before, mid, counts{Ready: -1, Inflight: 1})
 
-	must(wc.Datastore.RecordExceptionFailure(ctx, 1, &claimed[0], errors.New("retries exhausted")))
+	must(wc.Datastore.RecordExceptionFailure(ctx, 1, &claimed[0], errors.New("retries exhausted"), false))
 
 	after := snapshotCounts(ctx, wc)
 	assertDelta("exhausted retries move the exception from inflight to dead", mid, after, counts{Inflight: -1, Dead: 1})
@@ -194,7 +194,7 @@ func scenarioCrash(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) 
 	if reclaim == nil {
 		die("expected a reclaim, got nil")
 	}
-	must(wc.Datastore.Commit(ctx, wc.Topic.Id, group, reclaim.Lease.Token, nil, nil, 300*time.Millisecond))
+	must(wc.Datastore.Commit(ctx, wc.Topic.Id, group, reclaim.Lease.Token, nil, nil, 300*time.Millisecond, false))
 
 	after := snapshotCounts(ctx, wc)
 	assertDelta("reclaim + commit releases the orphaned lease", mid, after, counts{OpenLeases: -1})
