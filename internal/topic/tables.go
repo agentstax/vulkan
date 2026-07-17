@@ -2,8 +2,6 @@ package topic
 
 import "fmt"
 
-// TODO - should reconsider if this should be *Topic methods
-
 // LogTable is topicID's own physical message log.
 func LogTable(topicID int64) string {
 	return fmt.Sprintf("message_log_%d", topicID)

@@ -239,3 +239,5 @@ This is a much later thing but we should take the time to understand uber's desi
 - Switching from FIFO to LIFO under overload conditions. We could think of this ourselves as maybe not a switch but a load shedding gauge where if lag is growing we being to park older lease ranges systematically to skip more and more until lag is caught up.
 - This idea of priority tiers is also interesting. Where each piece of work has a priority to it 0-5. If under overload scenarios low tier work is dropped or skipped.
 - The producer side of overloading is interesting to think through as well
+
+decide on what is in internal vs pkg. Pkg should ideally be much smaller API surface only. Simple so even users can scan the code to find what they might be looking for

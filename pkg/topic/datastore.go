@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
@@ -173,7 +174,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			payload JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);
-	`, LogTable(id))
+	`, iTopic.LogTable(id))
 	if _, err := tx.Exec(ctx, createTableSql); err != nil {
 		return err
 	}
@@ -183,7 +184,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (0) TO (%d);
-	`, PartitionTable(id, 0), LogTable(id), partitionSize)
+	`, iTopic.PartitionTable(id, 0), iTopic.LogTable(id), partitionSize)
 	if _, err := tx.Exec(ctx, createPartitionSql); err != nil {
 		return err
 	}
@@ -202,7 +203,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (consumer_group, message_id)
 		);
-	`, DeliveryTable(id))
+	`, iTopic.DeliveryTable(id))
 	if _, err := tx.Exec(ctx, createDeliverySql); err != nil {
 		return err
 	}
@@ -220,7 +221,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			error TEXT NOT NULL,                 -- always populated -- a row only ever exists for a failed attempt
 			PRIMARY KEY (consumer_group, message_id, attempt)
 		);
-	`, DeliveryLogTable(id))
+	`, iTopic.DeliveryLogTable(id))
 	_, err := tx.Exec(ctx, createDeliveryLogSql)
 	return err
 }
@@ -251,15 +252,15 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 
 	// drops every message_log_<id>_N partition and delivery_<id>
-	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, LogTable(topic.Id))
+	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.LogTable(topic.Id))
 	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
 		return err
 	}
-	dropDeliverySql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, DeliveryTable(topic.Id))
+	dropDeliverySql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.DeliveryTable(topic.Id))
 	if _, err := tx.Exec(ctx, dropDeliverySql); err != nil {
 		return err
 	}
-	dropDeliveryLogSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, DeliveryLogTable(topic.Id))
+	dropDeliveryLogSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.DeliveryLogTable(topic.Id))
 	if _, err := tx.Exec(ctx, dropDeliveryLogSql); err != nil {
 		return err
 	}

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentstax/vulkan/internal/topic"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"

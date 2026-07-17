@@ -2945,11 +2945,28 @@ describing has stopped moving (see Phase 15).
 - [ ] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
       repeated on every call vs. an admin-object-holding-`ds` pattern that
       only needs `(ctx, name)` per call.
-- [ ] **`topic.LogTable`/`PartitionTable`/`DeliveryTable`/`DeliveryLogTable`**
+- [x] **`topic.LogTable`/`PartitionTable`/`DeliveryTable`/`DeliveryLogTable`**
       are exported functions any caller can reach, but they're really
       cross-package plumbing for producer/consumer, not something an end
-      user has a reason to call. Decide: keep exported, make `*Topic`
-      methods, or unexport.
+      user has a reason to call. Checked actual usage first: zero example
+      programs call these directly, every real call site is
+      `pkg/producer`/`pkg/consumer`/`pkg/consumer/metrics` building raw SQL
+      against tables `pkg/topic` owns creating/dropping. Plain unexport
+      wasn't viable -- those are three different packages, so lowercasing
+      in `pkg/topic` breaks cross-package compilation. `*Topic` methods
+      weren't either -- every real call site only ever carries a bare
+      `topicID int64` (the `Datastore` interface deliberately takes
+      `topicID int64`/`partitionSize int64`, not `*topic.Topic`), so methods
+      would force threading `*Topic` through that whole interface for zero
+      user-facing benefit. Landed on Go's actual tool for this: moved all
+      four into a new `internal/topic` package (module-internal, so
+      `producer`/`consumer`/`consumer/metrics`/`topic` can all still import
+      it, but nothing outside the module can) -- unqualified `topic` import
+      in the three consumer packages, aliased `iTopic` inside
+      `pkg/topic/datastore.go` itself since that file already has local
+      `topic *Topic` variables/params that would otherwise shadow an
+      unaliased `topic` import. They're gone from `pkg/topic`'s public API
+      entirely now, enforced by the compiler rather than doc-comment intent.
 
 *Config surface — where a field lives, and what it's called:*
 - [ ] **Consumer vs. topic vs. producer config placement.** A decent amount
