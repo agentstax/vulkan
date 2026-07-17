@@ -195,7 +195,7 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 // against an already-open tx
 func (d *producerDatastore[Message]) runInsert(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (message *Message, landed bool, err error) {
 	// let user do transactional enqueue and return work/message
-	message, err = producerFunc(ctx, tx, idempotencyKey)
+	message, err = producerFunc(ctx, newVulkanTx(tx), idempotencyKey)
 	if err != nil {
 		return nil, false, err
 	}
@@ -230,7 +230,7 @@ func (d *producerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx 
 		return nil, err
 	}
 
-	message, err = producerFunc(ctx, tx, idempotencyKey)
+	message, err = producerFunc(ctx, newVulkanTx(tx), idempotencyKey)
 	if err != nil {
 		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
 		return nil, err

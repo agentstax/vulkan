@@ -37,7 +37,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -205,7 +204,7 @@ func main() {
 // ---- helpers ----
 
 func publish(ctx context.Context, wp *producer.WorkProducer[KeyedRecord], key string, version int, deleted bool) {
-	_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*KeyedRecord, error) {
+	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
 		return &KeyedRecord{Key: key, Version: version, Deleted: deleted}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)

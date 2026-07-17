@@ -35,7 +35,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 const scalePartitionSize = int64(10)
@@ -77,7 +76,7 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
+			_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{CompactionKey: "hot-key"})
 			must(err)

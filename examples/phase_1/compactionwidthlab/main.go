@@ -32,7 +32,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -119,7 +118,7 @@ func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.WorkP
 }
 
 func publish(ctx context.Context, wp *producer.WorkProducer[Record], key string) {
-	_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*Record, error) {
+	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)

@@ -12,7 +12,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -58,7 +57,7 @@ func main() {
 
 	// WORK
 	for range *countPtr {
-		work, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
+		work, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err

@@ -40,7 +40,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -252,7 +251,7 @@ var _ net.Error = fakeNetError{}
 
 func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
 	for range n {
-		_, err := wp.Produce(ctx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

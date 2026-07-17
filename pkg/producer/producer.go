@@ -6,15 +6,12 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 // TODO - Consider using struct {} instead of generics
 
-// TODO - the pgx.Tx here couples this datastore-agnostic package to pgx should try to decouple if we ever want many datastores (probably not)
-
-type ProducerFunc[WorkType any] func(ctx context.Context, tx pgx.Tx, idempotencyKey uuid.UUID) (*WorkType, error)
-type TransactionFunc func(ctx context.Context, tx pgx.Tx) error
+type ProducerFunc[WorkType any] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*WorkType, error)
+type TransactionFunc func(ctx context.Context, tx Tx) error
 
 type Producer[WorkType any] interface {
 	Produce(ctx context.Context, work *WorkType) error
@@ -84,8 +81,8 @@ func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc Produ
 }
 
 // TODO - make good doc comments
-func (p *WorkProducer[WorkType]) ProduceInTx(ctx context.Context, tx pgx.Tx, producerFunc ProducerFunc[WorkType], opts ProduceOptions) (*WorkType, error) {
-	return p.datastore.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+func (p *WorkProducer[WorkType]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[WorkType], opts ProduceOptions) (*WorkType, error) {
+	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }
 
 // TODO - make good doc comments
@@ -99,7 +96,7 @@ func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, tra
 	}
 	defer tx.Rollback(ctx)
 
-	if err := transactionFunc(ctx, tx); err != nil {
+	if err := transactionFunc(ctx, newVulkanTx(tx)); err != nil {
 		return err
 	}
 

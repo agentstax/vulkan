@@ -26,7 +26,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 const group = "phase9.deletetopiclab.group"
@@ -55,7 +54,7 @@ func main() {
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	must(cd.Bind(ctx, tp.Id, group, "orders.*"))
 
-	fn := func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
+	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
 	// CompactionKey seeds latest_key; the default (protected) idempotency

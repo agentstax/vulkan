@@ -34,11 +34,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var fn = func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
+var fn = func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 	return common.NewWork(30, "admin@example.com")
 }
 
@@ -72,7 +71,7 @@ func atomicPublishScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
 	defer cleanupB()
 
-	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx pgx.Tx) error {
+	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
 		}
@@ -95,11 +94,11 @@ func rollbackOnFailureScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanupB()
 
 	wantErr := errors.New("second target refuses to publish")
-	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx pgx.Tx) error {
+	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
 		}
-		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx pgx.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpB.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return nil, wantErr
 		}, producer.ProduceOptions{})
 		return err
@@ -128,7 +127,7 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.P
 	assertMessageLogCount(ctx, ds, topicB.Id, 1)
 
 	betweenCalls := 0
-	err = producer.InTransaction(ctx, ds, func(ctx context.Context, tx pgx.Tx) error {
+	err = producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
 		}
@@ -161,7 +160,7 @@ func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresData
 			optsB.SkipIdempotency = true
 		}
 
-		err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx pgx.Tx) error {
+		err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
 			if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 				return err
 			}
