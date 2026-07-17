@@ -149,7 +149,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 		WorkTimeoutGrace: 100 * time.Millisecond,
 	})
 	must(err)
-	// leaseDuration = WorkTimeout+QueueTimeout+AckMargin (defaults: 1s+5s+2s=8s)
+	// leaseDuration = WorkTimeout+QueueMargin+AckMargin (defaults: 1s+5s+2s=8s)
 	// stays well above hangFor below, so the lease itself never expires mid-test.
 
 	const hangFor = 2500 * time.Millisecond

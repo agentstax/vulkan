@@ -78,7 +78,7 @@ func main() {
 		MaxAttempts:     3,
 		ClaimPollRate:   500 * time.Millisecond,
 		WorkTimeout:     10 * time.Second, // must exceed the slowest payload sleep
-		QueueTimeout:    3 * time.Second,
+		QueueMargin:    3 * time.Second,
 		AckMargin:       2 * time.Second,
 		ShutdownTimeout: 15 * time.Second,
 	})

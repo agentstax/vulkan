@@ -45,7 +45,7 @@ import (
 
 const group = "phase9.shutdowntruncationlab"
 
-// WorkTimeout + QueueTimeout + AckMargin below sums to this -- kept equal to the
+// WorkTimeout + QueueMargin + AckMargin below sums to this -- kept equal to the
 // leaseDuration used for the manual reclaim call later, so both claims behave
 // the same way.
 const lease = 2 * time.Second
@@ -79,7 +79,7 @@ func main() {
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:   3,
 		WorkTimeout:  1 * time.Second,
-		QueueTimeout: 500 * time.Millisecond,
+		QueueMargin: 500 * time.Millisecond,
 		AckMargin:    500 * time.Millisecond, // also PartialCommit's own detached-ctx budget
 	})
 	must(err)

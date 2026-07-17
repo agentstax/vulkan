@@ -22,8 +22,8 @@ func (c *MessageConsumer[Message]) WithWorkTimeout(workTimeout time.Duration) *M
 	return c
 }
 
-func (c *MessageConsumer[Message]) WithQueueTimeout(queueTimeout time.Duration) *MessageConsumer[Message] {
-	c.Config.QueueTimeout = queueTimeout
+func (c *MessageConsumer[Message]) WithQueueMargin(queueMargin time.Duration) *MessageConsumer[Message] {
+	c.Config.QueueMargin = queueMargin
 	return c
 }
 

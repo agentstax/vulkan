@@ -44,9 +44,9 @@ type MessageConsumerConfig struct {
 	MaxAttempts      int
 	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
 	ClaimPollRate    time.Duration
-	WorkTimeout      time.Duration // TODO - consider a better name
-	QueueTimeout     time.Duration // TODO - consider a better name -- is the time buffer we afford after work to sit in queue
-	AckMargin        time.Duration // TODO - consider a better name -- the extra margin of time we give the consumer to record success and failures after consumerFunc processing
+	WorkTimeout      time.Duration // bounds consumerFunc itself -- enforced via ctx and the hard-abandon fallback below
+	QueueMargin      time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
+	AckMargin        time.Duration // lease padding for recording success/failure after consumerFunc returns
 	// WorkTimeoutGrace is scheduling slack for a consumerFunc that DID respect
 	// ctx.Done() to actually unwind and send on the result channel before the
 	// hard cutoff abandons it -- not extra time to keep working. Go's own
@@ -85,8 +85,8 @@ func (c *MessageConsumerConfig) withDefaults() *MessageConsumerConfig {
 	if c.WorkTimeout == 0 {
 		c.WorkTimeout = 30 * time.Second
 	}
-	if c.QueueTimeout == 0 {
-		c.QueueTimeout = 5 * time.Second
+	if c.QueueMargin == 0 {
+		c.QueueMargin = 5 * time.Second
 	}
 	if c.AckMargin == 0 {
 		c.AckMargin = 2 * time.Second
@@ -207,15 +207,15 @@ func (p *MessageConsumer[Message]) validate() error {
 
 	// non-positive durations break their respective loops/timers:
 	// ClaimPollRate<=0 -> SleepWithContext/WaitForRoom timers fire immediately (busy loop),
-	// WorkTimeout/QueueTimeout/AckMargin<=0 -> the lease window math degenerates.
+	// WorkTimeout/QueueMargin/AckMargin<=0 -> the lease window math degenerates.
 	if p.Config.ClaimPollRate <= 0 {
 		return fmt.Errorf("ClaimPollRate must be > 0, got %v", p.Config.ClaimPollRate)
 	}
 	if p.Config.WorkTimeout <= 0 {
 		return fmt.Errorf("WorkTimeout must be > 0, got %v", p.Config.WorkTimeout)
 	}
-	if p.Config.QueueTimeout <= 0 {
-		return fmt.Errorf("QueueTimeout must be > 0, got %v", p.Config.QueueTimeout)
+	if p.Config.QueueMargin <= 0 {
+		return fmt.Errorf("QueueMargin must be > 0, got %v", p.Config.QueueMargin)
 	}
 	if p.Config.AckMargin <= 0 {
 		return fmt.Errorf("AckMargin must be > 0, got %v", p.Config.AckMargin)
@@ -415,7 +415,7 @@ func (p *MessageConsumer[Message]) Process(ctx context.Context, consumerFunc Con
 
 func (p *MessageConsumer[Message]) CursorClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
-	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
+	leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 
 	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
@@ -516,7 +516,7 @@ func (p *MessageConsumer[Message]) DrainExceptions(ctx context.Context, consumer
 }
 
 func (p *MessageConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
+	leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 
 	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {

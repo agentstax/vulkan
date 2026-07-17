@@ -3013,9 +3013,22 @@ describing has stopped moving (see Phase 15).
       "janitor opt-out" and "many workers running janitor" entries rather
       than opening a new one — same underlying question of who should own
       running the janitor.
-- [ ] **`WorkTimeout`/`QueueTimeout`/`AckMargin` naming** — each currently
-      has its own "consider a better name" marker; settle on names that
-      convey what each actually buffers for.
+- [x] **`WorkTimeout`/`QueueTimeout`/`AckMargin` naming.** All three sum
+      into `leaseDuration`, but checking actual enforcement (not just the
+      formula) split them into two real categories: `WorkTimeout` and
+      `AckMargin` are each ALSO independently enforced elsewhere (`WorkTimeout`
+      bounds `consumerFunc`'s own ctx + the hard-abandon fallback;
+      `AckMargin` bounds the `Commit`/`PartialCommit` call itself) — their
+      names already match that role, left unchanged. `QueueTimeout` was the
+      odd one out: never independently enforced anywhere, pure additive
+      lease padding, structurally identical to `AckMargin`'s role, not
+      `WorkTimeout`'s — renamed to **`QueueMargin`** to match. Removed the
+      "consider a better name" TODOs on all three now that the naming is
+      decided. `QueueMargin`'s own existence (not just its name) is still
+      tied to the still-open `Queue`/`PoolLimiter` dead-code bullet above —
+      if that mechanism gets dropped, whether a "time spent queued before a
+      worker starts" concept survives leaseDuration at all is an open
+      question this doesn't resolve, revisit alongside that decision.
 - [ ] **Named-return-params for public functions** — decide the house style
       and apply it consistently across the reviewed surface, not ad hoc.
 - [ ] **Retry policy is hardcoded in four places**
