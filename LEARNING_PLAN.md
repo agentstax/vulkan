@@ -2612,18 +2612,89 @@ type — even the reference didn't bother.*
 - [ ] **Abstract the datastore boundary.** Audit `pkg/consumer` for places that
       assume more than the `Datastore` interface promises, so swapping the
       backing store wouldn't require touching consumer logic.
-- [ ] **Multi-target transactional enqueue.** Extend the producer so one call
-      can publish to multiple queues/topics within the same transaction —
-      today's `WorkProducer.Produce(ctx, producerFunc, routingKey)` only
-      targets the one queue its `Datastore` was constructed against (the
-      caller's `producerFunc(ctx, tx)` closure runs inside a transaction
-      `Produce` opens and owns, but only one `AppendMessage` call is
-      possible per invocation). Note this gets materially harder, not just
-      bigger, once 8b lands: "multiple targets" today means multiple
-      `routing_key`s in one shared table, but post-8b it means multiple
-      physically separate `message_log_<topic_id>` tables, each with its own
-      sequence — likely multiple `WorkProducer` instances needing to share
-      one externally-managed transaction, inverting who currently owns it.
+- [x] **Multi-target transactional enqueue.** New package-level
+      `producer.InTransaction(ctx, ds, func(ctx, tx pgx.Tx) error {...})`
+      opens one transaction, runs the caller's closure, commits on nil /
+      rolls back otherwise. A new `WorkProducer[T].ProduceInTx(ctx, tx,
+      producerFunc, opts) (*T, error)` — the tx-taking sibling to
+      `Produce` — is called once per target inside that closure, so the
+      caller can interleave arbitrary business writes (and side effects)
+      across multiple topics in one transaction:
+      ```go
+      producer.InTransaction(ctx, ds, func(ctx context.Context, tx pgx.Tx) error {
+          order, err := orderProducer.ProduceInTx(ctx, tx, buildOrder, opts1)
+          if err != nil { return err }
+          sendEmailConfirmation(order) // caller's own side effect, own risk
+          _, err = notifProducer.ProduceInTx(ctx, tx, buildNotif(order), opts2)
+          return err
+      })
+      ```
+      Rejected a closure-free, declarative `PublishAll(Target(p1, fn1,
+      opts1), ...)` API that never exposes `pgx.Tx` to the caller — costs
+      too much flexibility (no interleaving business writes/side effects
+      across targets, the whole point of exposing `tx`).
+
+      Partition self-heal is per-target, via SAVEPOINT: Postgres aborts an
+      ENTIRE transaction on the first statement error, so there's no way to
+      catch and retry one target's missing-partition error without a
+      savepoint established BEFORE the risky insert. `ProduceInTx` wraps
+      its own `producerFunc` call + insert in one savepoint; on a
+      missing-partition error it rolls back to ITS OWN savepoint only,
+      creates the partition, and retries ITS OWN work — nothing before or
+      after it in the caller's closure (an earlier target's uncommitted
+      work, or a side effect like `sendEmailConfirmation`) is touched or
+      rerun. The insert + `RELEASE SAVEPOINT` are batched together via
+      `pgx.Batch` (`SAVEPOINT` itself can't be folded in — it has to exist
+      before the arbitrary `producerFunc` runs).
+
+      **No opt-out flag.** Considered and rejected a
+      `SkipPartitionSelfHeal`-style escape hatch: the risk is
+      anti-correlated with who'd reach for it — the population under
+      enough write pressure to want to shave off the savepoint tax is the
+      same population most likely to outrun the janitor's create-ahead and
+      actually need the protection. Throughput-sensitive users should tune
+      `JanitorPollRate`/`PartitionSize` instead (reduces how often
+      self-heal fires at all, doesn't remove the safety net).
+
+      **Measured, not assumed:** a throwaway sequential lab showed the
+      naive 3-round-trip savepoint added +160-190% per-call latency over a
+      plain insert at N=100/1000; batching the insert+release cut that to
+      +55-95%. A separate concurrent-producer lab (10/50/100 goroutines,
+      multiple runs) showed AGGREGATE THROUGHPUT for the batched-savepoint
+      version landed at 91-105% of baseline in the large majority of
+      samples — statistically indistinguishable from noise. Savepoints are
+      cheap bookkeeping, not WAL-flushing or lock-contending work, so the
+      per-call latency tax doesn't cost real throughput once there's
+      enough concurrency to overlap the extra round trip's idle wait. The
+      one honest caveat: a connection is held marginally longer per call,
+      so a pool sized right at its ceiling needs slightly more headroom.
+
+      **`InTransaction` does not retry.** `AppendMessage`'s retry is safe
+      to auto-rerun because `producerFunc` is narrow, framework-documented
+      business logic the docs already tell users to write as
+      safely-rerunnable. `InTransaction`'s closure is a much bigger surface
+      — arbitrary user code spanning multiple `ProduceInTx` calls plus
+      non-producer side effects between them — so auto-retrying on a
+      transient blip would mean silently rerunning that closure from an
+      unpredictable point. A transient blip or an ambiguous commit failure
+      surfaces to the caller as-is; a caller wanting retry-on-blip wraps
+      their own loop around `InTransaction` (they know what's safe to
+      rerun in their own closure, this package doesn't). This resolution
+      also made the commit-ambiguity/mixed-`SkipIdempotency`
+      classification question moot — nothing to classify when nothing
+      retries.
+
+      `just multi-target-lab`: two targets in one `InTransaction` closure
+      commit together; a failure on either rolls back BOTH inserts, not
+      just the failing target's; a forced missing-partition self-heal on
+      one target leaves the other target's already-made insert untouched
+      and a caller side effect standing between the two calls fires
+      exactly once (not rerun by the retry); and a genuine Commit-time
+      failure (forced via a scratch `DEFERRABLE INITIALLY DEFERRED` FK
+      fixture) surfaces as the raw driver error with no
+      `retry.PermanentError` wrapping, identically whether zero, one, or
+      every target used `SkipIdempotency` — locking down the no-retry
+      decision above as a regression test, not just a design note.
 - [x] **Attempt audit trail.** New per-topic `delivery_log_<topic_id>` table
       (`consumer_group, message_id, attempt, attempted_at, error`, PK
       `(consumer_group, message_id, attempt)`) recording only FAILED
