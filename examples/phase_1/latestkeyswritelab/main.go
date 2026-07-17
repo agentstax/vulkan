@@ -65,7 +65,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	unkeyedMs := timeSequential(ctx, wp, n, func(i int) string { return "" })
 	freshKeyMs := timeSequential(ctx, wp, n, func(i int) string { return fmt.Sprintf("fresh-%d", i) })
@@ -116,7 +116,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 
 // timeSequential runs n single-threaded publishes, keyFn(i) chosen per call,
 // returning total elapsed time in milliseconds.
-func timeSequential(ctx context.Context, wp *producer.WorkProducer[common.Work], n int, keyFn func(i int) string) float64 {
+func timeSequential(ctx context.Context, wp *producer.MessageProducer[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -136,7 +136,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	must(err)
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	start := time.Now()
 	var wg sync.WaitGroup

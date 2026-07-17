@@ -54,7 +54,7 @@ func main() {
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	step("publish 4 'old' messages, then let them age past ttl")
@@ -91,7 +91,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.WorkProducer[common.Work]) {
+func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
 	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})

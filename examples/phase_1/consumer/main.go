@@ -74,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	workConsumer, err := consumer.NewWorkConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, ds, &consumer.WorkConsumerConfig{
+	workConsumer, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, ds, &consumer.MessageConsumerConfig{
 		Type:          consumer.CURSOR,
 		BatchLimit:    10,
 		MaxAttempts:   3,
@@ -87,7 +87,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.WorkConsumer[common.Work]) error {
+	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.MessageConsumer[common.Work]) error {
 		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
 			return err
 		}

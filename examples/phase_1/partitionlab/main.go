@@ -49,7 +49,7 @@ func main() {
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
 	for range 14 {
@@ -76,7 +76,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.WorkProducer[common.Work]) {
+func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
 	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})

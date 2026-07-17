@@ -69,7 +69,7 @@ func main() {
 
 	cd := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
 	pd := producer.NewProducerDatastore[KeyedRecord](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))
 
 	const lease = 2 * time.Second
@@ -203,7 +203,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.WorkProducer[KeyedRecord], key string, version int, deleted bool) {
+func publish(ctx context.Context, wp *producer.MessageProducer[KeyedRecord], key string, version int, deleted bool) {
 	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
 		return &KeyedRecord{Key: key, Version: version, Deleted: deleted}, nil
 	}, producer.ProduceOptions{CompactionKey: key})

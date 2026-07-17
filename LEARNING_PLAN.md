@@ -85,7 +85,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
 | 11 — Architecture cleanup | ✅ done | datastore boundary audited (decision deferred to **13**), multi-target enqueue (`InTransaction`/`ProduceInTx`, savepoint self-heal), attempt audit log, `context.Cause`, batch write-path round trips; Explain-it-back deliberately skipped (see NOTES.md); answers in NOTES.md; tag `phase-11`; `pgx` vs. `database/sql` cut to **11b** |
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document |
-| 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `WorkConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built |
+| 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built |
 | 14 — V1 hardening, correctness & cleanup | ⬜ | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, schema evolution decision, FanOut rescan, default alerts, and the rest of the non-API-shape TODO.md/code-TODO backlog — sequenced after 13 locks the surface |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13 and 14 stop moving the surface they'd describe |
 | 6.5d, 7b, 8d, 9b, 11b | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`) — pick up only if a real workload demands each; moved to the end of this document; 9b should wait for 13 (not the original 11) to settle the datastore boundary, and 11b should weigh 8d's outcome if both are ever picked up |
@@ -2897,8 +2897,8 @@ describing has stopped moving (see Phase 15).
 **Build:**
 
 *Concrete shape questions this review already turned up:*
-- [ ] **`WorkConsumer.Queue`/`PoolLimiter` are validated but functionally
-      dead.** `NewWorkConsumer` requires a `concurrency.Queue[MessageRow]` and
+- [ ] **`MessageConsumer.Queue`/`PoolLimiter` are validated but functionally
+      dead.** `NewMessageConsumer` requires a `concurrency.Queue[MessageRow]` and
       `concurrency.PoolLimiter` (non-nil, `Queue.Cap() >= BatchLimit`,
       checked in `validate()`), but nothing in the live `Process`/
       `CursorClaim`/`LifecycleClaim` path reads `p.Queue` or `p.PoolLimiter`
@@ -2909,15 +2909,39 @@ describing has stopped moving (see Phase 15).
       both params + fields entirely (breaking, but removes dead required
       state every caller must construct for nothing), or keep them wired for
       a future prefetch/batching redesign.
-- [ ] **`pgx.Tx` threaded through every `producerFunc`/`ProduceInTx`
+- [x] **`pgx.Tx` threaded through every `producerFunc`/`ProduceInTx`
       signature** couples a package that's supposed to be datastore-agnostic
       to pgx specifically. Decide, and write the decision down even if it
       stays as-is (matches 11b's own "document even if the answer is keep
       pgx" precedent) — the reasoning belongs here, not just a shrug.
-- [ ] **`WorkType` generic vs. a `struct{}`-based shape** for
+- [ ] **`Message` generic vs. a `struct{}`-based shape** for
       producer/consumer — decide and document.
-- [ ] **`WorkType` → `Message`** rename across `pkg/consumer`'s generic type
-      param, if the review lands on it reading better.
+- [x] **`WorkType` → `Message`** rename across `pkg/producer`/`pkg/consumer`'s
+      generic type param. Landed as `Message` everywhere it means "the
+      caller's payload type" — `pkg/producer/datastore.go` and
+      `pkg/consumer/datastore.go` already used `Message` as their own
+      internal generic param name, so this closes an inconsistency that
+      already existed rather than introducing new vocabulary. Researched
+      the landscape first: job-queue libraries (River, Oban, Faktory,
+      Sidekiq, Asynq, BullMQ) converge on `Job`/`Task`; log/pub-sub systems
+      (Kafka, RabbitMQ, NATS, SQS, GCP Pub/Sub, pgmq) converge on `Message`
+      (Kafka's Java API technically prefers `Record`, but uses the two
+      interchangeably). pgmq — the closest same-category Postgres-native
+      project, with zero Kafka lineage — independently landed on `Message`
+      too, which is what tipped this away from reading as "just copying
+      Kafka": vulkan's architecture (partitioned topics, log compaction,
+      routing-key bindings, fan-out, cursor-based consumption) is log/pub-sub
+      shaped, not job-execution shaped, so `Message` is the term the actual
+      shape of the system converges on, not an arbitrary pick.
+      Cascaded into renaming `WorkProducer`→`MessageProducer`,
+      `NewWorkProducer`→`NewMessageProducer`, `WorkConsumer`→`MessageConsumer`,
+      `NewWorkConsumer`→`NewMessageConsumer`, `WorkConsumerConfig`→
+      `MessageConsumerConfig` — leaving `Work` in the producer/consumer type
+      names while the generic became `Message` would have read inconsistently
+      (`WorkProducer[Message]`). `pkg/concurrency`'s own `WorkType` param
+      (`Queue[WorkType]`/`PressureQueue[WorkType]`) was deliberately left
+      alone — its fate is tied to the still-open `Queue`/`PoolLimiter`
+      dead-code decision above, not this one.
 - [ ] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
       repeated on every call vs. an admin-object-holding-`ds` pattern that
       only needs `(ctx, name)` per call.
@@ -2929,7 +2953,7 @@ describing has stopped moving (see Phase 15).
 
 *Config surface — where a field lives, and what it's called:*
 - [ ] **Consumer vs. topic vs. producer config placement.** A decent amount
-      of `WorkConsumerConfig` (janitor settings especially) probably belongs
+      of `MessageConsumerConfig` (janitor settings especially) probably belongs
       on `topic.Config` instead — work out the real boundary, not per-field
       guesses.
 - [ ] **`WorkTimeout`/`QueueTimeout`/`AckMargin` naming** — each currently
@@ -2952,13 +2976,13 @@ describing has stopped moving (see Phase 15).
       default" tension is the part worth resolving deliberately, not just
       picking one).
 - [ ] **`validate()` runs inside `Process()`, not `New()`** — decide if
-      construction-time validation (fail fast at `NewWorkConsumer`, not at
+      construction-time validation (fail fast at `NewMessageConsumer`, not at
       first `Process()` call) is the right public contract.
 - [ ] **`PartitionSafetyBuffer`'s hardcoded `50000` default** needs an
       actually-reasoned default, not a placeholder number.
 - [ ] **Lifecycle funcs (startup → poll → shutdown)** — decide whether these
       become an overridable `Lifecycle` struct (new public extension point)
-      or stay internal to `WorkConsumer`.
+      or stay internal to `MessageConsumer`.
 
 *New public surfaces to shape — design the surface, full implementation can
 follow in Phase 14 or after v1 where noted:*
@@ -2981,12 +3005,12 @@ follow in Phase 14 or after v1 where noted:*
       change shape later.
 - [ ] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
       the full motivating write-up). Work through the design: does it live
-      as a new `WorkConsumerConfig` hook or a wrapper around `consumerFunc`;
+      as a new `MessageConsumerConfig` hook or a wrapper around `consumerFunc`;
       per-topic or per-group state; what counts as "the same dependency" when
       `consumerFunc` is opaque to this library; how open/closed state
       interacts with the existing `backoff()` formula. **Design only** — the
       breaker's actual trip/cooldown logic doesn't need to ship in v1, but
-      its shape does, since it changes `WorkConsumerConfig`.
+      its shape does, since it changes `MessageConsumerConfig`.
 - [ ] **Chaos-testing / fixture suite** — shape both halves: (1) internal
       test helpers this repo's own test suite can use to seed messages
       directly into `ready`/`inflight`/`dead` states and inject failures, and
@@ -3035,7 +3059,7 @@ that Phase 13 has settled what the surface looks like.
       like claimed cursor during this tx") — verify this is a perf question
       and not a live race; fix if it's the latter.
 - [ ] **Message/work-struct schema evolution.** Decide and document what
-      happens when a topic's `WorkType` shape changes after messages are
+      happens when a topic's `Message` shape changes after messages are
       already on the log — the edge cases that break, and what guidance (if
       any) the library gives users for handling it.
 - [ ] **`FanOut` rescans the entire log on every call** instead of tracking a
@@ -3093,7 +3117,7 @@ is actually done.*
       later step rolls everything back) — pair it with the outbox-pattern
       framing already on the site.
 - [ ] Doc comments on the public API surfaces Phase 13 finalized —
-      `Produce`/`ProduceInTx`/`InTransaction`, `WorkConsumerConfig` fields,
+      `Produce`/`ProduceInTx`/`InTransaction`, `MessageConsumerConfig` fields,
       and anything renamed or relocated during the review.
 - [ ] Document the known hard-timeout error message (`consumer.go`'s
       "goroutine abandoned" error) — what it means and how to avoid it

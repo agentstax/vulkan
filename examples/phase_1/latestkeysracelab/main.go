@@ -71,7 +71,7 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	var wg sync.WaitGroup
 	for range n {

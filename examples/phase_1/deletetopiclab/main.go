@@ -47,7 +47,7 @@ func main() {
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	step("seed a row in every topic-scoped table")
 

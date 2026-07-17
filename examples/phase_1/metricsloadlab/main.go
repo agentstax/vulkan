@@ -1,6 +1,6 @@
 package main
 
-// Phase 10 lab: run the real WorkConsumer.Consume loop under load with the
+// Phase 10 lab: run the real MessageConsumer.Consume loop under load with the
 // debug readout on.
 //
 // Two scenarios:
@@ -65,7 +65,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	must(err)
 
 	pd := producer.NewProducerDatastore[common.Work](consumerDS, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	const rows = 100
 	seed(ctx, wp, rows)
 
@@ -77,7 +77,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	// BatchLimit >= rows -- everything claims in one Process tick, so the only
 	// variable left between the two runs is how long RollWaterline's own
 	// ticker takes to fire, isolating the thing this scenario measures.
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
 		BatchLimit:        rows * 2,
 		ClaimPollRate:     50 * time.Millisecond,
 		WaterlinePollRate: pollRate,
@@ -117,7 +117,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	must(err)
 
 	pd := producer.NewProducerDatastore[common.Work](consumerDS, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	const rows = 60
 	seed(ctx, wp, rows)
 
@@ -126,7 +126,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	pool, err := concurrency.NewWorkerPoolLimiter(10)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
 		BatchLimit:              20,
 		ClaimPollRate:           100 * time.Millisecond,
 		WaterlinePollRate:       100 * time.Millisecond,
@@ -202,7 +202,7 @@ type consumerQueueState struct {
 // pollFor polls wc's queue-state snapshot until until(snap) is true or
 // timeout elapses, printing the debug readout at most every 250ms. Returns
 // the time spent polling.
-func pollFor(ctx context.Context, wc *consumer.WorkConsumer[common.Work], label string, timeout time.Duration, until func(consumerQueueState) bool) time.Duration {
+func pollFor(ctx context.Context, wc *consumer.MessageConsumer[common.Work], label string, timeout time.Duration, until func(consumerQueueState) bool) time.Duration {
 	start := time.Now()
 	deadline := start.Add(timeout)
 	lastPrint := time.Time{}
@@ -236,7 +236,7 @@ func newDS(ctx context.Context) *coredatastore.PostgresDatastore {
 	return ds
 }
 
-func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

@@ -18,9 +18,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// TODO - just convert WorkType to Message I like it better more generic
-// specifically converting WorkType to Message here to be more in line with community standards
-
 var (
 	ErrLeaseLost = errors.New("lease lost: row reclaimed by another consumer")
 )

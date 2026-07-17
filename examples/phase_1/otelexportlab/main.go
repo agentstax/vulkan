@@ -1,7 +1,7 @@
 package main
 
 // Phase 10 lab: point a REAL OTel Prometheus exporter at the metric.Meter
-// WorkConsumerConfig accepts, scrape it over a real HTTP server the way
+// MessageConsumerConfig accepts, scrape it over a real HTTP server the way
 // Prometheus itself would, and confirm every instrument registered by
 // pkg/consumer/metrics shows up on the other end -- proof the integration
 // works end-to-end, not just that it compiles against the API.
@@ -84,7 +84,7 @@ func main() {
 	meter := provider.Meter("otelexportlab")
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	seed(ctx, wp, 5)
 
 	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](20)
@@ -92,7 +92,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(3)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:       5,
 		WorkTimeout:      500 * time.Millisecond,
 		WorkTimeoutGrace: 50 * time.Millisecond,
@@ -164,7 +164,7 @@ func main() {
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

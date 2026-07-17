@@ -24,10 +24,10 @@ import (
 // long live dysfunctional options pattern - https://rednafi.com/go/dysfunctional-options-pattern/
 
 // ideally idepotent func
-type ConsumerFunc[WorkType any] func(ctx context.Context, work *WorkType) error
+type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 
-type Consumer[WorkType any] interface {
-	Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error
+type Consumer[Message any] interface {
+	Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error
 }
 
 type ConsumerType string
@@ -38,7 +38,7 @@ const (
 )
 
 // TODO - better comments for each field. Should follow structure of producer.Options and topic.Config
-type WorkConsumerConfig struct {
+type MessageConsumerConfig struct {
 	Type             ConsumerType
 	BatchLimit       int
 	MaxAttempts      int
@@ -69,7 +69,7 @@ type WorkConsumerConfig struct {
 // withDefaults fills every unset (zero) field so a caller can pass a sparse
 // config holding only what they care about -- same contract as river's
 // Config.WithDefaults. Mutates and returns c for construction-time chaining.
-func (c *WorkConsumerConfig) withDefaults() *WorkConsumerConfig {
+func (c *MessageConsumerConfig) withDefaults() *MessageConsumerConfig {
 	if c.Type == "" {
 		c.Type = CURSOR
 	}
@@ -123,28 +123,28 @@ func (c *WorkConsumerConfig) withDefaults() *WorkConsumerConfig {
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
-type WorkConsumer[WorkType any] struct {
+type MessageConsumer[Message any] struct {
 	Group        string
 	Topic        *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
 	Queue        concurrency.Queue[MessageRow]
 	PoolLimiter  concurrency.PoolLimiter
-	Datastore    Datastore[WorkType]
-	ShutdownFunc ShutdownFunc[WorkType]
+	Datastore    Datastore[Message]
+	ShutdownFunc ShutdownFunc[Message]
 	Metrics      *metrics.ConsumerMetrics
-	Config       *WorkConsumerConfig
+	Config       *MessageConsumerConfig
 	Logger       logger.Logger // copied from Config.Logger at construction
 }
 
 // required deps as params, everything else through cfg -- pass nil (or a
 // sparse config holding only the fields you care about) and withDefaults
 // fills the rest.
-func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *WorkConsumerConfig) (*WorkConsumer[WorkType], error) {
+func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
 	if cfg == nil {
-		cfg = &WorkConsumerConfig{}
+		cfg = &MessageConsumerConfig{}
 	}
 	cfg.withDefaults()
 
-	consumerDatastore := NewConsumerDatastore[WorkType](ds, &ConsumerDatastoreConfig{
+	consumerDatastore := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger: cfg.Logger,
 	})
 
@@ -155,13 +155,13 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 		return nil, err
 	}
 
-	return &WorkConsumer[WorkType]{
+	return &MessageConsumer[Message]{
 		Group:        group,
 		Topic:        t,
 		Queue:        queue,
 		PoolLimiter:  poolLimiter,
 		Datastore:    consumerDatastore,
-		ShutdownFunc: DefaultShutdownFunc[WorkType],
+		ShutdownFunc: DefaultShutdownFunc[Message],
 		Metrics:      metrics,
 		Config:       cfg,
 		Logger:       cfg.Logger,
@@ -170,7 +170,7 @@ func NewWorkConsumer[WorkType any](group string, t *topic.Topic, queue concurren
 
 // ### CONSUME V2 ###
 
-func (p *WorkConsumer[WorkType]) validate() error {
+func (p *MessageConsumer[Message]) validate() error {
 	// nil deps first -- everything below dereferences these, so guard before any access
 	if p.Config == nil {
 		return errors.New("Config must not be nil")
@@ -255,7 +255,7 @@ func (p *WorkConsumer[WorkType]) validate() error {
 	return nil
 }
 
-func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
+func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 	// LIFECYCLE groups never read or advance a cursor row (RollWaterline is
 	// CURSOR-only) -- creating one anyway would sit at committed=0 forever and
 	// wrongly pin the retention floor computed off MIN(committed).
@@ -276,7 +276,7 @@ func (p *WorkConsumer[WorkType]) Register(ctx context.Context) error {
 // Janitor is the retention/partition-maintenance loop: create-ahead runs every
 // tick so a producer never outruns it for long; drop runs alongside it, a
 // no-op while RetentionTTL is zero (the default -- retention is opt-in).
-func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
+func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
 	janitorPollRate := p.Config.JanitorPollRate
 	// TODO - move below default setting this is not the correct place for it
 	if janitorPollRate == 0 {
@@ -307,7 +307,7 @@ func (p *WorkConsumer[WorkType]) Janitor(ctx context.Context) error {
 	}
 }
 
-func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	// fail fast before spawning anything
 	// TODO - this should probably be moved to New() -- but requires rethinking dysfunctional options pattern womp womp
 	if err := p.validate(); err != nil {
@@ -353,7 +353,7 @@ func (p *WorkConsumer[WorkType]) Consume(ctx context.Context, consumerFunc Consu
 	return errors.Join(err, errShutdown)
 }
 
-func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
+func (p *MessageConsumer[Message]) Project(ctx context.Context) error {
 	if p.Config.Type == CURSOR {
 		return nil // don't need projection for cursor only
 	}
@@ -380,7 +380,7 @@ func (p *WorkConsumer[WorkType]) Project(ctx context.Context) error {
 // Deliberately lazy, not synchronous-on-Commit -- a synchronous call after
 // every Commit adds new lock contention on the shared cursor row. Lower
 // WaterlinePollRate instead if committed needs to catch up faster.
-func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
+func (p *MessageConsumer[Message]) RollWaterline(ctx context.Context) error {
 	if p.Config.Type != CURSOR {
 		return nil
 	}
@@ -406,7 +406,7 @@ func (p *WorkConsumer[WorkType]) RollWaterline(ctx context.Context) error {
 	}
 }
 
-func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *MessageConsumer[Message]) Process(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	ticker := time.NewTicker(p.Config.ClaimPollRate)
 	defer ticker.Stop()
 
@@ -432,7 +432,7 @@ func (p *WorkConsumer[WorkType]) Process(ctx context.Context, consumerFunc Consu
 	}
 }
 
-func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *MessageConsumer[Message]) CursorClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
@@ -457,7 +457,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 
 		lastProcessed = message.Id
 
-		var work WorkType
+		var work Message
 		if err := json.Unmarshal(message.Payload, &work); err != nil {
 			// bad payload will never deserialize -- no point retrying it
 			terminals = append(terminals, MessageTerminal{MessageId: message.Id, Err: err.Error()})
@@ -482,7 +482,7 @@ func (p *WorkConsumer[WorkType]) CursorClaim(ctx context.Context, consumerFunc C
 	return nil
 }
 
-func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastProcessed int64, claimed *ClaimedRange, exceptions []MessageException, terminals []MessageTerminal) error {
+func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, claimed *ClaimedRange, exceptions []MessageException, terminals []MessageTerminal) error {
 	if lastProcessed == claimed.Lease.Low && len(exceptions) == 0 && len(terminals) == 0 {
 		return nil // interrupted before resolving anything -- leave the lease exactly as claimed
 	}
@@ -514,7 +514,7 @@ func (p *WorkConsumer[WorkType]) CursorPartialCommit(ctx context.Context, lastPr
 // from CursorClaim's range poll -- a backed-off exception can't block a fresh range
 // from claiming, and vice versa. Cursor-path only: the lifecycle path has no waterline
 // to pin, so a failed delivery just retries in place on the next LifecycleClaim.
-func (p *WorkConsumer[WorkType]) DrainExceptions(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *MessageConsumer[Message]) DrainExceptions(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	if p.Config.Type != CURSOR {
 		return nil
 	}
@@ -534,7 +534,7 @@ func (p *WorkConsumer[WorkType]) DrainExceptions(ctx context.Context, consumerFu
 	}
 }
 
-func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *MessageConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueTimeout + p.Config.AckMargin
 
 	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration, p.Topic.DisableDeliveryLog)
@@ -543,7 +543,7 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 	}
 
 	for _, exception := range claimed {
-		var work WorkType
+		var work Message
 		// this payload already deserialized once, in CursorClaim, to reach the
 		// exception window in the first place -- same immutable message_log row,
 		// so it cannot fail to unmarshal here. a failure means an invariant broke
@@ -586,14 +586,14 @@ func (p *WorkConsumer[WorkType]) ExceptionClaim(ctx context.Context, consumerFun
 //
 // No lease handling here: Phase 6 doesn't do crash recovery, so a delivery left in
 // 'processing' (consumer died mid-process) just sits there until Phase 6.5's reclaim.
-func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFunc ConsumerFunc[WorkType]) error {
+func (p *MessageConsumer[Message]) LifecycleClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit)
 	if err != nil {
 		return err
 	}
 
 	for _, delivery := range deliveries {
-		var work WorkType
+		var work Message
 		if err := json.Unmarshal(delivery.Payload, &work); err != nil {
 			// a bad payload will never deserialize -> straight to the DLQ, no retries
 			if recordErr := p.Datastore.RecordTerminal(ctx, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
@@ -621,7 +621,7 @@ func (p *WorkConsumer[WorkType]) LifecycleClaim(ctx context.Context, consumerFun
 // callSafely catches an in-process Go panic  and turns it into an ordinary error.
 // Handles: nil map write, index out of range, bad type assertion
 // Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
-func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[WorkType], work *WorkType, messageID int64, attempt int) error {
+func (p *MessageConsumer[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], work *Message, messageID int64, attempt int) error {
 	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
 	// instead attempt to finish inflight requests bounded by timeout
 	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.WorkTimeout,
@@ -659,7 +659,7 @@ func (p *WorkConsumer[WorkType]) callSafely(ctx context.Context, consumerFunc Co
 	}
 }
 
-func (p *WorkConsumer[WorkType]) Drain(ctx context.Context, wg *sync.WaitGroup) {
+func (p *MessageConsumer[Message]) Drain(ctx context.Context, wg *sync.WaitGroup) {
 	doneSignal := make(chan struct{})
 
 	go func() {
@@ -680,7 +680,7 @@ func (p *WorkConsumer[WorkType]) Drain(ctx context.Context, wg *sync.WaitGroup) 
 
 }
 
-func (p *WorkConsumer[WorkType]) Shutdown(ctx context.Context) error {
+func (p *MessageConsumer[Message]) Shutdown(ctx context.Context) error {
 	// graceful shutdown:
 	// - cannot pass cancel context otherwise any functionality that uses ctx will immediately fail which is not what we want
 	// - need to pass timeout as well so shutdown cannot hang forever

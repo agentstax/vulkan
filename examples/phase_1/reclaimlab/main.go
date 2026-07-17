@@ -52,7 +52,7 @@ func main() {
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	for range seedRows {

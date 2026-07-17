@@ -87,7 +87,7 @@ func main() {
 	// Short lease (= WorkTimeout+QueueTimeout+AckMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxAttempts so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
-	wc, err := consumer.NewWorkConsumer[common.Work](*groupPtr, t, queue, pool, ds, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:      100,
 		MaxAttempts:     100,
 		ClaimPollRate:   200 * time.Millisecond,

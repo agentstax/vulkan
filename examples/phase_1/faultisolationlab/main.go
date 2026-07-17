@@ -74,7 +74,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
@@ -84,7 +84,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      5 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,
@@ -133,7 +133,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
@@ -143,7 +143,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      1 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,
@@ -249,7 +249,7 @@ var _ net.Error = fakeNetError{}
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

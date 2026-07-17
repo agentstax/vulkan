@@ -41,7 +41,7 @@ const (
 )
 
 // bindable is consumer.Datastore plus Bind/ClearBindings, which aren't part of
-// that interface (they're admin operations, not something WorkConsumer itself
+// that interface (they're admin operations, not something MessageConsumer itself
 // calls) -- a small local interface is enough to accept the concrete (unexported)
 // datastore struct as a helper param without naming its type.
 type bindable interface {
@@ -66,7 +66,7 @@ func main() {
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	head := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
 	fmt.Printf("topic=%q id=%d message_log head = %d\n", topicName, tp.Id, head)
@@ -139,7 +139,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.WorkProducer[common.Work], routingKey string) string {
+func publish(ctx context.Context, wp *producer.MessageProducer[common.Work], routingKey string) string {
 	work, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})

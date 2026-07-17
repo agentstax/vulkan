@@ -196,7 +196,7 @@ circuit breaker for a known-dead downstream dependency
   fail fast without even attempting consumerFunc) until a cooldown or a
   health probe says it's safe again. this is a consumerFunc/retry-policy
   concern, not a pkg/consumer datastore concern -- likely lives as an
-  optional wrapper around consumerFunc itself, or a new WorkConsumerConfig
+  optional wrapper around consumerFunc itself, or a new MessageConsumerConfig
   hook, not a new datastore method. not designed in detail yet -- open
   questions: per-topic or per-group, what counts as "the same dependency"
   (consumerFunc is opaque to this library), and how a breaker's open/closed

@@ -66,8 +66,8 @@ func main() {
 	defer func() { must(topic.Destroy(ctx, ds, wideName)) }()
 
 	step("seed both topics with the identical 40-message workload")
-	seed(ctx, cd, producer.NewWorkProducer(narrow, pd), narrow.Id, narrowPartitionSize)
-	seed(ctx, cd, producer.NewWorkProducer(wide, pd), wide.Id, widePartitionSize)
+	seed(ctx, cd, producer.NewMessageProducer(narrow, pd), narrow.Id, narrowPartitionSize)
+	seed(ctx, cd, producer.NewMessageProducer(wide, pd), wide.Id, widePartitionSize)
 
 	narrowPartitions := countPartitions(ctx, ds, narrow.Id)
 	widePartitions := countPartitions(ctx, ds, wide.Id)
@@ -104,7 +104,7 @@ func main() {
 // key that's never superseded, ids 2-38 are unique filler (each its own key,
 // so none of them ever match another row's compaction subplan), and ids
 // 39/40 are two versions of one key published back to back.
-func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.WorkProducer[Record], topicID, partitionSize int64) {
+func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.MessageProducer[Record], topicID, partitionSize int64) {
 	publish(ctx, wp, "stale") // id 1 -- never superseded
 	must(cd.EnsureNextPartition(ctx, topicID, partitionSize, 1))
 	for i := range 37 {
@@ -117,7 +117,7 @@ func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.WorkP
 	must(cd.EnsureNextPartition(ctx, topicID, partitionSize, 1))
 }
 
-func publish(ctx context.Context, wp *producer.WorkProducer[Record], key string) {
+func publish(ctx context.Context, wp *producer.MessageProducer[Record], key string) {
 	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{CompactionKey: key})

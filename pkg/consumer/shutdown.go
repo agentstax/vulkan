@@ -5,18 +5,18 @@ import (
 	"time"
 )
 
-type ShutdownFunc[WorkType any] func(ctx context.Context, consumer *WorkConsumer[WorkType]) error
+type ShutdownFunc[Message any] func(ctx context.Context, consumer *MessageConsumer[Message]) error
 
-func DefaultShutdownFunc[WorkType any](ctx context.Context, consumer *WorkConsumer[WorkType]) error {
+func DefaultShutdownFunc[Message any](ctx context.Context, consumer *MessageConsumer[Message]) error {
 	return consumer.Datastore.Shutdown(ctx)
 }
 
-func (c *WorkConsumer[WorkType]) WithShutdown(shutdownFunc ShutdownFunc[WorkType]) *WorkConsumer[WorkType] {
+func (c *MessageConsumer[Message]) WithShutdown(shutdownFunc ShutdownFunc[Message]) *MessageConsumer[Message] {
 	c.ShutdownFunc = shutdownFunc
 	return c
 }
 
-func (c *WorkConsumer[WorkType]) WithShutdownTimeout(shutdownTimeout time.Duration) *WorkConsumer[WorkType] {
+func (c *MessageConsumer[Message]) WithShutdownTimeout(shutdownTimeout time.Duration) *MessageConsumer[Message] {
 	c.Config.ShutdownTimeout = shutdownTimeout
 	return c
 }

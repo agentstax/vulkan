@@ -10,11 +10,11 @@ import (
 
 // TODO - Consider using struct {} instead of generics
 
-type ProducerFunc[WorkType any] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*WorkType, error)
+type ProducerFunc[Message any] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*Message, error)
 type TransactionFunc func(ctx context.Context, tx Tx) error
 
-type Producer[WorkType any] interface {
-	Produce(ctx context.Context, work *WorkType) error
+type Producer[Message any] interface {
+	Produce(ctx context.Context, work *Message) error
 }
 
 // ProduceOptions holds per-message knobs that are optional and rarely set --
@@ -58,20 +58,20 @@ type ProduceOptions struct {
 	SkipIdempotency bool
 }
 
-type WorkProducer[WorkType any] struct {
+type MessageProducer[Message any] struct {
 	Topic     *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
-	datastore Datastore[WorkType]
+	datastore Datastore[Message]
 }
 
-func NewWorkProducer[WorkType any](t *topic.Topic, datastore Datastore[WorkType]) *WorkProducer[WorkType] {
-	return &WorkProducer[WorkType]{
+func NewMessageProducer[Message any](t *topic.Topic, datastore Datastore[Message]) *MessageProducer[Message] {
+	return &MessageProducer[Message]{
 		Topic:     t,
 		datastore: datastore,
 	}
 }
 
 // TODO - make good doc comments
-func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc ProducerFunc[WorkType], opts ProduceOptions) (*WorkType, error) {
+func (p *MessageProducer[Message]) Produce(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 	if err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func (p *WorkProducer[WorkType]) Produce(ctx context.Context, producerFunc Produ
 }
 
 // TODO - make good doc comments
-func (p *WorkProducer[WorkType]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[WorkType], opts ProduceOptions) (*WorkType, error) {
+func (p *MessageProducer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }
 

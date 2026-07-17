@@ -53,7 +53,7 @@ func main() {
 	}
 
 	datastore := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(t, datastore)
+	wp := producer.NewMessageProducer(t, datastore)
 
 	// WORK
 	for range *countPtr {

@@ -100,7 +100,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
@@ -167,7 +167,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
@@ -242,7 +242,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(n))
 
@@ -288,7 +288,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, total)
 
@@ -316,7 +316,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

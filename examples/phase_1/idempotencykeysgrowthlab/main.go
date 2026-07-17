@@ -13,7 +13,7 @@ package main
 //     topic's own message_log size at the same checkpoints -- puts "how
 //     much extra storage" in concrete, relative terms instead of raw bytes.
 //   - Sweep keep-up: sustained concurrent publishing WHILE the sweep runs
-//     on the same cadence WorkConsumer's real Janitor loop uses (a ticker
+//     on the same cadence MessageConsumer's real Janitor loop uses (a ticker
 //     firing SweepExpiredIdempotencyKeys at a fixed poll rate, batched) --
 //     Little's Law says a keeping-up sweep should hold the table's
 //     steady-state size near rate * ttl, not let it grow toward the full
@@ -70,7 +70,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 
 	// idempotency_key is shared across every topic (unlike message_log) --
 	// baseline it before publishing so cruft from other topics/labs in this
@@ -95,7 +95,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 }
 
 // sweepKeepUpScenario: sustained concurrent publishing WHILE the sweep runs
-// on the same cadence WorkConsumer's real Janitor loop uses (a ticker firing
+// on the same cadence MessageConsumer's real Janitor loop uses (a ticker firing
 // SweepExpiredIdempotencyKeys, batched) -- proves whether steady-state size
 // stays bounded near rate * ttl (Little's Law) or the sweep falls behind and
 // the table grows toward the full published count instead.
@@ -114,7 +114,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
 
 	stop := make(chan struct{})
@@ -139,7 +139,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 		})
 	}
 
-	// mirrors WorkConsumer.Janitor's own ticker + sweep call, same shape
+	// mirrors MessageConsumer.Janitor's own ticker + sweep call, same shape
 	var sweepWg sync.WaitGroup
 	var peakRows atomic.Int64
 	sweepWg.Go(func() {
@@ -201,7 +201,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 
 // ---- helpers ----
 
-func publishConcurrent(ctx context.Context, wp *producer.WorkProducer[common.Work], n, goroutines int) {
+func publishConcurrent(ctx context.Context, wp *producer.MessageProducer[common.Work], n, goroutines int) {
 	perGoroutine := n / goroutines
 	remainder := n % goroutines
 

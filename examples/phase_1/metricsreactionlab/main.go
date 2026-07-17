@@ -1,7 +1,7 @@
 package main
 
 // Phase 10 lab: drive each failure mode the harness flags (--fail-rate,
-// --sleep, --crash-after) represent through the real WorkConsumer/Datastore
+// --sleep, --crash-after) represent through the real MessageConsumer/Datastore
 // paths, and assert the metrics snapshot moves EXACTLY the number(s) that
 // failure mode should move -- LEARNING_PLAN.md's own check: "if a failure
 // doesn't move a number, you have a blind spot."
@@ -56,7 +56,7 @@ func main() {
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	seed(ctx, wp, seedRows)
 
 	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](30)
@@ -64,7 +64,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(3)
 	must(err)
 
-	wc, err := consumer.NewWorkConsumer[common.Work](group, tp, queue, pool, ds, &consumer.WorkConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:              batch,
 		WorkTimeout:             1 * time.Second,
 		WorkTimeoutGrace:        100 * time.Millisecond,
@@ -86,7 +86,7 @@ func main() {
 
 const failingId1 = int64(1)
 
-func scenarioFailRate(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) {
+func scenarioFailRate(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) {
 	step("SCENARIO 1: retryable failure (--fail-rate equivalent) -> ready exception")
 	before := snapshotCounts(ctx, wc)
 
@@ -106,7 +106,7 @@ func scenarioFailRate(ctx context.Context, wc *consumer.WorkConsumer[common.Work
 
 // ---- scenario 2: sustained failure exhausts retries -> dead-letter ----
 
-func scenarioExhaustedRetries(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) {
+func scenarioExhaustedRetries(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) {
 	step("SCENARIO 2: sustained --fail-rate exhausts retries -> ready exception dead-letters")
 	before := snapshotCounts(ctx, wc)
 
@@ -136,7 +136,7 @@ func scenarioExhaustedRetries(ctx context.Context, wc *consumer.WorkConsumer[com
 
 // ---- scenario 3: hard timeout / hang (--sleep past WorkTimeout) ----
 
-func scenarioHardTimeout(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) {
+func scenarioHardTimeout(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) {
 	step("SCENARIO 3: hard timeout (--sleep past WorkTimeout) -> abandoned goroutine, then ready exception")
 	before := snapshotCounts(ctx, wc)
 
@@ -171,7 +171,7 @@ func scenarioHardTimeout(ctx context.Context, wc *consumer.WorkConsumer[common.W
 
 // ---- scenario 4: crash mid-range (--crash-after, never Commit) ----
 
-func scenarioCrash(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) {
+func scenarioCrash(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) {
 	step("SCENARIO 4: crash mid-range (--crash-after equivalent, never Commit) -> orphaned lease")
 	before := snapshotCounts(ctx, wc)
 
@@ -205,7 +205,7 @@ type counts struct {
 	Ready, Inflight, Dead, OpenLeases, AbandonedOutstanding, AbandonedTotal int64
 }
 
-func snapshotCounts(ctx context.Context, wc *consumer.WorkConsumer[common.Work]) counts {
+func snapshotCounts(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) counts {
 	snap, err := wc.Metrics.Snapshot(ctx)
 	must(err)
 	fmt.Println(snap.String())
@@ -240,7 +240,7 @@ func assertDelta(label string, before, after, want counts) {
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.WorkProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {
 		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

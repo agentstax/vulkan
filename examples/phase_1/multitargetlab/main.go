@@ -1,7 +1,7 @@
 package main
 
 // multi-target transactional enqueue lab: does producer.InTransaction +
-// WorkProducer.ProduceInTx actually deliver the atomicity/isolation
+// MessageProducer.ProduceInTx actually deliver the atomicity/isolation
 // guarantees the design promises?
 //
 // Four scenarios:
@@ -191,13 +191,13 @@ func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresData
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.WorkProducer[common.Work], func()) {
+func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.MessageProducer[common.Work], func()) {
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, topic.Config{Name: name, PartitionSize: partitionSize})
 	must(err)
 
 	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewWorkProducer(tp, pd)
+	wp := producer.NewMessageProducer(tp, pd)
 	return tp, wp, func() { must(topic.Destroy(ctx, ds, name)) }
 }
 
