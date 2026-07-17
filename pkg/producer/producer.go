@@ -89,6 +89,9 @@ func (p *WorkProducer[WorkType]) ProduceInTx(ctx context.Context, tx pgx.Tx, pro
 }
 
 // TODO - make good doc comments
+// InTransaction does not retry -- a transient blip or an ambiguous commit
+// failure surfaces to you as-is. Wrap your own retry loop around it if you
+// want one; only you know what's safe to rerun in your closure.
 func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
 	tx, err := ds.Pool.Begin(ctx)
 	if err != nil {
