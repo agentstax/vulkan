@@ -20,13 +20,14 @@ type topicDatastore struct {
 	Logger    logger.Logger
 }
 
-func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger) *topicDatastore {
+func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) *topicDatastore {
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
 	}
+	retryPolicy = retryPolicy.WithDefaults()
 	return &topicDatastore{
 		Datastore: datastore,
-		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, log), // TODO - make this user config driven eventually
+		Retry:     retry.NewDatastoreRetry(retryPolicy.MaxRetries, retryPolicy.BaseDelay, retryPolicy.MaxDelay, retryPolicy.Exponent, log),
 		Logger:    log,
 	}
 }

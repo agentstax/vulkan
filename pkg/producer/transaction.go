@@ -27,9 +27,9 @@ type vulkanTx struct {
 }
 
 func newVulkanTx(tx pgx.Tx) Tx {
-	return vulkanTx{tx}
+	return &vulkanTx{tx}
 }
 
-func (t vulkanTx) Raw() pgx.Tx {
+func (t *vulkanTx) Raw() pgx.Tx {
 	return t.Tx
 }

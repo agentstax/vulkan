@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 // ErrTopicConfigMismatch means Register was called with a Config that differs from the topic's existing row
@@ -36,7 +37,7 @@ func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (
 		return false, err
 	}
 
-	td := newTopicDatastore(ds, nil)
+	td := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
 
 	found, err := td.GetTopic(ctx, name)
 	if err != nil {
@@ -52,7 +53,7 @@ func Register(ctx context.Context, ds *datastore.PostgresDatastore, cfg Config) 
 	}
 	cfg.SetDefaults()
 
-	td := newTopicDatastore(ds, cfg.Logger)
+	td := newTopicDatastore(ds, cfg.Logger, cfg.Retry)
 	return td.UpsertTopic(ctx, cfg)
 }
 
@@ -61,7 +62,7 @@ func Destroy(ctx context.Context, ds *datastore.PostgresDatastore, name string) 
 		return err
 	}
 
-	td := newTopicDatastore(ds, nil)
+	td := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
 
 	found, err := td.GetTopic(ctx, name)
 	if err != nil {

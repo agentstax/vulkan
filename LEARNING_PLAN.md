@@ -3031,13 +3031,32 @@ describing has stopped moving (see Phase 15).
       question this doesn't resolve, revisit alongside that decision.
 - [ ] **Named-return-params for public functions** — decide the house style
       and apply it consistently across the reviewed surface, not ad hoc.
-- [ ] **Retry policy is hardcoded in four places**
+- [x] **Retry policy is hardcoded in four places**
       (`NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, ...)` in
       producer/topic/consumer/metrics datastores) — decide if/how this
       becomes user-configurable, and whether metrics polling in particular
       should inherit the same long backoff ceiling as a real write path (a DB
       blip could make the metrics/debug readout look hung for up to 5
       minutes as currently wired).
+
+      Resolved: added `retry.Policy{MaxRetries, BaseDelay, MaxDelay,
+      Exponent}` (`pkg/retry/policy.go`) with `retry.NewDefaultRetryPolicy()`
+      returning today's values, and a `WithDefaults()` that resolves any
+      zero-valued field. Each of the four sites' own `*Config`
+      (`ProducerDatastoreConfig`, `ConsumerDatastoreConfig`,
+      `ConsumerMetricsDatastoreConfig`, `topic.Config`) gained a `Retry
+      retry.Policy` field, resolved the same way their existing `Logger`
+      field already is. `topic.Exists`/`Destroy` (no `Config` param) fall
+      back to `retry.NewDefaultRetryPolicy()`, mirroring their existing
+      nil-Logger fallback exactly.
+
+      Deliberately not a global mutable singleton -- that would be hidden
+      cross-package coupling for a library. "Set once" ergonomics come from
+      the same pattern `Logger` already uses: construct one `retry.Policy`
+      value and pass it into all four configs for one shared policy, or a
+      different value into just one config to diverge (e.g. metrics polling
+      can now take a shorter policy than a real write path, resolving the
+      inline TODO questioning that in `consumer/metrics/datastore.go`).
 - [ ] **`backoff()` (exception retry timing) isn't overridable** — decide
       if/how a custom backoff function or config becomes part of the public
       surface.

@@ -135,12 +135,14 @@ type consumerDatastore[Message any] struct {
 
 type ConsumerDatastoreConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *retry.Policy // Default: retry.NewDefaultRetryPolicy().
 }
 
 func (c *ConsumerDatastoreConfig) withDefaults() *ConsumerDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
+	c.Retry = c.Retry.WithDefaults()
 	return c
 }
 
@@ -151,7 +153,7 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 	cfg.withDefaults()
 	return &consumerDatastore[Message]{
 		Datastore: ds,
-		Retry:     retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, cfg.Logger), // TODO - make this user config driven eventually
+		Retry:     retry.NewDatastoreRetry(cfg.Retry.MaxRetries, cfg.Retry.BaseDelay, cfg.Retry.MaxDelay, cfg.Retry.Exponent, cfg.Logger),
 		Logger:    cfg.Logger,
 	}
 }

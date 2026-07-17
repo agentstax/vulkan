@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"os"
-	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
@@ -17,12 +16,14 @@ type consumerMetricsDatastore struct {
 
 type ConsumerMetricsDatastoreConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *retry.Policy // Default: retry.NewDefaultRetryPolicy(). Metric polling may want a shorter policy than the default.
 }
 
 func (c *ConsumerMetricsDatastoreConfig) withDefaults() *ConsumerMetricsDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
+	c.Retry = c.Retry.WithDefaults()
 	return c
 }
 
@@ -33,8 +34,7 @@ func NewConsumerDatastore(ds *datastore.PostgresDatastore, cfg *ConsumerMetricsD
 	cfg.withDefaults()
 	return &consumerMetricsDatastore{
 		Datastore: ds,
-		// TODO - need to think through if it makes sense for metric polling to have such long timeouts or not
-		Retry:  retry.NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, cfg.Logger), // TODO - make this user config driven eventually
-		Logger: cfg.Logger,
+		Retry:     retry.NewDatastoreRetry(cfg.Retry.MaxRetries, cfg.Retry.BaseDelay, cfg.Retry.MaxDelay, cfg.Retry.Exponent, cfg.Logger),
+		Logger:    cfg.Logger,
 	}
 }

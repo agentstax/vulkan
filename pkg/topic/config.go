@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 // Config is separate from Topic so Register can grow (retention, etc.) without a signature change.
@@ -84,6 +85,10 @@ type Config struct {
 	// Only takes effect for Register -- Destroy and Exists have no Config
 	// parameter to carry one, so they always use that same default.
 	Logger logger.Logger
+
+	// Retry - transient-error retry policy for this topic's own datastore calls.
+	// Default: retry.NewDefaultRetryPolicy().
+	Retry *retry.Policy
 }
 
 func (c *Config) SetDefaults() {
@@ -105,6 +110,7 @@ func (c *Config) SetDefaults() {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
+	c.Retry = c.Retry.WithDefaults()
 }
 
 func (c *Config) Validate() error {
