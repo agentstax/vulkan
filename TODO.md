@@ -1,20 +1,7 @@
-graceful database recovery (handles it fine now but could be done better with a retry backoff policy and better error messages)
-debug field option which prints queue metrics like, how many are left
 consider using database/sql from stdlib to remove pgx dependency (might be a bad idea)
-current impl of a transactional enqueue (producer) doesn't support fanning out ie publishing to multiple queues
-consider normalizing message log attempts into seperate append only table - so we can better track each attempt / attempted_at / error mainly for debugging / auditting. main code should not read this as it would slow things down
-internal pkg logging needs to be able to pass a logger interface that is common
 better abstract out the datastore from the consumer. ie consumer should not know or care about the internals of the datastore
-need a logger that takes in an abitrary writer users can pass
-for any contextWith like Timeout or Deadline should you alternative With*Cause to enrich error with better message
-Reconsider the lazy rollup (AdvanceWaterline)
-  - should we consider making it syncronous ie after lease batch has completed -> advance
-  - on the metrics side of things how will users track and see when a message or batch is inflight and completed
 Process's loop (CURSOR/LIFECYCLE both) still exits entirely the moment CursorClaim/LifecycleClaim returns any error. A blip that clears within pkg/retry's MaxRetries is now correctly absorbed (Wrap returns nil, Process never sees it -- fixed as part of Phase 9's fault-isolation-lab). What's still open: retries exhausted (a sustained outage) or a genuinely permanent error still kill Process outright rather than backing off and trying again on the next tick.
   - open question: should Process itself retry/backoff at the poll-loop level (treat a claim-level failure as one bad tick, not fatal), or is "the caller of Consume restarts the process" the intended failure boundary?
-Consider further splitting the ClaimPollRate for each caller (project, process, rollup, drain)
-
-Commit's exception park is a loop of individual INSERTs inside one transaction (one Exec per failed message, one commit). switch to pgx.Batch: same per-row SQL, queued and sent together instead of one round-trip per row. deferred on purpose -- exceptions are the sparse/rare path by design, so the round-trip cost is unlikely to matter, and a plain loop is the simplest code to read while the exception-drain machinery around it is still being built. revisit once that's stable, since it's a small change (swap Exec-in-a-loop for Batch/SendBatch) that shouldn't touch the surrounding logic.
 
 lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
   edge case: long-running jobs whose runtime exceeds WorkTimeout but still want fast reclaim on a real crash. today such a job is either falsely reclaimed mid-flight (double-processed) or forces a huge WorkTimeout (slow crash recovery). a heartbeat decouples the reclaim timeout from job duration - the lease tracks "worker still alive" instead of a one-shot duration guess.
@@ -126,7 +113,9 @@ topic.Destroy can exhaust Postgres's lock table on a topic with enough partition
   requires a restart, and a topic can always eventually outgrow whatever new
   ceiling gets picked; batching removes the ceiling instead of just raising it.
   full mechanism + the exact math above is in LEARNING_PLAN.md's 8c section
-  (search "out of shared memory").
+  (search "out of shared memory"). still not implemented -- DeleteTopic (as of
+  Phase 11) still drops message_log_<id>/delivery_<id>/delivery_log_<id> each
+  in one statement inside a single transaction.
 
 Default alerts: a built-in layer for "approaching an operational limit" conditions
   problem: several failure modes in this project are silent until they happen --
@@ -160,65 +149,37 @@ Default alerts: a built-in layer for "approaching an operational limit" conditio
       intentionally short-lived topics) can raise or disable it.
   open questions, deliberately not resolved speculatively:
     - delivery mechanism -- log line, a metric/gauge, a health-check endpoint,
-      or an active check the Janitor/Consume loop runs each tick? this needs
-      the SAME logger/metrics extension point the "internal pkg logging" and
-      "track abandoned goroutines" TODO items above already call for, not a
-      separate one -- don't build a second one.
+      or an active check the Janitor/Consume loop runs each tick? pkg/logger
+      (a common Logger interface) and pkg/consumer/metrics (otel QueueState
+      gauges) already exist now -- this should reuse one of those, not build a
+      third extension point.
     - where defaults live -- hardcoded thresholds, computed live from the
       user's actual Postgres settings (e.g. query max_locks_per_transaction and
       derive a real partition-count ceiling), or user-configured per deployment?
     - v1 scope -- start with the two concrete, already-measured triggers above
       rather than designing a general-purpose rule engine up front.
-  depends on: a common logger/metrics interface (already a TODO above); natural
-  home is probably pkg/topic's Janitor loop once it exists, since that already
-  runs periodically per topic.
-
-EXPLAIN (ANALYZE, BUFFERS, TIMING) 
-UPDATE message_log
-SET 
-	status = 'processing',
-	lease_until = now() + make_interval(secs => $2),
-	lease_token = gen_random_uuid(), -- 'owner' claims this uuid
-	attempts = attempts + 1
-WHERE id IN (
-	SELECT id FROM message_log
-	WHERE (status = 'ready' AND can_run_after <= now())
-		OR (status = 'processing' AND lease_until < now()) -- retreive any 'expired' work
-	ORDER BY id
-	LIMIT $1
-	FOR UPDATE SKIP LOCKED
-)
-RETURNING *;
-
-do we need idempotency_keys_topic_created_at (adds further write overhead to only benefit the janitor process)
+  natural home is probably pkg/topic's Janitor loop once it exists, since that
+  already runs periodically per topic.
 
 message schema evolution
 
 rethink producer having both idempotencyKey AND skipIdempotency. Feels weird like ideally we should only have one. It is b/c our default is opt out
 which I like however that causes this problem which I don't like
-we have a lot of seperate round-trip queries that would benefit from pgx.Batch
 
 consider using named return function params for User public functions to be clear in what they mean
 
 need to relook at what should be consumer vs topic vs producer config. Probably a decent amount of consumer config that should be topic config ie janitor stuff
 
-consider putting logTable on base postgres datastore instead of redefining everywhere
-
 consider adding a testing suite ie can easily add messages in 'inflight', 'ready' with attempts or 'dead' state. Be able to inject failures easily for chaos testing etc
 
 cleanup go.mod file aftering factoring out examples into seperate project (they bring in excess deps that core lib doesn't need)
-
-docs should mention that ProducerFunc's tx IS the transactional outbox pattern collapsed
-into one hop -- the caller's business-row write and the message_log insert commit
-together with no separate outbox table or relay process, as long as both live in the
-same Postgres. worth calling out explicitly since it's a pattern people search for.
 
 doc site needs a worked example of the side-effect footgun inside a ProducerFunc (or a
 multi-target publish closure) -- eg calling sendEmailConfirmation() before the
 transaction is known to commit fires the email even if a later step in the same call
 rolls everything back. show the fix: defer any non-transactional side effect until
 after Produce/the multi-target call returns nil, never inside the closure itself.
-same underlying idea as the transactional-outbox entry above, worth showing together.
+same underlying idea as the transactional-outbox doc callout, worth showing together.
 
 circuit breaker for a known-dead downstream dependency
   raised during the delivery_log design discussion (Phase 11's attempt audit
@@ -272,3 +233,9 @@ Both of above needs to consider if that solution further locks us into using pos
 ***IMPORTANT*** we need to understand how user schema changes happen. IE user starts topic with work struct one way -> they want to change it -> how does that work. What are the edge cases that break schema changes. How can we make it easy
 
 a full testing strategy (likely based on labs) which not only do e2e tests but also provide benchmarking metrics that we can save and record somewhere to make sure key metrics like throughput are not degrading overtime
+
+This is a much later thing but we should take the time to understand uber's design decisions for their internal highly resilant DB
+- https://www.youtube.com/watch?v=g7FmEc5GLWs&t=387s
+- Switching from FIFO to LIFO under overload conditions. We could think of this ourselves as maybe not a switch but a load shedding gauge where if lag is growing we being to park older lease ranges systematically to skip more and more until lag is caught up.
+- This idea of priority tiers is also interesting. Where each piece of work has a priority to it 0-5. If under overload scenarios low tier work is dropped or skipped.
+- The producer side of overloading is interesting to think through as well

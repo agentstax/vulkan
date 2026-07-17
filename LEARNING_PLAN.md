@@ -72,7 +72,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 3.5 — Throughput / the commit wall | ✅ done | answers in NOTES.md; tag `phase-3.5` |
 | 4 — Log/queue split | ✅ done | `message_log` + per-group cursor; **`ORDER BY id`** is load-bearing (high-water mark must be ordered); answers in NOTES.md; tag `phase-4` |
 | 5 — Fan-out | ✅ done | `-group` flag → independent `cursor` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
-| 6 — Synthesis (naive per-row) | 🔨 **next** | `deliveries` row per (group,event); **measure the write-amplification wall** |
+| 6 — Synthesis (naive per-row) | ✅ done | `deliveries` row per (group,event); write-amplification wall measured; answers in NOTES.md; tag `phase-6` |
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
 | 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
@@ -84,9 +84,11 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_key), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
 | 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
 | 11 — Architecture cleanup | ✅ done | datastore boundary audited (decision deferred to **13**), multi-target enqueue (`InTransaction`/`ProduceInTx`, savepoint self-heal), attempt audit log, `context.Cause`, batch write-path round trips; Explain-it-back deliberately skipped (see NOTES.md); answers in NOTES.md; tag `phase-11`; `pgx` vs. `database/sql` cut to **11b** |
-| 11b — pgx vs. database/sql | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
-| 12 — FIFO partitions | ⬜ | deprioritized — ordering opt-in on the lifecycle path, not current focus |
-| 13 — Code cleanup | 🔄 ongoing | running list of deferred structural decisions, added to over time; no fixed close — first item is the `Datastore` interfaces' fate, from Phase 11's audit |
+| 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document |
+| 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `WorkConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built |
+| 14 — V1 hardening, correctness & cleanup | ⬜ | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, schema evolution decision, FanOut rescan, default alerts, and the rest of the non-API-shape TODO.md/code-TODO backlog — sequenced after 13 locks the surface |
+| 15 — Documentation | ⬜ | last, deliberately — docs wait until 13 and 14 stop moving the surface they'd describe |
+| 6.5d, 7b, 8d, 9b, 11b | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`) — pick up only if a real workload demands each; moved to the end of this document; 9b should wait for 13 (not the original 11) to settle the datastore boundary, and 11b should weigh 8d's outcome if both are ever picked up |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -513,12 +515,12 @@ limit case of two of them. So we measure all four conceptually, build only the
 one that survives, and forward-reference the rest to where they actually live.
 
 **Build (the portable core):**
-- [ ] **Measure the ceiling precisely.** Extend Phase 3's find-the-ceiling lab into
+- [x] **Measure the ceiling precisely.** Extend Phase 3's find-the-ceiling lab into
       a recorded baseline: msgs/sec at saturation, and *which* resource is the wall
       (WAL/fsync, claim-lock contention, round-trips, or worker code). This number
       is your "when would I ever need Kafka" threshold — it carries forward
       unchanged through every later phase.
-- [ ] **`synchronous_commit` (the one lever that survives the topology change).**
+- [x] **`synchronous_commit` (the one lever that survives the topology change).**
       Relax it (`local`/`off`) and re-measure commit rate. The point you must be
       able to articulate: **this is safe *because* you already accepted
       at-least-once in Phase 2.** A lost ack on crash = a reclaim = a reprocess,
@@ -528,7 +530,7 @@ one that survives, and forward-reference the rest to where they actually live.
       cursor model and the `deliveries` model later.
 
 **Measure-only (understand the lever, then watch Phase 4 subsume it):**
-- [ ] **Batch-ack / group-commit** — quantify it, don't build heavy infra. Acking B
+- [x] **Batch-ack / group-commit** — quantify it, don't build heavy infra. Acking B
       messages in one `UPDATE … WHERE id = ANY($1)` collapses B fsyncs into ~1.
       Note *why this is the bridge to Phase 4*: the cursor is the **ultimate**
       batched ack — N messages "acked" by a single integer write
@@ -537,21 +539,24 @@ one that survives, and forward-reference the rest to where they actually live.
       eliminate it.
 
 **Deferred (topology-coupled — cross-referenced to their real home):**
-- [ ] **Archive terminal rows → Phase 8 (retention).** An append-only log has no
+- [x] **Archive terminal rows → Phase 8 (retention).** An append-only log has no
       `done`/`dead` rows to archive; the "bloat" concern becomes "the log grows
       forever," solved by time-partition-drop retention in Phase 8. Building a
       `message_archive` table now would be thrown away at Phase 4. (It *does* return
-      for the `deliveries` table in Phase 6 — note it there.)
-- [ ] **Claim-hotspot sharding → Phase 12 (partitions) / Phase 6 (deliveries).** The
+      for the `deliveries` table in Phase 6 — note it there.) Resolved: Phase 8a's
+      partition-drop retention.
+- [x] **Claim-hotspot sharding → Phase 12 (partitions) / Phase 6 (deliveries).** The
       single-hot-index-end contention *dissolves* in the cursor model (no competing
       claim — each cursor reads its own `offset > position` range). It returns only
       when competing claims return on `deliveries` (Phase 6), and sharding is
-      exactly what Phase 12's `partition_key` formalizes.
+      exactly what Phase 12's `partition_key` formalizes. This forward-reference
+      itself is resolved (the concern is correctly tracked, not dropped) — the
+      underlying work is still open, tracked in Phase 12, which hasn't been built yet.
 
 **Lab:**
-- [ ] Record the baseline ceiling, then re-measure after `synchronous_commit` and
+- [x] Record the baseline ceiling, then re-measure after `synchronous_commit` and
       (on paper or a quick spike) after batch-ack. Note which moved it most.
-- [ ] **Crash-after-async-commit:** with `synchronous_commit=off`, kill mid-batch
+- [x] **Crash-after-async-commit:** with `synchronous_commit=off`, kill mid-batch
       and confirm reclamation reprocesses the lost acks — at-least-once still holds.
       This is the lab that *proves* relaxing the commit didn't add risk.
 
@@ -2637,9 +2642,14 @@ type — even the reference didn't bother.*
       audit above shows they don't even cleanly deliver that today. Rather
       than spend more chunks sealing leaks in an abstraction whose value is
       itself unresolved, deferred the actual "keep it, simplify it, or
-      remove it" decision to the new **Phase 13 — Code cleanup**'s "Decide
+      remove it" decision to a new standing "Code cleanup" phase's "Decide
       the fate of the `Datastore` interfaces" bullet, to be revisited
-      deliberately instead of resolved reactively mid-audit.
+      deliberately instead of resolved reactively mid-audit. (That phase was
+      short-lived — since retired and merged directly into Phase 13's public
+      API review below, once it turned out to have only this one item. This
+      bullet closes there now, not as its own phase; its old phase number has
+      since been reused for something unrelated, so it's referred to here by
+      name only, not by number.)
 - [x] **Multi-target transactional enqueue.** New package-level
       `producer.InTransaction(ctx, ds, func(ctx, tx pgx.Tx) error {...})`
       opens one transaction, runs the caller's closure, commits on nil /
@@ -2870,6 +2880,237 @@ deliberately which side of that tradeoff this project is on.
 
 ---
 
+## Phase 13 — Public API design review (v1 gate)
+
+**Concept:** everything exported from `pkg/producer`, `pkg/consumer`, and
+`pkg/topic` gets one painstaking pass before v1 locks it in. Not a
+grab-bag of individual TODOs that happen to mention naming — a systematic
+review of every exported type, config field, and function signature,
+because a public API shape decided casually now is a breaking change to
+undo after v1 ships. **Sequencing rule for the rest of this backlog:**
+anything that could affect public API shape happens here, before the shape
+is finalized — don't let a later phase discover it wanted the API different
+after this one already locked it in. Documentation is explicitly excluded
+from this phase and from Phase 14 — it comes last, once the shape it's
+describing has stopped moving (see Phase 15).
+
+**Build:**
+
+*Concrete shape questions this review already turned up:*
+- [ ] **`WorkConsumer.Queue`/`PoolLimiter` are validated but functionally
+      dead.** `NewWorkConsumer` requires a `concurrency.Queue[MessageRow]` and
+      `concurrency.PoolLimiter` (non-nil, `Queue.Cap() >= BatchLimit`,
+      checked in `validate()`), but nothing in the live `Process`/
+      `CursorClaim`/`LifecycleClaim` path reads `p.Queue` or `p.PoolLimiter`
+      — they were wired for the Prefetch/Dispatch design that predates the
+      current claim-from-log architecture (that dead code was deleted
+      alongside this review; `pkg/concurrency` is now unreferenced outside
+      of examples that only exist to satisfy this constructor). Decide: drop
+      both params + fields entirely (breaking, but removes dead required
+      state every caller must construct for nothing), or keep them wired for
+      a future prefetch/batching redesign.
+- [ ] **`pgx.Tx` threaded through every `producerFunc`/`ProduceInTx`
+      signature** couples a package that's supposed to be datastore-agnostic
+      to pgx specifically. Decide, and write the decision down even if it
+      stays as-is (matches 11b's own "document even if the answer is keep
+      pgx" precedent) — the reasoning belongs here, not just a shrug.
+- [ ] **`WorkType` generic vs. a `struct{}`-based shape** for
+      producer/consumer — decide and document.
+- [ ] **`WorkType` → `Message`** rename across `pkg/consumer`'s generic type
+      param, if the review lands on it reading better.
+- [ ] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
+      repeated on every call vs. an admin-object-holding-`ds` pattern that
+      only needs `(ctx, name)` per call.
+- [ ] **`topic.LogTable`/`PartitionTable`/`DeliveryTable`/`DeliveryLogTable`**
+      are exported functions any caller can reach, but they're really
+      cross-package plumbing for producer/consumer, not something an end
+      user has a reason to call. Decide: keep exported, make `*Topic`
+      methods, or unexport.
+
+*Config surface — where a field lives, and what it's called:*
+- [ ] **Consumer vs. topic vs. producer config placement.** A decent amount
+      of `WorkConsumerConfig` (janitor settings especially) probably belongs
+      on `topic.Config` instead — work out the real boundary, not per-field
+      guesses.
+- [ ] **`WorkTimeout`/`QueueTimeout`/`AckMargin` naming** — each currently
+      has its own "consider a better name" marker; settle on names that
+      convey what each actually buffers for.
+- [ ] **Named-return-params for public functions** — decide the house style
+      and apply it consistently across the reviewed surface, not ad hoc.
+- [ ] **Retry policy is hardcoded in four places**
+      (`NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, ...)` in
+      producer/topic/consumer/metrics datastores) — decide if/how this
+      becomes user-configurable, and whether metrics polling in particular
+      should inherit the same long backoff ceiling as a real write path (a DB
+      blip could make the metrics/debug readout look hung for up to 5
+      minutes as currently wired).
+- [ ] **`backoff()` (exception retry timing) isn't overridable** — decide
+      if/how a custom backoff function or config becomes part of the public
+      surface.
+- [ ] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
+      like it should collapse to one knob — decide the shape (the "opt-out
+      default" tension is the part worth resolving deliberately, not just
+      picking one).
+- [ ] **`validate()` runs inside `Process()`, not `New()`** — decide if
+      construction-time validation (fail fast at `NewWorkConsumer`, not at
+      first `Process()` call) is the right public contract.
+- [ ] **`PartitionSafetyBuffer`'s hardcoded `50000` default** needs an
+      actually-reasoned default, not a placeholder number.
+- [ ] **Lifecycle funcs (startup → poll → shutdown)** — decide whether these
+      become an overridable `Lifecycle` struct (new public extension point)
+      or stay internal to `WorkConsumer`.
+
+*New public surfaces to shape — design the surface, full implementation can
+follow in Phase 14 or after v1 where noted:*
+- [ ] **Datastore interfaces' fate** (raised in Phase 11's "Abstract the
+      datastore boundary" audit — briefly parked as its own short-lived
+      "Code cleanup" phase before merging directly into this review, since
+      it's the same constructor-coupling question this phase is already
+      asking; that phase's old number has since been reused, so it's
+      referred to by name here, not by number). Decide
+      (a) fix the constructor coupling above + the `pgtype.UUID` token leak
+      so it's a real seam, (b) thin it to what testing genuinely needs, or
+      (c) collapse it and depend on `*datastore.PostgresDatastore` directly.
+- [ ] **Migrations-into-code.** Decide whether `topic.Register` (or a new
+      `Ensure`) auto-provisions schema, or whether the project keeps
+      requiring an external `migrate` step — this is a shape decision on a
+      function users call directly, not an implementation detail.
+- [ ] **Row-level security / least-privilege setup** — shape it, most likely
+      as a `topic.Config` toggle; the underlying Postgres-side plumbing can
+      land after v1, but the config surface needs deciding now so it doesn't
+      change shape later.
+- [ ] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
+      the full motivating write-up). Work through the design: does it live
+      as a new `WorkConsumerConfig` hook or a wrapper around `consumerFunc`;
+      per-topic or per-group state; what counts as "the same dependency" when
+      `consumerFunc` is opaque to this library; how open/closed state
+      interacts with the existing `backoff()` formula. **Design only** — the
+      breaker's actual trip/cooldown logic doesn't need to ship in v1, but
+      its shape does, since it changes `WorkConsumerConfig`.
+- [ ] **Chaos-testing / fixture suite** — shape both halves: (1) internal
+      test helpers this repo's own test suite can use to seed messages
+      directly into `ready`/`inflight`/`dead` states and inject failures, and
+      (2) whether a thin public testing package ships to library consumers
+      for the same purpose, or whether that stays internal-only. Doesn't
+      need to be robust or complete — start the surfaces (what calling it
+      looks like), not a full chaos-engineering framework.
+
+**Done when:** every item above has an explicit, written decision (even "no
+change, and here's why") — nothing left as an open question for a later v1
+phase to trip over. Circuit breaker and the chaos-testing suite have a
+documented shape/surface, not full implementations. NOTES.md, `git tag
+phase-13`.
+
+**Real systems:** closer to a pre-1.0 API-freeze pass any library does (Go's
+own API-compatibility promise process, Kubernetes's alpha→beta→stable API
+graduation) than a message-broker mechanism — the discipline is the same:
+decide the shape once, deliberately, before people depend on it.
+
+---
+
+## Phase 14 — V1 hardening, correctness & cleanup
+
+**Concept:** the real (non-API-shape) gaps and rough edges found across
+TODO.md and the code-comment sweep that should close before v1 ships, now
+that Phase 13 has settled what the surface looks like.
+
+**Build:**
+- [ ] **`topic.Destroy` can exhaust Postgres's shared lock table** on a topic
+      with enough partitions (TODO.md has the full mechanism + measured
+      numbers — confirmed still unfixed: `DeleteTopic` still drops
+      `message_log_<id>`/`delivery_<id>`/`delivery_log_<id>` each in one
+      statement inside a single transaction). Implement the already-designed
+      fix: batched DETACH + DROP per partition across multiple transactions,
+      then drop the empty parent + topic row last.
+- [ ] **`pkg/consumer/metrics/abandoned_routines.go`'s tracking map can grow
+      unbounded.** Bound it (a `ConcurrentBoundedRingBuffer`-style structure,
+      per its own comment), and decide while there whether the bound is a
+      consumer config option or a fixed constant.
+- [ ] **Cursor-claim edge case** (`pkg/consumer/datastore.go`, "for now we
+      just consider 1 but should have better validation for 2 edge case") —
+      confirm what the second case actually is and whether it's reachable
+      and handled today, or genuinely a gap.
+- [ ] **Row-locking during the cursor-read transaction**
+      (`pkg/consumer/datastore.go`, "consider if we should lock any rows
+      like claimed cursor during this tx") — verify this is a perf question
+      and not a live race; fix if it's the latter.
+- [ ] **Message/work-struct schema evolution.** Decide and document what
+      happens when a topic's `WorkType` shape changes after messages are
+      already on the log — the edge cases that break, and what guidance (if
+      any) the library gives users for handling it.
+- [ ] **`FanOut` rescans the entire log on every call** instead of tracking a
+      per-group high-water mark for the LIFECYCLE path — give it one instead
+      of a full rescan each time.
+- [ ] **`deliveries.status` index** — no code change; the existing "don't add
+      without real evidence" decision (TODO.md) already stands. This bullet
+      just formally closes it out as reviewed-and-confirmed for v1, rather
+      than leaving it looking like an open question.
+- [ ] **DELETE CASCADEs / triggers for related tables** — evaluate whether
+      they'd simplify code, what they'd cost (especially around partition
+      drops), and whether they deepen the project's commitment to Postgres
+      specifically (relevant context for the Datastore-interfaces decision
+      in Phase 13).
+- [ ] **Default alerts** for approaching operational limits (partition count
+      nearing the lock-table ceiling from the `topic.Destroy` fix above,
+      compaction history depth) — build the two already-measured triggers on
+      top of the existing Logger/`QueueState` metrics extension points; no
+      new public surface needed, this is pure implementation.
+- [ ] **Benchmark-recording pipeline** — labs already measure throughput ad
+      hoc; decide where those numbers get saved so a throughput regression
+      is visible over time instead of re-derived by hand each time.
+- [ ] **Internal file-structure cleanup** — split up
+      `pkg/producer/datastore.go`, resolve the
+      `insertUnprotected`/`insertProtected` pattern question, and any other
+      internal-only readability debt surfaced along the way. No public
+      surface impact — purely for whoever reads this code next.
+- [ ] **`go.mod` cleanup after factoring examples into a separate module** —
+      currently blocked: examples aren't a separate module yet, so there's
+      nothing to clean up. Open sub-decision: either do the examples-module
+      split now so this becomes actionable, or explicitly decide the
+      go.mod weight isn't worth that split before v1 and drop this bullet.
+
+**Done when:** every item above is either fixed or has a written decision,
+all existing labs (plus any new ones this phase adds) still pass, NOTES.md,
+`git tag phase-14`.
+
+**Real systems:** the pre-release hardening pass every production datastore
+does — Kafka's own release checklists split exactly this way, API/protocol
+freeze first, then a bug-scrub pass against it.
+
+---
+
+## Phase 15 — Documentation (last)
+
+*Deliberately sequenced after Phase 13 and 15, not alongside them — writing
+docs against an API that's still moving means rewriting them every time the
+shape changes underneath. Everything here waits until the coding work above
+is actually done.*
+
+**Build:**
+- [ ] Doc site: worked example of the transactional-outbox side-effect
+      footgun (calling `sendEmailConfirmation()` before a `Produce`/
+      multi-target closure is known to commit fires the email even if a
+      later step rolls everything back) — pair it with the outbox-pattern
+      framing already on the site.
+- [ ] Doc comments on the public API surfaces Phase 13 finalized —
+      `Produce`/`ProduceInTx`/`InTransaction`, `WorkConsumerConfig` fields,
+      and anything renamed or relocated during the review.
+- [ ] Document the known hard-timeout error message (`consumer.go`'s
+      "goroutine abandoned" error) — what it means and how to avoid it
+      (respect `ctx`, or raise `WorkTimeoutGrace`).
+
+**Done when:** the doc site and public API doc comments reflect the v1
+surface as it actually shipped, NOTES.md, `git tag phase-15`.
+
+---
+
+*The rest of this document is the post-v1, unordered opt-in pool — pick any
+of these up only if a real workload actually demands it, in whatever order
+that happens to be. No fixed sequence among them, though two real
+dependencies are called out where they exist: 9b needs Phase 13 (the v1
+public API gate, not part of this pool) to close first, and 11b needs 8d's
+outcome decided first if both are ever in play.*
+
 ## Phase 12 — Optional FIFO partitions
 
 **Concept:** ordering on demand, paid for only where you opt in.
@@ -2935,46 +3176,6 @@ out to be the same mechanism.
 **Real systems:** Kafka **partitions** (key → partition, order within
 partition); Pulsar **Key_Shared** subscriptions (per-key order across multiple
 consumers); SQS FIFO **MessageGroupId**.
-
----
-
-## Phase 13 — Code cleanup (ongoing)
-
-*Not a single-pass phase like 0–12 — a running list of structural/cleanup
-decisions deliberately deferred rather than resolved reactively wherever
-they were first noticed. No fixed "Done when"/`git tag` closing ceremony
-for the phase itself; individual bullets close (`[x]`) with a decision +
-reasoning as they're actually revisited, same as any other phase's Build
-list. Added to over time, whenever something worth parking here comes up.*
-
-**Concept:** some structural questions don't have an obvious right answer
-the moment they're noticed, and forcing one immediately either stalls
-whatever phase surfaced them or bakes in an under-considered choice. This
-phase is the parking lot for those.
-
-**Build:**
-- [ ] **Decide the fate of the `Datastore` interfaces.** `pkg/producer` and
-      `pkg/consumer` each define their own `Datastore[Message]` interface
-      abstracting the Postgres backend. Raised in Phase 11's "Abstract the
-      datastore boundary" audit: the interface surface is nearly clean (one
-      `pgtype.UUID` leak), but `NewWorkConsumer`/
-      `metrics.NewConsumerMetrics` hardcode `*datastore.PostgresDatastore`
-      at construction time, so nothing today can actually swap backends —
-      the abstraction isn't reachable by a caller. Testing is the only
-      other real argument for keeping it, and the current shape doesn't
-      clearly serve that either. Decide: (a) keep it as a real seam — fix
-      the constructor coupling + the token leak so it's actually swappable;
-      (b) simplify to a thinner interface scoped to what testing genuinely
-      needs; (c) collapse it entirely and let both packages depend on
-      `*datastore.PostgresDatastore` directly.
-
-**Done when:** n/a for the phase itself — it doesn't close, it accumulates.
-Each bullet closes on its own when its decision is actually made and acted
-on.
-
-**Real systems:** the deliberately-parked backlog / "proposed" ADR pattern
-many teams use for exactly this — a structural question worth deciding
-carefully instead of resolving under whatever pressure first surfaced it.
 
 ---
 
@@ -3118,12 +3319,17 @@ workload shape (a panic or a hang breaks any range, no matter how long or
 short the job). Heartbeat only matters for one specific shape: a job whose
 *legitimate* runtime exceeds `WorkTimeout`. No workload in this project
 needs that yet, and building it now means landing a new datastore method
-(the renew `UPDATE`) right before Phase 11 redraws the consumer/datastore
-boundary — real risk of redoing it. Revisit after Phase 11, once that
-boundary has settled and Phase 10's debug readout (open-lease count,
-per-group lag) exists to actually observe heartbeat behavior instead of
-validating it blind. Pick this up only if a real long-running workload shows
-up that needs fast crash-reclaim without a huge fixed `WorkTimeout`.*
+(the renew `UPDATE`) right before the consumer/datastore boundary gets
+redrawn — real risk of redoing it. Originally written as "revisit after
+Phase 11 settles that boundary"; Phase 11 is done, but Phase 13 (public API
+design review) is the actual boundary-redraw event now — the Datastore
+interfaces' fate question that was going to be Phase 11's last word on this
+moved there. **Dependency: wait for Phase 13 to close, not just Phase 11**,
+before landing a new datastore method here. Also still wants Phase 10's
+debug readout (open-lease count, per-group lag) to exist so heartbeat
+behavior can be observed instead of validated blind — that part's already
+satisfied. Pick this up only if a real long-running workload shows up that
+needs fast crash-reclaim without a huge fixed `WorkTimeout`.*
 
 **Concept:** for long-running jobs whose runtime legitimately exceeds
 `WorkTimeout` but still want fast reclaim on a real crash: hand
@@ -3165,7 +3371,10 @@ lean on more. `database/sql`'s generic driver interface doesn't expose any
 of that cleanly — swapping now would mean re-deriving it all for
 portability nobody's asked for yet. Revisit once the platform is closer to
 feature-complete and dependency weight is a concrete concern, not a
-theoretical one.*
+theoretical one. **Dependency: if 8d ever gets picked up, decide it before
+finalizing this one** — `LISTEN/NOTIFY` is exactly the kind of pgx-only
+feature this decision needs to weigh, so deciding 11b first risks answering
+it without that data point.*
 
 **Concept:** decide whether removing the `pgx`-specific dependency in favor
 of `database/sql` is worth losing pgx-only features (native types, `COPY`,
@@ -3204,18 +3413,21 @@ pipelining aren't expressible through the generic driver interface.
   (claim-from-log) is the throughput payoff that makes it scale. 7–11 round out
   routing, operability, and the fault-tolerance/architecture gaps tracked in
   TODO.md — do them in order too, they build on each other the same way.
-- **Current focus:** Phase 7 (Routing), then Phase 8 (Operational layer), then
-  Phases 9–11 (TODO.md-derived: fault isolation, observability, architecture
-  cleanup). Phase 12 (FIFO partitions), 6.5d (lane sharding), 7b
-  (header/content routing), 8d (`LISTEN/NOTIFY` latency), 9b (lease
-  heartbeat/renewal), and 11b (`pgx` vs. `database/sql`) are optional and
-  deliberately deferred to the end of this document — pick them up only if
-  a real workload demands ordering, lane-level throughput, attribute-based
-  routing a `routing_key` pattern can't express, poll-interval latency
-  actually matters, (9b, specifically after Phase 11 lands) a long-running
-  job needs fast crash-reclaim without a huge fixed `WorkTimeout`, or (11b)
-  dependency weight becomes a concrete concern once the platform is closer
-  to feature-complete.
+- **Current focus:** Phases 0–11 are done. **Phase 13 (public API design
+  review) is the v1 gate — next up**, followed by Phase 14 (hardening,
+  correctness, cleanup) and Phase 15 (documentation, deliberately last) — that
+  three-phase sequence is the whole remaining path to v1. Phase 12 (FIFO
+  partitions), 6.5d (lane sharding), 7b (header/content routing), 8d
+  (`LISTEN/NOTIFY` latency), 9b (lease heartbeat/renewal), and 11b (`pgx` vs.
+  `database/sql`) are an unordered, opt-in pool, all deliberately deferred
+  past v1 to the end of this document — pick any of them up only if a real
+  workload demands ordering, lane-level throughput, attribute-based routing a
+  `routing_key` pattern can't express, poll-interval latency actually
+  matters, (9b) a long-running job needs fast crash-reclaim without a huge
+  fixed `WorkTimeout` — and wait for Phase 13 to close first, not just Phase
+  11, since 13 is the actual boundary-redraw event now — or (11b) dependency
+  weight becomes a concrete concern once the platform is closer to
+  feature-complete — and decide 8d first if it's ever in play too.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.
