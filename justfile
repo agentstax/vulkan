@@ -217,6 +217,16 @@ metrics-load-lab:
 otel-export-lab:
   go run examples/phase_1/otelexportlab/main.go
 
+# multi-target transactional enqueue lab: two targets published inside one
+# producer.InTransaction closure commit together, a failure on either rolls
+# back both (not just the failing one), a missing-partition self-heal on one
+# target never touches the other's already-made insert or reruns a caller
+# side effect between the two calls, and a Commit-time failure surfaces
+# completely unclassified -- no retry.PermanentError wrapping -- regardless
+# of SkipIdempotency mix across targets.
+multi-target-lab:
+  go run examples/phase_1/multitargetlab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
