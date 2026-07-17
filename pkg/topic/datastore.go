@@ -50,7 +50,10 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
-			disable_delivery_log
+			disable_delivery_log,
+			partition_safety_buffer,
+			janitor_poll_rate_ns,
+			janitor_sweep_batch_size
 		FROM topic
 		WHERE name = $1;
 	`
@@ -58,6 +61,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 	var t Topic
 	var retentionTTLNs int64
 	var idempotencyKeyTTLNs int64
+	var janitorPollRateNs int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(
 		&t.Id,
 		&t.Name,
@@ -66,6 +70,9 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 		&t.AllowDropPastCommitted,
 		&idempotencyKeyTTLNs,
 		&t.DisableDeliveryLog,
+		&t.PartitionSafetyBuffer,
+		&janitorPollRateNs,
+		&t.JanitorSweepBatchSize,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -75,6 +82,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 	}
 	t.RetentionTTL = time.Duration(retentionTTLNs)
 	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
+	t.JanitorPollRate = time.Duration(janitorPollRateNs)
 
 	return &t, nil
 }
@@ -98,14 +106,14 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, partition_safety_buffer, janitor_poll_rate_ns, janitor_sweep_batch_size)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id;
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog).Scan(&id)
+	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, cfg.PartitionSafetyBuffer, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id)
 
 	switch {
 	case insertErr == nil:

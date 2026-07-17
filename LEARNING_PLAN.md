@@ -2969,10 +2969,50 @@ describing has stopped moving (see Phase 15).
       entirely now, enforced by the compiler rather than doc-comment intent.
 
 *Config surface — where a field lives, and what it's called:*
-- [ ] **Consumer vs. topic vs. producer config placement.** A decent amount
-      of `MessageConsumerConfig` (janitor settings especially) probably belongs
-      on `topic.Config` instead — work out the real boundary, not per-field
-      guesses.
+- [x] **Consumer vs. topic vs. producer config placement.** Went through
+      every `MessageConsumerConfig` field individually against a concrete
+      test, not a vibe: trace which datastore call each field feeds, and
+      check whether that call's signature takes `consumerGroup` (genuinely
+      per-consumer-group, stays) or only `topicID` (shared topic state,
+      misplaced). `ProducerDatastoreConfig`/`ConsumerDatastoreConfig`/
+      `ConsumerMetricsDatastoreConfig` are each just `{Logger}` — already
+      correctly scoped. `topic.Config`'s existing fields are all correctly
+      topic-scoped too (`RetentionTTL`/`AllowDropPastCommitted`/
+      `DisableDeliveryLog` gate physical partition-drop/table-creation
+      decisions no single consumer group can own alone).
+      Moved **`PartitionSafetyBuffer`**, **`JanitorPollRate`**,
+      **`JanitorSweepBatchSize`** to `topic.Config`/`topic.Topic` (persisted
+      — new `topic` table columns in `migrations/005_topic.up.sql`, folded
+      into the existing migration per house style, not a new file). The
+      smoking gun: `EnsureNextPartition`/`DropExpiredPartitions`/
+      `SweepExpiredPartitions`/`SweepExpiredIdempotencyKeys` already took
+      `p.Topic.PartitionSize`/`RetentionTTL`/`AllowDropPastCommitted`/
+      `DisableDeliveryLog`/`IdempotencyKeyTTL` as siblings to these three in
+      the exact same calls — five inputs had already made the move, these
+      three were stragglers. Had to persist (not just move the Go struct
+      field) — the whole point is a single source of truth every
+      independently-constructed consumer-group process agrees on; a
+      transient `Config`-only field would let two processes disagree again,
+      which is the exact bug being fixed. Every real call site is
+      `topicID`-only, no `consumerGroup` anywhere, confirming these were
+      never actually per-group data, just configured in the wrong struct.
+      `JanitorPollRate` dropped its "0 defers to `ClaimPollRate`" fallback
+      (that only made sense sharing a struct with `ClaimPollRate`; now
+      topic-scoped, it gets its own real default, 5s, matching what most
+      callers got via the fallback anyway). `WaterlinePollRate` stays on
+      `MessageConsumerConfig` — confirmed via the same test:
+      `AdvanceWaterline(topicID, consumerGroup)` genuinely takes a group,
+      each group's cursor really is independent. `QueueTimeout` deliberately
+      left alone — tied to the still-open `Queue`/`PoolLimiter` dead-code
+      bullet above, placing it is premature until that resolves.
+      Also surfaced a bigger question this doesn't fully close: even with
+      config now correctly shared, `Janitor()` still runs once per
+      consumer-GROUP process, not once per topic, so N groups on one topic
+      still means N redundant loops maintaining the same partitions (now at
+      least agreeing on the same values). Rolled into TODO.md's existing
+      "janitor opt-out" and "many workers running janitor" entries rather
+      than opening a new one — same underlying question of who should own
+      running the janitor.
 - [ ] **`WorkTimeout`/`QueueTimeout`/`AckMargin` naming** — each currently
       has its own "consider a better name" marker; settle on names that
       convey what each actually buffers for.

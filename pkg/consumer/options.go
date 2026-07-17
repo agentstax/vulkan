@@ -36,8 +36,3 @@ func (c *MessageConsumer[Message]) WithClaimPollRate(claimPollRate time.Duration
 	c.Config.ClaimPollRate = claimPollRate
 	return c
 }
-
-func (c *MessageConsumer[Message]) WithJanitorPollRate(janitorPollRate time.Duration) *MessageConsumer[Message] {
-	c.Config.JanitorPollRate = janitorPollRate
-	return c
-}

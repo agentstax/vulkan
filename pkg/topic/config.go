@@ -62,6 +62,21 @@ type Config struct {
 	// per-attempt write not worth paying for.
 	DisableDeliveryLog bool
 
+	// PartitionSafetyBuffer - how far past the current write head the
+	// janitor creates partitions ahead of time.
+	// Default: 50_000.
+	PartitionSafetyBuffer int64
+
+	// JanitorPollRate - how often the janitor loop ticks (create-ahead,
+	// drop/sweep expired partitions, sweep idempotency_key).
+	// Default: 5 * time.Second.
+	JanitorPollRate time.Duration
+
+	// JanitorSweepBatchSize - rows deleted per sweep transaction; caps how
+	// much of a backlog one batch holds a lock for.
+	// Default: 1000.
+	JanitorSweepBatchSize int
+
 	// Logger - pass your own *slog.Logger (own Handler) or anything satisfying
 	// logger.Logger.
 	// Default: a text logger to os.Stdout at warn level and up.
@@ -78,6 +93,15 @@ func (c *Config) SetDefaults() {
 	if c.IdempotencyKeyTTL == 0 {
 		c.IdempotencyKeyTTL = 24 * time.Hour
 	}
+	if c.PartitionSafetyBuffer == 0 {
+		c.PartitionSafetyBuffer = 50000 // TODO - determine sane default
+	}
+	if c.JanitorPollRate == 0 {
+		c.JanitorPollRate = 5 * time.Second
+	}
+	if c.JanitorSweepBatchSize == 0 {
+		c.JanitorSweepBatchSize = 1000
+	}
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -93,6 +117,15 @@ func (c *Config) Validate() error {
 	if c.IdempotencyKeyTTL < 0 {
 		return errors.New("IdempotencyKeyTTL must be >= 0")
 	}
+	if c.PartitionSafetyBuffer < 0 {
+		return errors.New("PartitionSafetyBuffer must be >= 0")
+	}
+	if c.JanitorPollRate < 0 {
+		return errors.New("JanitorPollRate must be >= 0")
+	}
+	if c.JanitorSweepBatchSize < 0 {
+		return errors.New("JanitorSweepBatchSize must be >= 0")
+	}
 	return nil
 }
 
@@ -105,5 +138,8 @@ func (c *Config) ToTopic(id int64) *Topic {
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
 		DisableDeliveryLog:     c.DisableDeliveryLog,
+		PartitionSafetyBuffer:  c.PartitionSafetyBuffer,
+		JanitorPollRate:        c.JanitorPollRate,
+		JanitorSweepBatchSize:  c.JanitorSweepBatchSize,
 	}
 }

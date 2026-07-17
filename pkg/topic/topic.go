@@ -21,6 +21,9 @@ type Topic struct {
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTL      time.Duration
 	DisableDeliveryLog     bool
+	PartitionSafetyBuffer  int64
+	JanitorPollRate        time.Duration
+	JanitorSweepBatchSize  int
 }
 
 // TODO - consider constructing an admin object which gets passed ds

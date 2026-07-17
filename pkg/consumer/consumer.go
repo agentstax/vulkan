@@ -58,9 +58,6 @@ type MessageConsumerConfig struct {
 	WorkTimeoutGrace        time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- backoff() takes over on later retries
 	ShutdownTimeout         time.Duration
-	PartitionSafetyBuffer   int64
-	JanitorPollRate         time.Duration // 0 defaults to ClaimPollRate; set to decouple the janitor's tick from the claim loop's
-	JanitorSweepBatchSize   int           // rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
 	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
@@ -103,13 +100,7 @@ func (c *MessageConsumerConfig) withDefaults() *MessageConsumerConfig {
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 35 * time.Second
 	}
-	if c.PartitionSafetyBuffer == 0 {
-		c.PartitionSafetyBuffer = 50000 // TODO - determine sane default
-	}
-	// JanitorPollRate, WaterlinePollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
-	if c.JanitorSweepBatchSize == 0 {
-		c.JanitorSweepBatchSize = 1000
-	}
+	// WaterlinePollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -235,14 +226,8 @@ func (p *MessageConsumer[Message]) validate() error {
 	if p.Config.ExceptionInitialBackoff <= 0 {
 		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", p.Config.ExceptionInitialBackoff)
 	}
-	if p.Config.JanitorPollRate < 0 {
-		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", p.Config.JanitorPollRate)
-	}
 	if p.Config.WaterlinePollRate < 0 {
 		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", p.Config.WaterlinePollRate)
-	}
-	if p.Config.JanitorSweepBatchSize < 1 {
-		return fmt.Errorf("JanitorSweepBatchSize must be >= 1, got %d", p.Config.JanitorSweepBatchSize)
 	}
 
 	// shutdown timeout > work timeout + its grace buffer + AckMargin so in-flight
@@ -266,7 +251,7 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 	}
 
 	// cold-start guarantee: the next partition exists before Janitor's first tick
-	if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+	if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.PartitionSafetyBuffer); err != nil {
 		return err
 	}
 
@@ -276,14 +261,10 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 // Janitor is the retention/partition-maintenance loop: create-ahead runs every
 // tick so a producer never outruns it for long; drop runs alongside it, a
 // no-op while RetentionTTL is zero (the default -- retention is opt-in).
+//
+// Topic-scoped, not per-group -- every operation below takes topicID only
 func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
-	janitorPollRate := p.Config.JanitorPollRate
-	// TODO - move below default setting this is not the correct place for it
-	if janitorPollRate == 0 {
-		janitorPollRate = p.Config.ClaimPollRate
-	}
-
-	ticker := time.NewTicker(janitorPollRate)
+	ticker := time.NewTicker(p.Topic.JanitorPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -291,16 +272,16 @@ func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Config.PartitionSafetyBuffer); err != nil {
+			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.PartitionSafetyBuffer); err != nil {
 				return err
 			}
 			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.DisableDeliveryLog); err != nil {
 				return err
 			}
-			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Config.JanitorSweepBatchSize, p.Topic.DisableDeliveryLog); err != nil {
+			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.JanitorSweepBatchSize, p.Topic.DisableDeliveryLog); err != nil {
 				return err
 			}
-			if err := p.Datastore.SweepExpiredIdempotencyKeys(ctx, p.Topic.Id, p.Topic.IdempotencyKeyTTL, p.Config.JanitorSweepBatchSize); err != nil {
+			if err := p.Datastore.SweepExpiredIdempotencyKeys(ctx, p.Topic.Id, p.Topic.IdempotencyKeyTTL, p.Topic.JanitorSweepBatchSize); err != nil {
 				return err
 			}
 		}
