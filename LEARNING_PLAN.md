@@ -83,9 +83,10 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 8d — Latency: LISTEN/NOTIFY | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_key), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
 | 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
-| 11 — Architecture cleanup | ⬜ | datastore boundary, producer fan-out, attempt audit log (from TODO.md); `pgx` vs. `database/sql` cut to **11b** |
+| 11 — Architecture cleanup | ✅ done | datastore boundary audited (decision deferred to **13**), multi-target enqueue (`InTransaction`/`ProduceInTx`, savepoint self-heal), attempt audit log, `context.Cause`, batch write-path round trips; Explain-it-back deliberately skipped (see NOTES.md); answers in NOTES.md; tag `phase-11`; `pgx` vs. `database/sql` cut to **11b** |
 | 11b — pgx vs. database/sql | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 12 — FIFO partitions | ⬜ | deprioritized — ordering opt-in on the lifecycle path, not current focus |
+| 13 — Code cleanup | 🔄 ongoing | running list of deferred structural decisions, added to over time; no fixed close — first item is the `Datastore` interfaces' fate, from Phase 11's audit |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -2579,7 +2580,7 @@ actual Prometheus/Datadog wiring lives in a separate, opt-in package.
 
 ---
 
-## Phase 11 — Architecture cleanup: datastore boundary & producer API
+## Phase 11 — Architecture cleanup: datastore boundary & producer API ✅
 
 **Concept:** a few structural seams accumulated while building the platform —
 the consumer knows more about Postgres-specific datastore internals than it
@@ -2609,9 +2610,36 @@ documented* choice about how far to go, not necessarily eliminating every pgx
 type — even the reference didn't bother.*
 
 **Build:**
-- [ ] **Abstract the datastore boundary.** Audit `pkg/consumer` for places that
-      assume more than the `Datastore` interface promises, so swapping the
-      backing store wouldn't require touching consumer logic.
+- [x] **Abstract the datastore boundary.** Audited `pkg/consumer` (and its
+      `metrics` subpackage) against the `Datastore[Message]` interface.
+      Findings: (1) the interface's method surface is already almost
+      entirely plain Go types — the one exception is `Commit`/
+      `PartialCommit`'s `token pgtype.UUID` param and `LeaseRow.Token`/
+      `ClaimedException.LeaseToken`, the only pgx-specific type that
+      escapes the datastore layer into `consumer.go`'s own business logic
+      (`claimed.Lease.Token`) — the exact same leak the reference
+      implementation has in its own `Range.Token pgtype.UUID` (already
+      flagged in this phase's own intro note); (2) the bigger issue:
+      `WorkConsumer.Datastore` is correctly interface-typed, but
+      `NewWorkConsumer`/`metrics.NewConsumerMetrics` both take
+      `*datastore.PostgresDatastore` directly and construct their own
+      concrete datastore internally — nothing today can actually hand in
+      an alternate backend, unlike `pkg/producer`'s `NewWorkProducer`,
+      which already takes the interface directly; (3) `pkg/retry`'s
+      Postgres-specific transient-error classification is only used
+      internally by the concrete Postgres datastore's own retry wrapping —
+      not a boundary leak, since a different backend simply wouldn't
+      depend on it.
+
+      **Decision: don't patch incrementally — question the premise
+      instead.** The only real remaining argument for keeping
+      backend-swappable `Datastore` interfaces at all is testing, and the
+      audit above shows they don't even cleanly deliver that today. Rather
+      than spend more chunks sealing leaks in an abstraction whose value is
+      itself unresolved, deferred the actual "keep it, simplify it, or
+      remove it" decision to the new **Phase 13 — Code cleanup**'s "Decide
+      the fate of the `Datastore` interfaces" bullet, to be revisited
+      deliberately instead of resolved reactively mid-audit.
 - [x] **Multi-target transactional enqueue.** New package-level
       `producer.InTransaction(ctx, ds, func(ctx, tx pgx.Tx) error {...})`
       opens one transaction, runs the caller's closure, commits on nil /
@@ -2907,6 +2935,46 @@ out to be the same mechanism.
 **Real systems:** Kafka **partitions** (key → partition, order within
 partition); Pulsar **Key_Shared** subscriptions (per-key order across multiple
 consumers); SQS FIFO **MessageGroupId**.
+
+---
+
+## Phase 13 — Code cleanup (ongoing)
+
+*Not a single-pass phase like 0–12 — a running list of structural/cleanup
+decisions deliberately deferred rather than resolved reactively wherever
+they were first noticed. No fixed "Done when"/`git tag` closing ceremony
+for the phase itself; individual bullets close (`[x]`) with a decision +
+reasoning as they're actually revisited, same as any other phase's Build
+list. Added to over time, whenever something worth parking here comes up.*
+
+**Concept:** some structural questions don't have an obvious right answer
+the moment they're noticed, and forcing one immediately either stalls
+whatever phase surfaced them or bakes in an under-considered choice. This
+phase is the parking lot for those.
+
+**Build:**
+- [ ] **Decide the fate of the `Datastore` interfaces.** `pkg/producer` and
+      `pkg/consumer` each define their own `Datastore[Message]` interface
+      abstracting the Postgres backend. Raised in Phase 11's "Abstract the
+      datastore boundary" audit: the interface surface is nearly clean (one
+      `pgtype.UUID` leak), but `NewWorkConsumer`/
+      `metrics.NewConsumerMetrics` hardcode `*datastore.PostgresDatastore`
+      at construction time, so nothing today can actually swap backends —
+      the abstraction isn't reachable by a caller. Testing is the only
+      other real argument for keeping it, and the current shape doesn't
+      clearly serve that either. Decide: (a) keep it as a real seam — fix
+      the constructor coupling + the token leak so it's actually swappable;
+      (b) simplify to a thinner interface scoped to what testing genuinely
+      needs; (c) collapse it entirely and let both packages depend on
+      `*datastore.PostgresDatastore` directly.
+
+**Done when:** n/a for the phase itself — it doesn't close, it accumulates.
+Each bullet closes on its own when its decision is actually made and acted
+on.
+
+**Real systems:** the deliberately-parked backlog / "proposed" ADR pattern
+many teams use for exactly this — a structural question worth deciding
+carefully instead of resolving under whatever pressure first surfaced it.
 
 ---
 

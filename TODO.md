@@ -270,3 +270,5 @@ Similar to above need to consider adding triggers to simplify code for inverse o
 Both of above needs to consider if that solution further locks us into using postgres and if we want that or not
 
 ***IMPORTANT*** we need to understand how user schema changes happen. IE user starts topic with work struct one way -> they want to change it -> how does that work. What are the edge cases that break schema changes. How can we make it easy
+
+a full testing strategy (likely based on labs) which not only do e2e tests but also provide benchmarking metrics that we can save and record somewhere to make sure key metrics like throughput are not degrading overtime

@@ -2158,3 +2158,149 @@ dependencies that make this library heavier
   independent implementations of "what's the current queue state" ever
   drifting apart from each other.
 
+---
+
+## Phase 11 — Architecture cleanup: datastore boundary & producer API
+
+**What it does, and the tradeoff:** cleanup, not new capability, across five
+independent items. The two with real design work behind them: auditing
+whether `pkg/consumer` depends on more than its `Datastore` interface
+promises, and extending the producer so one call can publish to multiple
+topics atomically — today's `WorkProducer.Produce` opens and owns its own
+transaction around exactly one `AppendMessage`. The other three (attempt
+audit trail, `context.Cause` on nested timeouts, batched write-path round
+trips) were smaller, already-scoped polish items.
+
+**The aha:** the datastore-boundary audit didn't stay a code-cleanliness
+question. Checked whether `pkg/consumer` leaks Postgres specifics past its
+own interface — it mostly doesn't (one `pgtype.UUID` token leak) — but the
+constructors (`NewWorkConsumer`, `metrics.NewConsumerMetrics`) hardcode
+`*datastore.PostgresDatastore` internally, so the interface was never
+actually reachable by a caller who'd want to swap backends. That raised the
+real question underneath the audit: is a backend-swappable `Datastore`
+interface worth having at all, given testing is its only remaining
+justification and the current shape doesn't clearly serve that either.
+Rather than patch the leak and call the bullet done, that decision got
+pushed to a new standing **Phase 13 — Code cleanup**, to be made
+deliberately instead of resolved reactively mid-audit.
+
+### Explain it back
+
+Deliberately skipped for this phase — see Decisions.
+
+### Done
+
+- **Multi-target transactional enqueue.** New package-level
+  `producer.InTransaction(ctx, ds, func(ctx, tx pgx.Tx) error {...})` opens
+  one transaction, runs the caller's closure, commits on nil / rolls back
+  otherwise. `WorkProducer[T].ProduceInTx(ctx, tx, producerFunc, opts)` —
+  the tx-taking sibling to `Produce` — is called once per target inside
+  that closure, so the caller can interleave arbitrary business writes and
+  side effects across topics in one transaction. Rejected a closure-free,
+  declarative `PublishAll(Target(p1, fn1, opts1), ...)` alternative that
+  never exposes `pgx.Tx` — costs too much flexibility.
+  Partition self-heal is per-target via SAVEPOINT (`ProduceInTx` wraps its
+  own `producerFunc` call + insert in one savepoint, insert+`RELEASE`
+  batched via `pgx.Batch`) — Postgres aborts the whole transaction on the
+  first statement error, so isolating one target's missing-partition retry
+  needs a savepoint established before the risky insert runs. No
+  `SkipPartitionSelfHeal` opt-out: measured the savepoint tax (sequential
+  +55-95% per-call latency once batched) but also measured that it doesn't
+  cost real aggregate throughput under concurrency (91-105% of baseline) —
+  and the population who'd want the opt-out for throughput is the same
+  population most exposed to the risk it protects against.
+  `InTransaction` does not retry — the closure's surface (multiple
+  `ProduceInTx` calls plus arbitrary caller side effects) is too big to
+  safely auto-rerun on a blip, unlike `AppendMessage`'s narrow,
+  documented-as-rerunnable `producerFunc`. `just multi-target-lab`: atomic
+  two-target publish, rollback-on-failure (a second target's error rolls
+  back both, not just itself), partition self-heal isolation (a forced
+  missing-partition retry on one target never touches the other's insert
+  or reruns a side effect between them), and a genuine Commit-time failure
+  (via a scratch `DEFERRABLE INITIALLY DEFERRED` FK fixture) surfacing
+  completely unclassified regardless of `SkipIdempotency` mix across
+  targets.
+- **Datastore boundary audit.** `pkg/consumer`'s `Datastore[Message]`
+  interface method surface is already almost entirely plain Go types — the
+  one leak is `Commit`/`PartialCommit`'s `token pgtype.UUID` param and
+  `LeaseRow.Token`/`ClaimedException.LeaseToken`, the same leak the
+  reference implementation has in its own `Range.Token`. The real finding
+  was structural, not type-level: `NewWorkConsumer`/
+  `metrics.NewConsumerMetrics` both take `*datastore.PostgresDatastore`
+  directly and construct their concrete datastore internally, so nothing
+  today can actually hand in an alternate backend — unlike
+  `pkg/producer`'s `NewWorkProducer`, which already takes the interface.
+  Decision on what to do about it deferred to Phase 13 (see aha above).
+- **Attempt audit trail.** New per-topic `delivery_log_<topic_id>` table
+  (`consumer_group, message_id, attempt, attempted_at, error`) recording
+  only FAILED attempts — a row's absence for a given attempt IS the
+  "succeeded" signal, so nothing on any hot path ever reads it. Written in
+  the same transaction/statement as the `delivery_<topic_id>` mutation it
+  shadows. Required singularizing the six remaining shared tables
+  (`cursors→cursor`, `leases→lease`, `bindings→binding`, `topics→topic`,
+  `latest_keys→latest_key`, `idempotency_keys→idempotency_key`) and making
+  `deliveries` itself per-topic first, so the audit table could be
+  per-topic from the start instead of repeating pre-8b's shared-table
+  blast-radius mistake. `just delivery-log-lab`: a fresh failure logs
+  exactly one row, a success logs none, retries append distinct rows
+  rather than overwriting, `DisableDeliveryLog` skips the table and every
+  write, both retention paths drain it.
+- **`context.Cause` on nested timeouts.** The three live
+  `context.WithTimeout` call sites in `pkg/consumer/consumer.go` swapped
+  for `context.WithTimeoutCause`, each naming the specific budget that
+  fired (`WorkTimeout`, `AckMargin`, `ShutdownTimeout`) instead of a
+  generic `context.DeadlineExceeded` that gives no hint which one expired.
+  `errors.Is` classification unaffected — `Cause()` is a separate accessor
+  from `Err()`.
+- **Batched write-path round trips, audited per function rather than
+  assumed.** `Commit`/`PartialCommit`'s exception+terminal park loop
+  (runs after every `consumerFunc` call already finished, inside an
+  already-open transaction) was the real candidate — collapsed from 2
+  sequential round trips per parked message to one `pgx.Batch`. Measured:
+  parking N exceptions went from 3.16ms at N=1 to 9.3ms at N=1000 (total
+  wall-clock grew ~3x while N grew 1000x). The other candidate,
+  `RecordException*`/`Record*`'s one-message-at-a-time calls, was
+  deliberately left as-is — batching would defer the durable write past
+  multiple `consumerFunc` calls, trading a durability/idempotency
+  guarantee for a perf win nothing asked for.
+
+### Decisions
+
+- **Explain-it-back skipped for this phase.** Judged not worth the effort
+  relative to its value here — five mostly-independent cleanup items, most
+  already reasoned through and recorded above and in `LEARNING_PLAN.md`'s
+  own bullets at the time each was built, rather than one cohesive
+  mechanic worth re-deriving from memory afterward.
+- **Datastore-interface fate deferred, not decided, mid-audit.** See the
+  aha above — testing is the only remaining argument for keeping
+  `pkg/producer`/`pkg/consumer`'s `Datastore` interfaces, and the audit
+  showed they don't cleanly deliver even that today (constructors bypass
+  the abstraction entirely). Rather than resolve "keep, simplify, or
+  remove" reactively while auditing a narrower question, parked it as the
+  seed item in a new **Phase 13 — Code cleanup**, an intentionally
+  ongoing, no-fixed-close phase for exactly this kind of structural
+  decision.
+- **`InTransaction`/`ProduceInTx` over a closure-free declarative API.**
+  Considered `PublishAll(ctx, ds, Target(p1, fn1, opts1), Target(p2, fn2,
+  opts2))`, which never exposes `pgx.Tx` to the caller at all. Rejected —
+  costs too much flexibility, since interleaving arbitrary business writes
+  and side effects across targets in one call is the whole point of
+  exposing `tx` in the first place.
+- **No `SkipPartitionSelfHeal` opt-out.** Considered mirroring
+  `SkipIdempotency`'s protected-by-default-with-opt-out shape. Rejected:
+  unlike `SkipIdempotency` (opted into for an orthogonal reason —
+  tolerating duplicates), the population who'd reach for this opt-out
+  under throughput pressure is the same population most likely to outrun
+  the janitor's create-ahead and actually need the protection. Pointed
+  throughput-sensitive users at `JanitorPollRate`/`PartitionSize` instead.
+- **`InTransaction` does not retry, in v1.** `AppendMessage`'s retry is
+  safe to auto-rerun because `producerFunc` is narrow,
+  documented-as-rerunnable business logic. `InTransaction`'s closure is a
+  much bigger surface — arbitrary code spanning multiple `ProduceInTx`
+  calls plus side effects between them — so auto-retrying on a blip would
+  mean silently rerunning that closure from an unpredictable point. A
+  caller wanting retry-on-blip wraps their own loop around
+  `InTransaction`. This also made the ambiguous-commit/mixed-
+  `SkipIdempotency` classification question moot — nothing to classify
+  when nothing retries.
+
