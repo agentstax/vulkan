@@ -179,10 +179,11 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent
 			routing_key TEXT,
 			compaction_key TEXT,
+			idempotency_key UUID NOT NULL,
 			payload JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);
-	`, iTopic.LogTable(id))
+	`, iTopic.MessageLogTable(id))
 	if _, err := tx.Exec(ctx, createTableSql); err != nil {
 		return err
 	}
@@ -192,7 +193,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (0) TO (%d);
-	`, iTopic.PartitionTable(id, 0), iTopic.LogTable(id), partitionSize)
+	`, iTopic.PartitionTable(id, 0), iTopic.MessageLogTable(id), partitionSize)
 	if _, err := tx.Exec(ctx, createPartitionSql); err != nil {
 		return err
 	}
@@ -260,7 +261,7 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 
 	// drops every message_log_<id>_N partition and delivery_<id>
-	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.LogTable(topic.Id))
+	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.MessageLogTable(topic.Id))
 	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
 		return err
 	}

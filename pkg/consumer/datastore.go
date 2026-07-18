@@ -187,7 +187,7 @@ func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, to
 func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, topic.LogTable(topicID))
+	`, topic.MessageLogTable(topicID))
 
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
@@ -207,7 +207,7 @@ func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, to
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, topic.PartitionTable(topicID, nextPartition), topic.LogTable(topicID), nextPartition*partitionSize, (nextPartition+1)*partitionSize)
+	`, topic.PartitionTable(topicID, nextPartition), topic.MessageLogTable(topicID), nextPartition*partitionSize, (nextPartition+1)*partitionSize)
 
 	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
 	if err != nil {
@@ -239,7 +239,7 @@ func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, 
 
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, topic.LogTable(topicID))
+	`, topic.MessageLogTable(topicID))
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
@@ -290,7 +290,7 @@ func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context, top
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
 		WHERE i.inhparent = '%s'::regclass;
-	`, topic.LogTable(topicID), topic.LogTable(topicID))
+	`, topic.MessageLogTable(topicID), topic.MessageLogTable(topicID))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -866,7 +866,7 @@ func (d *consumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			)
 		)
 		ON CONFLICT DO NOTHING;
-	`, topic.DeliveryTable(topicID), topic.LogTable(topicID))
+	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
 	if err != nil {
@@ -988,7 +988,7 @@ func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
-		`, topic.DeliveryTable(lease.TopicID), topic.LogTable(lease.TopicID))
+		`, topic.DeliveryTable(lease.TopicID), topic.MessageLogTable(lease.TopicID))
 	} else {
 		// parked CTE + INSERT keeps the range-wide park and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message parked, same first-recorded-attempt
@@ -1004,7 +1004,7 @@ func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 			)
 			INSERT INTO %[3]s (consumer_group, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM parked;
-		`, topic.DeliveryTable(lease.TopicID), topic.LogTable(lease.TopicID), topic.DeliveryLogTable(lease.TopicID))
+		`, topic.DeliveryTable(lease.TopicID), topic.MessageLogTable(lease.TopicID), topic.DeliveryLogTable(lease.TopicID))
 	}
 	if _, err := tx.Exec(ctx, parkSql, consumerGroup, lease.Low, lease.High); err != nil {
 		return err
@@ -1055,7 +1055,7 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, topic.LogTable(topicID))
+	`, topic.MessageLogTable(topicID))
 
 	rows, err := tx.Query(ctx, sql, low, high, consumerGroup, topicID)
 	if err != nil {
@@ -1089,7 +1089,7 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 		RETURNING
 			old_values.claimed AS low,
 			cursor.claimed AS high;
-	`, topic.LogTable(topicID), topic.LogTable(topicID))
+	`, topic.MessageLogTable(topicID), topic.MessageLogTable(topicID))
 
 	cursorRows, err := tx.Query(ctx, cursorSql, consumerGroup, limit, topicID)
 	if err != nil {
@@ -1211,7 +1211,7 @@ func (d *consumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Cont
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`, topic.DeliveryTable(topicID), topic.LogTable(topicID))
+	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, consumerGroup, limit, topicID)
 	if err != nil {
@@ -1318,7 +1318,7 @@ func (d *consumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`, topic.DeliveryTable(topicID), topic.LogTable(topicID))
+	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 
 	rows, err := d.Datastore.Pool.Query(ctx, claimSql, consumerGroup, limit, leaseDuration.Seconds(), topicID)
 	if err != nil {

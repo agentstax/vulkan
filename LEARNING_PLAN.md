@@ -3088,10 +3088,43 @@ describing has stopped moving (see Phase 15).
       same `[1s, 5m]` envelope by default, ~9 attempts to hit the
       ceiling). Confirmed acceptable -- one backoff-curve mental model
       reused everywhere instead of two, worth the faster ramp.
-- [ ] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
+- [x] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
       like it should collapse to one knob — decide the shape (the "opt-out
       default" tension is the part worth resolving deliberately, not just
       picking one).
+
+      Resolved by removing the opt-out entirely rather than relocating it.
+      Research across Kafka (`enable.idempotence`, producer-instance-wide,
+      no per-message override), SQS FIFO, GCP Pub/Sub exactly-once, and
+      Azure Service Bus duplicate detection found no precedent for a
+      per-message skip toggle anywhere -- every system with a real "pay this
+      cost or don't" decision puts it at producer/queue/subscription scope,
+      not per-call; Stripe/NATS/River/Oban's per-message granularity is
+      about "supplied a key or didn't," never a separate boolean.
+
+      Went further than relocating to topic-level: `idempotency_key` is now
+      a `NOT NULL` column directly on `message_log_<id>` (previously it only
+      lived in the separate `idempotency_key` claim-gate table), populated
+      by the same `protectedInsertSQL` CTE that already writes the claim
+      row. This is a real improvement independent of the API-shape question
+      -- the claim-gate table is swept on `IdempotencyKeyTTL` (default 24h),
+      so before this change, once a claim row aged out there was no
+      permanent record of which key produced a given message; now that
+      record survives as long as the message itself does (`RetentionTTL`).
+      No conflict with the partitioned-table constraint that forced
+      `idempotency_key` into its own table originally -- that constraint is
+      about *unique* constraints needing the partition key, and this is a
+      plain `NOT NULL` column, not a new constraint.
+
+      `SkipIdempotency` deleted from `ProduceOptions`; `insertUnprotected`/
+      `insertUnprotectedSavepoint`/`unprotectedInsertSQL` deleted from
+      `pkg/producer/datastore.go` -- every publish always takes the
+      protected path now, no second code path to maintain.
+      `ProduceOptions` is left with just `RoutingKey`, `CompactionKey`,
+      `IdempotencyKey` (optional override; zero value auto-generates,
+      unchanged). `idempotencykeyslab`'s `skipIdempotencyScenario` removed;
+      `duplicateKeyScenario` gained an assertion that the landed row's own
+      `idempotency_key` column matches the key that produced it.
 - [ ] **`validate()` runs inside `Process()`, not `New()`** — decide if
       construction-time validation (fail fast at `NewMessageConsumer`, not at
       first `Process()` call) is the right public contract.

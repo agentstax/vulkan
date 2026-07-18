@@ -17,8 +17,7 @@ package main
 //   - ambiguousCommitScenario: a Commit-time failure (a deferred FK
 //     violation, so it surfaces at Commit, not at any INSERT) comes back
 //     from InTransaction completely unclassified -- no retry.PermanentError
-//     wrapping, no special-casing -- identically whether zero, one, or every
-//     target used SkipIdempotency. This is chunk 3's "no retry, so nothing
+//     wrapping, no special-casing. This is chunk 3's "no retry, so nothing
 //     to classify" decision, locked down as a regression.
 
 import (
@@ -59,8 +58,7 @@ func main() {
 	fmt.Println("   two targets in one InTransaction closure commit together, a failure on")
 	fmt.Println("   either rolls back both, a missing-partition self-heal on one target")
 	fmt.Println("   never touches the other's work or reruns a side effect between them, and")
-	fmt.Println("   a Commit-time failure surfaces completely unclassified regardless of")
-	fmt.Println("   SkipIdempotency mix across targets.")
+	fmt.Println("   a Commit-time failure surfaces completely unclassified.")
 }
 
 func atomicPublishScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
@@ -131,7 +129,7 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.P
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
 		}
-		betweenCalls++ // stands in for a caller side effect like sendEmailConfirmation
+		betweenCalls++                                                    // stands in for a caller side effect like sendEmailConfirmation
 		_, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}) // misses its partition, self-heals
 		return err
 	})
@@ -146,47 +144,40 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.P
 }
 
 func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("ambiguous commit: a Commit-time failure surfaces unclassified, regardless of SkipIdempotency mix")
+	step("ambiguous commit: a Commit-time failure surfaces unclassified")
 
 	setupDeferredFKFixture(ctx, ds)
 	defer teardownDeferredFKFixture(ctx, ds)
 
-	for _, mixed := range []bool{false, true} {
-		topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
-		topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	defer cleanupA()
+	defer cleanupB()
 
-		optsB := producer.ProduceOptions{}
-		if mixed {
-			optsB.SkipIdempotency = true
-		}
-
-		err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-			if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
-				return err
-			}
-			if _, err := wpB.ProduceInTx(ctx, tx, fn, optsB); err != nil {
-				return err
-			}
-			// passes now (deferred) -- fails when Commit checks the constraint
-			_, err := tx.Exec(ctx, "INSERT INTO multitargetlab_deferred_child (parent_id) VALUES (-1);")
+	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
-		})
-
-		pgErr, ok := errors.AsType[*pgconn.PgError](err)
-		if !ok || pgErr.Code != "23503" {
-			die(fmt.Sprintf("mixed=%v: expected the raw foreign_key_violation (23503) from tx.Commit, got %v", mixed, err))
 		}
-		if _, ok := errors.AsType[*retry.PermanentError](err); ok {
-			die(fmt.Sprintf("mixed=%v: InTransaction wrapped the commit error in retry.PermanentError -- it must never classify, only surface as-is", mixed))
+		if _, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+			return err
 		}
+		// passes now (deferred) -- fails when Commit checks the constraint
+		_, err := tx.Exec(ctx, "INSERT INTO multitargetlab_deferred_child (parent_id) VALUES (-1);")
+		return err
+	})
 
-		assertMessageLogCount(ctx, ds, topicA.Id, 0)
-		assertMessageLogCount(ctx, ds, topicB.Id, 0)
-
-		cleanupA()
-		cleanupB()
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || pgErr.Code != "23503" {
+		die(fmt.Sprintf("expected the raw foreign_key_violation (23503) from tx.Commit, got %v", err))
 	}
-	fmt.Println("  ✓ Commit-time failure surfaces as the raw driver error, unclassified, whether or not any target skipped idempotency")
+	if _, ok := errors.AsType[*retry.PermanentError](err); ok {
+		die("InTransaction wrapped the commit error in retry.PermanentError -- it must never classify, only surface as-is")
+	}
+
+	assertMessageLogCount(ctx, ds, topicA.Id, 0)
+	assertMessageLogCount(ctx, ds, topicB.Id, 0)
+
+	fmt.Println("  ✓ Commit-time failure surfaces as the raw driver error, unclassified")
 }
 
 // ---- fixtures ----

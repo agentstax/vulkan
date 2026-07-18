@@ -253,7 +253,7 @@ func (d *consumerMetricsDatastore) queueStateSnapshot(ctx context.Context, topic
 			), 0) AS open_leases
 		FROM cursor c
 		WHERE c.consumer_group = $1 AND c.topic_id = $2;
-	`, topic.LogTable(topicID), topic.DeliveryTable(topicID))
+	`, topic.MessageLogTable(topicID), topic.DeliveryTable(topicID))
 
 	var s QueueStateSnapshot
 	var oldestUnackedAt *time.Time
