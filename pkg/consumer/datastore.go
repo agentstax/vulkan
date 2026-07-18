@@ -516,23 +516,22 @@ func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Con
 	return nil
 }
 
-// sweepIdempotencyKeysBatch deletes up to batchSize expired rows for this
-// topic. created_at (not idempotency_key) is the cutoff column -- a
-// caller-supplied key isn't guaranteed to be a time-ordered UUIDv7 the way
-// the auto-generated default is, so only the server-assigned timestamp is
-// trustworthy for this.
+// sweepIdempotencyKeysBatch deletes up to batchSize expired rows from this
+// topic's own idempotency_key_<id> table. created_at (not idempotency_key)
+// is the cutoff column -- a caller-supplied key isn't guaranteed to be a
+// time-ordered UUIDv7 the way the auto-generated default is, so only the
+// server-assigned timestamp is trustworthy for this.
 func (d *consumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Context, topicID int64, cutoff time.Time, batchSize int) (int, error) {
-	sql := `
-		DELETE FROM idempotency_key
-		WHERE (topic_id, idempotency_key) IN (
-			SELECT topic_id, idempotency_key FROM idempotency_key
-			WHERE topic_id = $1
-				AND created_at < $2
-			LIMIT $3
+	sql := fmt.Sprintf(`
+		DELETE FROM %s
+		WHERE idempotency_key IN (
+			SELECT idempotency_key FROM %s
+			WHERE created_at < $1
+			LIMIT $2
 		);
-	`
+	`, topic.IdempotencyKeyTable(topicID), topic.IdempotencyKeyTable(topicID))
 
-	tag, err := d.Datastore.Pool.Exec(ctx, sql, topicID, cutoff, batchSize)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {
 		return 0, err
 	}

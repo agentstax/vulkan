@@ -138,11 +138,19 @@ idempotency-keys-lab:
 idempotency-keys-growth-lab:
   go run examples/phase_1/idempotencykeysgrowthlab/main.go
 
-# DeleteTopic cascade lab: seeds a row in every topic-scoped table
-# (cursors, leases, deliveries, bindings, latest_keys, idempotency_keys) --
-# including a still-open lease and an unclaimed deliveries row, not just the
-# already-resolved case -- then confirms Destroy cleans up all six, not just
-# message_log and the topics row itself.
+# idempotency_keys race lab: N goroutines sharing one idempotency key must
+# land exactly once under true concurrency (not just sequential retries),
+# and N goroutines each with their own distinct key must all land -- mirrors
+# latestkeysracelab's concurrent-race precedent.
+idempotency-keys-race-lab:
+  go run examples/phase_1/idempotencykeysracelab/main.go
+
+# DeleteTopic cascade lab: seeds a row in every topic_id-scoped table
+# (cursors, leases, bindings, latest_keys) plus the per-topic deliveries and
+# idempotency_keys tables -- including a still-open lease and an unclaimed
+# deliveries row, not just the already-resolved case -- then confirms
+# Destroy cleans up all of them, not just message_log and the topics row
+# itself.
 delete-topic-lab:
   go run examples/phase_1/deletetopiclab/main.go
 

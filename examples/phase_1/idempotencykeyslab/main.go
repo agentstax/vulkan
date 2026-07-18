@@ -184,7 +184,7 @@ func sweepScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	assertIdempotencyKeysCount(ctx, ds, tp.Id, 5)
 
 	// backdate them all past ttl
-	_, err = ds.Pool.Exec(ctx, `UPDATE idempotency_key SET created_at = now() - interval '1 hour' WHERE topic_id = $1;`, tp.Id)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE idempotency_key_%d SET created_at = now() - interval '1 hour';`, tp.Id))
 	must(err)
 
 	// one alive claim, published after the backdate, well inside ttl
@@ -291,9 +291,9 @@ func assertMessageLogCount(ctx context.Context, ds *coredatastore.PostgresDatast
 
 func assertIdempotencyKeysCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM idempotency_key WHERE topic_id = $1;`, topicID).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicID)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("idempotency_key[topic %d] has %d rows, want %d", topicID, count, want))
+		die(fmt.Sprintf("idempotency_key_%d has %d rows, want %d", topicID, count, want))
 	}
 }
 

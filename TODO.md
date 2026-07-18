@@ -251,3 +251,11 @@ related finding from the config-placement review (LEARNING_PLAN.md Phase 13): th
 group / order config options and placement of fields in tables via likeness. ie similiar fields should be logically next to each other for easier understanding.
 
 Need to obsess and standardize over every potential error message. Need to make each error message when can control as understandable and actionable as possible probably via enriching / adding metrics or links to docs (eventually)
+
+A couple things I don't want to forget about
+  1. use of a bloom filter for idempotency checking -- basically much faster way to check if idempotency key does not exist in set (instead of using CTE constraint)
+  2. Want to do thorough throughput and latency test with skipIdempotency vs not skipIdempotency. Should be multi topic with high concurrency and ideally hit db limits
+  3. Need to confirm that us manually creating UUIDv7 via go code is compatible with how PG18 better optimizes storage / pages with their built in UUIDv7(). ie their isn't some
+  metadata field that somehow gets set which tells tuples to be writen sequentially in pages it is just the values themselves
+
+Look into using BRIN index for different tables

@@ -383,9 +383,9 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 
 // protectedInsertSQL builds the claim+insert(+latest_key upsert when keyed)
 // CTE -- shared with the savepoint-batched path so both run the exact same
-// statement.
+// statement. Claims against idempotency_key_<topicID>
 func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, opts ProduceOptions) (string, []any) {
-	args := []any{topicID, idempotencyKey, message, opts.RoutingKey}
+	args := []any{idempotencyKey, message, opts.RoutingKey}
 
 	var sql string
 	if opts.CompactionKey != "" {
@@ -393,43 +393,43 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 		// stays empty when the claim already existed, so latest never fires either.
 		sql = fmt.Sprintf(`
 			WITH claim AS (
-				INSERT INTO idempotency_key (topic_id, idempotency_key)
-				VALUES ($1, $2)
-				ON CONFLICT (topic_id, idempotency_key) DO NOTHING
-				RETURNING 1
+				INSERT INTO %s (idempotency_key)
+				VALUES ($1)
+				ON CONFLICT (idempotency_key) DO NOTHING
+				RETURNING idempotency_key
 			), inserted AS (
 				INSERT INTO %s (payload, routing_key, compaction_key)
-				SELECT $3, NULLIF($4, ''), $5 -- if routing_key $4 is empty string '' insert as NULL
+				SELECT $2, NULLIF($3, ''), $4 -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
 				INSERT INTO latest_key (topic_id, compaction_key, latest_id)
-				SELECT $1, $5, id FROM inserted
+				SELECT $5, $4, id FROM inserted
 				ON CONFLICT (topic_id, compaction_key) DO UPDATE
 				SET latest_id = EXCLUDED.latest_id
 				WHERE latest_key.latest_id < EXCLUDED.latest_id
 			)
 			SELECT id FROM inserted;
-		`, topic.MessageLogTable(topicID))
-		args = append(args, opts.CompactionKey)
+		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
+		args = append(args, opts.CompactionKey, topicID)
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
 		sql = fmt.Sprintf(`
 			WITH claim AS (
-				INSERT INTO idempotency_key (topic_id, idempotency_key)
-				VALUES ($1, $2)
-				ON CONFLICT (topic_id, idempotency_key) DO NOTHING
-				RETURNING 1
+				INSERT INTO %s (idempotency_key)
+				VALUES ($1)
+				ON CONFLICT (idempotency_key) DO NOTHING
+				RETURNING idempotency_key
 			)
 			INSERT INTO %s (payload, routing_key, compaction_key)
 			SELECT
-				$3,
-				NULLIF($4, ''), -- if routing_key is empty string '' insert as NULL
+				$2,
+				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
 				NULL
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
-		`, topic.MessageLogTable(topicID))
+		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
 	}
 
 	return sql, args

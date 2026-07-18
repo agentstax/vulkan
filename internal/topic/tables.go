@@ -1,6 +1,8 @@
 package topic
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // MessageLogTable is topicID's own physical message log.
 func MessageLogTable(topicID int64) string {
@@ -21,4 +23,9 @@ func DeliveryTable(topicID int64) string {
 // when the topic was registered with DisableDeliveryLog.
 func DeliveryLogTable(topicID int64) string {
 	return fmt.Sprintf("delivery_log_%d", topicID)
+}
+
+// IdempotencyKeyTable is topicID's own physical idempotency claim table.
+func IdempotencyKeyTable(topicID int64) string {
+	return fmt.Sprintf("idempotency_key_%d", topicID)
 }
