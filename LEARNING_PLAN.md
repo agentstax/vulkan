@@ -3041,11 +3041,13 @@ describing has stopped moving (see Phase 15).
 
       Resolved: added `retry.Policy{MaxRetries, BaseDelay, MaxDelay,
       Exponent}` (`pkg/retry/policy.go`) with `retry.NewDefaultRetryPolicy()`
-      returning today's values, and a `WithDefaults()` that resolves any
-      zero-valued field. Each of the four sites' own `*Config`
+      returning `*Policy`, and a pointer-receiver `WithDefaults()` that
+      nil-checks the receiver (a totally unset `*Policy` returns
+      `NewDefaultRetryPolicy()` outright) and otherwise resolves any
+      zero-valued field in place. Each of the four sites' own `*Config`
       (`ProducerDatastoreConfig`, `ConsumerDatastoreConfig`,
       `ConsumerMetricsDatastoreConfig`, `topic.Config`) gained a `Retry
-      retry.Policy` field, resolved the same way their existing `Logger`
+      *retry.Policy` field, resolved the same way their existing `Logger`
       field already is. `topic.Exists`/`Destroy` (no `Config` param) fall
       back to `retry.NewDefaultRetryPolicy()`, mirroring their existing
       nil-Logger fallback exactly.
@@ -3057,9 +3059,35 @@ describing has stopped moving (see Phase 15).
       different value into just one config to diverge (e.g. metrics polling
       can now take a shorter policy than a real write path, resolving the
       inline TODO questioning that in `consumer/metrics/datastore.go`).
-- [ ] **`backoff()` (exception retry timing) isn't overridable** — decide
+- [x] **`backoff()` (exception retry timing) isn't overridable** — decide
       if/how a custom backoff function or config becomes part of the public
       surface.
+
+      Resolved by reusing `retry.Policy` rather than inventing a separate
+      config surface: `Retry` (`pkg/retry/retry.go`) now embeds `*Policy`
+      instead of duplicating its `MaxRetries`/`BaseDelay`/`MaxDelay`/
+      `Exponent` fields, and `Policy` gained a `Delay(attempt int)
+      time.Duration` method (`BaseDelay * Exponent^attempt`, clamped to
+      `[0, MaxDelay]`) extracted from `Wrap()`'s inline calc -- `Wrap()`
+      now calls `r.Policy.Delay(retryCount)` instead of duplicating the
+      formula, and `NewDatastoreRetry`'s four call sites collapsed from
+      five loose params to `(cfg.Retry, cfg.Logger)`.
+
+      `MessageConsumerConfig` gained `Backoff *retry.Policy` (default
+      `retry.NewDefaultRetryPolicy()`), threaded into
+      `Datastore.RecordExceptionFailure`'s new `backoffPolicy *retry.Policy`
+      param and used as `backoffPolicy.Delay(exception.Attempts - 1)` in
+      place of the deleted package-level `backoff()`. `WithBackoff(...)`
+      added to `options.go`. Distinct from `ExceptionInitialBackoff`
+      (unchanged) -- that's the first park's delay; `Backoff` is the curve
+      for every retry after that.
+
+      Known behavior change: today's curve was quadratic
+      (`(attempts-1)^2`s, clamped `[1s, 5m]`, ~18 attempts to hit the
+      ceiling); `Policy.Delay` is exponential (`BaseDelay * Exponent^n`,
+      same `[1s, 5m]` envelope by default, ~9 attempts to hit the
+      ceiling). Confirmed acceptable -- one backoff-curve mental model
+      reused everywhere instead of two, worth the faster ramp.
 - [ ] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
       like it should collapse to one knob — decide the shape (the "opt-out
       default" tension is the part worth resolving deliberately, not just

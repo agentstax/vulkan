@@ -50,7 +50,7 @@ func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg 
 	cfg.withDefaults()
 	return &producerDatastore[Message]{
 		Datastore: ds,
-		Retry:     retry.NewDatastoreRetry(cfg.Retry.MaxRetries, cfg.Retry.BaseDelay, cfg.Retry.MaxDelay, cfg.Retry.Exponent, cfg.Logger),
+		Retry:     retry.NewDatastoreRetry(cfg.Retry, cfg.Logger),
 		Logger:    cfg.Logger,
 	}
 }

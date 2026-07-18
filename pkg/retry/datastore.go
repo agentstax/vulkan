@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,9 +16,9 @@ type DatastoreRetry struct {
 	*Retry
 }
 
-func NewDatastoreRetry(maxRetries int, baseDelay time.Duration, maxDelay time.Duration, exponent int, log logger.Logger) *DatastoreRetry {
+func NewDatastoreRetry(policy *Policy, log logger.Logger) *DatastoreRetry {
 	return &DatastoreRetry{
-		Retry: NewRetry(maxRetries, baseDelay, maxDelay, exponent, log),
+		Retry: NewRetry(policy, log),
 	}
 }
 

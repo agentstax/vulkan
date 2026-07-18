@@ -210,7 +210,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 func runDBBlipRecovery(ctx context.Context) {
 	step("DB BLIP -- pkg/retry absorbs transient failures transparently; the caller never sees an error once it clears")
 
-	r := retry.NewDatastoreRetry(6, 10*time.Millisecond, 200*time.Millisecond, 2, logger.NewDefaultLogger(os.Stdout))
+	r := retry.NewDatastoreRetry(&retry.Policy{MaxRetries: 6, BaseDelay: 10 * time.Millisecond, MaxDelay: 200 * time.Millisecond, Exponent: 2}, logger.NewDefaultLogger(os.Stdout))
 
 	calls := 0
 	err := r.Wrap(ctx, func() error {

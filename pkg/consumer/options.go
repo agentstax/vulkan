@@ -1,6 +1,10 @@
 package consumer
 
-import "time"
+import (
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/retry"
+)
 
 func (c *MessageConsumer[Message]) WithType(consumerType ConsumerType) *MessageConsumer[Message] {
 	c.Config.Type = consumerType
@@ -34,5 +38,10 @@ func (c *MessageConsumer[Message]) WithAckMargin(ackMargin time.Duration) *Messa
 
 func (c *MessageConsumer[Message]) WithClaimPollRate(claimPollRate time.Duration) *MessageConsumer[Message] {
 	c.Config.ClaimPollRate = claimPollRate
+	return c
+}
+
+func (c *MessageConsumer[Message]) WithBackoff(backoff *retry.Policy) *MessageConsumer[Message] {
+	c.Config.Backoff = backoff
 	return c
 }

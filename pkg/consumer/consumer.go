@@ -14,6 +14,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -56,7 +57,8 @@ type MessageConsumerConfig struct {
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
 	WorkTimeoutGrace        time.Duration
-	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- backoff() takes over on later retries
+	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
+	Backoff                 *retry.Policy // curve for can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy().
 	ShutdownTimeout         time.Duration
 	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
@@ -97,6 +99,7 @@ func (c *MessageConsumerConfig) withDefaults() *MessageConsumerConfig {
 	if c.ExceptionInitialBackoff == 0 {
 		c.ExceptionInitialBackoff = 5 * time.Second
 	}
+	c.Backoff = c.Backoff.WithDefaults()
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = 35 * time.Second
 	}
@@ -136,7 +139,8 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 	cfg.withDefaults()
 
 	consumerDatastore := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
-		Logger: cfg.Logger,
+		Logger:       cfg.Logger,
+		MessageRetry: cfg.Backoff,
 	})
 
 	metrics, err := metrics.NewConsumerMetrics(cfg.Meter, group, t.Id, t.Name, ds, &metrics.ConsumerMetricsDatastoreConfig{

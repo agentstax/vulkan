@@ -34,7 +34,7 @@ func NewConsumerDatastore(ds *datastore.PostgresDatastore, cfg *ConsumerMetricsD
 	cfg.withDefaults()
 	return &consumerMetricsDatastore{
 		Datastore: ds,
-		Retry:     retry.NewDatastoreRetry(cfg.Retry.MaxRetries, cfg.Retry.BaseDelay, cfg.Retry.MaxDelay, cfg.Retry.Exponent, cfg.Logger),
+		Retry:     retry.NewDatastoreRetry(cfg.Retry, cfg.Logger),
 		Logger:    cfg.Logger,
 	}
 }

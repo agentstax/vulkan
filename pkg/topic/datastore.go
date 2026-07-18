@@ -24,10 +24,9 @@ func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
 	}
-	retryPolicy = retryPolicy.WithDefaults()
 	return &topicDatastore{
 		Datastore: datastore,
-		Retry:     retry.NewDatastoreRetry(retryPolicy.MaxRetries, retryPolicy.BaseDelay, retryPolicy.MaxDelay, retryPolicy.Exponent, log),
+		Retry:     retry.NewDatastoreRetry(retryPolicy, log),
 		Logger:    log,
 	}
 }
