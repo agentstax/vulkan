@@ -43,8 +43,8 @@ type ProduceOptions struct {
 	//
 	// Supply your own for protection across your OWN retries too -- e.g. your
 	// process crashes and restarts before learning whether a publish landed,
-	// and you call Produce again with the same key. Prefer a time ordered key
-	// like UUIDv7 such that data is logically ordered on disk for better efficency.
+	// and you call Produce again with the same key. Try to use a time-ordered key
+	// (UUIDv7): random (v4) keys slow throughput down considerably.
 	// Ex: a UUIDv7 persisted alongside the work before the first Produce attempt.
 	IdempotencyKey uuid.UUID
 

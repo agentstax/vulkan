@@ -47,10 +47,11 @@ type Config struct {
 
 	// IdempotencyKeyTTL - how long a produce-retry claim survives in
 	// idempotency_key before the janitor sweeps it.
-	// Default: 24h.
+	// Default: 1h.
 	//
 	// Zero is invalid, not "forever" -- SetDefaults resolves it before the
-	// topic is ever registered. Lower it for a topic whose producers never
+	// topic is ever registered. TTL only needs to cover your retry horizon,
+	// not a retention window. Lower it for a topic whose producers never
 	// retry across a restart.
 	// Ex: 10 * time.Minute.
 	IdempotencyKeyTTL time.Duration
@@ -96,7 +97,7 @@ func (c *Config) SetDefaults() {
 		c.PartitionSize = 1_000_000
 	}
 	if c.IdempotencyKeyTTL == 0 {
-		c.IdempotencyKeyTTL = 24 * time.Hour
+		c.IdempotencyKeyTTL = time.Hour
 	}
 	if c.PartitionSafetyBuffer == 0 {
 		c.PartitionSafetyBuffer = 50000 // TODO - determine sane default

@@ -206,8 +206,8 @@ func configRoundTripScenario(ctx context.Context, ds *coredatastore.PostgresData
 
 	tp1, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000})
 	must(err)
-	if tp1.IdempotencyKeyTTL != 24*time.Hour {
-		die(fmt.Sprintf("default IdempotencyKeyTTL = %v, want 24h", tp1.IdempotencyKeyTTL))
+	if tp1.IdempotencyKeyTTL != time.Hour {
+		die(fmt.Sprintf("default IdempotencyKeyTTL = %v, want 1h", tp1.IdempotencyKeyTTL))
 	}
 
 	// re-registering with the SAME (defaulted) config must NOT trip ErrTopicConfigMismatch --
@@ -215,10 +215,10 @@ func configRoundTripScenario(ctx context.Context, ds *coredatastore.PostgresData
 	// against itself on every re-register.
 	_, err = topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000})
 	must(err)
-	fmt.Println("  ✓ default IdempotencyKeyTTL (24h) survives a re-register with no mismatch")
+	fmt.Println("  ✓ default IdempotencyKeyTTL (1h) survives a re-register with no mismatch")
 
 	// a genuinely different IdempotencyKeyTTL on re-register must still be caught
-	_, err = topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000, IdempotencyKeyTTL: time.Hour})
+	_, err = topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000, IdempotencyKeyTTL: 2 * time.Hour})
 	if err == nil {
 		die("expected ErrTopicConfigMismatch for a changed IdempotencyKeyTTL, got nil")
 	}
