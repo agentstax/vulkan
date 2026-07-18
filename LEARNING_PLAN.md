@@ -3088,43 +3088,98 @@ describing has stopped moving (see Phase 15).
       same `[1s, 5m]` envelope by default, ~9 attempts to hit the
       ceiling). Confirmed acceptable -- one backoff-curve mental model
       reused everywhere instead of two, worth the faster ramp.
-- [x] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
+- [ ] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
       like it should collapse to one knob — decide the shape (the "opt-out
       default" tension is the part worth resolving deliberately, not just
       picking one).
 
-      Resolved by removing the opt-out entirely rather than relocating it.
-      Research across Kafka (`enable.idempotence`, producer-instance-wide,
-      no per-message override), SQS FIFO, GCP Pub/Sub exactly-once, and
-      Azure Service Bus duplicate detection found no precedent for a
-      per-message skip toggle anywhere -- every system with a real "pay this
-      cost or don't" decision puts it at producer/queue/subscription scope,
-      not per-call; Stripe/NATS/River/Oban's per-message granularity is
-      about "supplied a key or didn't," never a separate boolean.
-
-      Went further than relocating to topic-level: `idempotency_key` is now
-      a `NOT NULL` column directly on `message_log_<id>` (previously it only
-      lived in the separate `idempotency_key` claim-gate table), populated
-      by the same `protectedInsertSQL` CTE that already writes the claim
-      row. This is a real improvement independent of the API-shape question
-      -- the claim-gate table is swept on `IdempotencyKeyTTL` (default 24h),
-      so before this change, once a claim row aged out there was no
-      permanent record of which key produced a given message; now that
-      record survives as long as the message itself does (`RetentionTTL`).
-      No conflict with the partitioned-table constraint that forced
-      `idempotency_key` into its own table originally -- that constraint is
-      about *unique* constraints needing the partition key, and this is a
-      plain `NOT NULL` column, not a new constraint.
-
-      `SkipIdempotency` deleted from `ProduceOptions`; `insertUnprotected`/
-      `insertUnprotectedSavepoint`/`unprotectedInsertSQL` deleted from
-      `pkg/producer/datastore.go` -- every publish always takes the
-      protected path now, no second code path to maintain.
-      `ProduceOptions` is left with just `RoutingKey`, `CompactionKey`,
-      `IdempotencyKey` (optional override; zero value auto-generates,
-      unchanged). `idempotencykeyslab`'s `skipIdempotencyScenario` removed;
-      `duplicateKeyScenario` gained an assertion that the landed row's own
-      `idempotency_key` column matches the key that produced it.
+      **Option — always-on `idempotency_key`, no `skipIdempotency`, no
+      separate table.** Make `idempotency_key` the enforced identity of
+      `message_log` directly instead of a companion `idempotency_key` table:
+      - `message_log` becomes `PARTITION BY RANGE (idempotency_key)` (or
+        `RANGE (uuid_extract_timestamp(idempotency_key))` for
+        calendar-readable partition bounds — either way Postgres requires
+        the PK to include the partition key, but since
+        `uuid_extract_timestamp(idempotency_key)` is a pure function of
+        `idempotency_key` itself, that composite PK still fully enforces
+        uniqueness on `idempotency_key` alone — unlike the rejected
+        `(idempotency_key, id)` composite on today's id-partitioned table,
+        where `id` is an independent counter and enforces nothing). The
+        unique index is per-partition-local but globally correct, because
+        RANGE partitioning guarantees two rows sharing a key land in the
+        same partition. Drops the `idempotency_key` table and its janitor
+        DELETE-sweep entirely — one insert, one index, per publish, not two.
+      - `id` (`BIGSERIAL`) stops being the partition key but stays on the
+        table unconstrained (`nextval()` already guarantees uniqueness by
+        construction; nothing today enforces it with a formal index beyond
+        that either) — kept purely so `WHERE id > watermark ORDER BY id`
+        keeps working as the consumer's exact correctness filter.
+      - Cost: partition pruning is keyed off `idempotency_key` now, not
+        `id`, so a claim query filtering only by `id` can't prune partitions
+        the way it does today (Postgres partition pruning requires the WHERE
+        clause to constrain the actual partition-key expression; it doesn't
+        infer correlations between `id` and `idempotency_key`, even though
+        both roughly increase together via UUIDv7's embedded timestamp).
+        Given the fanout-benchmark finding that consumer drain, not producer
+        insert cost, is this system's actual wall, this cost lands on the
+        more sensitive side of the system — needs to be clawed back, not
+        accepted as-is.
+      - Mitigation: each cursor tracks its own `cursor_floor_G` — the
+        `idempotency_key` of its own current watermark, refreshed for free
+        each claim (already returned in the row data). Claim queries add
+        `idempotency_key >= cursor_floor_G` as a **pruning-only** predicate
+        alongside the real `id > watermark` correctness filter — restores
+        per-consumer-group partition pruning without `id` needing to be the
+        partition key.
+      - `cursor_floor_G` alone is unsafe without a clamp: a transaction can
+        hold an *older* `idempotency_key` than one already claimed while its
+        own insert is delayed (slow `producerFunc`, network lag before
+        `Begin()` lands, or the retry backoff gap after a failed attempt
+        rolls back) and land later with a *higher* `id` — silently excluded
+        by a naive `cursor_floor_G` filter, which is a dropped message, not
+        just a missed optimization.
+      - A live `pg_stat_activity`-derived floor (`MIN(xact_start)` across
+        producer backends) was explored and rejected as insufficient on its
+        own — it can't see a transaction before its `Begin()` reaches the
+        server (network-lag window) or during a retry's backoff delay after
+        a prior attempt already rolled back (both are gaps where the
+        straggler holds a stale key but isn't visible anywhere live).
+        `retry.Policy` alone can't bound this either — it only bounds
+        backoff *between* attempts, not `producerFunc`'s own duration or
+        per-attempt network latency, both unbounded without an explicit
+        deadline.
+      - Actual fix: enforce a hard ceiling on the whole `AppendMessage` call
+        (every retry, `Begin` through `Commit`) via `context.WithTimeout`,
+        so `cursor_floor_G`'s clamp becomes `now() - ceiling -
+        clockSkewBuffer` — a structural guarantee (nothing can still be
+        pending past the ceiling) instead of an inferred one. **Needs a
+        new, dedicated TTL for this**, not the existing
+        `idempotency_key_ttl_ns` (24h default,
+        `migrations/005_topic.up.sql`) — that knob is sized for "how long
+        should a dedup window matter," this one needs to be sized much
+        tighter, correlated to `retry.Policy`'s own curve and a realistic
+        `producerFunc` duration (seconds-to-low-minutes, not hours). Also
+        worth noting: the *current* separate-table design already
+        implicitly assumes something like this ceiling and doesn't enforce
+        it — a `producerFunc` that genuinely outlives
+        `idempotency_key_ttl_ns` today would have its claim row swept by
+        the janitor mid-retry, and the eventual retry would insert a fresh
+        claim, silently defeating dedup. Enforcing an explicit ceiling
+        closes that latent gap too, independent of whether this option is
+        taken.
+      - Given the ceiling is enforced by construction, the live
+        `pg_stat_activity` signal likely isn't needed at all once this
+        lands — `now() - ceiling` alone is simpler, has no catalog-query
+        dependency, and is exactly as safe (just always conservative by the
+        full ceiling width rather than adapting down early).
+      - Open sub-questions before this is buildable: exact partition-key
+        expression (raw `idempotency_key` range vs.
+        `uuid_extract_timestamp(idempotency_key)`, and target PG version
+        for native `uuid_extract_timestamp`), whether `context`
+        cancellation reliably aborts in-flight Postgres work through `pgx`
+        rather than just abandoning the wait locally, and `cursor_floor_G`
+        update strategy (atomic-per-claim vs. async-tick, same tradeoff
+        shape as the existing waterline advance cadence).
 - [ ] **`validate()` runs inside `Process()`, not `New()`** — decide if
       construction-time validation (fail fast at `NewMessageConsumer`, not at
       first `Process()` call) is the right public contract.

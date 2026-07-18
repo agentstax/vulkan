@@ -179,7 +179,6 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent
 			routing_key TEXT,
 			compaction_key TEXT,
-			idempotency_key UUID NOT NULL,
 			payload JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);
