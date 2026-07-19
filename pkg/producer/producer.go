@@ -34,6 +34,7 @@ type ProduceOptions struct {
 	// Default: "" (not part of a compacted stream; delivered independently, never superseded).
 	//
 	// Set it to opt this message into log compaction under that key.
+	// A hot key caps batched throughput: same-key batches commit one after another.
 	// Ex: "user:123", "session:abc-def"
 	CompactionKey string
 
@@ -45,6 +46,7 @@ type ProduceOptions struct {
 	// process crashes and restarts before learning whether a publish landed,
 	// and you call Produce again with the same key. Try to use a time-ordered key
 	// (UUIDv7): random (v4) keys slow throughput down considerably.
+	// A caller-supplied key routes the call to a per-call transaction, never a batch.
 	// Ex: a UUIDv7 persisted alongside the work before the first Produce attempt.
 	IdempotencyKey uuid.UUID
 
@@ -60,18 +62,37 @@ type ProduceOptions struct {
 
 type MessageProducer[Message any] struct {
 	Topic     *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
-	datastore Datastore[Message]
+	datastore *producerDatastore[Message]
+	batcher   *batcher[Message]
 }
 
-func NewMessageProducer[Message any](t *topic.Topic, datastore Datastore[Message]) *MessageProducer[Message] {
+func NewMessageProducer[Message any](t *topic.Topic, datastore *producerDatastore[Message]) *MessageProducer[Message] {
 	return &MessageProducer[Message]{
 		Topic:     t,
 		datastore: datastore,
+		batcher:   newBatcher(datastore, t.Id, t.PartitionSize, datastore.settings),
 	}
 }
 
-// TODO - make good doc comments
-func (p *MessageProducer[Message]) Produce(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+// Produce appends message to the topic, returning once it is durably
+// committed. Concurrent calls share transactions: batched under load,
+// committed alone (no added latency) at idle.
+//
+// Cancelling ctx stops the wait, not the message -- it still commits with
+// its batch, so the outcome is ambiguous.
+func (p *MessageProducer[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
+	// caller keys can collide -- a collision inside a shared txn stalls the
+	// whole batch, so keyed calls take a per-call transaction
+	if opts.IdempotencyKey != uuid.Nil {
+		passthrough := func(context.Context, Tx, uuid.UUID) (*Message, error) { return message, nil }
+		return p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, opts)
+	}
+	return p.batcher.produce(ctx, message, opts)
+}
+
+// ProduceFunc appends the message returned by producerFunc, which runs inside
+// the message's transaction -- your writes commit or roll back with it.
+func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 	if err != nil {
 		return nil, err

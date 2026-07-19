@@ -77,10 +77,10 @@ func main() {
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:   3,
-		WorkTimeout:  1 * time.Second,
+		BatchLimit:  3,
+		WorkTimeout: 1 * time.Second,
 		QueueMargin: 500 * time.Millisecond,
-		AckMargin:    500 * time.Millisecond, // also PartialCommit's own detached-ctx budget
+		AckMargin:   500 * time.Millisecond, // also PartialCommit's own detached-ctx budget
 	})
 	must(err)
 
@@ -158,7 +158,7 @@ func main() {
 
 func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {
-		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

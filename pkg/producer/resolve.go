@@ -21,6 +21,12 @@ const (
 // action. Transients and the first missing partition never reach here --
 // attemptBatch absorbs them.
 func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
+	// checked FIRST -- these can carry a statement index that is a retry
+	// artifact, NOT poison to evict
+	if retry.IsRetryable(err) || errors.Is(err, context.DeadlineExceeded) {
+		return failBatch
+	}
+
 	// a PgError WITH a statement index is the server rejecting that one
 	// statement. Only the FIRST failure carries a trustworthy index --
 	// statements after it never executed (the aborted txn ignores them), so
@@ -32,11 +38,7 @@ func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
 
 	// EX: pgx failing to encode ONE payload fails the whole SendBatch
 	// client-side -- deterministic, but no statement index to pin it on
-	if !retry.IsRetryable(err) {
-		return splitBatch
-	}
-
-	return failBatch
+	return splitBatch
 }
 
 // resolveBatch records an outcome on every operation in the batch: attempt,

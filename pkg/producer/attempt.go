@@ -3,6 +3,7 @@ package producer
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -27,7 +28,16 @@ func (b *batcher[Message]) attemptBatch(ctx context.Context, batch *batch[Messag
 func (b *batcher[Message]) runBatchWithRetry(ctx context.Context, batch *batch[Message]) (failedIdx int, err error) {
 	failedIdx = -1
 	err = b.datastore.Retry.Wrap(ctx, func() error {
-		idx, err := b.runBatch(ctx, batch)
+		// bound each attempt -- a hung database must not hold the batch forever
+		attemptCtx, cancel := context.WithTimeoutCause(ctx, b.settings.attemptTimeout,
+			fmt.Errorf("batch attempt exceeded BatchAttemptTimeout (%s) for topic %d", b.settings.attemptTimeout, b.topicID))
+		defer cancel()
+
+		idx, err := b.runBatch(attemptCtx, batch)
+		if err != nil && attemptCtx.Err() != nil {
+			// the wire error alone doesn't say WHOSE deadline expired
+			err = fmt.Errorf("%w: %w", err, context.Cause(attemptCtx))
+		}
 		// the last attempt wins failedIdx -- a permanent error stops Wrap
 		// right here, having either set an index or kept it -1
 		failedIdx = idx

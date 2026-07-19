@@ -118,7 +118,7 @@ func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.Messa
 }
 
 func publish(ctx context.Context, wp *producer.MessageProducer[Record], key string) {
-	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
+	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)

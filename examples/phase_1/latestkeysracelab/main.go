@@ -76,7 +76,7 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{CompactionKey: "hot-key"})
 			must(err)

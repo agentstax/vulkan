@@ -80,7 +80,7 @@ func main() {
 		MaxAttempts:   3,
 		ClaimPollRate: 1 * time.Second,
 		WorkTimeout:   5 * time.Second,
-		QueueMargin:  2 * time.Second,
+		QueueMargin:   2 * time.Second,
 		AckMargin:     1 * time.Second,
 	})
 	if err != nil {

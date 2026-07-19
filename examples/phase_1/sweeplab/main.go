@@ -92,7 +92,7 @@ func main() {
 // ---- helpers ----
 
 func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
-	_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})
 	must(err)

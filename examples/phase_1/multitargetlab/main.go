@@ -122,7 +122,7 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.P
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 2)
 	defer cleanupB()
 
-	_, err := wpB.Produce(ctx, fn, producer.ProduceOptions{})
+	_, err := wpB.ProduceFunc(ctx, fn, producer.ProduceOptions{})
 	must(err)
 	assertMessageLogCount(ctx, ds, topicB.Id, 1)
 

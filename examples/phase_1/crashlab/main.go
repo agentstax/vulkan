@@ -92,7 +92,7 @@ func main() {
 		MaxAttempts:     100,
 		ClaimPollRate:   200 * time.Millisecond,
 		WorkTimeout:     2 * time.Second,
-		QueueMargin:    1 * time.Second,
+		QueueMargin:     1 * time.Second,
 		AckMargin:       1 * time.Second,
 		ShutdownTimeout: 8 * time.Second,
 	})

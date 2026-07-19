@@ -62,7 +62,7 @@ func TestBatcherConcurrentProduce(t *testing.T) {
 	tp := harnessTopic(t, ds, 1_000_000)
 
 	pd := NewProducerDatastore[harnessPayload](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 100)
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 100})
 
 	const producers, msgs = 50, 20
 	var wg sync.WaitGroup
@@ -119,7 +119,7 @@ func TestBatcherDuplicateKeys(t *testing.T) {
 	tp := harnessTopic(t, ds, 1_000_000)
 
 	pd := NewProducerDatastore[harnessPayload](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 100)
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 100})
 
 	dupKey, _ := uuid.NewV7()
 	if _, err := ds.Pool.Exec(ctx, "INSERT INTO "+iTopic.IdempotencyKeyTable(tp.Id)+" (idempotency_key) VALUES ($1)", dupKey); err != nil {
@@ -160,7 +160,7 @@ func TestBatcherPoisonEviction(t *testing.T) {
 	tp := harnessTopic(t, ds, 1_000_000)
 
 	pd := NewProducerDatastore[json.RawMessage](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 100)
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 100})
 
 	ops := make([]*batchOperation[json.RawMessage], 5)
 	for i := range ops {
@@ -204,7 +204,7 @@ func TestBatcherClientEncodeIsolation(t *testing.T) {
 	tp := harnessTopic(t, ds, 1_000_000)
 
 	pd := NewProducerDatastore[json.RawMessage](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 100)
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 100})
 
 	ops := make([]*batchOperation[json.RawMessage], 4)
 	for i := range ops {
@@ -246,7 +246,7 @@ func TestBatcherMissingPartitionHeal(t *testing.T) {
 	tp := harnessTopic(t, ds, 10)
 
 	pd := NewProducerDatastore[harnessPayload](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 5) // cap <= PartitionSize so one heal covers a batch
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 5}) // cap <= PartitionSize so one heal covers a batch
 
 	for s := range 15 {
 		if _, err := b.produce(ctx, &harnessPayload{Seq: s}, ProduceOptions{}); err != nil {
@@ -290,7 +290,7 @@ func TestBatcherWorkerLifecycle(t *testing.T) {
 	tp := harnessTopic(t, ds, 1_000_000)
 
 	pd := NewProducerDatastore[harnessPayload](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 100)
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 100})
 
 	if _, err := b.produce(ctx, &harnessPayload{Seq: 0}, ProduceOptions{}); err != nil {
 		t.Fatalf("first produce: %v", err)
@@ -332,7 +332,7 @@ func TestBatcherConcurrentWorkers(t *testing.T) {
 	tp := harnessTopic(t, ds, 1_000_000)
 
 	pd := NewProducerDatastore[harnessPayload](ds, nil)
-	b := newBatcher(pd, tp.Id, tp.PartitionSize, 5) // tiny cap so the backlog outruns one worker
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 5}) // tiny cap so the backlog outruns one worker
 
 	stopSampling := make(chan struct{})
 	maxWorkers := make(chan int, 1)
@@ -388,5 +388,110 @@ func TestBatcherConcurrentWorkers(t *testing.T) {
 		t.Fatalf("expected backlog pressure to spawn extra workers, peak was %d", peak)
 	} else {
 		t.Logf("peak concurrent workers: %d", peak)
+	}
+}
+
+// CompactionKeys: hot compaction keys ride inside concurrent batches -- the
+// per-batch sort keeps latest_key lock order global, so nothing deadlocks
+// (which would surface as an evicted operation's error) and every latest_key
+// row ends pointing at the highest id written for its key.
+func TestBatcherCompactionKeys(t *testing.T) {
+	ctx := context.Background()
+	ds := harnessDatastore(t)
+	tp := harnessTopic(t, ds, 1_000_000)
+
+	pd := NewProducerDatastore[harnessPayload](ds, nil)
+	b := newBatcher(pd, tp.Id, tp.PartitionSize, batchSettings{maxBatchSize: 5}) // tiny cap -> concurrent workers -> real lock contention
+
+	const producers, msgs, keys = 20, 20, 3
+	var wg sync.WaitGroup
+	errCh := make(chan error, producers*msgs)
+	for p := range producers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for s := range msgs {
+				key := fmt.Sprintf("hot:%d", (p+s)%keys)
+				if _, err := b.produce(ctx, &harnessPayload{Producer: p, Seq: s}, ProduceOptions{CompactionKey: key}); err != nil {
+					errCh <- fmt.Errorf("producer %d seq %d: %w", p, s, err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("produce: %v", err)
+	}
+
+	var messages int
+	if err := ds.Pool.QueryRow(ctx, "SELECT count(*) FROM "+iTopic.MessageLogTable(tp.Id)).Scan(&messages); err != nil {
+		t.Fatal(err)
+	}
+	if messages != producers*msgs {
+		t.Fatalf("expected %d messages, got %d", producers*msgs, messages)
+	}
+
+	// every latest_key row must point at the max id for its key
+	var stale int
+	row := ds.Pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT count(*) FROM latest_key lk
+		JOIN (
+			SELECT compaction_key, max(id) AS max_id FROM %s GROUP BY compaction_key
+		) m ON m.compaction_key = lk.compaction_key
+		WHERE lk.topic_id = $1 AND lk.latest_id <> m.max_id;
+	`, iTopic.MessageLogTable(tp.Id)), tp.Id)
+	if err := row.Scan(&stale); err != nil {
+		t.Fatal(err)
+	}
+	if stale != 0 {
+		t.Fatalf("%d latest_key rows not pointing at their key's max id", stale)
+	}
+}
+
+// PublicProduce: the MessageProducer routing -- plain calls batch, a
+// caller-keyed call takes the per-call path and still dedups on its key.
+func TestBatcherPublicProduce(t *testing.T) {
+	ctx := context.Background()
+	ds := harnessDatastore(t)
+	tp := harnessTopic(t, ds, 1_000_000)
+
+	pd := NewProducerDatastore[harnessPayload](ds, nil)
+	wp := NewMessageProducer(tp, pd)
+
+	const producers, msgs = 10, 10
+	var wg sync.WaitGroup
+	errCh := make(chan error, producers*msgs)
+	for p := range producers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for s := range msgs {
+				if _, err := wp.Produce(ctx, &harnessPayload{Producer: p, Seq: s}, ProduceOptions{}); err != nil {
+					errCh <- err
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("produce: %v", err)
+	}
+
+	// caller-keyed: same key twice must land exactly one message
+	key, _ := uuid.NewV7()
+	for range 2 {
+		if _, err := wp.Produce(ctx, &harnessPayload{Producer: 99}, ProduceOptions{IdempotencyKey: key}); err != nil {
+			t.Fatalf("caller-keyed produce: %v", err)
+		}
+	}
+
+	var messages int
+	if err := ds.Pool.QueryRow(ctx, "SELECT count(*) FROM "+iTopic.MessageLogTable(tp.Id)).Scan(&messages); err != nil {
+		t.Fatal(err)
+	}
+	if messages != producers*msgs+1 {
+		t.Fatalf("expected %d messages (batched + 1 deduped caller-keyed), got %d", producers*msgs+1, messages)
 	}
 }

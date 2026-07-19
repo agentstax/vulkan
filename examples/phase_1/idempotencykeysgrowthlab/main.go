@@ -128,7 +128,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 				case <-stop:
 					return
 				default:
-					_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+					_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 						return common.NewWork(30, "admin@example.com")
 					}, producer.ProduceOptions{})
 					must(err)
@@ -212,7 +212,7 @@ func publishConcurrent(ctx context.Context, wp *producer.MessageProducer[common.
 		}
 		wg.Go(func() {
 			for range count {
-				_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{})
 				must(err)

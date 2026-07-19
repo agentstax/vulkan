@@ -259,3 +259,7 @@ A couple things I don't want to forget about
   metadata field that somehow gets set which tells tuples to be writen sequentially in pages it is just the values themselves
 
 Look into using BRIN index for different tables
+
+we need to test compaction key with default produce and determine if deadlock contention by reverse ordered transactions is a problem or not.
+  - ie and what extreme (or not extreme) example would it truly become a problem for users or can the system self heal through retries
+  - I know we can move these users to ProduceFunc but just to know

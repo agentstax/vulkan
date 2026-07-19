@@ -59,7 +59,7 @@ func main() {
 	}
 	// CompactionKey seeds latest_key; the default (protected) idempotency
 	// claim seeds idempotency_key -- one Produce call, two tables.
-	_, err = wp.Produce(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
+	_, err = wp.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 10, 3, 5*time.Second, false)

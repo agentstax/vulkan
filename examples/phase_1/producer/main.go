@@ -57,7 +57,7 @@ func main() {
 
 	// WORK
 	for range *countPtr {
-		work, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		work, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err

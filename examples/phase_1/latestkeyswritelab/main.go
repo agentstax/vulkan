@@ -119,7 +119,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 func timeSequential(ctx context.Context, wp *producer.MessageProducer[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
-		_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{CompactionKey: keyFn(i)})
 		must(err)
@@ -143,7 +143,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	for g := range goroutines {
 		wg.Go(func() {
 			for i := range perGoroutine {
-				_, err := wp.Produce(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{CompactionKey: keyFn(g, i)})
 				must(err)

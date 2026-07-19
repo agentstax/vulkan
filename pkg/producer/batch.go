@@ -1,6 +1,9 @@
 package producer
 
-import "slices"
+import (
+	"cmp"
+	"slices"
+)
 
 // batch is the operations dequeued together and resolved in one transaction.
 type batch[Message any] struct {
@@ -8,6 +11,11 @@ type batch[Message any] struct {
 }
 
 func newBatch[Message any](operations []*batchOperation[Message]) *batch[Message] {
+	// ascending CompactionKey -> every batch txn takes its latest_key row
+	// locks in one global order: hot keys queue batch-to-batch, never deadlock
+	slices.SortStableFunc(operations, func(a, b *batchOperation[Message]) int {
+		return cmp.Compare(a.request.opts.CompactionKey, b.request.opts.CompactionKey)
+	})
 	return &batch[Message]{operations: operations}
 }
 

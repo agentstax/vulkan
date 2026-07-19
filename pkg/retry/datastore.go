@@ -60,6 +60,12 @@ func IsTransientPgError(err error) bool {
 		return false
 	}
 
+	// deadlock victim -- the whole txn rolled back, a rerun proceeds. Relies
+	// on every Wrap closure owning its whole txn.
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return pgErr.Code == "40P01"
+	}
+
 	if pgconn.SafeToRetry(err) || pgconn.Timeout(err) {
 		return true
 	}
