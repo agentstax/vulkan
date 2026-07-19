@@ -108,3 +108,44 @@ short-window number once the table held its steady-state ~1M rows.
 Deferred (not run): multi-topic contention, partition rollover under load,
 streaming-replica amplification, commit_delay points, ProduceInTx savepoint
 overhead.
+
+## Follow-up: in-library batched Produce (acceptance lab)
+
+The library-side answer to conclusion 6 — measured through the real public
+API once batching landed, via `examples/phase_1/producerbatchlab`
+(`just producer-batch-lab`), while `SkipIdempotency` still existed as the
+comparison floor. Environment differs from the container above: the dev
+postgres:17 under Docker Desktop on macOS (fsync=on, synchronous_commit=on,
+untuned). `common.Work` payload, default knobs (BatchMaxSize 100 /
+BatchConcurrencyLimit 4), pool warmed untimed. The three comparison arms
+share one caller count (50 goroutines x 400 msgs) so the ratio is fair; the
+saturated arm is the batcher's actual ceiling.
+
+| arm                                        | msgs/s (multi-run) |
+|--------------------------------------------|--------------------|
+| batched `Produce` (claim-protected)        | 20,000 – 29,900    |
+| per-call `ProduceFunc` (claim-protected)   | 11,100 – 12,400    |
+| per-call `SkipIdempotency` (floor)         | 11,100 – 13,500    |
+| batched `Produce`, saturated (800 callers) | 108,800 – 134,600  |
+
+- The equal-concurrency arms are ARRIVAL-bound, not commit-bound: N callers
+  each blocked ~one commit cap the offered load at N/latency (Little's
+  law) — at 50 callers that's ~25k/s no matter how fast the batcher is.
+  Sweeping callers on the batched arm showed exactly that: 50 → ~20-23k
+  (largest batch 49), 100 → ~33k (99), 200 → ~67-77k, 400 → ~109-111k,
+  800 → ~127-135k, batches pinned at the 100 cap from 200 callers up.
+- So the honest multiples: **1.8-2.5x** the per-call paths at equal
+  concurrency, **~10-12x** the unprotected per-call floor once callers
+  saturate the batch cap. The protected batched path doesn't just
+  compensate for `SkipIdempotency`'s removal — it laps the path skip
+  existed to preserve.
+- Per-call protected ties the skip floor at 50 concurrent callers — the
+  claim gate is fully fsync-masked per-call in-library too, matching
+  conclusion 2's fsync-bound case.
+- Commit-driven grouping self-scales batch size to arrival rate with no
+  linger timer: ~13-48 at 50 callers, the full 100 cap at 200+; still
+  size 1 (zero added latency) at idle.
+- `BatchConcurrencyLimit` sweep {1, 2, 4, 8} at 50 callers: flat, within
+  run noise — arrival-bound traffic never backs up the queue enough to
+  spawn extra workers. Default stays 4 (headroom for slow-commit
+  environments and saturated bursts, not this box).
