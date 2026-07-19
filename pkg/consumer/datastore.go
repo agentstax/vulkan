@@ -77,9 +77,10 @@ type LeaseRow struct {
 	Reclaims      int         `db:"reclaims"`
 }
 
+// a nil Low/High means cursor exists but is already at head (nothing to claim)
 type CursorRange struct {
-	Low  int64 `db:"low"`
-	High int64 `db:"high"`
+	Low  *int64 `db:"low"`
+	High *int64 `db:"high"`
 }
 
 // a leased window of work -- the messages to process plus the lease that guards
@@ -1071,23 +1072,52 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 	defer tx.Rollback(ctx)
 
 	// TODO - projector could likely tracked head in a RWMutex such that it doesn't need to be calculated here
-	// TODO - consider if we should lock any rows like claimed cursor during this tx
 	cursorSql := fmt.Sprintf(`
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
 			SELECT * FROM cursor
 			WHERE consumer_group = $1 AND topic_id = $3
+			-- must FOR UPDATE, get race if using a basic snapshot read
+			-- two same-group workers racing on one cursor row (claimed=0, head=200, limit=100):
+			--
+			--   worker A: claims (0, 100], txn still open
+			--   worker B: takes its snapshot (claimed=0), blocks on A's row lock
+			--   worker A: commits
+			--   worker B: unblocks; its UPDATE re-checks the row's LATEST version
+			--             (claimed=100), so high is correct: 100+100 = 200
+			--
+			-- but B's low comes from THIS select, and forks on its read mode:
+			--
+			--   snapshot read:  low = 0   (stale)  -> B returns (0, 200]   -> overlaps A
+			--   FOR UPDATE:     low = 100 (latest) -> B returns (100, 200] -> disjoint
+			FOR UPDATE
+		), 
+		head AS (
+			-- ONE probe shared by both references below
+			SELECT MAX(id) AS head FROM %s
+		), 
+		updated AS (
+			UPDATE cursor
+			SET claimed = LEAST(cursor.claimed + $2, head.head) -- move claimed frontier forward by max(batchLimit)
+			FROM old_values, head
+			WHERE cursor.consumer_group = $1
+				AND cursor.topic_id = $3
+				AND cursor.claimed < head.head
+			RETURNING
+				old_values.claimed AS low,
+				cursor.claimed AS high
 		)
-		UPDATE cursor
-		SET
-			claimed = LEAST(cursor.claimed + $2, (SELECT MAX(id) FROM %s)) -- move claimed frontier forward by max(batchLimit)
-		FROM old_values
-		WHERE cursor.consumer_group = $1
-			AND cursor.topic_id = $3
-			AND cursor.claimed < (SELECT MAX(id) FROM %s)
-		RETURNING
-			old_values.claimed AS low,
-			cursor.claimed AS high;
-	`, topic.MessageLogTable(topicID), topic.MessageLogTable(topicID))
+		-- the CTEs answer different questions: 
+		-- - old_values = does the cursor row exist
+		-- - updated    = did the UPDATE fire.
+		-- LEFT JOIN combines them to return 3 unique states (claimed, caught up and cursor missing)
+		--
+		--   LEFT (old_values)   RIGHT (updated)   | rows   low    high   meaning
+		--   claimed=100         (100, 200]        | 1      100    200    claim it
+		--   claimed=200         (empty)           | 1      NULL   NULL   caught up
+		--   (empty)             (empty)           | 0      -      -      cursor missing -> error
+		-- 
+		SELECT u.low, u.high FROM old_values o LEFT JOIN updated u ON true;
+	`, topic.MessageLogTable(topicID))
 
 	cursorRows, err := tx.Query(ctx, cursorSql, consumerGroup, limit, topicID)
 	if err != nil {
@@ -1096,19 +1126,22 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 
 	claimedRange, err := pgx.CollectOneRow(cursorRows, pgx.RowToStructByName[CursorRange])
 	if err != nil {
-		// two cases for no rows returned
-		// 1. We are at head of message_log ie not messages to process
-		// 2. We could not find the cursor for this consumer group
-		// TODO - for now we just consider 1 but should have better validation for 2 edge case
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			// a consumer with no cursor row would otherwise poll forever looking
+			// caught up while messages accumulate
+			return nil, fmt.Errorf("no cursor for group %s on topic %d -- was Register called?", consumerGroup, topicID)
 		}
 
 		return nil, err
 	}
 
+	// at head of message_log ie no messages to process
+	if claimedRange.Low == nil {
+		return nil, nil
+	}
+
 	return d.ClaimMessages(
-		ctx, tx, topicID, consumerGroup, claimedRange.Low, claimedRange.High, limit, leaseDuration,
+		ctx, tx, topicID, consumerGroup, *claimedRange.Low, *claimedRange.High, limit, leaseDuration,
 	)
 }
 

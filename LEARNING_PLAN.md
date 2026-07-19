@@ -3465,14 +3465,78 @@ that Phase 13 has settled what the surface looks like.
       LAB's own `calls++` counter — message 2's zombie and message 3's worker
       run concurrently by design — fixed with `atomic.Int64`; the library
       change itself is race-clean.
-- [ ] **Cursor-claim edge case** (`pkg/consumer/datastore.go`, "for now we
+- [x] **Cursor-claim edge case** (`pkg/consumer/datastore.go`, "for now we
       just consider 1 but should have better validation for 2 edge case") —
       confirm what the second case actually is and whether it's reachable
       and handled today, or genuinely a gap.
-- [ ] **Row-locking during the cursor-read transaction**
+      **Resolved: case 2 = no cursor row exists for (group, topic), and it
+      was a genuine gap.** The cursor-advance UPDATE returned zero rows both
+      when caught up (`claimed >= MAX(id)`, which also covers the empty-log
+      NULL case) and when the cursor row was simply missing — both collapsed
+      into `pgx.ErrNoRows` → `nil, nil` → "caught up," so a consumer whose
+      `Register` was never called would poll forever looking healthy while
+      messages accumulated. Silent-success, the worst failure mode — same
+      disease the presence design targets. Reachable today by calling
+      `Consume`/`CursorClaim` without `Register` (nothing enforces the
+      ordering yet) or by manual cursor-row deletion; NOT reachable via
+      `topic.Destroy`, which deletes the cursor rows and drops
+      `message_log_<id>` in the same final txn, so a live consumer
+      post-destroy fails loudly on `42P01 undefined_table` instead. Fixed by
+      restructuring the one query rather than adding an existence check (a
+      second query would double the idle tick, the steady-state hot path):
+      the UPDATE moved into a CTE and the result is `SELECT ... FROM
+      old_values LEFT JOIN updated ON true`, so a live cursor ALWAYS yields
+      a row — NULL low/high means caught up (`CursorRange` fields became
+      pointers to carry this), and zero rows now unambiguously means the
+      cursor row is missing, returning a permanent error naming the fix
+      ("was Register called?"; plain error → `pkg/retry` classifies it
+      permanent, no spin). The hot-path latency concern was MEASURED, not
+      argued: the old shape paid the `MAX(id)` head probe TWICE (two
+      independent scalar-subquery InitPlans, a per-partition MergeAppend
+      probe each), and the restructure hoists it into one `head` CTE — at
+      10 partitions the shapes tie (~216-230µs avg, join over singleton
+      CTEs is invisible), at 500 partitions the new shape is ~25-30% FASTER
+      (claiming avg 906µs → 622µs, p99 1.03ms → 736µs; idle 894µs → 683µs),
+      a win that grows with partition count. So the correctness fix came out
+      as a throughput improvement. Complements the Phase 13
+      register-precondition item, not replaces it: that's the front door
+      (API misuse caught in-process), this is the datastore backstop
+      (invariant holds even against manual deletion). Verified: scratch
+      three-outcome harness (missing cursor errors loudly / registered
+      cursor claims 5 messages / caught-up returns nil) + 10 labs green
+      (reclaim, exception, routing, partition, drop-floor, sweep, topic,
+      compaction, fault-isolation, metrics-reaction).
+- [x] **Row-locking during the cursor-read transaction**
       (`pkg/consumer/datastore.go`, "consider if we should lock any rows
       like claimed cursor during this tx") — verify this is a perf question
       and not a live race; fix if it's the latter.
+      **Resolved: it was a LIVE RACE, and the TODO's suspicion was exactly
+      right.** Proven with a two-connection interleave on dev PG: claimer A
+      takes (0,100] and holds its txn open; claimer B (same group) starts,
+      snapshots, and blocks on A's cursor-row lock; A commits. Under READ
+      COMMITTED, B's UPDATE re-evaluates against the row's LATEST version
+      (EvalPlanQual) — so `high` computes correctly off claimed=100 — but
+      the `old_values` CTE stays materialized from B's ORIGINAL snapshot, so
+      `RETURNING old_values.claimed AS low` hands back the stale 0: B
+      returns (0,200], overlapping the (0,100] already leased to A —
+      systematic double-delivery whenever same-group workers race on a deep
+      backlog. Same READ COMMITTED/EPQ anomaly family as the
+      AdvanceWaterline snapshot race. Fix: `FOR UPDATE` on the `old_values`
+      select — a locking read doesn't answer from the snapshot; B blocks at
+      the CTE and, once A commits, reads the latest committed row, so low
+      and high come from the same row version. Repro rerun with the lock:
+      A (0,100], B (100,200], disjoint. Cost measured as zero: the UPDATE
+      was acquiring that row lock anyway, `FOR UPDATE` just moves the
+      acquisition before the read — cursorbench numbers with the lock are
+      identical to without (claiming avg 661µs vs 622µs at 500 partitions,
+      within run-to-run noise; 10-partition parity unchanged). The only new
+      locking is idle ticks (caught-up pollers now briefly lock the cursor
+      row), invisible at poll-rate frequencies. The stale-`head` question
+      was also checked and is benign in both shapes: one statement = one
+      snapshot, EPQ recomputes neither an inline scalar subquery nor a CTE,
+      and a stale head just means the claim lags one poll tick. Verified:
+      race repro (both shapes), three-outcome cursor check, all 10
+      cursor-path labs green.
 - [ ] **Message/work-struct schema evolution.** Decide and document what
       happens when a topic's `Message` shape changes after messages are
       already on the log — the edge cases that break, and what guidance (if
