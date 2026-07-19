@@ -2914,18 +2914,6 @@ describing has stopped moving (see Phase 15).
 **Build:**
 
 *Concrete shape questions this review already turned up:*
-- [ ] **`MessageConsumer.Queue`/`PoolLimiter` are validated but functionally
-      dead.** `NewMessageConsumer` requires a `concurrency.Queue[MessageRow]` and
-      `concurrency.PoolLimiter` (non-nil, `Queue.Cap() >= BatchLimit`,
-      checked in `validate()`), but nothing in the live `Process`/
-      `CursorClaim`/`LifecycleClaim` path reads `p.Queue` or `p.PoolLimiter`
-      — they were wired for the Prefetch/Dispatch design that predates the
-      current claim-from-log architecture (that dead code was deleted
-      alongside this review; `pkg/concurrency` is now unreferenced outside
-      of examples that only exist to satisfy this constructor). Decide: drop
-      both params + fields entirely (breaking, but removes dead required
-      state every caller must construct for nothing), or keep them wired for
-      a future prefetch/batching redesign.
 - [x] **`pgx.Tx` threaded through every `producerFunc`/`ProduceInTx`
       signature** couples a package that's supposed to be datastore-agnostic
       to pgx specifically. Decide, and write the decision down even if it
@@ -2933,6 +2921,18 @@ describing has stopped moving (see Phase 15).
       pgx" precedent) — the reasoning belongs here, not just a shrug.
 - [ ] **`Message` generic vs. a `struct{}`-based shape** for
       producer/consumer — decide and document.
+- [ ] **`MessageProducer.Register(ctx)` — give producers the consumer's
+      lifecycle pattern.** The presence/heartbeat design (TODO.md "Presence"
+      entry, where the full agreed shape lives) needs a lifetime heartbeat
+      goroutine per producer, and producers have no lifetime today — no ctx,
+      no Run, no Close. Agreed shape: a producer `Register(ctx)` mirroring
+      the consumer's — presence row + parent-table validation + heartbeat
+      start — with Produce/Consume checking registered-and-not-wound-down
+      before doing work. Two API consequences to decide here even though
+      presence itself may ship after v1: the new producer method + the
+      registration precondition on `Produce`, and the semantic redefinition
+      of consumer `Register`'s ctx from call-scoped setup to the instance's
+      lifetime.
 - [x] **`WorkType` → `Message`** rename across `pkg/producer`/`pkg/consumer`'s
       generic type param. Landed as `Message` everywhere it means "the
       caller's payload type" — `pkg/producer/datastore.go` and
@@ -3285,6 +3285,31 @@ describing has stopped moving (see Phase 15).
       only decides how often the failure path fires, and always-ahead makes
       it as rare as one-ahead can.
 
+      Multi-partition create-ahead (pg_partman's `premake N`) was then
+      considered and deliberately rejected — one-ahead + self-heal is the
+      design, not an interim state. The conditions that make `premake 4`
+      right for pg_partman are all absent here: (a) their maintenance runs
+      from cron (hourly/daily), so slack is measured in missed maintenance
+      windows — the janitor ticks every 5s, and one-ahead already covers
+      `PartitionSize / JanitorPollRate` = 200k msgs/s sustained at
+      defaults, above the library's measured ~130-145k/s ceiling; (b)
+      their time-based partitions burn down with the clock whether or not
+      traffic arrives — id-based partitions fill only with traffic, so the
+      requirement is `rate x poll interval`, not wall-time slack; (c)
+      their miss is a disaster (rows spill into the default partition,
+      manual repartitioning to repair), which is what premake is priced
+      against — our miss is the measured ~10%/p99-doubling self-heal blip.
+      A `PartitionsAhead` knob would also re-create the exact disease just
+      deleted: at every achievable rate, every value above 1 is
+      indistinguishable in practice. If the janitor ever genuinely can't
+      keep up (sustained rate crossing a full partition per tick), the
+      correct existing lever is `PartitionSize` — coverage scales linearly
+      with it, and users at that scale must reason about it anyway for
+      retention granularity. Multi-ahead stays the known additive escape
+      hatch only for a future produce path fast enough to beat 200k/s
+      sustained (e.g. COPY-based ingest); it would be a new internal
+      constant or field then, added with a measured need in hand.
+
 *New public surfaces to shape — design the surface, full implementation can
 follow in Phase 14 or after v1 where noted:*
 - [ ] **Datastore interfaces' fate** (raised in Phase 11's "Abstract the
@@ -3340,13 +3365,52 @@ TODO.md and the code-comment sweep that should close before v1 ships, now
 that Phase 13 has settled what the surface looks like.
 
 **Build:**
-- [ ] **`topic.Destroy` can exhaust Postgres's shared lock table** on a topic
-      with enough partitions (TODO.md has the full mechanism + measured
+- [x] **`topic.Destroy` can exhaust Postgres's shared lock table** on a topic
+      with enough partitions (TODO.md had the full mechanism + measured
       numbers — confirmed still unfixed: `DeleteTopic` still drops
       `message_log_<id>`/`delivery_<id>`/`delivery_log_<id>` each in one
       statement inside a single transaction). Implement the already-designed
       fix: batched DETACH + DROP per partition across multiple transactions,
       then drop the empty parent + topic row last.
+      **Resolved:** `deleteTopic` now drains the log's partitions first —
+      `listMessageLogPartitions` reads up to 100 attached partitions per pass
+      from `pg_inherits` (via `to_regclass`, so a missing parent yields zero
+      rows instead of an error), `dropPartitionBatch` drops that batch in one
+      transaction, loop until the catalog comes back empty — then the
+      original single transaction handles the topic row, the topic_id-scoped
+      row deletes, the now-empty parent, and the plain tables. One deliberate
+      deviation from the entry's "DETACH + DROP" wording: the batch does a
+      plain `DROP TABLE IF EXISTS` per partition with NO detach — a
+      non-concurrent DETACH takes the exact same ACCESS EXCLUSIVE lock on the
+      parent that the DROP does, so detaching first is the same locks in two
+      statements instead of one (and `DETACH CONCURRENTLY` can't run inside a
+      transaction block and leaves pending-detach states that would
+      complicate crash resume). Batch size is a fixed constant, not a knob:
+      each partition pins ~5 lock-table slots (table, pkey index, partial
+      compaction_key index, TOAST table, TOAST index), so 100/txn is ~500
+      slots — under 10% of the stock 6400-slot ceiling. Crash resumability
+      falls out of the ordering: the topic row survives until the final
+      transaction, so a destroy that dies mid-drain is finished by calling
+      `Destroy` again, and each pass re-reading the catalog makes the whole
+      thing idempotent (`IF EXISTS` also tolerates a live retention janitor
+      dropping an expired partition between the catalog read and the batch).
+      The drain loop is BOUNDED (starting partition count / batch + 3
+      passes): a live producer's missing-partition self-heal resurrects
+      partitions mid-drain, so against a topic still receiving writes the
+      loop would never see zero — past the bound it errors telling the
+      caller to stop producers and re-run, surfacing the caller-coordination
+      bug instead of livelocking on it. (The old single-transaction shape
+      didn't have this hazard — it won the lock race atomically — batching
+      traded that away; a follow-up presence/heartbeat design in TODO.md
+      would let Destroy refuse up front, naming the live producer, with this
+      bound remaining the hard backstop.) Live-verified on dev PG (stock
+      64×100 = 6400 slots): a 2100-partition topic still fails the old
+      shape — one-transaction `DROP TABLE message_log_<id>` → `out of shared
+      memory` (SQLSTATE 53200) — and the new batched `Destroy` cleared the
+      same topic in ~590ms leaving zero relations and no topic row. topiclab green as the small-scale
+      regression check. TODO.md entry swept; its "Default alerts" neighbor
+      re-worded (the Destroy cliff is fixed; the lock-table alert example now
+      points at user-run DDL instead).
 - [ ] **`pkg/consumer/metrics/abandoned_routines.go`'s tracking map can grow
       unbounded.** Bound it (a `ConcurrentBoundedRingBuffer`-style structure,
       per its own comment), and decide while there whether the bound is a
@@ -3464,6 +3528,23 @@ outcome decided first if both are ever in play.*
       key" — claim with a predicate that **skips rows whose `partition_key`
       already has an in-flight delivery in this group**. Null key → no
       constraint, full concurrency.
+- [ ] **Decide `MessageConsumer.Queue`/`PoolLimiter`'s fate here, alongside
+      FIFO.** (Moved from Phase 13's API review.) `NewMessageConsumer`
+      requires a `concurrency.Queue[MessageRow]` and `concurrency.PoolLimiter`
+      (non-nil, `Queue.Cap() >= BatchLimit`, checked in `validate()`), but
+      nothing in the live `Process`/`CursorClaim`/`LifecycleClaim` path reads
+      `p.Queue` or `p.PoolLimiter` — they were wired for the Prefetch/Dispatch
+      design that predates the current claim-from-log architecture (that dead
+      code was deleted alongside the Phase 13 review; `pkg/concurrency` is now
+      unreferenced outside of examples that only exist to satisfy this
+      constructor). Deferred here deliberately: the buffer-pool mechanism
+      needs to be thought through together with FIFO — how a prefetch queue
+      interacts with per-key ordering (a buffered row whose key gates on an
+      in-flight delivery can't just be handed to the next free worker) —
+      before deciding whether to drop both params + fields entirely or
+      re-wire them for a redesigned prefetch/dispatch. Reference for what the
+      original design looked like: the deleted Prefetch/Dispatch code in
+      https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
 
 *→ Reference (after you've built it): `reference/waterline/partitions.go` —
 `ClaimPartitioned` is the keyed claim. Note the extra subtlety it solves that this

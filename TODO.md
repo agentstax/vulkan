@@ -87,35 +87,69 @@ consider an index on deliveries.status if claim scans ever show up hot
   burst scenario that motivated it. this entry's original "revisit with
   real evidence, don't add speculatively" verdict stands.
 
-topic.Destroy can exhaust Postgres's lock table on a topic with enough partitions
-  problem: DeleteTopic (pkg/topic/datastore.go) wraps `DELETE FROM topic` +
-  `DROP TABLE message_log_<id>` in ONE transaction. message_log_<id> is
-  partitioned, so dropping the parent requires an ACCESS EXCLUSIVE lock on every
-  partition AND every object each partition owns -- confirmed empirically each
-  partition owns 5 lockable relations (the partition table, its pkey index, its
-  partial compaction_key index, its TOAST table, and the TOAST table's own
-  index). Postgres's shared lock table is fixed-size at server start
-  (max_locks_per_transaction * (max_connections + max_prepared_transactions) --
-  6400 on this dev Postgres's stock defaults, 64*100). Measured directly while
-  building Phase 8c's compaction-width-lab: a topic with ~1000 partitions
-  destroyed fine (~5000 locks needed), ~2000 partitions failed with "out of
-  shared memory" (~10000 locks needed, past the 6400-slot ceiling). Not
-  compaction-specific -- any topic (compacted or not) that accumulates enough
-  partitions hits this on Destroy. 8a's own retention janitor (dropPartition,
-  sweepBatch) already avoids this exact trap by dropping ONE partition per call
-  in small batches; Destroy never got that treatment because it's a full-topic
-  teardown, not an incremental janitor.
-  decision: reimplement DeleteTopic using the same batched-drop shape as 8a's
-  dropPartition/sweepBatch -- DETACH + DROP each partition individually, batched
-  across multiple transactions (e.g. 50-100 at a time), THEN drop the
-  now-empty parent + delete the topic row in one final small transaction.
-  Raising max_locks_per_transaction server-side is NOT a fix by itself -- it
-  requires a restart, and a topic can always eventually outgrow whatever new
-  ceiling gets picked; batching removes the ceiling instead of just raising it.
-  full mechanism + the exact math above is in LEARNING_PLAN.md's 8c section
-  (search "out of shared memory"). still not implemented -- DeleteTopic (as of
-  Phase 11) still drops message_log_<id>/delivery_<id>/delivery_log_<id> each
-  in one statement inside a single transaction.
+Presence: heartbeat rows for live producer/consumer instances
+  problem: nothing records what's connected to a topic. Operators can't answer
+  "what producers/consumers exist right now, and are they idle or active?"
+  without inferring it from message traffic, and Destroy can't tell whether
+  it's tearing down a topic something is still writing to -- it currently
+  finds out the hard way (a live producer's missing-partition self-heal
+  resurrects partitions mid-drain; deleteTopic's drop loop bounds its passes
+  and errors, but the error can only guess "a producer is likely still
+  writing", it can't name one).
+  design (shape agreed in discussion, not built): one presence row per
+  instance carrying three timestamps, two mechanisms:
+    - registered_at, written once at construction -- what EXISTS.
+    - last_heartbeat, bumped by a lifetime heartbeat goroutine -- what's
+      ALIVE. A crashed process leaves a stale row for a TTL sweep, same as
+      any lease.
+    - last_produced_at (/ last_consumed_at) -- what's ACTIVE. Must not cost a
+      write on the hot path: produce bumps an in-memory atomic timestamp and
+      the heartbeat tick flushes it alongside last_heartbeat, so activity
+      resolution is bounded by the heartbeat interval and the message path
+      stays untouched.
+  activity-only heartbeats (batcher-style, spawn on produce / exit at idle)
+  were considered and rejected: they collapse "nothing registered" and
+  "registered but idle" into one state, and the registered-idle producer that
+  is about to wake is exactly what an operator wants visible.
+  where the lifecycle lives (agreed in discussion): MessageProducer gets a
+  Register(ctx) matching MessageConsumer's -- constructors stay pure, and
+  Register is where an instance announces itself: insert the presence row,
+  validate the topic's PARENT tables exist (message_log_<id>, delivery_<id>,
+  idempotency_key_<id> via to_regclass -- parents only, partitions come and
+  go by design and are self-heal/janitor property), and start the heartbeat
+  goroutine, which the name already implies. NewMessageProducer(ctx, ...)
+  ctx-in-constructor was the earlier idea; Register(ctx) supersedes it (no
+  constructor signature change, and producer/consumer become symmetric).
+  Produce/Consume then check registration before doing work -- an atomic
+  flag, one load, free on the hot path -- with THREE states, not two:
+  not-registered errors "call Register first"; registered works; and
+  wound-down (Register's ctx cancelled -> heartbeat goroutine exits ->
+  flips the flag closed) errors too. The third state is what keeps presence
+  honest: without it a producer whose heartbeat died keeps producing while
+  its row goes stale -- actively-writing-but-looks-dead is exactly the
+  false-dead case that would wave the Destroy gate through into the
+  livelock. Producing implies alive becomes an invariant, not a hope.
+  known semantic change to make LOUDLY: consumer Register's ctx today is
+  call-scoped one-shot setup (a short startup timeout ctx is reasonable
+  against current code); this redesign makes that ctx the INSTANCE'S
+  LIFETIME -- fine pre-v1, but both Registers' doc comments must say it.
+  (Piggybacking the consumer heartbeat on the Consume loop instead was
+  considered and rejected: breaks the producer/consumer symmetry and misses
+  janitor-only instances.)
+  the API-shape decision belongs in Phase 13's review BEFORE v1 freezes the
+  surface, even if the feature itself ships later.
+  first consumer: a Destroy gate -- refuse to destroy while any producer on
+  the topic is ALIVE (not merely active: idle-but-alive can wake mid-drain),
+  with the refusal naming instances and their last-seen times. RabbitMQ's
+  queue.delete(if-unused) is the precedent. The gate is a front door, not the
+  correctness guarantee -- check-then-drain has an unavoidable TOCTOU window
+  and heartbeat liveness has the usual false-alive (stale row until TTL) /
+  false-dead (partitioned but alive) ambiguity -- so deleteTopic's bounded
+  drop loop stays as the hard backstop. Probably wants a force override for
+  the operator who knows better.
+  also the natural substrate for the Default alerts entry below -- an alert
+  that can say "destroy blocked: producer X seen 2s ago" instead of a bare
+  threshold is the version of that layer that explains itself.
 
 Default alerts: a built-in layer for "approaching an operational limit" conditions
   problem: several failure modes in this project are silent until they happen --
@@ -123,10 +157,13 @@ Default alerts: a built-in layer for "approaching an operational limit" conditio
   to know one is coming is to independently derive the math (the way this
   session had to, twice, in one sitting). Two concrete examples that motivated
   this, both from Phase 8c:
-    - partition count climbing high enough that Destroying/dropping a whole
-      topic in one transaction risks exhausting Postgres's shared lock table
-      (see the topic.Destroy entry directly above) -- ~1000 partitions was fine,
-      ~2000 wasn't, on stock Postgres settings.
+    - partition count climbing high enough that dropping a whole topic in one
+      transaction risks exhausting Postgres's shared lock table -- ~1000
+      partitions was fine, ~2000 wasn't, on stock Postgres settings (full
+      mechanism in LEARNING_PLAN.md's 8c section, search "out of shared
+      memory"). topic.Destroy itself has since been fixed with batched
+      per-partition drops, but a user running their own DDL against topic
+      tables still walks into the same fixed-size lock table blind.
     - a compacted topic's unbounded "is this key still the latest" read cost
       growing LINEARLY with the topic's accumulated partition history (measured
       ~10us/partition, no early termination -- LEARNING_PLAN.md's 8c "Open
@@ -261,3 +298,5 @@ Look into using BRIN index for different tables
 we need to test compaction key with default produce and determine if deadlock contention by reverse ordered transactions is a problem or not.
   - ie and what extreme (or not extreme) example would it truly become a problem for users or can the system self heal through retries
   - I know we can move these users to ProduceFunc but just to know
+
+named / defined errors for users to errors.Is on for convinence. How do we want to structure that? etc

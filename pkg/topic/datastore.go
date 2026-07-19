@@ -265,6 +265,13 @@ func (d *topicDatastore) DeleteTopic(ctx context.Context, topic *Topic) error {
 }
 
 func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
+	if err := d.drainPartitions(ctx, iTopic.MessageLogTable(topic.Id)); err != nil {
+		if errors.Is(err, errPartitionsRemain) {
+			return fmt.Errorf("topic %s: %w -- a producer is likely still writing; stop producers and call Destroy again", topic.Name, err)
+		}
+		return err
+	}
+
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -283,7 +290,7 @@ func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 		}
 	}
 
-	// drops every message_log_<id>_N partition, delivery_<id>, and idempotency_key_<id>
+	// the now-empty parent, delivery_<id>, and idempotency_key_<id>
 	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.MessageLogTable(topic.Id))
 	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
 		return err
