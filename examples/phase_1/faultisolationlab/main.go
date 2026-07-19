@@ -29,6 +29,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
@@ -159,10 +160,11 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	// stays well above hangFor below, so the lease itself never expires mid-test.
 
 	const hangFor = 2500 * time.Millisecond
-	calls := 0
+	// atomic -- message 2's abandoned goroutine is still running when message
+	// 3's invocation increments this
+	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
-		calls++
-		switch calls {
+		switch n := calls.Add(1); n {
 		case 1:
 			return nil
 		case 2:
@@ -171,7 +173,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 		case 3:
 			return nil
 		default:
-			die(fmt.Sprintf("consumerFunc called a %dth time -- only 3 messages seeded", calls))
+			die(fmt.Sprintf("consumerFunc called a %dth time -- only 3 messages seeded", n))
 			return nil
 		}
 	}
@@ -186,7 +188,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	}
 	fmt.Printf("  ✓ CursorClaim returned well before the %s hang finished\n", hangFor)
 
-	assert("all 3 messages attempted -- the hang doesn't block message 3", int64(calls), 3)
+	assert("all 3 messages attempted -- the hang doesn't block message 3", calls.Load(), 3)
 	assert("exactly 1 parked exception (the hung message)", deliveries(ctx, ds, tp.Id, group), 1)
 	assertStatus(ctx, ds, tp.Id, group, 2, "ready")
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "hard timeout")

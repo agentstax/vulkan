@@ -36,7 +36,8 @@ type AbandonedRoutines struct {
 
 	// local mirror -- Snapshot reads these, never the instruments above
 	mu sync.Mutex
-	// TODO - data map can grow unbound, should eventually bound like ConcurrentBoundedRingBuffer but less likely to matter
+	// deliberately unbounded -- an entry lives exactly as long as its abandoned
+	// goroutine which dwarf these entries in cost.
 	data               map[abandonedKey]time.Time // abandonedKey -> AbandonedAt.
 	monotonicTotal     atomic.Uint32              // sure fucking hope we don't need Uint64 here
 	selfClearLatencies *ConcurrentBoundedRingBuffer[time.Duration]
@@ -109,8 +110,8 @@ func (a *AbandonedRoutines) Add(ctx context.Context, messageId int64, attempt in
 	a.data[key] = time.Now()
 }
 
-// Remove is safe to call on every callSafely completion, abandoned or not --
-// a non-abandoned messageId/attempt simply isn't found and is skipped, no-op.
+// Remove clears an abandoned routine that finally returned (self-cleared).
+// The not-found branch is defensive -- callers pair every Remove with a prior Add.
 func (a *AbandonedRoutines) Remove(ctx context.Context, messageId int64, attempt int) {
 	key := abandonedKey{MessageId: messageId, Attempt: attempt}
 
@@ -122,7 +123,7 @@ func (a *AbandonedRoutines) Remove(ctx context.Context, messageId int64, attempt
 	a.mu.Unlock()
 
 	if !ok {
-		return // not abandoned -- ordinary completion, nothing to do
+		return // never Added -- decrementing outstanding here would corrupt it
 	}
 
 	a.outstanding.Add(ctx, -1, a.attrs)

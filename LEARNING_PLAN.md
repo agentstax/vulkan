@@ -3372,13 +3372,24 @@ that Phase 13 has settled what the surface looks like.
       statement inside a single transaction). Implement the already-designed
       fix: batched DETACH + DROP per partition across multiple transactions,
       then drop the empty parent + topic row last.
-      **Resolved:** `deleteTopic` now drains the log's partitions first —
-      `listMessageLogPartitions` reads up to 100 attached partitions per pass
+      **Resolved:** the drain lives in its own single-concern file,
+      `pkg/topic/drain.go` (the `queue.go`/`batch.go` producer-split
+      pattern), and is table-agnostic — `drainPartitions(ctx,
+      parentTableName)` early-exits when the catalog count is zero, then
+      loops: `listPartitions` reads up to 100 attached partitions per pass
       from `pg_inherits` (via `to_regclass`, so a missing parent yields zero
-      rows instead of an error), `dropPartitionBatch` drops that batch in one
-      transaction, loop until the catalog comes back empty — then the
-      original single transaction handles the topic row, the topic_id-scoped
-      row deletes, the now-empty parent, and the plain tables. One deliberate
+      rows instead of an error), `dropPartitionBatch` drops that batch in
+      one transaction, until the catalog comes back empty. `deleteTopic`
+      calls it and then the original single transaction handles the topic
+      row, the topic_id-scoped row deletes, the now-empty parent, and the
+      plain tables. Give-up is a sentinel (`errPartitionsRemain`) so
+      `deleteTopic` wraps only that case with the topic-flavored "a producer
+      is likely still writing; stop producers and call Destroy again"
+      message while other drain errors pass through unwrapped — the
+      generic/domain split that keeps the helper reusable. (Open for the
+      Phase 13 pass: the sentinel is unexported, so `Destroy` callers can't
+      `errors.Is` for it — decide alongside the presence-gate design, which
+      would replace this error path with an up-front refusal.) One deliberate
       deviation from the entry's "DETACH + DROP" wording: the batch does a
       plain `DROP TABLE IF EXISTS` per partition with NO detach — a
       non-concurrent DETACH takes the exact same ACCESS EXCLUSIVE lock on the
@@ -3411,10 +3422,49 @@ that Phase 13 has settled what the surface looks like.
       regression check. TODO.md entry swept; its "Default alerts" neighbor
       re-worded (the Destroy cliff is fixed; the lock-table alert example now
       points at user-run DDL instead).
-- [ ] **`pkg/consumer/metrics/abandoned_routines.go`'s tracking map can grow
+- [x] **`pkg/consumer/metrics/abandoned_routines.go`'s tracking map can grow
       unbounded.** Bound it (a `ConcurrentBoundedRingBuffer`-style structure,
       per its own comment), and decide while there whether the bound is a
       consumer config option or a fixed constant.
+      **Resolved: NOT bounded — the premise didn't survive analysis.** An
+      entry exists only while its abandoned goroutine is still running
+      (`Remove` fires when the routine finally returns), so the map exactly
+      mirrors live abandoned goroutines — ~50 bytes per entry vs ≥2KB of
+      stack plus whatever the zombie pins (the deserialized work message, the
+      timeout ctx). Bounding the map bounds under 3% of the leak while the
+      97% can't be reclaimed anyway, and evicting a *live* key breaks the
+      metrics: the routine's eventual `Remove` finds nothing, so the otel
+      `outstanding` counter drifts upward permanently and the latency sample
+      is lost. The ring-buffer suggestion doesn't transfer either —
+      `selfClearLatencies` can drop old *samples* harmlessly, but the map is
+      a set of live keys, not a window of history. The config-vs-constant
+      question dies with the bound (no bound, no knob). What the analysis DID
+      surface was the one true unbounded-growth path — an `Add`/`Remove`
+      ordering race in `callSafely`: the `select` commits to the timeout
+      branch, consumerFunc finishes in the gap before `Add` executes, the
+      worker's deferred `Remove` no-ops on the not-yet-inserted key, then
+      `Add` inserts an entry no one will ever remove (`outstanding` +1
+      forever). Fixed structurally rather than with a CAS handshake (first
+      proposal, rejected as wonky): the worker goroutine no longer touches
+      metrics at all — the timeout branch does `Add` and then spawns a
+      reaper goroutine that blocks on the buffered `done` channel and does
+      the `Remove` when the zombie finally returns. `Remove` can't precede
+      `Add` because the reaper doesn't exist until after `Add` — the ordering
+      is program order, not an interleaving argument. The reaper lives
+      exactly as long as the leaked goroutine it watches, so it adds nothing
+      unbounded. A "last look" non-blocking re-check of `done` after the
+      timer fires was tried and REJECTED: it defends a nanoseconds-wide
+      window whose failure mode (record failure, redeliver) is already
+      within the at-least-once contract, the rescued "real result" is
+      almost always `ctx.Err()` anyway (the work ctx died Grace earlier),
+      and the reaper keeps the metrics consistent without it (instant
+      Add-then-Remove, no drift). Live-verified: faultisolationlab (outstanding
+      1 → 0 across a real abandonment + self-clear, latency recorded),
+      metricsreactionlab, otelexportlab all green. Running faultisolationlab
+      under `-race` (first time ever) exposed a pre-existing data race in the
+      LAB's own `calls++` counter — message 2's zombie and message 3's worker
+      run concurrently by design — fixed with `atomic.Int64`; the library
+      change itself is race-clean.
 - [ ] **Cursor-claim edge case** (`pkg/consumer/datastore.go`, "for now we
       just consider 1 but should have better validation for 2 edge case") —
       confirm what the second case actually is and whether it's reachable

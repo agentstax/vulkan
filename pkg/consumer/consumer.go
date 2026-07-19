@@ -468,9 +468,6 @@ func (p *MessageConsumer[Message]) callSafely(ctx context.Context, consumerFunc 
 				// already gave up on this goroutine via the timeout branch.
 				done <- fmt.Errorf("recovered from consumerFunc panic: %v\n%s", r, debug.Stack())
 			}
-			// order specific to allow recover to always handle err for consumerFunc not metrics call
-			// safe to always call here, if routine was not abandoned it will not be found and skipped
-			p.Metrics.AbandonedRoutines.Remove(ctx, messageID, attempt)
 		}()
 		done <- consumerFunc(ctx, work)
 	}()
@@ -482,6 +479,14 @@ func (p *MessageConsumer[Message]) callSafely(ctx context.Context, consumerFunc 
 	// if this hard timeout is called go thread will be left hanging / abandoned
 	case <-time.After(p.Config.WorkTimeout + p.Config.WorkTimeoutGrace):
 		p.Metrics.AbandonedRoutines.Add(ctx, messageID, attempt)
+		// reaper -- done is buffered(1) and nothing else reads it past this
+		// point, so this receive fires exactly when the abandoned goroutine
+		// finally returns. Spawned after Add, so Remove can never precede it.
+		go func() {
+			<-done
+			p.Metrics.AbandonedRoutines.Remove(ctx, messageID, attempt)
+		}()
+
 		// don't print out work in case of sensitive values
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
