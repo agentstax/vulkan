@@ -45,15 +45,6 @@ type ProduceOptions struct {
 	// A caller-supplied key routes the call to a per-call transaction, never a batch.
 	// Ex: a UUIDv7 persisted alongside the work before the first Produce attempt.
 	IdempotencyKey uuid.UUID
-
-	// SkipIdempotency - opts this one call out of the idempotency claim gate entirely.
-	// Default: false (protected; IdempotencyKey is honored).
-	//
-	// No idempotency_key row is written. An ambiguous commit failure is never
-	// retried internally -- it surfaces as an error, leaving the caller to
-	// choose: retry (risk a duplicate) or don't (risk a lost message).
-	// Ex: true for high-volume telemetry published into an otherwise-protected topic.
-	SkipIdempotency bool
 }
 
 type MessageProducer[Message any] struct {

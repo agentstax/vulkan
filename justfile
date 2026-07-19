@@ -240,9 +240,8 @@ multi-target-lab:
 # caller-keyed call routes per-call and dedups, a poisoned/unencodable
 # payload fails only its own caller, hot compaction keys never deadlock
 # across concurrent batches, bursts self-heal missing partitions, and a
-# timing pass (batched vs per-call vs SkipIdempotency floor at equal
-# concurrency, plus a saturated batched arm) reports what the fsync
-# amortization actually buys in-library.
+# timing pass (batched vs per-call at equal concurrency, plus a saturated
+# batched arm) reports what the fsync amortization actually buys in-library.
 producer-batch-lab:
   go run examples/phase_1/producerbatchlab/main.go
 

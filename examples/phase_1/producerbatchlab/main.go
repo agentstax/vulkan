@@ -18,10 +18,10 @@ package main
 //     (no janitor running at all here) self-heals missing partitions,
 //     sequentially and under concurrency.
 //   - throughputScenario: the numbers -- batched Produce vs per-call
-//     ProduceFunc vs the SkipIdempotency floor at equal concurrency, plus a
-//     saturated batched arm (callers >> batch cap). Batching exists to claw
-//     back more than the claim gate costs; this is where that claim gets
-//     measured in-library.
+//     ProduceFunc at equal concurrency, plus a saturated batched arm
+//     (callers >> batch cap). The retired SkipIdempotency floor's numbers
+//     live in bench/idempotency/RESULTS.md's follow-up section -- batched
+//     lapped it ~10x saturated, which is why it could be removed.
 
 import (
 	"context"
@@ -233,12 +233,11 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), 55, "all 55 publishes landed across self-healed partitions")
 }
 
-// throughputScenario: the same workload down all three paths -- how much the
-// shared-transaction fsync amortization buys over per-call commits, and how
-// close the protected batched path gets to the unprotected floor it exists
-// to replace.
+// throughputScenario: the same workload down both paths -- how much the
+// shared-transaction fsync amortization buys over per-call commits, at equal
+// concurrency and then saturated.
 func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("throughput: batched Produce vs per-call ProduceFunc vs SkipIdempotency floor")
+	step("throughput: batched Produce vs per-call ProduceFunc, then saturated")
 
 	const producers, msgs = 50, 400 // ~2s per arm -- sub-second runs are all warmup noise
 	total := producers * msgs
@@ -249,10 +248,6 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	})
 	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wp *producer.MessageProducer[common.Work], work *common.Work) error {
 		_, err := wp.ProduceFunc(ctx, func(context.Context, producer.Tx, uuid.UUID) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
-		return err
-	})
-	skip := timeArm(ctx, ds, "skip", producers, msgs, func(wp *producer.MessageProducer[common.Work], work *common.Work) error {
-		_, err := wp.ProduceFunc(ctx, func(context.Context, producer.Tx, uuid.UUID) (*common.Work, error) { return work, nil }, producer.ProduceOptions{SkipIdempotency: true})
 		return err
 	})
 
@@ -270,12 +265,11 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 	rate := func(elapsed time.Duration) float64 { return float64(total) / elapsed.Seconds() }
 	fmt.Printf("  %-42s %8s %12s\n", fmt.Sprintf("arm (%d goroutines x %d msgs)", producers, msgs), "elapsed", "msgs/s")
-	fmt.Printf("  %-42s %7.2fs %12.0f\n", "batched Produce (claim-protected)", batched.Seconds(), rate(batched))
-	fmt.Printf("  %-42s %7.2fs %12.0f\n", "per-call ProduceFunc (claim-protected)", perCall.Seconds(), rate(perCall))
-	fmt.Printf("  %-42s %7.2fs %12.0f\n", "per-call SkipIdempotency (floor)", skip.Seconds(), rate(skip))
+	fmt.Printf("  %-42s %7.2fs %12.0f\n", "batched Produce", batched.Seconds(), rate(batched))
+	fmt.Printf("  %-42s %7.2fs %12.0f\n", "per-call ProduceFunc", perCall.Seconds(), rate(perCall))
 	fmt.Printf("  %-42s %7.2fs %12.0f\n", fmt.Sprintf("batched Produce, saturated (%d callers)", satProducers), saturated.Seconds(), satRate)
-	fmt.Printf("  -> batched is %.1fx per-call protected, %.1fx the unprotected floor at equal\n", rate(batched)/rate(perCall), rate(batched)/rate(skip))
-	fmt.Printf("     concurrency, and %.1fx the floor once callers saturate the batch cap\n", satRate/rate(skip))
+	fmt.Printf("  -> batched is %.1fx per-call at equal concurrency, %.1fx once callers\n", rate(batched)/rate(perCall), satRate/rate(perCall))
+	fmt.Printf("     saturate the batch cap\n")
 }
 
 // timeArm registers its own topic, warms the pool untimed, then times the
