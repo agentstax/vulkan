@@ -57,7 +57,7 @@ func main() {
 	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
 	for range 14 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize, 1))
+		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	partitionCount := countPartitions(ctx, ds, tp.Id)
 	fmt.Printf("  %d partitions exist (0-2 hold ids 1-14, 3 is create-ahead headroom)\n", partitionCount)

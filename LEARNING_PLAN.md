@@ -3197,11 +3197,93 @@ describing has stopped moving (see Phase 15).
         rather than just abandoning the wait locally, and `cursor_floor_G`
         update strategy (atomic-per-claim vs. async-tick, same tradeoff
         shape as the existing waterline advance cadence).
-- [ ] **`validate()` runs inside `Process()`, not `New()`** — decide if
+- [x] **`validate()` runs inside `Process()`, not `New()`** — decide if
       construction-time validation (fail fast at `NewMessageConsumer`, not at
       first `Process()` call) is the right public contract.
-- [ ] **`PartitionSafetyBuffer`'s hardcoded `50000` default** needs an
+
+      Resolved: construction-time, and generalized into a library-wide
+      convention rather than a one-off answer for `MessageConsumer`. Every
+      config struct now carries an exported `WithDefaults()` (fills unset
+      zero fields, mutates and returns the receiver) + `Validate()` pair,
+      living in its package's `config.go`; every public constructor that
+      accepts a config resolves it itself in one fixed shape: nil-check
+      required deps → nil/sparse cfg → `WithDefaults()` → `Validate()` →
+      construct, returning `(T, error)`. Defaults resolve BEFORE validation
+      (relational checks like `ShutdownTimeout > WorkTimeout +
+      WorkTimeoutGrace + AckMargin` are meaningless against sparse input,
+      and validating the resolved config also catches defaults drifting
+      into a bad relation). Ripples this decision forced, all landed:
+      `topic.Register` takes `*Config` (nil-allowed) instead of by-value;
+      `NewProducerDatastore`/`NewConsumerDatastore` (both)/
+      `NewPostgresDatastore`/`NewMessageProducer`/`retry.NewRetry`/
+      `NewDatastoreRetry` all gained error returns; `retry.Policy` got its
+      own `Validate` (a `MaxRetries < 1` policy makes `Wrap` return nil
+      without ever calling the wrapped func — a silent fake success), and
+      nested policy errors are always wrapped with their field name.
+      Checks crossing a dep and the config (`queue.Cap() >= BatchLimit`)
+      stay in the constructor; nil checks for fields the constructor sets
+      unconditionally were cut as unreachable. Exported (not unexported)
+      was a deliberate reversal after discussion: `retry.Policy.WithDefaults`
+      must be exported for cross-package callers, so one convention
+      everywhere beats a visibility split — simpler for external
+      contributors. Remaining hole, deferred to this phase's fluent-setter
+      review: `options.go` setters still mutate `Config` past validation
+      with no error path.
+- [x] **`PartitionSafetyBuffer`'s hardcoded `50000` default** needs an
       actually-reasoned default, not a placeholder number.
+
+      Resolved: the knob is DELETED. The analysis first landed on a derived
+      default (`PartitionSafetyBuffer = PartitionSize`, "the next partition
+      always exists"), and once that was established the knob had no
+      remaining reason to exist: every value >= PartitionSize is equivalent
+      to the default (the janitor only ever creates head+1, so the gate
+      saturates), and every value below it only makes the strictly-worse
+      self-heal path fire more often — a knob whose whole settable range is
+      "same or worse" is a footgun, not a knob. It also couldn't express
+      the one tuning direction that might ever matter (creating MULTIPLE
+      partitions ahead, pg_partman's `premake N`, for sustained rates above
+      PartitionSize per poll tick) — that would be a new additive field
+      either way. `ensureNextPartition` lost its gate arithmetic entirely
+      and now unconditionally keeps head+1 created each tick; the
+      `safetyBuffer` param left `EnsureNextPartition` (and the consumer
+      `Datastore` interface), the field left `Config`/`Topic`, and the
+      `partition_safety_buffer` column was deleted from `005_topic.up.sql`
+      in place. topiclab/compactionwidthlab assertions were updated for the
+      always-existing empty create-ahead partition — in compactionwidthlab
+      it sharpened the lab's own point: the no-early-termination negative
+      proof scans even the empty partition, the match case stops before it.
+      The analysis that justified always-ahead, in order of weight:
+      (1) The sizing rule is `buffer >= produce rate x JanitorPollRate` —
+      the janitor must win the race to the boundary within one 5s tick.
+      50k covered only 10k msgs/s; the library's own measured saturated
+      rate is ~130-145k msgs/s (needs ~650-725k of buffer, most of a
+      default 1M partition anyway). Worse, a fixed number is
+      anti-correlated with need: the `PartitionSize` doc tells
+      high-throughput topics to tune partitions UP (5M example), and for
+      exactly those topics 50k was a ~0.4s sliver, while a 10k-partition
+      audit topic got permanent always-ahead for free.
+      (2) Always-ahead costs nothing — verified empirically on the dev
+      PG 17: the janitor's per-tick `CREATE TABLE IF NOT EXISTS` on an
+      already-existing partition short-circuits without locking the parent
+      (returned instantly while a conflicting lock was held); an empty
+      partition has no storage; and retention can't touch it (drop skips
+      everything at/after the active partition, `partitionExpired` treats
+      empty as not-expired).
+      (3) A missed boundary is not free — measured with 200k batched
+      messages across 10 partition boundaries, janitor absent: the
+      self-heal arm ran ~8-14% slower with p99 doubled (8ms vs 4ms)
+      across two runs. And a real `CREATE ... PARTITION OF` takes ACCESS
+      EXCLUSIVE on the parent (measured: blocked 7s behind one open
+      reader transaction, with all inserts queued behind the waiter) —
+      the self-heal path runs that CREATE at the worst possible moment,
+      after producers have already failed and while they race each other
+      to run it.
+      (4) Precedent: pg_partman's `premake` defaults to keeping 4
+      partitions pre-created ahead at all times; "the next one always
+      exists" is the same posture scaled to a 5s maintenance tick.
+      Self-heal remains the correctness guarantee either way; create-ahead
+      only decides how often the failure path fires, and always-ahead makes
+      it as rare as one-ahead can.
 
 *New public surfaces to shape — design the surface, full implementation can
 follow in Phase 14 or after v1 where noted:*

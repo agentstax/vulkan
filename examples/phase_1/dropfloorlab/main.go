@@ -71,14 +71,14 @@ func main() {
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
 	for range 4 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize, 1))
+		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	time.Sleep(ttl + ttlMargin)
 
 	step("publish ids 5-9 into message_log_<id>_1 -- fresh, rolls the active partition forward")
 	for range 5 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize, 1))
+		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	assertPartitions("partitions 0/1/2 exist (2 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{0, 1, 2})
 
@@ -108,7 +108,7 @@ func main() {
 	time.Sleep(ttl + ttlMargin)
 	for range 5 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize, 1))
+		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	assertPartitions("partitions 1/2/3 exist (3 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 

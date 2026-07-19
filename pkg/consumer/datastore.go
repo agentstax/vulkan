@@ -23,7 +23,7 @@ var (
 
 type Datastore[Message any] interface {
 	UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error
-	EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error
+	EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error
 	// disableDeliveryLog skips the delivery_log_<topic_id> half of each drop's orphan cleanup.
 	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error
 	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error
@@ -180,13 +180,17 @@ func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID i
 	return nil
 }
 
-func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error {
+func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.ensureNextPartition(ctx, topicID, partitionSize, safetyBuffer)
+		return d.ensureNextPartition(ctx, topicID, partitionSize)
 	})
 }
 
-func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, topicID int64, partitionSize int64, safetyBuffer int64) error {
+// ensureNextPartition keeps the partition after head's created at all times.
+// An empty partition ahead is free (no storage, no locks on the no-op CREATE,
+// invisible to retention); a missed boundary fails in-flight produces into
+// the self-heal path.
+func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
 	`, topic.MessageLogTable(topicID))
@@ -194,13 +198,6 @@ func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, to
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
-	}
-
-	roomInPartition := partitionSize - (head % partitionSize)
-
-	// there is enough room in the current active partition
-	if roomInPartition > safetyBuffer {
-		return nil
 	}
 
 	nextPartition := head/partitionSize + 1

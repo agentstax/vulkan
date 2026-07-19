@@ -97,8 +97,11 @@ func main() {
 		negNarrow > posNarrow)
 	assertTrue("narrow: proving a negative touches nearly every partition -- no early termination",
 		int64(negNarrow) >= narrowPartitions-1)
-	assertTrue("wide: one partition holds everything, so both cases cost the same trivial touch",
-		negWide == posWide && negWide == 1)
+	// the always-existing empty create-ahead partition is the tell: proving a
+	// negative has no early termination so it scans even that, a match stops
+	// at the data partition and never reaches it
+	assertTrue("wide: a negative scans the data partition plus the empty create-ahead; a match stops at the data partition",
+		negWide == 2 && posWide == 1)
 
 	fmt.Println("\n✅ COMPACTION WIDTH LAB — numbers gathered, see LEARNING_PLAN.md's 8c")
 	fmt.Println("   \"Open question\" bullet for what they mean and whether they change anything.")
@@ -112,15 +115,15 @@ func main() {
 // 39/40 are two versions of one key published back to back.
 func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.MessageProducer[Record], topicID, partitionSize int64) {
 	publish(ctx, wp, "stale") // id 1 -- never superseded
-	must(cd.EnsureNextPartition(ctx, topicID, partitionSize, 1))
+	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
 	for i := range 37 {
 		publish(ctx, wp, fmt.Sprintf("filler:%d", i)) // ids 2-38, each a distinct key
-		must(cd.EnsureNextPartition(ctx, topicID, partitionSize, 1))
+		must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
 	}
 	publish(ctx, wp, "fresh") // id 39, v1
-	must(cd.EnsureNextPartition(ctx, topicID, partitionSize, 1))
+	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
 	publish(ctx, wp, "fresh") // id 40, v2 -- immediately supersedes id 39
-	must(cd.EnsureNextPartition(ctx, topicID, partitionSize, 1))
+	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
 }
 
 func publish(ctx context.Context, wp *producer.MessageProducer[Record], key string) {

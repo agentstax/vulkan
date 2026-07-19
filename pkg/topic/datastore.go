@@ -57,7 +57,6 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
-			partition_safety_buffer,
 			janitor_poll_rate_ns,
 			janitor_sweep_batch_size
 		FROM topic
@@ -76,7 +75,6 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 		&t.AllowDropPastCommitted,
 		&idempotencyKeyTTLNs,
 		&t.DisableDeliveryLog,
-		&t.PartitionSafetyBuffer,
 		&janitorPollRateNs,
 		&t.JanitorSweepBatchSize,
 	)
@@ -112,14 +110,14 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, partition_safety_buffer, janitor_poll_rate_ns, janitor_sweep_batch_size)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id;
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, cfg.PartitionSafetyBuffer, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id)
+	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id)
 
 	switch {
 	case insertErr == nil:

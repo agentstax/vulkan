@@ -97,7 +97,7 @@ func main() {
 	for range 2 { // topicA now has 5 rows -- exactly fills partition 0 at width 5
 		publish(ctx, wpA, "")
 	}
-	must(cd.EnsureNextPartition(ctx, topicA.Id, partitionSize, 1)) // create-ahead partition 1
+	must(cd.EnsureNextPartition(ctx, topicA.Id, partitionSize)) // create-ahead partition 1
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
@@ -108,7 +108,7 @@ func main() {
 	must(cd.UpsertCursor(ctx, topicB.Id, groupB))
 
 	must(cd.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
-	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1})
+	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1, 2}) // 2 is the janitor's empty create-ahead
 	fmt.Println("  -> this is the exact cross-topic contamination 8a's floor bug caused; each topic's floor is now its own")
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
@@ -151,7 +151,7 @@ func main() {
 	for range 5 { // fills topicD's partition 0 at width 5, all in sliceX
 		publish(ctx, wpD, "sliceX.event")
 	}
-	must(cd.EnsureNextPartition(ctx, topicD.Id, partitionSize, 1))
+	must(cd.EnsureNextPartition(ctx, topicD.Id, partitionSize))
 	time.Sleep(ttl + ttlMargin)
 
 	claimX, err := cd.ClaimMessagesWithCursor(ctx, topicD.Id, groupX, 10, 3, 30*time.Second, false)
@@ -166,13 +166,13 @@ func main() {
 	// simulating a slice consumer that's stuck or never started.
 
 	must(cd.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false, topicD.DisableDeliveryLog))
-	assertPartitions(ctx, ds, topicD.Id, "partition 0 SURVIVES -- groupY's slice, though it has zero actual traffic, still pins this topic's one shared floor", []int64{0, 1})
+	assertPartitions(ctx, ds, topicD.Id, "partition 0 SURVIVES -- groupY's slice, though it has zero actual traffic, still pins this topic's one shared floor", []int64{0, 1, 2}) // 2 is the janitor's empty create-ahead
 	fmt.Println("  -> this is the case 8b deliberately leaves unfixed: split into separate topics if slices need independent floors")
 
 	// ===== PROOF 5: operating against an unregistered topic id fails clearly =====
 	step("PROOF 5: publishing/claiming against an unregistered topic id fails clearly, never silently auto-creates one")
 	bogusTopicID := topicD.Id + 999_999_999 // guaranteed to never have been registered
-	err = cd.EnsureNextPartition(ctx, bogusTopicID, partitionSize, 1)
+	err = cd.EnsureNextPartition(ctx, bogusTopicID, partitionSize)
 	if err == nil {
 		die("expected an error operating against an unregistered topic id, got nil")
 	}

@@ -22,7 +22,6 @@ type Topic struct {
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTL      time.Duration
 	DisableDeliveryLog     bool
-	PartitionSafetyBuffer  int64
 	JanitorPollRate        time.Duration
 	JanitorSweepBatchSize  int
 }

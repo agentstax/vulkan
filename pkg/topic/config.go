@@ -64,11 +64,6 @@ type Config struct {
 	// per-attempt write not worth paying for.
 	DisableDeliveryLog bool
 
-	// PartitionSafetyBuffer - how far past the current write head the
-	// janitor creates partitions ahead of time.
-	// Default: 50_000.
-	PartitionSafetyBuffer int64
-
 	// JanitorPollRate - how often the janitor loop ticks (create-ahead,
 	// drop/sweep expired partitions, sweep idempotency_key).
 	// Default: 5 * time.Second.
@@ -99,9 +94,6 @@ func (c *Config) WithDefaults() *Config {
 	if c.IdempotencyKeyTTL == 0 {
 		c.IdempotencyKeyTTL = time.Hour
 	}
-	if c.PartitionSafetyBuffer == 0 {
-		c.PartitionSafetyBuffer = 50000 // TODO - determine sane default
-	}
 	if c.JanitorPollRate == 0 {
 		c.JanitorPollRate = 5 * time.Second
 	}
@@ -127,9 +119,6 @@ func (c *Config) Validate() error {
 	if c.IdempotencyKeyTTL < 0 {
 		return fmt.Errorf("IdempotencyKeyTTL must be >= 0, got %v", c.IdempotencyKeyTTL)
 	}
-	if c.PartitionSafetyBuffer < 0 {
-		return fmt.Errorf("PartitionSafetyBuffer must be >= 0, got %d", c.PartitionSafetyBuffer)
-	}
 	if c.JanitorPollRate < 0 {
 		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", c.JanitorPollRate)
 	}
@@ -151,7 +140,6 @@ func (c *Config) ToTopic(id int64) *Topic {
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
 		DisableDeliveryLog:     c.DisableDeliveryLog,
-		PartitionSafetyBuffer:  c.PartitionSafetyBuffer,
 		JanitorPollRate:        c.JanitorPollRate,
 		JanitorSweepBatchSize:  c.JanitorSweepBatchSize,
 	}
