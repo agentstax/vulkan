@@ -139,7 +139,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, topic.PartitionTable(topicID, next), topic.MessageLogTable(topicID), next*partitionSize, (next+1)*partitionSize)
+	`, topic.MessageLogPartitionTable(topicID, next), topic.MessageLogTable(topicID), next*partitionSize, (next+1)*partitionSize)
 
 	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
 	if err != nil {

@@ -9,8 +9,8 @@ func MessageLogTable(topicID int64) string {
 	return fmt.Sprintf("message_log_%d", topicID)
 }
 
-// PartitionTable is MessageLogTable's nth partition -- message_log_<topic_id>_<n>.
-func PartitionTable(topicID, n int64) string {
+// MessageLogPartitionTable is MessageLogTable's nth partition -- message_log_<topic_id>_<n>.
+func MessageLogPartitionTable(topicID, n int64) string {
 	return fmt.Sprintf("%s_%d", MessageLogTable(topicID), n)
 }
 

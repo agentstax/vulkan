@@ -206,7 +206,7 @@ func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, to
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, topic.PartitionTable(topicID, nextPartition), topic.MessageLogTable(topicID), nextPartition*partitionSize, (nextPartition+1)*partitionSize)
+	`, topic.MessageLogPartitionTable(topicID, nextPartition), topic.MessageLogTable(topicID), nextPartition*partitionSize, (nextPartition+1)*partitionSize)
 
 	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
 	if err != nil {
@@ -329,7 +329,7 @@ func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, topic
 		SELECT created_at FROM %s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
 		LIMIT 1;
-	`, topic.PartitionTable(topicID, n))
+	`, topic.MessageLogPartitionTable(topicID, n))
 
 	var newest time.Time
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&newest)
@@ -416,7 +416,7 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 			LIMIT $2
 		)
 		RETURNING id, compaction_key;
-	`, topic.PartitionTable(topicID, n), topic.PartitionTable(topicID, n))
+	`, topic.MessageLogPartitionTable(topicID, n), topic.MessageLogPartitionTable(topicID, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
@@ -586,7 +586,7 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 
 	dropSql := fmt.Sprintf(`
 		DROP TABLE %s;
-	`, topic.PartitionTable(topicID, n))
+	`, topic.MessageLogPartitionTable(topicID, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
 		return err

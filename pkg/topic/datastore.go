@@ -196,7 +196,7 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (0) TO (%d);
-	`, iTopic.PartitionTable(id, 0), iTopic.MessageLogTable(id), partitionSize)
+	`, iTopic.MessageLogPartitionTable(id, 0), iTopic.MessageLogTable(id), partitionSize)
 	if _, err := tx.Exec(ctx, createPartitionSql); err != nil {
 		return err
 	}
