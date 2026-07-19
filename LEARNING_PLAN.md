@@ -2077,6 +2077,19 @@ phase is `pkg/consumer`-specific.
         per-call and mixed traffic (critical + high-volume telemetry) is
         realistic within one topic.
 
+        (Since REMOVED — kept as history. The stored benchmark
+        (`bench/idempotency/RESULTS.md`) showed the gate is invisible
+        per-call and costs 16-20% of ceiling only when row-work-bound,
+        while the whole b1→b100 batching win is fsync amortization. So the
+        compensation went the other way: producer batching (payload-only
+        `Produce`, one claim-protected transaction per batch) claws back
+        far more than the gate ever cost — measured in-library at ~10x+
+        the unprotected per-call floor once callers saturate the batch
+        cap — and the all-protected invariant is exactly what makes
+        whole-batch retry safe. The escape hatch was deleted rather than
+        documented as the high-throughput option: the fastest path is now
+        also the protected one.)
+
       `SkipIdempotency` forced a deeper fix: `DatastoreRetry`'s blanket
       "retry anything blip-shaped" can't stay safe once retry-safety depends
       on caller context. Only `Commit()` is genuinely ambiguous (every
@@ -2274,10 +2287,10 @@ phase is `pkg/consumer`-specific.
       sweep drains expired claims in bounded batches while a live one
       survives; `IdempotencyKeyTTL` round-trips through a topic
       re-registration without falsely tripping `ErrTopicConfigMismatch` (the
-      exact bug an earlier, unpersisted version of this field had);
-      `SkipIdempotency=true` writes zero claim rows and genuinely
-      double-publishes under a repeated key (the honest cost, not hidden),
-      while a protected call right after in the same topic is unaffected.
+      exact bug an earlier, unpersisted version of this field had). (A sixth
+      scenario covered `SkipIdempotency`'s honest double-publish tradeoff;
+      it was deleted with the field itself once producer batching removed
+      the need for the opt-out.)
 - [x] `just idempotency-keys-growth-lab` — the storage/throughput axis, not
       mechanism correctness: `idempotency_key` size vs. `message_log` size
       at increasing checkpoints with no sweep running (the 20-36%+ overhead
@@ -2730,9 +2743,13 @@ type — even the reference didn't bother.*
       exactly once (not rerun by the retry); and a genuine Commit-time
       failure (forced via a scratch `DEFERRABLE INITIALLY DEFERRED` FK
       fixture) surfaces as the raw driver error with no
-      `retry.PermanentError` wrapping, identically whether zero, one, or
-      every target used `SkipIdempotency` — locking down the no-retry
-      decision above as a regression test, not just a design note.
+      `retry.PermanentError` wrapping — locking down the no-retry
+      decision above as a regression test, not just a design note. (This
+      scenario originally also swept `SkipIdempotency` mixes across
+      targets; that axis died with the field's removal, and the lab gained
+      the positive counterpart instead: rerunning the whole closure under
+      caller-supplied `IdempotencyKey`s lands every target exactly once —
+      the sanctioned retry pattern the no-retry decision points callers at.)
 - [x] **Attempt audit trail.** New per-topic `delivery_log_<topic_id>` table
       (`consumer_group, message_id, attempt, attempted_at, error`, PK
       `(consumer_group, message_id, attempt)`) recording only FAILED

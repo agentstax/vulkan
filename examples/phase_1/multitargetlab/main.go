@@ -17,9 +17,12 @@ package main
 //   - ambiguousCommitScenario: a Commit-time failure (a deferred FK
 //     violation, so it surfaces at Commit, not at any INSERT) comes back
 //     from InTransaction completely unclassified -- no retry.PermanentError
-//     wrapping, no special-casing -- identically whether zero, one, or every
-//     target used SkipIdempotency. This is chunk 3's "no retry, so nothing
-//     to classify" decision, locked down as a regression.
+//     wrapping, no special-casing. InTransaction never retries; whether a
+//     rerun is safe is the caller's call, so the raw error must reach them.
+//   - callerKeyRetryScenario: the sanctioned way to make that rerun safe --
+//     caller-supplied IdempotencyKeys per target. Rerunning the whole
+//     closure under the same keys (a retry after a lost Commit ack) dedups
+//     every target instead of double-publishing.
 
 import (
 	"context"
@@ -54,13 +57,14 @@ func main() {
 	rollbackOnFailureScenario(ctx, ds)
 	partitionSelfHealIsolationScenario(ctx, ds)
 	ambiguousCommitScenario(ctx, ds)
+	callerKeyRetryScenario(ctx, ds)
 
 	fmt.Println("\n✅ MULTI-TARGET LAB PASSED")
 	fmt.Println("   two targets in one InTransaction closure commit together, a failure on")
 	fmt.Println("   either rolls back both, a missing-partition self-heal on one target")
-	fmt.Println("   never touches the other's work or reruns a side effect between them, and")
-	fmt.Println("   a Commit-time failure surfaces completely unclassified regardless of")
-	fmt.Println("   SkipIdempotency mix across targets.")
+	fmt.Println("   never touches the other's work or reruns a side effect between them, a")
+	fmt.Println("   Commit-time failure surfaces completely unclassified, and rerunning the")
+	fmt.Println("   closure under caller-supplied keys dedups instead of double-publishing.")
 }
 
 func atomicPublishScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
@@ -146,48 +150,71 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.P
 }
 
 func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("ambiguous commit: a Commit-time failure surfaces unclassified, regardless of SkipIdempotency mix")
+	step("ambiguous commit: a Commit-time failure surfaces unclassified -- retrying is the caller's decision")
 
 	setupDeferredFKFixture(ctx, ds)
 	defer teardownDeferredFKFixture(ctx, ds)
 
-	for _, mixed := range []bool{false, true} {
-		topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
-		topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	defer cleanupA()
+	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	defer cleanupB()
 
-		optsB := producer.ProduceOptions{}
-		if mixed {
-			optsB.SkipIdempotency = true
-		}
-
-		err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-			if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
-				return err
-			}
-			if _, err := wpB.ProduceInTx(ctx, tx, fn, optsB); err != nil {
-				return err
-			}
-			// passes now (deferred) -- fails when Commit checks the constraint
-			_, err := tx.Exec(ctx, "INSERT INTO multitargetlab_deferred_child (parent_id) VALUES (-1);")
+	err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
 			return err
-		})
-
-		pgErr, ok := errors.AsType[*pgconn.PgError](err)
-		if !ok || pgErr.Code != "23503" {
-			die(fmt.Sprintf("mixed=%v: expected the raw foreign_key_violation (23503) from tx.Commit, got %v", mixed, err))
 		}
-		if _, ok := errors.AsType[*retry.PermanentError](err); ok {
-			die(fmt.Sprintf("mixed=%v: InTransaction wrapped the commit error in retry.PermanentError -- it must never classify, only surface as-is", mixed))
+		if _, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{}); err != nil {
+			return err
 		}
+		// passes now (deferred) -- fails when Commit checks the constraint
+		_, err := tx.Exec(ctx, "INSERT INTO multitargetlab_deferred_child (parent_id) VALUES (-1);")
+		return err
+	})
 
-		assertMessageLogCount(ctx, ds, topicA.Id, 0)
-		assertMessageLogCount(ctx, ds, topicB.Id, 0)
-
-		cleanupA()
-		cleanupB()
+	pgErr, ok := errors.AsType[*pgconn.PgError](err)
+	if !ok || pgErr.Code != "23503" {
+		die(fmt.Sprintf("expected the raw foreign_key_violation (23503) from tx.Commit, got %v", err))
+	}
+	if _, ok := errors.AsType[*retry.PermanentError](err); ok {
+		die("InTransaction wrapped the commit error in retry.PermanentError -- it must never classify, only surface as-is")
 	}
 
-	fmt.Println("  ✓ Commit-time failure surfaces as the raw driver error, unclassified, whether or not any target skipped idempotency")
+	assertMessageLogCount(ctx, ds, topicA.Id, 0)
+	assertMessageLogCount(ctx, ds, topicB.Id, 0)
+
+	fmt.Println("  ✓ Commit-time failure surfaces as the raw driver error, unclassified")
+}
+
+// callerKeyRetryScenario: reruns the whole closure under the SAME caller
+// keys -- what a caller does after losing a Commit ack. Auto-minted keys
+// resolve fresh per call, so THIS dedup guarantee belongs to caller keys
+// alone: without them a closure rerun double-publishes every target.
+func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+	step("caller-key retry: rerunning the closure under the same keys dedups every target")
+
+	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
+	defer cleanupA()
+	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
+	defer cleanupB()
+
+	keyA := uuid.Must(uuid.NewV7())
+	keyB := uuid.Must(uuid.NewV7())
+
+	closure := func(ctx context.Context, tx producer.Tx) error {
+		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{IdempotencyKey: keyA}); err != nil {
+			return err
+		}
+		_, err := wpB.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{IdempotencyKey: keyB})
+		return err
+	}
+
+	must(producer.InTransaction(ctx, ds, closure)) // the publish whose ack was "lost"
+	must(producer.InTransaction(ctx, ds, closure)) // the caller's retry
+
+	assertMessageLogCount(ctx, ds, topicA.Id, 1)
+	assertMessageLogCount(ctx, ds, topicB.Id, 1)
+	fmt.Println("  ✓ both targets landed exactly once across two full closure runs")
 }
 
 // ---- fixtures ----

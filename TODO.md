@@ -163,9 +163,6 @@ Default alerts: a built-in layer for "approaching an operational limit" conditio
 
 message schema evolution
 
-rethink producer having both idempotencyKey AND skipIdempotency. Feels weird like ideally we should only have one. It is b/c our default is opt out
-which I like however that causes this problem which I don't like
-
 consider using named return function params for User public functions to be clear in what they mean
 
 need to relook at what should be consumer vs topic vs producer config. Probably a decent amount of consumer config that should be topic config ie janitor stuff
@@ -254,7 +251,8 @@ Need to obsess and standardize over every potential error message. Need to make 
 
 A couple things I don't want to forget about
   1. use of a bloom filter for idempotency checking -- basically much faster way to check if idempotency key does not exist in set (instead of using CTE constraint)
-  2. Want to do thorough throughput and latency test with skipIdempotency vs not skipIdempotency. Should be multi topic with high concurrency and ideally hit db limits
+  2. Want a thorough throughput and latency test that is multi topic with high concurrency and ideally hits db limits (the single-topic skip-vs-claim comparison
+  was measured in bench/idempotency/RESULTS.md before SkipIdempotency was removed; multi-topic contention is still in its deferred list)
   3. Need to confirm that us manually creating UUIDv7 via go code is compatible with how PG18 better optimizes storage / pages with their built in UUIDv7(). ie their isn't some
   metadata field that somehow gets set which tells tuples to be writen sequentially in pages it is just the values themselves
 

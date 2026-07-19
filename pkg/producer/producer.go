@@ -66,7 +66,9 @@ func NewMessageProducer[Message any](t *topic.Topic, datastore *producerDatastor
 // committed alone (no added latency) at idle.
 //
 // Cancelling ctx stops the wait, not the message -- it still commits with
-// its batch, so the outcome is ambiguous.
+// its batch, so the outcome is ambiguous. To retry across that ambiguity
+// (or your own crash) without double-publishing, supply an IdempotencyKey:
+// the rerun dedups against whatever actually landed.
 func (p *MessageProducer[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
@@ -88,15 +90,24 @@ func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc
 	return message, nil
 }
 
-// TODO - make good doc comments
+// ProduceInTx appends producerFunc's message inside a transaction the caller
+// owns -- it commits or rolls back with everything else in tx.
+//
+// The message's IdempotencyKey stays locked until tx resolves -- any other
+// call reusing that key blocks the whole time. Keep transactions that reuse
+// keys short.
 func (p *MessageProducer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }
 
-// TODO - make good doc comments
-// InTransaction does not retry -- a transient blip or an ambiguous commit
-// failure surfaces to you as-is. Wrap your own retry loop around it if you
-// want one; only you know what's safe to rerun in your closure.
+// InTransaction opens one transaction, runs transactionFunc against it, and
+// commits -- the way to publish to multiple targets atomically via ProduceInTx.
+//
+// It does not retry -- a transient blip or an ambiguous commit failure
+// surfaces to you as-is. Wrap your own retry loop around it if you want one;
+// only you know what's safe to rerun in your closure. Rerunning the whole
+// closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
+// keys mint fresh per call, so a rerun double-publishes.
 func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
 	tx, err := ds.Pool.Begin(ctx)
 	if err != nil {

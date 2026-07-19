@@ -229,9 +229,10 @@ otel-export-lab:
 # producer.InTransaction closure commit together, a failure on either rolls
 # back both (not just the failing one), a missing-partition self-heal on one
 # target never touches the other's already-made insert or reruns a caller
-# side effect between the two calls, and a Commit-time failure surfaces
-# completely unclassified -- no retry.PermanentError wrapping -- regardless
-# of SkipIdempotency mix across targets.
+# side effect between the two calls, a Commit-time failure surfaces
+# completely unclassified (no retry.PermanentError wrapping -- retrying is
+# the caller's decision), and rerunning the closure under caller-supplied
+# IdempotencyKeys dedups every target instead of double-publishing.
 multi-target-lab:
   go run examples/phase_1/multitargetlab/main.go
 
