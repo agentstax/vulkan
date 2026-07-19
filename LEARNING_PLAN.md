@@ -85,10 +85,10 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
 | 11 — Architecture cleanup | ✅ done | datastore boundary audited (decision deferred to **13**), multi-target enqueue (`InTransaction`/`ProduceInTx`, savepoint self-heal), attempt audit log, `context.Cause`, batch write-path round trips; Explain-it-back deliberately skipped (see NOTES.md); answers in NOTES.md; tag `phase-11`; `pgx` vs. `database/sql` cut to **11b** |
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document |
-| 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built |
+| 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b** — additive-only later, so not a v1 blocker |
 | 14 — V1 hardening, correctness & cleanup | ⬜ | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, schema evolution decision, FanOut rescan, default alerts, and the rest of the non-API-shape TODO.md/code-TODO backlog — sequenced after 13 locks the surface |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13 and 14 stop moving the surface they'd describe |
-| 6.5d, 7b, 8d, 9b, 11b | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`) — pick up only if a real workload demands each; moved to the end of this document; 9b should wait for 13 (not the original 11) to settle the datastore boundary, and 11b should weigh 8d's outcome if both are ever picked up |
+| 6.5d, 7b, 8d, 9b, 11b, 13b | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, consumer lifecycle extension point) — pick up only if a real workload demands each; moved to the end of this document; 9b should wait for 13 (not the original 11) to settle the datastore boundary, and 11b should weigh 8d's outcome if both are ever picked up |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -3105,7 +3105,7 @@ describing has stopped moving (see Phase 15).
       same `[1s, 5m]` envelope by default, ~9 attempts to hit the
       ceiling). Confirmed acceptable -- one backoff-curve mental model
       reused everywhere instead of two, worth the faster ramp.
-- [ ] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
+- [x] **`idempotencyKey` + `skipIdempotency` both on producer options** feels
       like it should collapse to one knob — decide the shape (the "opt-out
       default" tension is the part worth resolving deliberately, not just
       picking one).
@@ -3202,9 +3202,6 @@ describing has stopped moving (see Phase 15).
       first `Process()` call) is the right public contract.
 - [ ] **`PartitionSafetyBuffer`'s hardcoded `50000` default** needs an
       actually-reasoned default, not a placeholder number.
-- [ ] **Lifecycle funcs (startup → poll → shutdown)** — decide whether these
-      become an overridable `Lifecycle` struct (new public extension point)
-      or stay internal to `MessageConsumer`.
 
 *New public surfaces to shape — design the surface, full implementation can
 follow in Phase 14 or after v1 where noted:*
@@ -3641,6 +3638,43 @@ NOTES.md, `git tag phase-11b`.
 **Real systems:** River and Oban both commit to pgx directly rather than
 `database/sql`, for the same reason — `LISTEN/NOTIFY`, `COPY`, and batch
 pipelining aren't expressible through the generic driver interface.
+
+---
+
+## 13b — Lifecycle funcs (startup → poll → shutdown) (deferred, optional)
+
+*Deprioritized for now — cut from Phase 13 to keep the v1 gate scoped to
+surfaces that would be breaking to change later. This one is the opposite
+shape: v1 ships with the startup → poll → shutdown sequence internal to
+`MessageConsumer`, and a public `Lifecycle` extension point can be added
+afterwards purely additively — no existing caller changes, no exported
+symbol moves. Deferring is itself the v1 decision: internal for now. Pick
+this up only if a real embedding need shows up (an external poll trigger, a
+custom scheduler, a test harness that needs to drive the loop by hand) —
+not speculatively, since publishing hook points freezes the poll loop's
+internal ordering into API.*
+
+**Concept:** decide whether the consumer's startup → poll → shutdown
+sequence becomes an overridable `Lifecycle` struct (a new public extension
+point on `MessageConsumer`) or stays internal — and if public, which hooks
+exist, what ordering/timing guarantees each carries, and what a hook is
+allowed to do (block? cancel? mutate config?).
+
+**Explain it back:**
+1. For each hook (startup, poll, shutdown): name a concrete workload that
+   needs to override it, and whether that need is already met from outside
+   via ctx cancellation + existing config knobs.
+2. What does a public `Lifecycle` struct freeze into API that today is free
+   to change while the sequence stays internal?
+
+**Done when:** the decision is written down (even "stays internal, and
+here's why"), NOTES.md, `git tag phase-13b`.
+
+**Real systems:** sarama's `ConsumerGroupHandler` (`Setup` /
+`ConsumeClaim` / `Cleanup`) is the public-lifecycle-interface version of
+this; River keeps its poll loop internal and exposes only `Start`/`Stop`.
+Both are defensible — the difference is how much of the loop's internal
+ordering each is willing to promise forever.
 
 ---
 

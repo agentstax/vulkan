@@ -43,13 +43,16 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8a.partitionlab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
 	for range 14 {

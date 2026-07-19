@@ -8,61 +8,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// bounds how many messages share one transaction -- caps lock-hold, latency
-// tail, and the rerun cost of evicting poison
-const defaultMaxBatchSize = 100
-
-// bounds how many workers drain the queue at once
-const defaultConcurrencyLimit = 4
-
-// bounds one batch transaction attempt against the database
-const defaultAttemptTimeout = 10 * time.Second
-
-// bounds how long a cancelled produce waits for its real outcome -- keep
-// above the attempt timeout
-const defaultShutdownGrace = 15 * time.Second
-
-// batchSettings are the batcher knobs, resolved from ProducerDatastoreConfig.
-type batchSettings struct {
-	maxBatchSize     int
-	concurrencyLimit int
-	attemptTimeout   time.Duration
-	shutdownGrace    time.Duration // negative = abandon immediately on cancel
-}
-
-func (s batchSettings) withDefaults() batchSettings {
-	if s.maxBatchSize < 1 {
-		s.maxBatchSize = defaultMaxBatchSize
-	}
-	if s.concurrencyLimit < 1 {
-		s.concurrencyLimit = defaultConcurrencyLimit
-	}
-	if s.attemptTimeout == 0 {
-		s.attemptTimeout = defaultAttemptTimeout
-	}
-	if s.shutdownGrace == 0 {
-		s.shutdownGrace = defaultShutdownGrace
-	}
-	return s
-}
-
 // batcher groups concurrent payload-only produces for one topic into shared
 // transactions, amortizing the per-commit fsync in the database.
 type batcher[Message any] struct {
 	datastore     *producerDatastore[Message]
 	topicID       int64
 	partitionSize int64
-	settings      batchSettings
+	cfg           ProducerDatastoreConfig
 
 	queue workQueue[batchOperation[Message]]
 }
 
-func newBatcher[Message any](datastore *producerDatastore[Message], topicID, partitionSize int64, settings batchSettings) *batcher[Message] {
+func newBatcher[Message any](datastore *producerDatastore[Message], topicID, partitionSize int64, cfg ProducerDatastoreConfig) *batcher[Message] {
 	return &batcher[Message]{
 		datastore:     datastore,
 		topicID:       topicID,
 		partitionSize: partitionSize,
-		settings:      settings.withDefaults(),
+		cfg:           cfg,
 	}
 }
 
@@ -83,7 +45,7 @@ func (b *batcher[Message]) produce(ctx context.Context, message *Message, opts P
 	operation := newBatchOperation(idempotencyKey, message, opts)
 
 	b.queue.enqueue(operation)
-	if b.queue.needsWorker(b.settings.maxBatchSize, b.settings.concurrencyLimit) {
+	if b.queue.needsWorker(b.cfg.BatchMaxSize, b.cfg.BatchConcurrencyLimit) {
 		go b.work()
 	}
 
@@ -92,13 +54,13 @@ func (b *batcher[Message]) produce(ctx context.Context, message *Message, opts P
 		// continue past select
 	case <-ctx.Done():
 		// exit early with no shutdownGrace
-		if b.settings.shutdownGrace < 0 {
+		if b.cfg.BatchShutdownGrace < 0 {
 			return nil, fmt.Errorf("produce abandoned for topic %d, batch outcome ambiguous (BatchShutdownGrace < 0): %w", b.topicID, ctx.Err())
 		}
 
 		// enqueued work cannot be recalled -- wait up to the grace for the
 		// real outcome before abandoning as ambiguous
-		grace := time.NewTimer(b.settings.shutdownGrace)
+		grace := time.NewTimer(b.cfg.BatchShutdownGrace)
 		defer grace.Stop()
 
 		select {
@@ -108,8 +70,8 @@ func (b *batcher[Message]) produce(ctx context.Context, message *Message, opts P
 		case <-grace.C:
 			// if shutdownGrace times out -> exit early
 			// work commit status is ambiguous and should be retried if possible when supplying external idempotency key
-			b.datastore.Logger.WarnContext(ctx, "produce abandoned after shutdown grace, batch outcome ambiguous", "topic_id", b.topicID, "grace", b.settings.shutdownGrace)
-			return nil, fmt.Errorf("produce abandoned after BatchShutdownGrace (%s) for topic %d, batch outcome ambiguous: %w", b.settings.shutdownGrace, b.topicID, ctx.Err())
+			b.datastore.Logger.WarnContext(ctx, "produce abandoned after shutdown grace, batch outcome ambiguous", "topic_id", b.topicID, "grace", b.cfg.BatchShutdownGrace)
+			return nil, fmt.Errorf("produce abandoned after BatchShutdownGrace (%s) for topic %d, batch outcome ambiguous: %w", b.cfg.BatchShutdownGrace, b.topicID, ctx.Err())
 		}
 	}
 
@@ -125,7 +87,7 @@ func (b *batcher[Message]) work() {
 	// waiting, it must not abort a transaction other operations share
 	ctx := context.Background()
 	for {
-		operations := b.queue.dequeue(b.settings.maxBatchSize)
+		operations := b.queue.dequeue(b.cfg.BatchMaxSize)
 		if operations == nil {
 			return
 		}

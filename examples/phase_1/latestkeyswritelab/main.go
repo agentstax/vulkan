@@ -60,12 +60,14 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	const n = 500
 	topicName := fmt.Sprintf("phase8c.latestkeyswritelab.fixed.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: largePartitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: largePartitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	unkeyedMs := timeSequential(ctx, wp, n, func(i int) string { return "" })
 	freshKeyMs := timeSequential(ctx, wp, n, func(i int) string { return fmt.Sprintf("fresh-%d", i) })
@@ -132,11 +134,13 @@ func timeSequential(ctx context.Context, wp *producer.MessageProducer[common.Wor
 // elapsed time plus the topic name (caller destroys it once done reading it).
 func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
 	name := fmt.Sprintf("phase8c.latestkeyswritelab.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: name, PartitionSize: largePartitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: largePartitionSize})
 	must(err)
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	start := time.Now()
 	var wg sync.WaitGroup

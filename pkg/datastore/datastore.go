@@ -12,7 +12,13 @@ type PostgresDatastore struct {
 	Pool *pgxpool.Pool
 }
 
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
 func NewPostgresDatastore(ctx context.Context, cfg *PostgresConnectionConfig) (*PostgresDatastore, error) {
+	if cfg == nil {
+		cfg = &PostgresConnectionConfig{}
+	}
+	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}

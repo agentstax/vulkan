@@ -61,11 +61,13 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 
 	consumerDS := newDS(ctx)
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, consumerDS, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
 	must(err)
 
-	pd := producer.NewProducerDatastore[common.Work](consumerDS, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](consumerDS, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	const rows = 100
 	seed(ctx, wp, rows)
 
@@ -113,11 +115,13 @@ func runLiveReadoutScenario(ctx context.Context) {
 
 	consumerDS := newDS(ctx)
 	topicName := fmt.Sprintf("%s.readout.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, consumerDS, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
 	must(err)
 
-	pd := producer.NewProducerDatastore[common.Work](consumerDS, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](consumerDS, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	const rows = 60
 	seed(ctx, wp, rows)
 

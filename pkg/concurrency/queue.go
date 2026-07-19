@@ -24,7 +24,7 @@ type PressureQueue[WorkType any] struct {
 
 func NewPressureQueue[WorkType any](limit int) (*PressureQueue[WorkType], error) {
 	if limit < 1 {
-		return nil, fmt.Errorf("limit cannot be < 1, got %d", limit)
+		return nil, fmt.Errorf("limit must be >= 1, got %d", limit)
 	}
 
 	return &PressureQueue[WorkType]{

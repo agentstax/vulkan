@@ -1,7 +1,7 @@
 package topic
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -49,7 +49,7 @@ type Config struct {
 	// idempotency_key before the janitor sweeps it.
 	// Default: 1h.
 	//
-	// Zero is invalid, not "forever" -- SetDefaults resolves it before the
+	// Zero is invalid, not "forever" -- WithDefaults resolves it before the
 	// topic is ever registered. TTL only needs to cover your retry horizon,
 	// not a retention window. Lower it for a topic whose producers never
 	// retry across a restart.
@@ -92,7 +92,7 @@ type Config struct {
 	Retry *retry.Policy
 }
 
-func (c *Config) SetDefaults() {
+func (c *Config) WithDefaults() *Config {
 	if c.PartitionSize == 0 {
 		c.PartitionSize = 1_000_000
 	}
@@ -112,26 +112,32 @@ func (c *Config) SetDefaults() {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
+	return c
 }
 
+// Validate runs after WithDefaults -- anything still out of range here was
+// set by the caller, not left unset.
 func (c *Config) Validate() error {
 	if err := validateName(c.Name); err != nil {
 		return err
 	}
 	if c.RetentionTTL < 0 {
-		return errors.New("RetentionTTL must be >= 0")
+		return fmt.Errorf("RetentionTTL must be >= 0, got %v", c.RetentionTTL)
 	}
 	if c.IdempotencyKeyTTL < 0 {
-		return errors.New("IdempotencyKeyTTL must be >= 0")
+		return fmt.Errorf("IdempotencyKeyTTL must be >= 0, got %v", c.IdempotencyKeyTTL)
 	}
 	if c.PartitionSafetyBuffer < 0 {
-		return errors.New("PartitionSafetyBuffer must be >= 0")
+		return fmt.Errorf("PartitionSafetyBuffer must be >= 0, got %d", c.PartitionSafetyBuffer)
 	}
 	if c.JanitorPollRate < 0 {
-		return errors.New("JanitorPollRate must be >= 0")
+		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", c.JanitorPollRate)
 	}
 	if c.JanitorSweepBatchSize < 0 {
-		return errors.New("JanitorSweepBatchSize must be >= 0")
+		return fmt.Errorf("JanitorSweepBatchSize must be >= 0, got %d", c.JanitorSweepBatchSize)
+	}
+	if err := c.Retry.Validate(); err != nil {
+		return fmt.Errorf("Retry: %w", err)
 	}
 	return nil
 }

@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/agentstax/vulkan/internal/topic"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -25,56 +23,34 @@ type producerDatastore[Message any] struct {
 	Retry     *retry.DatastoreRetry // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger    logger.Logger
 
-	settings batchSettings
+	cfg ProducerDatastoreConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 
-type ProducerDatastoreConfig struct {
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // Default: retry.NewDefaultRetryPolicy().
-
-	// BatchMaxSize - messages sharing one batched-Produce transaction.
-	// Default: 100.
-	BatchMaxSize int
-
-	// BatchConcurrencyLimit - workers committing a topic's batches at once
-	// (one pooled connection each).
-	// Default: 4.
-	BatchConcurrencyLimit int
-
-	// BatchAttemptTimeout - bound on one batch transaction attempt.
-	// Default: 10s.
-	BatchAttemptTimeout time.Duration
-
-	// BatchShutdownGrace - how long a cancelled Produce keeps waiting for its
-	// real outcome. Keep it above BatchAttemptTimeout.
-	// Default: 15s. Negative: abandon immediately.
-	BatchShutdownGrace time.Duration
-}
-
-func (c *ProducerDatastoreConfig) withDefaults() *ProducerDatastoreConfig {
-	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerDatastoreConfig) (*producerDatastore[Message], error) {
+	if ds == nil {
+		return nil, errors.New("datastore must not be nil")
 	}
-	c.Retry = c.Retry.WithDefaults()
-	return c
-}
-
-func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerDatastoreConfig) *producerDatastore[Message] {
 	if cfg == nil {
 		cfg = &ProducerDatastoreConfig{}
 	}
-	cfg.withDefaults()
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	if err != nil {
+		return nil, err
+	}
+
 	return &producerDatastore[Message]{
 		Datastore: ds,
-		Retry:     retry.NewDatastoreRetry(cfg.Retry, cfg.Logger),
+		Retry:     dsRetry,
 		Logger:    cfg.Logger,
-		settings: batchSettings{
-			maxBatchSize:     cfg.BatchMaxSize,
-			concurrencyLimit: cfg.BatchConcurrencyLimit,
-			attemptTimeout:   cfg.BatchAttemptTimeout,
-			shutdownGrace:    cfg.BatchShutdownGrace,
-		},
-	}
+		cfg:       *cfg,
+	}, nil
 }
 
 // AppendMessage resolves the idempotency key once and never regenerates it on

@@ -37,7 +37,10 @@ func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (
 		return false, err
 	}
 
-	td := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
+	td, err := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
+	if err != nil {
+		return false, err
+	}
 
 	found, err := td.GetTopic(ctx, name)
 	if err != nil {
@@ -47,14 +50,23 @@ func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (
 }
 
 // Register is idempotent -- an existing name resolves to its topic instead of erroring.
-func Register(ctx context.Context, ds *datastore.PostgresDatastore, cfg Config) (*Topic, error) {
+//
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func Register(ctx context.Context, ds *datastore.PostgresDatastore, cfg *Config) (*Topic, error) {
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	cfg.SetDefaults()
 
-	td := newTopicDatastore(ds, cfg.Logger, cfg.Retry)
-	return td.UpsertTopic(ctx, cfg)
+	td, err := newTopicDatastore(ds, cfg.Logger, cfg.Retry)
+	if err != nil {
+		return nil, err
+	}
+	return td.UpsertTopic(ctx, *cfg)
 }
 
 func Destroy(ctx context.Context, ds *datastore.PostgresDatastore, name string) error {
@@ -62,7 +74,10 @@ func Destroy(ctx context.Context, ds *datastore.PostgresDatastore, name string) 
 		return err
 	}
 
-	td := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
+	td, err := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
+	if err != nil {
+		return err
+	}
 
 	found, err := td.GetTopic(ctx, name)
 	if err != nil {

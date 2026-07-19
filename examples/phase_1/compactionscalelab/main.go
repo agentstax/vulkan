@@ -63,7 +63,7 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionscalelab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 

@@ -49,13 +49,16 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8a.sweeplab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
 
 	step("publish 4 'old' messages, then let them age past ttl")
 	head0 := head(ctx, ds, tp.Id)

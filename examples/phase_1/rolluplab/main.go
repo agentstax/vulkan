@@ -94,13 +94,16 @@ func stalenessScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 // `committed` so staleness is measured from the outside, not self-reported.
 func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) ([]rangeEvent, []sample) {
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
@@ -161,13 +164,16 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 // immediately after each Commit -- staleness is just that call's own latency.
 func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) []float64 {
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
@@ -236,13 +242,16 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, n float64, syncAdvance bool) float64 {
 	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(n))
 
@@ -282,13 +291,16 @@ func contentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, syncAdvance bool) float64 {
 	total := goroutines * perGoroutine
 	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, total)
 

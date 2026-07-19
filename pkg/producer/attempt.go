@@ -29,8 +29,8 @@ func (b *batcher[Message]) runBatchWithRetry(ctx context.Context, batch *batch[M
 	failedIdx = -1
 	err = b.datastore.Retry.Wrap(ctx, func() error {
 		// bound each attempt -- a hung database must not hold the batch forever
-		attemptCtx, cancel := context.WithTimeoutCause(ctx, b.settings.attemptTimeout,
-			fmt.Errorf("batch attempt exceeded BatchAttemptTimeout (%s) for topic %d", b.settings.attemptTimeout, b.topicID))
+		attemptCtx, cancel := context.WithTimeoutCause(ctx, b.cfg.BatchAttemptTimeout,
+			fmt.Errorf("batch attempt exceeded BatchAttemptTimeout (%s) for topic %d", b.cfg.BatchAttemptTimeout, b.topicID))
 		defer cancel()
 
 		idx, err := b.runBatch(attemptCtx, batch)

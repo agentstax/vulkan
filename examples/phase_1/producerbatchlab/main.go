@@ -74,8 +74,10 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
 		work, err := common.NewWork(30, "admin@example.com")
@@ -125,8 +127,10 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	pd := producer.NewProducerDatastore[json.RawMessage](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[json.RawMessage](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	errs := make([]error, total)
 	var wg sync.WaitGroup
@@ -173,8 +177,10 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	pd := producer.NewProducerDatastore[common.Work](ds, &producer.ProducerDatastoreConfig{BatchMaxSize: 5})
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, &producer.ProducerDatastoreConfig{BatchMaxSize: 5})
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
 		work, err := common.NewWork(30, "admin@example.com")
@@ -212,8 +218,10 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	pd := producer.NewProducerDatastore[common.Work](ds, &producer.ProducerDatastoreConfig{BatchMaxSize: 5})
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, &producer.ProducerDatastoreConfig{BatchMaxSize: 5})
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	for range 15 {
 		work, err := common.NewWork(30, "admin@example.com")
@@ -279,8 +287,10 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost
 	warm := producers
@@ -311,7 +321,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
 func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: name, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})
 	must(err)
 	return tp, func() { must(topic.Destroy(ctx, ds, name)) }
 }

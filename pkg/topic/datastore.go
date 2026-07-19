@@ -20,15 +20,21 @@ type topicDatastore struct {
 	Logger    logger.Logger
 }
 
-func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) *topicDatastore {
+func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*topicDatastore, error) {
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
 	}
+
+	dsRetry, err := retry.NewDatastoreRetry(retryPolicy, log)
+	if err != nil {
+		return nil, err
+	}
+
 	return &topicDatastore{
 		Datastore: datastore,
-		Retry:     retry.NewDatastoreRetry(retryPolicy, log),
+		Retry:     dsRetry,
 		Logger:    log,
-	}
+	}, nil
 }
 
 func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {

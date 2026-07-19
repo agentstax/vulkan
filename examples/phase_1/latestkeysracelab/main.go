@@ -66,12 +66,14 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 	const n = 50
 	topicName := fmt.Sprintf("phase8c.latestkeysracelab.race.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: 1000})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	var wg sync.WaitGroup
 	for range n {
@@ -97,7 +99,7 @@ func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	step("O(1) rerun: the same never-superseded row, re-measured against latest_key as history grows")
 
 	topicName := fmt.Sprintf("phase8c.latestkeysracelab.scale.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: scalePartitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: scalePartitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 

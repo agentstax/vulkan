@@ -61,13 +61,16 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	const partitionSize = int64(4)
 	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.drop.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
 
 	// fill partition 0 with a dormant key + filler, then age past ttl
 	publish(ctx, wp, "dormant-key")
@@ -96,13 +99,16 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 	const partitionSize = int64(1000000) // matches migration 001's original width -- never rolls
 	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.sweep.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
 
 	publish(ctx, wp, "dormant-key")
 	time.Sleep(ttl + ttlMargin)

@@ -63,13 +63,16 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionlab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
-	pd := producer.NewProducerDatastore[KeyedRecord](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[KeyedRecord](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))
 
 	const lease = 2 * time.Second

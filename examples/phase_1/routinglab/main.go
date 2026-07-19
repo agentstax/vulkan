@@ -60,13 +60,16 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("phase7.routinglab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	head := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
 	fmt.Printf("topic=%q id=%d message_log head = %d\n", topicName, tp.Id, head)

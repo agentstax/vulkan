@@ -195,13 +195,16 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, consumer.Datastore[common.Work], *producer.MessageProducer[common.Work]) {
 	cfg.Name = fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, cfg)
+	tp, err := topic.Register(ctx, ds, &cfg)
 	must(err)
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	return tp, cd, wp
 }
 

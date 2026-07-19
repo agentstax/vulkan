@@ -60,13 +60,16 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("phase9.shutdowntruncationlab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)

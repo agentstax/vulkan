@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -14,106 +13,15 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
 	"golang.org/x/sync/errgroup"
 )
-
-// fuck options patterns it always sucks to me
-// long live dysfunctional options pattern - https://rednafi.com/go/dysfunctional-options-pattern/
 
 // ideally idepotent func
 type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 
 type Consumer[Message any] interface {
 	Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error
-}
-
-type ConsumerType string
-
-const (
-	CURSOR    ConsumerType = "CURSOR"
-	LIFECYCLE ConsumerType = "LIFECYCLE"
-)
-
-// TODO - better comments for each field. Should follow structure of producer.Options and topic.Config
-type MessageConsumerConfig struct {
-	Type             ConsumerType
-	BatchLimit       int
-	MaxAttempts      int
-	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	ClaimPollRate    time.Duration
-	WorkTimeout      time.Duration // bounds consumerFunc itself -- enforced via ctx and the hard-abandon fallback below
-	QueueMargin      time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
-	AckMargin        time.Duration // lease padding for recording success/failure after consumerFunc returns
-	// WorkTimeoutGrace is scheduling slack for a consumerFunc that DID respect
-	// ctx.Done() to actually unwind and send on the result channel before the
-	// hard cutoff abandons it -- not extra time to keep working. Go's own
-	// scheduler wakeup after a context deadline fires is sub-millisecond at p99
-	// even under load (measured); this budget is really covering the caller's
-	// own cancellation-response time (e.g. a DB driver's cancel-request round
-	// trip), which pkg/consumer can't know in general. Default assumes one
-	// same-region network round trip's worth of slack.
-	WorkTimeoutGrace        time.Duration
-	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
-	Backoff                 *retry.Policy // curve for can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration
-	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
-	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Meter                   metric.Meter
-}
-
-// withDefaults fills every unset (zero) field so a caller can pass a sparse
-// config holding only what they care about -- same contract as river's
-// Config.WithDefaults. Mutates and returns c for construction-time chaining.
-func (c *MessageConsumerConfig) withDefaults() *MessageConsumerConfig {
-	if c.Type == "" {
-		c.Type = CURSOR
-	}
-	if c.BatchLimit == 0 {
-		c.BatchLimit = 1 // no batching by default
-	}
-	if c.MaxAttempts == 0 {
-		c.MaxAttempts = 3
-	}
-	if c.MaxRangeReclaims == 0 {
-		c.MaxRangeReclaims = 3
-	}
-	if c.ClaimPollRate == 0 {
-		c.ClaimPollRate = 5 * time.Second
-	}
-	if c.WorkTimeout == 0 {
-		c.WorkTimeout = 30 * time.Second
-	}
-	if c.QueueMargin == 0 {
-		c.QueueMargin = 5 * time.Second
-	}
-	if c.AckMargin == 0 {
-		c.AckMargin = 2 * time.Second
-	}
-	if c.WorkTimeoutGrace == 0 {
-		c.WorkTimeoutGrace = 100 * time.Millisecond
-	}
-	if c.ExceptionInitialBackoff == 0 {
-		c.ExceptionInitialBackoff = 5 * time.Second
-	}
-	c.Backoff = c.Backoff.WithDefaults()
-	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = 35 * time.Second
-	}
-	// WaterlinePollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
-	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
-	}
-	if c.Meter == nil {
-		// metric/noop, not the global otel.GetMeterProvider() -- reading the
-		// global registry requires the top-level otel package, which is
-		// bring the trace/baggage/go-logr dependencies ie bloat.
-		c.Meter = noop.NewMeterProvider().Meter("github.com/agentstax/vulkan/pkg/consumer")
-	}
-	return c
 }
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
@@ -129,19 +37,43 @@ type MessageConsumer[Message any] struct {
 	Logger       logger.Logger // copied from Config.Logger at construction
 }
 
-// required deps as params, everything else through cfg -- pass nil (or a
-// sparse config holding only the fields you care about) and withDefaults
-// fills the rest.
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
 func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
+	if t == nil {
+		return nil, errors.New("topic must not be nil")
+	}
+	if queue == nil {
+		return nil, errors.New("queue must not be nil")
+	}
+	if poolLimiter == nil {
+		return nil, errors.New("poolLimiter must not be nil")
+	}
+	if ds == nil {
+		return nil, errors.New("datastore must not be nil")
+	}
+
 	if cfg == nil {
 		cfg = &MessageConsumerConfig{}
 	}
-	cfg.withDefaults()
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
-	consumerDatastore := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
+	// Prefetcher can work around this with debounce timeout however
+	// having your queue smaller than batch limit seems like a code smell so error for now
+	if queue.Cap() < cfg.BatchLimit {
+		return nil, fmt.Errorf("queue cap (%d) must be >= BatchLimit (%d), otherwise prefetcher can never claim a full batch", queue.Cap(), cfg.BatchLimit)
+	}
+
+	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger:       cfg.Logger,
 		MessageRetry: cfg.Backoff,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	metrics, err := metrics.NewConsumerMetrics(cfg.Meter, group, t.Id, t.Name, ds, &metrics.ConsumerMetricsDatastoreConfig{
 		Logger: cfg.Logger,
@@ -150,7 +82,7 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 		return nil, err
 	}
 
-	return &MessageConsumer[Message]{
+	consumer := &MessageConsumer[Message]{
 		Group:        group,
 		Topic:        t,
 		Queue:        queue,
@@ -160,88 +92,9 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 		Metrics:      metrics,
 		Config:       cfg,
 		Logger:       cfg.Logger,
-	}, nil
-}
-
-// ### CONSUME V2 ###
-
-func (p *MessageConsumer[Message]) validate() error {
-	// nil deps first -- everything below dereferences these, so guard before any access
-	if p.Config == nil {
-		return errors.New("Config must not be nil")
-	}
-	if p.Topic == nil {
-		return errors.New("Topic must not be nil")
-	}
-	if p.Queue == nil {
-		return errors.New("Queue must not be nil")
-	}
-	if p.PoolLimiter == nil {
-		return errors.New("PoolLimiter must not be nil")
-	}
-	if p.Datastore == nil {
-		return errors.New("Datastore must not be nil")
-	}
-	if p.ShutdownFunc == nil {
-		return errors.New("ShutdownFunc must not be nil")
-	}
-	if p.Metrics == nil {
-		return errors.New("Metrics must not be nil")
-	}
-	if p.Logger == nil {
-		return errors.New("Logger must not be nil")
 	}
 
-	if p.Config.BatchLimit < 1 {
-		return fmt.Errorf("BatchLimit must be >= 1, got %d", p.Config.BatchLimit)
-	}
-
-	// Prefetcher can work around this with debounce timeout however
-	// having your queue smaller than batch limit seems like a code smell so error for now
-	if p.Queue.Cap() < p.Config.BatchLimit {
-		return fmt.Errorf("queue cap (%d) must be >= BatchLimit (%d), otherwise prefetcher can never claim a full batch", p.Queue.Cap(), p.Config.BatchLimit)
-	}
-
-	if p.Config.MaxAttempts < 1 {
-		return fmt.Errorf("MaxAttempts must be >= 1, got %d", p.Config.MaxAttempts)
-	}
-	if p.Config.MaxRangeReclaims < 1 {
-		return fmt.Errorf("MaxRangeReclaims must be >= 1, got %d", p.Config.MaxRangeReclaims)
-	}
-
-	// non-positive durations break their respective loops/timers:
-	// ClaimPollRate<=0 -> SleepWithContext/WaitForRoom timers fire immediately (busy loop),
-	// WorkTimeout/QueueMargin/AckMargin<=0 -> the lease window math degenerates.
-	if p.Config.ClaimPollRate <= 0 {
-		return fmt.Errorf("ClaimPollRate must be > 0, got %v", p.Config.ClaimPollRate)
-	}
-	if p.Config.WorkTimeout <= 0 {
-		return fmt.Errorf("WorkTimeout must be > 0, got %v", p.Config.WorkTimeout)
-	}
-	if p.Config.QueueMargin <= 0 {
-		return fmt.Errorf("QueueMargin must be > 0, got %v", p.Config.QueueMargin)
-	}
-	if p.Config.AckMargin <= 0 {
-		return fmt.Errorf("AckMargin must be > 0, got %v", p.Config.AckMargin)
-	}
-	if p.Config.WorkTimeoutGrace <= 0 {
-		return fmt.Errorf("WorkTimeoutGrace must be > 0, got %v", p.Config.WorkTimeoutGrace)
-	}
-	if p.Config.ExceptionInitialBackoff <= 0 {
-		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", p.Config.ExceptionInitialBackoff)
-	}
-	if p.Config.WaterlinePollRate < 0 {
-		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", p.Config.WaterlinePollRate)
-	}
-
-	// shutdown timeout > work timeout + its grace buffer + AckMargin so in-flight
-	// work can finish (or get abandoned) AND ack before the pool is torn down
-	// (implies ShutdownTimeout > 0 given the guards above)
-	if p.Config.ShutdownTimeout <= p.Config.WorkTimeout+p.Config.WorkTimeoutGrace+p.Config.AckMargin {
-		return fmt.Errorf("ShutdownTimeout must be > WorkTimeout + WorkTimeoutGrace + AckMargin")
-	}
-
-	return nil
+	return consumer, nil
 }
 
 func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
@@ -293,12 +146,6 @@ func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
 }
 
 func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	// fail fast before spawning anything
-	// TODO - this should probably be moved to New() -- but requires rethinking dysfunctional options pattern womp womp
-	if err := p.validate(); err != nil {
-		return err
-	}
-
 	errGroup, ctx := errgroup.WithContext(ctx)
 
 	p.Logger.InfoContext(ctx, "consumer deliveries projector starting", "group", p.Group, "topic", p.Topic.Id)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"time"
 
@@ -135,32 +134,35 @@ type consumerDatastore[Message any] struct {
 	Logger         logger.Logger
 }
 
-type ConsumerDatastoreConfig struct {
-	Logger       logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry        *retry.Policy // transient-error retry policy for this datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
-	MessageRetry *retry.Policy // exception/terminal retry-delay curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
-}
-
-func (c *ConsumerDatastoreConfig) withDefaults() *ConsumerDatastoreConfig {
-	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerDatastoreConfig) (*consumerDatastore[Message], error) {
+	if ds == nil {
+		return nil, errors.New("datastore must not be nil")
 	}
-	c.Retry = c.Retry.WithDefaults()
-	c.MessageRetry = c.MessageRetry.WithDefaults()
-	return c
-}
-
-func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerDatastoreConfig) *consumerDatastore[Message] {
 	if cfg == nil {
 		cfg = &ConsumerDatastoreConfig{}
 	}
-	cfg.withDefaults()
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	if err != nil {
+		return nil, err
+	}
+	messageRetry, err := retry.NewRetry(cfg.MessageRetry, cfg.Logger)
+	if err != nil {
+		return nil, err
+	}
+
 	return &consumerDatastore[Message]{
 		Datastore:      ds,
-		DatastoreRetry: retry.NewDatastoreRetry(cfg.Retry, cfg.Logger),
-		MessageRetry:   retry.NewRetry(cfg.MessageRetry, cfg.Logger),
+		DatastoreRetry: dsRetry,
+		MessageRetry:   messageRetry,
 		Logger:         cfg.Logger,
-	}
+	}, nil
 }
 
 func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error {
@@ -489,7 +491,7 @@ func (d *consumerDatastore[Message]) SweepExpiredIdempotencyKeys(ctx context.Con
 
 func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
 	// unlike RetentionTTL, ttl <= 0 isn't a real "keep forever" choice here --
-	// topic.Config.SetDefaults resolves an unset (zero) IdempotencyKeyTTL to
+	// topic.Config's WithDefaults resolves an unset (zero) IdempotencyKeyTTL to
 	// 1h before a topic is ever registered, so p.Topic.IdempotencyKeyTTL
 	// should never actually be <= 0 by the time this runs. This is a
 	// defensive no-op for that case, not the intended way to disable

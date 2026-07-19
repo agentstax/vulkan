@@ -21,11 +21,20 @@ type Retry struct {
 	Logger logger.Logger
 }
 
-func NewRetry(policy *Policy, log logger.Logger) *Retry {
-	return &Retry{
-		Policy: policy.WithDefaults(),
-		Logger: log,
+// policy may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewRetry(policy *Policy, log logger.Logger) (*Retry, error) {
+	if log == nil {
+		return nil, errors.New("logger must not be nil")
 	}
+	policy = policy.WithDefaults()
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
+	return &Retry{
+		Policy: policy,
+		Logger: log,
+	}, nil
 }
 
 // CalculateDelay returns the clamped exponential backoff

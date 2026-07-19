@@ -67,7 +67,7 @@ func main() {
 	must(err)
 
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
@@ -83,8 +83,10 @@ func main() {
 	defer func() { must(provider.Shutdown(ctx)) }()
 	meter := provider.Meter("otelexportlab")
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	seed(ctx, wp, 5)
 
 	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](20)

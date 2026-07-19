@@ -69,7 +69,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

@@ -68,13 +68,16 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	group := "phase9.faultisolationlab.panic"
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
@@ -127,13 +130,16 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	group := "phase9.faultisolationlab.hang"
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
@@ -210,10 +216,11 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 func runDBBlipRecovery(ctx context.Context) {
 	step("DB BLIP -- pkg/retry absorbs transient failures transparently; the caller never sees an error once it clears")
 
-	r := retry.NewDatastoreRetry(&retry.Policy{MaxRetries: 6, BaseDelay: 10 * time.Millisecond, MaxDelay: 200 * time.Millisecond, Exponent: 2}, logger.NewDefaultLogger(os.Stdout))
+	r, err := retry.NewDatastoreRetry(&retry.Policy{MaxRetries: 6, BaseDelay: 10 * time.Millisecond, MaxDelay: 200 * time.Millisecond, Exponent: 2}, logger.NewDefaultLogger(os.Stdout))
+	must(err)
 
 	calls := 0
-	err := r.Wrap(ctx, func() error {
+	err = r.Wrap(ctx, func() error {
 		calls++
 		if calls <= 2 {
 			return fakeNetError{} // looks like a transient network blip -- retryable

@@ -221,11 +221,13 @@ func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.MessageProducer[common.Work], func()) {
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: name, PartitionSize: partitionSize})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})
 	must(err)
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 	return tp, wp, func() { must(topic.Destroy(ctx, ds, name)) }
 }
 

@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -53,12 +54,18 @@ type MessageProducer[Message any] struct {
 	batcher   *batcher[Message]
 }
 
-func NewMessageProducer[Message any](t *topic.Topic, datastore *producerDatastore[Message]) *MessageProducer[Message] {
+func NewMessageProducer[Message any](t *topic.Topic, datastore *producerDatastore[Message]) (*MessageProducer[Message], error) {
+	if t == nil {
+		return nil, errors.New("topic must not be nil")
+	}
+	if datastore == nil {
+		return nil, errors.New("datastore must not be nil")
+	}
 	return &MessageProducer[Message]{
 		Topic:     t,
 		datastore: datastore,
-		batcher:   newBatcher(datastore, t.Id, t.PartitionSize, datastore.settings),
-	}
+		batcher:   newBatcher(datastore, t.Id, t.PartitionSize, datastore.cfg),
+	}, nil
 }
 
 // Produce appends message to the topic, returning once it is durably

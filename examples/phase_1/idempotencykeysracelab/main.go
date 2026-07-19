@@ -57,12 +57,14 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDa
 
 	const n = 50
 	topicName := fmt.Sprintf("phase9.idempotencykeysracelab.same.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: 1000})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	key := uuid.Must(uuid.NewV7())
 
@@ -96,12 +98,14 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *coredatastore.Postg
 
 	const n = 50
 	topicName := fmt.Sprintf("phase9.idempotencykeysracelab.distinct.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: 1000})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: 1000})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	var wg sync.WaitGroup
 	for range n {

@@ -65,12 +65,14 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	step("accumulation: idempotency_key_<id> size vs. message_log size, no sweep running")
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
 
@@ -106,13 +108,16 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	const publishers = 30
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.keepup.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, topic.Config{Name: topicName, PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
+	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(tp, pd)
-	cd := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	must(err)
+	wp, err := producer.NewMessageProducer(tp, pd)
+	must(err)
+	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
 

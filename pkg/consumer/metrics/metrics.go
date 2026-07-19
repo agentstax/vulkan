@@ -11,7 +11,11 @@ type ConsumerMetrics struct {
 }
 
 func NewConsumerMetrics(meter metric.Meter, group string, topicID int64, topicName string, ds *datastore.PostgresDatastore, cfg *ConsumerMetricsDatastoreConfig) (*ConsumerMetrics, error) {
-	consumerDatastore := NewConsumerDatastore(ds, cfg)
+	consumerDatastore, err := NewConsumerDatastore(ds, cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	queueState, err := NewQueueState(meter, group, topicID, topicName, consumerDatastore)
 	if err != nil {
 		return nil, err

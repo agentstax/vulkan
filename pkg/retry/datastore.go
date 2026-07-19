@@ -16,10 +16,16 @@ type DatastoreRetry struct {
 	*Retry
 }
 
-func NewDatastoreRetry(policy *Policy, log logger.Logger) *DatastoreRetry {
-	return &DatastoreRetry{
-		Retry: NewRetry(policy, log),
+// policy may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewDatastoreRetry(policy *Policy, log logger.Logger) (*DatastoreRetry, error) {
+	r, err := NewRetry(policy, log)
+	if err != nil {
+		return nil, err
 	}
+	return &DatastoreRetry{
+		Retry: r,
+	}, nil
 }
 
 // Wrap shadows the embedded Retry.Wrap -- same signature, so call sites keep

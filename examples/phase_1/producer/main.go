@@ -46,14 +46,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := topic.Register(ctx, ds, topic.Config{Name: *topicPtr})
+	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	datastore := producer.NewProducerDatastore[common.Work](ds, nil)
-	wp := producer.NewMessageProducer(t, datastore)
+	datastore, err := producer.NewProducerDatastore[common.Work](ds, nil)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	wp, err := producer.NewMessageProducer(t, datastore)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
 
 	// WORK
 	for range *countPtr {
