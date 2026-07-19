@@ -13,10 +13,6 @@ import (
 type ProducerFunc[Message any] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*Message, error)
 type TransactionFunc func(ctx context.Context, tx Tx) error
 
-type Producer[Message any] interface {
-	Produce(ctx context.Context, work *Message) error
-}
-
 // ProduceOptions holds per-message knobs that are optional and rarely set --
 // the zero value means "neither is set," so a caller who doesn't need them
 // never has to name them.
