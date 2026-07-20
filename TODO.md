@@ -382,13 +382,11 @@ named / defined errors for users to errors.Is on for convinence. How do we want 
 
 does pgx send sql comments to db? if so is that wasted bytes over the network we should try to limit
 
-**Circuit breaker for a known-dead downstream dependency**
+**`MessageProducer.Register(ctx)` — give producers the consumer's lifecycle pattern.**
 
 **`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)
 **Migrations-into-code.**
 **Row-level security / least-privilege setup**
-
-**`MessageProducer.Register(ctx)` — give producers the consumer's lifecycle pattern.**
 
 **Default alerts**
 **Chaos-testing / fixture suite**

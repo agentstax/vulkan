@@ -88,6 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b** — additive-only later, so not a v1 blocker |
 | 14 — V1 hardening, correctness & cleanup | ⬜ | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, schema evolution decision, FanOut rescan, default alerts, and the rest of the non-API-shape TODO.md/code-TODO backlog — sequenced after 13 locks the surface |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13 and 14 stop moving the surface they'd describe |
+| 16 — Circuit breaker (implementation) | ⬜ | builds the two-tier design settled in 13 (per-instance trip unit, quorum globalization, refund-on-close reconciliation); K's absolute-vs-fraction question may pull in the Presence heartbeat work as a prerequisite |
 | 6.5d, 7b, 8d, 9b, 11b, 13b | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, consumer lifecycle extension point) — pick up only if a real workload demands each; moved to the end of this document; 9b should wait for 13 (not the original 11) to settle the datastore boundary, and 11b should weigh 8d's outcome if both are ever picked up |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
@@ -3350,7 +3351,7 @@ follow in Phase 14 or after v1 where noted:*
       as a `topic.Config` toggle; the underlying Postgres-side plumbing can
       land after v1, but the config surface needs deciding now so it doesn't
       change shape later.
-- [o] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
+- [x] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
       the full motivating write-up). Work through the design: does it live
       as a new `MessageConsumerConfig` hook or a wrapper around `consumerFunc`;
       per-topic or per-group state; what counts as "the same dependency" when
@@ -3358,7 +3359,8 @@ follow in Phase 14 or after v1 where noted:*
       interacts with the existing `backoff()` formula. **Design only** — the
       breaker's actual trip/cooldown logic doesn't need to ship in v1, but
       its shape does, since it changes `MessageConsumerConfig`.
-      **Design settled (feature level; implementation separate).** Why the
+      **Design settled (feature level); implementation is its own phase —
+      Phase 16.** Why the
       existing machinery can't cover it: attempts/backoff/DLQ are
       per-message tools, but a dead dependency is a systemic failure —
       ~100% of traffic failing for one shared reason. Per-message backoff
@@ -3918,6 +3920,66 @@ is actually done.*
 
 **Done when:** the doc site and public API doc comments reflect the v1
 surface as it actually shipped, NOTES.md, `git tag phase-15`.
+
+---
+
+## Phase 16 — Circuit breaker (implementation)
+
+*The design is settled in Phase 13's circuit-breaker bullet — two-tier
+(per-instance trip unit, quorum globalization), error-class input,
+refund-on-close reconciliation, all of it. This phase is deliberately
+separated from that design work: it builds what Phase 13 decided, and only
+the questions explicitly left for implementation time get re-opened here.*
+
+**Build:**
+- [ ] **`error_class` enum on delivery rows** — recorded at park time from
+      the user's classification; values coordinated with the named-errors
+      taxonomy (the recognized dependency-down error users wrap). The one
+      schema touch, so it lands first.
+- [ ] **Per-instance breaker** — local streak tracking (N non-empty
+      all-systemic ticks + M cumulative, exception retries counting),
+      open state gating claims, exception retries, and
+      already-claimed/buffered work; state read from an atomic refreshed
+      by its own async ticker, never a hot-path query.
+- [ ] **Shared breaker row + globalization** — the (topic_id, group) row,
+      guarded CLOSED→OPEN transitions with a generation counter, and the
+      quorum: settle K here (small absolute vs Presence-backed fraction —
+      if fraction wins, the Presence entry's heartbeat rows become a
+      prerequisite and this phase inherits that dependency).
+- [ ] **Probe paths** — local self-probe on cooldown; global prober
+      elected via session-level advisory lock (self-releasing on crash);
+      half-open exists only as OPEN + holding the lock; global close does
+      not force local closes. Exact per-tier probe semantics get settled
+      here.
+- [ ] **Reconciliation on close** — probe winner refunds attempts AND
+      reclaims for systemic-classed rows (dead → ready); the hand-back
+      question for claimed-but-unattempted work resolves here too
+      (PartialCommit + refunded reclaim vs a new explicit release).
+- [ ] **Config + observability** — sparse opt-in fields on
+      `MessageConsumerConfig` (trip threshold N/M, cooldown, probe size,
+      quorum); per-instance and group state metered + queryable;
+      "instance open, group closed" surfaced as the bad-node signal; DLQ
+      alerting able to report "breaker open, N dead rows pending
+      reconciliation".
+- [ ] **Breaker lab** — a dead-dependency scenario (all instances trip →
+      global OPEN → recovery → reconciliation leaves zero wrongful DLQ),
+      a bad-node scenario (one instance trips alone, group keeps
+      draining, its parked rows succeed on other instances), and a flap
+      scenario (cooldown backoff + refund cycles converge, no poison
+      quarantine creep from repeated hand-backs).
+
+**Done when:** all three lab scenarios pass, a full outage-and-recovery
+cycle ends with every message either processed or legitimately dead
+(nothing wrongfully dead-lettered, no attempts/reclaims leaked), NOTES.md,
+`git tag phase-16`.
+
+**Real systems:** Envoy's outlier detection is the closest parallel to
+tier 1 — consecutive-5xx ejection of a single bad host from the pool while
+the cluster keeps serving; Resilience4j/Polly are the classic in-process
+breakers (closed/open/half-open with probe); Finagle's failure accrual is
+the per-node evidence-accumulation version. The two-tier composition —
+eject yourself locally, coordinate globally only on quorum — is what
+service meshes do with per-host ejection + cluster-wide panic thresholds.
 
 ---
 
