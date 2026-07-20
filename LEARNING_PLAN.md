@@ -3358,6 +3358,157 @@ follow in Phase 14 or after v1 where noted:*
       interacts with the existing `backoff()` formula. **Design only** — the
       breaker's actual trip/cooldown logic doesn't need to ship in v1, but
       its shape does, since it changes `MessageConsumerConfig`.
+      **Design settled (feature level; implementation separate).** Why the
+      existing machinery can't cover it: attempts/backoff/DLQ are
+      per-message tools, but a dead dependency is a systemic failure —
+      ~100% of traffic failing for one shared reason. Per-message backoff
+      can't express "the dependency is down" because each message's retry
+      clock is independent and fresh arrivals attempt immediately; the
+      breaker is the aggregate signal no per-message mechanism can
+      synthesize. The harms it stops: wrongful dead-lettering (an hour
+      outage vs a 3-attempt budget permanently DLQs messages that would
+      succeed at minute 61 — worst case is the instant-fail bad deploy,
+      which grinds the whole backlog to DLQ in minutes), a
+      guaranteed-wasted write storm (delivery/delivery_log/lease churn at
+      full production rate for provably doomed attempts), and hammering a
+      browning-out downstream.
+      The settled shape:
+      - *Input is error classification, nothing else.* The user marks an
+        error systemic (a recognized dependency-down error — composes with
+        the named-errors entry) vs this-message's-fault; only systemic
+        errors count toward tripping. Recorded at park time as an
+        `error_class` enum column on the delivery row (not a bool —
+        values coordinated with the named-errors taxonomy), which is what
+        later reconciliation matches on. Keyed/multi-dependency breakers
+        (per-tenant webhook endpoints) are OUT of scope: a 5%-of-traffic
+        dead tenant never trips an aggregate breaker, but fixing that
+        needs per-dependency tagging plus
+        skip-this-tenant-while-processing-others — per-message
+        scheduling, which is the user-initiated-defer feature's
+        territory, not a breaker.
+      - *Two tiers: the trip unit is the INSTANCE, not the group.* One
+        instance's evidence cannot distinguish "the dependency is dead"
+        from "I am broken" — a corrupted host file on one bad node
+        produces a 100% systemic-looking failure rate from inside that
+        instance, and letting it trip a group of hundreds would be a
+        false global outage. So evidence stays local and so does the
+        first verdict. Tier 1: an instance whose own batches run
+        all-systemic for N consecutive ticks opens ITS OWN breaker —
+        stops claiming, stops exception-claiming, self-probes on
+        cooldown. That is the correct response to both causes: a
+        bad-node instance should stop claiming (it converts healthy
+        messages into failures), and its parked rows get retried by
+        healthy instances through the exception window and succeed —
+        the system self-heals around a bad instance with zero
+        coordination, and "instance X open while the group is closed"
+        is precisely the bad-node alert an operator wants. Tier 2: a
+        genuinely dead dependency trips every instance within a few
+        ticks, so the global signal is K distinct instances locally
+        open — a quorum of local verdicts, written to a shared breaker
+        row (topic_id, group). Global OPEN unlocks the collective
+        machinery (single prober, reconciliation, group-level metric),
+        not the pause itself — even without tier 2 a real outage
+        converges to everyone-paused. Open: K as a small absolute
+        (brittle: unanimity for tiny groups) vs a fraction of live
+        instances — the fraction needs the live-instance count, i.e.
+        the Presence entry's heartbeat rows (TODO.md); this is the
+        first feature with a hard dependency on it.
+      - *Evidence bar: a debounce, not statistics.* Classification is
+        the user's word — the streak isn't inferring a failure rate,
+        it's debouncing one transient blip the user happened to classify
+        systemic. Trip when the streak spans ≥ N non-empty all-systemic
+        ticks AND ≥ M cumulative systemic failures within it (exception
+        retries count toward the streak too). The bias is deliberately
+        conservative: reconciliation makes a SLOW trip cheap (pre-trip
+        damage is refunded retroactively) while a FALSE trip is
+        unrefunded pure loss (healthy consumption paused) — so demand
+        more evidence, not less. M is a fixed-default knob (~10) folded
+        into the trip-threshold config, NOT derived from BatchLimit
+        (whose default of 1 would neuter the debounce exactly where it's
+        needed). Accepted corner: a trickle-traffic group (1 msg/hour)
+        may effectively never trip — it has no write-storm problem and
+        its wrongful-DLQ exposure is a handful of messages.
+      - *Locally open means zero new attempts by that instance*: no new
+        claims, no exception retries, and no attempts against
+        already-claimed/buffered work once the open state is known —
+        only a message already inside consumerFunc runs to completion
+        (goroutines can't be killed). The hand-back gap: PartialCommit
+        parks what resolved, but the unattempted remainder returns only
+        via lease expiry → reclaims++ — one tick per breaker episode,
+        tolerable, but flapping accumulates toward the MaxRangeReclaims
+        poison quarantine, so reconciliation refunds reclaims alongside
+        attempts. Breaker state is never a hot-path query: an async
+        ticker (WaterlinePollRate-style decoupling) refreshes a shared
+        atomic that the claim/exception loops read; staleness is one
+        ticker period of extra claiming, mopped up by reconciliation.
+      - *Reconciliation repairs the damage — automatically, on CLOSE,
+        by the probe winner*: rows whose `error_class` is systemic are
+        un-marked — dead → ready, attempts (and reclaims) refunded;
+        rows with unrelated errors stay dead. Refund-on-CLOSE (not
+        on-trip) is what makes automatic safe, three ways: the repaired
+        rows flow straight into a dependency that just passed the
+        probe — right rows, right moment; a wrong global trip that
+        never closes never mutates anything; and the zombie loop
+        (misclassified poison refunded → dies → refunded forever)
+        self-limits, since each refund cycle now requires a successful
+        probe first — cycling only happens against a genuinely flapping
+        dependency, where hold-then-retry is correct and the cooldown
+        backoff slows the cycle. It also reuses the leadership that
+        exists: the advisory-lock prober who observes the successful
+        probe is the closer, so prober = closer = reconciler — one
+        leader, one lock, no new election. It must NOT run on a lone
+        local trip — a bad-node instance records its local faults as
+        "systemic" (DNS failure is indistinguishable from a dead
+        dependency from inside) and refunding on its word would be
+        wrong; the quorum plus the successful probe are what make the
+        classification trustworthy. Cursor rewind was considered and
+        rejected (committed is a contiguity frontier — moving it back
+        redelivers successes). Net contract: "systemic failures are
+        retroactively not failures". Operator-invoked repair is OUT of
+        this feature — it's a generic requeue-dead-rows escape hatch
+        that belongs with the audit-API ideas, not v1 breaker surface.
+        Visible consequence to accept: pre-trip dead rows sit visibly
+        dead for the outage's duration and un-die on close — DLQ
+        alerting should be able to say "breaker open, N dead rows
+        pending reconciliation" rather than paging as if they were
+        real.
+      - *Recovery is automatic, per tier*: a locally-open instance
+        self-probes after cooldown with one small real batch — success
+        closes it, failure re-opens with backoff. On global OPEN, one
+        prober is elected via a session-level advisory lock (self-
+        releases if the prober crashes, so probe leadership can't
+        wedge); persisted breaker state is just CLOSED/OPEN — "half-
+        open" is OPEN + currently holding the probe lock, not a stored
+        state. Global close does NOT force local closes: each instance
+        re-verifies itself, so a bad node isn't "healed" by the group's
+        recovery. Real traffic is the probe; no user health-check hook
+        in v1. For the bad-deploy case probing fails until a human
+        ships the fix — correct: the breaker's job is holding, not
+        healing.
+      - *No manual pause API*: a maintenance window is "scale the group
+        to zero" — infra's job, and graceful shutdown already handles
+        in-flight leases. Accepted gap: an embedded consumer inside a
+        process that does other work can't scale down alone.
+      - *Observability*: per-instance and group state both surfaced —
+        state transitions logged + metered (state gauge, trip counter
+        on the existing Meter surface), state queryable on the
+        consumer; "instance open, group closed" is the bad-node signal.
+        Held traffic reads as lag, never as failures. TTL interaction:
+        held messages are protected by the retention drop floor unless
+        the user opted into `AllowDropPastCommitted`.
+      - *Config*: a sparse handful on `MessageConsumerConfig` (trip
+        threshold, cooldown, probe size, quorum K/fraction), opt-in for
+        v1 — silently changing failure semantics under an existing
+        consumer would be surprising.
+      - *Interaction with the future claim buffer pool* (the
+        Queue/PoolLimiter prefetch redesign deferred to the FIFO phase):
+        an open breaker gates BOTH the claim that fills the buffer and
+        the dequeue-into-attempt — buffered rows are not run against a
+        known-dead dependency. Do NOT resolve them by "just letting
+        leases expire": expiry counts as a reclaim, marching ranges
+        toward the poison quarantine (see the hand-back gap above —
+        same primitive, same reclaim refund). The settled shallow
+        buffer (≈ one batch) bounds how much ever needs handing back.
 - [o] **Chaos-testing / fixture suite** — shape both halves: (1) internal
       test helpers this repo's own test suite can use to seed messages
       directly into `ready`/`inflight`/`dead` states and inject failures, and
@@ -3819,8 +3970,14 @@ outcome decided first if both are ever in play.*
       interacts with per-key ordering (a buffered row whose key gates on an
       in-flight delivery can't just be handed to the next free worker) —
       before deciding whether to drop both params + fields entirely or
-      re-wire them for a redesigned prefetch/dispatch. Reference for what the
-      original design looked like: the deleted Prefetch/Dispatch code in
+      re-wire them for a redesigned prefetch/dispatch. Any redesign must
+      also compose with the circuit breaker (Phase 13's design bullet): an
+      open breaker gates BOTH the claim that fills the buffer and the
+      dequeue-into-attempt (buffered rows don't run against a known-dead
+      dependency), and buffered rows must not be resolved by silent lease
+      expiry (expiry counts as a reclaim → poison quarantine pressure).
+      Reference for what the original design looked like: the deleted
+      Prefetch/Dispatch code in
       https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
 
 *→ Reference (after you've built it): `reference/waterline/partitions.go` —

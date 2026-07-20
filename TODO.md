@@ -223,6 +223,14 @@ Presence: heartbeat rows for live producer/consumer instances
   also the natural substrate for the Default alerts entry below -- an alert
   that can say "destroy blocked: producer X seen 2s ago" instead of a bare
   threshold is the version of that layer that explains itself.
+  second consumer: the circuit breaker's globalization quorum (LEARNING_PLAN
+  Phase 13's circuit-breaker design bullet). Its two-tier design trips
+  per-instance breakers on local evidence and escalates to a group-wide OPEN
+  when K distinct instances are locally open -- and expressing K as a
+  fraction of the group (rather than a brittle absolute) requires knowing
+  how many instances are ALIVE right now, which is exactly this entry's
+  heartbeat rows. First feature with a hard dependency on presence, not just
+  an operator-visibility win.
 
 Default alerts: a built-in layer for "approaching an operational limit" conditions
   problem: several failure modes in this project are silent until they happen --
@@ -364,6 +372,7 @@ A couple things I don't want to forget about
   metadata field that somehow gets set which tells tuples to be writen sequentially in pages it is just the values themselves
 
 Look into using BRIN index for different tables
+look into using a GIN index for a headers table. ie could consiladate routing key into a headers JSONB column with GIN index (for efficent lookup). And this could allow user arbitrary key value routing / ordering logic for: routing, delays, priority and load shedding capabilities.
 
 we need to test compaction key with default produce and determine if deadlock contention by reverse ordered transactions is a problem or not.
   - ie and what extreme (or not extreme) example would it truly become a problem for users or can the system self heal through retries
