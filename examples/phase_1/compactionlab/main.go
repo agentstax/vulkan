@@ -177,10 +177,11 @@ func main() {
 	assertInt("committed", committed, 11)
 
 	publish(ctx, wp, "user:6", 1, true) // id 12, LIFECYCLE path
-	must(cd.FanOut(ctx, tp.Id, lifecycleGroup))
+	must(cd.UpsertCursor(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
+	must(cd.FanOut(ctx, tp.Id, lifecycleGroup, 100))
 	delivered, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroup, 20)
 	must(err)
-	assertIDs("FanOut applies the identical unbounded predicate across the WHOLE topic, not a range",
+	assertIDs("FanOut applies the identical compaction predicate across its whole scan, not a range",
 		deliveryIDs(delivered), []int64{3, 4, 6, 8, 10, 11, 12})
 	deletedDelivered := false
 	for _, d := range delivered {

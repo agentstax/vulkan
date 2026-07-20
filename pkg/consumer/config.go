@@ -22,6 +22,7 @@ const (
 type MessageConsumerConfig struct {
 	Type             ConsumerType
 	BatchLimit       int
+	FanOutBatchLimit int // max log rows FanOut scans per tick (LIFECYCLE only) -- bounds a cold group's catch-up scan; new messages materialize this many per tick until caught up
 	MaxAttempts      int
 	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
 	ClaimPollRate    time.Duration
@@ -51,6 +52,9 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	}
 	if c.BatchLimit == 0 {
 		c.BatchLimit = 1 // no batching by default
+	}
+	if c.FanOutBatchLimit == 0 {
+		c.FanOutBatchLimit = 1000 // fanout rows are cheap next to processing -- a wide default so only genuinely cold groups feel the cap
 	}
 	if c.MaxAttempts == 0 {
 		c.MaxAttempts = 3
@@ -98,6 +102,9 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 func (c *MessageConsumerConfig) Validate() error {
 	if c.BatchLimit < 1 {
 		return fmt.Errorf("BatchLimit must be >= 1, got %d", c.BatchLimit)
+	}
+	if c.FanOutBatchLimit < 1 {
+		return fmt.Errorf("FanOutBatchLimit must be >= 1, got %d", c.FanOutBatchLimit)
 	}
 	if c.MaxAttempts < 1 {
 		return fmt.Errorf("MaxAttempts must be >= 1, got %d", c.MaxAttempts)

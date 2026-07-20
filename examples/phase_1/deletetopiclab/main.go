@@ -72,7 +72,7 @@ func main() {
 	}
 	// deliberately never Commit -- leaves the lease open
 
-	must(cd.FanOut(ctx, tp.Id, group)) // materializes a 'ready' delivery row, left unclaimed
+	must(cd.FanOut(ctx, tp.Id, group, 100)) // materializes a 'ready' delivery row, left unclaimed
 
 	// claim it via the lifecycle path and fail it once -- status flips
 	// ready->inflight->ready in place (still 1 delivery row) while parking one

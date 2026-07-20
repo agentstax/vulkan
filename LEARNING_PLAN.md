@@ -3541,12 +3541,52 @@ that Phase 13 has settled what the surface looks like.
       happens when a topic's `Message` shape changes after messages are
       already on the log — the edge cases that break, and what guidance (if
       any) the library gives users for handling it.
-- [ ] **`FanOut` rescans the entire log on every call** instead of tracking a
+- [x] **`FanOut` rescans the entire log on every call** instead of tracking a
       per-group high-water mark for the LIFECYCLE path — give it one instead
       of a full rescan each time. (Design settled while fixing the cursor
       straggler bullet below: reuse the same snapshot fence, where FanOut's
       mark may additionally lag freely because `ON CONFLICT DO NOTHING`
       makes re-scanning unhardened territory idempotent.)
+      **Resolved: the marked scan, state living on the cursor table.**
+      LIFECYCLE groups now register a cursor row too (the old "no cursor row
+      or it jams the retention floor" rule died once FanOut advances
+      `claimed = committed` to its hardened mark — the floor now WAITS for
+      messages a slow group hasn't fanned out yet, where before they could
+      be TTL-dropped with their deliveries never materialized; a stopped
+      group pins retention exactly like a stopped CURSOR group, same
+      `AllowDropPastCommitted` override). Each tick is two autocommit
+      statements: a read-only (head, xmax) pair + cursor read with an idle
+      short-circuit, then one statement that scans `id > committed` (LIMIT
+      `FanOutBatchLimit`, default 1000), materializes matches, and hardens
+      the mark. The scan runs EAGERLY past the proven head — a visible row
+      delivers this tick even while a straggler txn below it is open,
+      because the delivery PK + `ON CONFLICT DO NOTHING` makes next tick's
+      rescan a no-op; only the mark needs the proof. Two deltas from the
+      claim gate: (1) NO `settled_head` term — mark and scan share one
+      snapshot, and a head a peer proved after our snapshot began can sit
+      above rows our scan can't see, so only the fresh/stored pairs (proven
+      against this statement's own xmin) may advance it; when nothing
+      proves, `o.committed` holds the mark and the tick just rescans. (2)
+      when the LIMIT cuts the scan short the mark caps at the last id
+      actually scanned, and every row counts against the LIMIT matched or
+      not, so sparse-routing groups still progress. Two traps found live:
+      the mark bound must be a scalar subquery (`id > (SELECT committed
+      FROM old_values)`) — joining old_values plans the bound as a join
+      FILTER walking the whole index from 0 (measured 660x at 200k rows);
+      and `claimed` advances via GREATEST so a group mistakenly running
+      both paths can't have its claim frontier regressed into overlap.
+      Binding changes are now forward-only (documented on
+      Bind/ClearBindings): history the mark passed stays as it was routed —
+      the old retroactive materialization was an accident of the rescan.
+      Measured (median/tick): steady-state old is linear — 9.5ms/55ms/246ms
+      at 10k/50k/200k rows — vs flat ~130µs (idle short-circuit, one
+      read-only statement); a tick materializing 100 fresh rows is ~1.2ms
+      flat at every log size. Verified: stragglercheck (eager delivery
+      above an open straggler + mark held below it + post-commit heal),
+      fanoutstress -race (12k rows, 385 aborted-id gaps, 3 racing tickers x
+      3 groups incl. a cold group catching up through a 50-row cap under
+      nonstop straggler/rollback traffic — zero missing, zero mis-routed,
+      all marks at head), all 25 labs green.
 - [x] **Cursor claims lose late-committing messages (straggler skip).**
       Found while designing the FanOut high-water mark. `BIGSERIAL` assigns
       ids at INSERT time but txns commit in ANY order, so the log's visible

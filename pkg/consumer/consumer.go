@@ -98,13 +98,11 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 }
 
 func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
-	// LIFECYCLE groups never read or advance a cursor row (RollWaterline is
-	// CURSOR-only) -- creating one anyway would sit at committed=0 forever and
-	// wrongly pin the retention floor computed off MIN(committed).
-	if p.Config.Type == CURSOR {
-		if err := p.Datastore.UpsertCursor(ctx, p.Topic.Id, p.Group); err != nil {
-			return err
-		}
+	// both types track the log through this row:
+	//   - CURSOR claims through it
+	//   - LIFECYCLE records fan-out progress in committed
+	if err := p.Datastore.UpsertCursor(ctx, p.Topic.Id, p.Group); err != nil {
+		return err
 	}
 
 	// cold-start guarantee: the next partition exists before Janitor's first tick
@@ -198,7 +196,7 @@ func (p *MessageConsumer[Message]) Project(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.Group); err != nil {
+			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.Group, p.Config.FanOutBatchLimit); err != nil {
 				return err
 			}
 		}

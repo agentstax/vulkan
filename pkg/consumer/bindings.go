@@ -13,6 +13,9 @@ import (
 // here to a POSIX regex for the claim/fan-out predicate's '~' match. A group
 // with no binding at all matches every event.
 //
+// Binding changes apply forward only: FanOut never revisits messages below the
+// group's cursor, so history a previous binding skipped stays skipped.
+//
 // TODO - this is a true wildcard, not a NATS-style selector -- it can't pin an
 // exact token depth (see TODO.md).
 func (d *consumerDatastore[Message]) Bind(ctx context.Context, topicID int64, consumerGroup, pattern string) error {
@@ -30,7 +33,8 @@ func (d *consumerDatastore[Message]) Bind(ctx context.Context, topicID int64, co
 	return err
 }
 
-// removes every binding for a group on this topic -> it goes back to matching all events on this topic.
+// removes every binding for a group on this topic -> it goes back to matching
+// all events on this topic, forward only (see Bind).
 func (d *consumerDatastore[Message]) ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := `
 		DELETE FROM binding

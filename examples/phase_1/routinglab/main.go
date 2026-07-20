@@ -127,7 +127,7 @@ func main() {
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
-	must(cd.FanOut(ctx, tp.Id, lifecycleGroup))
+	must(cd.FanOut(ctx, tp.Id, lifecycleGroup, 100))
 	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroup, limit)
 	must(err)
 	fmt.Printf("  claimed deliveries: %v\n", deliveryIDs(deliveries))
@@ -167,7 +167,10 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd bindable
 		must(err)
 		must(cd.ClearBindings(ctx, topicID, g))
 		must(cd.UpsertCursor(ctx, topicID, g))
-		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
+		// settled/pending must ride along -- the claim gate assumes
+		// gate >= settled >= claimed; bumping claimed alone breaks that and a
+		// poll where the fresh pair doesn't prove would regress the cursor
+		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3, settled_head=$3, pending_head=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
 		must(err)
 	}
 	return head

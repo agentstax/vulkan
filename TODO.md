@@ -15,18 +15,29 @@ lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
     - in-process we can only bound queue damage (stop renewing -> reclaim -> dead-letter), not kill the hung goroutine; accept the leak until process restart.
   depends on lease_token + lease_until (done); pairs with the existing workCtx (WithoutCancel+WorkTimeout) and attempts/dead-letter machinery.
 
-FanOut rescans the entire message_log on every call instead of tracking a per-group
-high-water mark. `INSERT INTO deliveries ... SELECT ... FROM message_log_<topic_id>`
-has no `WHERE id > <last fanned-out id>` and no LIMIT, so cost grows with total log
-size, not with new-messages-since-last-call -- `ON CONFLICT DO NOTHING` makes it
-correct regardless of how many times a row gets re-selected, just wasteful. fine at
-demo scale (the SQL comment already says so), but a real fix means giving the
-LIFECYCLE path its own per-group cursor, which is a bigger scope decision than a
-quick batch LIMIT -- revisit alongside any future work on the LIFECYCLE path itself.
+delivery rows should delete on completion instead of persisting as 'done' (from the
+LIFECYCLE-vs-CURSOR review that led to parking the lifecycle path): the delivery
+table's irreducible job is a DISPATCH INDEX over pending messages -- "who's next by
+an arbitrary key" -- not a completion record. deleting on success makes its storage
+O(pending window) instead of O(history). composes with the success-by-absence audit
+idea from the same review: an API answering "was message X processed by group Y" as
+id <= the group's frontier AND no dead row AND no open exception = succeeded, with
+delivery_log's failure rows supplying the attempt history for bumpy successes -- per-
+message audit with zero happy-path writes. write cost per delivery stays either way
+(insert at fanout, delete at done -- index maintenance is irreducible); only storage
+improves. known caveats: no success timestamp exists to report, and the audit horizon
+is the retention TTL.
 
-  narrowed by Phase 8b: each topic now has its own message_log_<id>, so the rescan
-  cost is bounded by ONE topic's volume instead of the whole system's -- still a
-  full rescan within that topic though, not actually fixed.
+page-bitmap completion tracking as a someday replacement for range leases on the
+CURSOR path (same review): a page row per N ids above the waterline holding a done-
+bitmap gives bit-granular crash recovery -- a reclaim redelivers only unset bits
+instead of the whole range -- with updates batched one page-row UPDATE per commit.
+this is Pulsar's ack-hole structure. deliberately NOT a route to custom dispatch
+order: bitmaps compress "who's done", but priority/delay/fairness need "who's next
+by a per-message key", which takes one index entry per pending message no matter the
+encoding (that's the delivery table's job). only worth building if range-granular
+crash redelivery ever shows up as a real cost -- it's rare-path today (crashes only;
+failures partial-commit and move on).
 
 add a proper NATS-style topic selector for routing bindings (LATER, low priority)
   today `binding.pattern` is a true wildcard: `*` matches any run of characters
