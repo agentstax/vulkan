@@ -14,7 +14,11 @@ import (
 type ConsumerType string
 
 const (
-	CURSOR    ConsumerType = "CURSOR"
+	CURSOR ConsumerType = "CURSOR"
+
+	// LIFECYCLE is PARKED -- prefer CURSOR. At the current feature set it is a
+	// strictly more expensive CURSOR; it re-earns its place only with the
+	// non-FIFO queue work (priority/delay/fairness -- see TODO.md).
 	LIFECYCLE ConsumerType = "LIFECYCLE"
 )
 

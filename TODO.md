@@ -32,6 +32,32 @@ message audit with zero happy-path writes. write cost per delivery stays either 
 improves. known caveats: no success timestamp exists to report, and the audit horizon
 is the retention TTL.
 
+async ordered-index claim table for LIFECYCLE (design sketch for whenever the
+lifecycle path revives as the non-FIFO substrate; from the same review): two-stage
+dispatch -- deliveries stays the durable unordered backlog, an orderer process
+async top-ups a SMALL ordered ready-buffer per user policy (priority, delay, load
+shedding), and claims just pop the buffer head. what it buys: claims stop sorting
+over pending entirely, and because ordering is async the policy can be arbitrary
+Go (tenant budgets, load-shed gauges), not just indexable SQL expressions. key
+decisions already made in discussion:
+  - ordering is WINDOW-APPROXIMATE, not global: the orderer scores a sliding
+    window of the backlog and accepts inversions beyond it. precedent: sidekiq
+    priorities are probabilistic queue-weights, celery is best-effort -- nobody
+    promises global priority order. document it.
+  - deep-backlog strict priority is the one thing window-ordering breaks (an
+    urgent message behind 100k backlog only jumps the window) -- fix with
+    low-cardinality priority TIERS on delivery rows: one id-ordered orderer
+    cursor per tier, merged by weight. exact tier semantics, no global sort.
+  - the buffer must stay only slightly ahead of claims (bounded depth). eager
+    ordering-on-arrival freezes stale decisions across a consumer outage; and
+    since the buffer is DERIVED state (rebuildable from deliveries), the resume
+    story is truncate-and-re-score, which bounded depth keeps cheap.
+  - the orderer is just another fenced scanner with a mark ("ordered through
+    message_id X") -- same marked-scan machinery fanOut uses, state can sit on
+    the same cursor row.
+  - open: separate buffer table vs a nullable position column + partial index
+    on deliveries (fewer tables, but position updates lose HOT).
+
 page-bitmap completion tracking as a someday replacement for range leases on the
 CURSOR path (same review): a page row per N ids above the waterline holding a done-
 bitmap gives bit-granular crash recovery -- a reclaim redelivers only unset bits
