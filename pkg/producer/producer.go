@@ -103,6 +103,11 @@ func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc
 // The message's IdempotencyKey stays locked until tx resolves -- any other
 // call reusing that key blocks the whole time. Keep transactions that reuse
 // keys short.
+//
+// For optimal performance call this LAST in your transaction. Producing
+// effectively takes a lock on consumer progress for the whole topic: claims
+// cannot advance past this message until tx commits, and every statement
+// after this call extends how long that lock is held.
 func (p *MessageProducer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }

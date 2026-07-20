@@ -3543,7 +3543,59 @@ that Phase 13 has settled what the surface looks like.
       any) the library gives users for handling it.
 - [ ] **`FanOut` rescans the entire log on every call** instead of tracking a
       per-group high-water mark for the LIFECYCLE path — give it one instead
-      of a full rescan each time.
+      of a full rescan each time. (Design settled while fixing the cursor
+      straggler bullet below: reuse the same snapshot fence, where FanOut's
+      mark may additionally lag freely because `ON CONFLICT DO NOTHING`
+      makes re-scanning unhardened territory idempotent.)
+- [x] **Cursor claims lose late-committing messages (straggler skip).**
+      Found while designing the FanOut high-water mark. `BIGSERIAL` assigns
+      ids at INSERT time but txns commit in ANY order, so the log's visible
+      `MAX(id)` can sit above a still-uncommitted lower id. FreshClaim
+      advanced `claimed` to that raw head, and nothing ever re-reads below
+      `claimed`. Proven live with two connections: A holds id=8 uncommitted,
+      B commits id=9, claim takes (0,9] seeing only 8 rows, commit lands,
+      A commits -> next claim returns nil "caught up", message 8 lost
+      forever. (The LIFECYCLE path was proven immune in the same harness —
+      its full rescan self-heals the straggler on the next tick, which is
+      the hidden service that rescan was providing.)
+      **Fix: the snapshot fence — claims stop at a PROVEN head, not the
+      visible one.** Each poll reads `MAX(id)` and the snapshot's `xmax`
+      in ONE statement (one snapshot, so the pair is sound: any txn that
+      could own an id <= head was already running, hence its txid < xmax),
+      taken BEFORE the claim tx's first write so our own txid isn't in the
+      waited-on set. The claim's `gate` CTE takes the best of the cached
+      `settled_head`, the fresh (head, xmax) pair, and the stored pair — a
+      pair proves out when the current statement's snapshot `xmin` (oldest
+      txid still running anywhere) passes its xmax: every txn that could
+      own an id at or below it is then finished, so each row is visible or
+      its id is a permanent gap. Three new cursor columns: `settled_head`,
+      `pending_head`, `pending_xmax xid8` (migration edited in place).
+      Load-bearing details: the pending pair stores UNCONDITIONALLY —
+      under nonstop producer traffic a fresh pair never proves out inside
+      its own poll (some txn always overlaps), so the next poll must find
+      it stored or claims stall behind traffic forever; verified with an
+      8-producer sustained-load harness (progress while producing, 14k/14k
+      drained, no stall). A truly idle poll short-circuits after the
+      read-only snapshot statement (head == pending == settled == claimed),
+      which removed the idle-tick cursor write AND the idle `FOR UPDATE`.
+      Rejected along the way: an advisory-lock fence producers must
+      cooperate with (topic-wide produce stalls queued behind one slow
+      `ProduceInTx`), an internal outbox/inbox table (write amplification
+      + group registry), row-level `xmin` filters (only visible rows can
+      be examined; txid order != id order under `ProduceInTx`, live
+      counterexample constructed), and lag windows (timing assumptions).
+      Measured (cursorbench, fenced vs prev shape): idle at parity (207µs
+      vs 211µs @ 10 partitions; 706µs vs 687µs @ 500), claiming pays one
+      extra round trip (+74µs @ 10 partitions, +12 percent @ 500 — amortized
+      across up to `limit` messages per claim); both still well under the
+      old two-MAX shape at 500 partitions. Tradeoff accepted: claims lag
+      the raw head by the lifetime of the oldest overlapping produce txn
+      (a long-held `ProduceInTx` holds claims back for its duration) —
+      the honest floor, since those ids aren't provably safe to seal over.
+      Verified: straggler repro now holds the claim while the producer txn
+      is open then claims everything including the straggler; three-outcome
+      cursor check unchanged (incl. same-poll claim after a quiet produce,
+      via the fresh-pair promotion); full lab suite green.
 - [ ] **`deliveries.status` index** — no code change; the existing "don't add
       without real evidence" decision (TODO.md) already stands. This bullet
       just formally closes it out as reviewed-and-confirmed for v1, rather

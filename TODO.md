@@ -300,3 +300,5 @@ we need to test compaction key with default produce and determine if deadlock co
   - I know we can move these users to ProduceFunc but just to know
 
 named / defined errors for users to errors.Is on for convinence. How do we want to structure that? etc
+
+does pgx send sql comments to db? if so is that wasted bytes over the network we should try to limit
