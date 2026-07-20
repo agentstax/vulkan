@@ -15,6 +15,10 @@ lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
     - in-process we can only bound queue damage (stop renewing -> reclaim -> dead-letter), not kill the hung goroutine; accept the leak until process restart.
   depends on lease_token + lease_until (done); pairs with the existing workCtx (WithoutCancel+WorkTimeout) and attempts/dead-letter machinery.
 
+review / refine the comments in fanOut (pkg/consumer/datastore.go) -- both the Go
+comments and the ones inside snapshotSql/scanSql. remember SQL comments ship to
+Postgres, so every comment edit needs a live lab re-run (routing-lab is the cheapest).
+
 delivery rows should delete on completion instead of persisting as 'done' (from the
 LIFECYCLE-vs-CURSOR review that led to parking the lifecycle path): the delivery
 table's irreducible job is a DISPATCH INDEX over pending messages -- "who's next by
