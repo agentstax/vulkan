@@ -198,7 +198,7 @@ func publish(ctx context.Context, wp *producer.MessageProducer[common.Work], rou
 	must(err)
 }
 
-func advance(ctx context.Context, cd consumer.Datastore[common.Work], topicID int64, group string) int64 {
+func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string) int64 {
 	c, err := cd.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c

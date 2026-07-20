@@ -15,13 +15,13 @@ import (
 // FanOut materializes one delivery row per message this group is bound to
 // receive. Scans only above the group's mark (cursor.committed), so
 // steady-state cost is O(new messages) per tick, not O(whole log).
-func (d *consumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error {
+func (d *ConsumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.fanOut(ctx, topicID, consumerGroup, limit)
 	})
 }
 
-func (d *consumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error {
+func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error {
 	// take the (head, xmax) pair the scan statement's gate below proves
 	// against -- the same fence as FreshClaimMessagesWithCursor.
 	snapshotSql := fmt.Sprintf(`
@@ -176,7 +176,7 @@ func (d *consumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 	return nil
 }
 
-func (d *consumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
+func (d *ConsumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
 	var deliveries []DeliveryRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -186,7 +186,7 @@ func (d *consumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Cont
 	return deliveries, err
 }
 
-func (d *consumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
+func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
 	// one statement (the Phase 2 state machine, now per-(group, topic, message) instead
 	// of per-message). SKIP LOCKED keeps competing workers from grabbing the same row.
@@ -235,13 +235,13 @@ func (d *consumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Cont
 
 // RecordSuccess marks a claimed delivery 'done'. Terminal success for this
 // (group, message); the log row is untouched and other groups are unaffected.
-func (d *consumerDatastore[Message]) RecordSuccess(ctx context.Context, delivery *DeliveryRow) error {
+func (d *ConsumerDatastore[Message]) RecordSuccess(ctx context.Context, delivery *DeliveryRow) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordSuccess(ctx, delivery)
 	})
 }
 
-func (d *consumerDatastore[Message]) recordSuccess(ctx context.Context, delivery *DeliveryRow) error {
+func (d *ConsumerDatastore[Message]) recordSuccess(ctx context.Context, delivery *DeliveryRow) error {
 	sql := fmt.Sprintf(`
 		UPDATE %s
 		SET
@@ -261,13 +261,13 @@ func (d *consumerDatastore[Message]) recordSuccess(ctx context.Context, delivery
 // incremented at claim time, so >= maxAttempts means this was the last try.
 // Phase 6 has no backoff (the delivery table carries no can_run_after) -- a
 // 'ready' row is simply re-claimed on the next poll.
-func (d *consumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordFailure(ctx, maxAttempts, delivery, failureErr, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) recordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) recordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error {
 	if delivery.Attempts >= maxAttempts {
 		// private call, not the exported RecordTerminal -- this already runs
 		// inside RecordFailure's own Retry.Wrap, calling the exported one
@@ -313,13 +313,13 @@ func (d *consumerDatastore[Message]) recordFailure(ctx context.Context, maxAttem
 // RecordTerminal dead-letters a delivery: no more retries. The DLQ for a group is
 // just `WHERE consumer_group = $1 AND status = 'dead'`; one group can dead-letter a
 // message while another processes the same offset fine.
-func (d *consumerDatastore[Message]) RecordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) RecordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordTerminal(ctx, delivery, terminalErr, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) recordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) recordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error, disableDeliveryLog bool) error {
 	var sql string
 	args := []any{delivery.ConsumerGroup, delivery.MessageId, terminalErr.Error()}
 	if disableDeliveryLog {

@@ -18,7 +18,7 @@ import (
 //
 // TODO - this is a true wildcard, not a NATS-style selector -- it can't pin an
 // exact token depth (see TODO.md).
-func (d *consumerDatastore[Message]) Bind(ctx context.Context, topicID int64, consumerGroup, pattern string) error {
+func (d *ConsumerDatastore[Message]) Bind(ctx context.Context, topicID int64, consumerGroup, pattern string) error {
 	rx, err := wildcardToRegex(pattern)
 	if err != nil {
 		return err
@@ -35,7 +35,7 @@ func (d *consumerDatastore[Message]) Bind(ctx context.Context, topicID int64, co
 
 // removes every binding for a group on this topic -> it goes back to matching
 // all events on this topic, forward only (see Bind).
-func (d *consumerDatastore[Message]) ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error {
+func (d *ConsumerDatastore[Message]) ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := `
 		DELETE FROM binding
 		WHERE consumer_group = $1 AND topic_id = $2;

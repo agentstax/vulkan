@@ -134,7 +134,7 @@ func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
 	must(err)
 }
 
-func reset(ctx context.Context, cd consumer.Datastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
+func reset(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
 	for _, q := range []string{
 		`DELETE FROM lease WHERE consumer_group=$1 AND topic_id=$2`,
 		`DELETE FROM cursor WHERE consumer_group=$1 AND topic_id=$2`,
@@ -152,7 +152,7 @@ func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID
 	must(err)
 }
 
-func freshClaim(ctx context.Context, cd consumer.Datastore[common.Work], topicID int64, group string, limit int) *consumer.ClaimedRange {
+func freshClaim(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string, limit int) *consumer.ClaimedRange {
 	claim, err := cd.ClaimMessagesWithCursor(ctx, topicID, group, limit, 3, 30*time.Second, false)
 	must(err)
 	if claim == nil {

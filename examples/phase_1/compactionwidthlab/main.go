@@ -113,7 +113,7 @@ func main() {
 // key that's never superseded, ids 2-38 are unique filler (each its own key,
 // so none of them ever match another row's compaction subplan), and ids
 // 39/40 are two versions of one key published back to back.
-func seed(ctx context.Context, cd consumer.Datastore[Record], wp *producer.MessageProducer[Record], topicID, partitionSize int64) {
+func seed(ctx context.Context, cd *consumer.ConsumerDatastore[Record], wp *producer.MessageProducer[Record], topicID, partitionSize int64) {
 	publish(ctx, wp, "stale") // id 1 -- never superseded
 	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
 	for i := range 37 {

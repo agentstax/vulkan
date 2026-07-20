@@ -168,7 +168,7 @@ func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int)
 	}
 }
 
-func advance(ctx context.Context, cd consumer.Datastore[common.Work], topicID int64) int64 {
+func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64) int64 {
 	c, err := cd.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c

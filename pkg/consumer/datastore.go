@@ -21,40 +21,6 @@ var (
 	ErrLeaseLost = errors.New("lease lost: row reclaimed by another consumer")
 )
 
-type Datastore[Message any] interface {
-	UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error
-	EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error
-	// disableDeliveryLog skips the delivery_log_<topic_id> half of each drop's orphan cleanup.
-	DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error
-	SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error
-	SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error
-	// Commit frees the range's lease, then parks any failures as sparse delivery
-	// rows -- initialBackoff sets how long a freshly parked row waits before it's
-	// first eligible for ClaimExceptions (RecordExceptionFailure's own
-	// MessageRetry takes over on later retries).
-	// disableDeliveryLog skips the parallel delivery_log_<topic_id> audit write.
-	Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error
-	// PartialCommit narrows a still-open lease to lastProcessed and parks whatever
-	// resolved before an interruption. The lease token isnt freed, it
-	// naturally expires and gets reclaimed.
-	PartialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error
-	AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error)
-	FanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error
-	// ClaimMessages(ctx context.Context, batchLimit int, processingTimeout time.Duration) ([]MessageRow, error)
-	ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error)
-	ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error)
-	// ClaimExceptions also runs the crash-loop kill backstop, which is itself a
-	// failure record -- disableDeliveryLog skips its delivery_log_<topic_id> write too.
-	ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error)
-	RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error
-	RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error
-	// ForceReclaim(ctx context.Context, messageRow *MessageRow) error
-	RecordSuccess(ctx context.Context, delivery *DeliveryRow) error
-	RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error
-	RecordTerminal(ctx context.Context, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error
-	Shutdown(ctx context.Context) error
-}
-
 type MessageRow struct {
 	Id      int64           `db:"id"`
 	Payload json.RawMessage `db:"payload"`
@@ -128,7 +94,7 @@ type DeliveryRow struct {
 	Attempts      int             `db:"attempts"`
 }
 
-type consumerDatastore[Message any] struct {
+type ConsumerDatastore[Message any] struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *retry.DatastoreRetry // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
 	MessageRetry   *retry.Retry          // exception/terminal can_run_after curve -- never Wrap()'d, just CalculateDelay
@@ -137,7 +103,7 @@ type consumerDatastore[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerDatastoreConfig) (*consumerDatastore[Message], error) {
+func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerDatastoreConfig) (*ConsumerDatastore[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -158,7 +124,7 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 		return nil, err
 	}
 
-	return &consumerDatastore[Message]{
+	return &ConsumerDatastore[Message]{
 		Datastore:      ds,
 		DatastoreRetry: dsRetry,
 		MessageRetry:   messageRetry,
@@ -166,7 +132,7 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 	}, nil
 }
 
-func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error {
+func (d *ConsumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error {
 	sql := `
 		INSERT INTO cursor (consumer_group, topic_id)
 		VALUES ($1, $2)
@@ -181,7 +147,7 @@ func (d *consumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID i
 	return nil
 }
 
-func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
+func (d *ConsumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.ensureNextPartition(ctx, topicID, partitionSize)
 	})
@@ -191,7 +157,7 @@ func (d *consumerDatastore[Message]) EnsureNextPartition(ctx context.Context, to
 // An empty partition ahead is free (no storage, no locks on the no-op CREATE,
 // invisible to retention); a missed boundary fails in-flight produces into
 // the self-heal path.
-func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
+func (d *ConsumerDatastore[Message]) ensureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
 	`, topic.MessageLogTable(topicID))
@@ -225,14 +191,16 @@ func (d *consumerDatastore[Message]) ensureNextPartition(ctx context.Context, to
 
 // DropExpiredPartitions drops each surviving partition whose newest row is
 // past ttl, skipping the active partition and (unless overridden) anything a
-// lagging group hasn't committed past yet. For both CURSOR and LIFECYCLE
-func (d *consumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
+// lagging group hasn't committed past yet -- both CURSOR and LIFECYCLE groups
+// track that through cursor.committed. disableDeliveryLog skips the
+// delivery_log_<topic_id> half of each drop's orphan cleanup.
+func (d *ConsumerDatastore[Message]) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
 	if ttl <= 0 {
 		return nil // retention disabled - partitions kept forever
 	}
@@ -284,7 +252,7 @@ func (d *consumerDatastore[Message]) dropExpiredPartitions(ctx context.Context, 
 }
 
 // existingPartitions lists surviving message_log_<topic_id>_<n> partition numbers.
-func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context, topicID int64) ([]int64, error) {
+func (d *ConsumerDatastore[Message]) existingPartitions(ctx context.Context, topicID int64) ([]int64, error) {
 	sql := fmt.Sprintf(`
 		SELECT REPLACE(c.relname, '%s_', '')::bigint AS n
 		FROM pg_inherits i
@@ -314,7 +282,7 @@ func (d *consumerDatastore[Message]) existingPartitions(ctx context.Context, top
 // cursorFloor is the waterline floor: the most-lagging group's committed
 // offset within this topic (nil if none exist yet). Scoped to topic_id so a
 // lagging group on another topic can't block this topic's drops/sweeps.
-func (d *consumerDatastore[Message]) cursorFloor(ctx context.Context, topicID int64) (*int64, error) {
+func (d *ConsumerDatastore[Message]) cursorFloor(ctx context.Context, topicID int64) (*int64, error) {
 	sql := `
 		SELECT MIN(committed) FROM cursor WHERE topic_id = $1;
 	`
@@ -325,7 +293,7 @@ func (d *consumerDatastore[Message]) cursorFloor(ctx context.Context, topicID in
 }
 
 // partitionExpired reports whether a partition's newest row is past ttl.
-func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, topicID int64, n int64, ttl time.Duration) (bool, error) {
+func (d *ConsumerDatastore[Message]) partitionExpired(ctx context.Context, topicID int64, n int64, ttl time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
 		SELECT created_at FROM %s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
@@ -347,13 +315,13 @@ func (d *consumerDatastore[Message]) partitionExpired(ctx context.Context, topic
 // SweepExpiredPartitions drains the ttl-expired prefix of every surviving
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
-func (d *consumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
 	if ttl <= 0 {
 		return nil // retention disabled
 	}
@@ -393,7 +361,7 @@ func (d *consumerDatastore[Message]) sweepExpiredPartitions(ctx context.Context,
 
 // sweepBatch deletes up to batchSize expired rows from the front of partition n,
 // plus their orphaned delivery/delivery_log rows, in one transaction.
-func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int, disableDeliveryLog bool) (int, error) {
+func (d *ConsumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int, disableDeliveryLog bool) (int, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
@@ -481,13 +449,13 @@ func (d *consumerDatastore[Message]) sweepBatch(ctx context.Context, topicID int
 }
 
 // SweepExpiredIdempotencyKeys drains idempotency_key rows older than ttl for this topic.
-func (d *consumerDatastore[Message]) SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
+func (d *ConsumerDatastore[Message]) SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.sweepExpiredIdempotencyKeys(ctx, topicID, ttl, batchSize)
 	})
 }
 
-func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
+func (d *ConsumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
 	// unlike RetentionTTL, ttl <= 0 isn't a real "keep forever" choice here --
 	// topic.Config's WithDefaults resolves an unset (zero) IdempotencyKeyTTL to
 	// 1h before a topic is ever registered, so p.Topic.IdempotencyKeyTTL
@@ -521,7 +489,7 @@ func (d *consumerDatastore[Message]) sweepExpiredIdempotencyKeys(ctx context.Con
 // is the cutoff column -- a caller-supplied key isn't guaranteed to be a
 // time-ordered UUIDv7 the way the auto-generated default is, so only the
 // server-assigned timestamp is trustworthy for this.
-func (d *consumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Context, topicID int64, cutoff time.Time, batchSize int) (int, error) {
+func (d *ConsumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Context, topicID int64, cutoff time.Time, batchSize int) (int, error) {
 	sql := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE idempotency_key IN (
@@ -541,7 +509,7 @@ func (d *consumerDatastore[Message]) sweepIdempotencyKeysBatch(ctx context.Conte
 
 // dropPartition removes the partition and its delivery/delivery_log rows in
 // one transaction.
-func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64, disableDeliveryLog bool) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -596,15 +564,20 @@ func (d *consumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 	return tx.Commit(ctx)
 }
 
-// frees the lease FIRST, token-guarded -- so a reclaimed worker's stale commit
-// bails before parking any phantom exception rows.
-func (d *consumerDatastore[Message]) Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+// Commit frees the range's lease, then parks any failures as sparse delivery
+// rows -- initialBackoff sets how long a freshly parked row waits before it's
+// first eligible for ClaimExceptions (RecordExceptionFailure's own
+// MessageRetry takes over on later retries). disableDeliveryLog skips the
+// parallel delivery_log_<topic_id> audit write.
+// The lease is freed FIRST, token-guarded -- so a reclaimed worker's stale
+// commit bails before parking any phantom exception rows.
+func (d *ConsumerDatastore[Message]) Commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.commit(ctx, topicID, consumerGroup, token, exceptions, terminals, initialBackoff, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -677,13 +650,16 @@ func (d *consumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 	return nil
 }
 
-func (d *consumerDatastore[Message]) PartialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+// PartialCommit narrows a still-open lease to lastProcessed and parks whatever
+// resolved before an interruption. The lease token isnt freed, it
+// naturally expires and gets reclaimed.
+func (d *ConsumerDatastore[Message]) PartialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.partialCommit(ctx, topicID, consumerGroup, token, lastProcessed, exceptions, terminals, initialBackoff, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -779,7 +755,7 @@ func (d *consumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 //	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursor comes back fresh, lease stale.
-func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
+func (d *ConsumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
 	var committed int64
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -789,7 +765,7 @@ func (d *consumerDatastore[Message]) AdvanceWaterline(ctx context.Context, topic
 	return committed, err
 }
 
-func (d *consumerDatastore[Message]) advanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
+func (d *ConsumerDatastore[Message]) advanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
 	// 		earliest unresolved exception (dead doesn't count -- only ready/inflight block)
@@ -825,7 +801,7 @@ func (d *consumerDatastore[Message]) advanceWaterline(ctx context.Context, topic
 
 // try to pick up a crashed range (an expired lease) and only claims fresh work
 // from the frontier if there's nothing to reclaim -- so crashed ranges drain first.
-func (d *consumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
+func (d *ConsumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
 	var claimed *ClaimedRange
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -835,7 +811,7 @@ func (d *consumerDatastore[Message]) ClaimMessagesWithCursor(ctx context.Context
 	return claimed, err
 }
 
-func (d *consumerDatastore[Message]) claimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
+func (d *ConsumerDatastore[Message]) claimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
 	reclaimed, err := d.ReclaimWithCursor(ctx, topicID, consumerGroup, limit, maxRangeReclaims, leaseDuration, disableDeliveryLog)
 	if err != nil {
 		return nil, err
@@ -853,7 +829,7 @@ func (d *consumerDatastore[Message]) claimMessagesWithCursor(ctx context.Context
 // mid-range doesn't strand those offsets. past maxRangeReclaims the range is
 // POISON -- quarantine it into the sparse exception window instead of handing it
 // out again, so one bad message can't crash-loop the whole range forever.
-func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
+func (d *ConsumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -924,7 +900,7 @@ func (d *consumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 // exact same exception-window machinery as an ordinary CursorClaim failure --
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
-func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, consumerGroup string, lease LeaseRow, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, consumerGroup string, lease LeaseRow, disableDeliveryLog bool) error {
 	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group", consumerGroup, "topic_id", lease.TopicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var parkSql string
@@ -968,7 +944,7 @@ func (d *consumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 }
 
 // readMessages reads topicID's message_log rows in (low, high], ordered by id.
-func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx, topicID int64, consumerGroup string, low, high int64) ([]MessageRow, error) {
+func (d *ConsumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx, topicID int64, consumerGroup string, low, high int64) ([]MessageRow, error) {
 	sql := fmt.Sprintf(`
 		SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1
@@ -1012,7 +988,7 @@ func (d *consumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
 }
 
-func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
+func (d *ConsumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Context, topicID int64, consumerGroup string, limit int, leaseDuration time.Duration) (*ClaimedRange, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -1187,7 +1163,7 @@ func (d *consumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 	)
 }
 
-func (d *consumerDatastore[Message]) ClaimMessages(
+func (d *ConsumerDatastore[Message]) ClaimMessages(
 	ctx context.Context,
 	tx pgx.Tx,
 	topicID int64,
@@ -1237,8 +1213,10 @@ func (d *consumerDatastore[Message]) ClaimMessages(
 	return &ClaimedRange{Lease: lease, Messages: msgs}, nil
 }
 
-// ClaimExceptions drains the sparse exception window: kill exhausted delivery rows, then claim.
-func (d *consumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
+// ClaimExceptions drains the sparse exception window: kill exhausted delivery
+// rows, then claim. The kill backstop is itself a failure record --
+// disableDeliveryLog skips its delivery_log_<topic_id> write too.
+func (d *ConsumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
 	var claimed []ClaimedException
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -1248,7 +1226,7 @@ func (d *consumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicI
 	return claimed, err
 }
 
-func (d *consumerDatastore[Message]) claimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
+func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
 	// an exception that causes a crash loop never resolves normally -- without this
 	// backstop it would reclaim forever, pinning committed below it forever.
 	var killSql string
@@ -1345,13 +1323,13 @@ func (d *consumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 }
 
 // success pop-deletes the row -- same sparse convention as never parking it: no row means resolved.
-func (d *consumerDatastore[Message]) RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
+func (d *ConsumerDatastore[Message]) RecordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordExceptionSuccess(ctx, exception)
 	})
 }
 
-func (d *consumerDatastore[Message]) recordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
+func (d *ConsumerDatastore[Message]) recordExceptionSuccess(ctx context.Context, exception *ClaimedException) error {
 	sql := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE consumer_group = $1
@@ -1372,13 +1350,13 @@ func (d *consumerDatastore[Message]) recordExceptionSuccess(ctx context.Context,
 
 // RecordExceptionFailure handles a retried exception's failure: attempts was already
 // incremented at claim time, so >= maxAttempts means this was the last try.
-func (d *consumerDatastore[Message]) RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordExceptionFailure(ctx, maxAttempts, exception, failureErr, disableDeliveryLog)
 	})
 }
 
-func (d *consumerDatastore[Message]) recordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) recordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
 	if exception.Attempts >= maxAttempts {
 		var sql string
 		if disableDeliveryLog {
@@ -1503,7 +1481,7 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 	return br.Close()
 }
 
-// func (d *consumerDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
+// func (d *ConsumerDatastore[Message]) ClaimMessages(ctx context.Context, limit int, leaseDuration time.Duration) ([]MessageRow, error) {
 // 	// FOR UPDATE SKIP LOCKED makes the sub select query safe for update ie other consumers in group cannot select while being updated:
 // 	sql := `
 // 		UPDATE message_log
@@ -1531,7 +1509,7 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 // 	return pgx.CollectRows(rows, pgx.RowToStructByName[MessageRow])
 // }
 
-// func (d *consumerDatastore[Message]) ForceReclaim(ctx context.Context, messageRow *MessageRow) error {
+// func (d *ConsumerDatastore[Message]) ForceReclaim(ctx context.Context, messageRow *MessageRow) error {
 // 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
 // 	defer cancel()
 
@@ -1556,7 +1534,7 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 // 	return nil
 // }
 
-// func (d *consumerDatastore[Message]) RecordSuccess(ctx context.Context, messageRow *MessageRow) error {
+// func (d *ConsumerDatastore[Message]) RecordSuccess(ctx context.Context, messageRow *MessageRow) error {
 // 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
 // 	defer cancel()
 
@@ -1584,7 +1562,7 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 // 	return nil
 // }
 
-// func (d *consumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error {
+// func (d *ConsumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, messageRow *MessageRow, failureErr error) error {
 // 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
 // 	defer cancel()
 
@@ -1618,7 +1596,7 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 // 	}
 // }
 
-// func (d *consumerDatastore[Message]) RecordTerminal(ctx context.Context, messageRow *MessageRow, terminalErr error) error {
+// func (d *ConsumerDatastore[Message]) RecordTerminal(ctx context.Context, messageRow *MessageRow, terminalErr error) error {
 // 	ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), *messageRow.LeaseUntil)
 // 	defer cancel()
 
@@ -1646,7 +1624,7 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 // 	return nil
 // }
 
-func (d *consumerDatastore[Message]) Shutdown(ctx context.Context) error {
+func (d *ConsumerDatastore[Message]) Shutdown(ctx context.Context) error {
 	d.Datastore.Pool.Close()
 
 	return nil

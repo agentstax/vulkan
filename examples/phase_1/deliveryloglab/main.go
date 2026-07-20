@@ -193,7 +193,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, consumer.Datastore[common.Work], *producer.MessageProducer[common.Work]) {
+func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.MessageProducer[common.Work]) {
 	cfg.Name = fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, &cfg)
 	must(err)
@@ -220,7 +220,7 @@ func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int)
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd consumer.Datastore[common.Work], wp *producer.MessageProducer[common.Work], tp *topic.Topic, n int) int64 {
+func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], wp *producer.MessageProducer[common.Work], tp *topic.Topic, n int) int64 {
 	seed(ctx, wp, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, n, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)

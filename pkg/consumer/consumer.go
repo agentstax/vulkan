@@ -20,17 +20,13 @@ import (
 // ideally idepotent func
 type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 
-type Consumer[Message any] interface {
-	Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error
-}
-
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
 type MessageConsumer[Message any] struct {
 	Group        string
 	Topic        *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
 	Queue        concurrency.Queue[MessageRow]
 	PoolLimiter  concurrency.PoolLimiter
-	Datastore    Datastore[Message]
+	Datastore    *ConsumerDatastore[Message]
 	ShutdownFunc ShutdownFunc[Message]
 	Metrics      *metrics.ConsumerMetrics
 	Config       *MessageConsumerConfig

@@ -2921,7 +2921,7 @@ describing has stopped moving (see Phase 15).
       pgx" precedent) — the reasoning belongs here, not just a shrug.
 - [ ] **`Message` generic vs. a `struct{}`-based shape** for
       producer/consumer — decide and document.
-- [ ] **`MessageProducer.Register(ctx)` — give producers the consumer's
+- [o] **`MessageProducer.Register(ctx)` — give producers the consumer's
       lifecycle pattern.** The presence/heartbeat design (TODO.md "Presence"
       entry, where the full agreed shape lives) needs a lifetime heartbeat
       goroutine per producer, and producers have no lifetime today — no ctx,
@@ -2959,7 +2959,7 @@ describing has stopped moving (see Phase 15).
       (`Queue[WorkType]`/`PressureQueue[WorkType]`) was deliberately left
       alone — its fate is tied to the still-open `Queue`/`PoolLimiter`
       dead-code decision above, not this one.
-- [ ] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
+- [o] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
       repeated on every call vs. an admin-object-holding-`ds` pattern that
       only needs `(ctx, name)` per call.
 - [x] **`topic.LogTable`/`PartitionTable`/`DeliveryTable`/`DeliveryLogTable`**
@@ -3312,7 +3312,7 @@ describing has stopped moving (see Phase 15).
 
 *New public surfaces to shape — design the surface, full implementation can
 follow in Phase 14 or after v1 where noted:*
-- [ ] **Datastore interfaces' fate** (raised in Phase 11's "Abstract the
+- [x] **Datastore interfaces' fate** (raised in Phase 11's "Abstract the
       datastore boundary" audit — briefly parked as its own short-lived
       "Code cleanup" phase before merging directly into this review, since
       it's the same constructor-coupling question this phase is already
@@ -3321,15 +3321,36 @@ follow in Phase 14 or after v1 where noted:*
       (a) fix the constructor coupling above + the `pgtype.UUID` token leak
       so it's a real seam, (b) thin it to what testing genuinely needs, or
       (c) collapse it and depend on `*datastore.PostgresDatastore` directly.
-- [ ] **Migrations-into-code.** Decide whether `topic.Register` (or a new
+      **Resolved: (c) — removed for now; revisit after the code cleanup and
+      re-add then if desired.** The producer's `Datastore` interface was
+      already deleted during the batching work on the same grounds; the
+      consumer's had the identical disease: `NewConsumerDatastore` returns
+      the concrete type and `NewMessageConsumer` constructs it internally
+      from a concrete `*datastore.PostgresDatastore`, so nothing could ever
+      substitute an alternative implementation — an unsubstitutable
+      interface is dead API surface, not a seam. Deleted `Datastore[Message]`
+      (its interface-only doc comments merged onto the concrete methods:
+      Commit's initialBackoff/park semantics, PartialCommit's
+      lease-narrowing, the disableDeliveryLog notes on
+      DropExpiredPartitions/ClaimExceptions) and the equally-dead one-method
+      `Consumer[Message]` interface (same fate as the producer's
+      `Producer[Message]`). The concrete type is now exported
+      (`ConsumerDatastore[Message]`) so labs can name it in helper
+      signatures — which also deleted routinglab's `bindable` workaround
+      interface, whose whole premise was the concrete type being
+      unexported. If a real seam is wanted post-cleanup, it gets designed
+      as one then: substitution actually possible, token/UUID types not
+      leaking pgx, thinned to what a second implementation or tests
+      genuinely need.
+- [o] **Migrations-into-code.** Decide whether `topic.Register` (or a new
       `Ensure`) auto-provisions schema, or whether the project keeps
       requiring an external `migrate` step — this is a shape decision on a
       function users call directly, not an implementation detail.
-- [ ] **Row-level security / least-privilege setup** — shape it, most likely
+- [o] **Row-level security / least-privilege setup** — shape it, most likely
       as a `topic.Config` toggle; the underlying Postgres-side plumbing can
       land after v1, but the config surface needs deciding now so it doesn't
       change shape later.
-- [ ] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
+- [o] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
       the full motivating write-up). Work through the design: does it live
       as a new `MessageConsumerConfig` hook or a wrapper around `consumerFunc`;
       per-topic or per-group state; what counts as "the same dependency" when
@@ -3337,7 +3358,7 @@ follow in Phase 14 or after v1 where noted:*
       interacts with the existing `backoff()` formula. **Design only** — the
       breaker's actual trip/cooldown logic doesn't need to ship in v1, but
       its shape does, since it changes `MessageConsumerConfig`.
-- [ ] **Chaos-testing / fixture suite** — shape both halves: (1) internal
+- [o] **Chaos-testing / fixture suite** — shape both halves: (1) internal
       test helpers this repo's own test suite can use to seed messages
       directly into `ready`/`inflight`/`dead` states and inject failures, and
       (2) whether a thin public testing package ships to library consumers
@@ -3636,16 +3657,66 @@ that Phase 13 has settled what the surface looks like.
       is open then claims everything including the straggler; three-outcome
       cursor check unchanged (incl. same-poll claim after a quiet produce,
       via the fresh-pair promotion); full lab suite green.
-- [ ] **`deliveries.status` index** — no code change; the existing "don't add
+- [x] **`deliveries.status` index** — no code change; the existing "don't add
       without real evidence" decision (TODO.md) already stands. This bullet
       just formally closes it out as reviewed-and-confirmed for v1, rather
       than leaving it looking like an open question.
-- [ ] **DELETE CASCADEs / triggers for related tables** — evaluate whether
+      **Resolved: confirmed for v1, no index.** Re-verified against the
+      current schema: `delivery_<topic_id>` still has only its
+      (consumer_group, message_id) PK, and no UPDATE touches an indexed
+      column, so every state transition keeps the HOT fast path — the
+      original cost argument is intact. The case FOR the index got weaker
+      twice since it was written: the blast-radius worry from the Phase 11
+      revisit (one lagging topic's bloat degrading every other topic's
+      queries) was fixed structurally by the per-topic delivery split, and
+      LIFECYCLE's parking took `ClaimMessagesWithLifecycle` out of live
+      traffic — `ClaimExceptions` is the only status-filtered scan left,
+      the exception window keeps its table sparse by design, and the
+      circuit-breaker analysis (TODO.md) already concluded a faster
+      exception scan during a failure burst is actively counterproductive.
+      TODO.md's "revisit with real evidence" entry stays as the reopening
+      condition.
+- [x] **DELETE CASCADEs / triggers for related tables** — evaluate whether
       they'd simplify code, what they'd cost (especially around partition
       drops), and whether they deepen the project's commitment to Postgres
       specifically (relevant context for the Datastore-interfaces decision
       in Phase 13).
-- [ ] **Default alerts** for approaching operational limits (partition count
+      **Resolved: written decision — no CASCADEs, no triggers.** Evaluated
+      twice: first on cost, then re-scored purely on maintainability.
+      CASCADEs' only code win is `deleteTopic`'s four-statement shared-table
+      loop (the per-topic tables are `DROP TABLE`s — FKs cascade rows, not
+      tables), while the cost lands on hot paths: an FK from
+      `delivery_<id>.message_id` into the message log turns O(1) partition
+      drops into per-row cascaded DELETEs, and even the "cheap" topic_id
+      FKs make every lease insert share-lock the same topic row (multixact
+      churn on a hot referenced row to protect a cold path). Deeper than
+      cost, FKs are wrong for this model: retention deliberately creates
+      orphans (`AllowDropPastCommitted`, dead DLQ rows outliving their
+      partition) that `dropPartition` already cleans set-based in one tx —
+      integrity constraints would reject states the design allows.
+      The maintainability re-score found two real debts CASCADEs/triggers
+      would pay: `deleteTopic`'s table list can drift (already guarded by
+      deletetopiclab's clean-teardown assertions), and `logSql` is
+      duplicated ~5x across the consumer datastore with per-site
+      `disableDeliveryLog` branches (the strongest trigger argument). But
+      both fixes relocate complexity rather than delete it — from code
+      that's greppable and PR-reviewable into schema state that isn't: the
+      trigger version moves the state machine's which-transitions-log
+      policy into PL/pgSQL WHEN clauses, and `DisableDeliveryLog` becomes
+      per-topic trigger existence, so identical code behaves differently
+      per topic based on live schema you can't read in a review. Same for
+      the `latest_key` upsert: already a CTE in the insert statement (one
+      round trip, batcher-pipelined) with its monotonic
+      `latest_id < EXCLUDED.latest_id` guard visible in the code — a
+      trigger does identical per-row work while hiding it. Duplication
+      over abstraction, applied across layers: five visible duplicates
+      beat one invisible one. If the logSql duplication ever bites, the
+      remedy is a shared Go helper, not a trigger. Lock-in tiebreaker:
+      plain DML/CTEs are the shallow end of Postgres commitment;
+      triggers/PL/pgSQL and FK-on-partitioned-table semantics are the deep
+      end, and they'd collide with the migrations-into-code TODO — with
+      the Phase 13 Datastore-interfaces question still open, don't deepen.
+- [o] **Default alerts** for approaching operational limits (partition count
       nearing the lock-table ceiling from the `topic.Destroy` fix above,
       compaction history depth) — build the two already-measured triggers on
       top of the existing Logger/`QueueState` metrics extension points; no

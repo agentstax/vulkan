@@ -40,16 +40,6 @@ const (
 	lifecycleGroup = "phase7.lifecycle.lab"
 )
 
-// bindable is consumer.Datastore plus Bind/ClearBindings, which aren't part of
-// that interface (they're admin operations, not something MessageConsumer itself
-// calls) -- a small local interface is enough to accept the concrete (unexported)
-// datastore struct as a helper param without naming its type.
-type bindable interface {
-	consumer.Datastore[common.Work]
-	Bind(ctx context.Context, topicID int64, consumerGroup, pattern string) error
-	ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error
-}
-
 func main() {
 	ctx := context.Background()
 
@@ -153,7 +143,7 @@ func publish(ctx context.Context, wp *producer.MessageProducer[common.Work], rou
 // resets all three groups to a clean slate and fast-forwards their cursors to
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
-func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd bindable, topicID int64, groups ...string) int64 {
+func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumer.ConsumerDatastore[common.Work], topicID int64, groups ...string) int64 {
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
 	for _, g := range groups {
 		for _, q := range []string{
@@ -176,7 +166,7 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd bindable
 	return head
 }
 
-func advance(ctx context.Context, cd consumer.Datastore[common.Work], topicID int64, group string) int64 {
+func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string) int64 {
 	c, err := cd.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c

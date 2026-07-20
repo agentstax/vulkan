@@ -333,9 +333,6 @@ we need to refactor our migration scripts into code -- ie we can't ask users to 
 
 this can be later but we need to think through security. Ideally we can easily setup and create users with least privledge AND easily enable / disable row level security on these tables or per topic
 
-we need to review and see if adding DELETE CASCADES for related tables make sense and would simplify code. If it does, does that come with any tradeoffs mainly throughput. Biggest issue I see with this is drop partitions. 
-Similar to above need to consider adding triggers to simplify code for inverse of above. think latest_keys on producer insert and delivery_log on delivery insert
-Both of above needs to consider if that solution further locks us into using postgres and if we want that or not
 
 ***IMPORTANT*** we need to understand how user schema changes happen. IE user starts topic with work struct one way -> they want to change it -> how does that work. What are the edge cases that break schema changes. How can we make it easy
 
@@ -375,3 +372,14 @@ we need to test compaction key with default produce and determine if deadlock co
 named / defined errors for users to errors.Is on for convinence. How do we want to structure that? etc
 
 does pgx send sql comments to db? if so is that wasted bytes over the network we should try to limit
+
+**Circuit breaker for a known-dead downstream dependency**
+
+**`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)
+**Migrations-into-code.**
+**Row-level security / least-privilege setup**
+
+**`MessageProducer.Register(ctx)` — give producers the consumer's lifecycle pattern.**
+
+**Default alerts**
+**Chaos-testing / fixture suite**
