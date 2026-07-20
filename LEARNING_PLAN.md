@@ -3878,10 +3878,16 @@ that Phase 13 has settled what the surface looks like.
       hoc; decide where those numbers get saved so a throughput regression
       is visible over time instead of re-derived by hand each time.
 - [ ] **Internal file-structure cleanup** — split up
-      `pkg/producer/datastore.go`, resolve the
-      `insertUnprotected`/`insertProtected` pattern question, and any other
-      internal-only readability debt surfaced along the way. No public
-      surface impact — purely for whoever reads this code next.
+      `pkg/producer/datastore.go` and any other internal-only readability
+      debt surfaced along the way (the old
+      `insertUnprotected`/`insertProtected` pattern question resolved
+      itself when the unprotected path was deleted with `SkipIdempotency`).
+      Also the stated restructure plan: the parked LIFECYCLE surface and
+      its cursor counterparts move to an internal package (still exported
+      there, but private by convention), with the true public APIs living
+      in `pkg` — this is also when the removed datastore interfaces
+      question gets its "re-add if desired" revisit (Phase 13's resolved
+      bullet).
 - [ ] **`go.mod` cleanup after factoring examples into a separate module** —
       currently blocked: examples aren't a separate module yet, so there's
       nothing to clean up. Open sub-decision: either do the examples-module
