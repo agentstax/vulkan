@@ -180,7 +180,12 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64, disableDeliveryLog bool) error {
 	createTableSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent
+			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent.
+			-- Should never optimize cache sequence like:
+			--   ALTER SEQUENCE table_name_id_seq CACHE 32
+			-- the consumer's claim fence assumes ids are issued in INSERT order, 
+			-- and a cached sequence hands out-of-order id blocks
+
 			routing_key TEXT,
 			compaction_key TEXT,
 			payload JSONB NOT NULL,
