@@ -32,6 +32,38 @@ message audit with zero happy-path writes. write cost per delivery stays either 
 improves. known caveats: no success timestamp exists to report, and the audit horizon
 is the retention TTL.
 
+intra-batch concurrency for CursorClaim: one worker's claimed range processes
+sequentially today, so a single slow (not failing) message queues the rest of the
+batch behind it -- worker latency is sum(all) instead of max(slowest). note the
+counter-argument before building: parallelism ACROSS ranges already exists (N
+workers claim disjoint ranges; claimed advances at claim time), so "run more
+workers" already scales throughput -- this only matters when a single process
+wants concurrency without more claim loops. FEATURE ONLY -- no impl decided.
+things any impl must answer (all open): partial-commit assumes a contiguous
+lastProcessed prefix, concurrent completion is non-contiguous, so mid-batch
+shutdown needs a new answer; in-order processing is CURSOR's pitch, so this is
+opt-in at minimum, and per-key ordering wants key lanes (see
+reference/waterline's lanes) not a free-for-all pool; Queue/PoolLimiter on
+MessageConsumer are vestigial (CursorClaim never touches them) and look like the
+half-built home for exactly this -- the real work item is finish or delete that
+architecture, not bolt on a second one.
+
+user-initiated defer: a way for consumerFunc to say "can't process this NOW, retry
+me at T" without it counting as a failure. today returning an error is the only
+tool -- it burns an attempt, records a failure that isn't one, and retries on the
+failure backoff curve instead of when the consumer actually wants it back. use
+cases: downstream rate limit ("retry in 60s"), a known-dead dependency (the
+circuit-breaker entry's outage scenario currently burns maxAttempts and
+dead-letters work that would have succeeded), out-of-order business state (the
+shipped event arrives before the payment row exists), deliberate off-peak
+scheduling. FEATURE ONLY -- no impl decided. candidate shapes to evaluate when
+picked up (all open): a sentinel error the library recognizes (least API churn,
+composes with the named-errors entry) vs a richer consumerFunc return; park into
+the existing exception window with can_run_after vs feed the async ordered-index
+idea below; whether a defer consumes an attempt (it's not a failure, but
+uncapped defers can loop forever) and whether it writes a delivery_log row (no
+error happened).
+
 async ordered-index claim table for LIFECYCLE (design sketch for whenever the
 lifecycle path revives as the non-FIFO substrate; from the same review): two-stage
 dispatch -- deliveries stays the durable unordered backlog, an orderer process
