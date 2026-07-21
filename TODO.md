@@ -385,7 +385,10 @@ does pgx send sql comments to db? if so is that wasted bytes over the network we
 for users public api need to abstract away required variables as plain params and optional params should be in the Config structs.
   Config structs should also be renamed as OptionalConfig to be more obvious
 
-**`MessageProducer.Register(ctx)` — give producers the consumer's lifecycle pattern.**
+**Consumer `Register`'s ctx redefinition** — producer `Register(ctx)` is built
+(lifecycle gate, `DisableGracefulShutdown`, `pkg/context.LifecycleContext`; see
+the LEARNING_PLAN bullet); the consumer's `Register` still treats ctx as
+call-scoped setup and needs the same instance-lifetime semantic.
 
 **`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)
 **Migrations-into-code.**

@@ -2934,6 +2934,68 @@ describing has stopped moving (see Phase 15).
       registration precondition on `Produce`, and the semantic redefinition
       of consumer `Register`'s ctx from call-scoped setup to the instance's
       lifetime.
+      *Producer side BUILT (lab: `producerregister`); consumer `Register`'s
+      ctx redefinition is the remaining piece.* What landed, and the
+      decisions behind it:
+      - **Constructor symmetry first**: `NewMessageProducer[T](t, ds, cfg)`
+        now takes the raw `PostgresDatastore` + renamed
+        `MessageProducerConfig` and builds `producerDatastore` AND
+        `topic.TopicDatastore` internally (matching `NewMessageConsumer`);
+        `NewProducerDatastore` went unexported — labs only ever built one to
+        hand it back. Cost: `Message` is no longer inferable, call sites
+        name it explicitly. `pkg/topic` exported its datastore
+        (`TopicDatastore`/`NewTopicDatastore`) rather than growing a
+        one-off package-level check func — fine ahead of the
+        public-API-to-root restructure.
+      - **Fail-fast topic validation** in Register: name-keyed `GetTopic` +
+        whole-struct compare against the held handle. Three distinct
+        errors: row gone → `topic.ErrTopicNotFound`; id changed →
+        `topic.ErrTopicStale` (destroyed+recreated — the handle addresses
+        dropped tables); any field drifted → `ErrTopicStale`. Id rides in
+        the struct, so the by-name fetch catches recreate; whole-struct
+        compare settled the "which fields" question (a stale handle is a
+        stale handle). No partition cold-start work — the producer's `23514`
+        heal is synchronous with the insert that needs it, so Register-time
+        ensure would only shave one round-trip once per process; revisit
+        with evidence (a producer-only topic pays the heal every boundary).
+      - **Lifecycle capture**: Register stores its ctx as `lifecycleCtx` —
+        the ctx scopes the INSTANCE, not the call. One gate helper
+        (`lifecycleErr`) guards `Produce`/`ProduceFunc`/`ProduceInTx`:
+        nil → `ErrNotRegistered`, cancelled → `ErrShutdownRequested`.
+        Per-call ctx can't carry this: HTTP request ctxs survive SIGTERM
+        and background jobs pass Background, so instance truth must live on
+        the instance. Wind-down = "accept nothing new, drain what you
+        hold": the batcher worker deliberately stays ctx-blind, so queued
+        work commits and the worker exits when the queue empties — zero new
+        batcher code. (Opposite of the circuit breaker's stop-the-buffer
+        choice: breaker-open means attempts fail; wind-down means they
+        succeed.)
+      - **Non-cancellable ctx = error, not warning**: Background/TODO
+        (`ctx.Done() == nil`) would make graceful shutdown silently not
+        exist, so Register rejects it with a multi-line teaching error
+        (first line wraps `ErrLifecycleContextNotCancellable` for
+        `errors.Is`; body shows both fixes as paste-able snippets). The
+        legit fire-and-forget persona (short-lived sequential scripts, where
+        Produce returning = committed and nothing is ever left to drain)
+        opts out explicitly via `DisableGracefulShutdown` — declared intent
+        over the cargo-cult `context.WithCancel` ritual a bare error would
+        breed. `pkg/context.LifecycleContext()` (SIGINT/SIGTERM via
+        `signal.NotifyContext`) is the guided path the error points to;
+        no-arg on purpose — anyone with a real parent ctx has outgrown the
+        helper and uses stdlib directly. Known wart: the package name
+        shadows stdlib `context` (import alias needed) — moot once the
+        public API moves to root.
+      - **Registration is once per instance**: second `Register` →
+        `ErrAlreadyRegistered`, live ("the first Register's context still
+        owns this producer's shutdown" — silent overwrite would change the
+        lifetime's owner mid-flight) or wound down ("stays down; construct
+        a new MessageProducer"). Keeps revival trivial (construction is
+        cheap) and keeps future heartbeat start/presence-row writes
+        strictly single-shot.
+      - All 27 labs swept: `DisableGracefulShutdown: true` +
+        `Register(ctx)` (they are the fire-and-forget persona);
+        `producerregister` is the lifecycle acceptance lab covering every
+        gate and error path. Full lab suite verified green.
 - [x] **`WorkType` → `Message`** rename across `pkg/producer`/`pkg/consumer`'s
       generic type param. Landed as `Message` everywhere it means "the
       caller's payload type" — `pkg/producer/datastore.go` and
