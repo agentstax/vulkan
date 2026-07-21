@@ -52,12 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	datastore, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-	wp, err := producer.NewMessageProducer(t, datastore)
+	wp, err := producer.NewMessageProducer[common.Work](t, ds, nil)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

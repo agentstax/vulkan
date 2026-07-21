@@ -23,23 +23,11 @@ type producerDatastore[Message any] struct {
 	Retry     *retry.DatastoreRetry // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger    logger.Logger
 
-	cfg ProducerDatastoreConfig // value copy, resolved+validated -- caller mutations after construction change nothing
+	cfg MessageProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 
-// cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
-func NewProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerDatastoreConfig) (*producerDatastore[Message], error) {
-	if ds == nil {
-		return nil, errors.New("datastore must not be nil")
-	}
-	if cfg == nil {
-		cfg = &ProducerDatastoreConfig{}
-	}
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
+// cfg is already resolved (WithDefaults + Validate) by NewMessageProducer.
+func newProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *MessageProducerConfig) (*producerDatastore[Message], error) {
 	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err

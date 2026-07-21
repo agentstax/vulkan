@@ -14,13 +14,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type topicDatastore struct {
+type TopicDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
 	Logger    logger.Logger
 }
 
-func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*topicDatastore, error) {
+func NewTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*TopicDatastore, error) {
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -30,14 +30,14 @@ func newTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger
 		return nil, err
 	}
 
-	return &topicDatastore{
+	return &TopicDatastore{
 		Datastore: datastore,
 		Retry:     dsRetry,
 		Logger:    log,
 	}, nil
 }
 
-func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {
+func (d *TopicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
@@ -47,7 +47,7 @@ func (d *topicDatastore) GetTopic(ctx context.Context, name string) (*Topic, err
 	return topic, err
 }
 
-func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, error) {
+func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, error) {
 	sql := `
 		SELECT
 			id,
@@ -92,7 +92,7 @@ func (d *topicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 }
 
 // UpsertTopic resolves cfg.Name to its db identity, creating it if it doesn't exist.
-func (d *topicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
@@ -102,7 +102,7 @@ func (d *topicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	return topic, err
 }
 
-func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func (d *topicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 // - Dense ID sequence -- A shared BIGSERIAL would leave each topic's ids scattered
 // across a sparse subset of it, which breaks the head/partitionSize math
 // EnsureNextPartition uses to create partitions when they are needed
-func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64, disableDeliveryLog bool) error {
+func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64, disableDeliveryLog bool) error {
 	createTableSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent.
@@ -263,13 +263,13 @@ func (d *topicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 	return err
 }
 
-func (d *topicDatastore) DeleteTopic(ctx context.Context, topic *Topic) error {
+func (d *TopicDatastore) DeleteTopic(ctx context.Context, topic *Topic) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.deleteTopic(ctx, topic)
 	})
 }
 
-func (d *topicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
+func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	if err := d.drainPartitions(ctx, iTopic.MessageLogTable(topic.Id)); err != nil {
 		if errors.Is(err, errPartitionsRemain) {
 			return fmt.Errorf("topic %s: %w -- a producer is likely still writing; stop producers and call Destroy again", topic.Name, err)

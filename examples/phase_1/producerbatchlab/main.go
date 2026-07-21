@@ -74,9 +74,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -127,9 +125,7 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	pd, err := producer.NewProducerDatastore[json.RawMessage](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[json.RawMessage](tp, ds, nil)
 	must(err)
 
 	errs := make([]error, total)
@@ -177,9 +173,7 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	pd, err := producer.NewProducerDatastore[common.Work](ds, &producer.ProducerDatastoreConfig{BatchMaxSize: 5})
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{BatchMaxSize: 5})
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -218,9 +212,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	pd, err := producer.NewProducerDatastore[common.Work](ds, &producer.ProducerDatastoreConfig{BatchMaxSize: 5})
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{BatchMaxSize: 5})
 	must(err)
 
 	for range 15 {
@@ -287,9 +279,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost

@@ -69,9 +69,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
@@ -112,9 +110,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)

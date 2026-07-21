@@ -382,6 +382,9 @@ named / defined errors for users to errors.Is on for convinence. How do we want 
 
 does pgx send sql comments to db? if so is that wasted bytes over the network we should try to limit
 
+for users public api need to abstract away required variables as plain params and optional params should be in the Config structs.
+  Config structs should also be renamed as OptionalConfig to be more obvious
+
 **`MessageProducer.Register(ctx)` — give producers the consumer's lifecycle pattern.**
 
 **`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)

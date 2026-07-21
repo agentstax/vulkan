@@ -56,9 +56,7 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 
 	head := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)

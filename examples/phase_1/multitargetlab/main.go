@@ -224,9 +224,7 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})
 	must(err)
 
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 	return tp, wp, func() { must(topic.Destroy(ctx, ds, name)) }
 }

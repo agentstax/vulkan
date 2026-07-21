@@ -14,12 +14,12 @@ type batcher[Message any] struct {
 	datastore     *producerDatastore[Message]
 	topicID       int64
 	partitionSize int64
-	cfg           ProducerDatastoreConfig
+	cfg           MessageProducerConfig
 
 	queue workQueue[batchOperation[Message]]
 }
 
-func newBatcher[Message any](datastore *producerDatastore[Message], topicID, partitionSize int64, cfg ProducerDatastoreConfig) *batcher[Message] {
+func newBatcher[Message any](datastore *producerDatastore[Message], topicID, partitionSize int64, cfg MessageProducerConfig) *batcher[Message] {
 	return &batcher[Message]{
 		datastore:     datastore,
 		topicID:       topicID,

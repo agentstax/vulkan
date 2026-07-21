@@ -3,6 +3,7 @@ package producer
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -49,23 +50,63 @@ type ProduceOptions struct {
 }
 
 type MessageProducer[Message any] struct {
-	Topic     *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
-	datastore *producerDatastore[Message]
-	batcher   *batcher[Message]
+	Topic          *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
+	datastore      *producerDatastore[Message]
+	topicDatastore *topic.TopicDatastore
+	batcher        *batcher[Message]
 }
 
-func NewMessageProducer[Message any](t *topic.Topic, datastore *producerDatastore[Message]) (*MessageProducer[Message], error) {
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewMessageProducer[Message any](t *topic.Topic, ds *coredatastore.PostgresDatastore, cfg *MessageProducerConfig) (*MessageProducer[Message], error) {
 	if t == nil {
 		return nil, errors.New("topic must not be nil")
 	}
-	if datastore == nil {
+	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
+	if cfg == nil {
+		cfg = &MessageProducerConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	producerDatastore, err := newProducerDatastore[Message](ds, cfg)
+	if err != nil {
+		return nil, err
+	}
+	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, cfg.Retry)
+	if err != nil {
+		return nil, err
+	}
+
 	return &MessageProducer[Message]{
-		Topic:     t,
-		datastore: datastore,
-		batcher:   newBatcher(datastore, t.Id, t.PartitionSize, datastore.cfg),
+		Topic:          t,
+		datastore:      producerDatastore,
+		topicDatastore: topicDatastore,
+		batcher:        newBatcher(producerDatastore, t.Id, t.PartitionSize, *cfg),
 	}, nil
+}
+
+// Register validates this producer's topic handle against the live topic row.
+func (p *MessageProducer[Message]) Register(ctx context.Context) error {
+	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return fmt.Errorf("%w: topic %q (id %d) was destroyed after this handle was resolved; re-create it with topic.Register", topic.ErrTopicNotFound, p.Topic.Name, p.Topic.Id)
+	}
+	if current.Id != p.Topic.Id {
+		return fmt.Errorf("%w: topic %q was destroyed and re-created (handle id %d, current id %d) -- this handle addresses dropped tables; resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, p.Topic.Id, current.Id)
+	}
+	if *current != *p.Topic {
+		return fmt.Errorf("%w: topic %q config changed after this handle was resolved (handle=%+v current=%+v); resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, *p.Topic, *current)
+	}
+
+	return nil
 }
 
 // Produce appends message to the topic, returning once it is durably

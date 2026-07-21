@@ -27,7 +27,7 @@ var errPartitionsRemain = errors.New("partitions remain")
 // Batched partition drain: removes a partitioned table's partitions a
 // batch at a time so no single transaction holds more than a batch's
 // worth of lock slots, leaving the parent empty for a cheap final DROP.
-func (d *topicDatastore) drainPartitions(ctx context.Context, parentTableName string) error {
+func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName string) error {
 	countSql := `SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
 	var partitionCount int64
 	if err := d.Datastore.Pool.QueryRow(ctx, countSql, parentTableName).Scan(&partitionCount); err != nil {
@@ -59,7 +59,7 @@ func (d *topicDatastore) drainPartitions(ctx context.Context, parentTableName st
 	return fmt.Errorf("%w: %s after %d drop passes", errPartitionsRemain, parentTableName, passLimit)
 }
 
-func (d *topicDatastore) listPartitions(ctx context.Context, parentTableName string) ([]string, error) {
+func (d *TopicDatastore) listPartitions(ctx context.Context, parentTableName string) ([]string, error) {
 	// to_regclass, not ::regclass -- a missing parent yields NULL, not error
 	sql := `
 		SELECT c.relname
@@ -89,7 +89,7 @@ func (d *topicDatastore) listPartitions(ctx context.Context, parentTableName str
 	return partitions, nil
 }
 
-func (d *topicDatastore) dropPartitionBatch(ctx context.Context, partitions []string) error {
+func (d *TopicDatastore) dropPartitionBatch(ctx context.Context, partitions []string) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err

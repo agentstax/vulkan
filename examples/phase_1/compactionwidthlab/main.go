@@ -54,8 +54,6 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[Record](ds, nil)
 	must(err)
-	pd, err := producer.NewProducerDatastore[Record](ds, nil)
-	must(err)
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
 	narrow, err := topic.Register(ctx, ds, &topic.Config{Name: narrowName, PartitionSize: narrowPartitionSize})
@@ -68,9 +66,9 @@ func main() {
 	defer func() { must(topic.Destroy(ctx, ds, wideName)) }()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducer, err := producer.NewMessageProducer(narrow, pd)
+	narrowProducer, err := producer.NewMessageProducer[Record](narrow, ds, nil)
 	must(err)
-	wideProducer, err := producer.NewMessageProducer(wide, pd)
+	wideProducer, err := producer.NewMessageProducer[Record](wide, ds, nil)
 	must(err)
 	seed(ctx, cd, narrowProducer, narrow.Id, narrowPartitionSize)
 	seed(ctx, cd, wideProducer, wide.Id, widePartitionSize)

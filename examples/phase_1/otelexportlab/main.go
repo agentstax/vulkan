@@ -83,9 +83,7 @@ func main() {
 	defer func() { must(provider.Shutdown(ctx)) }()
 	meter := provider.Meter("otelexportlab")
 
-	pd, err := producer.NewProducerDatastore[common.Work](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
 	must(err)
 	seed(ctx, wp, 5)
 

@@ -69,9 +69,7 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
 	must(err)
-	pd, err := producer.NewProducerDatastore[KeyedRecord](ds, nil)
-	must(err)
-	wp, err := producer.NewMessageProducer(tp, pd)
+	wp, err := producer.NewMessageProducer[KeyedRecord](tp, ds, nil)
 	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))
 

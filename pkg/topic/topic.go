@@ -13,6 +13,14 @@ import (
 // ErrTopicConfigMismatch means Register was called with a Config that differs from the topic's existing row
 var ErrTopicConfigMismatch = errors.New("topic config does not match existing topic")
 
+// ErrTopicNotFound means the named topic has no row.
+var ErrTopicNotFound = errors.New("topic not found")
+
+// ErrTopicStale means a held *Topic no longer matches its row -- the topic was
+// destroyed and re-created under the same name, or its config changed. The
+// handle's cached identity can't be trusted; resolve a fresh one with Register.
+var ErrTopicStale = errors.New("topic handle is stale")
+
 // Id addresses this topic's own message_log_<id>.
 type Topic struct {
 	Id                     int64
@@ -28,7 +36,7 @@ type Topic struct {
 
 // TODO - consider constructing an admin object which gets passed ds
 // then these Exists, Register, Destroy commands only get ctx, name/topic
-// and we no longer have to construct newTopicDatastore in each
+// and we no longer have to construct NewTopicDatastore in each
 // but might be slightly worse ux for devs
 
 func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (bool, error) {
@@ -36,7 +44,7 @@ func Exists(ctx context.Context, ds *datastore.PostgresDatastore, name string) (
 		return false, err
 	}
 
-	td, err := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
+	td, err := NewTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
 	if err != nil {
 		return false, err
 	}
@@ -61,7 +69,7 @@ func Register(ctx context.Context, ds *datastore.PostgresDatastore, cfg *Config)
 		return nil, err
 	}
 
-	td, err := newTopicDatastore(ds, cfg.Logger, cfg.Retry)
+	td, err := NewTopicDatastore(ds, cfg.Logger, cfg.Retry)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +81,7 @@ func Destroy(ctx context.Context, ds *datastore.PostgresDatastore, name string) 
 		return err
 	}
 
-	td, err := newTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
+	td, err := NewTopicDatastore(ds, nil, retry.NewDefaultRetryPolicy())
 	if err != nil {
 		return err
 	}
@@ -83,7 +91,7 @@ func Destroy(ctx context.Context, ds *datastore.PostgresDatastore, name string) 
 		return err
 	}
 	if found == nil {
-		return fmt.Errorf("topic %s not found", name)
+		return fmt.Errorf("%w: %s", ErrTopicNotFound, name)
 	}
 
 	return td.DeleteTopic(ctx, found)
