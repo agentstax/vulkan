@@ -97,6 +97,14 @@ func NewMessageProducer[Message any](t *topic.Topic, ds *coredatastore.PostgresD
 // ctx must be cancellable, unless MessageProducerConfig.DisableGracefulShutdown
 // declares otherwise.
 func (p *MessageProducer[Message]) Register(ctx context.Context) error {
+	// registration is once per instance
+	if p.lifecycleCtx != nil {
+		if p.lifecycleCtx.Err() != nil {
+			return fmt.Errorf("%w: topic %q -- this producer is wound down and stays down; construct a new MessageProducer to produce again", ErrAlreadyRegistered, p.Topic.Name)
+		}
+		return fmt.Errorf("%w: topic %q -- the context from the first Register still owns this producer's shutdown", ErrAlreadyRegistered, p.Topic.Name)
+	}
+
 	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase silently wouldn't block / drain. Reject unless declared on purpose.
 	if ctx.Done() == nil && !p.datastore.cfg.DisableGracefulShutdown {

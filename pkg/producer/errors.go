@@ -11,6 +11,11 @@ var ErrNotRegistered = errors.New("producer not registered")
 // producer refuses new work while anything already queued drains and commits.
 var ErrShutdownRequested = errors.New("producer shutdown requested")
 
+// ErrAlreadyRegistered means Register ran twice on one producer. A producer
+// registers once, and a wound-down producer stays down -- construct a new
+// MessageProducer to produce again.
+var ErrAlreadyRegistered = errors.New("producer already registered")
+
 // ErrLifecycleContextNotCancellable means Register was given a context that
 // can never be cancelled (e.g. context.Background()), so shutdown could never
 // be requested. Pass the application's shutdown context, or opt out with
