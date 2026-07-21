@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
-	"os/signal"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	vulkanctx "github.com/agentstax/vulkan/pkg/context"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -40,7 +39,7 @@ func main() {
 	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
 	// SETUP
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := vulkanctx.LifecycleContext()
 	defer stop()
 
 	const concurrencyLimit = 5

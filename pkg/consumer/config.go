@@ -48,6 +48,13 @@ type MessageConsumerConfig struct {
 	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
+
+	// DisableGracefulShutdown - lets Register accept a lifecycle context that
+	// can never be cancelled (e.g. context.Background()), this leaves Consume's
+	// ctx as the only shutdown signal.
+	// Prefer passing the application's shutdown context to Register.
+	// Default: false.
+	DisableGracefulShutdown bool
 }
 
 func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {

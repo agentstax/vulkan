@@ -16,6 +16,7 @@ import (
 	"os"
 
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -49,12 +50,12 @@ func main() {
 	// ===== produce before Register =====
 	step("produce before Register -- expect ErrNotRegistered")
 	_, err = p.Produce(ctx, &Message{Data: "too early"}, producer.ProduceOptions{})
-	requireIs(err, producer.ErrNotRegistered)
+	requireIs(err, vulkanerrors.ErrNotRegistered)
 
 	// ===== non-cancellable lifecycle context =====
 	step("Register(context.Background()) without opting out -- expect the teaching error")
 	err = p.Register(context.Background())
-	requireIs(err, producer.ErrLifecycleContextNotCancellable)
+	requireIs(err, vulkanerrors.ErrLifecycleContextNotCancellable)
 
 	// ===== the graceful path =====
 	step("Register with the real lifecycle context, then produce")
@@ -69,12 +70,12 @@ func main() {
 	step("cancel the lifecycle context -- expect ErrShutdownRequested, call ctx untouched")
 	stop() // stands in for SIGINT/SIGTERM: cancels the lifecycle context
 	_, err = p.Produce(ctx, &Message{Data: "too late"}, producer.ProduceOptions{})
-	requireIs(err, producer.ErrShutdownRequested)
+	requireIs(err, vulkanerrors.ErrShutdownRequested)
 
 	// ===== registration is once per instance =====
 	step("Register again after wind-down -- expect ErrAlreadyRegistered")
 	err = p.Register(ctx)
-	requireIs(err, producer.ErrAlreadyRegistered)
+	requireIs(err, vulkanerrors.ErrAlreadyRegistered)
 
 	// ===== fire-and-forget escape hatch =====
 	step("fresh producer with DisableGracefulShutdown -- Background is accepted")

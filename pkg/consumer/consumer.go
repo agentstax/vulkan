@@ -12,6 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
@@ -31,6 +32,9 @@ type MessageConsumer[Message any] struct {
 	Metrics      *metrics.ConsumerMetrics
 	Config       *MessageConsumerConfig
 	Logger       logger.Logger // copied from Config.Logger at construction
+
+	topicDatastore *topic.TopicDatastore
+	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -78,22 +82,61 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 		return nil, err
 	}
 
+	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	consumer := &MessageConsumer[Message]{
-		Group:        group,
-		Topic:        t,
-		Queue:        queue,
-		PoolLimiter:  poolLimiter,
-		Datastore:    consumerDatastore,
-		ShutdownFunc: DefaultShutdownFunc[Message],
-		Metrics:      metrics,
-		Config:       cfg,
-		Logger:       cfg.Logger,
+		Group:          group,
+		Topic:          t,
+		Queue:          queue,
+		PoolLimiter:    poolLimiter,
+		Datastore:      consumerDatastore,
+		ShutdownFunc:   DefaultShutdownFunc[Message],
+		Metrics:        metrics,
+		Config:         cfg,
+		Logger:         cfg.Logger,
+		topicDatastore: topicDatastore,
 	}
 
 	return consumer, nil
 }
 
+// Register validates this consumer's topic handle against the live topic row,
+// sets up its cursor, and starts the consumer's lifecycle.
+//
+// ctx must be cancellable, unless MessageConsumerConfig.DisableGracefulShutdown
+// declares otherwise.
 func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
+	// registration is once per instance
+	if p.lifecycleCtx != nil {
+		if p.lifecycleCtx.Err() != nil {
+			return fmt.Errorf("%w: consumer group %q on topic %q is wound down and stays down; construct a new MessageConsumer to consume again", vulkanerrors.ErrAlreadyRegistered, p.Group, p.Topic.Name)
+		}
+		return fmt.Errorf("%w: consumer group %q on topic %q -- the context from the first Register still owns this consumer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.Group, p.Topic.Name)
+	}
+
+	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
+	// shutdown phase silently wouldn't exist. Reject unless declared on purpose.
+	if ctx.Done() == nil && !p.Config.DisableGracefulShutdown {
+		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.Group, p.Topic.Name, lifecycleContextHelp)
+	}
+
+	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return fmt.Errorf("%w: topic %q (id %d) was destroyed after this handle was resolved; re-create it with topic.Register", topic.ErrTopicNotFound, p.Topic.Name, p.Topic.Id)
+	}
+	if current.Id != p.Topic.Id {
+		return fmt.Errorf("%w: topic %q was destroyed and re-created (handle id %d, current id %d) -- this handle addresses dropped tables; resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, p.Topic.Id, current.Id)
+	}
+	if *current != *p.Topic {
+		return fmt.Errorf("%w: topic %q config changed after this handle was resolved (handle=%+v current=%+v); resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, *p.Topic, *current)
+	}
+
 	// both types track the log through this row:
 	//   - CURSOR claims through it
 	//   - LIFECYCLE records fan-out progress in committed
@@ -106,41 +149,24 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 		return err
 	}
 
+	// tracked for graceful shutdown draining / handling
+	p.lifecycleCtx = ctx
+
 	return nil
 }
 
-// Janitor is the retention/partition-maintenance loop: create-ahead runs every
-// tick so a producer never outruns it for long; drop runs alongside it, a
-// no-op while RetentionTTL is zero (the default -- retention is opt-in).
-//
-// Topic-scoped, not per-group -- every operation below takes topicID only
-func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
-	ticker := time.NewTicker(p.Topic.JanitorPollRate)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize); err != nil {
-				return err
-			}
-			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.DisableDeliveryLog); err != nil {
-				return err
-			}
-			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.JanitorSweepBatchSize, p.Topic.DisableDeliveryLog); err != nil {
-				return err
-			}
-			if err := p.Datastore.SweepExpiredIdempotencyKeys(ctx, p.Topic.Id, p.Topic.IdempotencyKeyTTL, p.Topic.JanitorSweepBatchSize); err != nil {
-				return err
-			}
-		}
-	}
-}
-
+// Consume claims and processes messages with consumerFunc, blocking until
+// stopped: cancel ctx to stop this call, or cancel the context given to
+// Register to wind the whole consumer down. A requested stop from either side
+// shuts down in-flight work and returns nil
 func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	errGroup, ctx := errgroup.WithContext(ctx)
+	if err := p.lifecycleErr(); err != nil {
+		return err
+	}
+	runCtx, cancel := p.runCtx(ctx)
+	defer cancel()
+
+	errGroup, ctx := errgroup.WithContext(runCtx)
 
 	p.Logger.InfoContext(ctx, "consumer deliveries projector starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
@@ -164,12 +190,18 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 
 	p.Logger.InfoContext(ctx, "consumer janitor starting", "group", p.Group, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
-		return p.Janitor(ctx)
+		return p.janitor(ctx)
 	})
 
 	err := errGroup.Wait()
 	if errors.Is(err, context.Canceled) {
-		err = nil // requested shutdown, not a failure per say
+		// requested shutdown (either side), not a failure -- log which side asked
+		reason := "caller context cancelled"
+		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
+			reason = "lifecycle context cancelled"
+		}
+		p.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", p.Group, "topic", p.Topic.Id)
+		err = nil
 	}
 
 	// always attempt to gracefully shutdown
@@ -177,6 +209,67 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 
 	// any nil errors are discarded (so both nil -> returns nil)
 	return errors.Join(err, errShutdown)
+}
+
+// Janitor runs the retention/partition-maintenance loop standalone, under the
+// same rules as Consume: Register first, either ctx or the lifecycle context
+// stops it, and a requested stop from either side returns nil.
+//
+// Public so it can run as its own process or pod: it is topic-scoped, not
+// per-group, so one janitor serves every group on the topic -- a dedicated
+// maintenance deployment beats N consumers redundantly ticking the same
+// drops. Consume also runs this loop internally, so a single-process setup
+// needs nothing extra.
+func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
+	if err := p.lifecycleErr(); err != nil {
+		return err
+	}
+	runCtx, cancel := p.runCtx(ctx)
+	defer cancel()
+
+	err := p.janitor(runCtx)
+
+	if errors.Is(err, context.Canceled) {
+		// requested shutdown (either side), not a failure -- log which side asked
+		reason := "caller context cancelled"
+		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
+			reason = "lifecycle context cancelled"
+		}
+		p.Logger.InfoContext(ctx, "janitor stopped", "reason", reason, "topic", p.Topic.Id)
+		return nil
+	}
+
+	return err
+}
+
+// janitor is the retention/partition-maintenance loop: create-ahead runs every
+// tick so a producer never outruns it for long; drop runs alongside it, a
+// no-op while RetentionTTL is zero (the default -- retention is opt-in).
+//
+// Topic-scoped, not per-group -- every operation below takes topicID only
+func (p *MessageConsumer[Message]) janitor(ctx context.Context) error {
+	ticker := time.NewTicker(p.Topic.JanitorPollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize); err != nil {
+				return err
+			}
+			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.DisableDeliveryLog); err != nil {
+				return err
+			}
+			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.JanitorSweepBatchSize, p.Topic.DisableDeliveryLog); err != nil {
+				return err
+			}
+			if err := p.Datastore.SweepExpiredIdempotencyKeys(ctx, p.Topic.Id, p.Topic.IdempotencyKeyTTL, p.Topic.JanitorSweepBatchSize); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // RollWaterline is the lazy waterline roller: off the hot path, it periodically
@@ -457,4 +550,35 @@ func (p *MessageConsumer[Message]) Shutdown(ctx context.Context) error {
 	defer cancel()
 
 	return p.ShutdownFunc(shutdownCtx, p)
+}
+
+// runCtx merges a call's ctx with the instance lifecycle: whichever cancels
+// first stops the loops. A lifecycle cancellation carries ErrShutdownRequested
+// as the cause, so exits can tell app shutdown from the caller's own cancel.
+func (p *MessageConsumer[Message]) runCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	merged, cancel := context.WithCancelCause(ctx)
+	stopWatch := context.AfterFunc(p.lifecycleCtx, func() {
+		// if lifecycleCtx is cancelled this is called
+		cancel(vulkanerrors.ErrShutdownRequested)
+	})
+
+	mergedCancel := func() {
+		// if ctx is cancelled this is called
+		stopWatch() // unregister AfterFunc (doesn't trigger it)
+		cancel(nil) // nil = routine shutdown, ctx.Err() returns context.Canceled
+	}
+
+	return merged, mergedCancel
+}
+
+// lifecycleErr is the entrypoint gate: loops only start between Register and
+// its ctx's cancellation.
+func (p *MessageConsumer[Message]) lifecycleErr() error {
+	if p.lifecycleCtx == nil {
+		return fmt.Errorf("%w: consumer group %q on topic %q -- call Register with the application's lifetime context before consuming", vulkanerrors.ErrNotRegistered, p.Group, p.Topic.Name)
+	}
+	if err := p.lifecycleCtx.Err(); err != nil {
+		return fmt.Errorf("%w: consumer group %q on topic %q -- the lifetime context passed to Register is cancelled (%v)", vulkanerrors.ErrShutdownRequested, p.Group, p.Topic.Name, err)
+	}
+	return nil
 }

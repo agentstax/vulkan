@@ -94,10 +94,11 @@ func main() {
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:       5,
-		WorkTimeout:      500 * time.Millisecond,
-		WorkTimeoutGrace: 50 * time.Millisecond,
-		Meter:            meter, // <- the only line that matters: everything above is exporter plumbing
+		DisableGracefulShutdown: true,
+		BatchLimit:              5,
+		WorkTimeout:             500 * time.Millisecond,
+		WorkTimeoutGrace:        50 * time.Millisecond,
+		Meter:                   meter, // <- the only line that matters: everything above is exporter plumbing
 	})
 	must(err)
 	must(wc.Register(ctx))

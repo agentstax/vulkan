@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
@@ -100,15 +101,15 @@ func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 	// registration is once per instance
 	if p.lifecycleCtx != nil {
 		if p.lifecycleCtx.Err() != nil {
-			return fmt.Errorf("%w: topic %q -- this producer is wound down and stays down; construct a new MessageProducer to produce again", ErrAlreadyRegistered, p.Topic.Name)
+			return fmt.Errorf("%w: producer for topic %q is wound down and stays down; construct a new MessageProducer to produce again", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
 		}
-		return fmt.Errorf("%w: topic %q -- the context from the first Register still owns this producer's shutdown", ErrAlreadyRegistered, p.Topic.Name)
+		return fmt.Errorf("%w: producer for topic %q -- the context from the first Register still owns this producer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
 	}
 
 	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase silently wouldn't block / drain. Reject unless declared on purpose.
 	if ctx.Done() == nil && !p.datastore.cfg.DisableGracefulShutdown {
-		return fmt.Errorf("%w: topic %q\n%s", ErrLifecycleContextNotCancellable, p.Topic.Name, lifecycleContextHelp)
+		return fmt.Errorf("%w: producer for topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.Topic.Name, lifecycleContextHelp)
 	}
 
 	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
@@ -213,10 +214,10 @@ func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, tra
 // and its ctx's cancellation.
 func (p *MessageProducer[Message]) lifecycleErr() error {
 	if p.lifecycleCtx == nil {
-		return fmt.Errorf("%w: topic %q -- call Register with the application's lifetime context before producing", ErrNotRegistered, p.Topic.Name)
+		return fmt.Errorf("%w: producer for topic %q -- call Register with the application's lifetime context before producing", vulkanerrors.ErrNotRegistered, p.Topic.Name)
 	}
 	if err := p.lifecycleCtx.Err(); err != nil {
-		return fmt.Errorf("%w: topic %q -- the lifetime context passed to Register is cancelled (%v); queued messages still commit, new ones are refused", ErrShutdownRequested, p.Topic.Name, err)
+		return fmt.Errorf("%w: producer for topic %q -- the lifetime context passed to Register is cancelled (%v); queued messages still commit, new ones are refused", vulkanerrors.ErrShutdownRequested, p.Topic.Name, err)
 	}
 	return nil
 }

@@ -66,6 +66,7 @@ func main() {
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
+		DisableGracefulShutdown: true,
 		BatchLimit:              batch,
 		WorkTimeout:             1 * time.Second,
 		WorkTimeoutGrace:        100 * time.Millisecond,

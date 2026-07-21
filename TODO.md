@@ -385,6 +385,8 @@ does pgx send sql comments to db? if so is that wasted bytes over the network we
 for users public api need to abstract away required variables as plain params and optional params should be in the Config structs.
   Config structs should also be renamed as OptionalConfig to be more obvious
 
+consider abstracting out the claim fence transaction xmax logic into its own async ticker and claimers read from shared mem var. It would better abstract away that complex logic and we can have the poll rate much faster because it is a pretty cheap query
+
 **Consumer `Register`'s ctx redefinition** — producer `Register(ctx)` is built
 (lifecycle gate, `DisableGracefulShutdown`, `pkg/context.LifecycleContext`; see
 the LEARNING_PLAN bullet); the consumer's `Register` still treats ctx as

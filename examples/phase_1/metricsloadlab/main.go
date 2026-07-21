@@ -79,9 +79,10 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	// variable left between the two runs is how long RollWaterline's own
 	// ticker takes to fire, isolating the thing this scenario measures.
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
-		BatchLimit:        rows * 2,
-		ClaimPollRate:     50 * time.Millisecond,
-		WaterlinePollRate: pollRate,
+		DisableGracefulShutdown: true,
+		BatchLimit:              rows * 2,
+		ClaimPollRate:           50 * time.Millisecond,
+		WaterlinePollRate:       pollRate,
 	})
 	must(err)
 	must(wc.Register(ctx))
@@ -129,6 +130,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
+		DisableGracefulShutdown: true,
 		BatchLimit:              20,
 		ClaimPollRate:           100 * time.Millisecond,
 		WaterlinePollRate:       100 * time.Millisecond,
