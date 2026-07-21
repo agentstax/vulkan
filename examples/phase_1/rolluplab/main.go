@@ -100,8 +100,9 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
@@ -168,8 +169,9 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
@@ -244,8 +246,9 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, int(n))
 
@@ -291,8 +294,9 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, total)
 

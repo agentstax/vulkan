@@ -69,8 +69,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[KeyedRecord](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[KeyedRecord](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))
 
 	const lease = 2 * time.Second

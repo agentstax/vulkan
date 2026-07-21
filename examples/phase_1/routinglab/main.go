@@ -56,8 +56,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	head := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
 	fmt.Printf("topic=%q id=%d message_log head = %d\n", topicName, tp.Id, head)

@@ -63,8 +63,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
 	for range 4 {

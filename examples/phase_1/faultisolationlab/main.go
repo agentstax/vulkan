@@ -75,8 +75,9 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
@@ -135,8 +136,9 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)

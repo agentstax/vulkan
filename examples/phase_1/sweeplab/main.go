@@ -53,8 +53,9 @@ func main() {
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
 

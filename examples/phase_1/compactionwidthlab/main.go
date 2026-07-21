@@ -66,10 +66,12 @@ func main() {
 	defer func() { must(topic.Destroy(ctx, ds, wideName)) }()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducer, err := producer.NewMessageProducer[Record](narrow, ds, nil)
+	narrowProducer, err := producer.NewMessageProducer[Record](narrow, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wideProducer, err := producer.NewMessageProducer[Record](wide, ds, nil)
+	must(narrowProducer.Register(ctx))
+	wideProducer, err := producer.NewMessageProducer[Record](wide, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wideProducer.Register(ctx))
 	seed(ctx, cd, narrowProducer, narrow.Id, narrowPartitionSize)
 	seed(ctx, cd, wideProducer, wide.Id, widePartitionSize)
 

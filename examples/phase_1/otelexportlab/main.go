@@ -83,8 +83,9 @@ func main() {
 	defer func() { must(provider.Shutdown(ctx)) }()
 	meter := provider.Meter("otelexportlab")
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	seed(ctx, wp, 5)
 
 	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](20)

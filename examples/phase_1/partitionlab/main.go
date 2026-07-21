@@ -49,8 +49,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
 	for range 14 {

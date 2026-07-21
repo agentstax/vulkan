@@ -201,8 +201,9 @@ func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix s
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	return tp, cd, wp
 }
 

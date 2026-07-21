@@ -64,8 +64,9 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	unkeyedMs := timeSequential(ctx, wp, n, func(i int) string { return "" })
 	freshKeyMs := timeSequential(ctx, wp, n, func(i int) string { return fmt.Sprintf("fresh-%d", i) })
@@ -135,8 +136,9 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: largePartitionSize})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	start := time.Now()
 	var wg sync.WaitGroup

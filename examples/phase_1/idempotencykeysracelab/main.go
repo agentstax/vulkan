@@ -61,8 +61,9 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	key := uuid.Must(uuid.NewV7())
 
@@ -100,8 +101,9 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *coredatastore.Postg
 	must(err)
 	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 
 	var wg sync.WaitGroup
 	for range n {

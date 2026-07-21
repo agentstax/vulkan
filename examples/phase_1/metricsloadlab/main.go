@@ -64,8 +64,9 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	const rows = 100
 	seed(ctx, wp, rows)
 
@@ -116,8 +117,9 @@ func runLiveReadoutScenario(ctx context.Context) {
 	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, nil)
+	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(wp.Register(ctx))
 	const rows = 60
 	seed(ctx, wp, rows)
 
