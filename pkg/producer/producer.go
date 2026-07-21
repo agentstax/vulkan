@@ -93,7 +93,16 @@ func NewMessageProducer[Message any](t *topic.Topic, ds *coredatastore.PostgresD
 
 // Register validates this producer's topic handle against the live topic row
 // and starts the producer's lifecycle.
+//
+// ctx must be cancellable, unless MessageProducerConfig.DisableGracefulShutdown
+// declares otherwise.
 func (p *MessageProducer[Message]) Register(ctx context.Context) error {
+	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
+	// shutdown phase silently wouldn't block / drain. Reject unless declared on purpose.
+	if ctx.Done() == nil && !p.datastore.cfg.DisableGracefulShutdown {
+		return fmt.Errorf("%w: topic %q\n%s", ErrLifecycleContextNotCancellable, p.Topic.Name, lifecycleContextHelp)
+	}
+
 	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
 	if err != nil {
 		return err

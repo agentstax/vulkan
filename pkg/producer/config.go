@@ -31,6 +31,12 @@ type MessageProducerConfig struct {
 	// real outcome. Keep it above BatchAttemptTimeout.
 	// Default: 15s. Negative: abandon immediately.
 	BatchShutdownGrace time.Duration
+
+	// DisableGracefulShutdown - lets Register accept a non-cancellable
+	// lifecycle context (e.g. context.Background()). For short-lived
+	// scripts and jobs only -- a service should pass its shutdown context.
+	// Default: false.
+	DisableGracefulShutdown bool
 }
 
 func (c *MessageProducerConfig) WithDefaults() *MessageProducerConfig {
