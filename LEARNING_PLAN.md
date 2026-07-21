@@ -2922,7 +2922,7 @@ describing has stopped moving (see Phase 15).
       pgx" precedent) — the reasoning belongs here, not just a shrug.
 - [ ] **`Message` generic vs. a `struct{}`-based shape** for
       producer/consumer — decide and document.
-- [o] **`MessageProducer.Register(ctx)` — give producers the consumer's
+- [x] **`MessageProducer.Register(ctx)` — give producers the consumer's
       lifecycle pattern.** The presence/heartbeat design (TODO.md "Presence"
       entry, where the full agreed shape lives) needs a lifetime heartbeat
       goroutine per producer, and producers have no lifetime today — no ctx,
@@ -2934,9 +2934,9 @@ describing has stopped moving (see Phase 15).
       registration precondition on `Produce`, and the semantic redefinition
       of consumer `Register`'s ctx from call-scoped setup to the instance's
       lifetime.
-      *Producer side BUILT (lab: `producerregister`); consumer `Register`'s
-      ctx redefinition is the remaining piece.* What landed, and the
-      decisions behind it:
+      *BOTH sides BUILT (lab: `producerregister`; consumer verified via
+      scratch checks + full lab pass). Producer decisions first, consumer
+      block at the end.* What landed, and the decisions behind it:
       - **Constructor symmetry first**: `NewMessageProducer[T](t, ds, cfg)`
         now takes the raw `PostgresDatastore` + renamed
         `MessageProducerConfig` and builds `producerDatastore` AND
@@ -2996,6 +2996,57 @@ describing has stopped moving (see Phase 15).
         `Register(ctx)` (they are the fire-and-forget persona);
         `producerregister` is the lifecycle acceptance lab covering every
         gate and error path. Full lab suite verified green.
+      - **Consumer side — same model, one structural difference.** Consumer
+        `Register(ctx)` mirrors the producer verbatim: once-per-instance,
+        cancellability check + its own `DisableGracefulShutdown` (justified
+        differently — "Consume's ctx is my only off-switch" is a coherent
+        style, not a script persona), topic-handle validation, then its
+        original cursor/partition duties, then lifecycle capture. The
+        difference: `Consume(ctx)`/`Janitor(ctx)` are LOOPS, so their ctx
+        params already mean "this session" — the API stays untouched
+        (rejected: dropping the param; rejected: same-ref validation, which
+        bans deriving child ctxs and can't detect ancestry anyway) and each
+        public entrypoint runs its loops under a MERGED ctx
+        (`WithCancelCause` + `AfterFunc(lifecycleCtx)`): whichever side
+        cancels first stops the session, most-restrictive wins. One rule
+        everywhere: the lifetime enters at Register; every other ctx is
+        call-scoped.
+      - **Requested stop returns nil from either side** — the producer errors
+        on wind-down because a gated `Produce` call is REFUSED work; a
+        `Consume` session ending on wind-down is COMPLETED work, and
+        returning an error would make every clean SIGTERM deploy log a
+        failure. Attribution moved to an info log ("consumer stopped,
+        reason=lifecycle/caller context cancelled" — start/stop symmetric in
+        the log stream), and restart loops still terminate because the NEXT
+        call hits the gate's `ErrShutdownRequested`.
+      - **Janitor split public/private**: public `Janitor(ctx)` = gate +
+        merged ctx, documented as runnable in its own process/pod
+        (topic-scoped — one janitor serves every group; a maintenance
+        deployment beats N consumers redundantly ticking the same drops);
+        private `janitor(runCtx)` is the loop, and `Consume` runs the
+        private one. The other exported loop methods
+        (`Project`/`Process`/`RollWaterline`/`DrainExceptions`/`CursorClaim`)
+        stay ungated side-doors for now — their fate is the internal-package
+        restructure's. Raw `ConsumerDatastore` methods deliberately ungated
+        (plumbing layer, labs/ops drive it directly).
+      - **Sentinels hoisted to `pkg/errors`** (component-neutral strings:
+        "not registered", "shutdown requested", ...; wrap sites add
+        "producer for topic X" / "consumer group X on topic Y"). Teaching
+        templates stay per-package since their snippets name package types.
+        Same stdlib-shadowing wart as `pkg/context`; same moot-at-root
+        answer.
+      - Consumer sweep was small: `bench`/`crashlab`/`variance` already
+        register with cancellable ctxs; `metricsreactionlab`/
+        `otelexportlab`/`metricsloadlab` (Background) got the opt-out; the
+        consumer CLI now dogfoods `LifecycleContext()`; the `CursorClaim`
+        labs needed nothing.
+      - **Found while verifying, NOT fixed (TODO.md entry)**: `Consume`'s
+        exit runs `DefaultShutdownFunc` → `ConsumerDatastore.Shutdown`,
+        which closes the SHARED pgx pool — after any `Consume` returns,
+        every other producer/consumer on that `PostgresDatastore` gets
+        "closed pool". Labs never saw it (they exit right after); the
+        lifecycle model makes it glaring — an instance winding itself down
+        shouldn't kill the process-wide pool.
 - [x] **`WorkType` → `Message`** rename across `pkg/producer`/`pkg/consumer`'s
       generic type param. Landed as `Message` everywhere it means "the
       caller's payload type" — `pkg/producer/datastore.go` and

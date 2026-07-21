@@ -387,10 +387,18 @@ for users public api need to abstract away required variables as plain params an
 
 consider abstracting out the claim fence transaction xmax logic into its own async ticker and claimers read from shared mem var. It would better abstract away that complex logic and we can have the poll rate much faster because it is a pretty cheap query
 
-**Consumer `Register`'s ctx redefinition** — producer `Register(ctx)` is built
-(lifecycle gate, `DisableGracefulShutdown`, `pkg/context.LifecycleContext`; see
-the LEARNING_PLAN bullet); the consumer's `Register` still treats ctx as
-call-scoped setup and needs the same instance-lifetime semantic.
+DefaultShutdownFunc closes the SHARED pgx pool: Consume's exit runs
+ConsumerDatastore.Shutdown -> PostgresDatastore pool Close, so after any one
+Consume returns, every other producer/consumer sharing that PostgresDatastore
+gets "closed pool" errors. Labs exit right after Consume so it never surfaced;
+the lifecycle model makes it glaring -- an instance winding itself down
+shouldn't kill the process-wide pool. Likely fix: the default shutdown stops
+owning the datastore's lifetime (the app that constructed the ds closes it).
+- Does it make sense for users to even be concerned about a pool?
+- Should we completely abstract it away?
+- During register should we define pool 'members' and auto shutdown pool when no more members?
+
+We should contribute to postgres via adding similar functionality MIN_ACTIVE_ROWVERSION that sql server has to make claim fence easier for us and others
 
 **`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)
 **Migrations-into-code.**
