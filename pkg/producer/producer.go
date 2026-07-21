@@ -50,10 +50,11 @@ type ProduceOptions struct {
 }
 
 type MessageProducer[Message any] struct {
-	Topic          *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
+	Topic          *topic.Topic
 	datastore      *producerDatastore[Message]
 	topicDatastore *topic.TopicDatastore
 	batcher        *batcher[Message]
+	lifecycleCtx   context.Context
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -90,7 +91,8 @@ func NewMessageProducer[Message any](t *topic.Topic, ds *coredatastore.PostgresD
 	}, nil
 }
 
-// Register validates this producer's topic handle against the live topic row.
+// Register validates this producer's topic handle against the live topic row
+// and starts the producer's lifecycle.
 func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
 	if err != nil {
@@ -106,6 +108,9 @@ func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: topic %q config changed after this handle was resolved (handle=%+v current=%+v); resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, *p.Topic, *current)
 	}
 
+	// tracked for graceful shutdown draining / handling
+	p.lifecycleCtx = ctx
+
 	return nil
 }
 
@@ -118,6 +123,10 @@ func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 // (or your own crash) without double-publishing, supply an IdempotencyKey:
 // the rerun dedups against whatever actually landed.
 func (p *MessageProducer[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
+	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
 	if opts.IdempotencyKey != uuid.Nil {
@@ -130,6 +139,10 @@ func (p *MessageProducer[Message]) Produce(ctx context.Context, message *Message
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
 func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+
 	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 	if err != nil {
 		return nil, err
@@ -150,6 +163,10 @@ func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
 func (p *MessageProducer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+
 	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }
 
@@ -173,4 +190,16 @@ func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, tra
 	}
 
 	return tx.Commit(ctx)
+}
+
+// lifecycleErr is the produce gate: work is only accepted between Register
+// and its ctx's cancellation.
+func (p *MessageProducer[Message]) lifecycleErr() error {
+	if p.lifecycleCtx == nil {
+		return fmt.Errorf("%w: topic %q -- call Register with the application's lifetime context before producing", ErrNotRegistered, p.Topic.Name)
+	}
+	if err := p.lifecycleCtx.Err(); err != nil {
+		return fmt.Errorf("%w: topic %q -- the lifetime context passed to Register is cancelled (%v); queued messages still commit, new ones are refused", ErrShutdownRequested, p.Topic.Name, err)
+	}
+	return nil
 }
