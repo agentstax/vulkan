@@ -68,13 +68,13 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	// ===== real OTel SDK + real Prometheus exporter, wired the way an
 	// operator actually would: a MeterProvider backed by a Prometheus

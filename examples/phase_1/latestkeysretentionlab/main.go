@@ -62,13 +62,13 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	step("dropPartition: a whole-partition rollover reaps a dormant key's last row")
 
 	const partitionSize = int64(4)
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.drop.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -102,13 +102,13 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	step("sweepBatch: a low-volume tail reaps a dormant key's last row individually")
 
 	const partitionSize = int64(1000000) // matches migration 001's original width -- never rolls
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.sweep.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)

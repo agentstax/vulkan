@@ -40,14 +40,14 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	const topicName = "test.producerregister"
-	_ = mAdmin.DestroyTopic(ctx, topicName) // clean slate from any crashed prior run
+	_ = mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	p, err := producer.NewMessageProducer[Message](tp, ds, nil)
 	must(err)

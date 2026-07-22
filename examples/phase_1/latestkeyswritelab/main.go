@@ -61,13 +61,13 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	step("fixed cost: sequential publishes, no contention -- unkeyed vs. fresh-key INSERT vs. same-key UPDATE")
 
 	const n = 500
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.latestkeyswritelab.fixed.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: largePartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -91,20 +91,20 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 	const goroutines = 50
 	const perGoroutine = 20
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	manyKeysMs, manyKeysTopic := timeConcurrent(ctx, ds, "manykeys", goroutines, perGoroutine, func(g, i int) string {
 		return fmt.Sprintf("key-%d", g) // each goroutine owns a distinct key -- no cross-goroutine contention
 	})
-	defer func() { must(mAdmin.DestroyTopic(ctx, manyKeysTopic)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, manyKeysTopic, admin.DestroyOptions{Force: true})) }()
 
 	before := dumpTableStats(ctx, ds, "latest_key")
 
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
-	defer func() { must(mAdmin.DestroyTopic(ctx, oneKeyTopic)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, oneKeyTopic, admin.DestroyOptions{Force: true})) }()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
 	after := dumpTableStats(ctx, ds, "latest_key")
@@ -140,7 +140,7 @@ func timeSequential(ctx context.Context, wp *producer.MessageProducer[common.Wor
 // publishes across `goroutines` concurrent workers, and returns total
 // elapsed time plus the topic name (caller destroys it once done reading it).
 func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("phase8c.latestkeyswritelab.%s.%d", label, time.Now().UnixNano())

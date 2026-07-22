@@ -67,7 +67,7 @@ func main() {
 	}
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

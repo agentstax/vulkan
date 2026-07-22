@@ -57,18 +57,18 @@ func main() {
 	cd, err := consumer.NewConsumerDatastore[Record](ds, nil)
 	must(err)
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
 	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, &topic.Config{PartitionSize: narrowPartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, narrowName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, narrowName, admin.DestroyOptions{Force: true})) }()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
 	wide, err := mAdmin.RegisterTopic(ctx, wideName, &topic.Config{PartitionSize: widePartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, wideName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, wideName, admin.DestroyOptions{Force: true})) }()
 
 	step("seed both topics with the identical 40-message workload")
 	narrowProducer, err := producer.NewMessageProducer[Record](narrow, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})

@@ -67,13 +67,13 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	step("concurrent same-key publishes converge to the true max id")
 
 	const n = 50
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.latestkeysracelab.race.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: 1000})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -102,13 +102,13 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("O(1) rerun: the same never-superseded row, re-measured against latest_key as history grows")
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.latestkeysracelab.scale.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: scalePartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
 	insertStaleRow(ctx, ds, tp.Id)
 

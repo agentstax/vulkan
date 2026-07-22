@@ -62,7 +62,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 
 	consumerDS := newDS(ctx)
 	defer consumerDS.Close()
-	mAdmin, err := admin.NewMessageAdmin(consumerDS, nil)
+	mAdmin, err := admin.NewMessageAdmin(consumerDS, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
@@ -105,7 +105,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	cancel()
 	must(<-done)
 
-	must(mAdmin.DestroyTopic(ctx, topicName))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 
 	fmt.Printf("  ✓ %s: committed caught up to head in %s\n", label, elapsed)
 	return elapsed
@@ -118,7 +118,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 
 	consumerDS := newDS(ctx)
 	defer consumerDS.Close()
-	mAdmin, err := admin.NewMessageAdmin(consumerDS, nil)
+	mAdmin, err := admin.NewMessageAdmin(consumerDS, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("%s.readout.%d", group, time.Now().UnixNano())
@@ -192,7 +192,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	cancel()
 	must(<-done)
 
-	must(mAdmin.DestroyTopic(ctx, topicName))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 
 	if !sawException {
 		die("expected at least one retryable exception to appear during the run -- fail-rate injection produced none")

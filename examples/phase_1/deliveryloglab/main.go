@@ -70,9 +70,9 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	step("SCENARIO 1: a fresh failure logs one delivery_log row, a success logs none")
 
 	tp, cd, wp := newTopic(ctx, ds, "scenario1", topic.Config{})
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
 	seed(ctx, wp, 2)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 2, 3, 5*time.Second, tp.DisableDeliveryLog)
@@ -96,9 +96,9 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
 	tp, cd, wp := newTopic(ctx, ds, "scenario2", topic.Config{})
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
 	seed(ctx, wp, 1)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
@@ -135,9 +135,9 @@ func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresD
 	step("SCENARIO 3: DisableDeliveryLog skips table creation and every write")
 
 	tp, cd, wp := newTopic(ctx, ds, "scenario3", topic.Config{DisableDeliveryLog: true})
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
 	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), false)
 
@@ -162,9 +162,9 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 
 	const partitionSize = int64(4)
 	tp, cd, wp := newTopic(ctx, ds, "scenario4drop", topic.Config{PartitionSize: partitionSize})
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
 	dormantId := failOne(ctx, cd, wp, tp, 4) // fills partition 0 (ids 1-4), fails id 1
 	time.Sleep(ttl + ttlMargin)
@@ -185,9 +185,9 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
 	tp, cd, wp := newTopic(ctx, ds, "scenario4sweep", topic.Config{PartitionSize: partitionSize})
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
 	dormantId := failOne(ctx, cd, wp, tp, 1)
 	time.Sleep(ttl + ttlMargin)
@@ -207,7 +207,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.MessageProducer[common.Work]) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	tp, err := mAdmin.RegisterTopic(ctx, name, &cfg)
 	must(err)

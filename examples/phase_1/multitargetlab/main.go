@@ -222,7 +222,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 // ---- fixtures ----
 
 func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.MessageProducer[common.Work], func()) {
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
@@ -232,7 +232,7 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	return tp, wp, func() { must(mAdmin.DestroyTopic(ctx, name)) }
+	return tp, wp, func() { must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true})) }
 }
 
 // setupDeferredFKFixture builds a scratch FK relationship whose violation is

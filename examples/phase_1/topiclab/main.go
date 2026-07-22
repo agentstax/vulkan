@@ -57,7 +57,7 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	register := func(name string) *topic.Topic {
@@ -71,7 +71,7 @@ func main() {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.Topic{topicA, topicB, topicC, topicD} {
-			must(mAdmin.DestroyTopic(ctx, t.Name))
+			must(mAdmin.DestroyTopic(ctx, t.Name, admin.DestroyOptions{Force: true}))
 		}
 	}()
 

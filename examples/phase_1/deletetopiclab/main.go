@@ -43,7 +43,7 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	topicName := fmt.Sprintf("phase9.deletetopiclab.%d", time.Now().UnixNano())
@@ -99,7 +99,7 @@ func main() {
 	assertIdempotencyKeyRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
-	must(mAdmin.DestroyTopic(ctx, topicName))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 
 	for _, table := range scopedTables {
 		assertRowCount(ctx, ds, table, tp.Id, 0, "after Destroy")

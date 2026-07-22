@@ -317,13 +317,13 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
 func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	return tp, func() { must(mAdmin.DestroyTopic(ctx, name)) }
+	return tp, func() { must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true})) }
 }
 
 // produceConcurrently fans producers goroutines x msgs calls each and dies on
