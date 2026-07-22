@@ -1,7 +1,8 @@
 consider using database/sql from stdlib to remove pgx dependency (might be a bad idea)
 better abstract out the datastore from the consumer. ie consumer should not know or care about the internals of the datastore
-Process's loop (CURSOR/LIFECYCLE both) still exits entirely the moment CursorClaim/LifecycleClaim returns any error. A blip that clears within pkg/retry's MaxRetries is now correctly absorbed (Wrap returns nil, Process never sees it -- fixed as part of Phase 9's fault-isolation-lab). What's still open: retries exhausted (a sustained outage) or a genuinely permanent error still kill Process outright rather than backing off and trying again on the next tick.
-  - open question: should Process itself retry/backoff at the poll-loop level (treat a claim-level failure as one bad tick, not fatal), or is "the caller of Consume restarts the process" the intended failure boundary?
+Process's loop (CURSOR/LIFECYCLE both) still exits entirely the moment CursorClaim/LifecycleClaim returns any error. A blip that clears within pkg/retry's MaxRetries is now correctly absorbed (Wrap returns nil, Process never sees it -- fixed as part of Phase 9's fault-isolation-lab). The open question ("should Process retry/backoff at the poll-loop level, or is 'the caller of Consume restarts the process' the intended boundary") is RESOLVED: keep the per-tick-fatal design as-is -- an unbounded loop-level retry would mask a genuinely permanent error forever (crash is both a signal and a chance to fix things on restart), and it'd make Process a special case out of step with RollWaterline/DrainExceptions/Project/janitor, which all already share this identical give-up-and-exit shape via DatastoreRetry's bounded MaxRetries budget.
+  What WAS a real gap: a connection killed mid-query (SQLSTATE 57P01/57P02/57P03 -- admin/crash shutdown, cannot-connect-now) was misclassified PERMANENT (zero retries) despite the outcome being genuinely ambiguous, not deterministic -- unlike a syntax error or constraint violation, "did that commit land before the connection died" deserves the SAME bounded retry budget every other transient blip already gets. Fixed: pkg/retry.IsTransientPgError now classifies those three codes retryable alongside 40P01, after auditing every DatastoreRetry.Wrap call site (consumer/producer/topic/metrics, ~21 sites) for retry-safety-under-ambiguous-commit -- every write self-consumes its own re-entry (a token/status guard a retry can't re-match) or carries an idempotency key with ON CONFLICT DO NOTHING, so a retry of an attempt that actually landed is a no-op. One pre-existing gap surfaced and fixed alongside it: consumer's dropPartition did a bare `DROP TABLE` (no IF EXISTS), unlike every other DDL call site in the codebase -- now `DROP TABLE IF EXISTS`. Bonus: this also fixes producer's classifyBatchFailure, which could wrongly evict an innocent caller from a batch on a mid-read connection kill (the existing IsRetryable-first guard, added for 40P01, now covers this class too for free). Verified live: 8/8 repeat pg_terminate_backend-mid-consume runs recovered transparently (previously ~50% died outright) + a unit-level classification check for all three codes + a dropPartition double-DROP-IF-EXISTS check.
+  Follow-up: audited the REST of Postgres's SQLSTATE space for the same "ambiguous outcome, every write-path already proven safe under retry" shape and added 10 more codes to IsTransientPgError: 40001 (serialization_failure, same guaranteed-full-rollback story as 40P01 -- currently dead code since nothing uses SERIALIZABLE isolation, kept for correctness if that ever changes), 08000/08001/08003/08006/08007/40003 (connection never established or died mid-request, or Postgres explicitly says "don't know if it committed"), 57P05 (idle_session_timeout, same operator/server-lifecycle vein as 57P01-03), 53300 (too_many_connections -- never got a connection at all, so zero ambiguity), and 57014 (query_canceled, but ONLY safe because it's already filtered to exclude our OWN ctx-driven cancellation via the existing context.Canceled guard -- an externally cancelled statement aborts cleanly). Explicitly did NOT add: 08004 and 08P01 (can mean permanent misconfiguration -- bad credentials, protocol mismatch -- not just transient load), 40002 (deterministic constraint violation), the 53xxx/58xxx resource-exhaustion and I/O codes (retrying those masks a real operational emergency instead of surfacing it -- the same "crash is a signal" reasoning that kept Process's loop per-tick-fatal), the XX class (corruption -- retrying is actively dangerous), and 25P02 (already correctly handled as post-failure noise by the batch resolver's own poison-eviction logic -- adding it here would double-handle or mask the real error). Verified with a 32-case classification table (all 10 additions + all exclusions, including 25P02) plus a full rebuild/vet/faultisolationlab pass.
 
 lease heartbeat / renewal (LONG TERM, low priority - narrow edge case)
   edge case: long-running jobs whose runtime exceeds WorkTimeout but still want fast reclaim on a real crash. today such a job is either falsely reclaimed mid-flight (double-processed) or forces a huge WorkTimeout (slow crash recovery). a heartbeat decouples the reclaim timeout from job duration - the lease tracks "worker still alive" instead of a one-shot duration guess.
@@ -159,6 +160,52 @@ consider an index on deliveries.status if claim scans ever show up hot
   exception-claim scan is actively counterproductive during exactly the
   burst scenario that motivated it. this entry's original "revisit with
   real evidence, don't add speculatively" verdict stands.
+
+v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not built)
+  why the free funcs lose: topic.Exists/Register/Destroy run on the app's own
+  connection, so least-privilege is impossible in principle -- Register does
+  DDL (CREATE TABLE message_log_<id>), so every service registering on
+  startup needs a role that can CREATE and therefore DROP. topic config also
+  has no single owner (upsert is DO NOTHING + ErrTopicConfigMismatch:
+  changing retention means lockstep redeploys of every registrant, and no
+  Alter exists at all). and Destroy is one unguarded call on the same object
+  every service already holds. every surviving system splits control plane
+  from data plane AND backs the API split with a permission split (Kafka
+  AdminClient + delete.topic.enable, Pub/Sub admin clients + IAM, RabbitMQ
+  configure/write/read permissions, River's rivermigrate).
+  decided shape:
+    - pkg/admin is the ONLY write path for topic lifecycle: admin.New(ds,
+      &admin.Config{}) with Register, Alter, Exists, Destroy, Migrate (and
+      likely List, CLI-driven). the pkg/topic free funcs go away. the
+      admin's ds is where privileged credentials live in prod; app services
+      never construct one -- the object is the place the privilege split
+      attaches to.
+    - Destroy layered: admin.Config.AllowDestroy (default false ->
+      ErrDestroyDisabled) AND DestroyOptions{Force} required while the topic
+      still holds messages (ErrTopicNotEmpty). the existing drain refusal
+      stays underneath both. Register stays frictionless -- create is
+      recoverable, destroy is not.
+    - no topic.Lookup: producers/consumers take the topic NAME string in
+      their constructors (pure wiring, no I/O, no ctx) and lifecycle
+      Register(ctx) resolves name -> *topic.Topic (ErrTopicNotFound fails
+      fast at startup; a wait-for-deploy-ordering caller wraps Register).
+      folds into the same Register(ctx) the Presence entry below already
+      grows. *topic.Topic becomes an admin-return/informational type.
+      gotcha to doc on Destroy: destroy+recreate mints a new topic id, so a
+      long-running process holds a stale resolved topic.
+    - cmd/vulkan CLI (repo's first binary) wraps pkg/admin thinly: vulkan
+      migrate, vulkan topic register/alter/exists/destroy/list. the CLI sets
+      AllowDestroy internally -- an interactive type-the-name confirmation
+      replaces the config gate (--yes/--force for CI). conn via
+      DATABASE_URL-style env, which is where admin credentials live in CI.
+  deferred past v1: role creation / least-privilege bootstrap -- users can
+  GRANT themselves, and nothing in this shape blocks a later EnsureRoles
+  (default privileges cover dynamically created per-topic tables). wrinkle
+  recorded for then: the janitor does runtime partition DDL, which needs
+  table ownership -- role membership in the admin role or SECURITY DEFINER
+  functions are the candidate answers.
+  still needing their own design passes: Alter (currently an impossible
+  operation) and Migrate (embedded base-schema migrations, River-style).
 
 Presence: heartbeat rows for live producer/consumer instances
   problem: nothing records what's connected to a topic. Operators can't answer
@@ -389,9 +436,15 @@ consider abstracting out the claim fence transaction xmax logic into its own asy
 
 We should contribute to postgres via adding similar functionality MIN_ACTIVE_ROWVERSION that sql server has to make claim fence easier for us and others
 
+really need to think hard on our use of terminology Topic, Consumer and Producer. GCP pubsub uses topic, publisher, subscriber. NATS, SQS, Pulsar producer.Send, consumer.Receive
+
+A specific DeadLetterTopic Consumer. You can consume on events to DLQ
+
 **`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)
 **Migrations-into-code.**
 **Row-level security / least-privilege setup**
 
 **Default alerts**
 **Chaos-testing / fixture suite**
+
+flesh out TEST.md (the shutdown/interruption scenarios recorded there so far are Setup/Action/Assert prose from a scratch harness, not code) and implement it as an actual pkg/producer/pkg/consumer test suite once the API stops moving

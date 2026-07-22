@@ -554,7 +554,7 @@ func (d *ConsumerDatastore[Message]) dropPartition(ctx context.Context, topicID 
 	}
 
 	dropSql := fmt.Sprintf(`
-		DROP TABLE %s;
+		DROP TABLE IF EXISTS %s;
 	`, topic.MessageLogPartitionTable(topicID, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {

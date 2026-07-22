@@ -54,9 +54,8 @@ func classify(err error) error {
 	return NewPermanentError(err)
 }
 
-// IsTransientPgError reports whether err looks like a transport-level blip
-// (never reached the server, or a timeout) rather than a deterministic
-// rejection (a *pgconn.PgError, consumer.ErrLeaseLost).
+// IsTransientPgError reports whether a retry is safe -- never a
+// deterministic rejection (a business-logic *pgconn.PgError, consumer.ErrLeaseLost).
 func IsTransientPgError(err error) bool {
 	if err == nil {
 		return false
@@ -66,10 +65,32 @@ func IsTransientPgError(err error) bool {
 		return false
 	}
 
-	// deadlock victim -- the whole txn rolled back, a rerun proceeds. Relies
-	// on every Wrap closure owning its whole txn.
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
-		return pgErr.Code == "40P01"
+		switch pgErr.Code {
+		// deadlock / serialization_failure -- whole txn provably rolled back.
+		case "40P01", "40001":
+			return true
+
+		// never sent anything -- nothing could have landed.
+		case "08001", "08003", "53300":
+			return true
+
+		// query_canceled -- only external cancels reach here; ours are
+		// already filtered above. Aborts cleanly.
+		case "57014":
+			return true
+
+		// connection died after a statement may have shipped, so the outcome
+		// is genuinely ambiguous -- every DatastoreRetry.Wrap call site is
+		// audited for this (TODO.md); an ungated write added to one reopens it.
+		case "08000", "08006", "08007", "40003":
+			return true
+
+		// same ambiguity, caused by an admin command or restart instead.
+		case "57P01", "57P02", "57P03", "57P05":
+			return true
+		}
+		return false
 	}
 
 	if pgconn.SafeToRetry(err) || pgconn.Timeout(err) {
