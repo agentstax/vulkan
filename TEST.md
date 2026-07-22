@@ -165,17 +165,17 @@ Setup: subprocess consumer using `vulkanctx.LifecycleContext()`, background prod
 Action: `kill -TERM` ~1.5s after start.
 Assert: process exits 0 within ~150ms.
 
-### C15b -- double-signal escalation does NOT force-kill (gap, see Findings)
+### C15b -- double-signal escalation forces exit past a stuck handler (FIXED)
 Setup: subprocess consumer, `-hang` mode: `WorkTimeout: 20s`, `WorkTimeoutGrace: 1s`, handler ignores ctx and blocks forever once it picks up a message.
-Action: send SIGTERM once the handler is confirmed hung; wait 2s; send SIGTERM again; wait 2s.
-Assert (current, undesired): process is still alive after the second signal -- it has no observable effect. Process eventually self-bounds and exits 0, but only via `WorkTimeout+Grace` (~21s), never faster. See Findings.
+Action: send SIGTERM once the handler is confirmed hung; wait 2s; send SIGTERM again.
+Assert: process exits immediately (code 128+15) on the second signal, never waiting for `WorkTimeout+Grace` -- `LifecycleContext`'s own goroutine blocks on a second `<-sigs` independently of whatever `Consume` is doing and force-exits via `os.Exit` regardless of whether the stuck call ever returns. Confirmed this session via a minimal `LifecycleContext` harness (60s stuck call, two SIGTERMs 1s apart): exits in ~1s, code 143.
 
 ### C16 -- restart loop terminates via the gate after wind-down
 Setup: Register, cancel the lifecycle ctx immediately (before ever calling Consume).
 Action: call `Consume`.
 Assert: `errors.Is(err, vulkanerrors.ErrShutdownRequested)` -- a caller looping "call Consume, restart on return" terminates on the next call instead of hot-looping, because the entry gate itself refuses once wound down.
 
-### C17 -- backend connection killed mid-claim (FIXED, was flaky -- see Findings)
+### C17 -- backend connection killed mid-claim (FIXED, was flaky)
 Setup: Register, `ClaimPollRate: 100ms`; a background producer trickles messages.
 Action: once `Consume` is idle-polling, run `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()` against the SAME shared datastore; then produce one more message and wait for it to be processed.
 Assert (as of the `IsTransientPgError` fix below): `Consume` always recovers transparently and returns nil -- no more ~50% chance of dying outright.

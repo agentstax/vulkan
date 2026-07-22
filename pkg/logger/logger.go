@@ -19,9 +19,12 @@ type Logger interface {
 	ErrorContext(ctx context.Context, msg string, args ...any)
 }
 
-// NewDefaultLogger is the no-opinions default: human-readable text lines to w, warn level
-// and up -- quiet by default without being silent, so a caller who never
-// thinks about logging still hears about real problems.
-func NewDefaultLogger(w io.Writer) *slog.Logger {
-	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelWarn}))
+// NewDefaultLogger is the slog default: text lines to w, WARN and up.
+// level overrides WARN; extra args are ignored.
+func NewDefaultLogger(w io.Writer, level ...slog.Level) *slog.Logger {
+	lvl := slog.LevelWarn
+	if len(level) > 0 {
+		lvl = level[0]
+	}
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lvl}))
 }

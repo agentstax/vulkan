@@ -60,7 +60,7 @@ func main() {
 
 	// ===== the graceful path =====
 	step("Register with the real lifecycle context, then produce")
-	lifecycle, stop := vulkanctx.LifecycleContext()
+	lifecycle, stop := vulkanctx.LifecycleContext(nil)
 	defer stop()
 	must(p.Register(lifecycle))
 	work, err := p.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})

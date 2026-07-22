@@ -37,7 +37,7 @@ func main() {
 	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
 	// SETUP
-	ctx, stop := vulkanctx.LifecycleContext()
+	ctx, stop := vulkanctx.LifecycleContext(nil)
 	defer stop()
 
 	const concurrencyLimit = 5

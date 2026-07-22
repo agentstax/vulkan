@@ -7,7 +7,7 @@ shutdown, and context.Background/TODO can never be cancelled.
 
 Pass your application's shutdown context:
 
-    ctx, stop := vulkanctx.LifecycleContext() // github.com/agentstax/vulkan/pkg/context
+    ctx, stop := vulkanctx.LifecycleContext(nil) // github.com/agentstax/vulkan/pkg/context
     defer stop()
 
 Or declare that Consume's own ctx is the only off-switch:
