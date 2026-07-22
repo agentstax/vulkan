@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/agentstax/vulkan/pkg/admin"
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
@@ -39,11 +40,14 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	const topicName = "test.producerregister"
-	_ = topic.Destroy(ctx, ds, topicName) // clean slate from any crashed prior run
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	const topicName = "test.producerregister"
+	_ = mAdmin.DestroyTopic(ctx, topicName) // clean slate from any crashed prior run
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	p, err := producer.NewMessageProducer[Message](tp, ds, nil)
 	must(err)

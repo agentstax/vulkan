@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -42,8 +43,11 @@ func main() {
 	must(err)
 	defer ds.Close()
 
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	topicName := fmt.Sprintf("phase9.deletetopiclab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: 1000})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: 1000})
 	must(err)
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
@@ -95,7 +99,7 @@ func main() {
 	assertIdempotencyKeyRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
-	must(topic.Destroy(ctx, ds, topicName))
+	must(mAdmin.DestroyTopic(ctx, topicName))
 
 	for _, table := range scopedTables {
 		assertRowCount(ctx, ds, table, tp.Id, 0, "after Destroy")

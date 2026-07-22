@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -63,10 +64,13 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	topicName := fmt.Sprintf("phase8c.compactionscalelab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8c.compactionscalelab.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	step("insert the never-superseded row -- id=1, compaction_key=\"stale\"")
 	insertStaleRow(ctx, ds, tp.Id)

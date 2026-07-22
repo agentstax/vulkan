@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -316,10 +317,13 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
 func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
-	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	return tp, func() { must(topic.Destroy(ctx, ds, name)) }
+
+	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})
+	must(err)
+	return tp, func() { must(mAdmin.DestroyTopic(ctx, name)) }
 }
 
 // produceConcurrently fans producers goroutines x msgs calls each and dies on

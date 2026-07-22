@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -56,8 +57,11 @@ func main() {
 	must(err)
 	defer ds.Close()
 
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	register := func(name string) *topic.Topic {
-		t, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})
+		t, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})
 		must(err)
 		return t
 	}
@@ -67,7 +71,7 @@ func main() {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.Topic{topicA, topicB, topicC, topicD} {
-			must(topic.Destroy(ctx, ds, t.Name))
+			must(mAdmin.DestroyTopic(ctx, t.Name))
 		}
 	}()
 

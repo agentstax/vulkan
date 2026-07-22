@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -49,10 +50,13 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	topicName := fmt.Sprintf("phase8a.sweeplab.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8a.sweeplab.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)

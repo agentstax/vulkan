@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -47,7 +48,13 @@ func main() {
 	}
 	defer ds.Close()
 
-	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topic.Config{})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

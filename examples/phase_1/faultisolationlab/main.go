@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -68,11 +69,14 @@ func main() {
 func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("PANIC -- one message's consumerFunc panic is isolated to that message")
 
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	group := "phase9.faultisolationlab.panic"
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -129,11 +133,14 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("HARD TIMEOUT -- one message hangs past WorkTimeout, gets abandoned+retried without blocking the others")
 
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	group := "phase9.faultisolationlab.hang"
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)

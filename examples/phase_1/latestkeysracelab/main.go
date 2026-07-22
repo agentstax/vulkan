@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -66,10 +67,13 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	step("concurrent same-key publishes converge to the true max id")
 
 	const n = 50
-	topicName := fmt.Sprintf("phase8c.latestkeysracelab.race.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: 1000})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8c.latestkeysracelab.race.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: 1000})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -98,10 +102,13 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("O(1) rerun: the same never-superseded row, re-measured against latest_key as history grows")
 
-	topicName := fmt.Sprintf("phase8c.latestkeysracelab.scale.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: scalePartitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8c.latestkeysracelab.scale.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: scalePartitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	insertStaleRow(ctx, ds, tp.Id)
 

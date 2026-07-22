@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -60,10 +61,13 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	step("fixed cost: sequential publishes, no contention -- unkeyed vs. fresh-key INSERT vs. same-key UPDATE")
 
 	const n = 500
-	topicName := fmt.Sprintf("phase8c.latestkeyswritelab.fixed.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: largePartitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8c.latestkeyswritelab.fixed.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: largePartitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -87,17 +91,20 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 	const goroutines = 50
 	const perGoroutine = 20
 
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	manyKeysMs, manyKeysTopic := timeConcurrent(ctx, ds, "manykeys", goroutines, perGoroutine, func(g, i int) string {
 		return fmt.Sprintf("key-%d", g) // each goroutine owns a distinct key -- no cross-goroutine contention
 	})
-	defer func() { must(topic.Destroy(ctx, ds, manyKeysTopic)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, manyKeysTopic)) }()
 
 	before := dumpTableStats(ctx, ds, "latest_key")
 
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
-	defer func() { must(topic.Destroy(ctx, ds, oneKeyTopic)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, oneKeyTopic)) }()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
 	after := dumpTableStats(ctx, ds, "latest_key")
@@ -133,8 +140,11 @@ func timeSequential(ctx context.Context, wp *producer.MessageProducer[common.Wor
 // publishes across `goroutines` concurrent workers, and returns total
 // elapsed time plus the topic name (caller destroys it once done reading it).
 func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	name := fmt.Sprintf("phase8c.latestkeyswritelab.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: largePartitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: largePartitionSize})
 	must(err)
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})

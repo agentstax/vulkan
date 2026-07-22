@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -61,10 +62,13 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	step("dropPartition: a whole-partition rollover reaps a dormant key's last row")
 
 	const partitionSize = int64(4)
-	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.drop.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.drop.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -98,10 +102,13 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	step("sweepBatch: a low-volume tail reaps a dormant key's last row individually")
 
 	const partitionSize = int64(1000000) // matches migration 001's original width -- never rolls
-	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.sweep.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase8c.latestkeysretentionlab.sweep.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)

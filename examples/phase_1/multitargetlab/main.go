@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/retry"
@@ -221,14 +222,17 @@ func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 // ---- fixtures ----
 
 func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.MessageProducer[common.Work], func()) {
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})
 	must(err)
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	return tp, wp, func() { must(topic.Destroy(ctx, ds, name)) }
+	return tp, wp, func() { must(mAdmin.DestroyTopic(ctx, name)) }
 }
 
 // setupDeferredFKFixture builds a scratch FK relationship whose violation is

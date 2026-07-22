@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -61,8 +62,11 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 
 	consumerDS := newDS(ctx)
 	defer consumerDS.Close()
+	mAdmin, err := admin.NewMessageAdmin(consumerDS, nil)
+	must(err)
+
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
@@ -101,7 +105,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	cancel()
 	must(<-done)
 
-	must(topic.Destroy(ctx, consumerDS, topicName))
+	must(mAdmin.DestroyTopic(ctx, topicName))
 
 	fmt.Printf("  ✓ %s: committed caught up to head in %s\n", label, elapsed)
 	return elapsed
@@ -114,8 +118,11 @@ func runLiveReadoutScenario(ctx context.Context) {
 
 	consumerDS := newDS(ctx)
 	defer consumerDS.Close()
+	mAdmin, err := admin.NewMessageAdmin(consumerDS, nil)
+	must(err)
+
 	topicName := fmt.Sprintf("%s.readout.%d", group, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
 
 	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
@@ -185,7 +192,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	cancel()
 	must(<-done)
 
-	must(topic.Destroy(ctx, consumerDS, topicName))
+	must(mAdmin.DestroyTopic(ctx, topicName))
 
 	if !sawException {
 		die("expected at least one retryable exception to appear during the run -- fail-rate injection produced none")

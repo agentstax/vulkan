@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -94,10 +95,13 @@ func stalenessScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 // the role of RollWaterline, and a fast poller independently samples
 // `committed` so staleness is measured from the outside, not self-reported.
 func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) ([]rangeEvent, []sample) {
-	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -163,10 +167,13 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 // runSyncStaleness commits numRanges ranges, calling AdvanceWaterline
 // immediately after each Commit -- staleness is just that call's own latency.
 func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) []float64 {
-	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -240,10 +247,13 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 }
 
 func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, n float64, syncAdvance bool) float64 {
-	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -288,10 +298,13 @@ func contentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, syncAdvance bool) float64 {
 	total := goroutines * perGoroutine
-	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
-	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, topicName)) }()
+
+	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName)) }()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)

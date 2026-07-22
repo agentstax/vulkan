@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -56,15 +57,18 @@ func main() {
 	cd, err := consumer.NewConsumerDatastore[Record](ds, nil)
 	must(err)
 
-	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
-	narrow, err := topic.Register(ctx, ds, &topic.Config{Name: narrowName, PartitionSize: narrowPartitionSize})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, narrowName)) }()
+
+	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
+	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, &topic.Config{PartitionSize: narrowPartitionSize})
+	must(err)
+	defer func() { must(mAdmin.DestroyTopic(ctx, narrowName)) }()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
-	wide, err := topic.Register(ctx, ds, &topic.Config{Name: wideName, PartitionSize: widePartitionSize})
+	wide, err := mAdmin.RegisterTopic(ctx, wideName, &topic.Config{PartitionSize: widePartitionSize})
 	must(err)
-	defer func() { must(topic.Destroy(ctx, ds, wideName)) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, wideName)) }()
 
 	step("seed both topics with the identical 40-message workload")
 	narrowProducer, err := producer.NewMessageProducer[Record](narrow, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
@@ -66,7 +67,13 @@ func main() {
 	}
 	defer ds.Close()
 
-	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
+	mAdmin, err := admin.NewMessageAdmin(ds, nil)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topic.Config{})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
