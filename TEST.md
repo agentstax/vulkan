@@ -203,8 +203,67 @@ Setup: `CREATE TABLE IF NOT EXISTS scratchcheck_droptest`.
 Action: `DROP TABLE IF EXISTS scratchcheck_droptest` twice in a row (the second call simulates a retry that doesn't know the first one already landed).
 Assert: both calls succeed -- no `undefined_table` error on the second, unlike the bare `DROP TABLE` this replaced.
 
-## Findings
+## Retry classification (pkg/retry) -- one entry per SQLSTATE
 
-1. **FIXED -- claim-loop connection kill was race-dependent fatal.** `retry.IsTransientPgError` didn't classify SQLSTATE 57P01/57P02/57P03 (admin/crash shutdown, cannot-connect-now) as retryable, so a connection killed mid-query became a `PermanentError` and took down whichever loop hit it -> `Consume` returned a raw pgconn error instead of nil, ~50% of the time in testing. Fixed by adding those three codes to `IsTransientPgError` alongside `40P01`, after auditing all ~21 `DatastoreRetry.Wrap` call sites across consumer/producer/topic/metrics for retry-safety-under-ambiguous-commit (every write is either self-consuming on re-entry or idempotency-key protected). Surfaced and fixed one pre-existing latent gap along the way: consumer's `dropPartition` used a bare `DROP TABLE` (no `IF EXISTS`), the one DDL call site in the codebase that wasn't already idempotent under retry. See TODO.md for the full writeup. Verified: 8/8 repeat connection-kill runs now recover transparently (was ~3/6); classification + dropPartition idempotency checked directly.
+The classification checks above only prove `IsTransientPgError` returns the
+right bool for a synthetic error value -- they never prove a retry actually
+RUNS and SUCCEEDS through `DatastoreRetry.Wrap` for that code. That's the gap
+this section closes: one test per retryable SQLSTATE, so none of the 14 get
+forgotten. Grouped by how the error is actually produced, since that's the
+part most likely to get skipped or faked wrong.
 
-2. **No signal-escalation affordance (not yet fixed).** A second SIGTERM/Ctrl-C during a stuck graceful shutdown is silently swallowed -- `signal.NotifyContext`'s docs are explicit that default (force-kill) behavior only returns once `stop()` runs, and every example (`defer stop()`) defers that until after the blocking call already returned. Only the config's own `WorkTimeout`/`WorkTimeoutGrace` bounds a stuck shutdown; there's no faster manual override short of `SIGKILL -9`. Other libraries (asynq's SIGTSTP-then-SIGTERM, gRPC's `GracefulStop` + timer-triggered `Stop`) ship this as a deliberate two-signal idiom. Not filed as a TODO yet -- it's a new affordance, not a regression, and needs a design decision (own timer? re-arm `stop()` early?) before it's worth a queued item.
+### Directly triggerable against the live dev Postgres (admin SQL, no extra infra)
+
+#### RETRY-40P01 -- deadlock_detected
+Setup: two `ProduceInTx` callers, each taking locks on two `CompactionKey`s' `latest_key` rows in REVERSE order of each other (`ProduceInTx` doesn't get the batch path's lock-order sort -- that's the one place a real deadlock can still happen, per `ProduceInTx`'s own doc comment).
+Action: run both concurrently.
+Assert: Postgres deadlocks one of them (`40P01`); `Wrap` retries it; both callers eventually succeed; `latest_key` ends up pointing at whichever committed last.
+
+#### RETRY-53300 -- too_many_connections
+Setup: a `PostgresDatastore` with `MaxConns: 1`; hold that one connection open manually via `pool.Acquire` (don't release it yet).
+Action: start a `Produce`/claim call that needs the pool concurrently, then release the held connection after a short delay, still inside the retry budget.
+Assert: the blocked call succeeds once the connection frees -- it retried through the exhaustion window instead of failing immediately.
+
+#### RETRY-57014 -- query_canceled (external only)
+Setup: Register a consumer, seed messages, start `Consume`.
+Action: from a separate admin connection, find the consumer's backend pid in `pg_stat_activity` and call `pg_cancel_backend(pid)` (NOT `pg_terminate_backend`) exactly once mid-claim.
+Assert: the claim retries and the consumer keeps processing with no loss -- AND confirm this is never misattributed as "caller context cancelled" in the reason log, since it's an external cancel, not ours (the thing the code comment's `context.Canceled` note depends on).
+
+#### RETRY-57P01 -- admin_shutdown
+Already covered live: see C17 and its N=8 post-fix repeat above. No new entry needed.
+
+#### RETRY-57P05 -- idle_session_timeout
+Setup: acquire a raw `pgx.Conn` (not through the pool, so its identity is stable), `SET idle_session_timeout = '50ms'` on that session.
+Action: leave the connection idle past the timeout, then run a claim/produce that happens to reuse it.
+Assert: the operation retries and succeeds on a fresh connection. Flag: fiddly -- `pgxpool` doesn't expose per-connection identity/GUC control from `Wrap`'s level, so this needs a raw connection outside the normal pool path to force the timeout onto a specific session. Lowest priority of the "directly triggerable" group.
+
+### Needs network fault-injection infra (not built yet)
+
+#### RETRY-08000 -- connection_exception
+#### RETRY-08006 -- connection_failure
+Both need a fault-injection proxy (e.g. toxiproxy) between the app and Postgres to sever the TCP connection mid-statement in a way that surfaces as a *formatted* PgError rather than a raw network error `pgconn.SafeToRetry`/`net.Error` already catch below the PgError branch. Candidate for a future toxiproxy-based lab. Until that exists, fall back to the synthetic-injection shape used for the unreachable group below (construct a fake `*pgconn.PgError` with the code, feed it through a real `DatastoreRetry.Wrap` call with a counter closure, assert it retries and returns nil on the second attempt) -- that at least proves the MECHANISM, even without proving the trigger is realistic.
+
+#### RETRY-08001 -- sqlclient_unable_to_establish_sqlconnection
+Setup: point a `PostgresDatastore` at the real dev Postgres, then stop the container/process briefly (needs control over the dev Postgres's lifecycle -- not currently something any lab does).
+Action: attempt an operation while unreachable, restart Postgres before the retry budget exhausts.
+Assert: the operation succeeds once the server is back. Infra gap: needs a lab that owns the Postgres container's lifecycle instead of assuming it's always up at `:5432`.
+
+#### RETRY-08003 -- connection_does_not_exist
+Genuinely hard to trigger deliberately -- `pgxpool` validates a connection's health before handing it out, so getting it to hand you one that's ALREADY dead needs reaching underneath pgx (e.g. closing the raw `net.Conn` while pgx still believes it's healthy). Synthetic-injection test only, same shape as the 08000/08006 fallback above; flag as possibly not worth a live-trigger attempt at all.
+
+### Needs a disposable, independently controllable Postgres instance (not built yet)
+
+#### RETRY-57P02 -- crash_shutdown
+Requires actually crashing the Postgres server process (`kill -9` the postmaster, or worse). Destructive -- must never run against the shared dev Postgres other work depends on. Needs its own throwaway container spun up and torn down just for this test. Until that harness exists: synthetic-injection only.
+
+#### RETRY-57P03 -- cannot_connect_now
+Occurs while the server is starting up / not yet accepting connections, or in certain recovery states. Testable by racing connection attempts against a container that's mid-restart -- same "needs to own Postgres's lifecycle" infra gap as `08001`. Synthetic-injection only until then.
+
+### Effectively unreachable in vulkan's current design -- synthetic injection only, and that's fine
+
+#### RETRY-40001 -- serialization_failure
+No call site uses `SERIALIZABLE` isolation (every `BeginTx` passes a bare `pgx.TxOptions{}` = READ COMMITTED) -- this code cannot fire today. Test: call `DatastoreRetry.Wrap` directly with a closure that returns a fake `*pgconn.PgError{Code: "40001"}` on its first call and nil on the second; assert `Wrap` retries and returns nil. Proves the mechanism now, in case isolation ever changes later.
+
+#### RETRY-08007 -- transaction_resolution_unknown
+#### RETRY-40003 -- statement_completion_unknown
+Both are associated with two-phase commit / foreign-data-wrapper distributed-transaction scenarios in Postgres's own documentation -- vulkan is single-node and doesn't use 2PC or FDWs anywhere, so neither should ever fire in practice. Same synthetic-injection shape as `40001`: prove `Wrap` retries and recovers on the fake code, and leave it there. These two exist in the switch defensively, not because vulkan can trigger them.

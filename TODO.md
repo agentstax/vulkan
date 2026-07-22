@@ -440,11 +440,12 @@ really need to think hard on our use of terminology Topic, Consumer and Producer
 
 A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
-**`topic.Exists`/`Register`/`Destroy`'s call shape** (admin object)
-**Migrations-into-code.**
-**Row-level security / least-privilege setup**
+**Admin Surface**
+- **`topic.Exists`/`Register`/`Destroy`'s call shape**
+- **Migrations-into-code.**
 
-**Default alerts**
-**Chaos-testing / fixture suite**
+**Default alert metrics**
+
+**No signal-escalation affordance (not yet fixed).** A second SIGTERM/Ctrl-C during a stuck graceful shutdown is silently swallowed -- `signal.NotifyContext`'s docs are explicit that default (force-kill) behavior only returns once `stop()` runs, and every example (`defer stop()`) defers that until after the blocking call already returned. Only the config's own `WorkTimeout`/`WorkTimeoutGrace` bounds a stuck shutdown; there's no faster manual override short of `SIGKILL -9`. Other libraries (asynq's SIGTSTP-then-SIGTERM, gRPC's `GracefulStop` + timer-triggered `Stop`) ship this as a deliberate two-signal idiom. Not filed as a TODO yet -- it's a new affordance, not a regression, and needs a design decision (own timer? re-arm `stop()` early?) before it's worth a queued item.
 
 flesh out TEST.md (the shutdown/interruption scenarios recorded there so far are Setup/Action/Assert prose from a scratch harness, not code) and implement it as an actual pkg/producer/pkg/consumer test suite once the API stops moving
