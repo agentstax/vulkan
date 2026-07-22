@@ -263,6 +263,17 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 	return err
 }
 
+// IsEmpty reports whether the topic's log holds any row at all.
+func (d *TopicDatastore) IsEmpty(ctx context.Context, topicID int64) (bool, error) {
+	var notEmpty bool
+	err := d.Retry.Wrap(ctx, func() error {
+		// Partition-pruned and LIMIT 1'd, so it stays cheap regardless of topic size.
+		sql := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s LIMIT 1);`, iTopic.MessageLogTable(topicID))
+		return d.Datastore.Pool.QueryRow(ctx, sql).Scan(&notEmpty)
+	})
+	return !notEmpty, err
+}
+
 func (d *TopicDatastore) DeleteTopic(ctx context.Context, topic *Topic) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.deleteTopic(ctx, topic)

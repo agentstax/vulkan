@@ -47,9 +47,21 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 	return a.topicDatastore.UpsertTopic(ctx, name, *cfg)
 }
 
+// DestroyOptions configures a single DestroyTopic call.
+type DestroyOptions struct {
+	// Force - required to destroy a topic that still holds messages.
+	// Default: false.
+	Force bool
+}
+
 // DestroyTopic permanently drops the topic and every message it holds.
-// Returns ErrTopicNotFound if name isn't registered.
-func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string) error {
+// Returns ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set,
+// ErrTopicNotFound if name isn't registered, and ErrTopicNotEmpty if the
+// topic still holds messages and opts.Force isn't set.
+func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, opts DestroyOptions) error {
+	if !a.allowDestroy {
+		return ErrDestroyDisabled
+	}
 	if name == "" {
 		return errors.New("topic name is required")
 	}
@@ -60,6 +72,16 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string) error {
 	}
 	if found == nil {
 		return fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
+	}
+
+	if !opts.Force {
+		empty, err := a.topicDatastore.IsEmpty(ctx, found.Id)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			return fmt.Errorf("%w: %s", topic.ErrTopicNotEmpty, name)
+		}
 	}
 
 	return a.topicDatastore.DeleteTopic(ctx, found)
