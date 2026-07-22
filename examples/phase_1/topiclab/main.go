@@ -54,6 +54,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	register := func(name string) *topic.Topic {
 		t, err := topic.Register(ctx, ds, &topic.Config{Name: name, PartitionSize: partitionSize})

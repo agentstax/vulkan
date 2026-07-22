@@ -51,6 +51,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	cd, err := consumer.NewConsumerDatastore[Record](ds, nil)
 	must(err)

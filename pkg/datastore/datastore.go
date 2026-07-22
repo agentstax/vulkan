@@ -45,7 +45,8 @@ func NewPostgresDatastore(ctx context.Context, cfg *PostgresConnectionConfig) (*
 	}, nil
 }
 
-func (d *PostgresDatastore) Shutdown() error {
+// Close releases the pool. The app that constructed the datastore closes it
+// -- producers and consumers borrow it and never do.
+func (d *PostgresDatastore) Close() {
 	d.Pool.Close()
-	return nil
 }

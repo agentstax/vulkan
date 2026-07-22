@@ -44,7 +44,6 @@ type MessageConsumerConfig struct {
 	WorkTimeoutGrace        time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
 	Backoff                 *retry.Policy // curve for can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration
 	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
@@ -92,9 +91,6 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 		c.ExceptionInitialBackoff = 5 * time.Second
 	}
 	c.Backoff = c.Backoff.WithDefaults()
-	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = 35 * time.Second
-	}
 	// WaterlinePollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
@@ -147,13 +143,6 @@ func (c *MessageConsumerConfig) Validate() error {
 	}
 	if c.WaterlinePollRate < 0 {
 		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", c.WaterlinePollRate)
-	}
-
-	// shutdown timeout > work timeout + its grace buffer + AckMargin so in-flight
-	// work can finish (or get abandoned) AND ack before the pool is torn down
-	// (implies ShutdownTimeout > 0 given the guards above)
-	if c.ShutdownTimeout <= c.WorkTimeout+c.WorkTimeoutGrace+c.AckMargin {
-		return fmt.Errorf("ShutdownTimeout must be > WorkTimeout + WorkTimeoutGrace + AckMargin")
 	}
 
 	if err := c.Backoff.Validate(); err != nil {

@@ -60,6 +60,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	step(fmt.Sprintf("CATCH-UP SCENARIO: %s", label))
 
 	consumerDS := newDS(ctx)
+	defer consumerDS.Close()
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
 	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
 	must(err)
@@ -100,9 +101,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	cancel()
 	must(<-done)
 
-	teardownDS := newDS(ctx)
-	must(topic.Destroy(ctx, teardownDS, topicName))
-	teardownDS.Pool.Close()
+	must(topic.Destroy(ctx, consumerDS, topicName))
 
 	fmt.Printf("  ✓ %s: committed caught up to head in %s\n", label, elapsed)
 	return elapsed
@@ -114,6 +113,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	step("LIVE READOUT: consumer under load with injected retryable failures -- watch queue/exception counts move and drain")
 
 	consumerDS := newDS(ctx)
+	defer consumerDS.Close()
 	topicName := fmt.Sprintf("%s.readout.%d", group, time.Now().UnixNano())
 	tp, err := topic.Register(ctx, consumerDS, &topic.Config{Name: topicName})
 	must(err)
@@ -185,9 +185,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	cancel()
 	must(<-done)
 
-	teardownDS := newDS(ctx)
-	must(topic.Destroy(ctx, teardownDS, topicName))
-	teardownDS.Pool.Close()
+	must(topic.Destroy(ctx, consumerDS, topicName))
 
 	if !sawException {
 		die("expected at least one retryable exception to appear during the run -- fail-rate injection produced none")

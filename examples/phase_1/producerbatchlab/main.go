@@ -50,6 +50,7 @@ func main() {
 		MaxConns: 60, // headroom above the per-call arms' 50 concurrent publishers -- batched callers wait on a channel, not a connection, so even the 800-caller saturated arm needs no more
 	})
 	must(err)
+	defer ds.Close()
 
 	batchedExactlyOnceScenario(ctx, ds)
 	faultIsolationScenario(ctx, ds)

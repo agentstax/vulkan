@@ -68,6 +68,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	defer ds.Close()
 
 	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
 	if err != nil {
@@ -76,13 +77,12 @@ func main() {
 	}
 
 	wc, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t, pressureQueue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:      batch,
-		MaxAttempts:     3,
-		ClaimPollRate:   500 * time.Millisecond,
-		WorkTimeout:     30 * time.Second,
-		QueueMargin:     10 * time.Second,
-		AckMargin:       5 * time.Second,
-		ShutdownTimeout: 40 * time.Second,
+		BatchLimit:    batch,
+		MaxAttempts:   3,
+		ClaimPollRate: 500 * time.Millisecond,
+		WorkTimeout:   30 * time.Second,
+		QueueMargin:   10 * time.Second,
+		AckMargin:     5 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

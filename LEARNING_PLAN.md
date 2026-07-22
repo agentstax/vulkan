@@ -3040,13 +3040,39 @@ describing has stopped moving (see Phase 15).
         `otelexportlab`/`metricsloadlab` (Background) got the opt-out; the
         consumer CLI now dogfoods `LifecycleContext()`; the `CursorClaim`
         labs needed nothing.
-      - **Found while verifying, NOT fixed (TODO.md entry)**: `Consume`'s
-        exit runs `DefaultShutdownFunc` → `ConsumerDatastore.Shutdown`,
-        which closes the SHARED pgx pool — after any `Consume` returns,
-        every other producer/consumer on that `PostgresDatastore` gets
-        "closed pool". Labs never saw it (they exit right after); the
-        lifecycle model makes it glaring — an instance winding itself down
-        shouldn't kill the process-wide pool.
+      - **Found while verifying, since FIXED**: `Consume`'s exit ran
+        `DefaultShutdownFunc` → `ConsumerDatastore.Shutdown`, which closed
+        the SHARED pgx pool — after any `Consume` returned, every other
+        producer/consumer on that `PostgresDatastore` got "closed pool".
+        Fixed by deleting the whole hook after surveying the field (River,
+        gue, pgmq, Pub/Sub, NATS, franz-go, confluent, sarama, amqp091,
+        Watermill, net/http, gRPC, asynq, Temporal): no library has a
+        resource-owning shutdown callback, and every library taking an
+        injected pool leaves closing it to the app that constructed it
+        (the only exception, neoq, is the one that refuses injected pools
+        — a documented complaint against it). The Go team's own rejection
+        of ctx-shutdown for net/http (golang/go#52805) validates our
+        model rather than contradicting it: their objection is that
+        `ListenAndServe` returns BEFORE the drain (forcing the
+        `ErrServerClosed` sentinel + separate wait); `Consume` blocks
+        THROUGH the drain and returns nil — the Pub/Sub
+        `Receive`/asynq/Temporal camp. Deleted: `ShutdownFunc`/
+        `DefaultShutdownFunc`/`WithShutdown`/`WithShutdownTimeout`,
+        `ConsumerDatastore.Shutdown`, dead `Drain(ctx, wg)` (zero
+        callers), and `Config.ShutdownTimeout` — once the hook died the
+        knob bounded nothing live; wind-down is already capped per
+        message by `WorkTimeout + WorkTimeoutGrace` hard-abandon.
+        `PostgresDatastore.Shutdown()` renamed `Close()` (what `sql.DB`/
+        `pgxpool` call the app-owned teardown). Ownership rule, both
+        components identically: the app that constructed the datastore
+        closes it; producers and consumers borrow it and never do. Labs
+        now model the README canon — `defer ds.Close()` after
+        construction — and `metricsloadlab` lost its per-scenario
+        `teardownDS` workaround, which existed only because of this bug.
+        Live-verified with a shared-pool scratch (one ds: consume session
+        winds down → same ds produces → second consumer drains all,
+        both sessions return nil) + metricsloadlab/producerregister/
+        producerbatchlab green.
 - [x] **`WorkType` → `Message`** rename across `pkg/producer`/`pkg/consumer`'s
       generic type param. Landed as `Message` everywhere it means "the
       caller's payload type" — `pkg/producer/datastore.go` and

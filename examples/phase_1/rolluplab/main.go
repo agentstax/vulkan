@@ -48,6 +48,7 @@ func main() {
 		MaxConns: 40, // headroom above the contention scenario's 20 concurrent goroutines
 	})
 	must(err)
+	defer ds.Close()
 
 	stalenessScenario(ctx, ds)
 	fixedCostScenario(ctx, ds)

@@ -51,6 +51,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	runPanicIsolation(ctx, ds)
 	runHardTimeoutAbandon(ctx, ds)

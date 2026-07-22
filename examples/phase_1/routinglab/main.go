@@ -48,6 +48,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	topicName := fmt.Sprintf("phase7.routinglab.%d", time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})

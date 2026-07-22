@@ -1623,9 +1623,3 @@ func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {
 // 	}
 // 	return nil
 // }
-
-func (d *ConsumerDatastore[Message]) Shutdown(ctx context.Context) error {
-	d.Datastore.Pool.Close()
-
-	return nil
-}

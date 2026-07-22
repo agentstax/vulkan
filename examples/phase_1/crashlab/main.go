@@ -77,6 +77,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	defer ds.Close()
 
 	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
 	if err != nil {
@@ -88,13 +89,12 @@ func main() {
 	// reclaim quickly after the crash. High MaxAttempts so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t, queue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:      100,
-		MaxAttempts:     100,
-		ClaimPollRate:   200 * time.Millisecond,
-		WorkTimeout:     2 * time.Second,
-		QueueMargin:     1 * time.Second,
-		AckMargin:       1 * time.Second,
-		ShutdownTimeout: 8 * time.Second,
+		BatchLimit:    100,
+		MaxAttempts:   100,
+		ClaimPollRate: 200 * time.Millisecond,
+		WorkTimeout:   2 * time.Second,
+		QueueMargin:   1 * time.Second,
+		AckMargin:     1 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

@@ -49,6 +49,7 @@ func main() {
 		MaxConns: 50, // headroom above the keep-up scenario's 30 concurrent publishers + sweeper
 	})
 	must(err)
+	defer ds.Close()
 
 	accumulationScenario(ctx, ds)
 	sweepKeepUpScenario(ctx, ds)

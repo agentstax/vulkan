@@ -61,6 +61,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	topicName := fmt.Sprintf("phase8c.compactionlab.%d", time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName})
@@ -175,7 +176,7 @@ func main() {
 	committed = advance(ctx, cd, tp.Id)
 	assertInt("committed", committed, 11)
 
-	publish(ctx, wp, "user:6", 1, true) // id 12, LIFECYCLE path
+	publish(ctx, wp, "user:6", 1, true)               // id 12, LIFECYCLE path
 	must(cd.UpsertCursor(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
 	must(cd.FanOut(ctx, tp.Id, lifecycleGroup, 100))
 	delivered, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroup, 20)

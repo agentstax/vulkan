@@ -24,7 +24,6 @@ func main() {
 	groupPtr := flag.String("group", "learning.v1", "consumer group name")
 	topicPtr := flag.String("topic", "learning.v1", "topic to consume from (auto-registered if new)")
 	processorSleepPtr := flag.Float64("processor-sleep", 0.1, "artifical sleep in consumer func for testing (in seconds)")
-	shutdownSleepPtr := flag.Float64("shutdown-sleep", 1.0, "artifical sleep on graceful shutdown for testing (in seconds)")
 	failRatePtr := flag.Float64("fail-rate", 0.0, "artifical fail rate in consumer func for testing")
 	crashAfterPtr := flag.Float64("crash-after", -1, "artificial crash after n attempts for testing")
 
@@ -34,7 +33,6 @@ func main() {
 	fmt.Printf("flag group: %s\n", *groupPtr)
 	fmt.Printf("flag topic: %s\n", *topicPtr)
 	fmt.Printf("flag processor sleep: %f\n", *processorSleepPtr)
-	fmt.Printf("flag shutdown sleep: %f\n", *shutdownSleepPtr)
 	fmt.Printf("flag fail rate: %f\n", *failRatePtr)
 	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
@@ -66,6 +64,7 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+	defer ds.Close()
 
 	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
 	if err != nil {
@@ -86,16 +85,6 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	workConsumer.WithShutdown(func(ctx context.Context, workConsumer *consumer.MessageConsumer[common.Work]) error {
-		if err := workConsumer.Datastore.Shutdown(ctx); err != nil {
-			return err
-		}
-
-		// artifical sleep for testing functionality
-		time.Sleep(time.Duration(*shutdownSleepPtr) * time.Second)
-
-		return nil
-	}).WithShutdownTimeout(10 * time.Second)
 
 	if err := workConsumer.Register(ctx); err != nil {
 		fmt.Println(err.Error())

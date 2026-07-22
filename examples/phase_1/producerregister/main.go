@@ -16,8 +16,8 @@ import (
 	"os"
 
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -37,6 +37,7 @@ func main() {
 		Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	const topicName = "test.producerregister"
 	_ = topic.Destroy(ctx, ds, topicName) // clean slate from any crashed prior run

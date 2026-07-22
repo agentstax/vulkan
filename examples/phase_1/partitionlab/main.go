@@ -41,6 +41,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	topicName := fmt.Sprintf("phase8a.partitionlab.%d", time.Now().UnixNano())
 	tp, err := topic.Register(ctx, ds, &topic.Config{Name: topicName, PartitionSize: partitionSize})

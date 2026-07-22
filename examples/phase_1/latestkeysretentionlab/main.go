@@ -46,6 +46,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	dropPartitionScenario(ctx, ds)
 	sweepBatchScenario(ctx, ds)

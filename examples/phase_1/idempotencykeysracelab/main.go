@@ -39,6 +39,7 @@ func main() {
 		MaxConns: 60, // headroom above both scenarios' 50 concurrent publishers
 	})
 	must(err)
+	defer ds.Close()
 
 	sameKeyConcurrentScenario(ctx, ds)
 	distinctKeysConcurrentScenario(ctx, ds)

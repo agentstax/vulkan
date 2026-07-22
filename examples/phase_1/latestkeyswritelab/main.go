@@ -44,6 +44,7 @@ func main() {
 		MaxConns: 60, // headroom above the hot-key scenario's 50 concurrent goroutines
 	})
 	must(err)
+	defer ds.Close()
 
 	fixedCostScenario(ctx, ds)
 	hotKeyContentionScenario(ctx, ds)

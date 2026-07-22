@@ -45,6 +45,7 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+	defer ds.Close()
 
 	t, err := topic.Register(ctx, ds, &topic.Config{Name: *topicPtr})
 	if err != nil {

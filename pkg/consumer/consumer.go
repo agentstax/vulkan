@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
-	"sync"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
@@ -23,15 +22,14 @@ type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
 type MessageConsumer[Message any] struct {
-	Group        string
-	Topic        *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
-	Queue        concurrency.Queue[MessageRow]
-	PoolLimiter  concurrency.PoolLimiter
-	Datastore    *ConsumerDatastore[Message]
-	ShutdownFunc ShutdownFunc[Message]
-	Metrics      *metrics.ConsumerMetrics
-	Config       *MessageConsumerConfig
-	Logger       logger.Logger // copied from Config.Logger at construction
+	Group       string
+	Topic       *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
+	Queue       concurrency.Queue[MessageRow]
+	PoolLimiter concurrency.PoolLimiter
+	Datastore   *ConsumerDatastore[Message]
+	Metrics     *metrics.ConsumerMetrics
+	Config      *MessageConsumerConfig
+	Logger      logger.Logger // copied from Config.Logger at construction
 
 	topicDatastore *topic.TopicDatastore
 	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
@@ -93,7 +91,6 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 		Queue:          queue,
 		PoolLimiter:    poolLimiter,
 		Datastore:      consumerDatastore,
-		ShutdownFunc:   DefaultShutdownFunc[Message],
 		Metrics:        metrics,
 		Config:         cfg,
 		Logger:         cfg.Logger,
@@ -204,11 +201,7 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 		err = nil
 	}
 
-	// always attempt to gracefully shutdown
-	errShutdown := p.Shutdown(ctx)
-
-	// any nil errors are discarded (so both nil -> returns nil)
-	return errors.Join(err, errShutdown)
+	return err
 }
 
 // Janitor runs the retention/partition-maintenance loop standalone, under the
@@ -518,38 +511,6 @@ func (p *MessageConsumer[Message]) callSafely(ctx context.Context, consumerFunc 
 		p.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", p.Group, "message_id", messageID, "attempt", attempt, "timeout", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace)
 		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace, messageID)
 	}
-}
-
-func (p *MessageConsumer[Message]) Drain(ctx context.Context, wg *sync.WaitGroup) {
-	doneSignal := make(chan struct{})
-
-	go func() {
-		wg.Wait()
-		close(doneSignal)
-	}()
-
-	timer := time.NewTimer(p.Config.ShutdownTimeout)
-	defer timer.Stop()
-
-	select {
-	case <-doneSignal:
-		return // wg has successfully finished ie all in-flight work has finished / drained
-	case <-timer.C:
-		p.Logger.WarnContext(ctx, "in-flight work did not complete before shutdown timeout, work will be reclaimed after lease expires", "group", p.Group, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
-		return // in-flight work did not finish within timeout, exit early to start shutdown process
-	}
-
-}
-
-func (p *MessageConsumer[Message]) Shutdown(ctx context.Context) error {
-	// graceful shutdown:
-	// - cannot pass cancel context otherwise any functionality that uses ctx will immediately fail which is not what we want
-	// - need to pass timeout as well so shutdown cannot hang forever
-	shutdownCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.ShutdownTimeout,
-		fmt.Errorf("ShutdownTimeout (%s) exceeded for group %q topic %d", p.Config.ShutdownTimeout, p.Group, p.Topic.Id))
-	defer cancel()
-
-	return p.ShutdownFunc(shutdownCtx, p)
 }
 
 // runCtx merges a call's ctx with the instance lifecycle: whichever cancels

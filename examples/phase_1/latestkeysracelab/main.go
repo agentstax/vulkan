@@ -51,6 +51,7 @@ func main() {
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
 	must(err)
+	defer ds.Close()
 
 	concurrentRaceScenario(ctx, ds)
 	scaleCurveScenario(ctx, ds)
