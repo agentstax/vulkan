@@ -1,15 +1,29 @@
 package admin
 
 import (
-	"context"
-
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-type MessageProducer struct {
-	Topic          *topic.Topic
-	datastore      *producerDatastore[Message]
+type MessageAdmin struct {
 	topicDatastore *topic.TopicDatastore
-	batcher        *batcher[Message]
-	lifecycleCtx   context.Context
+}
+
+func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
+	if cfg == nil {
+		cfg = &MessageAdminConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, cfg.Retry)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MessageAdmin{
+		topicDatastore: topicDatastore,
+	}, nil
 }

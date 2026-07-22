@@ -92,17 +92,17 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 }
 
 // UpsertTopic resolves cfg.Name to its db identity, creating it if it doesn't exist.
-func (d *TopicDatastore) UpsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) UpsertTopic(ctx context.Context, name string, cfg Config) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.upsertTopic(ctx, cfg)
+		topic, err = d.upsertTopic(ctx, name, cfg)
 		return err
 	})
 	return topic, err
 }
 
-func (d *TopicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Config) (*Topic, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, cfg.Name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id)
+	insertErr := tx.QueryRow(ctx, insertSql, name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id)
 
 	switch {
 	case insertErr == nil:
@@ -125,22 +125,22 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize, cfg.DisableDeliveryLog); err != nil {
 			return nil, err
 		}
-		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", cfg.Name, "topic_id", id)
+		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", name, "topic_id", id)
 	case errors.Is(insertErr, pgx.ErrNoRows):
 		// not writing here, so reading via the plain pool (not tx) is fine.
 		// private getTopic, not GetTopic -- otherwise would have nested retries.
-		found, err := d.getTopic(ctx, cfg.Name)
+		found, err := d.getTopic(ctx, name)
 		if err != nil {
 			return nil, err
 		}
 		if found == nil {
-			return nil, fmt.Errorf("topic %s: lost the registration race and could not be resolved", cfg.Name)
+			return nil, fmt.Errorf("topic %s: lost the registration race and could not be resolved", name)
 		}
 		id = found.Id
-		if want := cfg.ToTopic(id); *found != *want {
-			return nil, fmt.Errorf("%w: topic %s: existing=%+v got=%+v", ErrTopicConfigMismatch, cfg.Name, *found, *want)
+		if want := cfg.ToTopic(id, name); *found != *want {
+			return nil, fmt.Errorf("%w: topic %s: existing=%+v got=%+v", ErrTopicConfigMismatch, name, *found, *want)
 		}
-		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", cfg.Name, "topic_id", id)
+		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", name, "topic_id", id)
 	default:
 		return nil, insertErr
 	}
@@ -149,7 +149,7 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, cfg Config) (*Topic, e
 		return nil, err
 	}
 
-	return cfg.ToTopic(id), nil
+	return cfg.ToTopic(id, name), nil
 }
 
 // createTopicLog creates:

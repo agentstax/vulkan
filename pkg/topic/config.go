@@ -11,14 +11,6 @@ import (
 
 // Config is separate from Topic so Register can grow (retention, etc.) without a signature change.
 type Config struct {
-	// Name - stable, unique identifier for this topic.
-	// Default: none (required).
-	//
-	// Dot-namespaced by domain and entity: <domain>.<entity>[.<event>]. Safe
-	// to rename later -- topics are addressed by id internally, not name.
-	// Ex: "orders.created", "billing.invoice.paid"
-	Name string
-
 	// PartitionSize - rows per partition.
 	// Default: 1_000_000.
 	//
@@ -110,9 +102,6 @@ func (c *Config) WithDefaults() *Config {
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
 func (c *Config) Validate() error {
-	if err := validateName(c.Name); err != nil {
-		return err
-	}
 	if c.RetentionTTL < 0 {
 		return fmt.Errorf("RetentionTTL must be >= 0, got %v", c.RetentionTTL)
 	}
@@ -131,10 +120,10 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) ToTopic(id int64) *Topic {
+func (c *Config) ToTopic(id int64, name string) *Topic {
 	return &Topic{
 		Id:                     id,
-		Name:                   c.Name,
+		Name:                   name,
 		PartitionSize:          c.PartitionSize,
 		RetentionTTL:           c.RetentionTTL,
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
