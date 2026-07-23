@@ -91,6 +91,69 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 	return &t, nil
 }
 
+func (d *TopicDatastore) ListTopics(ctx context.Context) ([]*Topic, error) {
+	var topics []*Topic
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		topics, err = d.listTopics(ctx)
+		return err
+	})
+	return topics, err
+}
+
+func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
+	sql := `
+		SELECT
+			id,
+			name,
+			partition_size,
+			retention_ttl_ns,
+			allow_drop_past_committed,
+			idempotency_key_ttl_ns,
+			disable_delivery_log,
+			janitor_poll_rate_ns,
+			janitor_sweep_batch_size
+		FROM topic
+		ORDER BY name;
+	`
+
+	rows, err := d.Datastore.Pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var topics []*Topic
+	for rows.Next() {
+		var t Topic
+		var retentionTTLNs int64
+		var idempotencyKeyTTLNs int64
+		var janitorPollRateNs int64
+		if err := rows.Scan(
+			&t.Id,
+			&t.Name,
+			&t.PartitionSize,
+			&retentionTTLNs,
+			&t.AllowDropPastCommitted,
+			&idempotencyKeyTTLNs,
+			&t.DisableDeliveryLog,
+			&janitorPollRateNs,
+			&t.JanitorSweepBatchSize,
+		); err != nil {
+			return nil, err
+		}
+		t.RetentionTTL = time.Duration(retentionTTLNs)
+		t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
+		t.JanitorPollRate = time.Duration(janitorPollRateNs)
+		topics = append(topics, &t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return topics, nil
+}
+
 // UpsertTopic resolves cfg.Name to its db identity, creating it if it doesn't exist.
 func (d *TopicDatastore) UpsertTopic(ctx context.Context, name string, cfg Config) (*Topic, error) {
 	var topic *Topic

@@ -487,7 +487,8 @@ really need to think hard on our use of terminology Topic, Consumer and Producer
 A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
 **Admin Surface**
-- **`topic.Exists`/`Register`/`Destroy`'s call shape**
+- **List functionality**
+- **Admin CLI**
 - **Migrations-into-code.**
 
 **Default alert metrics**

@@ -22,6 +22,11 @@ func (a *MessageAdmin) GetTopic(ctx context.Context, name string) (*topic.Topic,
 	return foundTopic, nil
 }
 
+// ListTopics returns every registered topic, ordered by name.
+func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
+	return a.topicDatastore.ListTopics(ctx)
+}
+
 // RegisterTopic is idempotent -- an existing name resolves to its topic
 // instead of erroring.
 //
