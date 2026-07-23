@@ -544,3 +544,5 @@ Need to make sure that we have the capability to naturally and safely evolve the
 For some more intense optimizations later https://packagemain.tech/p/golang-optimizations-for-highvolume
 
 A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor group (if could potentially watch same message by message that would be better but probably not possible)
+
+reconsider if latest_key should be a per topic latest_key_(topic_id) table. High update churn from many tables could be an issue. Should really do an evaluation on all system tables cursor / lease / binding / topic / latest_key tables

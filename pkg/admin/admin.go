@@ -6,8 +6,9 @@ import (
 )
 
 type MessageAdmin struct {
-	topicDatastore *topic.TopicDatastore
-	allowDestroy   bool
+	systemDatastore *systemDatastore
+	topicDatastore  *topic.TopicDatastore
+	allowDestroy    bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -19,13 +20,19 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	systemDatastore, err := newSystemDatastore(ds, cfg.Logger, cfg.Retry)
+	if err != nil {
+		return nil, err
+	}
+
 	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, cfg.Retry)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MessageAdmin{
-		topicDatastore: topicDatastore,
-		allowDestroy:   cfg.AllowDestroy,
+		systemDatastore: systemDatastore,
+		topicDatastore:  topicDatastore,
+		allowDestroy:    cfg.AllowDestroy,
 	}, nil
 }

@@ -291,7 +291,7 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				RETURNING idempotency_key
 			), inserted AS (
 				INSERT INTO %s (payload, routing_key, compaction_key)
-				SELECT $2, NULLIF($3, ''), $4 -- if routing_key $3 is empty string '' insert as NULL
+				SELECT $2, NULLIF($3, ''), $4      -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
