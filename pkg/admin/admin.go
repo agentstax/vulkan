@@ -2,11 +2,12 @@ package admin
 
 import (
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type MessageAdmin struct {
-	systemDatastore *systemDatastore
+	systemDatastore *system.SystemDatastore
 	topicDatastore  *topic.TopicDatastore
 	allowDestroy    bool
 }
@@ -20,7 +21,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	systemDatastore, err := newSystemDatastore(ds, cfg.Logger, cfg.Retry)
+	systemDatastore, err := system.NewSystemDatastore(ds, cfg.Logger, cfg.Retry)
 	if err != nil {
 		return nil, err
 	}

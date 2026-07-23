@@ -546,3 +546,5 @@ For some more intense optimizations later https://packagemain.tech/p/golang-opti
 A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor group (if could potentially watch same message by message that would be better but probably not possible)
 
 reconsider if latest_key should be a per topic latest_key_(topic_id) table. High update churn from many tables could be an issue. Should really do an evaluation on all system tables cursor / lease / binding / topic / latest_key tables
+
+see if our new Querier interface could be used to make stronger contracts with internal or public code

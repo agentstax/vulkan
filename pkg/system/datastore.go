@@ -1,4 +1,4 @@
-package admin
+package system
 
 import (
 	"context"
@@ -14,27 +14,34 @@ import (
 // arbitrary (ASCII "VULK"); it only has to stay fixed.
 const migrationAdvisoryLock int64 = 0x56554C4B
 
-// systemDatastore owns the shared control-plane schema -- the cursor / lease /
-// binding / topic / latest_key tables and the two schema-log tables.
-type systemDatastore struct {
+// SystemDatastore owns the shared control-plane schema.
+// Tables:
+// - cursor
+// - lease
+// - binding
+// - topic
+// - latest_key
+// - system_schema_log
+// - topic_schema_log
+type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
 	Logger    logger.Logger
 }
 
-func newSystemDatastore(ds *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*systemDatastore, error) {
+func NewSystemDatastore(ds *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*SystemDatastore, error) {
 	dsRetry, err := retry.NewDatastoreRetry(retryPolicy, log)
 	if err != nil {
 		return nil, err
 	}
-	return &systemDatastore{
+	return &SystemDatastore{
 		Datastore: ds,
 		Retry:     dsRetry,
 		Logger:    log,
 	}, nil
 }
 
-func (d *systemDatastore) RegisterSystem(ctx context.Context) error {
+func (d *SystemDatastore) RegisterSystem(ctx context.Context) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.registerSystem(ctx)
 	})
@@ -44,10 +51,9 @@ func (d *systemDatastore) RegisterSystem(ctx context.Context) error {
 // CREATE IF NOT EXISTS -- a no-op against a database that already has the
 // tables, a full bootstrap against a fresh one.
 //
-// This is the BASELINE, not a migration: edit these statements in place only
-// while the tables are unshipped. Once a release ships, changes are versioned
-// migration steps.
-func (d *systemDatastore) registerSystem(ctx context.Context) error {
+// This is the BASELINE, after v1 shipped changes to system should be done
+// via migration steps.
+func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -151,8 +157,7 @@ func (d *systemDatastore) registerSystem(ctx context.Context) error {
 	}
 
 	// system_schema_log is the append-only history of system schema-version
-	// changes -- one row per attempt, never updated or swept (it grows at deploy
-	// cadence, not message volume).
+	// changes -- one row per attempt.
 	createSystemSchemaLogSql := `
 		CREATE TABLE IF NOT EXISTS system_schema_log (
 			id BIGSERIAL PRIMARY KEY,
@@ -183,13 +188,13 @@ func (d *systemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
-	// Stamp the v1 baseline, but only if there's no success row yet
-	stampBaselineSql := `
+	// Record the v1 baseline, but only if there's no success row yet
+	recordBaselineSql := `
 		INSERT INTO system_schema_log (schema_version, status)
 		SELECT 1, 'success'
 		WHERE NOT EXISTS (SELECT 1 FROM system_schema_log WHERE status = 'success');
 	`
-	if _, err := tx.Exec(ctx, stampBaselineSql); err != nil {
+	if _, err := tx.Exec(ctx, recordBaselineSql); err != nil {
 		return err
 	}
 
