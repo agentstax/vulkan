@@ -11,6 +11,7 @@ import (
 // process exit code. version is the build-stamped string main passes in.
 func Execute(ctx context.Context, version string) int {
 	root, _ := newRootCmd()
+	orderFlags(root)
 
 	err := fang.Execute(
 		ctx,
@@ -22,6 +23,25 @@ func Execute(ctx context.Context, version string) int {
 		return exitCode(err)
 	}
 	return 0
+}
+
+// orderFlags shows flags in definition order instead of fang's default
+// alphabetical, giving every command the same shape: its own flags first (in
+// the order they're declared), then the inherited globals, which cobra merges
+// in last. The canonical trailing block is therefore always
+//
+//	... --database-url, --json, --help
+//
+// (--json second-to-last, --help last) -- keep it that way by declaring any new
+// global on the ROOT's persistent flags before --json, and any new per-command
+// flag before the merge. fang renders a single FLAGS block with no sub-grouping,
+// so ordering is the only lever. (Root alone also shows fang's --version, which
+// cobra appends after --help; that ordering isn't ours to control.)
+func orderFlags(cmd *cobra.Command) {
+	cmd.Flags().SortFlags = false
+	for _, sub := range cmd.Commands() {
+		orderFlags(sub)
+	}
 }
 
 // persisted global flags, read by subcommands off the root.

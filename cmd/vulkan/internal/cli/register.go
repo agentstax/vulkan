@@ -29,11 +29,11 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 		Use:   "register <name>",
 		Short: "Register a topic (idempotent)",
 		Long: "Register a topic. Idempotent -- an existing name with the same config is a\n" +
-			"no-op; a different config is rejected (that's alter's job).\n\n" +
-			"Names are dot-namespaced by domain and entity: <domain>.<entity>[.<event>].\n" +
-			"Topics are addressed by id internally, not name, so a name is safe to rename\n" +
-			"later. Examples: orders.created, billing.invoice.paid",
-		Args: requireTopicName("register"),
+			"no-op; a different config is rejected (that's alter's job). Topics are\n" +
+			"addressed by id internally, so a name is safe to rename later.",
+		Example: "# name: <domain>.<entity>[.<event>] -- e.g. orders.created\n" +
+			"vulkan topic register orders.created --retention-ttl 720h",
+		Args: requireTopicName("register", "name: <domain>.<entity>[.<event>], e.g. orders.created"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			name := args[0]
