@@ -27,7 +27,7 @@ func (p *MessageConsumer[Message]) Project(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.Group, p.Config.FanOutBatchLimit); err != nil {
+			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.consumerGroup, p.Config.FanOutBatchLimit); err != nil {
 				return err
 			}
 		}
@@ -46,7 +46,7 @@ func (p *MessageConsumer[Message]) Project(ctx context.Context) error {
 // No lease handling here: Phase 6 doesn't do crash recovery, so a delivery left in
 // 'processing' (consumer died mid-process) just sits there until Phase 6.5's reclaim.
 func (p *MessageConsumer[Message]) LifecycleClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit)
+	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Topic.Id, p.consumerGroup, p.Config.BatchLimit)
 	if err != nil {
 		return err
 	}

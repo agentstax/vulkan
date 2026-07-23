@@ -22,24 +22,25 @@ type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
 type MessageConsumer[Message any] struct {
-	Group       string
-	Topic       *topic.Topic // the resolved topic.Register return -- id already looked up, never re-resolved per message
+	Topic       *topic.Topic // resolved by Register from the name given to NewMessageConsumer
 	Queue       concurrency.Queue[MessageRow]
 	PoolLimiter concurrency.PoolLimiter
 	Datastore   *ConsumerDatastore[Message]
-	Metrics     *metrics.ConsumerMetrics
+	Metrics     *metrics.ConsumerMetrics // resolved by Register alongside Topic
 	Config      *MessageConsumerConfig
 	Logger      logger.Logger // copied from Config.Logger at construction
 
+	consumerGroup  string
+	topicName      string
 	topicDatastore *topic.TopicDatastore
 	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
-	if t == nil {
-		return nil, errors.New("topic must not be nil")
+func NewMessageConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
+	if topicName == "" {
+		return nil, errors.New("topic name is required")
 	}
 	if queue == nil {
 		return nil, errors.New("queue must not be nil")
@@ -73,25 +74,17 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 		return nil, err
 	}
 
-	metrics, err := metrics.NewConsumerMetrics(cfg.Meter, group, t.Id, t.Name, ds, &metrics.ConsumerMetricsDatastoreConfig{
-		Logger: cfg.Logger,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	consumer := &MessageConsumer[Message]{
-		Group:          group,
-		Topic:          t,
+		consumerGroup:  consumerGroup,
+		topicName:      topicName,
 		Queue:          queue,
 		PoolLimiter:    poolLimiter,
 		Datastore:      consumerDatastore,
-		Metrics:        metrics,
 		Config:         cfg,
 		Logger:         cfg.Logger,
 		topicDatastore: topicDatastore,
@@ -100,7 +93,7 @@ func NewMessageConsumer[Message any](group string, t *topic.Topic, queue concurr
 	return consumer, nil
 }
 
-// Register validates this consumer's topic handle against the live topic row,
+// Register resolves this consumer's topic by name against the live topic row,
 // sets up its cursor, and starts the consumer's lifecycle.
 //
 // ctx must be cancellable, unless MessageConsumerConfig.DisableGracefulShutdown
@@ -109,35 +102,38 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 	// registration is once per instance
 	if p.lifecycleCtx != nil {
 		if p.lifecycleCtx.Err() != nil {
-			return fmt.Errorf("%w: consumer group %q on topic %q is wound down and stays down; construct a new MessageConsumer to consume again", vulkanerrors.ErrAlreadyRegistered, p.Group, p.Topic.Name)
+			return fmt.Errorf("%w: consumer group %q on topic %q is wound down and stays down; construct a new MessageConsumer to consume again", vulkanerrors.ErrAlreadyRegistered, p.consumerGroup, p.Topic.Name)
 		}
-		return fmt.Errorf("%w: consumer group %q on topic %q -- the context from the first Register still owns this consumer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.Group, p.Topic.Name)
+		return fmt.Errorf("%w: consumer group %q on topic %q -- the context from the first Register still owns this consumer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.consumerGroup, p.Topic.Name)
 	}
 
 	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase silently wouldn't exist. Reject unless declared on purpose.
 	if ctx.Done() == nil && !p.Config.DisableGracefulShutdown {
-		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.Group, p.Topic.Name, lifecycleContextHelp)
+		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.consumerGroup, p.topicName, lifecycleContextHelp)
 	}
 
-	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
+	current, err := p.topicDatastore.GetTopic(ctx, p.topicName)
 	if err != nil {
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("%w: topic %q (id %d) was destroyed after this handle was resolved; re-create it with topic.Register", topic.ErrTopicNotFound, p.Topic.Name, p.Topic.Id)
+		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName)
 	}
-	if current.Id != p.Topic.Id {
-		return fmt.Errorf("%w: topic %q was destroyed and re-created (handle id %d, current id %d) -- this handle addresses dropped tables; resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, p.Topic.Id, current.Id)
+	p.Topic = current
+
+	consumerMetrics, err := metrics.NewConsumerMetrics(p.Config.Meter, p.consumerGroup, current.Id, current.Name, p.Datastore.Datastore, &metrics.ConsumerMetricsDatastoreConfig{
+		Logger: p.Config.Logger,
+	})
+	if err != nil {
+		return err
 	}
-	if *current != *p.Topic {
-		return fmt.Errorf("%w: topic %q config changed after this handle was resolved (handle=%+v current=%+v); resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, *p.Topic, *current)
-	}
+	p.Metrics = consumerMetrics
 
 	// both types track the log through this row:
 	//   - CURSOR claims through it
 	//   - LIFECYCLE records fan-out progress in committed
-	if err := p.Datastore.UpsertCursor(ctx, p.Topic.Id, p.Group); err != nil {
+	if err := p.Datastore.UpsertCursor(ctx, p.Topic.Id, p.consumerGroup); err != nil {
 		return err
 	}
 
@@ -165,27 +161,27 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 
 	errGroup, ctx := errgroup.WithContext(runCtx)
 
-	p.Logger.InfoContext(ctx, "consumer deliveries projector starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer deliveries projector starting", "group", p.consumerGroup, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Project(ctx)
 	})
 
-	p.Logger.InfoContext(ctx, "consumer starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.Process(ctx, consumerFunc)
 	})
 
-	p.Logger.InfoContext(ctx, "consumer waterline roller starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer waterline roller starting", "group", p.consumerGroup, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.RollWaterline(ctx)
 	})
 
-	p.Logger.InfoContext(ctx, "consumer exception drain starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer exception drain starting", "group", p.consumerGroup, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.DrainExceptions(ctx, consumerFunc)
 	})
 
-	p.Logger.InfoContext(ctx, "consumer janitor starting", "group", p.Group, "topic", p.Topic.Id)
+	p.Logger.InfoContext(ctx, "consumer janitor starting", "group", p.consumerGroup, "topic", p.Topic.Id)
 	errGroup.Go(func() error {
 		return p.janitor(ctx)
 	})
@@ -197,7 +193,7 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
 			reason = "lifecycle context cancelled"
 		}
-		p.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", p.Group, "topic", p.Topic.Id)
+		p.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id)
 		err = nil
 	}
 
@@ -291,7 +287,7 @@ func (p *MessageConsumer[Message]) RollWaterline(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if _, err := p.Datastore.AdvanceWaterline(ctx, p.Topic.Id, p.Group); err != nil {
+			if _, err := p.Datastore.AdvanceWaterline(ctx, p.Topic.Id, p.consumerGroup); err != nil {
 				return err
 			}
 		}
@@ -328,7 +324,7 @@ func (p *MessageConsumer[Message]) CursorClaim(ctx context.Context, consumerFunc
 	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 
-	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
+	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
 		return err
 	}
@@ -364,9 +360,9 @@ func (p *MessageConsumer[Message]) CursorClaim(ctx context.Context, consumerFunc
 
 	// range always frees -- the lazy roller (RollWaterline) advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
+	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.consumerGroup, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
+			p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		return err
@@ -382,14 +378,14 @@ func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, last
 	// the ctx that got us here is already Done -- the commit needs its own
 	// bounded, uncancelled window to actually reach the DB, same as Shutdown
 	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
-		fmt.Errorf("partial commit exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.Group, p.Topic.Id))
+		fmt.Errorf("partial commit exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
 	defer cancel()
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
+	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.consumerGroup, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.Group, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
+			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		// commitCtx expiring mid-call and PartialCommit's own DB error are
@@ -429,7 +425,7 @@ func (p *MessageConsumer[Message]) DrainExceptions(ctx context.Context, consumer
 func (p *MessageConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 
-	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration, p.Topic.DisableDeliveryLog)
+	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.consumerGroup, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
 		return err
 	}
@@ -447,7 +443,7 @@ func (p *MessageConsumer[Message]) ExceptionClaim(ctx context.Context, consumerF
 		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
-					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.Group, "topic", p.Topic.Id, "message_id", exception.MessageId)
+					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
 					continue // reclaimed by the kill backstop or another worker -- not ours anymore
 				}
 				return recordErr
@@ -457,7 +453,7 @@ func (p *MessageConsumer[Message]) ExceptionClaim(ctx context.Context, consumerF
 
 		if err := p.Datastore.RecordExceptionSuccess(ctx, &exception); err != nil {
 			if errors.Is(err, ErrLeaseLost) {
-				p.Logger.DebugContext(ctx, "lease lost recording exception success, ceded to new owner", "group", p.Group, "topic", p.Topic.Id, "message_id", exception.MessageId)
+				p.Logger.DebugContext(ctx, "lease lost recording exception success, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
 				continue
 			}
 			return err
@@ -508,7 +504,7 @@ func (p *MessageConsumer[Message]) callSafely(ctx context.Context, consumerFunc 
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
 		// it has bad side effects
-		p.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", p.Group, "message_id", messageID, "attempt", attempt, "timeout", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace)
+		p.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", p.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace)
 		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace, messageID)
 	}
 }
@@ -536,10 +532,10 @@ func (p *MessageConsumer[Message]) runCtx(ctx context.Context) (context.Context,
 // its ctx's cancellation.
 func (p *MessageConsumer[Message]) lifecycleErr() error {
 	if p.lifecycleCtx == nil {
-		return fmt.Errorf("%w: consumer group %q on topic %q -- call Register with the application's lifetime context before consuming", vulkanerrors.ErrNotRegistered, p.Group, p.Topic.Name)
+		return fmt.Errorf("%w: consumer group %q on topic %q -- call Register with the application's lifetime context before consuming", vulkanerrors.ErrNotRegistered, p.consumerGroup, p.topicName)
 	}
 	if err := p.lifecycleCtx.Err(); err != nil {
-		return fmt.Errorf("%w: consumer group %q on topic %q -- the lifetime context passed to Register is cancelled (%v)", vulkanerrors.ErrShutdownRequested, p.Group, p.Topic.Name, err)
+		return fmt.Errorf("%w: consumer group %q on topic %q -- the lifetime context passed to Register is cancelled (%v)", vulkanerrors.ErrShutdownRequested, p.consumerGroup, p.Topic.Name, err)
 	}
 	return nil
 }

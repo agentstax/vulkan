@@ -51,7 +51,9 @@ type ProduceOptions struct {
 }
 
 type MessageProducer[Message any] struct {
-	Topic          *topic.Topic
+	Topic *topic.Topic // resolved by Register from the name given to NewMessageProducer
+
+	topicName      string
 	datastore      *producerDatastore[Message]
 	topicDatastore *topic.TopicDatastore
 	batcher        *batcher[Message]
@@ -60,9 +62,9 @@ type MessageProducer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageProducer[Message any](t *topic.Topic, ds *coredatastore.PostgresDatastore, cfg *MessageProducerConfig) (*MessageProducer[Message], error) {
-	if t == nil {
-		return nil, errors.New("topic must not be nil")
+func NewMessageProducer[Message any](topicName string, ds *coredatastore.PostgresDatastore, cfg *MessageProducerConfig) (*MessageProducer[Message], error) {
+	if topicName == "" {
+		return nil, errors.New("topic name is required")
 	}
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
@@ -85,14 +87,13 @@ func NewMessageProducer[Message any](t *topic.Topic, ds *coredatastore.PostgresD
 	}
 
 	return &MessageProducer[Message]{
-		Topic:          t,
+		topicName:      topicName,
 		datastore:      producerDatastore,
 		topicDatastore: topicDatastore,
-		batcher:        newBatcher(producerDatastore, t.Id, t.PartitionSize, *cfg),
 	}, nil
 }
 
-// Register validates this producer's topic handle against the live topic row
+// Register resolves this producer's topic by name against the live topic row
 // and starts the producer's lifecycle.
 //
 // ctx must be cancellable, unless MessageProducerConfig.DisableGracefulShutdown
@@ -109,22 +110,18 @@ func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase silently wouldn't block / drain. Reject unless declared on purpose.
 	if ctx.Done() == nil && !p.datastore.cfg.DisableGracefulShutdown {
-		return fmt.Errorf("%w: producer for topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.Topic.Name, lifecycleContextHelp)
+		return fmt.Errorf("%w: producer for topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.topicName, lifecycleContextHelp)
 	}
 
-	current, err := p.topicDatastore.GetTopic(ctx, p.Topic.Name)
+	current, err := p.topicDatastore.GetTopic(ctx, p.topicName)
 	if err != nil {
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("%w: topic %q (id %d) was destroyed after this handle was resolved; re-create it with topic.Register", topic.ErrTopicNotFound, p.Topic.Name, p.Topic.Id)
+		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName)
 	}
-	if current.Id != p.Topic.Id {
-		return fmt.Errorf("%w: topic %q was destroyed and re-created (handle id %d, current id %d) -- this handle addresses dropped tables; resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, p.Topic.Id, current.Id)
-	}
-	if *current != *p.Topic {
-		return fmt.Errorf("%w: topic %q config changed after this handle was resolved (handle=%+v current=%+v); resolve a fresh one with topic.Register", topic.ErrTopicStale, p.Topic.Name, *p.Topic, *current)
-	}
+	p.Topic = current
+	p.batcher = newBatcher(p.datastore, current.Id, current.PartitionSize, p.datastore.cfg)
 
 	// tracked for graceful shutdown draining / handling
 	p.lifecycleCtx = ctx
@@ -214,7 +211,7 @@ func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, tra
 // and its ctx's cancellation.
 func (p *MessageProducer[Message]) lifecycleErr() error {
 	if p.lifecycleCtx == nil {
-		return fmt.Errorf("%w: producer for topic %q -- call Register with the application's lifetime context before producing", vulkanerrors.ErrNotRegistered, p.Topic.Name)
+		return fmt.Errorf("%w: producer for topic %q -- call Register with the application's lifetime context before producing", vulkanerrors.ErrNotRegistered, p.topicName)
 	}
 	if err := p.lifecycleCtx.Err(); err != nil {
 		return fmt.Errorf("%w: producer for topic %q -- the lifetime context passed to Register is cancelled (%v); queued messages still commit, new ones are refused", vulkanerrors.ErrShutdownRequested, p.Topic.Name, err)

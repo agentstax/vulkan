@@ -205,7 +205,9 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
   table ownership -- role membership in the admin role or SECURITY DEFINER
   functions are the candidate answers.
   still needing their own design passes: Alter (currently an impossible
-  operation) and Migrate (embedded base-schema migrations, River-style).
+  operation). Migrate's direction is decided -- see the "migration scripts ->
+  code" entry below (idempotent-create baseline + versioned steps, no
+  golang-migrate).
 
 Presence: heartbeat rows for live producer/consumer instances
   problem: nothing records what's connected to a topic. Operators can't answer
@@ -336,6 +338,12 @@ consider adding a testing suite ie can easily add messages in 'inflight', 'ready
 
 cleanup go.mod file aftering factoring out examples into seperate project (they bring in excess deps that core lib doesn't need)
 
+replace the two `SELECT * FROM cursor` queries (pkg/consumer/datastore.go:1035,
+pkg/consumer/datastore_lifecycle.go:54) with explicit column lists --
+conventions.md now bans SELECT * outright: any column ADD breaks old binaries
+via pgx scan-count mismatch, turning even additive migrations into breaking
+ones for exactly the rolling-deploy window that should be safe
+
 doc site needs a worked example of the side-effect footgun inside a ProducerFunc (or a
 multi-target publish closure) -- eg calling sendEmailConfirmation() before the
 transaction is known to commit fires the email even if a later step in the same call
@@ -383,8 +391,37 @@ circuit breaker for a known-dead downstream dependency
   actual fix is not letting the backlog get pointlessly huge in the first
   place (this breaker), not making the datastore survive scanning it fast.
 
-we need to refactor our migration scripts into code -- ie we can't ask users to run a migration script to setup tables and relations
-  - we need to decided if it should be automatic or something like Register or Ensure with Topic
+migration scripts -> code (DECIDED in discussion, not built): the golang-migrate
+  sql files + justfile migrate-up/down go away. admin.Migrate() calls
+  idempotent create code for the shared tables (CREATE TABLE IF NOT EXISTS --
+  the same idiom topic.Register already uses for per-topic tables). the model
+  is baseline + steps: the idempotent baseline creates the CURRENT shape (and
+  is all that exists until v1 ships -- edited in place, per the pre-ship
+  migration style), and versioned steps only start accruing once a shipped
+  release needs an existing table's shape changed. CREATE IF NOT EXISTS never
+  ALTERs, so the baseline alone can only serve fresh installs -- steps are
+  what carry an existing database forward. step mechanics agreed: linear
+  integer schema version (not semver; release notes map release -> schema
+  number), one transaction per step per topic with the version row updated in
+  the SAME txn (postgres DDL is transactional -- failure = clean rollback to
+  a recorded boundary), a NoTxn flag + internal idempotency for the
+  exceptions (CREATE INDEX CONCURRENTLY, big backfills), and downgrades are
+  for intentionally rolling back a release, never crash recovery.
+  three things golang-migrate silently provided that Migrate must reown:
+    - the version RECORD: a schema-version table written by Migrate, plus a
+      per-topic stamp (topic.schema_version) since per-topic table families
+      migrate as a loop and a crash mid-loop must be resumable. v1 MUST ship
+      the stamp even though v1's Migrate only creates tables -- otherwise
+      v1.1's Migrate can't tell what it's looking at. lifecycle Register
+      gates on the schema range the binary supports (teaching-error style,
+      fails fast at startup instead of mid-rollout column errors).
+    - the advisory lock: pg_advisory_xact_lock around a Migrate run so two
+      concurrent deploys can't interleave DDL.
+    - linear-history enforcement: nothing structural keeps baseline and
+      steps in agreement anymore, so the invariant test fresh-create-at-N ==
+      create-at-N-1-then-migrate-to-N (diff information_schema) is a
+      must-have, not a nice-to-have. plus up->down->up round trips and a
+      kill mid-topic-loop then resume.
 
 this can be later but we need to think through security. Ideally we can easily setup and create users with least privledge AND easily enable / disable row level security on these tables or per topic
 
@@ -392,6 +429,15 @@ this can be later but we need to think through security. Ideally we can easily s
 ***IMPORTANT*** we need to understand how user schema changes happen. IE user starts topic with work struct one way -> they want to change it -> how does that work. What are the edge cases that break schema changes. How can we make it easy
 
 a full testing strategy (likely based on labs) which not only do e2e tests but also provide benchmarking metrics that we can save and record somewhere to make sure key metrics like throughput are not degrading overtime
+  also needs a cross-version compatibility matrix: run producer/consumer built
+  against release N-1 on a database migrated by N -- the combination a rolling
+  deploy actually produces, and the empirical definition of which schema
+  changes are BREAKING (i.e. which ones require the two-release
+  expand/contract dance vs a plain additive migration). the other direction
+  (binary at N, database still at N-1) should fail fast at Register's schema
+  gate, and that clean teaching error is itself an assertion, not a skip.
+  mechanics: a small test module whose go.mod pins github.com/agentstax/vulkan
+  to the prior released version, run against a database migrated by HEAD.
 
 This is a much later thing but we should take the time to understand uber's design decisions for their internal highly resilant DB
 - https://www.youtube.com/watch?v=g7FmEc5GLWs&t=387s
