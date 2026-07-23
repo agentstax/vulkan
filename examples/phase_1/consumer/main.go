@@ -79,7 +79,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	workConsumer, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t, pressureQueue, workerPoolLimiter, ds, &consumer.MessageConsumerConfig{
+	workConsumer, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t.Name, pressureQueue, workerPoolLimiter, ds, &consumer.MessageConsumerConfig{
 		Type:          consumer.CURSOR,
 		BatchLimit:    10,
 		MaxAttempts:   3,

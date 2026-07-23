@@ -74,7 +74,7 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[KeyedRecord](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[KeyedRecord](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))

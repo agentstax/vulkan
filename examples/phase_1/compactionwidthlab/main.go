@@ -71,10 +71,10 @@ func main() {
 	defer func() { must(mAdmin.DestroyTopic(ctx, wideName, admin.DestroyOptions{Force: true})) }()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducer, err := producer.NewMessageProducer[Record](narrow, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	narrowProducer, err := producer.NewMessageProducer[Record](narrow.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(narrowProducer.Register(ctx))
-	wideProducer, err := producer.NewMessageProducer[Record](wide, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wideProducer, err := producer.NewMessageProducer[Record](wide.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wideProducer.Register(ctx))
 	seed(ctx, cd, narrowProducer, narrow.Id, narrowPartitionSize)

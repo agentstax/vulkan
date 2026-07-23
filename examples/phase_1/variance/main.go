@@ -81,7 +81,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](*groupPtr, t.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:    100,
 		MaxAttempts:   3,
 		ClaimPollRate: 500 * time.Millisecond,

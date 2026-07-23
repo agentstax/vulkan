@@ -69,7 +69,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	const rows = 100
@@ -83,7 +83,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	// BatchLimit >= rows -- everything claims in one Process tick, so the only
 	// variable left between the two runs is how long RollWaterline's own
 	// ticker takes to fire, isolating the thing this scenario measures.
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              rows * 2,
 		ClaimPollRate:           50 * time.Millisecond,
@@ -125,7 +125,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	const rows = 60
@@ -136,7 +136,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	pool, err := concurrency.NewWorkerPoolLimiter(10)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              20,
 		ClaimPollRate:           100 * time.Millisecond,

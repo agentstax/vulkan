@@ -80,7 +80,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -92,7 +92,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      5 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,
@@ -144,7 +144,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -156,7 +156,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
 		BatchLimit:       3,
 		WorkTimeout:      1 * time.Second,
 		WorkTimeoutGrace: 100 * time.Millisecond,

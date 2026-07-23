@@ -60,7 +60,7 @@ func main() {
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	seed(ctx, wp, seedRows)
@@ -70,7 +70,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(3)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batch,
 		WorkTimeout:             1 * time.Second,

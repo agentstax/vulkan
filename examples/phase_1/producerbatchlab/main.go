@@ -76,7 +76,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -128,7 +128,7 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewMessageProducer[json.RawMessage](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[json.RawMessage](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -177,7 +177,7 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -217,7 +217,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -285,7 +285,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
