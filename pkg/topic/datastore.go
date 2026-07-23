@@ -58,7 +58,9 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
 			janitor_poll_rate_ns,
-			janitor_sweep_batch_size
+			janitor_sweep_batch_size,
+			created_at,
+			updated_at
 		FROM topic
 		WHERE name = $1;
 	`
@@ -77,6 +79,8 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 		&t.DisableDeliveryLog,
 		&janitorPollRateNs,
 		&t.JanitorSweepBatchSize,
+		&t.CreatedAt,
+		&t.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -112,7 +116,9 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
 			janitor_poll_rate_ns,
-			janitor_sweep_batch_size
+			janitor_sweep_batch_size,
+			created_at,
+			updated_at
 		FROM topic
 		ORDER BY name;
 	`
@@ -139,6 +145,8 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 			&t.DisableDeliveryLog,
 			&janitorPollRateNs,
 			&t.JanitorSweepBatchSize,
+			&t.CreatedAt,
+			&t.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -176,11 +184,13 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
-		RETURNING id;
+		RETURNING id, created_at, updated_at;
 	`
 
 	var id int64
-	insertErr := tx.QueryRow(ctx, insertSql, name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id)
+	var createdAt time.Time
+	var updatedAt time.Time
+	insertErr := tx.QueryRow(ctx, insertSql, name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id, &createdAt, &updatedAt)
 
 	switch {
 	case insertErr == nil:
@@ -200,7 +210,10 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 			return nil, fmt.Errorf("topic %s: lost the registration race and could not be resolved", name)
 		}
 		id = found.Id
-		if want := cfg.ToTopic(id, name); *found != *want {
+		createdAt = found.CreatedAt
+		updatedAt = found.UpdatedAt
+		want := cfg.ToTopic(id, name, createdAt, updatedAt)
+		if *found != *want {
 			return nil, fmt.Errorf("%w: topic %s: existing=%+v got=%+v", ErrTopicConfigMismatch, name, *found, *want)
 		}
 		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", name, "topic_id", id)
@@ -212,7 +225,8 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 		return nil, err
 	}
 
-	return cfg.ToTopic(id, name), nil
+	t := cfg.ToTopic(id, name, createdAt, updatedAt)
+	return t, nil
 }
 
 // createTopicLog creates:

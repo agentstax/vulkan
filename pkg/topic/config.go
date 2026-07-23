@@ -120,7 +120,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (c *Config) ToTopic(id int64, name string) *Topic {
+func (c *Config) ToTopic(id int64, name string, createdAt, updatedAt time.Time) *Topic {
 	return &Topic{
 		Id:                     id,
 		Name:                   name,
@@ -131,5 +131,7 @@ func (c *Config) ToTopic(id int64, name string) *Topic {
 		DisableDeliveryLog:     c.DisableDeliveryLog,
 		JanitorPollRate:        c.JanitorPollRate,
 		JanitorSweepBatchSize:  c.JanitorSweepBatchSize,
+		CreatedAt:              createdAt,
+		UpdatedAt:              updatedAt,
 	}
 }

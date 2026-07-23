@@ -1,6 +1,10 @@
 .env
 .DS_Store
 
+# monorepo crap
+go.work
+go.work.sum
+
 # labs
 reclaimlab
 routinglab

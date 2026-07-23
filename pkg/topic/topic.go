@@ -15,4 +15,6 @@ type Topic struct {
 	DisableDeliveryLog     bool
 	JanitorPollRate        time.Duration
 	JanitorSweepBatchSize  int
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }

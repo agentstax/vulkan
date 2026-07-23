@@ -193,11 +193,40 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
       grows. *topic.Topic becomes an admin-return/informational type.
       gotcha to doc on Destroy: destroy+recreate mints a new topic id, so a
       long-running process holds a stale resolved topic.
-    - cmd/vulkan CLI (repo's first binary) wraps pkg/admin thinly: vulkan
-      migrate, vulkan topic register/alter/exists/destroy/list. the CLI sets
-      AllowDestroy internally -- an interactive type-the-name confirmation
-      replaces the config gate (--yes/--force for CI). conn via
-      DATABASE_URL-style env, which is where admin credentials live in CI.
+    - cmd/vulkan CLI (repo's first binary) wraps pkg/admin thinly -- full
+      command design (subcommands, flags, error text, confirmation flow)
+      lives in ADMIN_CLI.md, not duplicated here. Ships in two passes:
+      topic register/list/get/destroy first (pkg/admin already backs all
+      four), migrate and alter deliberately excluded from that first pass
+      (not stubbed -- admin.Migrate and admin.Alter don't exist yet) but
+      still committed to landing before v1 ships, as their own
+      implementation passes once pkg/admin grows the methods to back them.
+      Built on cobra + the charm
+      stack (fang/huh/lipgloss) for styled help/output and the one
+      interactive prompt (destroy's type-the-name confirm), gated behind a
+      TTY check so it never fires in CI -- --yes/--force cover the
+      non-interactive case.
+      packaging (DECIDED, not built): cmd/vulkan/ gets its OWN go.mod
+      (module github.com/agentstax/vulkan/cmd/vulkan) -- a nested Go
+      module, not a package in the root module. That's what keeps
+      cobra/charm out of the root module's dependency graph entirely: a
+      directory with its own go.mod is excluded from the parent module
+      completely, so `go get github.com/agentstax/vulkan` never sees it --
+      library consumers get zero CLI deps in go.sum, not merely zero CLI
+      code compiled in (unimported packages never ship either way, but the
+      module-graph/go.sum pollution is the part a shared module can't
+      avoid). CLI users install via `go install .../cmd/vulkan@latest`,
+      its own independent dependency graph. Local dev across the two
+      modules uses a committed go.work (`use ., ./cmd/vulkan`) -- NOT a
+      replace directive in cmd/vulkan/go.mod, which breaks
+      `go install ...@version` for everyone once published; go.work is
+      ignored by consumers so it's safe to commit. Cost: nested modules tag
+      independently (cmd/vulkan/vX.Y.Z prefix), so a release becomes tag
+      library -> bump cmd/vulkan/go.mod's require -> tag CLI, two steps not
+      one -- script it in the justfile. Same trick is the fix for the
+      "cleanup go.mod after factoring out examples" entry below --
+      examples/ getting its own go.mod is the identical pattern, not a
+      separate mechanism.
   deferred past v1: role creation / least-privilege bootstrap -- users can
   GRANT themselves, and nothing in this shape blocks a later EnsureRoles
   (default privileges cover dynamically created per-topic tables). wrinkle
@@ -336,7 +365,7 @@ need to relook at what should be consumer vs topic vs producer config. Probably 
 
 consider adding a testing suite ie can easily add messages in 'inflight', 'ready' with attempts or 'dead' state. Be able to inject failures easily for chaos testing etc
 
-cleanup go.mod file aftering factoring out examples into seperate project (they bring in excess deps that core lib doesn't need)
+cleanup go.mod file aftering factoring out examples into seperate project (they bring in excess deps that core lib doesn't need) -- same nested-module technique as cmd/vulkan's packaging decision (v1 admin surface entry above): examples/ gets its OWN go.mod, which excludes it from the root module's dependency graph/zip entirely, not just from what gets compiled in
 
 replace the two `SELECT * FROM cursor` queries (pkg/consumer/datastore.go:1035,
 pkg/consumer/datastore_lifecycle.go:54) with explicit column lists --
@@ -487,7 +516,6 @@ really need to think hard on our use of terminology Topic, Consumer and Producer
 A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
 **Admin Surface**
-- **List functionality**
 - **Admin CLI**
 - **Migrations-into-code.**
 
@@ -496,3 +524,7 @@ A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 flesh out TEST.md (the shutdown/interruption scenarios recorded there so far are Setup/Action/Assert prose from a scratch harness, not code) and implement it as an actual pkg/producer/pkg/consumer test suite once the API stops moving
 
 Need to make sure that we have the capability to naturally and safely evolve the Message Schema overtime. So adding and removing fields. Currently unmarshalling would break things
+
+For some more intense optimizations later https://packagemain.tech/p/golang-optimizations-for-highvolume
+
+A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor group (if could potentially watch same message by message that would be better but probably not possible)
