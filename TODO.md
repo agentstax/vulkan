@@ -196,16 +196,20 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
     - cmd/vulkan CLI (repo's first binary) wraps pkg/admin thinly -- full
       command design (subcommands, flags, error text, confirmation flow)
       lives in ADMIN_CLI.md, not duplicated here. Ships in two passes:
-      topic register/list/get/destroy first (pkg/admin already backs all
-      four), migrate and alter deliberately excluded from that first pass
-      (not stubbed -- admin.Migrate and admin.Alter don't exist yet) but
-      still committed to landing before v1 ships, as their own
-      implementation passes once pkg/admin grows the methods to back them.
-      Built on cobra + the charm
-      stack (fang/huh/lipgloss) for styled help/output and the one
-      interactive prompt (destroy's type-the-name confirm), gated behind a
-      TTY check so it never fires in CI -- --yes/--force cover the
-      non-interactive case.
+      topic register/list/get/destroy FIRST PASS DONE (2026-07-23, built +
+      live-verified against dev Postgres); migrate and alter deliberately
+      excluded from that first pass (not stubbed -- admin.Migrate and
+      admin.Alter don't exist yet) but still committed to landing before v1
+      ships, as their own implementation passes once pkg/admin grows the
+      methods to back them.
+      Built on cobra + fang + lipgloss v2 for styled help/output; destroy's
+      type-the-name confirm is a PLAIN readline prompt -- huh was dropped (it
+      couldn't match the inline transcript and its validation retries fought
+      abort-on-mismatch; see ADMIN_CLI.md) -- TTY-gated so it never fires in
+      CI, with --yes/--force for the non-interactive case. topic table gained
+      created_at + updated_at; updated_at is alter-prep (no bump path until
+      alter lands). list shows name/created/updated, get shows all fields.
+      --json was removed for now (no consumer yet).
       packaging (DECIDED, not built): cmd/vulkan/ gets its OWN go.mod
       (module github.com/agentstax/vulkan/cmd/vulkan) -- a nested Go
       module, not a package in the root module. That's what keeps
@@ -217,16 +221,28 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
       module-graph/go.sum pollution is the part a shared module can't
       avoid). CLI users install via `go install .../cmd/vulkan@latest`,
       its own independent dependency graph. Local dev across the two
-      modules uses a committed go.work (`use ., ./cmd/vulkan`) -- NOT a
-      replace directive in cmd/vulkan/go.mod, which breaks
-      `go install ...@version` for everyone once published; go.work is
-      ignored by consumers so it's safe to commit. Cost: nested modules tag
+      modules uses a go.work (`use ., ./cmd/vulkan`) each dev creates via
+      `go work init . ./cmd/vulkan` -- it's GITIGNORED, not committed (it's
+      environment-local; committing forces the workspace on every consumer/CI
+      checkout). NOT a replace directive in cmd/vulkan/go.mod, which breaks
+      `go install ...@version` for everyone once published. Cost: nested modules tag
       independently (cmd/vulkan/vX.Y.Z prefix), so a release becomes tag
       library -> bump cmd/vulkan/go.mod's require -> tag CLI, two steps not
       one -- script it in the justfile. Same trick is the fix for the
       "cleanup go.mod after factoring out examples" entry below --
       examples/ getting its own go.mod is the identical pattern, not a
       separate mechanism.
+    - cmd/vulkan connection gap (KNOWN, deferred): datastore.
+      PostgresConnectionConfig has no sslmode / DSN-query-param field -- it's
+      User/Pass/Host/Port/Database/MaxConns only, built into a plain
+      postgres:// string (only pool_max_conns supported). The CLI parses
+      --database-url / VULKAN_ADMIN_DATABASE_URL itself into that struct, so
+      anything beyond user/pass/host/port/db (sslmode=require, connect_timeout,
+      ...) is SILENTLY DROPPED today. Fine for local/CI Postgres; fix is a
+      small pkg/datastore field add (explicit sslmode field or a passthrough
+      param map, NOT a redesign) the first time someone points the CLI at a DB
+      that needs it. The CLI already warns on stderr about unsupported query
+      params it drops.
   deferred past v1: role creation / least-privilege bootstrap -- users can
   GRANT themselves, and nothing in this shape blocks a later EnsureRoles
   (default privileges cover dynamically created per-topic tables). wrinkle

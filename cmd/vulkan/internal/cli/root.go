@@ -30,12 +30,12 @@ func Execute(ctx context.Context, version string) int {
 // the order they're declared), then the inherited globals, which cobra merges
 // in last. The canonical trailing block is therefore always
 //
-//	... --database-url, --json, --help
+//	... --database-url, --help
 //
-// (--json second-to-last, --help last) -- keep it that way by declaring any new
-// global on the ROOT's persistent flags before --json, and any new per-command
-// flag before the merge. fang renders a single FLAGS block with no sub-grouping,
-// so ordering is the only lever. (Root alone also shows fang's --version, which
+// (--help last) -- keep it that way by declaring any new global on the ROOT's
+// persistent flags before --help gets merged, and any new per-command flag
+// before the merge. fang renders a single FLAGS block with no sub-grouping, so
+// ordering is the only lever. (Root alone also shows fang's --version, which
 // cobra appends after --help; that ordering isn't ours to control.)
 func orderFlags(cmd *cobra.Command) {
 	cmd.Flags().SortFlags = false
@@ -47,7 +47,6 @@ func orderFlags(cmd *cobra.Command) {
 // persisted global flags, read by subcommands off the root.
 type globalFlags struct {
 	databaseURL string
-	json        bool
 }
 
 func newRootCmd() (*cobra.Command, *globalFlags) {
@@ -65,7 +64,6 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 	pf := root.PersistentFlags()
 	pf.StringVar(&g.databaseURL, "database-url", "",
 		"postgres:// connection URL (or set "+databaseURLEnv+")")
-	pf.BoolVar(&g.json, "json", false, "emit machine-readable JSON instead of a table")
 
 	root.AddCommand(newTopicCmd(g))
 

@@ -93,7 +93,7 @@ func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *d
 		return nil, nil, nil, failOp("could not connect to database: %v", err)
 	}
 
-	// Library logs go to stderr (never stdout, which carries --json/-q payload)
+	// Library logs go to stderr (never stdout, which carries the command payload)
 	// and only at ERROR: the library's routine INFO/WARN lines ("topic
 	// registered", "topic destroyed") are implementation noise here -- the CLI's
 	// own ✓/error output is the interface.

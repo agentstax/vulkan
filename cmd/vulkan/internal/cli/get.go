@@ -33,19 +33,12 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 			}
 
 			// -q is the scriptable form: no output at all, the exit code IS the
-			// answer (`if vulkan topic get -q X; then ...`). It wins over --json.
+			// answer (`if vulkan topic get -q X; then ...`).
 			if quiet {
 				if found == nil {
 					return failPrinted()
 				}
 				return nil
-			}
-
-			if g.json {
-				if found == nil {
-					return failPrinted() // exit 1, no stdout -- exit code is the boolean
-				}
-				return printJSON(out, toTopicJSON(found))
 			}
 
 			if found == nil {

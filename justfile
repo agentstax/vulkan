@@ -154,6 +154,13 @@ idempotency-keys-race-lab:
 delete-topic-lab:
   go run examples/phase_1/deletetopiclab/main.go
 
+# register idempotency lab: re-registering a topic is idempotent (same config
+# resolves to the same topic, not an error) and a conflicting config is
+# rejected with ErrTopicConfigMismatch -- guards the created_at/updated_at
+# struct-equality edge in topic.upsertTopic. Self-seeding, destroyed on exit.
+register-idempotency-lab:
+  go run examples/phase_1/registeridempotencylab/main.go
+
 # delivery_log lab: a fresh failure logs exactly one row (right attempt
 # number + error), a success logs none, and two retries of the same message
 # append two MORE distinct rows (attempt=1, attempt=2) rather than

@@ -113,7 +113,6 @@ vulkan topic destroy orders.created --force --yes
 
 ## Scripting
 
-- `--json` — machine-readable output on `list` and `get`.
 - `-q` / `--quiet` — `list` prints names only; `get` prints nothing (the exit
   code is the answer).
 - Exit codes: `0` success · `1` operation failed (not found, not empty, config

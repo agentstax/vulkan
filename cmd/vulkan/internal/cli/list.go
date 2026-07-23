@@ -31,12 +31,9 @@ func newTopicListCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
-			switch {
-			case g.json:
-				return printJSON(out, toTopicsJSON(topics))
-			case quiet:
+			if quiet {
 				printTopicNames(out, topics)
-			default:
+			} else {
 				printTopicsTable(out, topics)
 			}
 			return nil

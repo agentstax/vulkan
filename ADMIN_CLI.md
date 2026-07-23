@@ -1,9 +1,9 @@
 # `vulkan` admin CLI — design
 
-Status: **design only, not implemented.** `cmd/vulkan` doesn't exist yet. This
-records the command surface agreed on before writing any code, per TODO.md's
-"v1 admin surface" entry (`cmd/vulkan CLI (repo's first binary) wraps
-pkg/admin thinly`).
+Status: **first pass implemented** — `topic register/list/get/destroy` are
+built and live-verified. `migrate` and `alter` remain deferred (see below).
+This records the command surface, per TODO.md's "v1 admin surface" entry
+(`cmd/vulkan CLI (repo's first binary) wraps pkg/admin thinly`).
 
 **Implementation lands in two passes** (DECIDED): `topic register/list/
 get/destroy` first, since `pkg/admin` already backs all four today.
@@ -78,17 +78,16 @@ runtime role. Reusing that var name risks a CI script's ambient
 command. A distinctly named var forces the operator to wire in admin
 credentials on purpose.
 
-**Output**: human-readable table by default. `--json` for scripting.
-`list`/`get` also take `-q`/`--quiet` (names-only / no detail block) for
-shell composition (`docker`/`kubectl -o name` convention).
+**Output**: human-readable table by default. `list`/`get` also take
+`-q`/`--quiet` (names-only / no detail block) for shell composition
+(`docker`/`kubectl -o name` convention). (`--json` was removed for now --
+no consumer yet; re-add when something needs machine-readable output.)
 
 **Exit codes**: `0` success · `1` operation failed (not found, not empty,
 config mismatch, destroy aborted) · `2` usage error (bad flags, refusing to
 run non-interactively).
 
-**Errors**: always human text on stderr, `error: ` prefix, even under
-`--json` — only the success payload becomes JSON, so error handling never
-has to branch on flags.
+**Errors**: always human text on stderr, with an `error: ` prefix.
 
 **Unmigrated DB**: any `topic` subcommand run before `vulkan migrate` has
 ever run should translate Postgres's raw `42P01 undefined_table` into:
@@ -381,5 +380,5 @@ library embedders, not this tool.
 
 - Whether `migrate status`'s "every topic stamp advances on every step"
   assumption holds once `Migrate` is actually implemented.
-- Whether `--json` should be available on `migrate status`/`versions` too
-  (probably yes, not yet spec'd here).
+- Whether to bring back a machine-readable output mode (`--json` was removed
+  in the first pass for want of a consumer).
