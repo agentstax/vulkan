@@ -115,6 +115,30 @@ func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) e
 	return a.migrateRunner.RunAll(ctx, targetVersion, migrate.EntityTopic, topicMigrations.Registry)
 }
 
+// RenameTopic changes the topic's name.
+// Returns ErrTopicNotFound if name isn't registered.
+// ErrTopicNameTaken if newName already is.
+//
+// Running producers/consumers keep working (they resolved the id at their Register),
+// but anything still CONFIGURED with the old name fails its next restart's Register.
+func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName string) (*topic.Topic, error) {
+	if name == "" || newName == "" {
+		return nil, errors.New("topic name and new name are required")
+	}
+	if newName == name {
+		return nil, errors.New("new name matches the current name -- nothing to rename")
+	}
+
+	renamed, err := a.topicDatastore.RenameTopic(ctx, name, newName)
+	if err != nil {
+		return nil, err
+	}
+	if renamed == nil {
+		return nil, fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
+	}
+	return renamed, nil
+}
+
 // DestroyOptions configures a single DestroyTopic call.
 type DestroyOptions struct {
 	// Force - required to destroy a topic that still holds messages.

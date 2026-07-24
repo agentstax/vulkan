@@ -2,6 +2,8 @@
 
 Codebase-wide rules. Violations are bugs, not style nits.
 
+each func param has explicit type, never combined
+
 ## SQL
 
 - Never `SELECT *` -- always name columns explicitly. A column ADD must be

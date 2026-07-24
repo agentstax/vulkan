@@ -11,3 +11,6 @@ var ErrTopicNotFound = errors.New("topic not found")
 // ErrTopicNotEmpty means Destroy was called on a topic that still holds
 // messages, without an explicit force override.
 var ErrTopicNotEmpty = errors.New("topic still holds messages")
+
+// ErrTopicNameTaken means Rename's target name already belongs to another topic.
+var ErrTopicNameTaken = errors.New("topic name already taken")

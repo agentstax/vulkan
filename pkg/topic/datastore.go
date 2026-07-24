@@ -12,6 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type TopicDatastore struct {
@@ -358,6 +359,83 @@ func alterLogFields(old, updated *Topic) []any {
 		fields = append(fields, "janitor_sweep_batch_size", fmt.Sprintf("%v -> %v", old.JanitorSweepBatchSize, updated.JanitorSweepBatchSize))
 	}
 	return fields
+}
+
+// RenameTopic moves oldName's row to newName.
+// Returns (nil, nil) if no topic is registered under oldName
+// ErrTopicNameTaken if newName already is.
+func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newName string) (*Topic, error) {
+	var topic *Topic
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		topic, err = d.renameTopic(ctx, oldName, newName)
+		return err
+	})
+	return topic, err
+}
+
+func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) (*Topic, error) {
+	// read-before-write pins the id
+	old, err := d.getTopic(ctx, oldName)
+	if err != nil {
+		return nil, err
+	}
+	if old == nil {
+		return nil, nil
+	}
+
+	sql := `
+		UPDATE topic
+		SET name = $2, updated_at = NOW()
+		WHERE id = $1
+		RETURNING
+			id,
+			name,
+			partition_size,
+			retention_ttl_ns,
+			allow_drop_past_committed,
+			idempotency_key_ttl_ns,
+			disable_delivery_log,
+			janitor_poll_rate_ns,
+			janitor_sweep_batch_size,
+			created_at,
+			updated_at;
+	`
+
+	var t Topic
+	var retentionTTLNs int64
+	var idempotencyKeyTTLNs int64
+	var janitorPollRateNs int64
+	if err := d.Datastore.Pool.QueryRow(ctx, sql, old.Id, newName).Scan(
+		&t.Id,
+		&t.Name,
+		&t.PartitionSize,
+		&retentionTTLNs,
+		&t.AllowDropPastCommitted,
+		&idempotencyKeyTTLNs,
+		&t.DisableDeliveryLog,
+		&janitorPollRateNs,
+		&t.JanitorSweepBatchSize,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// destroyed between the read and the update
+			return nil, nil
+		}
+		// 23505 = unqiue constraint violation ie name taken
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, fmt.Errorf("%w: %s", ErrTopicNameTaken, newName)
+		}
+		return nil, err
+	}
+	t.RetentionTTL = time.Duration(retentionTTLNs)
+	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
+	t.JanitorPollRate = time.Duration(janitorPollRateNs)
+
+	d.Logger.InfoContext(ctx, "topic renamed", "topic_id", t.Id, "name", fmt.Sprintf("%s -> %s", oldName, newName))
+	return &t, nil
 }
 
 // createTopicLog creates:
