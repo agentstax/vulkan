@@ -9,12 +9,10 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-// using concept of a 'permit' as this pass that is handed over to creator of thread in pool
-// if you are given a permit -> you are good to create a thread
-// that created thread should be the 'owner' of the permit and always release at end of work. really that just means always 'defer ReleasePermit()'
-
+// a 'permit' is handed to whoever will own an in-flight unit of work -- the
+// holder must always release it when done, ie always 'defer ReleasePermit()'.
 type PoolLimiter interface {
-	AcquirePermit(ctx context.Context, owner string) error
+	WaitForPermit(ctx context.Context, owner string) error // BLOCKS until one is free
 	ReleasePermit(ctx context.Context, owner string) error
 }
 
@@ -35,7 +33,7 @@ func NewWorkerPoolLimiter(limit int) (*WorkerPoolLimiter, error) {
 	}, nil
 }
 
-func (p *WorkerPoolLimiter) AcquirePermit(ctx context.Context, owner string) error {
+func (p *WorkerPoolLimiter) WaitForPermit(ctx context.Context, owner string) error {
 	err := p.semaphore.Acquire(ctx, 1)
 	if err != nil {
 		return err

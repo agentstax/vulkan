@@ -90,7 +90,7 @@ func main() {
 			}
 
 			// blocking - waits till can get permit
-			err = workerPoolLimiter.AcquirePermit(ctx.ToContext(), threadId.String())
+			err = workerPoolLimiter.WaitForPermit(ctx.ToContext(), threadId.String())
 			if err != nil {
 				return // context is likely cancel or shutdown in this case
 			}

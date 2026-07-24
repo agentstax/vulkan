@@ -6,9 +6,6 @@ import (
 	"time"
 )
 
-// could consider using struct{} instead of generic WorkType
-// generics can be confusing, struct you would need to cast on
-
 type Queue[WorkType any] interface {
 	Cap() int
 	WaitForRoom(ctx context.Context, timeout time.Duration, threshold int) (int, error)
