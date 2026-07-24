@@ -57,3 +57,5 @@ does pgx send sql comments to db? if so is that wasted bytes over the network we
 reconsider if latest_key should be a per topic latest_key_(topic_id) table. High update churn from many tables could be an issue. Should really do an evaluation on all system tables cursor / lease / binding / topic / latest_key tables
 
 see if our new Querier interface could be used to make stronger contracts with internal or public code
+
+Need to consider how in the case where janitor is not fast enough to create a new partition and there are many concurrent partitions. The instance one producers hits the retry create new partitions point it is likely many producers will hit the exact same and potentially spam the database with the same request. The question is, is that okay can postgres handle that or do we need a way to have a blocking single request and other instances or producer waits for it to complete
