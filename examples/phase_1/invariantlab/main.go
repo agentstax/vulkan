@@ -57,31 +57,31 @@ func main() {
 
 	// 1. fresh == migrate ------------------------------------------------------
 	section("migrate v1 -> v4 builds the same schema as a fresh create-at-4")
-	must(runner.Run(ctx, maxV, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV, migrate.EntitySystem, 0, reg))
 	must(createFresh(ctx, pool))
 	check(sameColumns(ctx, pool), "stepwise migration == fresh-create-at-4 (information_schema)")
 
 	// 2. up -> down -> up ------------------------------------------------------
 	section("Down inverts Up, and re-up reproduces the schema")
-	must(runner.Run(ctx, 1, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, 1, migrate.EntitySystem, 0, reg))
 	check(!tableExists(ctx, pool, stepwise), "full down dropped the table")
-	must(runner.Run(ctx, maxV, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV, migrate.EntitySystem, 0, reg))
 	check(sameColumns(ctx, pool), "re-up reproduced the identical schema")
 
 	// 3. Up idempotency: version says v3 but the DDL is already at v4, so the
 	// re-run re-applies step 4's Up against an object that already exists.
 	section("Up is idempotent under an ambiguous-commit re-run")
 	forgetVersion(ctx, pool, maxV)
-	must(runner.Run(ctx, maxV, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV, migrate.EntitySystem, 0, reg))
 	check(currentVersion(ctx, pool) == maxV && sameColumns(ctx, pool),
 		"re-applied Up over existing schema -> no-op, schema unchanged")
 
 	// 4. Down idempotency: drop c3 (now at v3), then claim v4 again so the
 	// re-run re-applies step 4's Down against a column that's already gone.
 	section("Down is idempotent under an ambiguous-commit re-run")
-	must(runner.Run(ctx, maxV-1, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV-1, migrate.EntitySystem, 0, reg))
 	claimVersion(ctx, pool, maxV)
-	must(runner.Run(ctx, maxV-1, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV-1, migrate.EntitySystem, 0, reg))
 	check(currentVersion(ctx, pool) == maxV-1 && !hasColumn(ctx, pool, stepwise, "c3"),
 		"re-applied Down over absent column -> no-op")
 

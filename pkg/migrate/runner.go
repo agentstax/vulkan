@@ -45,10 +45,30 @@ func NewRunner(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log l
 	}, nil
 }
 
-// Run migrates every entity of entityType to targetVersion using registry.
-// Migration attempts to run over all topics and CONTINUES past any topic that
-// fails. The system has only one entity, so that is a single run.
-func (r *Runner) Run(ctx context.Context, targetVersion int64, entityType string, registry []Migration) error {
+// RunOnce migrates single entity of entityType and id entityId to targetVersion using registry.
+func (r *Runner) RunOnce(ctx context.Context, targetVersion int64, entityType string, entityId int64, registry []Migration) error {
+	if err := Validate(registry); err != nil {
+		return err
+	}
+	// Version 1 is the baseline (Register); the registry supplies 2..max.
+	maxVersion := int64(len(registry)) + 1
+	if targetVersion < 1 || targetVersion > maxVersion {
+		return fmt.Errorf("target version %d out of range [1, %d]", targetVersion, maxVersion)
+	}
+
+	conn, err := r.Datastore.AcquireLock(ctx)
+	if err != nil {
+		return err
+	}
+	defer r.Datastore.ReleaseLock(conn)
+
+	return r.migrateEntity(ctx, conn, entityType, entityId, targetVersion, maxVersion, registry)
+}
+
+// RunAll migrates every entity of entityType to targetVersion using registry.
+// CONTINUES past any entity that fails, joining every error. Topic only --
+// system is a singleton, migrated through RunOnce.
+func (r *Runner) RunAll(ctx context.Context, targetVersion int64, entityType string, registry []Migration) error {
 	if err := Validate(registry); err != nil {
 		return err
 	}
@@ -81,7 +101,7 @@ func (r *Runner) Run(ctx context.Context, targetVersion int64, entityType string
 func (r *Runner) entities(ctx context.Context, conn *pgxpool.Conn, entityType string) ([]mDatastore.Entity, error) {
 	switch entityType {
 	case mDatastore.EntitySystem:
-		return r.Datastore.ListSystems()
+		return nil, fmt.Errorf("system is a singleton entity -- use RunOnce, not RunAll")
 	case mDatastore.EntityTopic:
 		return r.Datastore.ListTopics(ctx, conn)
 	default:

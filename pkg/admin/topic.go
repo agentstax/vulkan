@@ -104,8 +104,22 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, opts Destr
 	return a.topicDatastore.DeleteTopic(ctx, found)
 }
 
-// MigrateTopics moves the system schema to targetVersion.
-// Returns an error ErrNotRegistered if RegisterSystem hasn't run.
+// MigrateTopic moves a single topic's schema to targetVersion.
+// Returns ErrTopicNotFound if name isn't registered.
+func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, targetVersion int64) error {
+	found, err := a.GetTopic(ctx, name)
+	if err != nil {
+		return err
+	}
+	if found == nil {
+		return fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
+	}
+
+	return a.migrateRunner.RunOnce(ctx, targetVersion, migrate.EntityTopic, found.Id, topicMigrations.Registry)
+}
+
+// MigrateTopics moves every registered topic's schema to targetVersion.
+// A no-op, not an error, if no topics are registered.
 func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) error {
-	return a.migrateRunner.Run(ctx, targetVersion, migrate.EntitySystem, topicMigrations.Registry)
+	return a.migrateRunner.RunAll(ctx, targetVersion, migrate.EntityTopic, topicMigrations.Registry)
 }

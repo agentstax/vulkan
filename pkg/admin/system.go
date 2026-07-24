@@ -19,5 +19,6 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context) error {
 // MigrateSystem moves the system schema to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {
-	return a.migrateRunner.Run(ctx, targetVersion, migrate.EntitySystem, systemMigrations.Registry)
+	// 0 = system entityId by convention
+	return a.migrateRunner.RunOnce(ctx, targetVersion, migrate.EntitySystem, 0, systemMigrations.Registry)
 }
