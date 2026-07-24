@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
 )
 
 // GetTopic looks up a topic by name. Returns (nil, nil), not an error, if no
@@ -101,4 +102,10 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, opts Destr
 	}
 
 	return a.topicDatastore.DeleteTopic(ctx, found)
+}
+
+// MigrateTopics moves the system schema to targetVersion.
+// Returns an error ErrNotRegistered if RegisterSystem hasn't run.
+func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) error {
+	return a.migrateRunner.Run(ctx, targetVersion, migrate.EntitySystem, topicMigrations.Registry)
 }

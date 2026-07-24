@@ -1,2 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS idx_claim_ready;
-DROP INDEX CONCURRENTLY IF EXISTS idx_claim_processing;

@@ -438,9 +438,8 @@ circuit breaker for a known-dead downstream dependency
   place (this breaker), not making the datastore survive scanning it fast.
 
 migration scripts -> code (BUILT 2026-07-23, live-verified against dev Postgres;
-  DELETING the golang-migrate sql files + migrate-up/down recipes is deferred to
-  its own phase -- they coexist, superseded by `just system-register`): the golang-migrate
-  sql files + justfile migrate-up/down go away. admin.Migrate() calls
+  golang-migrate sql files + justfile migrate-up/down recipes DELETED 2026-07-24,
+  superseded by `just system-register`): admin.Migrate() calls
   idempotent create code for the shared tables (CREATE TABLE IF NOT EXISTS --
   the same idiom topic.Register already uses for per-topic tables). the model
   is baseline + steps: the idempotent baseline creates the CURRENT shape (and
@@ -483,9 +482,8 @@ migration scripts -> code (BUILT 2026-07-23, live-verified against dev Postgres;
   hook a v1.1 binary needs). Two fixture-driven labs: invariant-lab
   (fresh-at-N == migrate-to-N information_schema diff, up->down->up, Up/Down
   idempotency) and schema-gate-lab; every lab now self-registers the system.
-  STILL DEFERRED: delete migrations/*.sql + the migrate-up/down recipes;
-  admin.MigrateTopics (the topic-scope Runner works, no admin verb yet); the
-  `vulkan migrate` CLI command (ADMIN_CLI.md); admin.Alter.
+  STILL DEFERRED: admin.MigrateTopics (the topic-scope Runner works, no admin
+  verb yet); the `vulkan migrate` CLI command (ADMIN_CLI.md); admin.Alter.
 
 this can be later but we need to think through security. Ideally we can easily setup and create users with least privledge AND easily enable / disable row level security on these tables or per topic
 

@@ -48,7 +48,7 @@ func NewRunner(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log l
 // Run migrates every entity of entityType to targetVersion using registry.
 // Migration attempts to run over all topics and CONTINUES past any topic that
 // fails. The system has only one entity, so that is a single run.
-func (r *Runner) Run(ctx context.Context, targetVersion int64, entityType string, entityId int, registry []Migration) error {
+func (r *Runner) Run(ctx context.Context, targetVersion int64, entityType string, registry []Migration) error {
 	if err := Validate(registry); err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (r *Runner) Run(ctx context.Context, targetVersion int64, entityType string
 	}
 	defer r.Datastore.ReleaseLock(conn)
 
-	entities, err := r.entities(ctx, conn, entityType, int64(entityId))
+	entities, err := r.entities(ctx, conn, entityType)
 	if err != nil {
 		return err
 	}
@@ -78,10 +78,10 @@ func (r *Runner) Run(ctx context.Context, targetVersion int64, entityType string
 	return errors.Join(errs...)
 }
 
-func (r *Runner) entities(ctx context.Context, conn *pgxpool.Conn, entityType string, entityId int64) ([]mDatastore.Entity, error) {
+func (r *Runner) entities(ctx context.Context, conn *pgxpool.Conn, entityType string) ([]mDatastore.Entity, error) {
 	switch entityType {
 	case mDatastore.EntitySystem:
-		return r.Datastore.ListSystems(entityId)
+		return r.Datastore.ListSystems()
 	case mDatastore.EntityTopic:
 		return r.Datastore.ListTopics(ctx, conn)
 	default:
@@ -102,6 +102,7 @@ func (r *Runner) migrateEntity(ctx context.Context, conn *pgxpool.Conn, entityTy
 	switch {
 	case targetVersion > current:
 		for v := current + 1; v <= targetVersion; v++ {
+			// correct migration is offset in slice index. registry[0] = version 2
 			if err := r.stepUp(ctx, conn, entityType, entityId, registry[v-2]); err != nil {
 				r.Datastore.TryRecordFailure(ctx, conn, entityType, entityId, v, err)
 				return fmt.Errorf("up to version %d: %w", v, err)
@@ -109,12 +110,13 @@ func (r *Runner) migrateEntity(ctx context.Context, conn *pgxpool.Conn, entityTy
 			r.Logger.InfoContext(ctx, "schema migrated up", "scope", entityType, "entity_id", entityId, "version", v)
 		}
 	case targetVersion < current:
-		for v := current; v > targetVersion; v-- {
-			if err := r.stepDown(ctx, conn, entityType, entityId, registry[v-2]); err != nil {
-				r.Datastore.TryRecordFailure(ctx, conn, entityType, entityId, v-1, err)
-				return fmt.Errorf("down to version %d: %w", v-1, err)
+		for v := current - 1; v >= targetVersion; v-- {
+			// correct migration is offset in slice index. registry[0] = version 2
+			if err := r.stepDown(ctx, conn, entityType, entityId, registry[v-1]); err != nil {
+				r.Datastore.TryRecordFailure(ctx, conn, entityType, entityId, v, err)
+				return fmt.Errorf("down to version %d: %w", v, err)
 			}
-			r.Logger.InfoContext(ctx, "schema migrated down", "scope", entityType, "entity_id", entityId, "version", v-1)
+			r.Logger.InfoContext(ctx, "schema migrated down", "scope", entityType, "entity_id", entityId, "version", v)
 		}
 	}
 	return nil

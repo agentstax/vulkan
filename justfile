@@ -11,14 +11,8 @@ database-down:
 database-delete:
   docker-compose -f ./scripts/database/docker-compose.yaml down -v
 
-migrate-up:
-  migrate -source file:./migrations -database postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable up
-
-migrate-down:
-  migrate -source file:./migrations -database postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable down
-
-# go-forward dev bootstrap: stands up the control-plane schema in Go
-# (RegisterSystem), superseding migrate-up. Idempotent -- safe to re-run.
+# dev bootstrap: stands up the control-plane schema in Go (RegisterSystem).
+# Idempotent -- safe to re-run.
 system-register:
   go run examples/phase_1/systemregister/main.go
 
