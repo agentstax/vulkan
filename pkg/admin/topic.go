@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -39,6 +40,16 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
 func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topic.Config) (*topic.Topic, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
+	}
+
+	// gate -- a topic can't exist without the control-plane schema it rides on;
+	// otherwise UpsertTopic dies with a raw undefined-table error.
+	registered, err := a.systemDatastore.IsRegistered(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !registered {
+		return nil, fmt.Errorf("register the system with RegisterSystem before registering topic %q: %w", name, migrate.ErrNotRegistered)
 	}
 
 	if cfg == nil {

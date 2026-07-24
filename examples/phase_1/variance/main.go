@@ -74,6 +74,10 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	if err := mAdmin.RegisterSystem(ctx); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topic.Config{})
 	if err != nil {

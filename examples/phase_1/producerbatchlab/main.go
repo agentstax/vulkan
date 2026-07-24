@@ -319,6 +319,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})

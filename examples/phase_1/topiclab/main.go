@@ -59,6 +59,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	register := func(name string) *topic.Topic {
 		t, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})

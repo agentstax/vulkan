@@ -2,12 +2,14 @@ package system
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // SystemDatastore owns the shared control-plane schema.
@@ -45,6 +47,29 @@ func (d *SystemDatastore) RegisterSystem(ctx context.Context) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.registerSystem(ctx)
 	})
+}
+
+// IsRegistered reports whether RegisterSystem has run -- a system success row in
+// schema_log. A missing schema_log table (42P01) counts as not registered.
+func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
+	var registered bool
+	err := d.Datastore.Pool.QueryRow(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM schema_log 
+			WHERE entity_type = 'system' 
+				AND entity_id = 0 
+				AND status = 'success'
+		);`,
+	).Scan(&registered)
+	if err != nil {
+		// 42P01 = table does not exist
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+			return false, nil
+		}
+		return false, err
+	}
+	return registered, nil
 }
 
 // registerSystem creates the shared control-plane schema. Every statement is

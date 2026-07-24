@@ -68,6 +68,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})

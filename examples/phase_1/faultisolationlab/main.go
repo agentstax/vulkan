@@ -71,6 +71,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	group := "phase9.faultisolationlab.panic"
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())

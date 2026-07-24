@@ -63,6 +63,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	const n = 500
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("phase8c.latestkeyswritelab.fixed.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: largePartitionSize})

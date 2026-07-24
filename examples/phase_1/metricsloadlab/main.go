@@ -64,6 +64,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	defer consumerDS.Close()
 	mAdmin, err := admin.NewMessageAdmin(consumerDS, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})

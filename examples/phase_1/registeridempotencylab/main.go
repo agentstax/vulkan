@@ -38,6 +38,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	name := fmt.Sprintf("registeridempotency.lab.%d", time.Now().UnixNano())
 

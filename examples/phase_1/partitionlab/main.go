@@ -46,6 +46,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("phase8a.partitionlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{PartitionSize: partitionSize})

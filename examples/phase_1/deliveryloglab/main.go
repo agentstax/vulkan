@@ -72,6 +72,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	tp, cd, wp := newTopic(ctx, ds, "scenario1", topic.Config{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
+	must(mAdmin.RegisterSystem(ctx))
 	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
 	seed(ctx, wp, 2)
