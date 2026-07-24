@@ -36,8 +36,11 @@ TrueColor to 16-color, adapts to light/dark backgrounds).
 CLI: `destroy`'s type-the-name-to-confirm prompt. Gives that prompt an
 accessible (screen-reader) mode for free.
 
-**Lip Gloss** (`charmbracelet/lipgloss`, v2) for tables (`topic list`,
-`migrate status`) and the colored ✓/✗/⚠ status glyphs.
+**Lip Gloss** (`charmbracelet/lipgloss`, v2) for the colored ✓/✗/⚠ status
+glyphs, gated on `colorEnabled()` (a real TTY, no `NO_COLOR`/`TERM=dumb`) so
+piped/CI output stays plain text. Tables (`topic list`, `topic get`,
+`migrate versions`/`status`) are stdlib `text/tabwriter` -- Lip Gloss's own
+table component isn't in use.
 
 **Packaging**: `cmd/vulkan/` is a nested Go module with its own `go.mod` --
 none of the above land in the root library module's dependency graph.
