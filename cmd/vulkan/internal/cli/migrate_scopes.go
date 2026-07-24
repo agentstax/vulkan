@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/spf13/cobra"
 )
 
@@ -96,6 +97,17 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 			if moving == 0 {
 				printMigrateNoop(out, s, targets, to)
 				return nil
+			}
+
+			// Fast pre-flight, not a guarantee -- see migrate.IsLocked. Catches the
+			// common case (another migrate already running) before committing to a
+			// call that would otherwise block silently until that one finishes.
+			locked, err := migrate.IsLocked(ctx, ds.Pool)
+			if err != nil {
+				return translateAdminError(err)
+			}
+			if locked {
+				return failOp("another migration is already in progress (advisory lock held) -- wait for it to finish, or confirm no other migrate process is actually running before retrying")
 			}
 
 			if err := runScopeMigrate(ctx, mAdmin, s, name, to); err != nil {
