@@ -74,7 +74,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 5 — Fan-out | ✅ done | `-group` flag → independent `cursor` row per group over one log; poll loop + `just lag` (head − position); answers in NOTES.md; tag `phase-5` |
 | 6 — Synthesis (naive per-row) | ✅ done | `deliveries` row per (group,event); write-amplification wall measured; answers in NOTES.md; tag `phase-6` |
 | 6.5 — Claim-from-log refactor | ✅ 6.5a–c done | 6.5a happy path (`phase-6.5a`), 6.5b leases + crash recovery (`phase-6.5b`), 6.5c exception window + poison-batch quarantine (`phase-6.5c`) — all tagged, answers in NOTES.md; **6.5d (lane sharding) deprioritized — moved to the end of this document, optional, not started** |
-| 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
+| 7 — Routing | ✅ done | predicate at read/fan-out time (cursor or per-row); a true `*` wildcard, not NATS-style depth-precise selectors (the selector upgrade is now a **7b** task) — header matching cut to **7b**; answers in NOTES.md; tag `phase-7` |
 | 7b — Header/content routing | ⬜ | deprioritized — optional, deferred; moved to the end of this document |
 | 8 — Operational layer | ⬜ | retention split into **8a**, log compaction split into **8c**; observability moved to **10**, LISTEN/NOTIFY moved to **8d** |
 | 8a — Retention | ✅ done | partition-drop by `RANGE (id)` (claim-path pruning) + bounded DELETE sweep for the low-volume tail; Go janitor, no pg_partman; answers in NOTES.md; tag `phase-8a` |
@@ -84,12 +84,16 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 9 — Consumer fault isolation & recovery | ✅ done | DB-blip retry (`pkg/retry`, idempotency_key), graceful-shutdown lease truncation (`PartialCommit`), panic recovery + hard per-message timeout (`callSafely`), abandoned-goroutine tracking; found/fixed a real `pkg/retry.Wrap` bug along the way; answers in NOTES.md; tag `phase-9` |
 | 10 — Observability: logging & rollup model | ✅ done | pluggable logger, queue-state query, metrics snapshot, OTel `metric.Meter` integration, debug readout; stayed lazy on the rollup (measured 1.3x-1.9x contention cost of synchronous); answers in NOTES.md; tag `phase-10` |
 | 11 — Architecture cleanup | ✅ done | datastore boundary audited (decision deferred to **13**), multi-target enqueue (`InTransaction`/`ProduceInTx`, savepoint self-heal), attempt audit log, `context.Cause`, batch write-path round trips; Explain-it-back deliberately skipped (see NOTES.md); answers in NOTES.md; tag `phase-11`; `pgx` vs. `database/sql` cut to **11b** |
-| 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document |
-| 13 — Public API design review | 🔨 **next** | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker + chaos-testing suite get their shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b** — additive-only later, so not a v1 blocker |
-| 14 — V1 hardening, correctness & cleanup | ⬜ | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, schema evolution decision, FanOut rescan, default alerts, and the rest of the non-API-shape TODO.md/code-TODO backlog — sequenced after 13 locks the surface |
-| 15 — Documentation | ⬜ | last, deliberately — docs wait until 13 and 14 stop moving the surface they'd describe |
-| 16 — Circuit breaker (implementation) | ⬜ | builds the two-tier design settled in 13 (per-instance trip unit, quorum globalization, refund-on-close reconciliation); K's absolute-vs-fraction question may pull in the Presence heartbeat work as a prerequisite |
-| 6.5d, 7b, 8d, 9b, 11b, 13b | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, consumer lifecycle extension point) — pick up only if a real workload demands each; moved to the end of this document; 9b should wait for 13 (not the original 11) to settle the datastore boundary, and 11b should weigh 8d's outcome if both are ever picked up |
+| 11.5 — Admin surface, migrations-into-code & CLI | ✅ done | the v1 control plane: `pkg/migrate` (schema-in-Go, single `schema_log`, advisory lock, two independent scopes) + `pkg/admin.MessageAdmin` (Register/Get/List/Alter/Rename/Destroy + system Register/Migrate) + `cmd/vulkan` (nested module, cobra/fang, `topic` and `migrate` command trees); `PartitionSize` immutable, name→`rename`; answers in NOTES.md; **no tag** (built across many `continue` commits, not one boundary) |
+| 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
+| 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
+| 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap, janitor efficiency/concurrency (opt-out + multi-janitor contention), buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency — deletes the dead params) — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement — sequenced alongside **14a** |
+| 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all three measure or test a surface that needs to stop moving first |
+| 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
+| 16 — Circuit breaker (implementation) | ⬜ | builds the two-tier design settled in 13 (per-instance trip unit, quorum globalization, refund-on-close reconciliation); K's absolute-vs-fraction question may pull in **13d**'s presence heartbeat work as a prerequisite |
+| 6.5d, 7b, 8d, 9b, 11b, 11.5b, 12b, 13b, 13c, 13d, 14d | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing + NATS-style selector, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, dynamic partition bounds, defer + policy-driven dispatch, consumer lifecycle extension point, RLS + chaos/fixture suite, presence heartbeat rows, research backlog) — pick up only if a real workload demands each; moved to the end of this document; 9b's prerequisite (Phase 13 settling the datastore boundary) is now satisfied, 11b should weigh 8d's outcome if both are ever picked up, and 13d is Phase 16's prerequisite if quorum-as-a-fraction wins |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -997,7 +1001,7 @@ bindings decide who receives.
       true wildcard can't (`orders.*.central1` also matches
       `orders.us.high.central1` — there's no way to say "one segment here,
       not more"). Simpler to build and reason about; revisit only if
-      bindings actually need that depth precision (tracked in TODO.md).
+      bindings actually need that depth precision (tracked in **7b**).
       Header/content matching (`headers @> '{...}'` JSONB containment) is a
       separate real alternative some systems offer (see Real systems below)
       but was cut too, for the same reason — see optional Phase 7b.
@@ -1144,7 +1148,7 @@ janitor below *is* that automation, in Go, on a ticker.
       per-topic and each topic *is* its own log. Reconsider keeping every
       'topic' in the same `message_log` table — may need an actual topic
       concept (its own log/partitions) rather than routing_key filtering over
-      a shared one. (TODO.md has the durable pointer.)
+      a shared one. (Later resolved by Phase 8b's per-topic tables.)
 
 **Lab:**
 - [x] Shrink the partition width and TTL to lab scale; publish across several
@@ -1705,13 +1709,15 @@ matter, not a patch bolted on after a scaling surprise.
       — 6400 on this dev Postgres's stock defaults). ~1000 partitions
       (~5000 locks) destroyed fine; ~2000 (~10000 locks) didn't. Not
       specific to compaction — any topic that accumulates enough partitions
-      hits this on `Destroy`. Filed as its own `TODO.md` entry (batch the
+      hits this on `Destroy`. Filed as its own entry (batch the
       drop the way 8a's `dropPartition`/`sweepBatch` already do, instead of
       one giant transaction) rather than fixed here — out of this phase's
-      scope. This, plus the read-cost finding above, also motivated a
-      second `TODO.md` entry: a built-in "default alerts" concept for
+      scope, since fixed by Phase 14's `topic.Destroy` bullet. This, plus
+      the read-cost finding above, also motivated a
+      second entry: a built-in "default alerts" concept for
       surfacing exactly this kind of silent-until-it-happens operational
-      cliff before a user hits it blind.
+      cliff before a user hits it blind — now Phase 14a's default-alerts
+      bullet.
 
       Alternatives considered and rejected in favor of the index:
       1. **A per-claim aggregate CTE** (`GROUP BY compaction_key` once, join
@@ -2784,7 +2790,8 @@ type — even the reference didn't bother.*
       same outage burst was deliberately rejected — a slow scan during a
       provably-dead-dependency burst is closer to accidental backpressure on
       the one path where speed is actively undesirable (faster retries just
-      dead-letter messages sooner) than a bug, recorded in `TODO.md` instead
+      dead-letter messages sooner) than a bug, recorded as a written
+      decision (now Phase 14's `deliveries.status` bullet) instead
       of built.
 
       One write site — `quarantine` (a poisoned range's give-up park after
@@ -2898,6 +2905,230 @@ deliberately which side of that tradeoff this project is on.
 
 ---
 
+## Phase 11.5 — Admin surface, migrations-into-code & control-plane CLI ✅
+
+**Concept:** everything up to Phase 11 was the *data plane* — producing,
+claiming, retaining, compacting messages. This phase builds the *control
+plane* around it: how an operator stands up the schema, registers/alters/
+renames/destroys topics, evolves the schema over time, and does all of it
+from a real binary instead of ad-hoc SQL. Three bodies of work that landed
+together because each needs the others: migrations-into-code (so schema
+lives in Go, not golang-migrate `.sql` files), the `pkg/admin` surface (the
+thin, guarded API the whole control plane routes through), and `cmd/vulkan`
+(the CLI that wraps that API). This is deliberately *before* Phase 13's API
+review — 13 reviews this surface as part of the v1 gate.
+
+*→ No reference impl for this one — it's product/operational shape, not a
+distributed-systems mechanic. The design record lives in this phase's own
+bullets — the former `ADMIN_CLI.md` file and the `TODO.md` "v1 admin
+surface" / "migration scripts -> code" entries have all been folded in
+here.*
+
+**Build:**
+
+*Migrations-into-code:*
+- [x] **`pkg/migrate` runner + types.** `Migration`/`TopicMigration` as sparse
+      structs (NOT an interface — most steps need no Validate/NoTxn, an
+      interface would force empty stubs); a `Querier` that deliberately
+      EXCLUDES `Begin/Commit/Rollback` so a step can't manage its own txn
+      (the runner owns the boundary — Validate + Up/Down + version stamp
+      commit atomically). `RunOnce` (single entity) and `RunAll` (loop all
+      topics, continue-past-failure via `errors.Join`).
+- [x] **Single `schema_log` table.** `(entity_type, entity_id, schema_version,
+      status, error, occurred_at)` — one append-only table for BOTH scopes,
+      not two. Current version = latest-by-`id` row where `status='success'`
+      (NOT `MAX(schema_version)` — latest-by-id is what makes a downgrade read
+      correctly). Failure rows accumulate as diagnostic history, never read to
+      decide control flow.
+- [x] **Two independent scopes.** system (shared control-plane tables) and
+      topic (per-topic table families) version on separate counters, both
+      baseline v1; a topic's version only moves when a topic-scope step runs
+      for that specific topic.
+- [x] **One advisory lock.** `common.AdvisoryLock` (`0x56554C4B`) — session
+      lock held across a whole `Run` (`AcquireLock` pins a connection so it
+      outlives per-step txns), xact lock on `RegisterSystem`. `IsLocked`
+      reads `pg_locks` for a pre-flight check (snapshot, not a guarantee —
+      TOCTOU accepted).
+- [x] **Explicit registries + gates.** `pkg/system/migrations` and
+      `pkg/topic/migrations` each export an ordered slice (no `init()` magic),
+      with a contiguity unit test. `RegisterTopic` gates on system-registered
+      (teaching error wrapping `migrate.ErrNotRegistered`, not a raw 42P01);
+      lifecycle `AssertSchemaSupported` fails a producer/consumer fast when the
+      DB's schema is outside the range the binary supports.
+- [x] **Deleted golang-migrate.** `migrations/*.sql`, `migrations/old/`, and
+      the justfile `migrate-up`/`migrate-down` recipes removed —
+      `RegisterSystem`'s CREATE-IF-NOT-EXISTS baseline is the go-forward
+      bootstrap.
+
+*Admin surface (`pkg/admin.MessageAdmin`):*
+- [x] **Topic verbs.** `RegisterTopic` (idempotent, struct-equality mismatch
+      check), `GetTopic`/`ListTopics`, `DestroyTopic` (`AllowDestroy` config
+      gate + `DestroyOptions{Force}` for non-empty), `AlterTopic`,
+      `RenameTopic`.
+- [x] **`AlterTopic` = sparse patch.** `topic.AlterConfig` is pointer fields,
+      nil = leave unchanged (chosen over full-replace: a forgotten field
+      no-ops instead of clobbering a live value to zero). `updateTopic` is a
+      single static `UPDATE ... SET col = COALESCE($n, col)` — a nil param is
+      NULL, so COALESCE keeps the current value. `PartitionSize` is absent by
+      construction (immutable — see below; the settled unlock design is
+      **11.5b**, dynamic partition bounds); `Validate` is stricter than
+      `Config.Validate` on the `> 0` fields (there zero means "default me,"
+      here it would land in the row).
+- [x] **`RenameTopic` = metadata-only.** Everything is addressed by id, so a
+      rename is one row update. Reads the row first to pin the id, then
+      updates `WHERE id = $1` (not `WHERE name`) so an ambiguous-commit retry
+      re-applies idempotently instead of misreporting not-found; maps 23505 to
+      `ErrTopicNameTaken`.
+- [x] **System verbs.** `RegisterSystem`/`MigrateSystem` (single entity),
+      `MigrateTopics` (all)/`MigrateTopic` (one).
+- [x] **`delivery_log_<id>` always created.** The `DisableDeliveryLog` flag now
+      gates *writes*, not table shape — so every topic shares one schema, which
+      is what lets the flag be a plain alterable row field.
+
+*CLI (`cmd/vulkan`):*
+- [x] **Nested Go module.** Own `go.mod` (`.../cmd/vulkan`), resolved locally
+      via a gitignored `go.work` — keeps cobra/fang/lipgloss out of the root
+      library's dependency graph entirely.
+- [x] **`topic` tree.** `register`/`list`/`get`/`alter`/`rename`/`destroy`.
+      Sparse flags map 1:1 onto the config structs via `cmd.Flags().Changed`
+      (only passed flags reach the patch); `alter` prints an OLD → NEW diff
+      table; `destroy` has a TTY-gated type-the-name confirm (`--yes`/`--force`
+      for CI).
+- [x] **`migrate` tree.** `init`/`versions`/`status`/`system|topics|topic
+      up|down --to N`. Reads `pkg/migrate` directly for `status`/`versions`;
+      an `IsLocked` pre-flight so contention fails fast ("another migration is
+      in progress") instead of blocking silently on `pg_advisory_lock`.
+- [x] **Error taxonomy.** `cliError` carrying an exit code — `failUsage`
+      (exit 2), `failOp` (exit 1), `failPrinted`; `translateAdminError` maps
+      raw 42P01 to "run `vulkan migrate init` first"; glyphs (`✓`/`✗`/`⚠`)
+      gated on `colorEnabled()`, tables via stdlib `text/tabwriter`.
+- [x] **Smaller shipped details** (done-work record folded from TODO.md's
+      admin entry): `topic` gained `created_at`/`updated_at` columns, with
+      `updated_at` bumped on every alter/rename; `list` shows
+      name/created/updated and `get` shows every field; `--json` was removed
+      for now (no consumer yet — whether a machine-readable mode comes back
+      is the one open question left from the CLI design); destroy's
+      type-the-name confirm is a plain readline prompt (`fmt.Print` +
+      `bufio`) — `huh` was dropped after it couldn't match the inline
+      transcript and its validation retries fought abort-on-mismatch; the
+      plain prompt gives abort-on-first-mismatch for free, is more
+      screen-reader friendly, and shed ~15 transitive deps.
+- [x] **CLI conventions & rationale** (folded from `ADMIN_CLI.md`).
+      Connection: `--database-url` falling back to env
+      `VULKAN_ADMIN_DATABASE_URL` — deliberately NOT plain `DATABASE_URL`:
+      `pkg/admin` exists for a privilege split, so the CLI's connection is
+      the privileged (DDL/DROP) one, and reusing the ambient app var risks
+      a CI script aiming a destructive admin command with credentials
+      meant for the app — a distinct name forces the operator to wire in
+      admin credentials on purpose. Output: human-readable tables by
+      default; `-q`/`--quiet` on `list`/`get` (names-only / no detail
+      block, the docker/kubectl `-o name` convention) for shell
+      composition — `if vulkan topic get -q X; then …` works, with the
+      exit code doubling as the boolean; errors are always human text on
+      stderr with an `error: ` prefix. Stack specifics: fang provides the
+      styled help/usage/error output, automatic `--version`, man pages,
+      shell completions, and color-profile downsampling (TrueColor →
+      16-color, light/dark adaptation); tables are stdlib
+      `text/tabwriter`, NOT lipgloss's table component. CI-safety is two
+      risk profiles, not one: termenv-based styling detects non-TTY output
+      and strips ANSI automatically (safe in every pipeline by default),
+      while Bubble-Tea-family interactive prompts assume a TTY and do NOT
+      degrade when piped (huh#101) — destroy's TTY gate means the one
+      risky path never runs in CI, and the gate is belt-and-suspenders:
+      `CI`/`TERM=dumb` env checks alongside `isatty`, since some CI log
+      viewers present a pty-like stream that fools a bare isatty check.
+- [x] **`migrate` command semantics** (folded from `ADMIN_CLI.md`): `--to`
+      is mandatory on every up/down leaf — no implicit "to latest" on up,
+      no implicit "one step back" on down — and the CLI enforces DIRECTION
+      itself (the runner would happily go either way from a bare target):
+      `up` refuses a target that would roll the schema back, `down`
+      refuses one that would move it forward. `versions` reads only the
+      registry compiled into THIS binary — no DB access — and steps
+      deliberately carry no description in the registry (the registry file
+      and release notes are where prose lives). `status` compares current
+      (DB: schema_log latest-by-id success row) vs available (the
+      binary-compiled ceiling), and `current > available` is NOT an error —
+      an older CLI on a newer DB just reports "I only know up to N"; only
+      `current < available` is actionable, and status prints the exact
+      up-command to run. The `IsLocked` pre-flight is a fast TOCTOU-
+      accepting check against pg_locks — a lost race falls back to
+      blocking on the advisory lock (pre-check behavior), and deliberately
+      NO client-side timeout: bounding just the waiting-for-lock phase
+      without risking killing a legitimately long-running step would
+      require splitting lock acquisition out of `Runner.RunOnce`/`RunAll`
+      as its own call — more surface than an edge case this rare
+      justifies. `init` isn't a migrate STEP — it's `RegisterSystem`
+      surfaced under `migrate` because standing up the schema belongs with
+      schema management; it's what unblocks `topic register`'s
+      system-registered gate.
+- [x] **`topic` verb semantics** (folded from `ADMIN_CLI.md`). register:
+      config flags are left unset by default so `WithDefaults()` stays the
+      single source of truth (`--help` annotates "(library default)"
+      instead of duplicating numbers), and the config-mismatch diff table
+      is computed CLI-side — refetch via `GetTopic` and compare against
+      what was just sent, never parse the wrapped error string. alter:
+      bools are genuine tri-state (`--flag=false` counts as PASSED via
+      `Changed`, distinct from omitted = leave as-is); zero field flags is
+      a usage error (exit 2), not a silent no-op — an alter must change
+      something; two consequences carried in `--help` from `AlterTopic`'s
+      contract: a running producer/consumer snapshots config at ITS
+      Register, so an alter lands on its next restart, not live, and a
+      declarative `RegisterTopic` still passing the pre-alter config
+      deliberately fails `ErrTopicConfigMismatch` so it can't silently
+      paper over an operator's change. rename's documented hazard: the
+      OLD NAME IS FREE the moment it returns — running instances keep
+      working (they resolved the id at Register), but anything still
+      configured with the old name fails its next restart's Register, or
+      worse, silently attaches to a new topic later registered under the
+      freed name — update configs before reusing a name. destroy: `--yes`
+      and `--force` are INDEPENDENT gates — CI skipping the prompt doesn't
+      imply consent to blow away undelivered messages, that still needs
+      `--force` said explicitly; checks are ordered lookup → force/empty →
+      confirm so a doomed call never wastes a confirmation prompt; a
+      mistyped confirmation aborts immediately with no retry loop (a
+      script piping the wrong thing doesn't hang or get three guesses at a
+      destructive op); non-interactive stdin without `--yes` refuses
+      rather than hanging on a read that never resolves; and
+      `ErrDestroyDisabled` never surfaces here — the CLI sets
+      `AllowDestroy` internally, so that gate only matters to library
+      embedders.
+
+**Lab:** no permanent `just` lab for this phase (it's operational surface, not
+a mechanic to re-watch) — verification was live throwaway checks against dev
+`:5432` for every verb: sparse-alter leaves untouched fields byte-identical,
+explicit-zero lands (COALESCE keys on NULL not zero), rename frees the old name
+and preserves id/config, every error path returns the right sentinel + exit
+code. The invariant labs that DO persist are the migration ones from the
+migrations-into-code work (fresh-create-at-N == migrate-to-N schema diff,
+Up/Down double-apply).
+
+**Explain it back** *(answers in NOTES.md):*
+1. Why is `AlterConfig` pointer-per-field instead of reusing `topic.Config`
+   or requiring every field? What specific failure does the sparse-pointer
+   shape prevent that a full-replace struct would cause?
+2. `updateTopic` uses `COALESCE($n, col)` with a single static statement.
+   Why does a nil Go pointer end up keeping the column's current value — and
+   why is that better than building the `SET` list dynamically?
+3. Why is `PartitionSize` immutable while every other topic field is
+   alterable? What's the exact mechanism that would break if it changed
+   mid-life, and what's the settled path to eventually unlock it?
+4. `RenameTopic` updates `WHERE id = $1`, not `WHERE name = $1`, even though
+   the caller passed a name. Why does the key choice matter for retry safety?
+5. Current schema version is "latest-by-`id` row where `status='success'`,"
+   NOT `MAX(schema_version)`. Why does a downgrade force that distinction?
+6. Why does `RegisterSystem` use an xact-scoped advisory lock while a
+   `Migrate` run uses a session-scoped one? What breaks if you swap them?
+7. Why did the CLI get its own nested `go.mod` instead of being a package in
+   the root module? What exactly does a library consumer avoid because of it?
+
+**Done when:** every verb built + live-verified against dev Postgres, docs
+reconciled (`ADMIN_CLI.md` + `TODO.md` at the time — both records since
+folded into this phase), NOTES.md entry written. No git tag —
+unlike the earlier phases, this landed across many `continue` commits rather
+than at one clean boundary.
+
+---
+
 ## Phase 13 — Public API design review (v1 gate)
 
 **Concept:** everything exported from `pkg/producer`, `pkg/consumer`, and
@@ -2908,7 +3139,10 @@ because a public API shape decided casually now is a breaking change to
 undo after v1 ships. **Sequencing rule for the rest of this backlog:**
 anything that could affect public API shape happens here, before the shape
 is finalized — don't let a later phase discover it wanted the API different
-after this one already locked it in. Documentation is explicitly excluded
+after this one already locked it in. Every item below is now resolved
+(the last two open ones, `Message` generic-vs-`struct{}` and
+named-return-params, were promoted out to **14b** rather than decided
+here). Documentation is explicitly excluded
 from this phase and from Phase 14 — it comes last, once the shape it's
 describing has stopped moving (see Phase 15).
 
@@ -2920,11 +3154,9 @@ describing has stopped moving (see Phase 15).
       to pgx specifically. Decide, and write the decision down even if it
       stays as-is (matches 11b's own "document even if the answer is keep
       pgx" precedent) — the reasoning belongs here, not just a shrug.
-- [ ] **`Message` generic vs. a `struct{}`-based shape** for
-      producer/consumer — decide and document.
 - [x] **`MessageProducer.Register(ctx)` — give producers the consumer's
-      lifecycle pattern.** The presence/heartbeat design (TODO.md "Presence"
-      entry, where the full agreed shape lives) needs a lifetime heartbeat
+      lifecycle pattern.** The presence/heartbeat design (**13d**, where the
+      full agreed shape lives) needs a lifetime heartbeat
       goroutine per producer, and producers have no lifetime today — no ctx,
       no Run, no Close. Agreed shape: a producer `Register(ctx)` mirroring
       the consumer's — presence row + parent-table validation + heartbeat
@@ -3097,9 +3329,10 @@ describing has stopped moving (see Phase 15).
       names while the generic became `Message` would have read inconsistently
       (`WorkProducer[Message]`). `pkg/concurrency`'s own `WorkType` param
       (`Queue[WorkType]`/`PressureQueue[WorkType]`) was deliberately left
-      alone — its fate is tied to the still-open `Queue`/`PoolLimiter`
-      dead-code decision above, not this one.
-- [o] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
+      alone — its fate is tied to the `Queue`/`PoolLimiter` decision (now
+      **14a**'s buffered claim + dispatch task, which deletes the package),
+      not this one.
+- [x] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
       repeated on every call vs. an admin-object-holding-`ds` pattern that
       only needs `(ctx, name)` per call.
 - [x] **`topic.LogTable`/`PartitionTable`/`DeliveryTable`/`DeliveryLogTable`**
@@ -3160,16 +3393,17 @@ describing has stopped moving (see Phase 15).
       `MessageConsumerConfig` — confirmed via the same test:
       `AdvanceWaterline(topicID, consumerGroup)` genuinely takes a group,
       each group's cursor really is independent. `QueueTimeout` deliberately
-      left alone — tied to the still-open `Queue`/`PoolLimiter` dead-code
-      bullet above, placing it is premature until that resolves.
+      left alone — tied to the `Queue`/`PoolLimiter` decision (now **14a**'s
+      buffered claim + dispatch task), placing it is premature until that
+      lands.
       Also surfaced a bigger question this doesn't fully close: even with
       config now correctly shared, `Janitor()` still runs once per
       consumer-GROUP process, not once per topic, so N groups on one topic
       still means N redundant loops maintaining the same partitions (now at
-      least agreeing on the same values). Rolled into TODO.md's existing
-      "janitor opt-out" and "many workers running janitor" entries rather
-      than opening a new one — same underlying question of who should own
-      running the janitor.
+      least agreeing on the same values). Rolled into the "janitor opt-out"
+      and "many workers running janitor" question rather than opening a
+      new one — same underlying question of who should own running the
+      janitor, now tracked as **14a**'s janitor efficiency/concurrency task.
 - [x] **`WorkTimeout`/`QueueTimeout`/`AckMargin` naming.** All three sum
       into `leaseDuration`, but checking actual enforcement (not just the
       formula) split them into two real categories: `WorkTimeout` and
@@ -3181,13 +3415,11 @@ describing has stopped moving (see Phase 15).
       lease padding, structurally identical to `AckMargin`'s role, not
       `WorkTimeout`'s — renamed to **`QueueMargin`** to match. Removed the
       "consider a better name" TODOs on all three now that the naming is
-      decided. `QueueMargin`'s own existence (not just its name) is still
-      tied to the still-open `Queue`/`PoolLimiter` dead-code bullet above —
-      if that mechanism gets dropped, whether a "time spent queued before a
-      worker starts" concept survives leaseDuration at all is an open
-      question this doesn't resolve, revisit alongside that decision.
-- [ ] **Named-return-params for public functions** — decide the house style
-      and apply it consistently across the reviewed surface, not ad hoc.
+      decided. `QueueMargin`'s own existence (not just its name) was
+      tied to the `Queue`/`PoolLimiter` decision — resolved by **14a**'s
+      buffered claim + dispatch task, which keeps it with real meaning:
+      time buffered before a processor starts eats the lease, and the
+      bounded buffer is what bounds it.
 - [x] **Retry policy is hardcoded in four places**
       (`NewDatastoreRetry(6, time.Second, 5*time.Minute, 2, ...)` in
       producer/topic/consumer/metrics datastores) — decide if/how this
@@ -3482,16 +3714,18 @@ follow in Phase 14 or after v1 where noted:*
       as one then: substitution actually possible, token/UUID types not
       leaking pgx, thinned to what a second implementation or tests
       genuinely need.
-- [o] **Migrations-into-code.** Decide whether `topic.Register` (or a new
+- [x] **Migrations-into-code.** Decide whether `topic.Register` (or a new
       `Ensure`) auto-provisions schema, or whether the project keeps
       requiring an external `migrate` step — this is a shape decision on a
       function users call directly, not an implementation detail.
-- [o] **Row-level security / least-privilege setup** — shape it, most likely
-      as a `topic.Config` toggle; the underlying Postgres-side plumbing can
-      land after v1, but the config surface needs deciding now so it doesn't
-      change shape later.
-- [x] **Circuit breaker for a known-dead downstream dependency** (TODO.md has
-      the full motivating write-up). Work through the design: does it live
+- [x] **Circuit breaker for a known-dead downstream dependency** (motivating
+      scenario: a high-throughput topic whose `consumerFunc` all calls one
+      external dependency that goes down for an hour keeps retrying at full
+      claim throughput the whole outage — every claimed message fails, gets
+      parked/retried/dead-lettered, hammering deliveries at close to peak
+      rate exactly when the datastore is least able to absorb it; the
+      breaker stops the retry storm at its source instead of making the
+      datastore layer absorb it better). Work through the design: does it live
       as a new `MessageConsumerConfig` hook or a wrapper around `consumerFunc`;
       per-topic or per-group state; what counts as "the same dependency" when
       `consumerFunc` is opaque to this library; how open/closed state
@@ -3516,17 +3750,17 @@ follow in Phase 14 or after v1 where noted:*
       The settled shape:
       - *Input is error classification, nothing else.* The user marks an
         error systemic (a recognized dependency-down error — composes with
-        the named-errors entry) vs this-message's-fault; only systemic
-        errors count toward tripping. Recorded at park time as an
+        the named-errors taxonomy, **14b**) vs this-message's-fault; only
+        systemic errors count toward tripping. Recorded at park time as an
         `error_class` enum column on the delivery row (not a bool —
-        values coordinated with the named-errors taxonomy), which is what
-        later reconciliation matches on. Keyed/multi-dependency breakers
+        values coordinated with **14b**'s named-errors taxonomy), which is
+        what later reconciliation matches on. Keyed/multi-dependency breakers
         (per-tenant webhook endpoints) are OUT of scope: a 5%-of-traffic
         dead tenant never trips an aggregate breaker, but fixing that
         needs per-dependency tagging plus
         skip-this-tenant-while-processing-others — per-message
         scheduling, which is the user-initiated-defer feature's
-        territory, not a breaker.
+        territory (**12b**), not a breaker.
       - *Two tiers: the trip unit is the INSTANCE, not the group.* One
         instance's evidence cannot distinguish "the dependency is dead"
         from "I am broken" — a corrupted host file on one bad node
@@ -3552,7 +3786,7 @@ follow in Phase 14 or after v1 where noted:*
         converges to everyone-paused. Open: K as a small absolute
         (brittle: unanimity for tiny groups) vs a fraction of live
         instances — the fraction needs the live-instance count, i.e.
-        the Presence entry's heartbeat rows (TODO.md); this is the
+        the presence design's heartbeat rows (13d); this is the
         first feature with a hard dependency on it.
       - *Evidence bar: a debounce, not statistics.* Classification is
         the user's word — the streak isn't inferring a failure rate,
@@ -3650,19 +3884,15 @@ follow in Phase 14 or after v1 where noted:*
         toward the poison quarantine (see the hand-back gap above —
         same primitive, same reclaim refund). The settled shallow
         buffer (≈ one batch) bounds how much ever needs handing back.
-- [o] **Chaos-testing / fixture suite** — shape both halves: (1) internal
-      test helpers this repo's own test suite can use to seed messages
-      directly into `ready`/`inflight`/`dead` states and inject failures, and
-      (2) whether a thin public testing package ships to library consumers
-      for the same purpose, or whether that stays internal-only. Doesn't
-      need to be robust or complete — start the surfaces (what calling it
-      looks like), not a full chaos-engineering framework.
+*(Row-level security / least-privilege setup and the chaos-testing / fixture
+suite were both parked here originally; both moved out of the v1 gate to the
+optional post-v1 pool — see **13c**. Neither freezes a surface a later
+addition would have to break, so shaping them is itself post-v1 work.)*
 
 **Done when:** every item above has an explicit, written decision (even "no
 change, and here's why") — nothing left as an open question for a later v1
-phase to trip over. Circuit breaker and the chaos-testing suite have a
-documented shape/surface, not full implementations. NOTES.md, `git tag
-phase-13`.
+phase to trip over. Circuit breaker has a documented shape/surface, not a
+full implementation. NOTES.md, `git tag phase-13`.
 
 **Real systems:** closer to a pre-1.0 API-freeze pass any library does (Go's
 own API-compatibility promise process, Kubernetes's alpha→beta→stable API
@@ -3675,7 +3905,10 @@ decide the shape once, deliberately, before people depend on it.
 
 **Concept:** the real (non-API-shape) gaps and rough edges found across
 TODO.md and the code-comment sweep that should close before v1 ships, now
-that Phase 13 has settled what the surface looks like.
+that Phase 13 has settled what the surface looks like. Every item below is
+now resolved — the backlog's still-open functionality, cleanup, and
+measurement items were promoted out into their own explicitly ordered
+**14a**/**14b**/**14c**, which are the actual remaining path to v1.
 
 **Build:**
 - [x] **`topic.Destroy` can exhaust Postgres's shared lock table** on a topic
@@ -3725,7 +3958,7 @@ that Phase 13 has settled what the surface looks like.
       caller to stop producers and re-run, surfacing the caller-coordination
       bug instead of livelocking on it. (The old single-transaction shape
       didn't have this hazard — it won the lock race atomically — batching
-      traded that away; a follow-up presence/heartbeat design in TODO.md
+      traded that away; the follow-up presence/heartbeat design (13d)
       would let Destroy refuse up front, naming the live producer, with this
       bound remaining the hard backstop.) Live-verified on dev PG (stock
       64×100 = 6400 slots): a 2100-partition topic still fails the old
@@ -3850,10 +4083,6 @@ that Phase 13 has settled what the surface looks like.
       and a stale head just means the claim lags one poll tick. Verified:
       race repro (both shapes), three-outcome cursor check, all 10
       cursor-path labs green.
-- [ ] **Message/work-struct schema evolution.** Decide and document what
-      happens when a topic's `Message` shape changes after messages are
-      already on the log — the edge cases that break, and what guidance (if
-      any) the library gives users for handling it.
 - [x] **`FanOut` rescans the entire log on every call** instead of tracking a
       per-group high-water mark for the LIFECYCLE path — give it one instead
       of a full rescan each time. (Design settled while fixing the cursor
@@ -3950,24 +4179,39 @@ that Phase 13 has settled what the surface looks like.
       cursor check unchanged (incl. same-poll claim after a quiet produce,
       via the fresh-pair promotion); full lab suite green.
 - [x] **`deliveries.status` index** — no code change; the existing "don't add
-      without real evidence" decision (TODO.md) already stands. This bullet
+      without real evidence" decision already stands (folded from TODO.md;
+      this bullet is now the canonical record). This bullet
       just formally closes it out as reviewed-and-confirmed for v1, rather
       than leaving it looking like an open question.
       **Resolved: confirmed for v1, no index.** Re-verified against the
       current schema: `delivery_<topic_id>` still has only its
       (consumer_group, message_id) PK, and no UPDATE touches an indexed
       column, so every state transition keeps the HOT fast path — the
-      original cost argument is intact. The case FOR the index got weaker
+      original cost argument is intact (status is the single most
+      frequently written column in the table — every recording function
+      sets it — so a status index would end the HOT fast path for every
+      state transition, on every topic, to speed a read that's only
+      expensive in an already-contained case). The case FOR the index got
+      weaker
       twice since it was written: the blast-radius worry from the Phase 11
       revisit (one lagging topic's bloat degrading every other topic's
       queries) was fixed structurally by the per-topic delivery split, and
       LIFECYCLE's parking took `ClaimMessagesWithLifecycle` out of live
       traffic — `ClaimExceptions` is the only status-filtered scan left,
       the exception window keeps its table sparse by design, and the
-      circuit-breaker analysis (TODO.md) already concluded a faster
-      exception scan during a failure burst is actively counterproductive.
-      TODO.md's "revisit with real evidence" entry stays as the reopening
-      condition.
+      circuit-breaker analysis (Phase 13's design bullet) already concluded
+      a faster exception scan during a failure burst is actively
+      counterproductive: fresh happy-path parks aren't gated by
+      `ClaimExceptions`' cost at all, and speeding the retry-claim path
+      against a dependency that's provably down just burns through
+      maxAttempts sooner, permanently dead-lettering messages that would
+      have succeeded on recovery — a slow unindexed scan there is closer to
+      accidental backpressure than a bug. REOPENING CONDITION: real
+      evidence of a hot claim scan (pg_stat_user_tables / EXPLAIN ANALYZE
+      on a lagging group), never speculation — and if it's ever added,
+      prefer a PARTIAL index (WHERE status IN ('ready', 'inflight')) over a
+      full one, so terminal done/dead rows drop out of upkeep instead of
+      bloating the index forever.
 - [x] **DELETE CASCADEs / triggers for related tables** — evaluate whether
       they'd simplify code, what they'd cost (especially around partition
       drops), and whether they deepen the project's commitment to Postgres
@@ -4008,14 +4252,232 @@ that Phase 13 has settled what the surface looks like.
       triggers/PL/pgSQL and FK-on-partitioned-table semantics are the deep
       end, and they'd collide with the migrations-into-code TODO — with
       the Phase 13 Datastore-interfaces question still open, don't deepen.
-- [o] **Default alerts** for approaching operational limits (partition count
-      nearing the lock-table ceiling from the `topic.Destroy` fix above,
-      compaction history depth) — build the two already-measured triggers on
-      top of the existing Logger/`QueueState` metrics extension points; no
-      new public surface needed, this is pure implementation.
-- [ ] **Benchmark-recording pipeline** — labs already measure throughput ad
-      hoc; decide where those numbers get saved so a throughput regression
-      is visible over time instead of re-derived by hand each time.
+- [x] **SQLSTATE retry-classification hardening** (done-work record folded
+      from TODO.md — the work landed before this phase was reached, but
+      this is its home in the plan). The open question "should `Process`'s
+      loop retry/backoff at the poll-loop level when a claim errors, or is
+      'the caller of Consume restarts the process' the intended boundary"
+      was RESOLVED as keep-per-tick-fatal: an unbounded loop-level retry
+      would mask a genuinely permanent error forever (crash is both a
+      signal and a chance to fix things on restart), and it would make
+      `Process` a special case out of step with `RollWaterline`/
+      `DrainExceptions`/`Project`/janitor, which all share the identical
+      give-up-and-exit shape via `DatastoreRetry`'s bounded MaxRetries
+      budget. What WAS a real gap, fixed: a connection killed mid-query
+      (SQLSTATE 57P01/57P02/57P03 — admin/crash shutdown,
+      cannot-connect-now) was misclassified PERMANENT (zero retries)
+      despite the outcome being genuinely ambiguous — "did that commit
+      land before the connection died" deserves the same bounded retry
+      budget every other transient blip gets.
+      `pkg/retry.IsTransientPgError` now classifies those three codes
+      retryable alongside 40P01, after auditing every
+      `DatastoreRetry.Wrap` call site (~21 across
+      consumer/producer/topic/metrics) for
+      retry-safety-under-ambiguous-commit — every write self-consumes its
+      own re-entry (a token/status guard a retry can't re-match) or
+      carries an idempotency key with ON CONFLICT DO NOTHING, so a retry
+      of an attempt that actually landed is a no-op. A follow-up audit of
+      the rest of the SQLSTATE space added 10 more codes: 40001
+      (serialization_failure — currently dead code since nothing uses
+      SERIALIZABLE, kept for correctness), 08000/08001/08003/08006/08007/
+      40003 (connection never established or died mid-request, or
+      Postgres explicitly can't say whether it committed), 57P05
+      (idle_session_timeout), 53300 (too_many_connections — never got a
+      connection, zero ambiguity), and 57014 (query_canceled — only safe
+      because our own ctx-driven cancellation is already filtered out by
+      the existing context.Canceled guard). Explicitly NOT added:
+      08004/08P01 (can mean permanent misconfiguration — bad credentials,
+      protocol mismatch), 40002 (deterministic constraint violation), the
+      53xxx/58xxx resource-exhaustion and I/O codes (retrying masks a
+      real operational emergency instead of surfacing it — the same
+      "crash is a signal" reasoning), the XX corruption class (retrying
+      is actively dangerous), and 25P02 (post-failure noise the batch
+      resolver's own poison-eviction already handles — adding it would
+      double-handle or mask the real error). Two bonus fixes surfaced
+      alongside: consumer `dropPartition`'s bare `DROP TABLE` became
+      `DROP TABLE IF EXISTS` (the one DDL site unlike every other), and
+      producer `classifyBatchFailure` stopped wrongly evicting an
+      innocent caller from a batch on a mid-read connection kill (the
+      existing IsRetryable-first guard now covers this class for free).
+      Verified: 8/8 repeat pg_terminate_backend-mid-consume runs
+      recovered transparently (previously ~50% died outright), a 32-case
+      classification table covering every addition and exclusion, and a
+      full rebuild/vet/faultisolationlab pass.
+
+**Done when:** every item above is either fixed or has a written decision,
+all existing labs (plus any new ones this phase adds) still pass, NOTES.md,
+`git tag phase-14`.
+
+**Real systems:** the pre-release hardening pass every production datastore
+does — Kafka's own release checklists split exactly this way, API/protocol
+freeze first, then a bug-scrub pass against it.
+
+---
+
+## Phase 14a — Functionality (pre-v1)
+
+*Promoted out of Phase 14's flat backlog into its own explicitly ordered
+phase — this is the active "right now" focus: functionality and
+operational decisions that must close before v1 ships, as distinct from
+the naming/shape cleanup in **14b** (which also absorbs two items promoted
+out of Phase 13) or the measurement/testing work in **14c** that's
+sequenced after both of these close.*
+
+**Build:**
+- [o] **Message/work-struct schema evolution.** Decide and document what
+      happens when a topic's `Message` shape changes after messages are
+      already on the log — the edge cases that break, and what guidance (if
+      any) the library gives users for handling it.
+- [o] **Default alerts** for approaching operational limits (full spec folded
+      from TODO.md; this is now the canonical record). The problem: several
+      failure modes in this project are silent until they happen — nothing
+      warns a user before they cross an operational cliff, and the only way
+      to know one is coming is to independently re-derive the math. The two
+      concrete, already-measured triggers that define v1 scope: partition
+      count climbing high enough that user-run DDL against topic tables
+      risks exhausting Postgres's fixed-size shared lock table (~1000
+      partitions fine, ~2000 not, on stock settings — `topic.Destroy`
+      itself is fixed above, but a user's own DDL still walks in blind),
+      and a compacted topic's "is this key still the latest" read cost
+      growing LINEARLY with accumulated partition history (measured
+      ~10µs/partition, no early termination — a backlog replay against an
+      old high-history topic silently becomes minutes of pure query
+      overhead with no signal saying why). Neither is a correctness bug —
+      both "work fine until they don't." Each alert, when it fires, must:
+      explain WHY it matters — the actual mechanism, never just "value >
+      threshold"; list the LEVERS available with enough context to judge
+      each (e.g. partition count: widen `PartitionSize`, batch the DDL,
+      shorten retention), not a generic "raise your limits"; and be
+      OVERRIDABLE per-check, for the user who made an informed call that a
+      check doesn't apply (bigger max_locks_per_transaction, intentionally
+      short-lived topics). Open questions, deliberately not resolved
+      speculatively: delivery mechanism — log line, metric/gauge,
+      health-check endpoint, or an active check run on a janitor/Consume
+      tick? (pkg/logger and the otel `QueueState` gauges already exist —
+      reuse one, don't build a third extension point); where defaults
+      live — hardcoded thresholds, computed live from the user's actual
+      Postgres settings (e.g. query max_locks_per_transaction and derive a
+      real partition-count ceiling), or per-deployment config; v1 scope
+      stays the two measured triggers, not a general-purpose rule engine.
+      Natural home is pkg/topic's janitor loop, which already runs
+      periodically per topic; the presence design (13d) is the substrate
+      that would let an alert say "destroy blocked: producer X seen 2s
+      ago" instead of a bare threshold.
+- [ ] **`cmd/vulkan` connection gap** (folded from the admin-surface entry):
+      `datastore.PostgresConnectionConfig` has no sslmode /
+      DSN-query-param field — it's User/Pass/Host/Port/Database/MaxConns
+      only, built into a plain postgres:// string (only pool_max_conns
+      supported). The CLI parses `--database-url` /
+      `VULKAN_ADMIN_DATABASE_URL` itself into that struct, so anything
+      beyond user/pass/host/port/db (sslmode=require, connect_timeout,
+      ...) is SILENTLY DROPPED today — the CLI at least warns on stderr
+      about unsupported query params it drops. Fine for local/CI
+      Postgres; the fix is a small pkg/datastore field add (an explicit
+      sslmode field or a passthrough param map, NOT a redesign) the first
+      time someone points the CLI at a database that needs it.
+- [ ] **Janitor efficiency and concurrency** (folded from TODO.md). Consider
+      allowing parts of the janitor process to be opt-out, so users can
+      disable it in-consumer and run it directly in a separate process —
+      for better scaling and separation of concerns. Needs real thought:
+      boundaries depend on each other, so what happens if the janitor is
+      "down" in an opt-out world?
+      - **IMPORTANT — the multi-janitor contention question.** Think through
+        the consequences of many workers/consumers all running janitor
+        processes and how to prevent overloading or lock contention,
+        ideally without leader election. Possibly reuse the lease-ownership
+        concept: each janitor instance fights for a lease when work is
+        available via `can_run_after`. Janitors should have jitter in their
+        poll. One concern is sporadic, random load distribution across
+        janitor instances in terms of CPU/mem — opting out of the
+        in-consumer janitor process could resolve that.
+      - **This isn't hypothetical — it's true today with zero opt-in.**
+        Finding from the Phase 13 config-placement review: `Janitor()` runs
+        once per `MessageConsumer` instance, i.e. once per consumer GROUP
+        process — but every one of its four operations
+        (`EnsureNextPartition`, `DropExpiredPartitions`,
+        `SweepExpiredPartitions`, `SweepExpiredIdempotencyKeys`) is purely
+        topicID-scoped, no `consumerGroup` param anywhere in any of their
+        signatures. So N consumer groups reading one topic today already
+        means N redundant janitor loops independently hammering the same
+        partitions/idempotency_key rows — true before any opt-out design
+        exists, just currently invisible because
+        `JanitorPollRate`/`PartitionSafetyBuffer`/`JanitorSweepBatchSize`
+        now live on `topic.Config` (so at least the N loops agree on the
+        same values — doesn't stop there being N of them). Whatever
+        opt-out/scaling design lands here should also settle who actually
+        OWNS running the janitor for a topic — today's answer ("whichever
+        consumer group processes happen to be up") was never a deliberate
+        choice, just where the loop happened to get wired in.
+- [ ] **Buffered claim + N-processor dispatch (CURSOR path only).** Absorbed
+      from Phase 12's `Queue`/`PoolLimiter` bullet — the fate decision can't
+      wait for FIFO: the params are required-but-dead constructor surface
+      (breaking to remove, so it must land pre-v1), and the unkeyed
+      dispatcher turns out not to need FIFO at all. The shape, decided in
+      discussion:
+      - **Messages are the dispatch unit; ranges stay the claim/commit unit
+        as hidden bookkeeping.** That one split is what makes it safe. Fill
+        loop claims ranges (`ClaimMessagesWithCursor`), tags each message
+        with its range, appends to a bounded FIFO buffer; N processors pull
+        from the head; a range Commits when its last message resolves. One
+        claim of `BatchLimit` messages feeds all N processors — ranges in
+        flight stay ~2-3 (refill-driven), never N, so no range-hoarding and
+        other workers keep claiming contiguous ranges right behind.
+      - **The invariant that keeps `PartialCommit` unmodified:** processors
+        pull in id order, so the dispatched set within any range is always
+        a contiguous prefix. Shutdown = stop dispatching, drain in-flight
+        (same latency as today — parallel stragglers wait max one handler
+        runtime), and the resolved set per range is a contiguous prefix
+        again. No bitmap, no schema change.
+      - **Force-reclaim verb** for a wholly-untouched buffered range at
+        shutdown/abort: immediately release it instead of letting it sit
+        out lease expiry (expiry counts as a reclaim → poison quarantine
+        pressure). Also the primitive Phase 16's breaker needs — an open
+        breaker gates BOTH the fill loop and the dequeue, and empties the
+        buffer via this verb.
+      - **Config: one field (`Concurrency`, default 1), nothing else.** N=1
+        with the hardcoded depth-1 prefetch IS today's behavior plus
+        claim-RTT hiding; N>1 is the explicit opt-out of in-order
+        processing (CURSOR's pitch — a keyed topic loses per-key order
+        until Phase 12's lanes). Buffer depth is a LATENCY lever, never a
+        parallelism lever: refill is hardcoded to keep N processors fed,
+        not exposed as config — scaling concurrency by hoarding ranges is
+        the misuse this design forbids.
+      - **Kills the dead params:** `Queue`/`PoolLimiter` constructor params
+        + fields deleted, `pkg/concurrency` with them (the examples that
+        exist only to satisfy the constructor get updated). The dispatcher
+        is sparse config, not injected collaborators. `QueueMargin` regains
+        real meaning — time buffered before a processor starts eats the
+        lease, and the bounded buffer is what bounds it.
+      - **Honesty check before building:** benchmark against just raising
+        `BatchLimit` — the hidden RTT is claimRTT/(claimRTT +
+        batch-processing time), and the fanout benchmark showed consumer
+        drain, not claim, is the wall. N>1 dispatch is the real payoff;
+        depth-1 prefetch mostly rides along.
+      This is also where the intra-batch-concurrency idea (folded from
+      TODO.md via Phase 12) lands: one worker's range processes
+      sequentially today, so a single slow (not failing) message queues the
+      rest of the batch behind it — worker latency is sum(all) instead of
+      max(slowest). Reference for the original (deleted) Prefetch/Dispatch
+      design this replaces:
+      https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
+
+**Done when:** every item above is either fixed or has a written decision,
+NOTES.md, `git tag phase-14a`.
+
+---
+
+## Phase 14b — Cleanup / public API design (pre-v1)
+
+*The other half of the promoted RIGHT NOW backlog — no new behavior here,
+just naming/shape decisions that lock in before v1 (per Phase 13's own
+sequencing rule) plus the internal-readability debt that rides along with
+it.*
+
+**Build:**
+- [ ] **`Message` generic vs. a `struct{}`-based shape** for
+      producer/consumer — decide and document.
+- [ ] **Named-return-params for public functions** — decide the house style
+      and apply it consistently across the reviewed surface, not ad hoc.
 - [ ] **Internal file-structure cleanup** — split up
       `pkg/producer/datastore.go` and any other internal-only readability
       debt surfaced along the way (the old
@@ -4032,23 +4494,74 @@ that Phase 13 has settled what the surface looks like.
       nothing to clean up. Open sub-decision: either do the examples-module
       split now so this becomes actionable, or explicitly decide the
       go.mod weight isn't worth that split before v1 and drop this bullet.
+- [ ] **Error message consistency and obsession** (folded from TODO.md).
+      Obsess over and standardize every potential error message — each one
+      should be as understandable and actionable as possible, wherever
+      controllable, probably via enriching context or adding links to docs
+      (eventually).
+      - Named/defined errors for users to `errors.Is` on, for convenience —
+        decide how to structure that taxonomy (coordinates with the
+        circuit breaker's `error_class` enum, Phase 16).
+- [ ] **Config & options refinement** (folded from TODO.md). For the public
+      API, abstract away required variables as plain params, keeping only
+      truly optional params in the `Config` structs. `Config` structs
+      should also be renamed to `OptionalConfig` to make that split
+      obvious at the call site.
+
+**Done when:** every item above has a written decision and, where
+applicable, is applied consistently across the reviewed surface, NOTES.md,
+`git tag phase-14b`.
+
+---
+
+## Phase 14c — Once 14a/14b are complete (pre-v1)
+
+*Sequenced after **14a** and **14b** close: a benchmark suite, a
+cross-version compatibility matrix, and a real test suite are all more
+useful once the API and internals have stopped moving — building or
+running them against a surface that's still shifting means redoing the
+work.*
+
+**Build:**
+- [ ] **Benchmark-recording pipeline** — labs already measure throughput ad
+      hoc; decide where those numbers get saved so a throughput regression
+      is visible over time instead of re-derived by hand each time. Folded
+      from TODO.md: the pipeline's first real workload should be a
+      thorough multi-topic throughput/latency benchmark under high
+      concurrency, ideally pushed until it hits real DB limits (connection
+      pool, lock table, I/O) rather than the library's own bottleneck. The
+      single-topic skip-vs-claim comparison was already measured in
+      `bench/idempotency/RESULTS.md` before `SkipIdempotency` was removed;
+      multi-topic contention was left on that benchmark's own deferred
+      list and is still open.
+- [ ] **Cross-version compatibility matrix** (folded from TODO.md's
+      testing-strategy entry): run a producer/consumer built against
+      release N-1 on a database migrated by N — the combination a rolling
+      deploy actually produces, and the empirical definition of which
+      schema changes are BREAKING (i.e. require the two-release
+      expand/contract dance) vs. a plain additive migration. The other
+      direction (binary at N, database still at N-1) should fail fast at
+      Register's schema gate — that clean teaching error is itself an
+      assertion, not a skip. Mechanics: a small test module whose go.mod
+      pins github.com/agentstax/vulkan to the prior released version, run
+      against a database migrated by HEAD.
+- [ ] **TEST.md expand and refine** (folded from TODO.md). Flesh out
+      TEST.md — the shutdown/interruption scenarios recorded there so far
+      are Setup/Action/Assert prose from a scratch harness, not code — and
+      implement it as an actual `pkg/producer`/`pkg/consumer` test suite
+      once the API stops moving.
 
 **Done when:** every item above is either fixed or has a written decision,
-all existing labs (plus any new ones this phase adds) still pass, NOTES.md,
-`git tag phase-14`.
-
-**Real systems:** the pre-release hardening pass every production datastore
-does — Kafka's own release checklists split exactly this way, API/protocol
-freeze first, then a bug-scrub pass against it.
+NOTES.md, `git tag phase-14c`.
 
 ---
 
 ## Phase 15 — Documentation (last)
 
-*Deliberately sequenced after Phase 13 and 15, not alongside them — writing
-docs against an API that's still moving means rewriting them every time the
-shape changes underneath. Everything here waits until the coding work above
-is actually done.*
+*Deliberately sequenced after Phase 13 and Phase 14 (now 14a/14b/14c), not
+alongside them — writing docs against an API that's still moving means
+rewriting them every time the shape changes underneath. Everything here
+waits until the coding work above is actually done.*
 
 **Build:**
 - [ ] Doc site: worked example of the transactional-outbox side-effect
@@ -4056,12 +4569,14 @@ is actually done.*
       multi-target closure is known to commit fires the email even if a
       later step rolls everything back) — pair it with the outbox-pattern
       framing already on the site.
-- [ ] Doc comments on the public API surfaces Phase 13 finalized —
+- [ ] Doc comments on the public API surfaces Phase 13 and 14b finalized —
       `Produce`/`ProduceInTx`/`InTransaction`, `MessageConsumerConfig` fields,
-      and anything renamed or relocated during the review.
+      the `Message` generic-vs-`struct{}` and named-return-params decisions,
+      and anything else renamed or relocated during the review.
 - [ ] Document the known hard-timeout error message (`consumer.go`'s
       "goroutine abandoned" error) — what it means and how to avoid it
       (respect `ctx`, or raise `WorkTimeoutGrace`).
+- [ ] Quick Start Documentation - Might require work with the cli.
 
 **Done when:** the doc site and public API doc comments reflect the v1
 surface as it actually shipped, NOTES.md, `git tag phase-15`.
@@ -4078,8 +4593,9 @@ the questions explicitly left for implementation time get re-opened here.*
 
 **Build:**
 - [ ] **`error_class` enum on delivery rows** — recorded at park time from
-      the user's classification; values coordinated with the named-errors
-      taxonomy (the recognized dependency-down error users wrap). The one
+      the user's classification; values coordinated with **14b**'s
+      named-errors taxonomy (the recognized dependency-down error users
+      wrap). The one
       schema touch, so it lands first.
 - [ ] **Per-instance breaker** — local streak tracking (N non-empty
       all-systemic ticks + M cumulative, exception retries counting),
@@ -4089,7 +4605,7 @@ the questions explicitly left for implementation time get re-opened here.*
 - [ ] **Shared breaker row + globalization** — the (topic_id, group) row,
       guarded CLOSED→OPEN transitions with a generation counter, and the
       quorum: settle K here (small absolute vs Presence-backed fraction —
-      if fraction wins, the Presence entry's heartbeat rows become a
+      if fraction wins, 13d's presence heartbeat rows become a
       prerequisite and this phase inherits that dependency).
 - [ ] **Probe paths** — local self-probe on cooldown; global prober
       elected via session-level advisory lock (self-releasing on crash);
@@ -4130,10 +4646,12 @@ service meshes do with per-host ejection + cluster-wide panic thresholds.
 
 *The rest of this document is the post-v1, unordered opt-in pool — pick any
 of these up only if a real workload actually demands it, in whatever order
-that happens to be. No fixed sequence among them, though two real
-dependencies are called out where they exist: 9b needs Phase 13 (the v1
-public API gate, not part of this pool) to close first, and 11b needs 8d's
-outcome decided first if both are ever in play.*
+that happens to be. No fixed sequence among them, though a couple of real
+dependencies are called out where they exist: 9b's prerequisite (Phase 13,
+the v1 public API gate, not part of this pool) is now satisfied — 13 is
+done — so 9b is clear to pick up on its own merits; 11b needs 8d's outcome
+decided first if both are ever in play; and Phase 16's quorum-as-a-fraction
+option depends on 13d (presence heartbeat rows).*
 
 ## Phase 12 — Optional FIFO partitions
 
@@ -4163,29 +4681,22 @@ outcome decided first if both are ever in play.*
       key" — claim with a predicate that **skips rows whose `partition_key`
       already has an in-flight delivery in this group**. Null key → no
       constraint, full concurrency.
-- [ ] **Decide `MessageConsumer.Queue`/`PoolLimiter`'s fate here, alongside
-      FIFO.** (Moved from Phase 13's API review.) `NewMessageConsumer`
-      requires a `concurrency.Queue[MessageRow]` and `concurrency.PoolLimiter`
-      (non-nil, `Queue.Cap() >= BatchLimit`, checked in `validate()`), but
-      nothing in the live `Process`/`CursorClaim`/`LifecycleClaim` path reads
-      `p.Queue` or `p.PoolLimiter` — they were wired for the Prefetch/Dispatch
-      design that predates the current claim-from-log architecture (that dead
-      code was deleted alongside the Phase 13 review; `pkg/concurrency` is now
-      unreferenced outside of examples that only exist to satisfy this
-      constructor). Deferred here deliberately: the buffer-pool mechanism
-      needs to be thought through together with FIFO — how a prefetch queue
-      interacts with per-key ordering (a buffered row whose key gates on an
-      in-flight delivery can't just be handed to the next free worker) —
-      before deciding whether to drop both params + fields entirely or
-      re-wire them for a redesigned prefetch/dispatch. Any redesign must
-      also compose with the circuit breaker (Phase 13's design bullet): an
-      open breaker gates BOTH the claim that fills the buffer and the
-      dequeue-into-attempt (buffered rows don't run against a known-dead
-      dependency), and buffered rows must not be resolved by silent lease
-      expiry (expiry counts as a reclaim → poison quarantine pressure).
-      Reference for what the original design looked like: the deleted
-      Prefetch/Dispatch code in
-      https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
+- [ ] **Keyed lanes at the dispatch point.** (This bullet used to own the
+      whole `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign — that
+      moved to **14a**: the params are breaking-to-remove so pre-v1, and the
+      unkeyed dispatcher needs no FIFO. What stays here is the keyed half.)
+      14a's buffer dispatches messages to N processors in id order, which
+      preserves nothing per-key: at N>1 two `acct-42` messages in one range
+      run concurrently, so intra-range key order dies before cross-range
+      FIFO even enters the picture. The fix is a routing rule at the
+      dequeue point — same `partition_key` → same lane, each lane
+      sequential, unkeyed → free-for-all (see reference/waterline's
+      lanes) — which slots into the 14a structure as a dispatch policy, not
+      a rewrite. Decide here whether keyed order under concurrency is
+      served by the lifecycle keyed claim (bullet above), by lanes on the
+      14a buffer, or both — and how a lane holds order through a retry (a
+      backed-off head must block its later offsets, the same subtlety as
+      the keyed claim).
 
 *→ Reference (after you've built it): `reference/waterline/partitions.go` —
 `ClaimPartitioned` is the keyed claim. Note the extra subtlety it solves that this
@@ -4223,6 +4734,126 @@ out to be the same mechanism.
 **Real systems:** Kafka **partitions** (key → partition, order within
 partition); Pulsar **Key_Shared** subscriptions (per-key order across multiple
 consumers); SQS FIFO **MessageGroupId**.
+
+---
+
+## 12b — User-initiated defer & policy-driven dispatch (deferred, optional)
+
+*Moved here from TODO.md (three entries folded: user-initiated defer, the
+async ordered-index sketch, and the Uber resilient-DB overload notes). This
+is the other half of the parked LIFECYCLE path's revival story: Phase 12
+gives the revived delivery table its ordering **constraint** (per-key FIFO);
+this section gives it its ordering **policy** (priority, delay, load
+shedding). The defer feature is the only user-facing ask so far, and it is
+FEATURE ONLY — no impl decided.*
+
+**Concept:** consumers currently control neither WHEN a message comes back
+nor WHICH pending message runs next. Time: returning an error is the only
+"not now" tool — it burns an attempt, records a failure that isn't one, and
+retries on the failure backoff curve instead of when the consumer actually
+wants it back. Order: claims hand out id-order ranges — no priority, no
+delay, no shedding. Both are per-message scheduling problems, and both
+point at the same substrate.
+
+**The feature — user-initiated defer:** a way for consumerFunc to say
+"can't process this NOW, retry me at T" without it counting as a failure.
+Use cases: downstream rate limit ("retry in 60s"); a keyed/partial
+dependency outage (Phase 13's circuit-breaker bullet explicitly hands the
+dead-tenant case to this feature as per-message scheduling — and the
+breaker's own outage scenario otherwise burns maxAttempts and dead-letters
+work that would have succeeded); out-of-order business state (the shipped
+event arrives before the payment row exists); deliberate off-peak
+scheduling. Candidate shapes to evaluate when picked up (all open):
+- a sentinel error the library recognizes (least API churn, composes with
+  **14b**'s named-errors taxonomy) vs a richer consumerFunc return;
+- park into the existing exception window with `can_run_after` (6.5c's
+  machinery, exists today) vs feed the ordered-index buffer below;
+- whether a defer consumes an attempt (it's not a failure, but uncapped
+  defers can loop forever) and whether it writes a `delivery_log` row (no
+  error happened).
+
+**The mechanism sketch — async ordered-index claim table** (for whenever
+the lifecycle path revives as the non-FIFO substrate; from the
+LIFECYCLE-vs-CURSOR review): two-stage dispatch — `deliveries` stays the
+durable unordered backlog, an orderer process async top-ups a SMALL ordered
+ready-buffer per user policy (priority, delay, load shedding), and claims
+just pop the buffer head. What it buys: claims stop sorting over pending
+entirely, and because ordering is async the policy can be arbitrary Go
+(tenant budgets, load-shed gauges), not just indexable SQL expressions.
+Key decisions already made in discussion:
+- ordering is WINDOW-APPROXIMATE, not global: the orderer scores a sliding
+  window of the backlog and accepts inversions beyond it. Precedent:
+  Sidekiq priorities are probabilistic queue-weights, Celery is
+  best-effort — nobody promises global priority order. Document it.
+- deep-backlog strict priority is the one thing window-ordering breaks (an
+  urgent message behind 100k backlog only jumps the window) — fix with
+  low-cardinality priority TIERS on delivery rows: one id-ordered orderer
+  cursor per tier, merged by weight. Exact tier semantics, no global sort.
+- the buffer must stay only slightly ahead of claims (bounded depth).
+  Eager ordering-on-arrival freezes stale decisions across a consumer
+  outage; and since the buffer is DERIVED state (rebuildable from
+  `deliveries`), the resume story is truncate-and-re-score, which bounded
+  depth keeps cheap.
+- the orderer is just another fenced scanner with a mark ("ordered through
+  message_id X") — same marked-scan machinery fanOut uses, state can sit
+  on the same cursor row.
+- open: separate buffer table vs a nullable position column + partial
+  index on `deliveries` (fewer tables, but position updates lose HOT).
+- open: where per-message policy inputs (priority tier, run-at) live —
+  dedicated delivery-row columns vs the `headers` JSONB that 7b would add
+  (its GIN bullet already flags headers as the candidate substrate for
+  delays/tiers/shedding if they ever want to be header-driven).
+
+**Overload policies (folded from the Uber resilient-DB notes —
+https://www.youtube.com/watch?v=g7FmEc5GLWs&t=387s — worth studying
+properly when this is picked up):**
+- FIFO→LIFO under overload: think of it not as a switch but a load-shedding
+  gauge — if lag is growing, systematically park older work (older lease
+  ranges on the CURSOR path, older buffer entries here) to skip more and
+  more until lag is caught up.
+- priority tiers on each piece of work (0–5): under overload, low-tier
+  work is dropped or skipped — the same low-cardinality tiers the
+  window-ordering fix above already wants, doing double duty.
+- the producer side of overload (backpressure at enqueue) is interesting
+  to think through as well — everything above is consumer-side only.
+
+**Build (decision tasks — nothing here is designed to completion):**
+- [ ] Watch the Uber talk end-to-end and mine it: LIFO-under-overload,
+      tier semantics, and their producer-side story.
+- [ ] Decide the defer API shape (sentinel error vs richer consumerFunc
+      return) and its semantics: does a defer consume an attempt, does it
+      write a `delivery_log` row.
+- [ ] Decide the defer substrate: exception-window `can_run_after` (cheap,
+      exists today) vs the ordered-index buffer (general, doesn't exist).
+      A defer-only need does not by itself justify building the orderer.
+- [ ] If the orderer is built: settle buffer-table-vs-position-column, the
+      policy-input home (columns vs 7b headers), bounded buffer depth,
+      tier merge weights, and the truncate-and-re-score resume story.
+- [ ] Lab: a defer-heavy stream (rate-limited downstream) shows retries
+      landing at the requested times with zero attempts burned and zero
+      failure rows; if the orderer exists, a priority-tier lab shows an
+      urgent message jumping a deep backlog while FIFO order holds inside
+      a tier's window.
+
+**Explain it back:**
+1. Why is a defer not a failure — what concretely goes wrong when it's
+   recorded as one (attempt cap, backoff curve, delivery_log)?
+2. Why must the ready-buffer stay only slightly ahead of claims, and what
+   makes truncate-and-re-score a safe resume story?
+3. Where exactly does window-approximate ordering break strict priority,
+   and how do low-cardinality tiers restore it without a global sort?
+
+**Done when:** the defer shape + substrate decisions are written down here
+(the feature may ship on `can_run_after` alone without the orderer ever
+being built); if the orderer is built, labs pass, NOTES.md,
+`git tag phase-12b`.
+
+**Real systems:** SQS `DelaySeconds`/`ChangeMessageVisibility` (defer
+without failure); Pulsar `reconsumeLater` + its delayed-delivery tracker —
+an in-memory time-ordered index over the persisted backlog that injects
+ids when due, which is exactly the derived ready-buffer shape; Sidekiq
+weighted queues / Celery priorities (the window-approximate precedent);
+Uber's resilient-DB talk for LIFO-under-overload and tier shedding.
 
 ---
 
@@ -4300,6 +4931,11 @@ containment instead of a regex.
       dropped it because with only one shape it had nothing to discriminate.
 - [ ] Header matcher: `headers @> '{...}'` (JSONB containment) — a group
       matches when its bound match object is a subset of the event's headers.
+- [ ] A GIN index on `headers` is the expected lookup accelerator (folded
+      from TODO.md's GIN idea) — and the same JSONB column is the candidate
+      substrate for arbitrary user key/value policies beyond routing
+      (12b's delays, priority tiers, load-shedding gauges) if those ever
+      want to be header-driven rather than dedicated columns.
 - [ ] **The foot-gun to guard against:** an empty `{}` header match is `@>`-true
       for *every* event, silently widening a group to match everything.
       Reject it at bind time.
@@ -4307,6 +4943,22 @@ containment instead of a regex.
 *→ Reference: `reference/waterline/routing.go`'s `BindHeader` (the foot-gun
 guard) and the `kind='header'` branch of `pglog.go`'s `readRange` — this was
 already built there in full; port it once you want it here.*
+
+**Also parked here — NATS-style selector for `pattern` bindings** (folded
+from TODO.md; LATER, low priority — the other matcher upgrade, so it rides
+with this phase even though it touches `pattern`, not headers):
+- [ ] Today `binding.pattern` is a true wildcard: `*` matches any run of
+      characters including dots, so it can span any number of hierarchy
+      levels (`orders.*.central1` matches `orders.us.central1` AND
+      `orders.us.high.central1`). Simple to implement and reason about,
+      but it can't pin an exact depth — there's no way to say "match this
+      one segment, not deeper nesting" (e.g. distinguish a region-level
+      event from a datacenter-level sub-event at the same position). A
+      NATS-style selector fixes that by splitting `*` (exactly one
+      dot-delimited token) from `>` (one-or-more trailing tokens,
+      tail-only) — `reference/waterline/routing.go`'s `natsToRegex` is the
+      translation to follow. Revisit only if bindings actually need that
+      precision.
 
 **Lab:**
 - [ ] Bind a group to `{"region":"eu","tier":"gold"}`; only events whose
@@ -4371,12 +5023,13 @@ redrawn — real risk of redoing it. Originally written as "revisit after
 Phase 11 settles that boundary"; Phase 11 is done, but Phase 13 (public API
 design review) is the actual boundary-redraw event now — the Datastore
 interfaces' fate question that was going to be Phase 11's last word on this
-moved there. **Dependency: wait for Phase 13 to close, not just Phase 11**,
-before landing a new datastore method here. Also still wants Phase 10's
-debug readout (open-lease count, per-group lag) to exist so heartbeat
-behavior can be observed instead of validated blind — that part's already
-satisfied. Pick this up only if a real long-running workload shows up that
-needs fast crash-reclaim without a huge fixed `WorkTimeout`.*
+moved there. **Dependency satisfied: Phase 13 is now done** (not just
+Phase 11), so a new datastore method here no longer risks redoing work
+across a boundary redraw. Also wants Phase 10's debug readout (open-lease
+count, per-group lag) to exist so heartbeat behavior can be observed
+instead of validated blind — that part's already satisfied too. Pick this
+up only if a real long-running workload shows up that needs fast
+crash-reclaim without a huge fixed `WorkTimeout`.*
 
 **Concept:** for long-running jobs whose runtime legitimately exceeds
 `WorkTimeout` but still want fast reclaim on a real crash: hand
@@ -4387,6 +5040,38 @@ reclaimed — cancel the work context. Keep a hard max-duration ceiling
 regardless, so a buggy progress loop that keeps touching forever still
 eventually caps out. Opt-in; short jobs ignore it and rely on the fixed
 lease window.
+
+Design gotchas already settled (folded from TODO.md's entry; this is now
+the canonical record): renewal is PROGRESS-based (Temporal
+activity-heartbeat style), NOT an unconditional background ticker — the
+library fundamentally can't tell "slow but progressing" from "hung" for an
+opaque `consumerFunc`, only the user can. The heartbeat interval must sit
+comfortably under the lease window so one missed beat (GC pause, DB blip,
+renew round-trip, worker-vs-DB clock drift) doesn't falsely reclaim a
+healthy worker — interval ≈ window/3 survives ~2 misses — while the window
+stays bounded above by acceptable crash-recovery latency. The extension
+must cover the ack (`RecordSuccess`/`RecordFailure`), not just processing —
+don't reopen the window at the finish line. And in-process the library can
+only bound queue damage (stop renewing → lapse → reclaim → dead-letter via
+attempts), never kill the hung goroutine — accept the leak until process
+restart.
+
+**Build:**
+- [ ] Opt-in `heartbeat()`/`touch()` handle passed to `consumerFunc`; the
+      framework extends the lease only when touched (the renew `UPDATE`
+      above). Short jobs ignore it and rely on the fixed lease window.
+- [ ] `RowsAffected==0` on a renew = already reclaimed → cancel the work
+      ctx so a cooperative func stops; the row is another worker's now.
+- [ ] Keep the hard max-duration ceiling as the backstop: a job that hangs
+      WHILE still touching must eventually cap out → lapse → reclaim →
+      dead via attempts.
+- [ ] Defaults that honor the timing invariant (interval ≈ window/3) and
+      an extension window that covers the ack, not just processing.
+
+**Lab:**
+- [ ] A long-runner outliving `WorkTimeout` while touching is never
+      reclaimed; kill it mid-job (touches stop) and it reclaims fast; a
+      hung-but-still-touching loop hits the ceiling and dead-letters.
 
 **Explain it back:**
 1. Without heartbeat, how does a long-running job avoid getting reclaimed
@@ -4428,6 +5113,16 @@ of `database/sql` is worth losing pgx-only features (native types, `COPY`,
 `pgx.Batch` pipelining, and the `LISTEN/NOTIFY` support 8d depends on) —
 document the decision even if the answer stays "keep pgx."
 
+**Build:**
+- [ ] Inventory every pgx-specific dependency in shipped code — `pgx.Tx`
+      through the `producerFunc`/`ProduceInTx` signatures, `pgtype.UUID`
+      lease/range tokens in public structs, `pgx.Batch` pipelining — and
+      what re-deriving each over `database/sql` would cost.
+- [ ] Weigh 8d's outcome first if it's in play (`LISTEN/NOTIFY` is exactly
+      the kind of pgx-only feature this decision needs to price in).
+- [ ] Write the decision down (decision + reasoning), even if the answer
+      stays "keep pgx".
+
 **Explain it back:**
 1. What would actually break, concretely, if `pkg/` were rewritten against
    `database/sql` instead of `pgx` — name the specific pgx feature each
@@ -4442,6 +5137,74 @@ NOTES.md, `git tag phase-11b`.
 **Real systems:** River and Oban both commit to pgx directly rather than
 `database/sql`, for the same reason — `LISTEN/NOTIFY`, `COPY`, and batch
 pipelining aren't expressible through the generic driver interface.
+
+---
+
+## 11.5b — Dynamic partition bounds (deferred, optional)
+
+*Folded from TODO.md — the follow-up that makes `PartitionSize` alterable
+(design settled in discussion 2026-07-24; `AlterTopic` shipped first with
+`PartitionSize` immutable — this unlocks it). Deferred because the blast
+radius is every hot invariant-laden path in the library, for an admin
+nicety — and it's fully backward-compatible to add later, since existing
+partitions' bounds are already in the catalog.*
+
+**Concept:** today every partition-math call site (producer
+`ensureCoveringPartition`, consumer `EnsureNextPartition`/
+`DropExpiredPartitions`/`dropPartition`/`SweepExpiredPartitions`) assumes
+one constant width for the topic's whole life: partition n =
+`[n*size, (n+1)*size)` — name and bounds are the same number viewed
+through size. Change size mid-life and head/size points at the wrong
+table — hence immutable. The fix: Postgres already stores every
+partition's true bounds; the math is just a cache of the catalog.
+
+**Settled shape:**
+- KEEP `message_log_<id>_<n>` sequential naming. Reads never reconstruct
+  a name: walk `pg_inherits` + `pg_get_expr(relpartbound)` and use the
+  (relname, lower, upper) triples as handed back. Row-level point lookups
+  can use `tableoid::regclass` (needs a row to exist — partition
+  enumeration still wants the `pg_inherits` walk).
+- creation mints n = max existing suffix + 1 and from = max upper bound
+  off ONE catalog read; `CREATE TABLE IF NOT EXISTS` keeps the
+  concurrent-create race benign (racers on the same snapshot compute the
+  identical name+bounds; a stale racer self-heals next tick).
+- contiguity + non-overlap survive any size history because new
+  partitions only ever append at the top.
+- hot-path cost: bounds are immutable once created, so cache the
+  partition map in memory and re-read the catalog only when head crosses
+  the cached max upper bound — one query per rollover, not per append.
+
+Resulting semantics: `PartitionSize` = width of FUTURE partitions only,
+existing ones untouched (Kafka `segment.bytes`). That moves it into the
+freely-alterable bucket — a plain topic-row UPDATE.
+
+**Build:**
+- [ ] Catalog-backed partition enumeration (the `pg_inherits` +
+      `relpartbound` walk) replacing every `n*size` reconstruction across
+      the producer and janitor call sites named above.
+- [ ] Creation path: mint suffix + bounds off one catalog read; keep the
+      `IF NOT EXISTS` race story.
+- [ ] In-memory partition-map cache, re-read only on rollover (head
+      crossing the cached max upper bound).
+- [ ] Flip `PartitionSize` into `AlterConfig` (11.5's sparse-patch
+      machinery is already there) + document the future-widths-only
+      semantics.
+- [ ] Lab: alter `PartitionSize` mid-life on a topic under load; old
+      partitions keep their bounds, new ones take the new width, and
+      retention/sweep/self-heal all keep working across the mixed-width
+      history.
+
+**Explain it back:**
+1. Why do contiguity and non-overlap survive ANY size history — what's
+   the one structural property doing all the work?
+2. Why is the concurrent-create race still benign once bounds come from
+   the catalog instead of the formula?
+
+**Done when:** lab passes, `PartitionSize` is alterable with
+future-widths-only semantics, NOTES.md, `git tag phase-11.5b`.
+
+**Real systems:** Kafka `segment.bytes` — alterable, applies to new
+segments only, existing segments keep their width.
 
 ---
 
@@ -4464,6 +5227,16 @@ point on `MessageConsumer`) or stays internal — and if public, which hooks
 exist, what ordering/timing guarantees each carries, and what a hook is
 allowed to do (block? cancel? mutate config?).
 
+**Build:**
+- [ ] For each hook (startup, poll, shutdown): collect the concrete
+      workloads that would need to override it, and check whether each is
+      already served from outside via ctx cancellation + existing config
+      knobs.
+- [ ] Decide public `Lifecycle` struct vs. stays-internal; if public,
+      specify the hooks, their ordering/timing guarantees, and what a hook
+      is allowed to do.
+- [ ] Write the decision down (even "stays internal, and here's why").
+
 **Explain it back:**
 1. For each hook (startup, poll, shutdown): name a concrete workload that
    needs to override it, and whether that need is already met from outside
@@ -4482,6 +5255,208 @@ ordering each is willing to promise forever.
 
 ---
 
+## 13c — Post-v1 surfaces: RLS & chaos-testing (deferred, optional)
+
+*Deprioritized past v1 — both were parked in Phase 13's "surfaces to shape"
+list on the theory that the config/API shape had to be locked before v1 so
+it couldn't change later. On reflection neither one does: RLS is a
+Postgres-side toggle that lands additively (a new `topic.Config` field
+defaulting off — existing callers unaffected), and the chaos/fixture helpers
+are test-only surface carrying no compatibility promise at all. Neither
+freezes anything a later addition would have to break, so shaping them is
+itself post-v1 work. Two unrelated surfaces sharing one deferred slot only
+because they were cut from the same gate for the same reason — pick either up
+on its own when a real need shows (a deployment that actually wants per-tenant
+row isolation, or a test suite that needs to seed arbitrary states), not
+speculatively.*
+
+**Concept:** two independent surfaces, both cut from the v1 gate:
+
+- **Row-level security / least-privilege setup** — most likely a
+  `topic.Config` toggle that provisions Postgres RLS policies plus a
+  least-privilege role for the data-plane connection, so a compromised
+  consumer credential can't reach outside its own topic. The shape to
+  decide when picked up: what the config field looks like, which tables
+  carry policies, how a runtime role maps to a topic, and whether
+  provisioning rides `RegisterTopic` or a separate admin verb. The
+  Postgres-side plumbing lands afterward; only the config shape is the
+  design question.
+- **Chaos-testing / fixture suite** — (1) internal test helpers this repo's
+  own suite uses to seed messages directly into `ready`/`inflight`/`dead`
+  and inject failures, and (2) whether a thin public testing package ships
+  to consumers for the same purpose or stays internal-only. Start the
+  surfaces (what calling it looks like), not a full chaos-engineering
+  framework.
+
+**Build:**
+- [ ] Shape the RLS surface: config field + policy/role model; decide
+      `RegisterTopic`-rides vs. separate admin verb. Plumbing lands after.
+- [ ] Shape the chaos/fixture surface: internal seed/inject helpers first;
+      decide public-package vs. internal-only second.
+
+**Explain it back:**
+1. Why is RLS safe to defer past v1 when other config surfaces had to be
+   locked in Phase 13 — what makes adding the toggle later additive rather
+   than breaking?
+2. For the fixture suite, what's the actual argument for shipping a public
+   testing package vs. keeping it internal — who's the consumer that can't
+   get there with the existing public API?
+
+**Done when:** each surface has a written decision (even "no change, here's
+why"), NOTES.md, `git tag phase-13c`.
+
+**Real systems:** Supabase's per-tenant RLS policies on shared tables are the
+direct model for the first; the second is the seed-arbitrary-state helper
+every mature queue ships — River's `rivertest` is exactly the
+"does the fixture helper go public" decision, already made one way.
+
+---
+
+## 13d — Presence: heartbeat rows for live producer/consumer instances (deferred)
+
+*Moved here from TODO.md as the canonical home — Phase 13's
+producer-`Register` bullet and Phase 16's quorum question both point at
+this design. The API-shape half already shipped with Phase 13's lifecycle
+work: `Register(ctx)` on both producer and consumer, lifecycle capture as
+the instance's lifetime, and the three-state gate (`ErrNotRegistered` →
+working → `ErrShutdownRequested`). What remains is the presence feature
+itself. Phase 16's quorum-as-a-fraction option has a hard dependency on
+this — the first feature that needs it rather than merely benefiting from
+it.*
+
+**Concept:** nothing records what's connected to a topic. Operators can't
+answer "what producers/consumers exist right now, and are they idle or
+active?" without inferring it from message traffic, and Destroy can't tell
+whether it's tearing down a topic something is still writing to — it
+currently finds out the hard way (a live producer's missing-partition
+self-heal resurrects partitions mid-drain; the drain loop bounds its passes
+and errors, but the error can only guess "a producer is likely still
+writing", it can't name one).
+
+**Design (shape agreed in discussion, not built):** one presence row per
+instance carrying three timestamps, two mechanisms:
+- `registered_at`, written once at `Register` — what EXISTS.
+- `last_heartbeat`, bumped by a lifetime heartbeat goroutine — what's
+  ALIVE. A crashed process leaves a stale row for a TTL sweep, same as any
+  lease.
+- `last_produced_at` / `last_consumed_at` — what's ACTIVE. Must not cost a
+  write on the hot path: produce bumps an in-memory atomic timestamp and
+  the heartbeat tick flushes it alongside `last_heartbeat`, so activity
+  resolution is bounded by the heartbeat interval and the message path
+  stays untouched.
+
+Activity-only heartbeats (batcher-style, spawn on produce / exit at idle)
+were considered and rejected: they collapse "nothing registered" and
+"registered but idle" into one state, and the registered-idle producer that
+is about to wake is exactly what an operator wants visible. (Piggybacking
+the consumer heartbeat on the Consume loop was also considered and
+rejected: it breaks producer/consumer symmetry and misses janitor-only
+instances.)
+
+`Register(ctx)` is where an instance announces itself: insert the presence
+row, validate the topic's PARENT tables exist (`message_log_<id>`,
+`delivery_<id>`, `idempotency_key_<id>` via `to_regclass` — parents only;
+partitions come and go by design and are self-heal/janitor property), and
+start the heartbeat goroutine. The shipped three-state gate is what keeps
+presence honest: without the wound-down state, a producer whose heartbeat
+died keeps producing while its row goes stale — actively-writing-but-
+looks-dead is exactly the false-dead case that would wave the Destroy gate
+through into the drain livelock. Producing implies alive becomes an
+invariant, not a hope.
+
+**First consumer: a Destroy gate** — refuse to destroy while any producer
+on the topic is ALIVE (not merely active: idle-but-alive can wake
+mid-drain), with the refusal naming instances and their last-seen times.
+RabbitMQ's `queue.delete(if-unused)` is the precedent. The gate is a front
+door, not the correctness guarantee — check-then-drain has an unavoidable
+TOCTOU window, and heartbeat liveness has the usual false-alive (stale row
+until TTL) / false-dead (partitioned but alive) ambiguity — so
+`deleteTopic`'s bounded drop loop stays as the hard backstop. Probably
+wants a force override for the operator who knows better.
+
+**Second consumer: the circuit breaker's globalization quorum** (Phase 16).
+Expressing K as a fraction of the group rather than a brittle absolute
+requires knowing how many instances are ALIVE right now — exactly these
+heartbeat rows. Also the natural substrate for Phase 14a's default-alerts
+layer: an alert that can say "destroy blocked: producer X seen 2s ago"
+instead of a bare threshold is the version of that layer that explains
+itself.
+
+**Build:**
+- [ ] Presence table + one row per instance: `registered_at` (written once
+      at Register), `last_heartbeat`, `last_produced_at`/`last_consumed_at`;
+      row inserted in `Register(ctx)`.
+- [ ] Lifetime heartbeat goroutine started at Register; activity timestamps
+      bump an in-memory atomic on the hot path and flush on the heartbeat
+      tick — zero hot-path writes.
+- [ ] Parent-table validation at Register (`to_regclass` on
+      `message_log_<id>`/`delivery_<id>`/`idempotency_key_<id>` — parents
+      only; partitions are self-heal/janitor property).
+- [ ] TTL sweep for stale rows (a crashed process leaves one, same as any
+      lease).
+- [ ] Destroy gate: refuse while any producer on the topic is ALIVE, the
+      refusal naming instances and last-seen times; a force override for
+      the operator; `deleteTopic`'s bounded drop loop stays the hard
+      backstop.
+- [ ] Live-instance count query — the read Phase 16's quorum-as-a-fraction
+      option needs.
+
+**Explain it back:**
+1. Why must the Destroy gate check ALIVE rather than ACTIVE, and why does
+   the bounded drop loop stay as the hard backstop even once the gate
+   exists?
+2. Why does "producing implies alive" require the third (wound-down) gate
+   state — what goes wrong with a two-state registered/not-registered gate?
+
+**Done when:** presence rows live-verified (register → heartbeat → stale on
+kill → TTL sweep), the Destroy gate refuses while naming a live instance,
+and the activity timestamps resolve within one heartbeat interval with zero
+hot-path writes, NOTES.md, `git tag phase-13d`.
+
+**Real systems:** RabbitMQ `queue.delete(if-unused)`; Kafka consumer-group
+membership is the same shape — a coordinator tracking liveness via
+heartbeats with `session.timeout.ms` as the TTL sweep; Temporal's worker
+liveness/pollers view is the operator-visibility version.
+
+---
+
+## 14d — Post-v1 research backlog (deferred, optional)
+
+*Cut from Phase 14 — these two aren't hardening work at all: neither has a
+design attached, neither blocks v1 (nothing about them is API-shape or
+correctness), and both are watch-and-mine-later items rather than build
+tasks. Kept together since they're the same shape of item ("go read/watch
+this, decide later whether it applies"), not because they're related to
+each other. Named `14d` (not `14b`) to leave `14a`/`14b`/`14c` for the
+mandatory pre-v1 phases those letters now name.*
+
+- [ ] **Contribute a `MIN_ACTIVE_ROWVERSION`-style primitive upstream to
+      Postgres** (folded from TODO.md; no timeline, watch-and-propose
+      only). SQL Server's `MIN_ACTIVE_ROWVERSION()` is a cheap, first-class
+      read of the low-water mark across all in-flight row-version-bearing
+      transactions — exactly the question Phase 14's snapshot fence (the
+      straggler-skip bullet: `(head, xmax)` pair + later "has xmin passed
+      xmax" proof, backed by the bespoke `pending_head`/`pending_xmax`
+      cursor columns) answers by hand because Postgres has no native
+      equivalent. A core primitive would let claim fences poll a system
+      value instead of carrying migration-added tracking columns — cheaper
+      for this library, and useful to anyone else solving "prove no
+      earlier txn can still land a row." Related, not yet folded: TODO.md's
+      still-open sibling idea to abstract the same xmax logic into an
+      internal async ticker (the in-library version of this same problem,
+      no upstream dependency).
+- [ ] **Read for hot-path ideas: Go optimization patterns for high-volume
+      systems** (folded from TODO.md —
+      https://packagemain.tech/p/golang-optimizations-for-highvolume). No
+      design attached; the task is to read it once the API stops moving and
+      mine it for anything applicable to the library's actual hot paths
+      (claim, produce, janitor loops) rather than applying it speculatively.
+
+**Done when:** each item either has a written decision/outcome or is
+explicitly dropped as not worth pursuing, NOTES.md.
+
+---
+
 ## How to use this
 
 - **Do the phases in order.** Resist jumping to the synthesis (Phases 6–6.5).
@@ -4497,21 +5472,33 @@ ordering each is willing to promise forever.
   (claim-from-log) is the throughput payoff that makes it scale. 7–11 round out
   routing, operability, and the fault-tolerance/architecture gaps tracked in
   TODO.md — do them in order too, they build on each other the same way.
-- **Current focus:** Phases 0–11 are done. **Phase 13 (public API design
-  review) is the v1 gate — next up**, followed by Phase 14 (hardening,
-  correctness, cleanup) and Phase 15 (documentation, deliberately last) — that
-  three-phase sequence is the whole remaining path to v1. Phase 12 (FIFO
-  partitions), 6.5d (lane sharding), 7b (header/content routing), 8d
-  (`LISTEN/NOTIFY` latency), 9b (lease heartbeat/renewal), and 11b (`pgx` vs.
-  `database/sql`) are an unordered, opt-in pool, all deliberately deferred
-  past v1 to the end of this document — pick any of them up only if a real
-  workload demands ordering, lane-level throughput, attribute-based routing a
-  `routing_key` pattern can't express, poll-interval latency actually
-  matters, (9b) a long-running job needs fast crash-reclaim without a huge
-  fixed `WorkTimeout` — and wait for Phase 13 to close first, not just Phase
-  11, since 13 is the actual boundary-redraw event now — or (11b) dependency
-  weight becomes a concrete concern once the platform is closer to
-  feature-complete — and decide 8d first if it's ever in play too.
+- **Current focus:** Phases 0–11.5 are done, and Phases 13 and 14 are now
+  also done (every Build item in both is `[x]` — the tags just haven't
+  been cut yet). What's actually left before v1: **14a** (functionality —
+  right now), **14b** (cleanup/public API design, alongside 14a), then
+  **14c** (benchmark pipeline, compat matrix, TEST.md — waits on both), and
+  finally Phase 15 (documentation, deliberately last). Everything else —
+  Phase 12 (FIFO partitions), 6.5d (lane sharding), 7b (header/content
+  routing + NATS-style selector), 8d (`LISTEN/NOTIFY` latency), 9b (lease
+  heartbeat/renewal), 11b (`pgx` vs. `database/sql`), 11.5b (dynamic
+  partition bounds), 12b (user-initiated defer + policy-driven dispatch),
+  13b (consumer lifecycle extension point), 13c (RLS + chaos/fixture
+  suite), 13d (presence heartbeat rows), and 14d (post-v1 research
+  backlog) — is an unordered, opt-in pool, all deliberately deferred past
+  v1 to the end of this document. Pick any of them up only if a real
+  workload demands ordering, lane-level throughput, attribute-based
+  routing or depth-precise selectors a plain `routing_key` pattern can't
+  express, poll-interval latency actually matters, (9b) a long-running job
+  needs fast crash-reclaim without a huge fixed `WorkTimeout`, (11b)
+  dependency weight becomes a concrete concern once the platform is closer
+  to feature-complete (decide 8d first if it's ever in play too), (11.5b)
+  a topic genuinely needs to change its partition width mid-life, (12b) a
+  consumer needs to defer a message without burning an attempt or wants
+  priority/delay/load-shed dispatch, (13b) an embedding need shows up for
+  the poll loop, (13c) a deployment wants per-tenant row isolation or the
+  test suite needs to seed arbitrary states, (13d) an operator needs to
+  see what's connected to a topic or Phase 16 needs quorum-as-a-fraction,
+  or (14d) either research item turns out to matter enough to act on.
 - **The meta-lesson:** by Phase 6.5 you'll understand *in your hands* why Kafka,
   RabbitMQ, and Pulsar are different — they're the same primitives with different
   foundational defaults. That understanding is worth more than the code.

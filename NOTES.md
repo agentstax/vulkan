@@ -2304,3 +2304,245 @@ Deliberately skipped for this phase — see Decisions.
   `SkipIdempotency` classification question moot — nothing to classify
   when nothing retries.
 
+---
+
+## Phase 11.5 — Admin surface, migrations-into-code & control-plane CLI
+
+**What it does, and the tradeoff:** builds the control plane on top of the
+Phase 1–11 data plane — schema bootstrap + evolution, topic
+register/alter/rename/destroy, and a real `vulkan` binary that wraps all of
+it. Three bodies of work that shipped together: **migrations-into-code**
+(schema lives in Go, applied through a versioned runner, not golang-migrate
+`.sql` files), the **`pkg/admin` surface** (the one guarded API the whole
+control plane routes through), and **`cmd/vulkan`** (the CLI). The recurring
+tradeoff across all three: duplication and static shape over cleverness —
+per-topic tables over shared, static SQL over dynamically-built, a sparse
+patch over a full-replace, immutability enforced by an absent struct field
+over a runtime check.
+
+**The aha:** most of the hard decisions here were about *what a field's zero
+value means*, and they don't agree across the three verbs that write a topic
+row. `RegisterTopic` treats zero as "default me" (`WithDefaults` resolves it
+before the row is written). `AlterTopic` can't — an operator altering only
+`RetentionTTL` must not silently reset five other fields to zero — so it
+needs a pointer patch where nil (not zero) means "leave alone," and zero is a
+*real* value that must land. That single semantic difference forced: pointer
+fields on `AlterConfig`, a stricter `Validate` (no `WithDefaults` to lean
+on), and a `COALESCE($n, col)` UPDATE so the "leave alone" case is expressed
+in SQL as NULL rather than in Go as string-building. The immutability of
+`PartitionSize` falls out of the same thinking taken to its end: rather than
+validate "you can't change this" at runtime, the field simply doesn't exist
+on `AlterConfig` — the type system is the check.
+
+### Explain it back
+
+**1. Why `AlterConfig` pointer-per-field, not `topic.Config` reuse or
+every-field-required?** The failure a sparse patch prevents is **silent
+clobbering of a live value to zero**. `topic.Config` uses zero-means-default
+semantics (`WithDefaults` fills unset fields before the row is written) — fine
+for create, useless for patch, because a value field can't tell "caller wants
+RetentionTTL = 0" from "caller didn't mention RetentionTTL." A full-replace
+struct forces the operator to restate every field to change one, and any they
+forget becomes zero — and zero is a *real, often destructive* setting here
+(RetentionTTL 0 = keep forever; a tuned JanitorSweepBatchSize silently reset).
+"Require every field" isn't even enforceable in Go: a missing struct field is
+a silent zero, not a compile error, so the destructive version is the one the
+language hands you by default. Pointers give tri-state — nil = leave, non-nil
+= set (including set to zero) — so a forgotten field is nil → no-op. Same
+mistake, opposite blast radius: sparse fails safe, full-replace fails
+destructive.
+
+**2. Why does `COALESCE($n, col)` keep the current value, and why beat a
+dynamic SET list?** pgx encodes a nil pointer as SQL `NULL`, and
+`COALESCE(NULL, col)` returns `col` — the stored value untouched; a non-nil
+param is a concrete value (even `0`, which is not NULL) and overwrites. So the
+"leave alone" case lives in the SQL as NULL rather than in Go as
+string-assembly. That keeps the statement fully **static** — the same six-column
+SET every call — so it reads like every other query in the file, prepares/plans
+once, and drops the placeholder-counting closure the dynamic version needed.
+The subtlety it gets right for free: an *explicit* zero (RetentionTTL back to
+forever) still lands, because COALESCE branches on NULL, never on zero-value.
+
+**3. Why is `PartitionSize` immutable, what breaks, and what's the unlock?**
+Partitions are created `FOR VALUES FROM (n*size) TO ((n+1)*size)`, and the
+runtime computes partition *identity* from `head/partitionSize` at every hot
+site — producer `ensureCoveringPartition`, consumer `EnsureNextPartition`,
+`DropExpiredPartitions`, `dropPartition`'s delivery-cleanup range, sweep
+batching. Name and bounds are the same number viewed through `size`. Change
+`size` mid-life and `head/size` names a partition whose real on-disk bounds no
+longer match — wrong partition dropped, overlapping-partition CREATE errors, a
+message routed to a table that doesn't cover its id. It's immutable by
+construction (absent from `AlterConfig`), not by a runtime check. Settled
+unlock (TODO.md "dynamic partition bounds"): stop computing bounds, read the
+real ones from `pg_inherits` + `pg_get_expr(relpartbound)`; keep `_<n>` naming
+but never reconstruct a name from math — use the `(relname, lower, upper)`
+triples as handed back; mint each new partition at `from = max existing upper
+bound, to = from + current size`. That yields Kafka `segment.bytes` semantics:
+altering size touches only *future* partitions. Deferred because it rewrites
+every hot partition-math path for an admin nicety, and it's fully
+backward-compatible (existing bounds already sit in the catalog).
+
+**4. Why `WHERE id = $1`, not `WHERE name = $1`, for a rename?** Retry safety
+under ambiguous commit. `DatastoreRetry` reruns on an ambiguous outcome — a
+connection killed mid-commit, where "did it land?" is unknowable. If the first
+attempt *did* commit the rename and the retry runs `UPDATE ... WHERE name =
+oldName`, no row carries `oldName` anymore → zero rows affected → the code
+reports `ErrTopicNotFound` for a rename that actually **succeeded**. The name
+is the very thing being mutated, so it's the worst possible key across a
+retry. So `renameTopic` reads the row first to pin the immutable `id`, then
+keys the UPDATE on it: the retry re-applies to the same row (sets name to
+`newName` again — an idempotent no-op) and returns success.
+
+**5. Why "latest-by-`id` where `status='success'`," not `MAX(schema_version)`?**
+A downgrade (intentional release rollback) inserts a row with a *lower*
+`schema_version` than current. Under `MAX(schema_version)`, that rollback row
+is invisible — MAX still returns the higher pre-rollback number — so the system
+would believe it's still at the new version, never re-apply the up step on a
+later roll-forward, and every status readout would lie. Latest-by-`id` follows
+insertion order regardless of the version value, so the rollback row becomes
+current and history reads truthfully ("went to v4, rolled back to v3"). MAX is
+only correct if versions monotonically increase, which downgrades break by
+design.
+
+**6. Why xact-scoped lock for `RegisterSystem` but session-scoped for a
+`Migrate` run?** `RegisterSystem` is one short transaction —
+`pg_advisory_xact_lock` auto-releases at commit/rollback, so it can't leak and
+holds for the minimum time. A `Run` walks *multiple* per-step transactions
+(each step commits its DDL + version stamp atomically). A txn-scoped lock would
+release at the **first** step's commit, letting a concurrent migrate interleave
+between steps — precisely what the lock exists to prevent. So `Run` takes a
+SESSION-scoped `pg_advisory_lock` on a pinned connection, held across all the
+steps' transactions and released explicitly (or on connection death). Swap
+them and both failure modes appear: a session lock on `RegisterSystem` must be
+manually released (leak risk on an error path), and a xact lock on `Run` loses
+inter-step serialization — two migrations could both proceed and corrupt the
+version sequence.
+
+**7. Why a nested `go.mod` for the CLI, and what does a consumer avoid?** A
+directory with its own `go.mod` is a *separate module*, excluded from the
+parent's package graph entirely — so the root library module never imports
+cobra/fang/lipgloss; they're absent from its `go.mod`/`go.sum`. A consumer
+running `go get github.com/agentstax/vulkan` gets **zero CLI dependencies in
+their `go.sum`**. That's stronger than "the CLI code isn't compiled in"
+(unimported packages never ship either way) — it's the module-graph / go.sum
+pollution that a shared module can't avoid: no transitive cobra version
+constraints leaking into their build, no CLI supply-chain surface. The cost:
+the CLI versions/releases independently, and local dev needs a `go.work` to
+resolve both modules — gitignored, because committing it would force the
+workspace on every consumer/CI checkout. Deliberately *not* a `replace`
+directive, which would break `go install ...@version` for everyone once
+published.
+
+### Done
+
+- **`pkg/migrate` — schema as versioned Go.** `Migration`/`TopicMigration`
+  sparse structs (func fields for `ValidateUp`/`Up`/`ValidateDown`/`Down`,
+  `NoTxn` bool) chosen over an interface so a plain step needs no empty stubs.
+  A `Querier` interface that excludes `Begin`/`Commit`/`Rollback` makes it a
+  *compile error* for a step to manage its own transaction — the runner owns
+  the boundary, committing Validate + Up/Down + the version stamp atomically.
+  `RunOnce` migrates one entity; `RunAll` loops every topic and continues past
+  a per-topic failure, joining errors with `errors.Join`.
+- **Single `schema_log` table, latest-by-id.** One append-only table for both
+  scopes (`entity_type, entity_id, schema_version, status, error,
+  occurred_at`), chosen over two scope-specific tables. Current version is the
+  latest-by-`id` row with `status='success'` — deliberately NOT
+  `MAX(schema_version)`, because a downgrade inserts a *lower* version and
+  latest-by-id is what makes "current" follow the rollback. Failure rows are
+  pure diagnostic history, never read to decide control flow.
+- **Two independent version counters.** system scope (shared control-plane
+  tables) and topic scope (per-topic table families) version separately, both
+  baseline v1. A topic's version advances only when a topic-scope step runs
+  for that specific topic — a system-only migration never touches it.
+- **One advisory lock, two hold-times.** `common.AdvisoryLock = 0x56554C4B`.
+  `AcquireLock` takes a SESSION-scoped lock and pins a connection so it
+  outlives the per-step transactions (a txn lock would release at each
+  commit); `RegisterSystem` uses the xact-scoped variant since it's a single
+  short transaction. `IsLocked` queries `pg_locks` for a pre-flight snapshot —
+  explicitly not a guarantee (a TOCTOU race with a real `AcquireLock` is
+  accepted), just enough to turn "blocks forever, silently" into "fails fast
+  with a clear message" for the CLI.
+- **Explicit registries + teaching-error gates.** `pkg/system/migrations` and
+  `pkg/topic/migrations` each export an ordered slice with a contiguity unit
+  test — no `init()` registration magic. `RegisterTopic` gates on
+  system-registered, raising an error wrapping `migrate.ErrNotRegistered`
+  instead of leaking a raw 42P01 from deep in a query. Lifecycle
+  `AssertSchemaSupported` fails a producer/consumer fast when the DB's schema
+  version is outside the range the binary compiled against.
+- **golang-migrate deleted.** `migrations/*.sql`, `migrations/old/`, and the
+  justfile `migrate-up`/`migrate-down` recipes removed;
+  `RegisterSystem`'s idempotent CREATE-IF-NOT-EXISTS baseline is now the
+  bootstrap path.
+- **`pkg/admin.MessageAdmin` — the guarded surface.** `RegisterTopic`
+  (idempotent, struct-equality mismatch check), `GetTopic`/`ListTopics`,
+  `AlterTopic`, `RenameTopic`, `DestroyTopic` (guarded by
+  `AllowDestroy` config + `DestroyOptions{Force}` for a non-empty topic), plus
+  `RegisterSystem`/`MigrateSystem`/`MigrateTopics`/`MigrateTopic`.
+- **`AlterTopic` — sparse pointer patch.** `topic.AlterConfig` is
+  pointer-per-field, nil = unchanged. Chosen over full-replace because a
+  forgotten field then no-ops instead of clobbering a live value to zero —
+  and "require every field" isn't enforceable in Go anyway (a missing field is
+  a silent zero, and here zero is destructive: it flips RetentionTTL to
+  keep-forever). `updateTopic` is one static `UPDATE ... SET col =
+  COALESCE($n, col)`: a nil Go pointer reaches Postgres as NULL, so COALESCE
+  keeps the current value — no dynamically-built SET list. `Validate` is
+  stricter than `Config.Validate` on the `> 0` fields (there zero means
+  "unset, default me" and never survives `WithDefaults`; here it would land in
+  the row). An all-nil patch is a usage error, not a silent no-op.
+- **`RenameTopic` — metadata-only, id-keyed.** Every table is addressed by id,
+  so a rename is a single row update. It reads the row first to pin the id,
+  then updates `WHERE id = $1` rather than `WHERE name = $1`: under an
+  ambiguous-commit retry a name-keyed update would find no row the second time
+  (the first attempt already renamed it) and misreport not-found, where the
+  id-keyed one re-applies idempotently. A 23505 unique violation on the new
+  name maps to `ErrTopicNameTaken`. Documented hazard: the old name is free
+  immediately, so a stale config can later attach to a *different* topic
+  registered under it.
+- **`delivery_log_<id>` always created.** Previously the table's *existence*
+  encoded `DisableDeliveryLog`; now the flag gates only the writes and the
+  table always exists. Cost is a few catalog rows + an empty index per topic;
+  the payoff is that every topic shares one schema shape (so the flag is a
+  plain alterable row field, and the migration invariant labs have one legal
+  shape per version instead of two).
+- **`cmd/vulkan` — nested-module CLI.** Its own `go.mod`
+  (`.../cmd/vulkan`), resolved locally through a gitignored `go.work`. A
+  directory with its own go.mod is excluded from the parent module entirely,
+  so `go get github.com/agentstax/vulkan` never pulls cobra/fang/lipgloss —
+  library consumers get zero CLI deps in their go.sum, not merely zero CLI
+  code compiled in. Built on cobra + fang, glyphs via lipgloss v2 (gated on
+  `colorEnabled()` so piped/CI output stays plain), tables via stdlib
+  `text/tabwriter`.
+- **`topic` and `migrate` command trees.** `topic
+  register/list/get/alter/rename/destroy`; `migrate
+  init/versions/status/system|topics|topic up|down --to N`. Sparse flags map
+  1:1 onto the config structs via `cmd.Flags().Changed` (only passed flags
+  become non-nil — bools included, so `--flag=false` is a real set); `alter`
+  renders an OLD → NEW diff table; `migrate` runs an `IsLocked` pre-flight so
+  contention fails fast instead of hanging on `pg_advisory_lock`. Error
+  taxonomy: `cliError` carrying an exit code — `failUsage` (2), `failOp` (1),
+  `failPrinted` — with `translateAdminError` turning a raw 42P01 into "run
+  `vulkan migrate init` first."
+
+### Decisions
+
+- **No git tag for this phase.** Unlike Phases 1–11, this landed
+  incrementally across many `continue` commits (the migrations-into-code
+  8-chunk plan, then MigrateTopics, then the migrate CLI, then Alter, then
+  Rename, then their CLI verbs), not at one clean boundary — so there's no
+  single `phase-11.5` commit worth tagging. The durable record is this NOTES
+  entry + `ADMIN_CLI.md` + the `TODO.md` "v1 admin surface" / "migration
+  scripts -> code" entries.
+- **`PartitionSize` immutable, unlock deferred.** It's absent from
+  `AlterConfig` entirely — the type system enforces immutability rather than a
+  runtime check. The reason: every partition's `FOR VALUES FROM (n*size) TO
+  ((n+1)*size)` bounds and all the `head/partitionSize` math assume one
+  constant width for the topic's life. The settled unlock (TODO.md "dynamic
+  partition bounds"): read real bounds from `pg_inherits` + `relpartbound`
+  instead of computing them, keep `_<n>` naming, mint new partitions at the
+  current size — giving Kafka `segment.bytes` semantics (width of *future*
+  partitions only). Deferred because it touches every hot partition-math call
+  site for an admin nicety, and it's fully backward-compatible to add later.
+- **Name change is its own verb, not an Alter field.** `RenameTopic` uses the
+  name as a lookup key, so folding a `NewName` into the config patch would mix
+  identity-change with config-change. One concept = one named thing.
+
