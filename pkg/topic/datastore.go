@@ -195,7 +195,7 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 	switch {
 	case insertErr == nil:
 		// we won the insert -- stand up this topic's own log
-		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize, cfg.DisableDeliveryLog); err != nil {
+		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize); err != nil {
 			return nil, err
 		}
 		// add the schema baseline in the SAME txn
@@ -241,7 +241,7 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 //
 // - message_log_<id>
 // - delivery_<id>
-// - delivery_log_<id> (unless disableDeliveryLog)
+// - delivery_log_<id>
 //
 // Split one per topic instead of shared because:
 // - Drop Partition functionality -- DropExpiredPartitions/SweepExpiredPartitions only expire a
@@ -262,7 +262,7 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 // - Dense ID sequence -- A shared BIGSERIAL would leave each topic's ids scattered
 // across a sparse subset of it, which breaks the head/partitionSize math
 // EnsureNextPartition uses to create partitions when they are needed
-func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64, disableDeliveryLog bool) error {
+func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
 	createTableSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent.
@@ -330,10 +330,7 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		return err
 	}
 
-	if disableDeliveryLog {
-		return nil
-	}
-
+	// delivery_log_<id> exists even when DisableDeliveryLog
 	createDeliveryLogSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			consumer_group TEXT NOT NULL,        -- PK

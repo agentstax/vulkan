@@ -48,7 +48,7 @@ type Config struct {
 	// Ex: 10 * time.Minute.
 	IdempotencyKeyTTL time.Duration
 
-	// DisableDeliveryLog - opt out of delivery_log_<id>, the per-attempt
+	// DisableDeliveryLog - don't record to delivery_log_<id>, the per-attempt
 	// failure audit trail written alongside every delivery_<id> failure.
 	// Default: false (enabled).
 	//
