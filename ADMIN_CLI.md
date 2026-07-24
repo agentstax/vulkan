@@ -1,27 +1,26 @@
 # `vulkan` admin CLI — design
 
-Status: **first pass implemented** — `topic register/list/get/destroy` are
-built and live-verified. `migrate` and `alter` remain deferred (see below).
-This records the command surface, per TODO.md's "v1 admin surface" entry
-(`cmd/vulkan CLI (repo's first binary) wraps pkg/admin thinly`).
+Status: **`topic register/list/get/destroy` and `migrate` are built and
+live-verified.** `alter` remains deferred (see below). This records the
+command surface, per TODO.md's "v1 admin surface" entry (`cmd/vulkan CLI
+(repo's first binary) wraps pkg/admin thinly`).
 
-**Implementation lands in two passes** (DECIDED): `topic register/list/
-get/destroy` first, since `pkg/admin` already backs all four today.
-`migrate` and `alter` are deliberately excluded from that first pass — not
-stubbed. `admin.MigrateSystem` and the `schema_log` table now exist
-(2026-07-23), so a system-scope `vulkan migrate` is backable in principle, but
-the CLI command isn't wired and `admin.MigrateTopics` doesn't exist yet;
-`admin.Alter` doesn't exist, TODO.md itself calls it "currently an impossible
-operation". Both are still committed to landing **before v1 ships**, as their own separate
-implementation passes once `pkg/admin` grows the methods to back them --
-just not in the same pass as the first four commands. See "Implementation
-scope" below for the full "buildable today vs not" breakdown.
+**Implementation landed in passes** (DECIDED): `topic register/list/
+get/destroy` first, since `pkg/admin` already backed all four from day one.
+`migrate` landed next (2026-07-24), once `admin.MigrateSystem`,
+`MigrateTopics`, and `MigrateTopic` all existed. `alter` is still excluded --
+not stubbed. `admin.Alter` doesn't exist; TODO.md itself calls it "currently
+an impossible operation." It's still committed to landing **before v1
+ships**, as its own implementation pass once `pkg/admin` grows the method to
+back it. See "Implementation scope" below for the full breakdown.
 
 The CLI is a thin wrapper over `pkg/admin`'s methods (`RegisterTopic`,
-`GetTopic`, `ListTopics`, `DestroyTopic`) plus `Migrate` (`admin.MigrateSystem`
-exists as of 2026-07-23; the CLI command isn't wired). Internals of
-`pkg/admin`/`pkg/topic` are out of scope here — this is the user-facing
-surface only.
+`GetTopic`, `ListTopics`, `DestroyTopic`, `RegisterSystem`, `MigrateSystem`,
+`MigrateTopics`, `MigrateTopic`) plus two direct `pkg/migrate` reads
+(`migrate.Version`, `migrate.IsLocked`) for `status`/`versions` and the
+lock pre-flight -- see "`vulkan migrate`" below for why those two reach past
+`pkg/admin`. Internals of `pkg/admin`/`pkg/topic`/`pkg/migrate` are otherwise
+out of scope here -- this is the user-facing surface only.
 
 ## Library stack
 
@@ -99,10 +98,10 @@ undefined_table`:
 error: system schema not registered -- register the system first
 ```
 
-## Implementation scope (first pass)
+## Implementation scope
 
-What's buildable against `pkg/admin`/`pkg/topic`/`pkg/datastore` as they
-stand today, with zero changes to library code:
+What's buildable against `pkg/admin`/`pkg/topic`/`pkg/migrate`/`pkg/datastore`
+as they stand today, with zero changes to library code:
 
 - **`register`/`list`/`get`/`destroy`** — fully buildable. `RegisterTopic`,
   `ListTopics`, `GetTopic`, `DestroyTopic`+`DestroyOptions{Force}` all
@@ -111,100 +110,164 @@ stand today, with zero changes to library code:
   CLI's per-case messages. The CLI sets `AllowDestroy: true` via the
   existing `MessageAdminConfig` field -- no library change needed for that
   either.
-- **`migrate` and `alter`** — `admin.MigrateSystem` now backs a system-scope
-  migrate (2026-07-23); the `vulkan migrate` subcommands still need wiring (plus
-  `admin.MigrateTopics` for the topic scope). `alter` remains unbuildable.
-  Deferred, not stubbed.
+- **`migrate`** — built (2026-07-24). `admin.RegisterSystem`/`MigrateSystem`/
+  `MigrateTopics`/`MigrateTopic` back `init`/`system`/`topics`/`topic`;
+  `status`/`versions` read `pkg/migrate` directly (see below).
+- **`alter`** — remains unbuildable; `admin.Alter` doesn't exist. Deferred,
+  not stubbed.
 
-**Connection wiring caveat** (found while scoping, worth keeping in mind
-when this gets built): `datastore.NewPostgresDatastore` takes a
-`PostgresConnectionConfig{User, Pass, Host, Port, Database, MaxConns}`
-struct, not a URL -- there's no `postgres://...` constructor today. The CLI
-can still honor `--database-url`/`VULKAN_ADMIN_DATABASE_URL` without any
-`pkg/datastore` change by parsing the URL itself and populating that
-struct. The gap: `PostgresConnectionConfig` has no field for `sslmode` or
-any other DSN query parameter, so anything beyond user/pass/host/port/db in
-the URL is silently dropped today. Not blocking for a first pass against a
-plain local/CI Postgres, but will need a `pkg/datastore` change (a field,
-not a redesign) the moment someone points `--database-url` at something
-requiring `sslmode=require` et al.
+**Connection wiring caveat** (found while scoping `topic`, still true):
+`datastore.NewPostgresDatastore` takes a `PostgresConnectionConfig{User,
+Pass, Host, Port, Database, MaxConns}` struct, not a URL -- there's no
+`postgres://...` constructor today. The CLI honors
+`--database-url`/`VULKAN_ADMIN_DATABASE_URL` without any `pkg/datastore`
+change by parsing the URL itself and populating that struct
+(`internal/cli/conn.go`). The gap: `PostgresConnectionConfig` has no field
+for `sslmode` or any other DSN query parameter, so anything beyond
+user/pass/host/port/db in the URL is dropped with a warning today. Not
+blocking against a plain local/CI Postgres, but will need a `pkg/datastore`
+change (a field, not a redesign) the moment someone points `--database-url`
+at something requiring `sslmode=require` et al.
 
 ---
 
 ## `vulkan migrate`
 
-> Data-model note (2026-07-23): the backing shipped as a single `schema_log`
-> table keyed by `(entity_type, entity_id)` -- `('system', 0)` and
-> `('topic', topic_id)`. Read the `schema_version` / `topic.schema_version`
-> naming below as that one table; the command spec itself is still to be wired.
+> Data-model note: the backing is a single `schema_log` table keyed by
+> `(entity_type, entity_id)` -- `('system', 0)` and `('topic', topic_id)`.
+> Current version = latest-by-`id` row where `status = 'success'`.
+
+**Two independent scopes, not one.** System (the shared control-plane
+tables) and topic (per-topic table families) version SEPARATELY -- each has
+its own registry, its own ceiling, its own current version per entity. A
+topic's version only moves when a topic-scope step actually runs for it;
+it does NOT advance just because a system-scope step ran. This resolved the
+"does every topic's stamp advance on every step" open question below in the
+negative -- the two scopes never touch each other's version.
 
 ```
-vulkan migrate versions
-vulkan migrate up --to N       # --to required -- explicit, no implicit "to latest"
-vulkan migrate down --to N     # --to required -- no implicit "one step back"
-vulkan migrate status
+vulkan migrate init                          # RegisterSystem -- create the control-plane schema at v1 (idempotent)
+vulkan migrate versions                      # versions this binary knows, per scope -- no DB read
+vulkan migrate status                        # current (DB) vs available (binary), system + every topic
+vulkan migrate system  up|down  --to N       # MigrateSystem
+vulkan migrate topics  up|down  --to N       # MigrateTopics -- every registered topic
+vulkan migrate topic   up|down <name> --to N # MigrateTopic -- one topic
+```
+
+`init` isn't a migrate STEP -- it's the same `RegisterSystem` bootstrap
+`admin.RegisterSystem` backs elsewhere, surfaced here because "stand up the
+schema" belongs conceptually with the rest of schema management, not
+scattered as its own top-level verb. `topic register` still gates on it
+having run (see "Unregistered system" above); this is what unblocks that gate.
+
+### `init`
+
+Idempotent, matching `RegisterSystem`:
+
+```
+$ vulkan migrate init
+✓ system schema initialized (version 1)
 ```
 
 ### `versions`
 
-Lists every schema version compiled into *this binary* — the step list
-itself is the source of truth, not anything read from the database:
+Lists every schema version compiled into *this binary*, per scope -- the
+step registry is the source of truth, nothing is read from the database.
+Steps carry no description in the registry (a house-style choice -- the
+registry file itself, and release notes, are where that lives), so `versions`
+prints numbers, not prose:
 
 ```
 $ vulkan migrate versions
-VERSION   DESCRIPTION
-1         baseline: topic, cursor, per-topic tables
-2         add delivery_log audit trail
-3         add compaction latest_key index
-4         add schema_version per-topic stamp
+system schema versions (this binary):
+  1  baseline
+  2
+  3
 
-latest available: 4
+topic schema versions (this binary):
+  1  baseline
+  (no versioned steps compiled in yet)
 ```
 
-### `up` / `down`
+### `system` / `topics` / `topic` `up` / `down`
+
+`--to` is mandatory on every leaf -- explicit target, no implicit "to
+latest" on `up`, no implicit "one step back" on `down`. The CLI enforces
+direction itself (the runner would happily go either way from a bare
+target): `up` refuses a target that would roll the schema back, `down`
+refuses one that would move it forward:
 
 ```
-$ vulkan migrate up
-error: --to is required (e.g. --to 4) -- run `vulkan migrate versions` to see what's available
+$ vulkan migrate system up
+error: --to is required (e.g. --to 3) -- run `vulkan migrate versions` to see what's available
 
-$ vulkan migrate down
-error: --to is required for migrate down (e.g. --to 3) -- downgrades name an explicit target, there's no implicit "down one step"
+$ vulkan migrate system down
+error: --to is required for system down -- downgrades name an explicit target, there's no implicit "down one step"
 
-$ vulkan migrate down --to 5
-error: schema is already at version 4, nothing to do (requested --to 5 is not a downgrade)
+$ vulkan migrate system down --to 5
+error: --to 5 is out of range [1, 3] for this binary -- run `vulkan migrate versions` to see what's available
 
-$ vulkan migrate up --to 4
+$ vulkan migrate system down --to 3
+error: system is at version 2; --to 3 is not a downgrade -- use `up` to move forward
+
+$ vulkan migrate system up --to 2
+✓ system migrated up to version 2
+
+$ vulkan migrate system up --to 2     # run again, already there
+✓ system already at version 2, nothing to do
+
+$ vulkan migrate topics up --to 2
+✓ migrated 3 topics up to version 2
+
+$ vulkan migrate topics up --to 2     # no topics registered yet
+no topics registered
+
+$ vulkan migrate topic up orders.created --to 2
+✓ topic "orders.created" migrated up to version 2
+
+$ vulkan migrate topic up ghost.topic --to 2
+error: topic "ghost.topic" not found
+
+$ vulkan migrate system up --to 3
 error: another migration is already in progress (advisory lock held) -- wait for it to finish, or confirm no other migrate process is actually running before retrying
 ```
 
+The lock-contention error is a fast pre-flight (`migrate.IsLocked` against
+`pg_locks`, checked right before the real call), not a guarantee -- another
+process can still win a race in the gap between the check and the actual
+lock acquisition. That residual case falls back to today's behavior
+(the call blocks until the lock frees), same as before this check existed;
+deliberately not closed with a client-side timeout, since the only way to
+bound just the "waiting for the lock" phase without also risking killing a
+legitimately long-running migration step would require splitting lock
+acquisition out of the library's `Runner.RunOnce`/`RunAll` as its own call --
+more surface than an edge case this rare justifies.
+
 ### `status`
 
-Compares two numbers:
+Compares two numbers per schema (system, and every registered topic):
 
-- **current** — read from the DB: the shared `schema_version` row, plus each
-  topic's own `topic.schema_version` stamp (that per-topic stamp exists so a
-  crash mid-migration-loop is resumable/visible).
-- **latest available** — not a DB read. The same binary-compiled ceiling
-  `versions` prints. An older CLI against a newer DB can say "I only know up
-  to 3, this DB is at 4" without that being an error.
+- **current** — read from the DB via `migrate.Version` (schema_log latest-by-id
+  success row).
+- **available** — not a DB read. The same binary-compiled ceiling `versions`
+  prints, per scope. An older CLI against a newer DB can say "I only know up
+  to 2, this DB is at 3" without that being an error (`current > available`
+  is not "behind" -- only `current < available` is actionable).
 
 ```
 $ vulkan migrate status
-latest available: 4 (vulkan migrate versions)
+latest available: system 3, topic 1
 
-SCHEMA              CURRENT
-shared              3
-orders.created       3
-billing.paid          4
+SCHEMA            CURRENT   AVAILABLE
+system            2         3
+orders.created    1         1
+billing.paid      1         1
 
-shared, orders.created behind latest (3 < 4) -- run `vulkan migrate up --to 4`
+system behind (2 < 3) -- run `vulkan migrate system up --to 3`
+
+$ vulkan migrate status     # before init
+system schema not initialized -- run `vulkan migrate init`
 ```
-
-Design assumption this leans on (worth confirming when `Migrate` is actually
-built, not just a CLI-side wish): every topic's stamp must advance on
-*every* step, even one that only touches shared tables and has nothing to
-do for that topic. Otherwise "current" needs a second axis ("current *for
-steps that applied to you*"), which is a worse status display.
 
 ---
 
@@ -388,7 +451,14 @@ library embedders, not this tool.
 
 ## Open questions
 
-- Whether `migrate status`'s "every topic stamp advances on every step"
-  assumption holds once `Migrate` is actually implemented.
 - Whether to bring back a machine-readable output mode (`--json` was removed
   in the first pass for want of a consumer).
+- `alter`'s CLI surface -- undesigned until `admin.Alter` gets its own design
+  pass in `pkg/admin` (some topic config, like `PartitionSize`, is baked into
+  per-topic table shape and may not be a simple field update).
+
+**Resolved**: `migrate status`'s per-topic-stamp question (was: does every
+topic's version advance on every step, even system-only ones?) -- no. System
+and topic are fully independent version counters; a topic's version only
+moves when a topic-scope step runs for that specific topic. See "`vulkan
+migrate`" above.
