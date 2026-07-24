@@ -1,26 +1,27 @@
 # `vulkan` admin CLI — design
 
-Status: **`topic register/list/get/destroy` and `migrate` are built and
-live-verified.** `alter` remains deferred (see below). This records the
-command surface, per TODO.md's "v1 admin surface" entry (`cmd/vulkan CLI
-(repo's first binary) wraps pkg/admin thinly`).
+Status: **`topic register/list/get/alter/rename/destroy` and `migrate` are
+built and live-verified.** This records the command surface, per TODO.md's
+"v1 admin surface" entry (`cmd/vulkan CLI (repo's first binary) wraps
+pkg/admin thinly`).
 
 **Implementation landed in passes** (DECIDED): `topic register/list/
 get/destroy` first, since `pkg/admin` already backed all four from day one.
 `migrate` landed next (2026-07-24), once `admin.MigrateSystem`,
-`MigrateTopics`, and `MigrateTopic` all existed. `alter` is still excluded --
-not stubbed. `admin.Alter` doesn't exist; TODO.md itself calls it "currently
-an impossible operation." It's still committed to landing **before v1
-ships**, as its own implementation pass once `pkg/admin` grows the method to
-back it. See "Implementation scope" below for the full breakdown.
+`MigrateTopics`, and `MigrateTopic` all existed. `alter` and `rename` landed
+last (2026-07-24), once `admin.AlterTopic`/`RenameTopic` existed to back
+them -- `alter` was blocked until the field-mutability question was settled
+(PartitionSize is immutable, so it's absent from the surface; name change is
+its own `rename` verb). See "Implementation scope" below.
 
 The CLI is a thin wrapper over `pkg/admin`'s methods (`RegisterTopic`,
-`GetTopic`, `ListTopics`, `DestroyTopic`, `RegisterSystem`, `MigrateSystem`,
-`MigrateTopics`, `MigrateTopic`) plus two direct `pkg/migrate` reads
-(`migrate.Version`, `migrate.IsLocked`) for `status`/`versions` and the
-lock pre-flight -- see "`vulkan migrate`" below for why those two reach past
-`pkg/admin`. Internals of `pkg/admin`/`pkg/topic`/`pkg/migrate` are otherwise
-out of scope here -- this is the user-facing surface only.
+`GetTopic`, `ListTopics`, `AlterTopic`, `RenameTopic`, `DestroyTopic`,
+`RegisterSystem`, `MigrateSystem`, `MigrateTopics`, `MigrateTopic`) plus two
+direct `pkg/migrate` reads (`migrate.Version`, `migrate.IsLocked`) for
+`status`/`versions` and the lock pre-flight -- see "`vulkan migrate`" below
+for why those two reach past `pkg/admin`. Internals of
+`pkg/admin`/`pkg/topic`/`pkg/migrate` are otherwise out of scope here -- this
+is the user-facing surface only.
 
 ## Library stack
 
@@ -106,9 +107,9 @@ error: system schema not registered -- register the system first
 What's buildable against `pkg/admin`/`pkg/topic`/`pkg/migrate`/`pkg/datastore`
 as they stand today, with zero changes to library code:
 
-- **`register`/`list`/`get`/`destroy`** — fully buildable. `RegisterTopic`,
-  `ListTopics`, `GetTopic`, `DestroyTopic`+`DestroyOptions{Force}` all
-  exist; `ErrTopicConfigMismatch`/`ErrTopicNotFound`/`ErrTopicNotEmpty`/
+- **`register`/`list`/`get`/`destroy`** — `RegisterTopic`, `ListTopics`,
+  `GetTopic`, `DestroyTopic`+`DestroyOptions{Force}` all exist;
+  `ErrTopicConfigMismatch`/`ErrTopicNotFound`/`ErrTopicNotEmpty`/
   `ErrDestroyDisabled` are all already `errors.Is`-distinguishable for the
   CLI's per-case messages. The CLI sets `AllowDestroy: true` via the
   existing `MessageAdminConfig` field -- no library change needed for that
@@ -116,8 +117,10 @@ as they stand today, with zero changes to library code:
 - **`migrate`** — built (2026-07-24). `admin.RegisterSystem`/`MigrateSystem`/
   `MigrateTopics`/`MigrateTopic` back `init`/`system`/`topics`/`topic`;
   `status`/`versions` read `pkg/migrate` directly (see below).
-- **`alter`** — remains unbuildable; `admin.Alter` doesn't exist. Deferred,
-  not stubbed.
+- **`alter`/`rename`** — built (2026-07-24). `admin.AlterTopic` (sparse
+  `topic.AlterConfig` patch) backs `alter`; `admin.RenameTopic`
+  (+ `ErrTopicNameTaken`) backs `rename`. See "`vulkan topic alter`" and
+  "`vulkan topic rename`" below.
 
 **Connection wiring caveat** (found while scoping `topic`, still true):
 `datastore.NewPostgresDatastore` takes a `PostgresConnectionConfig{User,
@@ -369,17 +372,94 @@ $ vulkan topic get ghost.topic; echo $?
 
 ---
 
-## `vulkan topic alter`
+## `vulkan topic alter <name>`
 
-No design exists in `pkg/admin` yet — TODO.md itself calls this "currently
-an impossible operation." Not designing a CLI surface for a backend that
-doesn't exist yet.
+Backed by `admin.AlterTopic`, which takes a sparse `topic.AlterConfig` --
+pointer fields where nil means "leave unchanged." The CLI mirrors that
+exactly: each flag maps 1:1 to a field, and only the flags actually passed
+(`cmd.Flags().Changed`) become non-nil. It's a **patch, not a replace** --
+unmentioned fields keep their stored value, which is why the operator doesn't
+have to restate the whole config to change one field.
 
-**Resolved**: omitted entirely from the CLI's first implementation pass,
-not stubbed (see "Implementation scope" above) — clig.dev's own guidance is
-against exposing a subcommand guaranteed to fail. Lands as its own
-implementation pass once `Alter` gets its design pass in `pkg/admin`, and
-is committed to landing before v1 ships either way.
+Two fields are deliberately absent from the surface:
+
+- **`--partition-size`** — immutable. Every existing partition's bounds were
+  computed from it, so it can't change mid-life (see TODO.md's "dynamic
+  partition bounds" entry for the follow-up that would unlock it). `pkg/topic`
+  enforces this by construction: `AlterConfig` has no `PartitionSize` field.
+- **the name** — changing it is `topic rename` (below), not a config field.
+
+Bools are genuine tri-state: `--disable-delivery-log=false` counts as
+*passed*, so it sets the field false, distinct from omitting the flag (leave
+as-is). Success prints an OLD → NEW table over just the fields that changed:
+
+```
+$ vulkan topic alter orders.created --retention-ttl 1440h --janitor-sweep-batch-size 5000
+✓ altered topic "orders.created" (id=42)
+
+  FIELD                   OLD        NEW
+  RetentionTTL            720h0m0s   1440h0m0s
+  JanitorSweepBatchSize   1000       5000
+```
+
+Passing no field flags is a usage error (exit 2), not a silent no-op -- an
+alter must change something. Out-of-range values are rejected up front by
+`AlterConfig.Validate` before any DB call, same exit 2:
+
+```
+$ vulkan topic alter orders.created
+error: no fields set -- an alter must change at least one field
+
+$ vulkan topic alter orders.created --janitor-sweep-batch-size 0
+error: JanitorSweepBatchSize must be > 0, got 0
+
+$ vulkan topic alter ghost.topic --retention-ttl 1h
+error: topic "ghost.topic" not found
+```
+
+Two consequences carried in the command's `--help` (from `AlterTopic`'s own
+contract): a running producer/consumer snapshots config at *its* Register, so
+an alter takes effect on its next restart, not live; and a `RegisterTopic`
+call still passing the pre-alter config will fail `ErrTopicConfigMismatch` --
+deliberate, so a declarative register can't silently paper over an operator's
+change.
+
+---
+
+## `vulkan topic rename <name> <new-name>`
+
+Backed by `admin.RenameTopic`. Everything but the name -- id, config, stored
+messages -- is untouched, since every table is addressed by id internally, so
+this is a single metadata-only row update:
+
+```
+$ vulkan topic rename orders.created orders.v2
+✓ renamed topic "orders.created" -> "orders.v2" (id=42)
+```
+
+Error cases map the two sentinels plus the same-name guard:
+
+```
+$ vulkan topic rename ghost.topic whatever
+error: topic "ghost.topic" not found
+
+$ vulkan topic rename orders.v2 billing.paid       # target name already taken
+error: topic "billing.paid" already exists -- pick a name that's free, or destroy it first
+
+$ vulkan topic rename orders.v2 orders.v2
+error: new name matches the current name -- nothing to rename
+
+$ vulkan topic rename orders.v2
+error: rename requires a topic name and a new name
+usage: vulkan topic rename <name> <new-name>
+```
+
+The hazard worth knowing (in `--help` too): the **old name is free the moment
+this returns**. Running producers/consumers keep working -- they resolved the
+id at their Register -- but anything still *configured* with the old name
+fails its next restart's Register, or worse, silently attaches to a new topic
+later registered under the freed name. Update those configs before reusing
+the old name.
 
 ---
 
@@ -456,9 +536,13 @@ library embedders, not this tool.
 
 - Whether to bring back a machine-readable output mode (`--json` was removed
   in the first pass for want of a consumer).
-- `alter`'s CLI surface -- undesigned until `admin.Alter` gets its own design
-  pass in `pkg/admin` (some topic config, like `PartitionSize`, is baked into
-  per-topic table shape and may not be a simple field update).
+
+**Resolved**: `alter`'s CLI surface (was: undesigned, since some config like
+`PartitionSize` is baked into per-topic table shape and may not be a simple
+field update) -- built 2026-07-24. `PartitionSize` is immutable and simply
+absent from the surface; the name is `rename`'s job, not a config field;
+every remaining field is a plain sparse-patch update. See "`vulkan topic
+alter`"/"`vulkan topic rename`" above.
 
 **Resolved**: `migrate status`'s per-topic-stamp question (was: does every
 topic's version advance on every step, even system-only ones?) -- no. System

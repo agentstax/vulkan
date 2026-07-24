@@ -9,12 +9,14 @@ import (
 func newTopicCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "topic",
-		Short: "Register, inspect, and destroy topics",
+		Short: "Register, inspect, alter, rename, and destroy topics",
 	}
 
 	cmd.AddCommand(newTopicRegisterCmd(g))
 	cmd.AddCommand(newTopicListCmd(g))
 	cmd.AddCommand(newTopicGetCmd(g))
+	cmd.AddCommand(newTopicAlterCmd(g))
+	cmd.AddCommand(newTopicRenameCmd(g))
 	cmd.AddCommand(newTopicDestroyCmd(g))
 
 	return cmd
