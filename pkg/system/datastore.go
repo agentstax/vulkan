@@ -2,17 +2,13 @@ package system
 
 import (
 	"context"
+	"os"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 )
-
-// migrationAdvisoryLock is the one global key every system and topic-scope
-// schema mutation takes -- one-off scripts, so serializing them all against
-// each other costs nothing and stops two deploys interleaving DDL. The value is
-// arbitrary (ASCII "VULK"); it only has to stay fixed.
-const migrationAdvisoryLock int64 = 0x56554C4B
 
 // SystemDatastore owns the shared control-plane schema.
 // Tables:
@@ -21,19 +17,23 @@ const migrationAdvisoryLock int64 = 0x56554C4B
 // - binding
 // - topic
 // - latest_key
-// - system_schema_log
-// - topic_schema_log
+// - schema_log
 type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
 	Logger    logger.Logger
 }
 
-func NewSystemDatastore(ds *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*SystemDatastore, error) {
+func NewSystemDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log logger.Logger) (*SystemDatastore, error) {
+	if log == nil {
+		log = logger.NewDefaultLogger(os.Stdout)
+	}
+
 	dsRetry, err := retry.NewDatastoreRetry(retryPolicy, log)
 	if err != nil {
 		return nil, err
 	}
+
 	return &SystemDatastore{
 		Datastore: ds,
 		Retry:     dsRetry,
@@ -61,7 +61,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 	defer tx.Rollback(ctx)
 
 	// txn-scoped -- acquired here, auto-released at commit.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1);`, migrationAdvisoryLock); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		return err
 	}
 
@@ -156,43 +156,34 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
-	// system_schema_log is the append-only history of system schema-version
-	// changes -- one row per attempt.
-	createSystemSchemaLogSql := `
-		CREATE TABLE IF NOT EXISTS system_schema_log (
+	// schema_log is the append-only history of schema-version changes
+	// -- one row per attempt. entity_type + entity_id say whose:
+	// ('system', 0) for the control plane, ('topic', topic_id) per topic.
+	createSchemaLogSql := `
+		CREATE TABLE IF NOT EXISTS schema_log (
 			id BIGSERIAL PRIMARY KEY,
+			entity_type TEXT NOT NULL,    -- 'system' | 'topic'
+			entity_id BIGINT NOT NULL,    -- 0 for system; topic_id for a topic
 			schema_version BIGINT NOT NULL,
-			status TEXT NOT NULL, -- 'success' | 'failure' (extensible)
-			error TEXT,           -- populated when status = 'failure'
+			status TEXT NOT NULL,         -- 'success' | 'failure' (extensible)
+			error TEXT,                   -- populated when status = 'failure'
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 	`
-	if _, err := tx.Exec(ctx, createSystemSchemaLogSql); err != nil {
+	if _, err := tx.Exec(ctx, createSchemaLogSql); err != nil {
 		return err
 	}
 
-	// topic_schema_log is system_schema_log's per-topic counterpart -- the same
-	// append-only history, scoped by topic_id so each topic tracks its own
-	// version independently.
-	createTopicSchemaLogSql := `
-		CREATE TABLE IF NOT EXISTS topic_schema_log (
-			id BIGSERIAL PRIMARY KEY,
-			schema_version BIGINT NOT NULL,
-			topic_id BIGINT NOT NULL,
-			status TEXT NOT NULL, -- 'success' | 'failure' (extensible)
-			error TEXT,           -- populated when status = 'failure'
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-	`
-	if _, err := tx.Exec(ctx, createTopicSchemaLogSql); err != nil {
-		return err
-	}
-
-	// Record the v1 baseline, but only if there's no success row yet
+	// Record the system v1 baseline, but only if there's no success row yet
 	recordBaselineSql := `
-		INSERT INTO system_schema_log (schema_version, status)
-		SELECT 1, 'success'
-		WHERE NOT EXISTS (SELECT 1 FROM system_schema_log WHERE status = 'success');
+		INSERT INTO schema_log (entity_type, entity_id, schema_version, status)
+		SELECT 'system', 0, 1, 'success'
+		WHERE NOT EXISTS (
+			SELECT 1 FROM schema_log 
+			WHERE entity_type = 'system' 
+				AND entity_id = 0 
+				AND status = 'success'
+		);
 	`
 	if _, err := tx.Exec(ctx, recordBaselineSql); err != nil {
 		return err

@@ -20,7 +20,7 @@ type TopicDatastore struct {
 	Logger    logger.Logger
 }
 
-func NewTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger, retryPolicy *retry.Policy) (*TopicDatastore, error) {
+func NewTopicDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log logger.Logger) (*TopicDatastore, error) {
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -31,7 +31,7 @@ func NewTopicDatastore(datastore *datastore.PostgresDatastore, log logger.Logger
 	}
 
 	return &TopicDatastore{
-		Datastore: datastore,
+		Datastore: ds,
 		Retry:     dsRetry,
 		Logger:    log,
 	}, nil
@@ -196,6 +196,14 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 	case insertErr == nil:
 		// we won the insert -- stand up this topic's own log
 		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize, cfg.DisableDeliveryLog); err != nil {
+			return nil, err
+		}
+		// add the schema baseline in the SAME txn
+		schemaSql := `
+			INSERT INTO schema_log (entity_type, entity_id, schema_version, status) 
+			VALUES ('topic', $1, 1, 'success');
+		`
+		if _, err := tx.Exec(ctx, schemaSql, id); err != nil {
 			return nil, err
 		}
 		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", name, "topic_id", id)
@@ -381,6 +389,11 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 		if _, err := tx.Exec(ctx, deleteSql, topic.Id); err != nil {
 			return err
 		}
+	}
+
+	// remove this topic's schema history
+	if _, err := tx.Exec(ctx, `DELETE FROM schema_log WHERE entity_type = 'topic' AND entity_id = $1;`, topic.Id); err != nil {
+		return err
 	}
 
 	// the now-empty parent, delivery_<id>, and idempotency_key_<id>

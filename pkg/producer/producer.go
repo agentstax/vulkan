@@ -81,7 +81,7 @@ func NewMessageProducer[Message any](topicName string, ds *coredatastore.Postgre
 	if err != nil {
 		return nil, err
 	}
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, cfg.Retry)
+	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}

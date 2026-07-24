@@ -47,7 +47,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 
 			// 2. emptiness -- MessageAdmin doesn't expose this, so build a
 			// topic.TopicDatastore over the same pool (public API, no pkg change).
-			tds, err := topic.NewTopicDatastore(ds, logger.NewDefaultLogger(os.Stderr, slog.LevelError), nil)
+			tds, err := topic.NewTopicDatastore(ds, nil, logger.NewDefaultLogger(os.Stderr, slog.LevelError))
 			if err != nil {
 				return failOp("could not check whether topic is empty: %v", err)
 			}

@@ -74,7 +74,7 @@ func NewMessageConsumer[Message any](consumerGroup string, topicName string, que
 		return nil, err
 	}
 
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Logger, nil)
+	topicDatastore, err := topic.NewTopicDatastore(ds, nil, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}
