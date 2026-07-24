@@ -7,6 +7,7 @@ import (
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
@@ -121,6 +122,12 @@ func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName)
 	}
 	p.Topic = current
+
+	// fail fast if the db's schema is outside the range this build understands
+	if err := migrate.AssertSchemaSupported(ctx, p.topicDatastore.Datastore.Pool, current.Id); err != nil {
+		return err
+	}
+
 	p.batcher = newBatcher(p.datastore, current.Id, current.PartitionSize, p.datastore.cfg)
 
 	// tracked for graceful shutdown draining / handling

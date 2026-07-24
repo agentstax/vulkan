@@ -13,6 +13,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
@@ -121,6 +122,11 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName)
 	}
 	p.Topic = current
+
+	// fail fast if the db's schema is outside the range this build understands
+	if err := migrate.AssertSchemaSupported(ctx, p.topicDatastore.Datastore.Pool, current.Id); err != nil {
+		return err
+	}
 
 	consumerMetrics, err := metrics.NewConsumerMetrics(p.Config.Meter, p.consumerGroup, current.Id, current.Name, p.Datastore.Datastore, &metrics.ConsumerMetricsDatastoreConfig{
 		Logger: p.Config.Logger,

@@ -91,7 +91,7 @@ func (r *Runner) entities(ctx context.Context, conn *pgxpool.Conn, entityType st
 
 // migrateEntity walks one entity between its current version and targetVersion.
 func (r *Runner) migrateEntity(ctx context.Context, conn *pgxpool.Conn, entityType string, entityId, targetVersion, maxVersion int64, registry []Migration) error {
-	current, err := r.Datastore.CurrentVersion(ctx, conn, entityType, entityId)
+	current, err := mDatastore.Version(ctx, conn, entityType, entityId)
 	if err != nil {
 		return err
 	}

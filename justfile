@@ -257,6 +257,12 @@ multi-target-lab:
 invariant-lab:
   go run examples/phase_1/invariantlab/main.go
 
+# schema gate lab: a producer/consumer refuses to Register when the db's system
+# or topic schema version is outside the range this build understands -- fail
+# fast with an operator-actionable message. The v1.1 upgrade path's tripwire.
+schema-gate-lab:
+  go run examples/phase_1/schemagatelab/main.go
+
 # producer batch lab: the batched payload-only Produce path. Concurrent
 # callers share transactions (xmin-proven) and land exactly once, a
 # caller-keyed call routes per-call and dedups, a poisoned/unencodable
