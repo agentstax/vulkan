@@ -248,6 +248,15 @@ otel-export-lab:
 multi-target-lab:
   go run examples/phase_1/multitargetlab/main.go
 
+# invariant lab: the migrate engine's guarantees under a fixture registry (the
+# real registries are empty) -- migrate-to-N == fresh-create-at-N via an
+# information_schema diff, up->down->up reversibility, and Up/Down idempotency
+# under an ambiguous-commit re-run. The linear-history teeth golang-migrate's
+# file layout used to give for free. Borrows the system entity against scratch
+# tables, resets to baseline on exit.
+invariant-lab:
+  go run examples/phase_1/invariantlab/main.go
+
 # producer batch lab: the batched payload-only Produce path. Concurrent
 # callers share transactions (xmin-proven) and land exactly once, a
 # caller-keyed call routes per-call and dedups, a poisoned/unencodable
