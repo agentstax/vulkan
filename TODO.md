@@ -198,10 +198,11 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
       lives in ADMIN_CLI.md, not duplicated here. Ships in two passes:
       topic register/list/get/destroy FIRST PASS DONE (2026-07-23, built +
       live-verified against dev Postgres); migrate and alter deliberately
-      excluded from that first pass (not stubbed -- admin.Migrate and
-      admin.Alter don't exist yet) but still committed to landing before v1
-      ships, as their own implementation passes once pkg/admin grows the
-      methods to back them.
+      excluded from that first pass. admin.MigrateSystem now EXISTS (2026-07-23,
+      backing a future `vulkan migrate`), but the CLI command isn't wired and
+      admin.MigrateTopics/admin.Alter don't exist yet -- all still committed to
+      landing before v1 ships, as their own implementation passes once
+      pkg/admin grows the methods to back them.
       Built on cobra + fang + lipgloss v2 for styled help/output; destroy's
       type-the-name confirm is a PLAIN readline prompt -- huh was dropped (it
       couldn't match the inline transcript and its validation retries fought
@@ -250,9 +251,9 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
   table ownership -- role membership in the admin role or SECURITY DEFINER
   functions are the candidate answers.
   still needing their own design passes: Alter (currently an impossible
-  operation). Migrate's direction is decided -- see the "migration scripts ->
-  code" entry below (idempotent-create baseline + versioned steps, no
-  golang-migrate).
+  operation). Migrate is BUILT (2026-07-23) -- admin.MigrateSystem; see the
+  "migration scripts -> code" entry below. (admin.MigrateTopics and the
+  `vulkan migrate` CLI command are still pending.)
 
 Presence: heartbeat rows for live producer/consumer instances
   problem: nothing records what's connected to a topic. Operators can't answer
@@ -436,7 +437,9 @@ circuit breaker for a known-dead downstream dependency
   actual fix is not letting the backlog get pointlessly huge in the first
   place (this breaker), not making the datastore survive scanning it fast.
 
-migration scripts -> code (DECIDED in discussion, not built): the golang-migrate
+migration scripts -> code (BUILT 2026-07-23, live-verified against dev Postgres;
+  DELETING the golang-migrate sql files + migrate-up/down recipes is deferred to
+  its own phase -- they coexist, superseded by `just system-register`): the golang-migrate
   sql files + justfile migrate-up/down go away. admin.Migrate() calls
   idempotent create code for the shared tables (CREATE TABLE IF NOT EXISTS --
   the same idiom topic.Register already uses for per-topic tables). the model
@@ -467,6 +470,22 @@ migration scripts -> code (DECIDED in discussion, not built): the golang-migrate
       create-at-N-1-then-migrate-to-N (diff information_schema) is a
       must-have, not a nice-to-have. plus up->down->up round trips and a
       kill mid-topic-loop then resume.
+  SHIPPED (2026-07-23): pkg/migrate (a receiver-light Runner over
+  Run(target, entityType, entityId, registry); DB ops in pkg/migrate/datastore)
+  records into ONE schema_log table -- entity_type 'system'|'topic', entity_id
+  0|topic_id, schema_version, status 'success'|'failure', error. admin gained
+  RegisterSystem (idempotent baseline) + MigrateSystem (explicit target, up OR
+  down). RegisterTopic records the topic's v1 baseline in its create txn AND
+  gates on system-registered (teaching error, wraps migrate.ErrNotRegistered);
+  DestroyTopic reaps the topic's schema_log rows. One common.AdvisoryLock
+  (session lock on a Run, xact lock on RegisterSystem). Lifecycle Register calls
+  migrate.AssertSchemaSupported (Min/Max version per entity, [1,1] at v1 -- the
+  hook a v1.1 binary needs). Two fixture-driven labs: invariant-lab
+  (fresh-at-N == migrate-to-N information_schema diff, up->down->up, Up/Down
+  idempotency) and schema-gate-lab; every lab now self-registers the system.
+  STILL DEFERRED: delete migrations/*.sql + the migrate-up/down recipes;
+  admin.MigrateTopics (the topic-scope Runner works, no admin verb yet); the
+  `vulkan migrate` CLI command (ADMIN_CLI.md); admin.Alter.
 
 this can be later but we need to think through security. Ideally we can easily setup and create users with least privledge AND easily enable / disable row level security on these tables or per topic
 
@@ -533,7 +552,9 @@ A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
 **Admin Surface**
 - **Admin CLI**
-- **Migrations-into-code.**
+- **Migrations-into-code.** BUILT 2026-07-23 (pkg/migrate + admin RegisterSystem/
+  MigrateSystem + lifecycle schema gate). Deferred: sql-file deletion,
+  admin.MigrateTopics, the `vulkan migrate` CLI command.
 
 **Default alert metrics**
 

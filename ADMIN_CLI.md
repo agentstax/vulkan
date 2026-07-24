@@ -8,17 +8,18 @@ This records the command surface, per TODO.md's "v1 admin surface" entry
 **Implementation lands in two passes** (DECIDED): `topic register/list/
 get/destroy` first, since `pkg/admin` already backs all four today.
 `migrate` and `alter` are deliberately excluded from that first pass — not
-stubbed — because neither has a backing implementation yet (`admin.Migrate`
-doesn't exist, no `schema_version` table exists; `admin.Alter` doesn't
-exist, TODO.md itself calls it "currently an impossible operation"). Both
-are still committed to landing **before v1 ships**, as their own separate
+stubbed. `admin.MigrateSystem` and the `schema_log` table now exist
+(2026-07-23), so a system-scope `vulkan migrate` is backable in principle, but
+the CLI command isn't wired and `admin.MigrateTopics` doesn't exist yet;
+`admin.Alter` doesn't exist, TODO.md itself calls it "currently an impossible
+operation". Both are still committed to landing **before v1 ships**, as their own separate
 implementation passes once `pkg/admin` grows the methods to back them --
 just not in the same pass as the first four commands. See "Implementation
 scope" below for the full "buildable today vs not" breakdown.
 
 The CLI is a thin wrapper over `pkg/admin`'s methods (`RegisterTopic`,
-`GetTopic`, `ListTopics`, `DestroyTopic`) plus `Migrate` (shape decided in
-TODO.md's "migration scripts -> code" entry, not built yet). Internals of
+`GetTopic`, `ListTopics`, `DestroyTopic`) plus `Migrate` (`admin.MigrateSystem`
+exists as of 2026-07-23; the CLI command isn't wired). Internals of
 `pkg/admin`/`pkg/topic` are out of scope here — this is the user-facing
 surface only.
 
@@ -89,11 +90,13 @@ run non-interactively).
 
 **Errors**: always human text on stderr, with an `error: ` prefix.
 
-**Unmigrated DB**: any `topic` subcommand run before `vulkan migrate` has
-ever run should translate Postgres's raw `42P01 undefined_table` into:
+**Unregistered system**: any `topic` subcommand run before the system schema is
+registered should surface the teaching error `pkg/admin` already returns
+(`RegisterTopic` wraps `migrate.ErrNotRegistered`) rather than a raw `42P01
+undefined_table`:
 
 ```
-error: schema not initialized -- run `vulkan migrate` first
+error: system schema not registered -- register the system first
 ```
 
 ## Implementation scope (first pass)
@@ -108,8 +111,10 @@ stand today, with zero changes to library code:
   CLI's per-case messages. The CLI sets `AllowDestroy: true` via the
   existing `MessageAdminConfig` field -- no library change needed for that
   either.
-- **`migrate` (all four subcommands) and `alter`** — not buildable, see
-  above. Deferred, not stubbed.
+- **`migrate` and `alter`** — `admin.MigrateSystem` now backs a system-scope
+  migrate (2026-07-23); the `vulkan migrate` subcommands still need wiring (plus
+  `admin.MigrateTopics` for the topic scope). `alter` remains unbuildable.
+  Deferred, not stubbed.
 
 **Connection wiring caveat** (found while scoping, worth keeping in mind
 when this gets built): `datastore.NewPostgresDatastore` takes a
@@ -127,6 +132,11 @@ requiring `sslmode=require` et al.
 ---
 
 ## `vulkan migrate`
+
+> Data-model note (2026-07-23): the backing shipped as a single `schema_log`
+> table keyed by `(entity_type, entity_id)` -- `('system', 0)` and
+> `('topic', topic_id)`. Read the `schema_version` / `topic.schema_version`
+> naming below as that one table; the command spec itself is still to be wired.
 
 ```
 vulkan migrate versions
