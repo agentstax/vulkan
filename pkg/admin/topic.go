@@ -64,6 +64,57 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 	return a.topicDatastore.UpsertTopic(ctx, name, *cfg)
 }
 
+// AlterTopic applies cfg's non-nil fields to the topic's stored config and
+// returns the updated topic. Returns ErrTopicNotFound if name isn't registered.
+//
+// Two consequences to plan around:
+//   - Running producers/consumers snapshot the topic at their Register, so an
+//     alter takes effect on their NEXT restart, not live.
+//   - RegisterTopic calls still passing the pre-alter config will fail with
+//     ErrTopicConfigMismatch -- deliberate, so declarative register calls
+//     can't silently drift from what an operator changed.
+func (a *MessageAdmin) AlterTopic(ctx context.Context, name string, cfg *topic.AlterConfig) (*topic.Topic, error) {
+	if name == "" {
+		return nil, errors.New("topic name is required")
+	}
+
+	if cfg == nil {
+		cfg = &topic.AlterConfig{}
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	updated, err := a.topicDatastore.UpdateTopic(ctx, name, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
+	}
+	return updated, nil
+}
+
+// MigrateTopic moves a single topic's schema to targetVersion.
+// Returns ErrTopicNotFound if name isn't registered.
+func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, targetVersion int64) error {
+	found, err := a.GetTopic(ctx, name)
+	if err != nil {
+		return err
+	}
+	if found == nil {
+		return fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
+	}
+
+	return a.migrateRunner.RunOnce(ctx, targetVersion, migrate.EntityTopic, found.Id, topicMigrations.Registry)
+}
+
+// MigrateTopics moves every registered topic's schema to targetVersion.
+// A no-op, not an error, if no topics are registered.
+func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) error {
+	return a.migrateRunner.RunAll(ctx, targetVersion, migrate.EntityTopic, topicMigrations.Registry)
+}
+
 // DestroyOptions configures a single DestroyTopic call.
 type DestroyOptions struct {
 	// Force - required to destroy a topic that still holds messages.
@@ -102,24 +153,4 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, opts Destr
 	}
 
 	return a.topicDatastore.DeleteTopic(ctx, found)
-}
-
-// MigrateTopic moves a single topic's schema to targetVersion.
-// Returns ErrTopicNotFound if name isn't registered.
-func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, targetVersion int64) error {
-	found, err := a.GetTopic(ctx, name)
-	if err != nil {
-		return err
-	}
-	if found == nil {
-		return fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
-	}
-
-	return a.migrateRunner.RunOnce(ctx, targetVersion, migrate.EntityTopic, found.Id, topicMigrations.Registry)
-}
-
-// MigrateTopics moves every registered topic's schema to targetVersion.
-// A no-op, not an error, if no topics are registered.
-func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) error {
-	return a.migrateRunner.RunAll(ctx, targetVersion, migrate.EntityTopic, topicMigrations.Registry)
 }

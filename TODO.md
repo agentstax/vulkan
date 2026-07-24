@@ -255,6 +255,39 @@ v1 admin surface: pkg/admin owns topic lifecycle (DECIDED in discussion, not bui
   "migration scripts -> code" entry below. (admin.MigrateTopics and the
   `vulkan migrate` CLI command are still pending.)
 
+dynamic partition bounds: the follow-up that makes PartitionSize alterable
+  (design settled in discussion 2026-07-24; AlterTopic ships first with
+  PartitionSize immutable -- this unlocks it).
+  today every partition-math call site (producer ensureCoveringPartition,
+  consumer EnsureNextPartition/DropExpiredPartitions/dropPartition/
+  SweepExpiredPartitions) assumes one constant width for the topic's whole
+  life: partition n = [n*size, (n+1)*size), name and bounds are the same
+  number viewed through size. change size mid-life and head/size points at
+  the wrong table -- hence immutable.
+  the fix: Postgres already stores every partition's true bounds; the math
+  is just a cache of the catalog. settled shape:
+    - KEEP message_log_<id>_<n> sequential naming. reads never reconstruct
+      a name: walk pg_inherits + pg_get_expr(relpartbound) and use the
+      (relname, lower, upper) triples as handed back. row-level point
+      lookups can use tableoid::regclass (needs a row to exist -- partition
+      enumeration still wants the pg_inherits walk).
+    - creation mints n = max existing suffix + 1 and from = max upper
+      bound off ONE catalog read; CREATE TABLE IF NOT EXISTS keeps the
+      concurrent-create race benign (racers on the same snapshot compute
+      the identical name+bounds; a stale racer self-heals next tick).
+    - contiguity + non-overlap survive any size history because new
+      partitions only ever append at the top.
+    - hot-path cost: bounds are immutable once created, so cache the
+      partition map in memory and re-read the catalog only when head
+      crosses the cached max upper bound -- one query per rollover, not
+      per append.
+  resulting semantics: PartitionSize = width of FUTURE partitions only,
+  existing ones untouched (Kafka segment.bytes). that moves it into the
+  freely-alterable bucket -- a plain topic-row UPDATE.
+  deferred because the blast radius is every hot invariant-laden path in
+  the library, for an admin nicety; fully backward-compatible to add later
+  since existing partitions' bounds are already in the catalog.
+
 Presence: heartbeat rows for live producer/consumer instances
   problem: nothing records what's connected to a topic. Operators can't answer
   "what producers/consumers exist right now, and are they idle or active?"
@@ -567,3 +600,6 @@ A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor g
 reconsider if latest_key should be a per topic latest_key_(topic_id) table. High update churn from many tables could be an issue. Should really do an evaluation on all system tables cursor / lease / binding / topic / latest_key tables
 
 see if our new Querier interface could be used to make stronger contracts with internal or public code
+
+options vs dsfunctional vs builder Withs. Need to decide on one commone pattern.
+- One extra reason to consider options as the default pattern is it would work well with AlterTopics nil sparse field config

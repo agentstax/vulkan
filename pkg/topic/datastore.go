@@ -237,6 +237,129 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 	return t, nil
 }
 
+// UpdateTopic applies cfg's non-nil fields to name's row.
+// Returns (nil, nil) if no topic is registered under name.
+func (d *TopicDatastore) UpdateTopic(ctx context.Context, name string, cfg *AlterConfig) (*Topic, error) {
+	var topic *Topic
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		topic, err = d.updateTopic(ctx, name, cfg)
+		return err
+	})
+	return topic, err
+}
+
+func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *AlterConfig) (*Topic, error) {
+	// read-before-write is only for the old -> new log line
+	old, err := d.getTopic(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if old == nil {
+		return nil, nil
+	}
+
+	// a nil param reaches Postgres as NULL
+	// COALESCE keeps the column's current value if nil passed
+	sql := `
+		UPDATE topic
+		SET
+			retention_ttl_ns = COALESCE($2, retention_ttl_ns),
+			allow_drop_past_committed = COALESCE($3, allow_drop_past_committed),
+			idempotency_key_ttl_ns = COALESCE($4, idempotency_key_ttl_ns),
+			disable_delivery_log = COALESCE($5, disable_delivery_log),
+			janitor_poll_rate_ns = COALESCE($6, janitor_poll_rate_ns),
+			janitor_sweep_batch_size = COALESCE($7, janitor_sweep_batch_size),
+			updated_at = NOW()
+		WHERE name = $1
+		RETURNING
+			id,
+			name,
+			partition_size,
+			retention_ttl_ns,
+			allow_drop_past_committed,
+			idempotency_key_ttl_ns,
+			disable_delivery_log,
+			janitor_poll_rate_ns,
+			janitor_sweep_batch_size,
+			created_at,
+			updated_at;
+	`
+
+	var t Topic
+	var retentionTTLNs int64
+	var idempotencyKeyTTLNs int64
+	var janitorPollRateNs int64
+	if err := d.Datastore.Pool.QueryRow(ctx, sql,
+		name,
+		durationNs(cfg.RetentionTTL),
+		cfg.AllowDropPastCommitted,
+		durationNs(cfg.IdempotencyKeyTTL),
+		cfg.DisableDeliveryLog,
+		durationNs(cfg.JanitorPollRate),
+		cfg.JanitorSweepBatchSize,
+	).Scan(
+		&t.Id,
+		&t.Name,
+		&t.PartitionSize,
+		&retentionTTLNs,
+		&t.AllowDropPastCommitted,
+		&idempotencyKeyTTLNs,
+		&t.DisableDeliveryLog,
+		&janitorPollRateNs,
+		&t.JanitorSweepBatchSize,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// destroyed between the read and the update
+			return nil, nil
+		}
+		return nil, err
+	}
+	t.RetentionTTL = time.Duration(retentionTTLNs)
+	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
+	t.JanitorPollRate = time.Duration(janitorPollRateNs)
+
+	d.Logger.InfoContext(ctx, "topic altered", alterLogFields(old, &t)...)
+	return &t, nil
+}
+
+// durationNs widens *time.Duration to the *int64 the _ns columns store,
+// passing nil through so COALESCE sees NULL.
+func durationNs(d *time.Duration) *int64 {
+	if d == nil {
+		return nil
+	}
+	ns := int64(*d)
+	return &ns
+}
+
+// alterLogFields renders old -> new pairs for just the fields that changed.
+func alterLogFields(old, updated *Topic) []any {
+	fields := []any{"topic", updated.Name, "topic_id", updated.Id}
+
+	if old.RetentionTTL != updated.RetentionTTL {
+		fields = append(fields, "retention_ttl", fmt.Sprintf("%v -> %v", old.RetentionTTL, updated.RetentionTTL))
+	}
+	if old.AllowDropPastCommitted != updated.AllowDropPastCommitted {
+		fields = append(fields, "allow_drop_past_committed", fmt.Sprintf("%v -> %v", old.AllowDropPastCommitted, updated.AllowDropPastCommitted))
+	}
+	if old.IdempotencyKeyTTL != updated.IdempotencyKeyTTL {
+		fields = append(fields, "idempotency_key_ttl", fmt.Sprintf("%v -> %v", old.IdempotencyKeyTTL, updated.IdempotencyKeyTTL))
+	}
+	if old.DisableDeliveryLog != updated.DisableDeliveryLog {
+		fields = append(fields, "disable_delivery_log", fmt.Sprintf("%v -> %v", old.DisableDeliveryLog, updated.DisableDeliveryLog))
+	}
+	if old.JanitorPollRate != updated.JanitorPollRate {
+		fields = append(fields, "janitor_poll_rate", fmt.Sprintf("%v -> %v", old.JanitorPollRate, updated.JanitorPollRate))
+	}
+	if old.JanitorSweepBatchSize != updated.JanitorSweepBatchSize {
+		fields = append(fields, "janitor_sweep_batch_size", fmt.Sprintf("%v -> %v", old.JanitorSweepBatchSize, updated.JanitorSweepBatchSize))
+	}
+	return fields
+}
+
 // createTopicLog creates:
 //
 // - message_log_<id>

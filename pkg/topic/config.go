@@ -1,6 +1,7 @@
 package topic
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -116,6 +117,38 @@ func (c *Config) Validate() error {
 	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
+	}
+	return nil
+}
+
+// AlterConfig is Alter's sparse patch -- a nil field means leave unchanged.
+// PartitionSize is absent -- currently immutable (future work)
+// Name is absent -- renaming is its own verb, not a config change.
+type AlterConfig struct {
+	RetentionTTL           *time.Duration
+	AllowDropPastCommitted *bool
+	IdempotencyKeyTTL      *time.Duration
+	DisableDeliveryLog     *bool
+	JanitorPollRate        *time.Duration
+	JanitorSweepBatchSize  *int
+}
+
+func (c *AlterConfig) Validate() error {
+	if c.RetentionTTL == nil && c.AllowDropPastCommitted == nil && c.IdempotencyKeyTTL == nil &&
+		c.DisableDeliveryLog == nil && c.JanitorPollRate == nil && c.JanitorSweepBatchSize == nil {
+		return errors.New("no fields set -- an alter must change at least one field")
+	}
+	if c.RetentionTTL != nil && *c.RetentionTTL < 0 {
+		return fmt.Errorf("RetentionTTL must be >= 0, got %v", *c.RetentionTTL)
+	}
+	if c.IdempotencyKeyTTL != nil && *c.IdempotencyKeyTTL <= 0 {
+		return fmt.Errorf("IdempotencyKeyTTL must be > 0, got %v", *c.IdempotencyKeyTTL)
+	}
+	if c.JanitorPollRate != nil && *c.JanitorPollRate <= 0 {
+		return fmt.Errorf("JanitorPollRate must be > 0, got %v", *c.JanitorPollRate)
+	}
+	if c.JanitorSweepBatchSize != nil && *c.JanitorSweepBatchSize <= 0 {
+		return fmt.Errorf("JanitorSweepBatchSize must be > 0, got %d", *c.JanitorSweepBatchSize)
 	}
 	return nil
 }
