@@ -74,7 +74,7 @@ func exitCode(err error) int {
 func translateAdminError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
-		return failOp("schema not initialized -- run `vulkan migrate` first")
+		return failOp("schema not initialized -- run `vulkan migrate init` first")
 	}
 	return failOp("%s", err.Error())
 }
