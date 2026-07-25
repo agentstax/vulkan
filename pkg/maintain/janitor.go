@@ -12,13 +12,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// ddlLockTimeout caps how long partition queries waits for its table lock.
+// WAITING is the hazard, not failing: postgres queues every later produce and
+// claim behind the lock, so a stuck lock holder would stall the whole topic.
+const ddlLockTimeout = 2 * time.Second
+
 // The janitor duty's four ops, in tick order:
 // - create-ahead
 // - whole-partition drop
 // - expired-prefix sweep
 // - idempotency-key sweep.
 // All topicID-scoped; each is idempotent and concurrent-safe.
-
 func (d *MaintenanceDatastore) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.ensureNextPartition(ctx, topicID, partitionSize)
@@ -47,7 +51,20 @@ func (d *MaintenanceDatastore) ensureNextPartition(ctx context.Context, topicID 
 			FOR VALUES FROM (%d) TO (%d);
 	`, topic.MessageLogPartitionTable(topicID, nextPartition), topic.MessageLogTable(topicID), nextPartition*partitionSize, (nextPartition+1)*partitionSize)
 
-	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
+	// one round trip -- a batch outside an explicit txn runs as one implicit
+	// transaction, which scopes the SET LOCAL to exactly these two statements
+	// instead of leaking it to whatever might use this pooled connection next
+	batch := &pgx.Batch{}
+	batch.Queue(fmt.Sprintf(`SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds()))
+	batch.Queue(createPartitionSql)
+
+	results := d.Datastore.Pool.SendBatch(ctx, batch)
+	if _, err := results.Exec(); err != nil {
+		results.Close()
+		return err
+	}
+	_, err := results.Exec()
+	closeErr := results.Close()
 	if err != nil {
 		// IF NOT EXISTS still races -- losing to a concurrent creator means it exists
 		var pgErr *pgconn.PgError
@@ -55,6 +72,9 @@ func (d *MaintenanceDatastore) ensureNextPartition(ctx context.Context, topicID 
 			return nil
 		}
 		return err
+	}
+	if closeErr != nil {
+		return closeErr
 	}
 
 	d.Logger.InfoContext(ctx, "partition created", "topic_id", topicID, "partition", nextPartition)
@@ -328,6 +348,11 @@ func (d *MaintenanceDatastore) dropPartition(ctx context.Context, topicID int64,
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	// also cap the orphan DELETEs' row-lock waits
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
+		return err
+	}
 
 	low := n * partitionSize
 	high := (n + 1) * partitionSize
