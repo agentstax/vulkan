@@ -1,22 +1,19 @@
 package main
 
-// BROKEN pending CloseOpenRanges: this lab drives CursorClaim directly to
-// deterministically interrupt mid-range, but CursorClaim is gone -- buffered
-// dispatch moved partial-commit-on-shutdown into CloseOpenRanges, which
-// doesn't exist yet. Rewrite this lab once that lands.
+// Graceful-shutdown lease truncation lab.
 //
-// Phase 9 lab: graceful-shutdown lease truncation.
+// A shutdown signal mid-range must not force the WHOLE range to sit out a
+// full lease-expiry reclaim: everything already resolved (successes + a
+// parked exception) has to survive via CloseOpenRanges' PartialCommit path,
+// and only the untouched suffix should remain leased for a future reclaim.
 //
-// CursorClaim's per-message loop now checks ctx.Done() between messages (not
-// mid-message -- a hard per-message timeout is a separate, not-yet-built item). An
-// interruption mid-range must not force the WHOLE range to sit out a full
-// lease-expiry reclaim: everything already resolved (successes + a parked
-// exception) has to survive, and only the untouched suffix should remain leased
-// for a future reclaim.
-//
-// Drives CursorClaim directly (not Consume) so cancellation timing is
-// deterministic: a consumerFunc closure cancels the shared context partway
-// through a batch, simulating a shutdown signal arriving mid-range.
+// Drives wc.Process directly (not Consume) with pool N=1 so message dispatch
+// is strictly serialized: consumerFunc itself cancels the shared context after
+// message 2 finishes, simulating a shutdown signal arriving mid-range. Message
+// 3 is already sitting in the buffer (prefetch claims the whole range of 3 up
+// front) but N=1 means dispatch can't hand it out until message 2's permit
+// releases -- by then ctx is already cancelled, so dispatch exits without ever
+// calling WaitForNext for it.
 //
 // Confirms:
 //   - messages before the interruption point resolve normally (one success, one
@@ -37,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
@@ -90,31 +88,37 @@ func main() {
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:  3,
-		WorkTimeout: 1 * time.Second,
-		QueueMargin: 500 * time.Millisecond,
-		AckMargin:   500 * time.Millisecond, // also PartialCommit's own detached-ctx budget
+		DisableGracefulShutdown: true,
+		BatchLimit:              3,
+		WorkTimeout:             1 * time.Second,
+		QueueMargin:             500 * time.Millisecond,
+		AckMargin:               500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
 	})
 	must(err)
+	must(wc.Register(ctx))
 
 	step("WORKER claims all 3, shutdown fires after message 2 -- message 3 never attempted")
 	runCtx, cancel := context.WithCancel(ctx)
-	calls := 0
+	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
-		calls++
-		switch calls {
+		switch n := calls.Add(1); n {
 		case 1:
 			return nil // success
 		case 2:
 			cancel() // shutdown signal arrives -- this message still finishes though
 			return errors.New("simulated failure")
 		default:
-			die(fmt.Sprintf("consumerFunc called a %dth time -- message 3 must never be attempted", calls))
+			die(fmt.Sprintf("consumerFunc called a %dth time -- message 3 must never be attempted", n))
 			return nil
 		}
 	}
-	must(wc.CursorClaim(runCtx, consumerFunc))
-	assert("exactly 2 messages attempted", int64(calls), 2)
+	// Process blocks until runCtx cancels (cancel() fires synchronously inside
+	// consumerFunc above) -- N=1 pool means dispatch can't reach message 3
+	// before that cancellation is already visible to it.
+	if err := wc.Process(runCtx, consumerFunc); err != nil && !errors.Is(err, context.Canceled) {
+		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
+	}
+	assert("exactly 2 messages attempted", calls.Load(), 2)
 
 	lb := onlyLease(ctx, ds, tp.Id)
 	fmt.Printf("  lease narrowed: (%d,%d] (was (0,%d])\n", lb.low, lb.high, lb.high)
