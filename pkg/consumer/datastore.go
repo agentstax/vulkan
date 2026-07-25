@@ -741,6 +741,39 @@ func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 	return nil
 }
 
+// ForceReclaimRange surrenders a range nobody ever started -- unlike
+// PartialCommit this expires the WHOLE lease immediately so the next
+// ReclaimWithCursor can pick it straight back up.
+func (d *ConsumerDatastore[Message]) ForceReclaimRange(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.forceReclaimRange(ctx, topicID, consumerGroup, token)
+	})
+}
+
+func (d *ConsumerDatastore[Message]) forceReclaimRange(ctx context.Context, topicID int64, consumerGroup string, token pgtype.UUID) error {
+	// reclaims goes negative on purpose: the next ReclaimWithCursor's
+	// unconditional +1 nets it back to 0 -- this must not count as a real reclaim.
+	sql := `
+		UPDATE lease
+		SET
+			until = now(),
+			reclaims = GREATEST(reclaims - 1, -1), -- should never go under -1
+			token = gen_random_uuid()              -- rotate token so any retry matches 0 rows instead of double decrementing
+		WHERE consumer_group = $1
+			AND token = $2
+			AND topic_id = $3;
+	`
+
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, token, topicID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+	return nil
+}
+
 // committed is the waterline: the mark below which every offset is resolved. it
 // rides at the lowest open lease's low, or at `claimed` when nothing is leased.
 //
