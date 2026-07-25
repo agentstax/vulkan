@@ -60,6 +60,7 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			disable_delivery_log,
 			janitor_poll_rate_ns,
 			janitor_sweep_batch_size,
+			waterline_poll_rate_ns,
 			created_at,
 			updated_at
 		FROM topic
@@ -70,6 +71,7 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 	var retentionTTLNs int64
 	var idempotencyKeyTTLNs int64
 	var janitorPollRateNs int64
+	var waterlinePollRateNs int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(
 		&t.Id,
 		&t.Name,
@@ -80,6 +82,7 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 		&t.DisableDeliveryLog,
 		&janitorPollRateNs,
 		&t.JanitorSweepBatchSize,
+		&waterlinePollRateNs,
 		&t.CreatedAt,
 		&t.UpdatedAt,
 	)
@@ -92,6 +95,7 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 	t.RetentionTTL = time.Duration(retentionTTLNs)
 	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
 	t.JanitorPollRate = time.Duration(janitorPollRateNs)
+	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
 
 	return &t, nil
 }
@@ -118,6 +122,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 			disable_delivery_log,
 			janitor_poll_rate_ns,
 			janitor_sweep_batch_size,
+			waterline_poll_rate_ns,
 			created_at,
 			updated_at
 		FROM topic
@@ -136,6 +141,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 		var retentionTTLNs int64
 		var idempotencyKeyTTLNs int64
 		var janitorPollRateNs int64
+		var waterlinePollRateNs int64
 		if err := rows.Scan(
 			&t.Id,
 			&t.Name,
@@ -146,6 +152,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 			&t.DisableDeliveryLog,
 			&janitorPollRateNs,
 			&t.JanitorSweepBatchSize,
+			&waterlinePollRateNs,
 			&t.CreatedAt,
 			&t.UpdatedAt,
 		); err != nil {
@@ -154,6 +161,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 		t.RetentionTTL = time.Duration(retentionTTLNs)
 		t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
 		t.JanitorPollRate = time.Duration(janitorPollRateNs)
+		t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
 		topics = append(topics, &t)
 	}
 	if err := rows.Err(); err != nil {
@@ -182,8 +190,8 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id, created_at, updated_at;
 	`
@@ -191,7 +199,7 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 	var id int64
 	var createdAt time.Time
 	var updatedAt time.Time
-	insertErr := tx.QueryRow(ctx, insertSql, name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize).Scan(&id, &createdAt, &updatedAt)
+	insertErr := tx.QueryRow(ctx, insertSql, name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt)
 
 	switch {
 	case insertErr == nil:
@@ -228,6 +236,16 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", name, "topic_id", id)
 	default:
 		return nil, insertErr
+	}
+
+	// seed the janitor maintenance duty
+	seedDutySql := `
+		INSERT INTO maintenance (duty, topic_id)
+		VALUES ('janitor', $1)
+		ON CONFLICT DO NOTHING;
+	`
+	if _, err := tx.Exec(ctx, seedDutySql, id); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -271,6 +289,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 			disable_delivery_log = COALESCE($5, disable_delivery_log),
 			janitor_poll_rate_ns = COALESCE($6, janitor_poll_rate_ns),
 			janitor_sweep_batch_size = COALESCE($7, janitor_sweep_batch_size),
+			waterline_poll_rate_ns = COALESCE($8, waterline_poll_rate_ns),
 			updated_at = NOW()
 		WHERE name = $1
 		RETURNING
@@ -283,6 +302,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 			disable_delivery_log,
 			janitor_poll_rate_ns,
 			janitor_sweep_batch_size,
+			waterline_poll_rate_ns,
 			created_at,
 			updated_at;
 	`
@@ -291,6 +311,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 	var retentionTTLNs int64
 	var idempotencyKeyTTLNs int64
 	var janitorPollRateNs int64
+	var waterlinePollRateNs int64
 	if err := d.Datastore.Pool.QueryRow(ctx, sql,
 		name,
 		durationNs(cfg.RetentionTTL),
@@ -299,6 +320,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 		cfg.DisableDeliveryLog,
 		durationNs(cfg.JanitorPollRate),
 		cfg.JanitorSweepBatchSize,
+		durationNs(cfg.WaterlinePollRate),
 	).Scan(
 		&t.Id,
 		&t.Name,
@@ -309,6 +331,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 		&t.DisableDeliveryLog,
 		&janitorPollRateNs,
 		&t.JanitorSweepBatchSize,
+		&waterlinePollRateNs,
 		&t.CreatedAt,
 		&t.UpdatedAt,
 	); err != nil {
@@ -321,6 +344,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 	t.RetentionTTL = time.Duration(retentionTTLNs)
 	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
 	t.JanitorPollRate = time.Duration(janitorPollRateNs)
+	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
 
 	d.Logger.InfoContext(ctx, "topic altered", alterLogFields(old, &t)...)
 	return &t, nil
@@ -357,6 +381,9 @@ func alterLogFields(old, updated *Topic) []any {
 	}
 	if old.JanitorSweepBatchSize != updated.JanitorSweepBatchSize {
 		fields = append(fields, "janitor_sweep_batch_size", fmt.Sprintf("%v -> %v", old.JanitorSweepBatchSize, updated.JanitorSweepBatchSize))
+	}
+	if old.WaterlinePollRate != updated.WaterlinePollRate {
+		fields = append(fields, "waterline_poll_rate", fmt.Sprintf("%v -> %v", old.WaterlinePollRate, updated.WaterlinePollRate))
 	}
 	return fields
 }
@@ -398,6 +425,7 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 			disable_delivery_log,
 			janitor_poll_rate_ns,
 			janitor_sweep_batch_size,
+			waterline_poll_rate_ns,
 			created_at,
 			updated_at;
 	`
@@ -406,6 +434,7 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 	var retentionTTLNs int64
 	var idempotencyKeyTTLNs int64
 	var janitorPollRateNs int64
+	var waterlinePollRateNs int64
 	if err := d.Datastore.Pool.QueryRow(ctx, sql, old.Id, newName).Scan(
 		&t.Id,
 		&t.Name,
@@ -416,6 +445,7 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 		&t.DisableDeliveryLog,
 		&janitorPollRateNs,
 		&t.JanitorSweepBatchSize,
+		&waterlinePollRateNs,
 		&t.CreatedAt,
 		&t.UpdatedAt,
 	); err != nil {
@@ -433,6 +463,7 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 	t.RetentionTTL = time.Duration(retentionTTLNs)
 	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
 	t.JanitorPollRate = time.Duration(janitorPollRateNs)
+	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
 
 	d.Logger.InfoContext(ctx, "topic renamed", "topic_id", t.Id, "name", fmt.Sprintf("%s -> %s", oldName, newName))
 	return &t, nil
@@ -582,7 +613,7 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 
 	// every other table scoped by topic_id
-	for _, table := range []string{"cursor", "lease", "binding", "latest_key"} {
+	for _, table := range []string{"cursor", "lease", "maintenance", "binding", "latest_key"} {
 		deleteSql := fmt.Sprintf(`DELETE FROM %s WHERE topic_id = $1;`, table)
 		if _, err := tx.Exec(ctx, deleteSql, topic.Id); err != nil {
 			return err

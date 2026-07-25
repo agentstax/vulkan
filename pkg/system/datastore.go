@@ -16,6 +16,7 @@ import (
 // Tables:
 // - cursor
 // - lease
+// - maintenance
 // - binding
 // - topic
 // - latest_key
@@ -125,6 +126,24 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
+	// maintenance duties: one row per claimable background job. N processes
+	// race a conditional UPDATE on can_run_after each tick; the winner runs
+	// the duty, losers match zero rows -- one effective worker per interval
+	// with no leader election. Also the fleet daemon's discovery index:
+	// "what duties exist" and "whose turn" are the same query.
+	createMaintenanceSql := `
+		CREATE TABLE IF NOT EXISTS maintenance (
+			duty TEXT NOT NULL,                      -- 'janitor' | 'waterline'
+			topic_id BIGINT NOT NULL,
+			consumer_group TEXT NOT NULL DEFAULT '', -- '' for topic-scoped duties (janitor)
+			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (duty, topic_id, consumer_group)
+		);
+	`
+	if _, err := tx.Exec(ctx, createMaintenanceSql); err != nil {
+		return err
+	}
+
 	// bindings: routing rules. A group with no binding matches all events; a
 	// group WITH a binding only receives events whose routing_key matches
 	// `pattern`.
@@ -156,6 +175,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,           -- opt out of delivery_log_<id> (per-attempt failure audit trail)
 			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,       -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
 			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,            -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,     -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);

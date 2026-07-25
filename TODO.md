@@ -32,6 +32,8 @@ A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
 A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor group (if could potentially watch same message by message that would be better but probably not possible)
 
+Consider storing messages a binary data (maybe as an compressed option). Would prevent users from easily searching fields in db but could make for more efficent network requests and faster unmarshalling if we did something similar to protocol buffers (grpc). https://github.com/Apaezmx/pgproto
+
 ## BEFORE V1
 
 review / refine the comments in fanOut (pkg/consumer/datastore.go) -- both the Go

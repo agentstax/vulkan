@@ -133,18 +133,32 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 }
 
 func (d *ConsumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID int64, consumerGroup string) error {
-	sql := `
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	cursorSql := `
 		INSERT INTO cursor (consumer_group, topic_id)
 		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING;
 	`
-
-	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
-	if err != nil {
+	if _, err := tx.Exec(ctx, cursorSql, consumerGroup, topicID); err != nil {
 		return err
 	}
 
-	return nil
+	// a cursor must never exist without a waterline duty
+	dutySql := `
+		INSERT INTO maintenance (duty, topic_id, consumer_group)
+		VALUES ('waterline', $2, $1)
+		ON CONFLICT DO NOTHING;
+	`
+	if _, err := tx.Exec(ctx, dutySql, consumerGroup, topicID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (d *ConsumerDatastore[Message]) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {

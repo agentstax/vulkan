@@ -67,6 +67,15 @@ type Config struct {
 	// Default: 1000.
 	JanitorSweepBatchSize int
 
+	// WaterlinePollRate - how often the waterline duty rolls cursors' committed
+	// forward. Deliberately lazy, not synchronous-on-Commit -- a synchronous
+	// roll after every Commit adds lock contention on the shared cursor row.
+	// Default: 1 * time.Second.
+	//
+	// Lower it to shrink committed's staleness (the crash-recovery
+	// redelivery window); raise it for topics where redelivery is cheap.
+	WaterlinePollRate time.Duration
+
 	// Logger - pass your own *slog.Logger (own Handler) or anything satisfying
 	// logger.Logger.
 	// Default: a text logger to os.Stdout at warn level and up.
@@ -93,6 +102,9 @@ func (c *Config) WithDefaults() *Config {
 	if c.JanitorSweepBatchSize == 0 {
 		c.JanitorSweepBatchSize = 1000
 	}
+	if c.WaterlinePollRate == 0 {
+		c.WaterlinePollRate = 1 * time.Second
+	}
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -115,6 +127,9 @@ func (c *Config) Validate() error {
 	if c.JanitorSweepBatchSize < 0 {
 		return fmt.Errorf("JanitorSweepBatchSize must be >= 0, got %d", c.JanitorSweepBatchSize)
 	}
+	if c.WaterlinePollRate < 0 {
+		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", c.WaterlinePollRate)
+	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}
@@ -131,11 +146,13 @@ type AlterConfig struct {
 	DisableDeliveryLog     *bool
 	JanitorPollRate        *time.Duration
 	JanitorSweepBatchSize  *int
+	WaterlinePollRate      *time.Duration
 }
 
 func (c *AlterConfig) Validate() error {
 	if c.RetentionTTL == nil && c.AllowDropPastCommitted == nil && c.IdempotencyKeyTTL == nil &&
-		c.DisableDeliveryLog == nil && c.JanitorPollRate == nil && c.JanitorSweepBatchSize == nil {
+		c.DisableDeliveryLog == nil && c.JanitorPollRate == nil && c.JanitorSweepBatchSize == nil &&
+		c.WaterlinePollRate == nil {
 		return errors.New("no fields set -- an alter must change at least one field")
 	}
 	if c.RetentionTTL != nil && *c.RetentionTTL < 0 {
@@ -149,6 +166,9 @@ func (c *AlterConfig) Validate() error {
 	}
 	if c.JanitorSweepBatchSize != nil && *c.JanitorSweepBatchSize <= 0 {
 		return fmt.Errorf("JanitorSweepBatchSize must be > 0, got %d", *c.JanitorSweepBatchSize)
+	}
+	if c.WaterlinePollRate != nil && *c.WaterlinePollRate <= 0 {
+		return fmt.Errorf("WaterlinePollRate must be > 0, got %v", *c.WaterlinePollRate)
 	}
 	return nil
 }
@@ -164,6 +184,7 @@ func (c *Config) ToTopic(id int64, name string, createdAt, updatedAt time.Time) 
 		DisableDeliveryLog:     c.DisableDeliveryLog,
 		JanitorPollRate:        c.JanitorPollRate,
 		JanitorSweepBatchSize:  c.JanitorSweepBatchSize,
+		WaterlinePollRate:      c.WaterlinePollRate,
 		CreatedAt:              createdAt,
 		UpdatedAt:              updatedAt,
 	}

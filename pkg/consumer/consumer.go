@@ -286,13 +286,7 @@ func (p *MessageConsumer[Message]) RollWaterline(ctx context.Context) error {
 		return nil
 	}
 
-	// TODO - this is a strange place to set a default, need to reconsider it
-	waterlinePollRate := p.Config.WaterlinePollRate
-	if waterlinePollRate == 0 {
-		waterlinePollRate = p.Config.ClaimPollRate
-	}
-
-	ticker := time.NewTicker(waterlinePollRate)
+	ticker := time.NewTicker(p.Topic.WaterlinePollRate)
 	defer ticker.Stop()
 
 	for {
