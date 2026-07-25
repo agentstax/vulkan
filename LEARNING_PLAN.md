@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap, janitor efficiency/concurrency (opt-out + multi-janitor contention), buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency — deletes the dead params) — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap, janitor efficiency/concurrency (opt-out + multi-janitor contention); buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all three measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -3329,9 +3329,10 @@ describing has stopped moving (see Phase 15).
       names while the generic became `Message` would have read inconsistently
       (`WorkProducer[Message]`). `pkg/concurrency`'s own `WorkType` param
       (`Queue[WorkType]`/`PressureQueue[WorkType]`) was deliberately left
-      alone — its fate is tied to the `Queue`/`PoolLimiter` decision (now
-      **14a**'s buffered claim + dispatch task, which deletes the package),
-      not this one.
+      alone — its fate was tied to the `Queue`/`PoolLimiter` decision (now
+      **14a**'s buffered claim + dispatch task, done: the package and the
+      `WorkType` param both survived unrenamed — `Queue`/`PoolLimiter` were
+      revived as the caller-facing way to set N, not deleted), not this one.
 - [x] **`topic.Exists`/`Register`/`Destroy`'s call shape** — `(ctx, ds, name)`
       repeated on every call vs. an admin-object-holding-`ds` pattern that
       only needs `(ctx, name)` per call.
@@ -4408,57 +4409,70 @@ sequenced after both of these close.*
         OWNS running the janitor for a topic — today's answer ("whichever
         consumer group processes happen to be up") was never a deliberate
         choice, just where the loop happened to get wired in.
-- [ ] **Buffered claim + N-processor dispatch (CURSOR path only).** Absorbed
-      from Phase 12's `Queue`/`PoolLimiter` bullet — the fate decision can't
-      wait for FIFO: the params are required-but-dead constructor surface
-      (breaking to remove, so it must land pre-v1), and the unkeyed
-      dispatcher turns out not to need FIFO at all. The shape, decided in
-      discussion:
+- [x] **Buffered claim + N-processor dispatch (CURSOR path only).** Absorbed
+      from Phase 12's `Queue`/`PoolLimiter` bullet. Landed largely as
+      designed below, with one reversal found while building: `Queue`/
+      `PoolLimiter` are REVIVED, not deleted — they're how a caller sets N
+      (`concurrency.NewWorkerPoolLimiter(n)`), not dead params. There is no
+      `Concurrency` config field; the permit count IS the concurrency knob.
       - **Messages are the dispatch unit; ranges stay the claim/commit unit
-        as hidden bookkeeping.** That one split is what makes it safe. Fill
-        loop claims ranges (`ClaimMessagesWithCursor`), tags each message
-        with its range, appends to a bounded FIFO buffer; N processors pull
-        from the head; a range Commits when its last message resolves. One
-        claim of `BatchLimit` messages feeds all N processors — ranges in
-        flight stay ~2-3 (refill-driven), never N, so no range-hoarding and
-        other workers keep claiming contiguous ranges right behind.
-      - **The invariant that keeps `PartialCommit` unmodified:** processors
-        pull in id order, so the dispatched set within any range is always
-        a contiguous prefix. Shutdown = stop dispatching, drain in-flight
-        (same latency as today — parallel stragglers wait max one handler
-        runtime), and the resolved set per range is a contiguous prefix
-        again. No bitmap, no schema change.
-      - **Force-reclaim verb** for a wholly-untouched buffered range at
-        shutdown/abort: immediately release it instead of letting it sit
-        out lease expiry (expiry counts as a reclaim → poison quarantine
-        pressure). Also the primitive Phase 16's breaker needs — an open
-        breaker gates BOTH the fill loop and the dequeue, and empties the
-        buffer via this verb.
-      - **Config: one field (`Concurrency`, default 1), nothing else.** N=1
-        with the hardcoded depth-1 prefetch IS today's behavior plus
-        claim-RTT hiding; N>1 is the explicit opt-out of in-order
-        processing (CURSOR's pitch — a keyed topic loses per-key order
-        until Phase 12's lanes). Buffer depth is a LATENCY lever, never a
-        parallelism lever: refill is hardcoded to keep N processors fed,
-        not exposed as config — scaling concurrency by hoarding ranges is
-        the misuse this design forbids.
-      - **Kills the dead params:** `Queue`/`PoolLimiter` constructor params
-        + fields deleted, `pkg/concurrency` with them (the examples that
-        exist only to satisfy the constructor get updated). The dispatcher
-        is sparse config, not injected collaborators. `QueueMargin` regains
-        real meaning — time buffered before a processor starts eats the
-        lease, and the bounded buffer is what bounds it.
-      - **Honesty check before building:** benchmark against just raising
-        `BatchLimit` — the hidden RTT is claimRTT/(claimRTT +
-        batch-processing time), and the fanout benchmark showed consumer
-        drain, not claim, is the wall. N>1 dispatch is the real payoff;
-        depth-1 prefetch mostly rides along.
+        as hidden bookkeeping**, owned by `claimBuffer`
+        (`pkg/consumer/claimbuffer.go`) — the sole owner of every in-flight
+        range's `rangeState` (`pkg/consumer/rangestate.go`), keyed by lease
+        token. Queue entries (`Buffered`) are inert copies, no live
+        pointers, so a range can be removed out from under a still-queued
+        entry without racing it.
+      - **processCursor** (`pkg/consumer/consumer.go`) runs `prefetch` +
+        `dispatch` concurrently via `errgroup`: `prefetch` claims a range
+        and calls `claimBuffer.Add`; `dispatch` loops
+        `PoolLimiter.WaitForPermit` (renamed from `AcquirePermit` — blocking,
+        symmetric with `WaitForRoom`/`WaitForNext`) →
+        `claimBuffer.WaitForNext` → `wg.Go(processClaim)`. `processClaim`
+        resolves via `ResolveSuccess`/`ResolveException`/`ResolveTerminal`,
+        then `IsRangeResolved` + `TryGetRangeSnapshot` (a one-shot CAS on
+        `rangeState.committed`) hands the commit snapshot to exactly one
+        caller — the resolver whose Add happened to finish last.
+      - **The invariant that keeps `PartialCommit` unmodified:** `WaitForNext`
+        marks a message dispatched in FIFO dequeue order, so the dispatched
+        set within any range is always a contiguous prefix regardless of N.
+        `rangeState.contiguousResolved()` walks from index 0 and stops at
+        the first unresolved slot, so a partial commit only ever advances
+        over a truly-finished prefix — resolved-out-of-order slots past a
+        gap stay leased and ride redelivery with the gap. No bitmap, no
+        schema change.
+      - **Shutdown**: `Drain` (new `Config.ShutdownTimeout`, defaults to
+        `WorkTimeout+WorkTimeoutGrace+AckMargin`) waits out in-flight
+        `processClaim` goroutines, then `CloseOpenRanges` takes sole
+        ownership of every still-tracked range (`claimBuffer.RemoveAll` is
+        the fence) and settles each: never-dispatched-and-not-stale →
+        `ForceReclaimRange` (immediate surrender, doesn't wait out a full
+        lease); anything with resolved progress → `CursorPartialCommit`
+        (same narrowing path a live commit uses).
+      - **`ForceReclaimRange`** (`pkg/consumer/datastore.go`): token-guarded
+        UPDATE that expires the lease now and nets the reclaim counter back
+        to its pre-call value (`reclaims - 1`, floored at -1, cancelled out
+        by `ReclaimWithCursor`'s unconditional `+1`) so a voluntary
+        surrender never counts toward `MaxRangeReclaims` poison pressure.
+      - **Accepted residual race, documented not fixed:** a message whose
+        own `commitRange` call races an in-flight shutdown can lose to
+        `context.Canceled` (visible as a "commit failed, range stays open"
+        WARN); `CloseOpenRanges` settles the same range moments later via
+        its own detached `WithoutCancel`+`AckMargin` window. Harmless,
+        logged non-event — reproduces on nearly every run of
+        `examples/phase_1/concurrencylab`.
+      - Labs: `examples/phase_1/concurrencylab` (`just concurrency-lab`) —
+        one slow message doesn't block the rest of its batch once N>1, plus
+        an N=1-vs-N=8 throughput printout; `shutdowntruncationlab`
+        (`just shutdown-truncation-lab`) — mid-range shutdown narrows the
+        lease to the untouched suffix through the new `CloseOpenRanges`
+        path.
       This is also where the intra-batch-concurrency idea (folded from
-      TODO.md via Phase 12) lands: one worker's range processes
-      sequentially today, so a single slow (not failing) message queues the
-      rest of the batch behind it — worker latency is sum(all) instead of
-      max(slowest). Reference for the original (deleted) Prefetch/Dispatch
-      design this replaces:
+      TODO.md via Phase 12) lands: one worker's range used to process
+      sequentially, so a single slow (not failing) message queued the rest
+      of the batch behind it — worker latency was sum(all) instead of
+      max(slowest); `concurrency-lab`'s ordering scenario is the executable
+      proof this no longer holds at N>1. Reference for the original
+      (deleted) Prefetch/Dispatch design this reincarnates:
       https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
 
 **Done when:** every item above is either fixed or has a written decision,
@@ -4696,7 +4710,11 @@ option depends on 13d (presence heartbeat rows).*
       served by the lifecycle keyed claim (bullet above), by lanes on the
       14a buffer, or both — and how a lane holds order through a retry (a
       backed-off head must block its later offsets, the same subtlety as
-      the keyed claim).
+      the keyed claim). Confirmed now that 14a has landed: the hook exists
+      as designed — `claimBuffer.WaitForNext` (`pkg/consumer/claimbuffer.go`)
+      is the single dequeue point every dispatched message passes through,
+      so a lane-routing policy slots in there without touching `prefetch`,
+      `Add`, or the resolve/commit path at all.
 
 *→ Reference (after you've built it): `reference/waterline/partitions.go` —
 `ClaimPartitioned` is the keyed claim. Note the extra subtlety it solves that this
