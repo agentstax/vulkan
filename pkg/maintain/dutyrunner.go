@@ -99,11 +99,10 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 	workCtx, stopWork := context.WithCancelCause(ctx)
 	heartbeatDone := d.startRenewalHeartbeat(workCtx, stopWork, *token)
 
-	// work is Janitor.sweep or WaterlineRoller.roll
 	err = work(workCtx)
 
-	stopWork(nil)   // triggers heartbeat to stop
-	<-heartbeatDone // wait for heartbeat to stop
+	stopWork(nil)   // triggers heartbeat to drain
+	<-heartbeatDone // wait for heartbeat to drain
 
 	if err == nil {
 		return // success keeps the claim -- the claim IS the schedule
@@ -126,7 +125,7 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 	}
 }
 
-// startRenewalHeartbeat extends the claim every tick rate/2 while the duty works.
+// startRenewalHeartbeat renews the claim every rate/2 while the duty works.
 // ErrDutyLost cancels the work: the fence tripped, another maintainer owns
 // the duty. The returned channel closes when the heartbeat is fully stopped.
 func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork context.CancelCauseFunc, token pgtype.UUID) <-chan struct{} {

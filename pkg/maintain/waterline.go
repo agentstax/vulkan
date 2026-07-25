@@ -7,8 +7,7 @@ import (
 	"github.com/agentstax/vulkan/internal/topic"
 )
 
-// committed is the waterline: the mark below which every offset is resolved. it
-// rides at the lowest open lease's low, or at `claimed` when nothing is leased.
+// committed is the waterline: the mark below which every offset is resolved.
 //
 // Race Condition:
 //

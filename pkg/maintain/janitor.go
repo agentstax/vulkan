@@ -410,13 +410,10 @@ func (d *MaintenanceDatastore) SweepExpiredIdempotencyKeys(ctx context.Context, 
 }
 
 func (d *MaintenanceDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
-	// unlike RetentionTTL, ttl <= 0 isn't a real "keep forever" choice here --
-	// topic.Config's WithDefaults resolves an unset (zero) IdempotencyKeyTTL to
-	// 1h before a topic is ever registered, so a registered topic's TTL
-	// should never actually be <= 0 by the time this runs. This is a
-	// defensive no-op for that case, not the intended way to disable
-	// cleanup -- there's no supported way to opt an idempotency_key row
-	// out of eventually being swept.
+	// defensive only, not a keep-forever switch like RetentionTTL:
+	// topic.Config defaults an unset IdempotencyKeyTTL to 1h at registration,
+	// and there's no supported way to opt idempotency_key rows out of
+	// being swept
 	if ttl <= 0 {
 		return nil
 	}

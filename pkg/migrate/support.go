@@ -21,10 +21,15 @@ const (
 // schema and this topic's schema must both sit within the range this build
 // understands. Too new -> upgrade the binary; too old -> migrate the database.
 func AssertSchemaSupported(ctx context.Context, q datastore.Querier, topicID int64) error {
-	if err := assertEntity(ctx, q, mDatastore.EntitySystem, 0, MinSystemVersion, MaxSystemVersion); err != nil {
+	if err := AssertSystemSchemaSupported(ctx, q); err != nil {
 		return err
 	}
 	return assertEntity(ctx, q, mDatastore.EntityTopic, topicID, MinTopicVersion, MaxTopicVersion)
+}
+
+// AssertSystemSchemaSupported is the topic-less half of AssertSchemaSupported.
+func AssertSystemSchemaSupported(ctx context.Context, q datastore.Querier) error {
+	return assertEntity(ctx, q, mDatastore.EntitySystem, 0, MinSystemVersion, MaxSystemVersion)
 }
 
 func assertEntity(ctx context.Context, q datastore.Querier, entityType string, entityID, minV, maxV int64) error {

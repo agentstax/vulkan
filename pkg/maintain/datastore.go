@@ -55,6 +55,61 @@ func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceDa
 	}, nil
 }
 
+// FleetDuty is one row of the fleet's discovery view. The whole struct is
+// the fleet's reconcile key.
+type FleetDuty struct {
+	Duty          string
+	TopicID       int64
+	TopicName     string // duties register by topic name not id
+	ConsumerGroup string
+	Rate          time.Duration
+}
+
+// ListDuties lists every duty seeded in the maintenance table. Read-only:
+// claiming stays with each spawned duty's own runner.
+func (d *MaintenanceDatastore) ListDuties(ctx context.Context) ([]FleetDuty, error) {
+	var duties []FleetDuty
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		duties, err = d.listDuties(ctx)
+		return err
+	})
+	return duties, err
+}
+
+func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, error) {
+	// each duty runs at its own topic's rate, so the rate switches on duty kind.
+	sql := `
+		SELECT
+			m.duty, m.consumer_group, t.id, t.name,
+			CASE m.duty
+				WHEN 'janitor' THEN t.janitor_poll_rate_ns
+				WHEN 'waterline' THEN t.waterline_poll_rate_ns
+			END
+		FROM maintenance m
+		JOIN topic t ON t.id = m.topic_id
+		WHERE m.duty IN ('janitor', 'waterline');
+	`
+
+	rows, err := d.Datastore.Pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var duties []FleetDuty
+	for rows.Next() {
+		var f FleetDuty
+		var rateNs int64
+		if err := rows.Scan(&f.Duty, &f.ConsumerGroup, &f.TopicID, &f.TopicName, &rateNs); err != nil {
+			return nil, err
+		}
+		f.Rate = time.Duration(rateNs)
+		duties = append(duties, f)
+	}
+	return duties, rows.Err()
+}
+
 // ClaimDuty races the duty's gate -- the winner owns it until can_run_after,
 // and renew/release fence on the returned token. nil token = claim lost.
 func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*pgtype.UUID, error) {

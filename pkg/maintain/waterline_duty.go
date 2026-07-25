@@ -84,7 +84,6 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, w.topicName)
 	}
 
-	// fail fast if the db's schema is outside the range this build understands
 	if err := migrate.AssertSchemaSupported(ctx, w.topicDatastore.Datastore.Pool, current.Id); err != nil {
 		return err
 	}
