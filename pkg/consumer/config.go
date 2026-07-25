@@ -45,6 +45,7 @@ type MessageConsumerConfig struct {
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
 	Backoff                 *retry.Policy // curve for can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy().
 	WaterlinePollRate       time.Duration // 0 defaults to ClaimPollRate; set to decouple RollWaterline's tick from the claim loop's -- lower this to shrink committed's staleness (see LEARNING_PLAN.md's Phase 10 "Resolve the lazy-vs-synchronous rollup" for the measured tradeoff against making it synchronous instead)
+	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
 
@@ -89,6 +90,9 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	}
 	if c.ExceptionInitialBackoff == 0 {
 		c.ExceptionInitialBackoff = 5 * time.Second
+	}
+	if c.ShutdownTimeout == 0 {
+		c.ShutdownTimeout = c.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
 	}
 	c.Backoff = c.Backoff.WithDefaults()
 	// WaterlinePollRate: zero stays zero -- it already means "use ClaimPollRate" at the use site
@@ -143,6 +147,9 @@ func (c *MessageConsumerConfig) Validate() error {
 	}
 	if c.WaterlinePollRate < 0 {
 		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", c.WaterlinePollRate)
+	}
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)
 	}
 
 	if err := c.Backoff.Validate(); err != nil {

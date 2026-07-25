@@ -348,10 +348,64 @@ func (p *MessageConsumer[Message]) processCursor(ctx context.Context, consumerFu
 	g.Go(func() error {
 		return p.dispatch(gCtx, &wg, consumerFunc)
 	})
+	err := g.Wait()
 
-	// TODO: shutdown doesn't yet drain in-flight work or settle open ranges
-	// before returning -- both ride out ordinary lease expiry for now.
-	return g.Wait()
+	p.Drain(ctx, &wg)
+	p.CloseOpenRanges(ctx)
+
+	return err
+}
+
+// Drain waits for in-flight processClaim calls to finish, bounded by
+// ShutdownTimeout -- a consumerFunc that ignores ctx.Done() can't hang
+// shutdown forever; whatever's still running past the timeout is left for
+// CloseOpenRanges to settle instead.
+func (p *MessageConsumer[Message]) Drain(ctx context.Context, wg *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait() // this is what waits for in-flight work to complete
+		close(done)
+	}()
+
+	timer := time.NewTimer(p.Config.ShutdownTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+	case <-timer.C:
+		p.Logger.WarnContext(ctx, "in-flight work did not finish before ShutdownTimeout, stragglers settle via lease expiry", "group", p.consumerGroup, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
+	}
+}
+
+// CloseOpenRanges takes sole ownership of every range still tracked after
+// Drain (RemoveAll fences any straggler that resolves after this point) and
+// settles each: untouched ranges surrender immediately via ForceReclaimRange
+// so another worker doesn't wait out a full lease for nothing; anything with
+// resolved progress commits that prefix via CursorPartialCommit.
+func (p *MessageConsumer[Message]) CloseOpenRanges(ctx context.Context) {
+	for _, state := range p.buffer.RemoveAll() {
+		p.closeRange(ctx, state)
+	}
+}
+
+func (p *MessageConsumer[Message]) closeRange(ctx context.Context, state *rangeState) {
+	if state.neverDispatched() && !state.stale.Load() {
+		// ctx is already Done at shutdown need fresh to complete graceful shutdown.
+		// CursorPartialCommit constructs new context internally.
+		reclaimCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
+			fmt.Errorf("force reclaim exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
+		defer cancel()
+
+		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Topic.Id, p.consumerGroup, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
+			p.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
+		}
+		return
+	}
+
+	lastProcessed, exceptions, terminals := state.contiguousResolved()
+	if err := p.CursorPartialCommit(ctx, lastProcessed, state.lease, exceptions, terminals); err != nil {
+		p.Logger.WarnContext(ctx, "partial commit failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
+	}
 }
 
 // prefetch claims ranges and feeds their messages into p.buffer.
@@ -478,8 +532,8 @@ func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rang
 	}
 }
 
-func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, claimed *ClaimedRange, exceptions []MessageException, terminals []MessageTerminal) error {
-	if lastProcessed == claimed.Lease.Low && len(exceptions) == 0 && len(terminals) == 0 {
+func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, lease LeaseRow, exceptions []MessageException, terminals []MessageTerminal) error {
+	if lastProcessed == lease.Low && len(exceptions) == 0 && len(terminals) == 0 {
 		return nil // interrupted before resolving anything -- leave the lease exactly as claimed
 	}
 
@@ -491,9 +545,9 @@ func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, last
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.consumerGroup, claimed.Lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
+	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.consumerGroup, lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
+			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		// commitCtx expiring mid-call and PartialCommit's own DB error are
