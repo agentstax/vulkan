@@ -17,7 +17,7 @@ import (
 // - whole-partition drop
 // - expired-prefix sweep
 // - idempotency-key sweep.
-// All topicID-scoped each is idempotent and concurrent-safe.
+// All topicID-scoped; each is idempotent and concurrent-safe.
 
 func (d *MaintenanceDatastore) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	return d.Retry.Wrap(ctx, func() error {

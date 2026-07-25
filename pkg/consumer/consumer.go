@@ -71,13 +71,14 @@ func NewMessageConsumer[Message any](consumerGroup string, topicName string, que
 
 	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger:       cfg.Logger,
+		Retry:        cfg.Retry,
 		MessageRetry: cfg.Backoff,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	topicDatastore, err := topic.NewTopicDatastore(ds, nil, cfg.Logger)
+	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}

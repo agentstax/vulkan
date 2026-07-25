@@ -4364,6 +4364,8 @@ sequenced after both of these close.*
       periodically per topic; the presence design (13d) is the substrate
       that would let an alert say "destroy blocked: producer X seen 2s
       ago" instead of a bare threshold.
+      Need to also consider having duty specific metrics now that they can
+      live seperately.
 - [ ] **`cmd/vulkan` connection gap** (folded from the admin-surface entry):
       `datastore.PostgresConnectionConfig` has no sslmode /
       DSN-query-param field — it's User/Pass/Host/Port/Database/MaxConns
@@ -4521,6 +4523,8 @@ it.*
       truly optional params in the `Config` structs. `Config` structs
       should also be renamed to `OptionalConfig` to make that split
       obvious at the call site.
+- [] **Comment conventions and standardizations**. Public surfaces should follow
+      a standard: description, defaults, errors, doc links
 
 **Done when:** every item above has a written decision and, where
 applicable, is applied consistently across the reviewed surface, NOTES.md,
@@ -4591,6 +4595,7 @@ waits until the coding work above is actually done.*
       "goroutine abandoned" error) — what it means and how to avoid it
       (respect `ctx`, or raise `WorkTimeoutGrace`).
 - [ ] Quick Start Documentation - Might require work with the cli.
+- [ ] DDL Table Design Diagram
 
 **Done when:** the doc site and public API doc comments reflect the v1
 surface as it actually shipped, NOTES.md, `git tag phase-15`.

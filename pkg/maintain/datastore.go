@@ -94,8 +94,7 @@ func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topic
 	return &token, nil
 }
 
-// RenewDuty extends a claim the caller already won -- called between sweep
-// batches so a long backlog drain keeps ownership past the original interval.
+// RenewDuty extends a claim the caller already won.
 func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, token pgtype.UUID, rate time.Duration) error {
 	return d.Retry.Wrap(ctx, func() error {
 		sql := `

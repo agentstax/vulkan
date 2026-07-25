@@ -69,3 +69,5 @@ Consider creating a DefaultProducer and DefaultConsumer for easier quickstarts w
 refactor out queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter from consumer
 
 need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
+
+Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).

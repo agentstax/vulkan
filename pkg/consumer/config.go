@@ -44,6 +44,7 @@ type MessageConsumerConfig struct {
 	WorkTimeoutGrace        time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
 	Backoff                 *retry.Policy // curve for can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy().
+	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- unrelated to Backoff, which shapes message redelivery. Default: retry.NewDefaultRetryPolicy().
 	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
@@ -94,6 +95,7 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 		c.ShutdownTimeout = c.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
 	}
 	c.Backoff = c.Backoff.WithDefaults()
+	c.Retry = c.Retry.WithDefaults()
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -149,6 +151,9 @@ func (c *MessageConsumerConfig) Validate() error {
 
 	if err := c.Backoff.Validate(); err != nil {
 		return fmt.Errorf("Backoff: %w", err)
+	}
+	if err := c.Retry.Validate(); err != nil {
+		return fmt.Errorf("Retry: %w", err)
 	}
 	return nil
 }

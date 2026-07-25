@@ -12,3 +12,7 @@ each func param has explicit type, never combined
   longer matches the scan destination count). Explicit column lists are what
   keep adds non-breaking, leaving column removal as the only change that needs
   the two-release expand/contract dance.
+
+## Comments
+
+Avoid large blocks of text, break apart using formatting or single statements per line
