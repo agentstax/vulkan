@@ -54,9 +54,10 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 
 	root := &cobra.Command{
 		Use:   "vulkan",
-		Short: "Admin CLI for Vulkan topics",
-		Long: "vulkan is the privileged admin tool for a Vulkan deployment: register,\n" +
-			"inspect, and destroy topics against the control-plane database.",
+		Short: "Admin CLI for Vulkan deployments",
+		Long: "vulkan is the privileged admin tool for a Vulkan deployment: manage\n" +
+			"topics, schema migrations, and maintenance against the control-plane\n" +
+			"database.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
@@ -67,6 +68,7 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 
 	root.AddCommand(newTopicCmd(g))
 	root.AddCommand(newMigrateCmd(g))
+	root.AddCommand(newMaintainCmd(g))
 
 	return root, g
 }

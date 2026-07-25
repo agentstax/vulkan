@@ -68,29 +68,38 @@ func pathDatabase(u *url.URL) string {
 	return u.Path
 }
 
-// openAdmin resolves the connection (flag then env), dials Postgres, and builds
-// a MessageAdmin. AllowDestroy is set here because this binary IS the privileged
-// admin tool -- the gate exists for library embedders, not the CLI (ADMIN_CLI.md).
-// The datastore is returned too, so destroy can build a topic.TopicDatastore for
-// the one thing MessageAdmin doesn't expose (an emptiness probe). The returned
-// close func releases the pool; callers defer it.
-func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *datastore.PostgresDatastore, func(), error) {
+// openDatastore resolves the connection (flag then env) and dials Postgres.
+// The returned close func releases the pool; callers defer it.
+func openDatastore(ctx context.Context, databaseURL string) (*datastore.PostgresDatastore, func(), error) {
 	raw := databaseURL
 	if raw == "" {
 		raw = os.Getenv(databaseURLEnv)
 	}
 	if raw == "" {
-		return nil, nil, nil, failUsage("no database URL -- pass --database-url or set %s", databaseURLEnv)
+		return nil, nil, failUsage("no database URL -- pass --database-url or set %s", databaseURLEnv)
 	}
 
 	cfg, err := parseConnConfig(raw)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	ds, err := datastore.NewPostgresDatastore(ctx, cfg)
 	if err != nil {
-		return nil, nil, nil, failOp("could not connect to database: %v", err)
+		return nil, nil, failOp("could not connect to database: %v", err)
+	}
+	return ds, func() { ds.Close() }, nil
+}
+
+// openAdmin is openDatastore plus a MessageAdmin. AllowDestroy is set here
+// because this binary IS the privileged admin tool -- the gate exists for
+// library embedders, not the CLI (ADMIN_CLI.md). The datastore is returned
+// too, so destroy can build a topic.TopicDatastore for the one thing
+// MessageAdmin doesn't expose (an emptiness probe).
+func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *datastore.PostgresDatastore, func(), error) {
+	ds, closeDS, err := openDatastore(ctx, databaseURL)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Library logs go to stderr (never stdout, which carries the command payload)
@@ -102,9 +111,9 @@ func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *d
 		Logger:       logger.NewDefaultLogger(os.Stderr, slog.LevelError),
 	})
 	if err != nil {
-		ds.Close()
+		closeDS()
 		return nil, nil, nil, failOp("could not initialize admin: %v", err)
 	}
 
-	return mAdmin, ds, func() { ds.Close() }, nil
+	return mAdmin, ds, closeDS, nil
 }

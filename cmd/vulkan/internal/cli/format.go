@@ -66,6 +66,16 @@ func retentionDetail(d time.Duration) string {
 	return d.String()
 }
 
+// gateAgeCell renders now() - can_run_after for the duty table: negative while
+// a claim holds the gate in the future, positive once the duty sits eligible.
+// Sub-second ages keep millisecond detail; anything larger rounds to seconds.
+func gateAgeCell(d time.Duration) string {
+	if d.Abs() < time.Second {
+		return d.Round(time.Millisecond).String()
+	}
+	return d.Round(time.Second).String()
+}
+
 // timeCell renders a topic timestamp (created/updated) for the list/get views,
 // to the minute, in whatever zone the driver returns it in.
 func timeCell(t time.Time) string {
