@@ -137,6 +137,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 			topic_id BIGINT NOT NULL,
 			consumer_group TEXT NOT NULL DEFAULT '', -- '' for topic-scoped duties (janitor)
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			token UUID NOT NULL DEFAULT gen_random_uuid(), -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim
 			PRIMARY KEY (duty, topic_id, consumer_group)
 		);
 	`
