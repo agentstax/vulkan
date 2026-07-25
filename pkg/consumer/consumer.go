@@ -2,101 +2,92 @@ package consumer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime/debug"
-	"sync"
-	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
-	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/migrate"
-	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"golang.org/x/sync/errgroup"
 )
 
-// ideally idepotent func
+// ideally idempotent func
 type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 
-// TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
-type MessageConsumer[Message any] struct {
-	Topic       *topic.Topic // resolved by Register from the name given to NewMessageConsumer
-	PoolLimiter concurrency.PoolLimiter
-	Datastore   *ConsumerDatastore[Message]
-	Metrics     *metrics.ConsumerMetrics // resolved by Register alongside Topic
-	Config      *MessageConsumerConfig
-	Logger      logger.Logger // copied from Config.Logger at construction
+// Consumer runs a consumer group on one topic: hand Consume a function and
+// every message reaches it. Failed messages retry with backoff, and the
+// topic's upkeep (partitions, retention, waterline) happens automatically.
+type Consumer[Message any] struct {
+	MessageConsumer   *MessageConsumer[Message]   // nil when Config.Type is LIFECYCLE
+	ExceptionConsumer *ExceptionConsumer[Message] // nil when Config.Type is LIFECYCLE
+	DeliveryConsumer  *DeliveryConsumer[Message]  // nil when Config.Type is CURSOR
+	Maintainer        *maintain.Maintainer
+	Config            *ConsumerConfig
+	Logger            logger.Logger // copied from Config.Logger at construction
 
-	consumerGroup  string
-	topicName      string
-	topicDatastore *topic.TopicDatastore
-	buffer         *claimBuffer    // wraps the queue given to NewMessageConsumer -- nothing outside processCursor needs the raw queue
-	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
+	consumerGroup string
+	topicName     string
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-	if queue == nil {
-		return nil, errors.New("queue must not be nil")
-	}
-	if poolLimiter == nil {
-		return nil, errors.New("poolLimiter must not be nil")
-	}
-	if ds == nil {
-		return nil, errors.New("datastore must not be nil")
-	}
-
+func NewConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
 	if cfg == nil {
-		cfg = &MessageConsumerConfig{}
+		cfg = &ConsumerConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Prefetcher can work around this with debounce timeout however
-	// having your queue smaller than batch limit seems like a code smell so error for now
-	if queue.Cap() < cfg.BatchLimit {
-		return nil, fmt.Errorf("queue cap (%d) must be >= BatchLimit (%d), otherwise prefetcher can never claim a full batch", queue.Cap(), cfg.BatchLimit)
+	consumer := &Consumer[Message]{
+		Config:        cfg,
+		Logger:        cfg.Logger,
+		consumerGroup: consumerGroup,
+		topicName:     topicName,
 	}
 
-	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
-		Logger:       cfg.Logger,
-		Retry:        cfg.Retry,
-		MessageRetry: cfg.Backoff,
-	})
+	maintainerConfig := &maintain.MaintainerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	}
+	janitor, err := maintain.NewJanitor(topicName, ds, maintainerConfig)
 	if err != nil {
 		return nil, err
 	}
+	duties := []maintain.Duty{janitor}
 
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
-	if err != nil {
-		return nil, err
+	switch cfg.Type {
+	case CURSOR:
+		consumer.MessageConsumer, err = NewMessageConsumer[Message](consumerGroup, topicName, queue, poolLimiter, ds, cfg)
+		if err != nil {
+			return nil, err
+		}
+		consumer.ExceptionConsumer, err = NewExceptionConsumer[Message](consumerGroup, topicName, ds, cfg)
+		if err != nil {
+			return nil, err
+		}
+		// only the CURSOR path has a waterline to roll -- LIFECYCLE tracks
+		// state per delivery row
+		roller, err := maintain.NewWaterlineRoller(consumerGroup, topicName, ds, maintainerConfig)
+		if err != nil {
+			return nil, err
+		}
+		duties = append(duties, roller)
+	case LIFECYCLE:
+		consumer.DeliveryConsumer, err = NewDeliveryConsumer[Message](consumerGroup, topicName, ds, cfg)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("invalid consumer type %q", cfg.Type)
 	}
 
-	buffer, err := NewClaimBuffer(queue)
+	consumer.Maintainer, err = maintain.NewMaintainer(duties...)
 	if err != nil {
 		return nil, err
-	}
-
-	consumer := &MessageConsumer[Message]{
-		consumerGroup:  consumerGroup,
-		topicName:      topicName,
-		PoolLimiter:    poolLimiter,
-		Datastore:      consumerDatastore,
-		Config:         cfg,
-		Logger:         cfg.Logger,
-		topicDatastore: topicDatastore,
-		buffer:         buffer,
 	}
 
 	return consumer, nil
@@ -105,594 +96,77 @@ func NewMessageConsumer[Message any](consumerGroup string, topicName string, que
 // Register resolves this consumer's topic by name against the live topic row,
 // sets up its cursor, and starts the consumer's lifecycle.
 //
-// ctx must be cancellable, unless MessageConsumerConfig.DisableGracefulShutdown
+// ctx must be cancellable, unless ConsumerConfig.DisableGracefulShutdown
 // declares otherwise.
-func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
-	// registration is once per instance
-	if p.lifecycleCtx != nil {
-		if p.lifecycleCtx.Err() != nil {
-			return fmt.Errorf("%w: consumer group %q on topic %q is wound down and stays down; construct a new MessageConsumer to consume again", vulkanerrors.ErrAlreadyRegistered, p.consumerGroup, p.Topic.Name)
+func (c *Consumer[Message]) Register(ctx context.Context) error {
+	// each part registers itself -- the overlapping bootstrap (topic
+	// resolution, schema assert, cursor upsert) is idempotent
+	switch c.Config.Type {
+	case CURSOR:
+		if err := c.MessageConsumer.Register(ctx); err != nil {
+			return err
 		}
-		return fmt.Errorf("%w: consumer group %q on topic %q -- the context from the first Register still owns this consumer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.consumerGroup, p.Topic.Name)
+		if err := c.ExceptionConsumer.Register(ctx); err != nil {
+			return err
+		}
+	case LIFECYCLE:
+		if err := c.DeliveryConsumer.Register(ctx); err != nil {
+			return err
+		}
 	}
+	return c.Maintainer.Register(ctx)
+}
 
-	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
-	// shutdown phase silently wouldn't exist. Reject unless declared on purpose.
-	if ctx.Done() == nil && !p.Config.DisableGracefulShutdown {
-		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.consumerGroup, p.topicName, lifecycleContextHelp)
+// base is the registered part whose base carries this consumer's lifecycle.
+func (c *Consumer[Message]) base() *consumerBase[Message] {
+	if c.Config.Type == LIFECYCLE {
+		return &c.DeliveryConsumer.consumerBase
 	}
-
-	current, err := p.topicDatastore.GetTopic(ctx, p.topicName)
-	if err != nil {
-		return err
-	}
-	if current == nil {
-		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName)
-	}
-	p.Topic = current
-
-	// fail fast if the db's schema is outside the range this build understands
-	if err := migrate.AssertSchemaSupported(ctx, p.topicDatastore.Datastore.Pool, current.Id); err != nil {
-		return err
-	}
-
-	consumerMetrics, err := metrics.NewConsumerMetrics(p.Config.Meter, p.consumerGroup, current.Id, current.Name, p.Datastore.Datastore, &metrics.ConsumerMetricsDatastoreConfig{
-		Logger: p.Config.Logger,
-	})
-	if err != nil {
-		return err
-	}
-	p.Metrics = consumerMetrics
-
-	// both types track the log through this row:
-	//   - CURSOR claims through it
-	//   - LIFECYCLE records fan-out progress in committed
-	if err := p.Datastore.UpsertCursor(ctx, p.Topic.Id, p.consumerGroup); err != nil {
-		return err
-	}
-
-	// cold-start guarantee: the next partition exists before Janitor's first tick
-	if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize); err != nil {
-		return err
-	}
-
-	// tracked for graceful shutdown draining / handling
-	p.lifecycleCtx = ctx
-
-	return nil
+	return &c.MessageConsumer.consumerBase
 }
 
 // Consume claims and processes messages with consumerFunc, blocking until
 // stopped: cancel ctx to stop this call, or cancel the context given to
 // Register to wind the whole consumer down. A requested stop from either side
 // shuts down in-flight work and returns nil
-func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	if err := p.lifecycleErr(); err != nil {
+func (c *Consumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
+	base := c.base()
+	if err := base.lifecycleErr(); err != nil {
 		return err
 	}
-	runCtx, cancel := p.runCtx(ctx)
+	runCtx, cancel := base.runCtx(ctx)
 	defer cancel()
 
-	errGroup, ctx := errgroup.WithContext(runCtx)
+	c.Logger.InfoContext(runCtx, "consumer starting", "group", c.consumerGroup, "topic", c.topicName)
 
-	p.Logger.InfoContext(ctx, "consumer deliveries projector starting", "group", p.consumerGroup, "topic", p.Topic.Id)
-	errGroup.Go(func() error {
-		return p.Project(ctx)
-	})
+	g, gCtx := errgroup.WithContext(runCtx)
 
-	p.Logger.InfoContext(ctx, "consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id)
-	errGroup.Go(func() error {
-		return p.Process(ctx, consumerFunc)
-	})
-
-	p.Logger.InfoContext(ctx, "consumer waterline roller starting", "group", p.consumerGroup, "topic", p.Topic.Id)
-	errGroup.Go(func() error {
-		return p.RollWaterline(ctx)
-	})
-
-	p.Logger.InfoContext(ctx, "consumer exception drain starting", "group", p.consumerGroup, "topic", p.Topic.Id)
-	errGroup.Go(func() error {
-		return p.DrainExceptions(ctx, consumerFunc)
-	})
-
-	p.Logger.InfoContext(ctx, "consumer janitor starting", "group", p.consumerGroup, "topic", p.Topic.Id)
-	errGroup.Go(func() error {
-		return p.janitor(ctx)
-	})
-
-	err := errGroup.Wait()
-	if errors.Is(err, context.Canceled) {
-		// requested shutdown (either side), not a failure -- log which side asked
-		reason := "caller context cancelled"
-		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
-			reason = "lifecycle context cancelled"
-		}
-		p.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id)
-		err = nil
-	}
-
-	return err
-}
-
-// Janitor runs the retention/partition-maintenance loop standalone, under the
-// same rules as Consume: Register first, either ctx or the lifecycle context
-// stops it, and a requested stop from either side returns nil.
-//
-// Public so it can run as its own process or pod: it is topic-scoped, not
-// per-group, so one janitor serves every group on the topic -- a dedicated
-// maintenance deployment beats N consumers redundantly ticking the same
-// drops. Consume also runs this loop internally, so a single-process setup
-// needs nothing extra.
-func (p *MessageConsumer[Message]) Janitor(ctx context.Context) error {
-	if err := p.lifecycleErr(); err != nil {
-		return err
-	}
-	runCtx, cancel := p.runCtx(ctx)
-	defer cancel()
-
-	err := p.janitor(runCtx)
-
-	if errors.Is(err, context.Canceled) {
-		// requested shutdown (either side), not a failure -- log which side asked
-		reason := "caller context cancelled"
-		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
-			reason = "lifecycle context cancelled"
-		}
-		p.Logger.InfoContext(ctx, "janitor stopped", "reason", reason, "topic", p.Topic.Id)
-		return nil
-	}
-
-	return err
-}
-
-// janitor is the retention/partition-maintenance loop: create-ahead runs every
-// tick so a producer never outruns it for long; drop runs alongside it, a
-// no-op while RetentionTTL is zero (the default -- retention is opt-in).
-//
-// Topic-scoped, not per-group -- every operation below takes topicID only
-func (p *MessageConsumer[Message]) janitor(ctx context.Context) error {
-	ticker := time.NewTicker(p.Topic.JanitorPollRate)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := p.Datastore.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize); err != nil {
-				return err
-			}
-			if err := p.Datastore.DropExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.DisableDeliveryLog); err != nil {
-				return err
-			}
-			if err := p.Datastore.SweepExpiredPartitions(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Topic.RetentionTTL, p.Topic.AllowDropPastCommitted, p.Topic.JanitorSweepBatchSize, p.Topic.DisableDeliveryLog); err != nil {
-				return err
-			}
-			if err := p.Datastore.SweepExpiredIdempotencyKeys(ctx, p.Topic.Id, p.Topic.IdempotencyKeyTTL, p.Topic.JanitorSweepBatchSize); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-// RollWaterline is the lazy waterline roller: off the hot path, it periodically
-// rolls committed up to the lowest open lease (or claimed when none are open). Only
-// the cursor path has a waterline; the lifecycle path tracks state per delivery row.
-//
-// Deliberately lazy, not synchronous-on-Commit -- a synchronous call after
-// every Commit adds new lock contention on the shared cursor row. Lower
-// WaterlinePollRate instead if committed needs to catch up faster.
-func (p *MessageConsumer[Message]) RollWaterline(ctx context.Context) error {
-	if p.Config.Type != CURSOR {
-		return nil
-	}
-
-	ticker := time.NewTicker(p.Topic.WaterlinePollRate)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if _, err := p.Datastore.AdvanceWaterline(ctx, p.Topic.Id, p.consumerGroup); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (p *MessageConsumer[Message]) Process(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	switch p.Config.Type {
+	switch c.Config.Type {
 	case CURSOR:
-		return p.processCursor(ctx, consumerFunc)
+		g.Go(func() error {
+			return c.MessageConsumer.Consume(gCtx, consumerFunc)
+		})
+		g.Go(func() error {
+			return c.ExceptionConsumer.Consume(gCtx, consumerFunc)
+		})
 	case LIFECYCLE:
-		return p.processLifecycle(ctx, consumerFunc)
-	default:
-		return errors.New("invalid consumer type")
-	}
-}
-
-func (p *MessageConsumer[Message]) processLifecycle(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	ticker := time.NewTicker(p.Config.ClaimPollRate)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := p.LifecycleClaim(ctx, consumerFunc); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-// processCursor has a fill side (prefetch) and a spend side (dispatch) running concurrently.
-// This allows the claim's network round trip to overlap whatever is being processed.
-func (p *MessageConsumer[Message]) processCursor(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	// tracks in-flight goroutines independently of ctx, so a shutdown can
-	// wait out stragglers instead of abandoning them the instant ctx cancels.
-	var wg sync.WaitGroup
-
-	g, gCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		return p.prefetch(gCtx)
-	})
-	g.Go(func() error {
-		return p.dispatch(gCtx, &wg, consumerFunc)
-	})
-	err := g.Wait()
-
-	p.Drain(ctx, &wg)
-	p.CloseOpenRanges(ctx)
-
-	return err
-}
-
-// Drain waits for in-flight processClaim calls to finish, bounded by
-// ShutdownTimeout -- a consumerFunc that ignores ctx.Done() can't hang
-// shutdown forever; whatever's still running past the timeout is left for
-// CloseOpenRanges to settle instead.
-func (p *MessageConsumer[Message]) Drain(ctx context.Context, wg *sync.WaitGroup) {
-	done := make(chan struct{})
-	go func() {
-		wg.Wait() // this is what waits for in-flight work to complete
-		close(done)
-	}()
-
-	timer := time.NewTimer(p.Config.ShutdownTimeout)
-	defer timer.Stop()
-
-	select {
-	case <-done:
-	case <-timer.C:
-		p.Logger.WarnContext(ctx, "in-flight work did not finish before ShutdownTimeout, stragglers settle via lease expiry", "group", p.consumerGroup, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
-	}
-}
-
-// CloseOpenRanges takes sole ownership of every range still tracked after
-// Drain (RemoveAll fences any straggler that resolves after this point) and
-// settles each: untouched ranges surrender immediately via ForceReclaimRange
-// so another worker doesn't wait out a full lease for nothing; anything with
-// resolved progress commits that prefix via CursorPartialCommit.
-func (p *MessageConsumer[Message]) CloseOpenRanges(ctx context.Context) {
-	for _, state := range p.buffer.RemoveAll() {
-		p.closeRange(ctx, state)
-	}
-}
-
-func (p *MessageConsumer[Message]) closeRange(ctx context.Context, state *rangeState) {
-	if state.neverDispatched() && !state.stale.Load() {
-		// ctx is already Done at shutdown need fresh to complete graceful shutdown.
-		// CursorPartialCommit constructs new context internally.
-		reclaimCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
-			fmt.Errorf("force reclaim exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
-		defer cancel()
-
-		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Topic.Id, p.consumerGroup, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
-			p.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
-		}
-		return
-	}
-
-	lastProcessed, exceptions, terminals := state.contiguousResolved()
-	if err := p.CursorPartialCommit(ctx, lastProcessed, state.lease, exceptions, terminals); err != nil {
-		p.Logger.WarnContext(ctx, "partial commit failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
-	}
-}
-
-// prefetch claims ranges and feeds their messages into p.buffer.
-func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
-	for {
-		// blocks until there's room for a full batch, or the debounce timeout
-		// elapses -- either way returns whatever room currently exists.
-		room, err := p.buffer.WaitForRoom(ctx, p.Config.ClaimPollRate, p.Config.BatchLimit)
-		if err != nil {
-			return err
-		}
-		if room == 0 {
-			continue
-		}
-
-		// leaseDuration should always have an extra time buffer (QueueMargin) to not
-		// potentially overlap with another worker reclaiming (double processing)
-		leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
-		limit := min(room, p.Config.BatchLimit)
-
-		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
-		if err != nil {
-			// ctx cancellation is a real shutdown -> propagate and stop
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-			// potential db blip -- back off instead of hot-looping the claim
-			if err := SleepWithContext(ctx, p.Config.ClaimPollRate); err != nil {
-				return err
-			}
-			continue
-		}
-		if claimed == nil {
-			// caught up -- nothing to reclaim or claim
-			if err := SleepWithContext(ctx, p.Config.ClaimPollRate); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if len(claimed.Messages) == 0 {
-			// every message in the range compacted away -- nothing to dispatch or
-			// resolve, so commit it directly to immediately move on
-			p.commitRange(ctx, newRangeSnapshot(claimed.Lease, nil, nil))
-			continue
-		}
-		if err := p.buffer.Add(ctx, claimed); err != nil {
-			return err
-		}
-	}
-}
-
-// dispatch drains p.buffer across PoolLimiter's N concurrent processors
-func (p *MessageConsumer[Message]) dispatch(ctx context.Context, wg *sync.WaitGroup, consumerFunc ConsumerFunc[Message]) error {
-	for {
-		owner, err := uuid.NewV7()
-		if err != nil {
-			return err // something is very wrong if this happens
-		}
-
-		if err := p.PoolLimiter.WaitForPermit(ctx, owner.String()); err != nil {
-			return err // ctx cancelled -- shutdown
-		}
-
-		item, err := p.buffer.WaitForNext(ctx)
-		if err != nil {
-			p.PoolLimiter.ReleasePermit(ctx, owner.String()) // best effort
-			return err                                       // ctx cancelled -- shutdown
-		}
-
-		wg.Go(func() {
-			defer p.PoolLimiter.ReleasePermit(ctx, owner.String())
-			p.processClaim(ctx, item, consumerFunc)
+		g.Go(func() error {
+			return c.DeliveryConsumer.Consume(gCtx, consumerFunc)
 		})
 	}
-}
 
-// processClaim runs consumerFunc for one dispatched message and folds the outcome into p.buffer.
-func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffered, consumerFunc ConsumerFunc[Message]) {
-	// sat in the queue too long to safely start -- surrendering the whole
-	// range beats risking a lease overrun (another worker reclaiming the
-	// same range while this message is still being worked).
-	if item.lease.Until.Before(time.Now().Add(p.Config.WorkTimeout).Add(p.Config.AckMargin)) {
-		p.buffer.MarkStale(item.lease.Token)
-		return
-	}
-
-	var work Message
-	if err := json.Unmarshal(item.row.Payload, &work); err != nil {
-		// bad payload will never deserialize -- no point retrying it
-		p.buffer.ResolveTerminal(item, err)
-	} else if err := p.callSafely(ctx, consumerFunc, &work, item.row.Id, 0); err != nil {
-		p.buffer.ResolveException(item, err)
-	} else {
-		p.buffer.ResolveSuccess(item)
-	}
-
-	// is the entire range full of messages resolve
-	// ie was this item the final message to be processed in the range
-	if !p.buffer.IsRangeResolved(item.lease.Token) {
-		return
-	}
-	snapshot, err := p.buffer.TryGetRangeSnapshot(item.lease.Token)
-	if err != nil {
-		return // another resolver or shutdown owns the commit
-	}
-	p.commitRange(ctx, snapshot)
-}
-
-// commitRange finalizes a range once every message has resolved in it
-func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
-	// range always frees -- the lazy roller (RollWaterline) advances committed
-	// past it; failures ride along as parked exceptions, not a blocked range.
-	err := p.Datastore.Commit(ctx, p.Topic.Id, p.consumerGroup, commit.Lease.Token, commit.Exceptions, commit.Terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog)
-	switch {
-	case err == nil:
-		p.buffer.Remove(commit.Lease.Token)
-	case errors.Is(err, ErrLeaseLost):
-		p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
-		p.buffer.Remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
-	default:
-		// stays tracked -- CloseOpenRanges retries it on the way out
-		p.Logger.WarnContext(ctx, "commit failed, range stays open for a retry at shutdown", "group", p.consumerGroup, "topic", p.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High, "err", err)
-	}
-}
-
-func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, lease LeaseRow, exceptions []MessageException, terminals []MessageTerminal) error {
-	if lastProcessed == lease.Low && len(exceptions) == 0 && len(terminals) == 0 {
-		return nil // interrupted before resolving anything -- leave the lease exactly as claimed
-	}
-
-	// the ctx that got us here is already Done -- the commit needs its own
-	// bounded, uncancelled window to actually reach the DB, same as Shutdown
-	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
-		fmt.Errorf("partial commit exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
-	defer cancel()
-
-	// narrow the lease to the untouched suffix instead of leaving the WHOLE
-	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.consumerGroup, lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
-		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", lease.Low, "high", lease.High)
-			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
-		}
-		// commitCtx expiring mid-call and PartialCommit's own DB error are
-		// otherwise indistinguishable from the wire error alone
-		if commitCtx.Err() != nil {
-			return fmt.Errorf("%w: %w", err, context.Cause(commitCtx))
-		}
-		return err
-	}
-	return nil
-}
-
-// DrainExceptions is a second poll loop over the sparse exception window, separate
-// from CursorClaim's range poll -- a backed-off exception can't block a fresh range
-// from claiming, and vice versa. Cursor-path only: the lifecycle path has no waterline
-// to pin, so a failed delivery just retries in place on the next LifecycleClaim.
-func (p *MessageConsumer[Message]) DrainExceptions(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	if p.Config.Type != CURSOR {
-		return nil
-	}
-
-	ticker := time.NewTicker(p.Config.ClaimPollRate)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if err := p.ExceptionClaim(ctx, consumerFunc); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (p *MessageConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
-
-	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.consumerGroup, p.Config.BatchLimit, p.Config.MaxAttempts, leaseDuration, p.Topic.DisableDeliveryLog)
-	if err != nil {
-		return err
-	}
-
-	for _, exception := range claimed {
-		var work Message
-		// this payload already deserialized once, in CursorClaim, to reach the
-		// exception window in the first place -- same immutable message_log row,
-		// so it cannot fail to unmarshal here. a failure means an invariant broke
-		// elsewhere; surface it loudly instead of building unreachable recovery.
-		if err := json.Unmarshal(exception.Payload, &work); err != nil {
-			return err
-		}
-
-		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
-			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
-				if errors.Is(recordErr, ErrLeaseLost) {
-					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
-					continue // reclaimed by the kill backstop or another worker -- not ours anymore
-				}
-				return recordErr
-			}
-			continue
-		}
-
-		if err := p.Datastore.RecordExceptionSuccess(ctx, &exception); err != nil {
-			if errors.Is(err, ErrLeaseLost) {
-				p.Logger.DebugContext(ctx, "lease lost recording exception success, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
-				continue
-			}
-			return err
-		}
-	}
-
-	return nil
-}
-
-// callSafely catches an in-process Go panic  and turns it into an ordinary error.
-// Handles: nil map write, index out of range, bad type assertion
-// Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
-func (p *MessageConsumer[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], work *Message, messageID int64, attempt int) error {
-	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
-	// instead attempt to finish inflight requests bounded by timeout
-	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.WorkTimeout,
-		fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d", p.Config.WorkTimeout, messageID, attempt))
-	defer cancel()
-
-	done := make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// done is buffered -- always deliverable, even if the select below
-				// already gave up on this goroutine via the timeout branch.
-				done <- fmt.Errorf("recovered from consumerFunc panic: %v\n%s", r, debug.Stack())
-			}
-		}()
-		done <- consumerFunc(ctx, work)
-	}()
-
-	select {
-	case err := <-done:
-		return err
-	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
-	// if this hard timeout is called go thread will be left hanging / abandoned
-	case <-time.After(p.Config.WorkTimeout + p.Config.WorkTimeoutGrace):
-		p.Metrics.AbandonedRoutines.Add(ctx, messageID, attempt)
-		// reaper -- done is buffered(1) and nothing else reads it past this
-		// point, so this receive fires exactly when the abandoned goroutine
-		// finally returns. Spawned after Add, so Remove can never precede it.
-		go func() {
-			<-done
-			p.Metrics.AbandonedRoutines.Remove(ctx, messageID, attempt)
-		}()
-
-		// don't print out work in case of sensitive values
-		// TODO - documentation should have this known error mesage and how to help prevent it
-		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
-		// it has bad side effects
-		p.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", p.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace)
-		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", p.Config.WorkTimeout+p.Config.WorkTimeoutGrace, messageID)
-	}
-}
-
-// runCtx merges a call's ctx with the instance lifecycle: whichever cancels
-// first stops the loops. A lifecycle cancellation carries ErrShutdownRequested
-// as the cause, so exits can tell app shutdown from the caller's own cancel.
-func (p *MessageConsumer[Message]) runCtx(ctx context.Context) (context.Context, context.CancelFunc) {
-	merged, cancel := context.WithCancelCause(ctx)
-	stopWatch := context.AfterFunc(p.lifecycleCtx, func() {
-		// if lifecycleCtx is cancelled this is called
-		cancel(vulkanerrors.ErrShutdownRequested)
+	g.Go(func() error {
+		return c.Maintainer.Run(gCtx)
 	})
 
-	mergedCancel := func() {
-		// if ctx is cancelled this is called
-		stopWatch() // unregister AfterFunc (doesn't trigger it)
-		cancel(nil) // nil = routine shutdown, ctx.Err() returns context.Canceled
+	err := g.Wait()
+	if err == nil && runCtx.Err() != nil {
+		// requested shutdown (either side), not a failure -- log which side asked
+		reason := "caller context cancelled"
+		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
+			reason = "lifecycle context cancelled"
+		}
+		c.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", c.consumerGroup, "topic", c.topicName)
 	}
-
-	return merged, mergedCancel
-}
-
-// lifecycleErr is the entrypoint gate: loops only start between Register and
-// its ctx's cancellation.
-func (p *MessageConsumer[Message]) lifecycleErr() error {
-	if p.lifecycleCtx == nil {
-		return fmt.Errorf("%w: consumer group %q on topic %q -- call Register with the application's lifetime context before consuming", vulkanerrors.ErrNotRegistered, p.consumerGroup, p.topicName)
-	}
-	if err := p.lifecycleCtx.Err(); err != nil {
-		return fmt.Errorf("%w: consumer group %q on topic %q -- the lifetime context passed to Register is cancelled (%v)", vulkanerrors.ErrShutdownRequested, p.consumerGroup, p.Topic.Name, err)
-	}
-	return nil
+	return err
 }

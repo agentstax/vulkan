@@ -23,7 +23,7 @@ const (
 )
 
 // TODO - better comments for each field. Should follow structure of producer.Options and topic.Config
-type MessageConsumerConfig struct {
+type ConsumerConfig struct {
 	Type             ConsumerType
 	BatchLimit       int
 	FanOutBatchLimit int // max log rows FanOut scans per tick (LIFECYCLE only) -- bounds a cold group's catch-up scan; new messages materialize this many per tick until caught up
@@ -57,7 +57,7 @@ type MessageConsumerConfig struct {
 	DisableGracefulShutdown bool
 }
 
-func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
+func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	if c.Type == "" {
 		c.Type = CURSOR
 	}
@@ -110,7 +110,7 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *MessageConsumerConfig) Validate() error {
+func (c *ConsumerConfig) Validate() error {
 	if c.BatchLimit < 1 {
 		return fmt.Errorf("BatchLimit must be >= 1, got %d", c.BatchLimit)
 	}

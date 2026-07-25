@@ -14,6 +14,10 @@ import (
 // releaseWindow caps the release of a duty on shutdown.
 const releaseWindow = 5 * time.Second
 
+// hungWorkFactor is number of heartbeats before duty work
+// is considered 'hung'
+const hungWorkFactor = 10
+
 // dutyRunner is the duty/claim machinery every duty composes:
 // - jittered ticks
 // - claim race
@@ -136,11 +140,18 @@ func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork con
 		ticker := time.NewTicker(d.rate / 2)
 		defer ticker.Stop()
 
+		ticks := 0
 		for {
 			select {
 			case <-workCtx.Done():
 				return
 			case <-ticker.C:
+				// track if work is taking too long ie 'hung'
+				ticks++
+				if ticks%(2*hungWorkFactor) == 0 {
+					d.logger.WarnContext(workCtx, "duty work still running -- possibly hung", "duty", d.kind, "topic", d.topicID, "group", d.group, "running_for", time.Duration(ticks)*d.rate/2)
+				}
+
 				err := d.ds.RenewDuty(workCtx, d.kind, d.topicID, d.group, token, d.rate)
 				if err == nil {
 					continue

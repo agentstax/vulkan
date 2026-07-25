@@ -12,4 +12,4 @@ Pass your application's shutdown context:
 
 Or declare that Consume's own ctx is the only off-switch:
 
-    &consumer.MessageConsumerConfig{DisableGracefulShutdown: true}`
+    &consumer.ConsumerConfig{DisableGracefulShutdown: true}`
