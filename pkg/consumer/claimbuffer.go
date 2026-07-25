@@ -10,23 +10,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// inert queue entry -- no live pointers, so it stays valid even if its range
+var errRangeNotTracked = errors.New("range not tracked -- settled elsewhere")
+
+// Buffered inert queue entry -- no live pointers, so it stays valid even if its range
 // gets removed while this message is still in flight.
-type buffered struct {
+type Buffered struct {
 	row   MessageRow
 	lease LeaseRow // token used for staleness check, ForceReclaimRange
 	index int      // this message's index in rangeState.results
 }
 
-func newBuffered(row MessageRow, lease LeaseRow, index int) *buffered {
-	return &buffered{row: row, lease: lease, index: index}
+func newBuffered(row MessageRow, lease LeaseRow, index int) *Buffered {
+	return &Buffered{row: row, lease: lease, index: index}
 }
 
-// buffered are the dispatch unit, ranges the claim/commit unit.
+// Buffered entries are the dispatch unit, ranges the claim/commit unit.
 // claimBuffer is the only thing that touches both, so they can't
 // end up half-updated relative to each other.
 type claimBuffer struct {
-	queue concurrency.Queue[buffered]
+	queue concurrency.Queue[Buffered]
 
 	// guards `ranges` ONLY. RWMutex because lookup (read) fires once per
 	// message while track/Remove (write) fire once per range -- reads
@@ -35,7 +37,7 @@ type claimBuffer struct {
 	ranges   map[pgtype.UUID]*rangeState
 }
 
-func NewClaimBuffer(queue concurrency.Queue[buffered]) (*claimBuffer, error) {
+func NewClaimBuffer(queue concurrency.Queue[Buffered]) (*claimBuffer, error) {
 	if queue == nil {
 		return nil, errors.New("queue must not be nil")
 	}
@@ -49,18 +51,16 @@ func (b *claimBuffer) WaitForRoom(ctx context.Context, timeout time.Duration, th
 	return b.queue.WaitForRoom(ctx, timeout, threshold)
 }
 
-func (b *claimBuffer) Add(ctx context.Context, claimed *ClaimedRange) (*rangeCommit, error) {
+// Add tracks claimed and enqueues its messages for dispatch.
+func (b *claimBuffer) Add(ctx context.Context, claimed *ClaimedRange) error {
 	if claimed == nil {
-		return nil, errors.New("claimed must not be nil")
+		return errors.New("claimed must not be nil")
+	}
+	if len(claimed.Messages) == 0 {
+		return errors.New("claimed must have at least one message")
 	}
 
 	state := newRangeState(claimed)
-	if state.total == 0 {
-		// nothing to dispatch, nothing to wait on -- this range skips b.track
-		// below, so there's no CloseOpenRanges backstop to catch it later; the
-		// non-nil commit is the only signal Prefetch gets to commit it now
-		return newRangeCommit(state.lease, nil, nil), nil
-	}
 
 	// track BEFORE enqueueing: a mid-enqueue error still leaves the range
 	// tracked, so CloseOpenRanges settles it instead of it leaking untracked
@@ -68,10 +68,10 @@ func (b *claimBuffer) Add(ctx context.Context, claimed *ClaimedRange) (*rangeCom
 	for i, row := range claimed.Messages {
 		item := newBuffered(row, claimed.Lease, i)
 		if err := b.queue.EnQueue(ctx, item); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return nil, nil
+	return nil
 }
 
 func (b *claimBuffer) track(state *rangeState) {
@@ -86,7 +86,7 @@ func (b *claimBuffer) lookup(token pgtype.UUID) *rangeState {
 	return b.ranges[token]
 }
 
-func (b *claimBuffer) WaitForNext(ctx context.Context) (*buffered, error) {
+func (b *claimBuffer) WaitForNext(ctx context.Context) (*Buffered, error) {
 	item, err := b.queue.DeQueue(ctx) // DeQueue is blocking
 	if err != nil {
 		return nil, err
@@ -99,33 +99,39 @@ func (b *claimBuffer) WaitForNext(ctx context.Context) (*buffered, error) {
 	return item, nil
 }
 
-func (b *claimBuffer) ResolveSuccess(item *buffered) *rangeCommit {
-	return b.resolve(item, kindSuccess, "")
+func (b *claimBuffer) ResolveSuccess(item *Buffered) {
+	b.resolve(item, kindSuccess, "")
 }
 
-func (b *claimBuffer) ResolveException(item *buffered, err error) *rangeCommit {
-	return b.resolve(item, kindException, err.Error())
+func (b *claimBuffer) ResolveException(item *Buffered, err error) {
+	b.resolve(item, kindException, err.Error())
 }
 
-func (b *claimBuffer) ResolveTerminal(item *buffered, err error) *rangeCommit {
-	return b.resolve(item, kindTerminal, err.Error())
+func (b *claimBuffer) ResolveTerminal(item *Buffered, err error) {
+	b.resolve(item, kindTerminal, err.Error())
 }
 
-func (b *claimBuffer) resolve(item *buffered, kind outcomeKind, err string) *rangeCommit {
+func (b *claimBuffer) resolve(item *Buffered, kind outcomeKind, err string) {
 	state := b.lookup(item.lease.Token)
 	if state == nil {
-		return nil // already settled elsewhere -- fences a drain-timeout straggler
+		return // already settled elsewhere -- fences a drain-timeout straggler
 	}
+	state.resolve(item.index, kind, err)
+}
 
-	state.results[item.index].resolve(kind, err)
+func (b *claimBuffer) IsRangeResolved(token pgtype.UUID) bool {
+	state := b.lookup(token)
+	return state != nil && state.isResolved()
+}
 
-	if state.resolved.Add(1) != int64(state.total) {
-		return nil // not the last message
+// errors are normal flow -- several resolvers can see IsRangeResolved true,
+// only TryGetSnapshot's CompareAndSwap winner gets the snapshot.
+func (b *claimBuffer) TryGetRangeSnapshot(token pgtype.UUID) (*rangeSnapshot, error) {
+	state := b.lookup(token)
+	if state == nil {
+		return nil, errRangeNotTracked
 	}
-
-	// is the last message -> rangeState is resolved
-	exceptions, terminals := state.resolvedExceptionsTerminals()
-	return newRangeCommit(state.lease, exceptions, terminals)
+	return state.TryGetSnapshot()
 }
 
 func (b *claimBuffer) MarkStale(token pgtype.UUID) {

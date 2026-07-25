@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
@@ -36,10 +37,9 @@ import (
 )
 
 const (
-	group    = "phase10.metricsreactionlab"
-	seedRows = 9
-	batch    = 3
-	lease    = 3 * time.Second
+	group = "phase10.metricsreactionlab"
+	batch = 3
+	lease = 3 * time.Second
 )
 
 func main() {
@@ -64,11 +64,14 @@ func main() {
 	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	seed(ctx, wp, seedRows)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](30)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](30)
 	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(3)
+	// N=1 -- scenario 1/2 depend on failingId1 being the SPECIFIC message that
+	// fails; with true concurrent dispatch (N>1), which message wins the race
+	// to be call #1 isn't deterministic. This lab tests metric reactions to
+	// failure modes, not concurrency itself.
+	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
@@ -81,9 +84,16 @@ func main() {
 	must(err)
 	must(wc.Register(ctx))
 
+	// seeded one range at a time, right before the scenario that consumes it --
+	// Process claims continuously once anything is available, so pre-seeding
+	// all 9 up front would let scenario 1 race ahead and claim scenarios 3 and
+	// 4's ranges too before this lab ever gets to run them.
+	seed(ctx, wp, 3) // ids 1-3
 	scenarioFailRate(ctx, wc)
 	scenarioExhaustedRetries(ctx, wc)
+	seed(ctx, wp, 3) // ids 4-6
 	scenarioHardTimeout(ctx, wc)
+	seed(ctx, wp, 3) // ids 7-9
 	scenarioCrash(ctx, wc)
 
 	fmt.Println("\n✅ METRICS REACTION LAB PASSED")
@@ -98,15 +108,17 @@ func scenarioFailRate(ctx context.Context, wc *consumer.MessageConsumer[common.W
 	step("SCENARIO 1: retryable failure (--fail-rate equivalent) -> ready exception")
 	before := snapshotCounts(ctx, wc)
 
-	calls := 0
-	must(wc.CursorClaim(ctx, func(ctx context.Context, work *common.Work) error {
-		calls++
-		if calls == 1 {
+	var calls atomic.Int64
+	consumerFunc := func(ctx context.Context, work *common.Work) error {
+		if calls.Add(1) == 1 {
 			return errors.New("artificial failure from -fail-rate")
 		}
 		return nil
-	}))
-	assert("all 3 messages in range 1 attempted", int64(calls), 3)
+	}
+	runProcessUntil(ctx, wc, consumerFunc, 5*time.Second, func() bool {
+		return calls.Load() == 3 && openLeases(ctx, wc) == 0
+	})
+	assert("all 3 messages in range 1 attempted", calls.Load(), 3)
 
 	after := snapshotCounts(ctx, wc)
 	assertDelta("fail-rate failure parks exactly one ready exception", before, after, counts{Ready: 1})
@@ -149,18 +161,18 @@ func scenarioHardTimeout(ctx context.Context, wc *consumer.MessageConsumer[commo
 	before := snapshotCounts(ctx, wc)
 
 	const hangFor = 2 * time.Second // outlives WorkTimeout(1s)+Grace(100ms)
-	calls := 0
-	start := time.Now()
-	must(wc.CursorClaim(ctx, func(ctx context.Context, work *common.Work) error {
-		calls++
-		if calls == 1 {
+	var calls atomic.Int64
+	consumerFunc := func(ctx context.Context, work *common.Work) error {
+		if calls.Add(1) == 1 {
 			time.Sleep(hangFor)
 		}
 		return nil
-	}))
-	elapsed := time.Since(start)
+	}
+	elapsed := runProcessUntil(ctx, wc, consumerFunc, 5*time.Second, func() bool {
+		return calls.Load() == 3 && openLeases(ctx, wc) == 0
+	})
 	if elapsed >= hangFor {
-		die(fmt.Sprintf("CursorClaim took %s -- it should have abandoned message 4 around WorkTimeout+Grace, not waited out the full %s hang", elapsed, hangFor))
+		die(fmt.Sprintf("range took %s to commit -- it should have abandoned message 4 around WorkTimeout+Grace, not waited out the full %s hang", elapsed, hangFor))
 	}
 
 	mid := snapshotCounts(ctx, wc)
@@ -213,6 +225,14 @@ type counts struct {
 	Ready, Inflight, Dead, OpenLeases, AbandonedOutstanding, AbandonedTotal int64
 }
 
+// openLeases is snapshotCounts' OpenLeases field alone, without the
+// print-every-call side effect -- safe to poll in a tight loop.
+func openLeases(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) int64 {
+	snap, err := wc.Metrics.Snapshot(ctx)
+	must(err)
+	return snap.QueueState.OpenLeases
+}
+
 func snapshotCounts(ctx context.Context, wc *consumer.MessageConsumer[common.Work]) counts {
 	snap, err := wc.Metrics.Snapshot(ctx)
 	must(err)
@@ -247,6 +267,32 @@ func assertDelta(label string, before, after, want counts) {
 }
 
 // ---- helpers ----
+
+// runProcessUntil drives wc.Process in the background until condition
+// reports done (polled every 20ms), then cancels and waits for it to return.
+// Replaces the old CursorClaim's single-shot determinism now that claiming
+// and processing overlap concurrently instead of running one range at a time.
+func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Work], consumerFunc consumer.ConsumerFunc[common.Work], timeout time.Duration, done func() bool) time.Duration {
+	runCtx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- wc.Process(runCtx, consumerFunc) }()
+
+	start := time.Now()
+	for !done() {
+		if time.Since(start) > timeout {
+			cancel()
+			die(fmt.Sprintf("timed out waiting for the expected condition, Process returned: %v", <-errCh))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	elapsed := time.Since(start)
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
+	}
+	return elapsed
+}
 
 func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {

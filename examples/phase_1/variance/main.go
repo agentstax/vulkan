@@ -50,7 +50,7 @@ func main() {
 	defer stop()
 	time.AfterFunc(180*time.Second, stop) // watchdog
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](100 + conc)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](100 + conc)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

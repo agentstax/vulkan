@@ -1,7 +1,7 @@
 package main
 
 // Phase 9 lab: induce each of the three failure modes callSafely was built to
-// contain, through the real CursorClaim path against real Postgres, plus a
+// contain, through the real Process path against real Postgres, plus a
 // direct check of the pkg/retry mechanism a DB blip depends on.
 //
 // 1. PANIC -- one message's consumerFunc panics. Confirms recover() converts
@@ -10,14 +10,14 @@ package main
 //    stack trace land in last_error.
 //
 // 2. HARD TIMEOUT -- one message hangs well past WorkTimeout+WorkTimeoutGrace.
-//    Confirms CursorClaim doesn't wait out the whole hang before moving on to
-//    the next message, the hung message is parked as a retryable exception,
-//    the abandoned-goroutine gauge shows it while it's still running in the
-//    background, and the gauge/reclaim-latency correctly update once that
-//    detached goroutine finally finishes on its own.
+//    Confirms the range commits without waiting out the whole hang, the hung
+//    message is parked as a retryable exception, the abandoned-goroutine
+//    gauge shows it while it's still running in the background, and the
+//    gauge/reclaim-latency correctly update once that detached goroutine
+//    finally finishes on its own.
 //
 // 3. DB BLIP -- a direct check of pkg/retry.DatastoreRetry.Wrap (the
-//    mechanism CursorClaim's own datastore calls depend on): a transient
+//    mechanism every datastore call depends on): a transient
 //    failure that clears within MaxRetries must be fully invisible to the
 //    caller (Wrap returns nil), and one that never clears must still fail
 //    once retries are exhausted, not retry forever. Building this lab is
@@ -25,6 +25,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -88,22 +89,23 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](10)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
 	must(err)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:       3,
-		WorkTimeout:      5 * time.Second,
-		WorkTimeoutGrace: 100 * time.Millisecond,
+		DisableGracefulShutdown: true,
+		BatchLimit:              3,
+		WorkTimeout:             5 * time.Second,
+		WorkTimeoutGrace:        100 * time.Millisecond,
 	})
 	must(err)
+	must(wc.Register(ctx))
 
-	calls := 0
+	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
-		calls++
-		switch calls {
+		switch n := calls.Add(1); n {
 		case 1:
 			return nil
 		case 2:
@@ -111,13 +113,15 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 		case 3:
 			return nil
 		default:
-			die(fmt.Sprintf("consumerFunc called a %dth time -- only 3 messages seeded", calls))
+			die(fmt.Sprintf("consumerFunc called a %dth time -- only 3 messages seeded", n))
 			return nil
 		}
 	}
 
-	must(wc.CursorClaim(ctx, consumerFunc))
-	assert("all 3 messages attempted -- one panic doesn't stop the batch", int64(calls), 3)
+	runProcessUntil(ctx, wc, consumerFunc, 5*time.Second, func() bool {
+		return calls.Load() == 3 && leases(ctx, ds, tp.Id, group) == 0
+	})
+	assert("all 3 messages attempted -- one panic doesn't stop the batch", calls.Load(), 3)
 	assert("exactly 1 parked exception (the panicking message)", deliveries(ctx, ds, tp.Id, group), 1)
 	assertStatus(ctx, ds, tp.Id, group, 2, "ready")
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "recovered from consumerFunc panic")
@@ -152,23 +156,25 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](10)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
 	must(err)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
-		BatchLimit:       3,
-		WorkTimeout:      1 * time.Second,
-		WorkTimeoutGrace: 100 * time.Millisecond,
+		DisableGracefulShutdown: true,
+		BatchLimit:              3,
+		WorkTimeout:             1 * time.Second,
+		WorkTimeoutGrace:        100 * time.Millisecond,
 	})
 	must(err)
+	must(wc.Register(ctx))
 	// leaseDuration = WorkTimeout+QueueMargin+AckMargin (defaults: 1s+5s+2s=8s)
 	// stays well above hangFor below, so the lease itself never expires mid-test.
 
 	const hangFor = 2500 * time.Millisecond
 	// atomic -- message 2's abandoned goroutine is still running when message
-	// 3's invocation increments this
+	// 3's invocation increments this, and runProcessUntil polls it concurrently
 	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
 		switch n := calls.Add(1); n {
@@ -185,15 +191,15 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 		}
 	}
 
-	start := time.Now()
-	must(wc.CursorClaim(ctx, consumerFunc))
-	elapsed := time.Since(start)
-	fmt.Printf("  CursorClaim returned after %s (message 2's own goroutine is still sleeping in the background)\n", elapsed)
+	elapsed := runProcessUntil(ctx, wc, consumerFunc, 5*time.Second, func() bool {
+		return calls.Load() == 3 && leases(ctx, ds, tp.Id, group) == 0
+	})
+	fmt.Printf("  range committed after %s (message 2's own goroutine is still sleeping in the background)\n", elapsed)
 
 	if elapsed >= hangFor {
-		die(fmt.Sprintf("CursorClaim took %s -- it should have abandoned message 2 around WorkTimeout+Grace (~1.1s), not waited out the full %s hang", elapsed, hangFor))
+		die(fmt.Sprintf("range took %s to commit -- it should have abandoned message 2 around WorkTimeout+Grace (~1.1s), not waited out the full %s hang", elapsed, hangFor))
 	}
-	fmt.Printf("  ✓ CursorClaim returned well before the %s hang finished\n", hangFor)
+	fmt.Printf("  ✓ range committed well before the %s hang finished\n", hangFor)
 
 	assert("all 3 messages attempted -- the hang doesn't block message 3", calls.Load(), 3)
 	assert("exactly 1 parked exception (the hung message)", deliveries(ctx, ds, tp.Id, group), 1)
@@ -201,7 +207,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "hard timeout")
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "goroutine abandoned")
 
-	assert("abandoned-goroutine gauge shows exactly 1 outstanding right after CursorClaim returns", int64(wc.Metrics.AbandonedRoutines.Snapshot().Outstanding), 1)
+	assert("abandoned-goroutine gauge shows exactly 1 outstanding right after the range commits", int64(wc.Metrics.AbandonedRoutines.Snapshot().Outstanding), 1)
 	assert("tracking total reflects exactly 1 abandonment ever", int64(wc.Metrics.AbandonedRoutines.Snapshot().Total), 1)
 
 	step("waiting for the abandoned goroutine to actually finish its sleep and self-reclaim")
@@ -264,6 +270,33 @@ func (fakeNetError) Temporary() bool { return true }
 var _ net.Error = fakeNetError{}
 
 // ---- helpers ----
+
+// runProcessUntil drives wc.Process in the background until condition
+// reports done (polled every 20ms), then cancels and waits for it to return.
+// Replaces the old CursorClaim's single-shot determinism now that claiming
+// and processing overlap concurrently instead of running one range at a time.
+func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Work], consumerFunc consumer.ConsumerFunc[common.Work], timeout time.Duration, done func() bool) time.Duration {
+	runCtx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- wc.Process(runCtx, consumerFunc) }()
+
+	start := time.Now()
+	for !done() {
+		if time.Since(start) > timeout {
+			cancel()
+			<-errCh
+			die("timed out waiting for the expected condition")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	elapsed := time.Since(start)
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
+	}
+	return elapsed
+}
 
 func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {

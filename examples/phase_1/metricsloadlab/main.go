@@ -76,7 +76,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	const rows = 100
 	seed(ctx, wp, rows)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](200)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](200)
 	must(err)
 	pool, err := concurrency.NewWorkerPoolLimiter(10)
 	must(err)
@@ -132,7 +132,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	const rows = 60
 	seed(ctx, wp, rows)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](200)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](200)
 	must(err)
 	pool, err := concurrency.NewWorkerPoolLimiter(10)
 	must(err)

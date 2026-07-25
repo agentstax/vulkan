@@ -13,12 +13,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
@@ -94,7 +96,7 @@ func main() {
 	must(wp.Register(ctx))
 	seed(ctx, wp, 5)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](20)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](20)
 	must(err)
 	pool, err := concurrency.NewWorkerPoolLimiter(3)
 	must(err)
@@ -113,14 +115,15 @@ func main() {
 	// AbandonedRoutines' Counter/UpDownCounter/Histogram are synchronous
 	// instruments, unlike the QueueState ObservableGauges: they only produce
 	// a data point once actually recorded to, so a run that never abandons a
-	// goroutine would (correctly) never show them on a scrape. Message 1
-	// fails (ready exception), message 2 hangs past WorkTimeout (abandoned
-	// goroutine), the rest succeed.
+	// goroutine would (correctly) never show them on a scrape. Whichever
+	// message's goroutine wins the race to be call #1 fails (ready exception),
+	// #2 hangs past WorkTimeout (abandoned goroutine), the rest succeed -- N=3
+	// concurrent dispatch means call order no longer matches message id order,
+	// but this lab only checks that the instruments fired, not which id did it.
 	step("driving real consumer activity so every instrument -- including the synchronous ones -- has a data point")
-	calls := 0
-	must(wc.CursorClaim(ctx, func(ctx context.Context, work *common.Work) error {
-		calls++
-		switch calls {
+	var calls atomic.Int64
+	consumerFunc := func(ctx context.Context, work *common.Work) error {
+		switch n := calls.Add(1); n {
 		case 1:
 			return fmt.Errorf("artificial failure from -fail-rate")
 		case 2:
@@ -129,7 +132,12 @@ func main() {
 		default:
 			return nil
 		}
-	}))
+	}
+	runProcessUntil(ctx, wc, consumerFunc, 5*time.Second, func() bool {
+		snap, err := wc.Metrics.Snapshot(ctx)
+		must(err)
+		return calls.Load() == 5 && snap.QueueState.OpenLeases == 0
+	})
 
 	step("waiting for the abandoned goroutine to self-clear so its counters carry a real value")
 	deadline := time.Now().Add(5 * time.Second)
@@ -171,6 +179,32 @@ func main() {
 }
 
 // ---- helpers ----
+
+// runProcessUntil drives wc.Process in the background until condition
+// reports done (polled every 20ms), then cancels and waits for it to return.
+// Replaces the old CursorClaim's single-shot determinism now that claiming
+// and processing overlap concurrently instead of running one range at a time.
+func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Work], consumerFunc consumer.ConsumerFunc[common.Work], timeout time.Duration, done func() bool) time.Duration {
+	runCtx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- wc.Process(runCtx, consumerFunc) }()
+
+	start := time.Now()
+	for !done() {
+		if time.Since(start) > timeout {
+			cancel()
+			die(fmt.Sprintf("timed out waiting for the expected condition, Process returned: %v", <-errCh))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	elapsed := time.Since(start)
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
+	}
+	return elapsed
+}
 
 func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
 	for range n {

@@ -43,7 +43,7 @@ func main() {
 
 	const concurrencyLimit = 5
 
-	pressureQueue, err := concurrency.NewPressureQueue[consumer.MessageRow](concurrencyLimit * 10)
+	pressureQueue, err := concurrency.NewPressureQueue[consumer.Buffered](concurrencyLimit * 10)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

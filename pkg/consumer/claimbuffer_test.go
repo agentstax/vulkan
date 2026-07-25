@@ -41,7 +41,7 @@ func resolveSlot(state *rangeState, index int, kind outcomeKind, err string) {
 
 func newTestBuffer(t *testing.T, cap int) *claimBuffer {
 	t.Helper()
-	queue, err := concurrency.NewPressureQueue[buffered](cap)
+	queue, err := concurrency.NewPressureQueue[Buffered](cap)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -62,12 +62,8 @@ func TestClaimBuffer_AddTracksBeforeEnqueue(t *testing.T) {
 	buf := newTestBuffer(t, 3)
 	rng := testRange(testToken(1), 1, 2, 3)
 
-	commit, err := buf.Add(context.Background(), rng)
-	if err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if commit != nil {
-		t.Fatal("a non-empty range must not commit immediately")
 	}
 	if _, tracked := buf.ranges[rng.Lease.Token]; !tracked {
 		t.Fatal("range should be tracked after Add")
@@ -87,34 +83,24 @@ func TestClaimBuffer_AddMidEnqueueErrorLeavesRangeTracked(t *testing.T) {
 		cancel()
 	}()
 
-	commit, err := buf.Add(ctx, rng)
+	err := buf.Add(ctx, rng)
 	if err == nil {
 		t.Fatal("expected an error from the blocked EnQueue")
-	}
-	if commit != nil {
-		t.Fatal("expected no commit on error")
 	}
 	if _, tracked := buf.ranges[rng.Lease.Token]; !tracked {
 		t.Fatal("range must remain tracked after a mid-enqueue error")
 	}
 }
 
-// an empty range (every message compacted away) has nothing to dispatch, so
-// Add must hand back an immediate commit instead of tracking a range no
-// Resolve call will ever reach total for.
-func TestClaimBuffer_AddEmptyRangeCommitsImmediately(t *testing.T) {
+// an empty range (every message compacted away) has nothing to dispatch or
+// resolve -- Add rejects it, the caller (prefetch) is the one that commits
+// it directly instead of tracking a range no Resolve call could ever settle.
+func TestClaimBuffer_AddRejectsEmptyRange(t *testing.T) {
 	buf := newTestBuffer(t, 3)
 	rng := testRange(testToken(3)) // zero messages
 
-	commit, err := buf.Add(context.Background(), rng)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if commit == nil {
-		t.Fatal("expected an immediate commit for an empty range")
-	}
-	if commit.Lease.Token != rng.Lease.Token {
-		t.Fatalf("commit lease token = %v, want %v", commit.Lease.Token, rng.Lease.Token)
+	if err := buf.Add(context.Background(), rng); err == nil {
+		t.Fatal("expected an error for an empty range")
 	}
 	if _, tracked := buf.ranges[rng.Lease.Token]; tracked {
 		t.Fatal("an empty range must not be tracked")
@@ -124,7 +110,7 @@ func TestClaimBuffer_AddEmptyRangeCommitsImmediately(t *testing.T) {
 func TestClaimBuffer_WaitForNextAdvancesDispatched(t *testing.T) {
 	buf := newTestBuffer(t, 3)
 	rng := testRange(testToken(4), 1, 2, 3)
-	if _, err := buf.Add(context.Background(), rng); err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -154,7 +140,7 @@ func TestClaimBuffer_WaitForNextConcurrentDispatchCount(t *testing.T) {
 		ids[i] = int64(i + 1)
 	}
 	rng := testRange(testToken(5), ids...)
-	if _, err := buf.Add(context.Background(), rng); err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -176,8 +162,8 @@ func TestClaimBuffer_WaitForNextConcurrentDispatchCount(t *testing.T) {
 	}
 }
 
-// exactly one Resolve call among N concurrent ones for the last N distinct
-// slots of a range must receive the commit snapshot -- run under -race.
+// exactly one of N concurrent resolve-then-TryGetRangeSnapshot chains for a
+// range's N distinct slots must win the commit snapshot -- run under -race.
 func TestClaimBuffer_ResolveLastResolverCommitsExactlyOnce(t *testing.T) {
 	const n = 100
 	buf := newTestBuffer(t, n)
@@ -186,11 +172,11 @@ func TestClaimBuffer_ResolveLastResolverCommitsExactlyOnce(t *testing.T) {
 		ids[i] = int64(i + 1)
 	}
 	rng := testRange(testToken(6), ids...)
-	if _, err := buf.Add(context.Background(), rng); err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	items := make([]*buffered, n)
+	items := make([]*Buffered, n)
 	for i := range n {
 		item, err := buf.WaitForNext(context.Background())
 		if err != nil {
@@ -203,9 +189,13 @@ func TestClaimBuffer_ResolveLastResolverCommitsExactlyOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Add(1)
-		go func(item *buffered) {
+		go func(item *Buffered) {
 			defer wg.Done()
-			if commit := buf.ResolveSuccess(item); commit != nil {
+			buf.ResolveSuccess(item)
+			if !buf.IsRangeResolved(item.lease.Token) {
+				return
+			}
+			if _, err := buf.TryGetRangeSnapshot(item.lease.Token); err == nil {
 				commits.Add(1)
 			}
 		}(items[i])
@@ -227,11 +217,11 @@ func TestClaimBuffer_ResolveSlotExclusivity(t *testing.T) {
 		ids[i] = int64(i + 1)
 	}
 	rng := testRange(testToken(7), ids...)
-	if _, err := buf.Add(context.Background(), rng); err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	items := make([]*buffered, n)
+	items := make([]*Buffered, n)
 	for i := range n {
 		item, err := buf.WaitForNext(context.Background())
 		if err != nil {
@@ -240,22 +230,24 @@ func TestClaimBuffer_ResolveSlotExclusivity(t *testing.T) {
 		items[i] = item
 	}
 
-	var finalCommit atomic.Pointer[rangeCommit]
+	var finalCommit atomic.Pointer[rangeSnapshot]
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Add(1)
-		go func(item *buffered) {
+		go func(item *Buffered) {
 			defer wg.Done()
-			var commit *rangeCommit
 			switch item.index % 3 {
 			case 0:
-				commit = buf.ResolveSuccess(item)
+				buf.ResolveSuccess(item)
 			case 1:
-				commit = buf.ResolveException(item, errors.New("retryable"))
+				buf.ResolveException(item, errors.New("retryable"))
 			case 2:
-				commit = buf.ResolveTerminal(item, errors.New("bad payload"))
+				buf.ResolveTerminal(item, errors.New("bad payload"))
 			}
-			if commit != nil {
+			if !buf.IsRangeResolved(item.lease.Token) {
+				return
+			}
+			if commit, err := buf.TryGetRangeSnapshot(item.lease.Token); err == nil {
 				finalCommit.Store(commit)
 			}
 		}(items[i])
@@ -289,7 +281,7 @@ func TestClaimBuffer_ResolveSlotExclusivity(t *testing.T) {
 func TestClaimBuffer_ResolveAfterRemoveIsFenced(t *testing.T) {
 	buf := newTestBuffer(t, 1)
 	rng := testRange(testToken(8), 1)
-	if _, err := buf.Add(context.Background(), rng); err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	item, err := buf.WaitForNext(context.Background())
@@ -299,15 +291,19 @@ func TestClaimBuffer_ResolveAfterRemoveIsFenced(t *testing.T) {
 
 	buf.Remove(rng.Lease.Token)
 
-	if commit := buf.ResolveSuccess(item); commit != nil {
-		t.Fatal("expected a fenced no-op after Remove")
+	buf.ResolveSuccess(item) // fenced no-op
+	if buf.IsRangeResolved(item.lease.Token) {
+		t.Fatal("expected IsRangeResolved false after Remove")
+	}
+	if _, err := buf.TryGetRangeSnapshot(item.lease.Token); !errors.Is(err, errRangeNotTracked) {
+		t.Fatalf("err = %v, want errRangeNotTracked after Remove", err)
 	}
 }
 
 func TestClaimBuffer_ResolveAfterRemoveAllIsFenced(t *testing.T) {
 	buf := newTestBuffer(t, 1)
 	rng := testRange(testToken(9), 1)
-	if _, err := buf.Add(context.Background(), rng); err != nil {
+	if err := buf.Add(context.Background(), rng); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	item, err := buf.WaitForNext(context.Background())
@@ -320,8 +316,42 @@ func TestClaimBuffer_ResolveAfterRemoveAllIsFenced(t *testing.T) {
 		t.Fatalf("RemoveAll returned %d ranges, want 1", len(removed))
 	}
 
-	if commit := buf.ResolveSuccess(item); commit != nil {
-		t.Fatal("expected a fenced no-op after RemoveAll")
+	buf.ResolveSuccess(item) // fenced no-op
+	if buf.IsRangeResolved(item.lease.Token) {
+		t.Fatal("expected IsRangeResolved false after RemoveAll")
+	}
+	if _, err := buf.TryGetRangeSnapshot(item.lease.Token); !errors.Is(err, errRangeNotTracked) {
+		t.Fatalf("err = %v, want errRangeNotTracked after RemoveAll", err)
+	}
+}
+
+// a premature TryGetRangeSnapshot (range not fully resolved) must error
+// WITHOUT consuming commit ownership -- the real final resolver still gets
+// the snapshot afterward.
+func TestClaimBuffer_TryGetRangeSnapshotBeforeResolvedDoesNotBurnCommit(t *testing.T) {
+	buf := newTestBuffer(t, 2)
+	rng := testRange(testToken(13), 1, 2)
+	if err := buf.Add(context.Background(), rng); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	first, err := buf.WaitForNext(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second, err := buf.WaitForNext(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	buf.ResolveSuccess(first)
+	if _, err := buf.TryGetRangeSnapshot(rng.Lease.Token); !errors.Is(err, errRangeNotResolved) {
+		t.Fatalf("err = %v, want errRangeNotResolved for a half-resolved range", err)
+	}
+
+	buf.ResolveSuccess(second)
+	snapshot, err := buf.TryGetRangeSnapshot(rng.Lease.Token)
+	if err != nil || snapshot == nil {
+		t.Fatalf("the final resolver must still get the snapshot, got (%v, %v)", snapshot, err)
 	}
 }
 
@@ -337,7 +367,7 @@ func TestClaimBuffer_RemoveAllExactlyOnce(t *testing.T) {
 	tokens := []pgtype.UUID{testToken(10), testToken(11), testToken(12)}
 	for i, tok := range tokens {
 		rng := testRange(tok, int64(i)+1)
-		if _, err := buf.Add(context.Background(), rng); err != nil {
+		if err := buf.Add(context.Background(), rng); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}

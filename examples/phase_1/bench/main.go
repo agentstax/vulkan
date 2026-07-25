@@ -45,7 +45,7 @@ func main() {
 
 	// buffer stays shallow but must be >= batch (validate) and big enough to keep the pool fed
 	bufferSize := batch + conc
-	pressureQueue, err := concurrency.NewPressureQueue[consumer.MessageRow](bufferSize)
+	pressureQueue, err := concurrency.NewPressureQueue[consumer.Buffered](bufferSize)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

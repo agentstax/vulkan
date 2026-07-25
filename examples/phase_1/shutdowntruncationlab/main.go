@@ -1,5 +1,10 @@
 package main
 
+// BROKEN pending CloseOpenRanges: this lab drives CursorClaim directly to
+// deterministically interrupt mid-range, but CursorClaim is gone -- buffered
+// dispatch moved partial-commit-on-shutdown into CloseOpenRanges, which
+// doesn't exist yet. Rewrite this lab once that lands.
+//
 // Phase 9 lab: graceful-shutdown lease truncation.
 //
 // CursorClaim's per-message loop now checks ctx.Done() between messages (not
@@ -79,7 +84,7 @@ func main() {
 	must(cd.UpsertCursor(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
-	queue, err := concurrency.NewPressureQueue[consumer.MessageRow](10)
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
 	must(err)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)

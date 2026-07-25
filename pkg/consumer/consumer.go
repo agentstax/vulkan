@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
@@ -15,6 +16,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -24,7 +26,6 @@ type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
 // TODO - abstract lifecycle funcs like startup -> pull(poll) -> shutdown into a Lifecycle struct with overridable values
 type MessageConsumer[Message any] struct {
 	Topic       *topic.Topic // resolved by Register from the name given to NewMessageConsumer
-	Queue       concurrency.Queue[MessageRow]
 	PoolLimiter concurrency.PoolLimiter
 	Datastore   *ConsumerDatastore[Message]
 	Metrics     *metrics.ConsumerMetrics // resolved by Register alongside Topic
@@ -34,12 +35,13 @@ type MessageConsumer[Message any] struct {
 	consumerGroup  string
 	topicName      string
 	topicDatastore *topic.TopicDatastore
+	buffer         *claimBuffer    // wraps the queue given to NewMessageConsumer -- nothing outside processCursor needs the raw queue
 	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[MessageRow], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
+func NewMessageConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *MessageConsumerConfig) (*MessageConsumer[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -80,15 +82,20 @@ func NewMessageConsumer[Message any](consumerGroup string, topicName string, que
 		return nil, err
 	}
 
+	buffer, err := NewClaimBuffer(queue)
+	if err != nil {
+		return nil, err
+	}
+
 	consumer := &MessageConsumer[Message]{
 		consumerGroup:  consumerGroup,
 		topicName:      topicName,
-		Queue:          queue,
 		PoolLimiter:    poolLimiter,
 		Datastore:      consumerDatastore,
 		Config:         cfg,
 		Logger:         cfg.Logger,
 		topicDatastore: topicDatastore,
+		buffer:         buffer,
 	}
 
 	return consumer, nil
@@ -301,6 +308,17 @@ func (p *MessageConsumer[Message]) RollWaterline(ctx context.Context) error {
 }
 
 func (p *MessageConsumer[Message]) Process(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
+	switch p.Config.Type {
+	case CURSOR:
+		return p.processCursor(ctx, consumerFunc)
+	case LIFECYCLE:
+		return p.processLifecycle(ctx, consumerFunc)
+	default:
+		return errors.New("invalid consumer type")
+	}
+}
+
+func (p *MessageConsumer[Message]) processLifecycle(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
 	ticker := time.NewTicker(p.Config.ClaimPollRate)
 	defer ticker.Stop()
 
@@ -309,71 +327,155 @@ func (p *MessageConsumer[Message]) Process(ctx context.Context, consumerFunc Con
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			switch p.Config.Type {
-			case CURSOR:
-				if err := p.CursorClaim(ctx, consumerFunc); err != nil {
-					return err
-				}
-			case LIFECYCLE:
-				if err := p.LifecycleClaim(ctx, consumerFunc); err != nil {
-					return err
-				}
-			default:
-				return errors.New("invalid consumer type")
+			if err := p.LifecycleClaim(ctx, consumerFunc); err != nil {
+				return err
 			}
-
 		}
 	}
 }
 
-func (p *MessageConsumer[Message]) CursorClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	// leaseDuration should always have extra buffer to not potentially overlap with another worker reclaiming (double processing)
-	leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
+// processCursor has a fill side (prefetch) and a spend side (dispatch) running concurrently.
+// This allows the claim's network round trip to overlap whatever is being processed.
+func (p *MessageConsumer[Message]) processCursor(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
+	// tracks in-flight goroutines independently of ctx, so a shutdown can
+	// wait out stragglers instead of abandoning them the instant ctx cancels.
+	var wg sync.WaitGroup
 
-	claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, p.Config.BatchLimit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return p.prefetch(gCtx)
+	})
+	g.Go(func() error {
+		return p.dispatch(gCtx, &wg, consumerFunc)
+	})
+
+	// TODO: shutdown doesn't yet drain in-flight work or settle open ranges
+	// before returning -- both ride out ordinary lease expiry for now.
+	return g.Wait()
+}
+
+// prefetch claims ranges and feeds their messages into p.buffer.
+func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
+	for {
+		// blocks until there's room for a full batch, or the debounce timeout
+		// elapses -- either way returns whatever room currently exists.
+		room, err := p.buffer.WaitForRoom(ctx, p.Config.ClaimPollRate, p.Config.BatchLimit)
+		if err != nil {
+			return err
+		}
+		if room == 0 {
+			continue
+		}
+
+		// leaseDuration should always have an extra time buffer (QueueMargin) to not
+		// potentially overlap with another worker reclaiming (double processing)
+		leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
+		limit := min(room, p.Config.BatchLimit)
+
+		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
+		if err != nil {
+			// ctx cancellation is a real shutdown -> propagate and stop
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			// potential db blip -- back off instead of hot-looping the claim
+			if err := SleepWithContext(ctx, p.Config.ClaimPollRate); err != nil {
+				return err
+			}
+			continue
+		}
+		if claimed == nil {
+			// caught up -- nothing to reclaim or claim
+			if err := SleepWithContext(ctx, p.Config.ClaimPollRate); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if len(claimed.Messages) == 0 {
+			// every message in the range compacted away -- nothing to dispatch or
+			// resolve, so commit it directly to immediately move on
+			p.commitRange(ctx, newRangeSnapshot(claimed.Lease, nil, nil))
+			continue
+		}
+		if err := p.buffer.Add(ctx, claimed); err != nil {
+			return err
+		}
+	}
+}
+
+// dispatch drains p.buffer across PoolLimiter's N concurrent processors
+func (p *MessageConsumer[Message]) dispatch(ctx context.Context, wg *sync.WaitGroup, consumerFunc ConsumerFunc[Message]) error {
+	for {
+		owner, err := uuid.NewV7()
+		if err != nil {
+			return err // something is very wrong if this happens
+		}
+
+		if err := p.PoolLimiter.WaitForPermit(ctx, owner.String()); err != nil {
+			return err // ctx cancelled -- shutdown
+		}
+
+		item, err := p.buffer.WaitForNext(ctx)
+		if err != nil {
+			p.PoolLimiter.ReleasePermit(ctx, owner.String()) // best effort
+			return err                                       // ctx cancelled -- shutdown
+		}
+
+		wg.Go(func() {
+			defer p.PoolLimiter.ReleasePermit(ctx, owner.String())
+			p.processClaim(ctx, item, consumerFunc)
+		})
+	}
+}
+
+// processClaim runs consumerFunc for one dispatched message and folds the outcome into p.buffer.
+func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffered, consumerFunc ConsumerFunc[Message]) {
+	// sat in the queue too long to safely start -- surrendering the whole
+	// range beats risking a lease overrun (another worker reclaiming the
+	// same range while this message is still being worked).
+	if item.lease.Until.Before(time.Now().Add(p.Config.WorkTimeout).Add(p.Config.AckMargin)) {
+		p.buffer.MarkStale(item.lease.Token)
+		return
+	}
+
+	var work Message
+	if err := json.Unmarshal(item.row.Payload, &work); err != nil {
+		// bad payload will never deserialize -- no point retrying it
+		p.buffer.ResolveTerminal(item, err)
+	} else if err := p.callSafely(ctx, consumerFunc, &work, item.row.Id, 0); err != nil {
+		p.buffer.ResolveException(item, err)
+	} else {
+		p.buffer.ResolveSuccess(item)
+	}
+
+	// is the entire range full of messages resolve
+	// ie was this item the final message to be processed in the range
+	if !p.buffer.IsRangeResolved(item.lease.Token) {
+		return
+	}
+	snapshot, err := p.buffer.TryGetRangeSnapshot(item.lease.Token)
 	if err != nil {
-		return err
+		return // another resolver or shutdown owns the commit
 	}
-	if claimed == nil {
-		return nil // nothing to reclaim or claim -- caught up
-	}
+	p.commitRange(ctx, snapshot)
+}
 
-	var exceptions []MessageException
-	var terminals []MessageTerminal
-	lastProcessed := claimed.Lease.Low // partial commit stays at Low if interrupted before any message is reached
-
-	for _, message := range claimed.Messages {
-		if ctx.Err() != nil {
-			// graceful shutdown mid-range -- stop taking on new messages.
-			// everything up to lastProcessed is already resolved below.
-			return p.CursorPartialCommit(ctx, lastProcessed, claimed, exceptions, terminals)
-		}
-
-		lastProcessed = message.Id
-
-		var work Message
-		if err := json.Unmarshal(message.Payload, &work); err != nil {
-			// bad payload will never deserialize -- no point retrying it
-			terminals = append(terminals, MessageTerminal{MessageId: message.Id, Err: err.Error()})
-			continue
-		}
-
-		if err := p.callSafely(ctx, consumerFunc, &work, message.Id, 0); err != nil {
-			exceptions = append(exceptions, MessageException{MessageId: message.Id, Err: err.Error()})
-			continue
-		}
-	}
-
+// commitRange finalizes a range once every message has resolved in it
+func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
 	// range always frees -- the lazy roller (RollWaterline) advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	if err := p.Datastore.Commit(ctx, p.Topic.Id, p.consumerGroup, claimed.Lease.Token, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
-		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", claimed.Lease.Low, "high", claimed.Lease.High)
-			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
-		}
-		return err
+	err := p.Datastore.Commit(ctx, p.Topic.Id, p.consumerGroup, commit.Lease.Token, commit.Exceptions, commit.Terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog)
+	switch {
+	case err == nil:
+		p.buffer.Remove(commit.Lease.Token)
+	case errors.Is(err, ErrLeaseLost):
+		p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
+		p.buffer.Remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
+	default:
+		// stays tracked -- CloseOpenRanges retries it on the way out
+		p.Logger.WarnContext(ctx, "commit failed, range stays open for a retry at shutdown", "group", p.consumerGroup, "topic", p.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High, "err", err)
 	}
-	return nil
 }
 
 func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, claimed *ClaimedRange, exceptions []MessageException, terminals []MessageTerminal) error {

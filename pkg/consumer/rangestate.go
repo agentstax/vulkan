@@ -1,6 +1,14 @@
 package consumer
 
-import "sync/atomic"
+import (
+	"errors"
+	"sync/atomic"
+)
+
+var (
+	errRangeNotResolved = errors.New("range not fully resolved")
+	errSnapshotTaken    = errors.New("snapshot already taken by another resolver")
+)
 
 type outcomeKind int
 
@@ -31,16 +39,15 @@ func (s *slot) resolve(kind outcomeKind, err string) {
 	s.done.Store(true)
 }
 
-// Snapshot Add/Resolve hand back when a range is ready to commit -- a copy,
-// not a live *rangeState, so holding it past a later Remove() can't race.
-type rangeCommit struct {
+// a copy, not a live *rangeState -- holding it past a later Remove() can't race.
+type rangeSnapshot struct {
 	Lease      LeaseRow
 	Exceptions []MessageException
 	Terminals  []MessageTerminal
 }
 
-func newRangeCommit(lease LeaseRow, exceptions []MessageException, terminals []MessageTerminal) *rangeCommit {
-	return &rangeCommit{Lease: lease, Exceptions: exceptions, Terminals: terminals}
+func newRangeSnapshot(lease LeaseRow, exceptions []MessageException, terminals []MessageTerminal) *rangeSnapshot {
+	return &rangeSnapshot{Lease: lease, Exceptions: exceptions, Terminals: terminals}
 }
 
 // mutable bookkeeping for one claimed range, lives only inside
@@ -53,7 +60,8 @@ type rangeState struct {
 	total int
 
 	dispatched atomic.Int64 // count handed out by WaitForNext
-	resolved   atomic.Int64 // resolved.Add(1)'s return value is unique per caller -- whoever sees it hit total is the sole committer
+	resolved   atomic.Int64 // resolved==total means every slot is done
+	committed  atomic.Bool  // TryGetSnapshot's one-shot CAS
 	stale      atomic.Bool
 	results    []slot
 }
@@ -75,6 +83,30 @@ func newRangeState(claimed *ClaimedRange) *rangeState {
 
 func (r *rangeState) neverDispatched() bool {
 	return r.dispatched.Load() == 0
+}
+
+func (r *rangeState) resolve(index int, kind outcomeKind, err string) {
+	r.results[index].resolve(kind, err)
+	r.resolved.Add(1)
+}
+
+// isResolved returns true when all messages in range have been tracked / resolved.
+func (r *rangeState) isResolved() bool {
+	return r.resolved.Load() == int64(r.total)
+}
+
+// TryGetSnapshot hands the snapshot to exactly one caller: isResolved is
+// checked BEFORE the CAS so a premature call can't burn snapshot ownership.
+func (r *rangeState) TryGetSnapshot() (*rangeSnapshot, error) {
+	if !r.isResolved() {
+		return nil, errRangeNotResolved
+	}
+	if !r.committed.CompareAndSwap(false, true) {
+		return nil, errSnapshotTaken
+	}
+
+	exceptions, terminals := r.resolvedExceptionsTerminals()
+	return newRangeSnapshot(r.lease, exceptions, terminals), nil
 }
 
 // traverse results from index 0, stopping at the first unresolved slot, so the
