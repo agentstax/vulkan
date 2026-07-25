@@ -61,3 +61,9 @@ see if our new Querier interface could be used to make stronger contracts with i
 Need to consider how in the case where janitor is not fast enough to create a new partition and there are many concurrent partitions. The instance one producers hits the retry create new partitions point it is likely many producers will hit the exact same and potentially spam the database with the same request. The question is, is that okay can postgres handle that or do we need a way to have a blocking single request and other instances or producer waits for it to complete
 
 lab binaries should be produced into a /bin folder that it .gitignored except for a .gitkeep
+
+Consider creating a DefaultProducer and DefaultConsumer for easier quickstarts which has comments and maybe a log statement recommending not to use in prod
+
+refactor out queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter from consumer
+
+need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
