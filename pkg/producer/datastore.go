@@ -23,11 +23,11 @@ type producerDatastore[Message any] struct {
 	Retry     *retry.DatastoreRetry // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger    logger.Logger
 
-	cfg MessageProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
+	cfg ProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 
-// cfg is already resolved (WithDefaults + Validate) by NewMessageProducer.
-func newProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *MessageProducerConfig) (*producerDatastore[Message], error) {
+// cfg is already resolved (WithDefaults + Validate) by NewProducer.
+func newProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*producerDatastore[Message], error) {
 	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err

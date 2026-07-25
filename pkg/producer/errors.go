@@ -12,4 +12,4 @@ Pass your application's shutdown context:
 
 Or declare a short-lived producer fire-and-forget:
 
-    &producer.MessageProducerConfig{DisableGracefulShutdown: true}`
+    &producer.ProducerConfig{DisableGracefulShutdown: true}`

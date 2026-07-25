@@ -51,8 +51,8 @@ type ProduceOptions struct {
 	IdempotencyKey uuid.UUID
 }
 
-type MessageProducer[Message any] struct {
-	Topic *topic.Topic // resolved by Register from the name given to NewMessageProducer
+type Producer[Message any] struct {
+	Topic *topic.Topic // resolved by Register from the name given to NewProducer
 
 	topicName      string
 	datastore      *producerDatastore[Message]
@@ -63,7 +63,7 @@ type MessageProducer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageProducer[Message any](topicName string, ds *coredatastore.PostgresDatastore, cfg *MessageProducerConfig) (*MessageProducer[Message], error) {
+func NewProducer[Message any](topicName string, ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -71,7 +71,7 @@ func NewMessageProducer[Message any](topicName string, ds *coredatastore.Postgre
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &MessageProducerConfig{}
+		cfg = &ProducerConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -87,7 +87,7 @@ func NewMessageProducer[Message any](topicName string, ds *coredatastore.Postgre
 		return nil, err
 	}
 
-	return &MessageProducer[Message]{
+	return &Producer[Message]{
 		topicName:      topicName,
 		datastore:      producerDatastore,
 		topicDatastore: topicDatastore,
@@ -97,13 +97,13 @@ func NewMessageProducer[Message any](topicName string, ds *coredatastore.Postgre
 // Register resolves this producer's topic by name against the live topic row
 // and starts the producer's lifecycle.
 //
-// ctx must be cancellable, unless MessageProducerConfig.DisableGracefulShutdown
+// ctx must be cancellable, unless ProducerConfig.DisableGracefulShutdown
 // declares otherwise.
-func (p *MessageProducer[Message]) Register(ctx context.Context) error {
+func (p *Producer[Message]) Register(ctx context.Context) error {
 	// registration is once per instance
 	if p.lifecycleCtx != nil {
 		if p.lifecycleCtx.Err() != nil {
-			return fmt.Errorf("%w: producer for topic %q is wound down and stays down; construct a new MessageProducer to produce again", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
+			return fmt.Errorf("%w: producer for topic %q is wound down and stays down; construct a new Producer to produce again", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
 		}
 		return fmt.Errorf("%w: producer for topic %q -- the context from the first Register still owns this producer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
 	}
@@ -144,7 +144,7 @@ func (p *MessageProducer[Message]) Register(ctx context.Context) error {
 // its batch, so the outcome is ambiguous. To retry across that ambiguity
 // (or your own crash) without double-publishing, supply an IdempotencyKey:
 // the rerun dedups against whatever actually landed.
-func (p *MessageProducer[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
+func (p *Producer[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (p *MessageProducer[Message]) Produce(ctx context.Context, message *Message
 
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
-func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+func (p *Producer[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (p *MessageProducer[Message]) ProduceFunc(ctx context.Context, producerFunc
 // effectively takes a lock on consumer progress for the whole topic: claims
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
-func (p *MessageProducer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+func (p *Producer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, tra
 
 // lifecycleErr is the produce gate: work is only accepted between Register
 // and its ctx's cancellation.
-func (p *MessageProducer[Message]) lifecycleErr() error {
+func (p *Producer[Message]) lifecycleErr() error {
 	if p.lifecycleCtx == nil {
 		return fmt.Errorf("%w: producer for topic %q -- call Register with the application's lifetime context before producing", vulkanerrors.ErrNotRegistered, p.topicName)
 	}

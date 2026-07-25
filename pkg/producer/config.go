@@ -9,7 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-type MessageProducerConfig struct {
+type ProducerConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Retry  *retry.Policy // Default: retry.NewDefaultRetryPolicy().
 
@@ -39,7 +39,7 @@ type MessageProducerConfig struct {
 	DisableGracefulShutdown bool
 }
 
-func (c *MessageProducerConfig) WithDefaults() *MessageProducerConfig {
+func (c *ProducerConfig) WithDefaults() *ProducerConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -61,7 +61,7 @@ func (c *MessageProducerConfig) WithDefaults() *MessageProducerConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *MessageProducerConfig) Validate() error {
+func (c *ProducerConfig) Validate() error {
 	if c.BatchMaxSize < 1 {
 		return fmt.Errorf("BatchMaxSize must be >= 1, got %d", c.BatchMaxSize)
 	}
