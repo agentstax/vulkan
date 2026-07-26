@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap, janitor efficiency/concurrency (opt-out + multi-janitor contention); buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all three measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -4360,12 +4360,14 @@ sequenced after both of these close.*
       Postgres settings (e.g. query max_locks_per_transaction and derive a
       real partition-count ceiling), or per-deployment config; v1 scope
       stays the two measured triggers, not a general-purpose rule engine.
-      Natural home is pkg/topic's janitor loop, which already runs
-      periodically per topic; the presence design (13d) is the substrate
-      that would let an alert say "destroy blocked: producer X seen 2s
-      ago" instead of a bare threshold.
-      Need to also consider having duty specific metrics now that they can
-      live seperately.
+      Natural home is the maintenance tier's janitor duty, which already
+      runs periodically per topic; the presence design (13d) is the
+      substrate that would let an alert say "destroy blocked: producer X
+      seen 2s ago" instead of a bare threshold.
+      Duty HEALTH metrics now exist (`pkg/maintain/metrics` `DutyState`:
+      overdue count by duty kind + oldest gate age); still open whether
+      duties should also emit WORK metrics (partitions dropped, rows swept,
+      roll distance) now that they run separately from consumers.
 - [ ] **`cmd/vulkan` connection gap** (folded from the admin-surface entry):
       `datastore.PostgresConnectionConfig` has no sslmode /
       DSN-query-param field — it's User/Pass/Host/Port/Database/MaxConns
@@ -4378,39 +4380,72 @@ sequenced after both of these close.*
       Postgres; the fix is a small pkg/datastore field add (an explicit
       sslmode field or a passthrough param map, NOT a redesign) the first
       time someone points the CLI at a database that needs it.
-- [ ] **Janitor efficiency and concurrency** (folded from TODO.md). Consider
-      allowing parts of the janitor process to be opt-out, so users can
-      disable it in-consumer and run it directly in a separate process —
-      for better scaling and separation of concerns. Needs real thought:
-      boundaries depend on each other, so what happens if the janitor is
-      "down" in an opt-out world?
-      - **IMPORTANT — the multi-janitor contention question.** Think through
-        the consequences of many workers/consumers all running janitor
-        processes and how to prevent overloading or lock contention,
-        ideally without leader election. Possibly reuse the lease-ownership
-        concept: each janitor instance fights for a lease when work is
-        available via `can_run_after`. Janitors should have jitter in their
-        poll. One concern is sporadic, random load distribution across
-        janitor instances in terms of CPU/mem — opting out of the
-        in-consumer janitor process could resolve that.
-      - **This isn't hypothetical — it's true today with zero opt-in.**
-        Finding from the Phase 13 config-placement review: `Janitor()` runs
-        once per `MessageConsumer` instance, i.e. once per consumer GROUP
-        process — but every one of its four operations
-        (`EnsureNextPartition`, `DropExpiredPartitions`,
-        `SweepExpiredPartitions`, `SweepExpiredIdempotencyKeys`) is purely
-        topicID-scoped, no `consumerGroup` param anywhere in any of their
-        signatures. So N consumer groups reading one topic today already
-        means N redundant janitor loops independently hammering the same
-        partitions/idempotency_key rows — true before any opt-out design
-        exists, just currently invisible because
-        `JanitorPollRate`/`PartitionSafetyBuffer`/`JanitorSweepBatchSize`
-        now live on `topic.Config` (so at least the N loops agree on the
-        same values — doesn't stop there being N of them). Whatever
-        opt-out/scaling design lands here should also settle who actually
-        OWNS running the janitor for a topic — today's answer ("whichever
-        consumer group processes happen to be up") was never a deliberate
-        choice, just where the loop happened to get wired in.
+- [x] **Janitor efficiency and concurrency** (folded from TODO.md). Built as
+      the MAINTENANCE TIER. Both questions the bullet raised got answers, and
+      neither answer is an opt-out flag:
+      - **The split is the user-code fault line, not opt-out flags.** The
+        consumer's five background loops divide on whether they need
+        `consumerFunc`: work loops (message processing, exception drain)
+        stay per-instance and lease-coordinated; the maintenance loops (the
+        four janitor ops + the waterline roll, which needs no user code
+        either) became claimable DUTIES that anyone can run. Composition
+        replaced flags: `Consumer` is the batteries-included default
+        (`MessageConsumer`/`ExceptionConsumer` are the bare pieces;
+        `Producer` renamed to match), and `pkg/maintain` runs duties without
+        a consumer at all — `Janitor`/`WaterlineRoller` pinned standalone,
+        `Maintainer(duties...)` orchestrating a set, `FleetMaintainer`
+        discovering and running every duty in the deployment (the
+        separate-process story: `vulkan maintain run`, SIGTERM-clean;
+        `vulkan maintain status` for eyes on it).
+      - **Multi-janitor contention → the `maintenance` state table** —
+        exactly the lease-ownership reuse the bullet guessed at.
+        `(duty, topic_id, consumer_group, can_run_after, token)`, one row
+        per duty: 'janitor' per topic, 'waterline' per (topic, group).
+        A claim is one conditional UPDATE gating on `can_run_after <= now()`
+        (DB `now()` on both sides, never client time) that pushes the gate
+        one rate ahead and rotates the fencing `token` — one winner per
+        interval, losers cost one no-op UPDATE, no leader election. While
+        work runs, a heartbeat renews the gate every rate/2 fencing on the
+        token (`ErrDutyLost` cancels the work; an overrunning ex-owner
+        discovers it lost at its next renew). Errors KEEP the claim — the
+        future gate is the retry backoff, so N replicas can't storm a
+        failing duty. Ticks are jittered (first tick included — k8s rollouts
+        start replicas in phase). The claim row is an efficiency layer, not
+        a correctness layer: every op stays idempotent/concurrent-safe, so
+        overlap after a stalled winner is harmless. Sporadic-load worry:
+        winners rotate per interval by design; pinning load somewhere
+        deliberate is what `FleetMaintainer` + no bundled duties is for.
+      - **Ownership settled by seeding, not by accident.** The duty rows ARE
+        the answer to "who owns the janitor": `RegisterTopic` seeds
+        'janitor', `UpsertCursor` seeds 'waterline' (a cursor must never
+        exist without one), `DestroyTopic` deletes them — and whoever holds
+        the claim this interval does the work, whether that's a bundled
+        `Consumer`, a pinned duty, or the fleet daemon. The four janitor ops
+        + `AdvanceWaterline` moved off `ConsumerDatastore` (~480 lines) into
+        maintain's own datastore; `WaterlinePollRate` moved to
+        `topic.Config` beside the other janitor knobs, so every runner
+        agrees on rates AND there's only one effective runner per interval.
+        Partition DDL takes a 2s `SET LOCAL lock_timeout` — a stuck AEL on
+        the log parent queues all topic traffic, so fail the pass fast and
+        let the kept claim wait out the interval.
+      - **What's watching the watchers: metrics + CLI, not an in-process
+        monitor.** Deliberately NO overdue-duty watcher in any consumer
+        (consumers are dumb to duties) and none in the fleet either —
+        gate-watching only detects the nobody-claims mode, whose effects the
+        QueueState gauges already surface. Instead: `pkg/maintain/metrics`
+        `DutyState` (fleet-wide `overdue_duties`/`oldest_gate_age` gauges +
+        `Snapshot` for exporter-less readers, overdue = gate trailing now()
+        by >10x the duty's own rate), `vulkan maintain status` as the
+        diagnosis surface, and one heartbeat-side WARN for the only failure
+        the heartbeat alone can see: work still running after ~10 rates
+        ("possibly hung") while its renewals keep the gate perpetually
+        fresh.
+      - **Proved by `maintenancelab`** (`just maintenance-lab`): counts duty
+        EXECUTIONS as fencing-token rotations (renews don't rotate) — three
+        consumers on a 1s-rate topic produce ~9 executions per duty per 10s,
+        not ~30; kill two and the survivor carries both duties within an
+        interval; kill the last and rotations stop; waterline reached head
+        and the create-ahead partition exists.
 - [x] **Buffered claim + N-processor dispatch (CURSOR path only).** Absorbed
       from Phase 12's `Queue`/`PoolLimiter` bullet. Landed largely as
       designed below, with one reversal found while building: `Queue`/

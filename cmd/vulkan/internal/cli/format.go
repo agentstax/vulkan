@@ -24,58 +24,6 @@ func commaInt(n int64) string {
 	return neg + string(out)
 }
 
-// compactDuration is the list-column form: "720h", "1h", "5s" -- collapse to the
-// coarsest whole unit, fall back to Go's duration string for odd values.
-func compactDuration(d time.Duration) string {
-	switch {
-	case d == 0:
-		return "0s"
-	case d%time.Hour == 0:
-		return fmt.Sprintf("%dh", d/time.Hour)
-	case d%time.Minute == 0:
-		return fmt.Sprintf("%dm", d/time.Minute)
-	default:
-		return d.String()
-	}
-}
-
-// dayParenthetical adds " (30d)" when a duration is a whole number of days.
-func dayParenthetical(d time.Duration) string {
-	const day = 24 * time.Hour
-	if d > 0 && d%day == 0 {
-		return fmt.Sprintf(" (%dd)", d/day)
-	}
-	return ""
-}
-
-// retentionCell is the list RETENTION column: "forever" for keep-indefinitely,
-// else the compact form plus a day parenthetical.
-func retentionCell(d time.Duration) string {
-	if d == 0 {
-		return "forever"
-	}
-	return compactDuration(d) + dayParenthetical(d)
-}
-
-// retentionDetail is the get form: raw Go duration string ("720h0m0s"), or
-// "forever" for keep-indefinitely.
-func retentionDetail(d time.Duration) string {
-	if d == 0 {
-		return "forever"
-	}
-	return d.String()
-}
-
-// gateAgeCell renders now() - can_run_after for the duty table: negative while
-// a claim holds the gate in the future, positive once the duty sits eligible.
-// Sub-second ages keep millisecond detail; anything larger rounds to seconds.
-func gateAgeCell(d time.Duration) string {
-	if d.Abs() < time.Second {
-		return d.Round(time.Millisecond).String()
-	}
-	return d.Round(time.Second).String()
-}
-
 // timeCell renders a topic timestamp (created/updated) for the list/get views,
 // to the minute, in whatever zone the driver returns it in.
 func timeCell(t time.Time) string {

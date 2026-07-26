@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/maintain/metrics"
@@ -86,4 +87,29 @@ func printDutiesTable(w io.Writer, duties []metrics.DutyStatus) {
 		noun = "duty"
 	}
 	fmt.Fprintf(w, "\n%d %s, %d overdue\n", len(duties), noun, overdue)
+}
+
+// compactDuration is the RATE cell: "720h", "1h", "5s" -- collapse to the
+// coarsest whole unit, fall back to Go's duration string for odd values.
+func compactDuration(d time.Duration) string {
+	switch {
+	case d == 0:
+		return "0s"
+	case d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d%time.Minute == 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	default:
+		return d.String()
+	}
+}
+
+// gateAgeCell renders now() - can_run_after for the duty table: negative while
+// a claim holds the gate in the future, positive once the duty sits eligible.
+// Sub-second ages keep millisecond detail; anything larger rounds to seconds.
+func gateAgeCell(d time.Duration) string {
+	if d.Abs() < time.Second {
+		return d.Round(time.Millisecond).String()
+	}
+	return d.Round(time.Second).String()
 }

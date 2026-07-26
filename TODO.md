@@ -34,8 +34,6 @@ A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor g
 
 Consider storing messages a binary data (maybe as an compressed option). Would prevent users from easily searching fields in db but could make for more efficent network requests and faster unmarshalling if we did something similar to protocol buffers (grpc). https://github.com/Apaezmx/pgproto
 
-Need to reconsider if an overdue duties watcher earns its place in defaulted Consumer
-
 ## BEFORE V1
 
 review / refine the comments in fanOut (pkg/consumer/datastore.go) -- both the Go
