@@ -4478,19 +4478,94 @@ sequenced after both of these close.*
       shorten retention), not a generic "raise your limits"; and be
       OVERRIDABLE per-check, for the user who made an informed call that a
       check doesn't apply (bigger max_locks_per_transaction, intentionally
-      short-lived topics). Open questions, deliberately not resolved
-      speculatively: delivery mechanism — log line, metric/gauge,
-      health-check endpoint, or an active check run on a janitor/Consume
-      tick? (pkg/logger and the otel `QueueState` gauges already exist —
-      reuse one, don't build a third extension point); where defaults
-      live — hardcoded thresholds, computed live from the user's actual
-      Postgres settings (e.g. query max_locks_per_transaction and derive a
-      real partition-count ceiling), or per-deployment config; v1 scope
-      stays the two measured triggers, not a general-purpose rule engine.
-      Natural home is the maintenance tier's janitor duty, which already
-      runs periodically per topic; the presence design (13d) is the
-      substrate that would let an alert say "destroy blocked: producer X
-      seen 2s ago" instead of a bare threshold.
+      short-lived topics). v1 scope stays the two measured triggers, not a
+      general-purpose rule engine.
+      DESIGN SETTLED 2026-07-26 (build open). Consumption is THREE LAYERS,
+      one per moment of the user's alert journey:
+      (1) WARN logs through the host's injected pkg/logger — the
+      zero-setup interrupt channel. Format is Postgres's own
+      MESSAGE/DETAIL/HINT triple (message = what + measured numbers,
+      detail = the mechanism, hint = the levers by name). Evaluation is
+      level-triggered, notification edge-triggered: log on the
+      inactive→firing transition, re-log at a long repeat interval while
+      it persists, always log resolved.
+      (2) Register-time findings: the checks run once at
+      producer/consumer Register (Sidekiq's boot-check pattern — the
+      process's most-watched moment), log-only, no claim, no topic write.
+      Covers every library user even when maintenance never runs.
+      (3) The `__system.advisories` topic (NATS advisories-as-messages):
+      alerts published as ordinary messages, inheriting delivery,
+      routing, retention, replay, and multi-consumer-group semantics for
+      free. This is the integration surface (a consumer group forwarding
+      to Slack/PagerDuty is ~20 lines of user code) and the CLI's
+      "what's firing now" read surface (compaction heads = current state).
+      The `Advisory` schema (pkg/advisory, user-facing — consumers decode
+      `MessageConsumer[advisory.Advisory]`): typed identity fields Name
+      ("partition_count"), EntityId (rename-proof machine identity,
+      schema_log's entity pattern, 0 = system), EntityName (human
+      handle), Status ("firing"|"resolved"), Severity ("warn"; "critical"
+      reserved — the field ships in v1 so the routing key never changes
+      shape); the prose triple Message/Detail/Hint; and two jsonb maps —
+      Data (measurements about the entity: the check's evidence) and
+      Metadata (context about the report itself: evaluator,
+      first_fired_at, repeat count). Placement test: about the subject →
+      Data, about the report → Metadata. GUARDRAIL: neither map ever
+      routes, keys, or dedups — a consumer branching on a map key for
+      delivery has rebuilt the rejected rule engine. Typed Value/Ceiling
+      numeric fields REJECTED: checks measure differently-shaped things
+      (one int vs three rates), jsonb's JSON numbers are doubles so int64
+      precision above 2^53 was false anyway, and numeric time-series
+      belong to the otel gauges — the advisory carries judgment +
+      explanation.
+      Routing key `advisory.<name>.<entity-name>.<severity>` — severity
+      LAST so the common binding is an ends-with match
+      (`advisory.*.critical`); known consequence: name-based bindings
+      silently stop matching after a topic rename (EntityId in the
+      payload is the durable handle). Compaction key `<name>/<entity-id>`
+      — firing→resolved are versions of one key, so the topic IS the
+      state store: current alert state = compaction heads, history = the
+      uncompacted log under ordinary retention. The retention interplay
+      works FOR us: resolved advisories age out of current state
+      naturally, while the repeat-interval re-fire re-produces firing
+      keys far inside any sane TTL — the human reminder and the state
+      keepalive are the same produce.
+      Evaluation: a NEW `advisor` duty kind (row per topic in
+      maintenance, claimable like janitor/waterline) — NOT a janitor
+      passenger: janitor ticks ~5s for create-ahead, checks want
+      minutes-to-hours, and the duty registry IS the gating clock;
+      janitor cleans, advisor watches. Edge-triggering is restart-proof:
+      the advisor reads its own alert key's compaction head, compares
+      status, produces only on transition or past the repeat interval —
+      the topic is its own dedup memory, and duty claiming already
+      guarantees one evaluator per topic. The advisor publishes through
+      the real `Producer[advisory.Advisory]` (maintain→producer imports
+      cleanly; hand-copying the compaction upsert would be the
+      lab-staleness trap in production code). Checks live in
+      pkg/advisory as pure functions (measurements in → *Advisory or nil
+      out), closed set, classify+switch, no plugin registry; the duty
+      wiring (advisor.go/advisor_duty.go mirroring janitor's file
+      pattern) lives in pkg/maintain.
+      Thresholds computed LIVE where possible (query
+      max_locks_per_transaction, derive the real partition ceiling —
+      honest for users who already raised it); warn thresholds sit well
+      before the cliff (Temporal's paired warn/fail pattern). Overrides
+      per check via sparse-struct config (disable / threshold override),
+      house style. `__system.` becomes the RESERVED topic-name prefix —
+      RegisterTopic rejects user names under it (first name validation
+      in admin); the advisories topic is created by RegisterSystem,
+      backfilled by MigrateSystem (a schema epoch bump), and gets
+      janitor/waterline/advisor duties like any topic. Who runs it: the
+      defaulted Consumer runs the maintenance tier, so most users get
+      the advisor without asking; docs cover the rest, plus the
+      Register-time layer and DutyState's overdue gauge (an unmanned
+      advisor duty is itself visible).
+      The presence design (13d) remains the substrate that would let an
+      alert say "destroy blocked: producer X seen 2s ago" instead of a
+      bare threshold.
+      Chunk plan: `~/.claude/plans/default-alerts-advisories.md` (5
+      chunks: pkg/advisory → reserved prefix + system topic → advisor
+      duty → Register-time findings → CLI + lab). Build PARKED — not
+      started yet, deliberately.
       Duty HEALTH metrics now exist (`pkg/maintain/metrics` `DutyState`:
       overdue count by duty kind + oldest gate age); still open whether
       duties should also emit WORK metrics (partitions dropped, rows swept,
@@ -4706,6 +4781,11 @@ sequencing rule) plus the internal-readability debt that rides along with
 it.*
 
 **Build:**
+- [ ] **Trimming down public surface** Consider trimming down public API
+      to just the main things necessary. For example exposing both 
+      DestroyTopic and DestoryTopicVersion can only lead to confusion.
+      Might be better consildate to just DestroyTopic with a version
+      option for those power users who care.
 - [ ] **`Message` generic vs. a `struct{}`-based shape** for
       producer/consumer — decide and document.
 - [ ] **Named-return-params for public functions** — decide the house style
@@ -4734,6 +4814,9 @@ it.*
       - Named/defined errors for users to `errors.Is` on, for convenience —
         decide how to structure that taxonomy (coordinates with the
         circuit breaker's `error_class` enum, Phase 16).
+- [ ] **Logging consistency and obsession** Logs should be informative and
+      actionable if required. They should be filterable / queryable. They
+      should be consistently structured and formatted.
 - [ ] **Config & options refinement** (folded from TODO.md). For the public
       API, abstract away required variables as plain params, keeping only
       truly optional params in the `Config` structs. `Config` structs
@@ -4741,8 +4824,9 @@ it.*
       obvious at the call site. Depending on what is decided could make it
       such that compaction_key and compaction_rank are required params in
       a single 'compaction' option to avoid validation
-- [] **Comment conventions and standardizations**. Public surfaces should follow
+- [ ] **Comment conventions and standardizations**. Public surfaces should follow
       a standard: description, defaults, errors, doc links
+- [ ] **Standardized SQL formatting**
 - [ ] **Maintenance-tier surface joins the review** — everything the
       maintenance tier exported postdates Phase 13's painstaking pass over
       producer/consumer/topic, so it hasn't had one: `pkg/maintain`

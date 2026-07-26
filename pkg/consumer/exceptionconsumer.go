@@ -9,17 +9,18 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // ExceptionConsumer is the bare exception drain: it periodically re-claims
 // the group's parked exceptions and retries each through consumerFunc.
 type ExceptionConsumer[Message any] struct {
-	consumerBase[Message]
+	*consumerBase[Message]
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExceptionConsumer[Message any](consumerGroup string, topicName string, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*ExceptionConsumer[Message], error) {
+func NewExceptionConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*ExceptionConsumer[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -35,7 +36,7 @@ func NewExceptionConsumer[Message any](consumerGroup string, topicName string, d
 		return nil, err
 	}
 
-	base, err := newConsumerBase[Message](consumerGroup, topicName, ds, cfg)
+	base, err := newConsumerBase[Message](consumerGroup, topicName, version, ds, cfg)
 	if err != nil {
 		return nil, err
 	}

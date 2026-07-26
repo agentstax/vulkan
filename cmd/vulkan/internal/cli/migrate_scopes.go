@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
 
@@ -151,7 +152,8 @@ func runScopeMigrate(ctx context.Context, mAdmin *admin.MessageAdmin, s scope, n
 	case scopeSystem:
 		return mAdmin.MigrateSystem(ctx, to)
 	case scopeTopic:
-		return mAdmin.MigrateTopic(ctx, name, to)
+		// version hardcoded until the --schema-version flag lands.
+		return mAdmin.MigrateTopic(ctx, name, topic.SchemaVersion(1), to)
 	default:
 		return mAdmin.MigrateTopics(ctx, to)
 	}

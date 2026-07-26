@@ -5,7 +5,7 @@ package main
 // enforcement golang-migrate's file layout used to give for free.
 //
 // It borrows the SYSTEM entity against throwaway scratch tables and resets the
-// system schema_log to its v1 baseline on exit -- nothing real is touched.
+// system migration_log to its v1 baseline on exit -- nothing real is touched.
 //
 // Proves:
 //  1. migrating v1->N produces the SAME schema as creating N fresh -- a
@@ -165,33 +165,33 @@ func hasColumn(ctx context.Context, pool *pgxpool.Pool, table, col string) bool 
 
 func currentVersion(ctx context.Context, pool *pgxpool.Pool) int64 {
 	var v int64
-	must(pool.QueryRow(ctx, `SELECT schema_version FROM schema_log WHERE entity_type = 'system' AND entity_id = 0 AND status = 'success' ORDER BY id DESC LIMIT 1;`).Scan(&v))
+	must(pool.QueryRow(ctx, `SELECT migration_version FROM migration_log WHERE entity_type = 'system' AND entity_id = 0 AND status = 'success' ORDER BY id DESC LIMIT 1;`).Scan(&v))
 	return v
 }
 
 // forgetVersion drops the success records at/above v, so the engine reads the
 // current version as v-1 while the DDL is already at v -- an interrupted migrate.
 func forgetVersion(ctx context.Context, pool *pgxpool.Pool, v int64) {
-	_, err := pool.Exec(ctx, `DELETE FROM schema_log WHERE entity_type = 'system' AND entity_id = 0 AND schema_version >= $1;`, v)
+	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = 'system' AND entity_id = 0 AND migration_version >= $1;`, v)
 	must(err)
 }
 
 // claimVersion records a success at v without doing v's DDL -- the mirror of
 // forgetVersion, so the engine believes it's ahead of where the schema is.
 func claimVersion(ctx context.Context, pool *pgxpool.Pool, v int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO schema_log (entity_type, entity_id, schema_version, status) VALUES ('system', 0, $1, 'success');`, v)
+	_, err := pool.Exec(ctx, `INSERT INTO migration_log (entity_type, entity_id, migration_version, status) VALUES ('system', 0, $1, 'success');`, v)
 	must(err)
 }
 
-// reset drops the scratch tables and returns the system schema_log to exactly
+// reset drops the scratch tables and returns the system migration_log to exactly
 // one v1 baseline row -- the lab only ever borrowed the system entity, and its
 // round trips leave extra v1 rows (each down-to-baseline records one).
 func reset(ctx context.Context, pool *pgxpool.Pool) {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS `+stepwise+`, `+fresh+`;`)
 	must(err)
-	_, err = pool.Exec(ctx, `DELETE FROM schema_log WHERE entity_type = 'system' AND entity_id = 0;`)
+	_, err = pool.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = 'system' AND entity_id = 0;`)
 	must(err)
-	_, err = pool.Exec(ctx, `INSERT INTO schema_log (entity_type, entity_id, schema_version, status) VALUES ('system', 0, 1, 'success');`)
+	_, err = pool.Exec(ctx, `INSERT INTO migration_log (entity_type, entity_id, migration_version, status) VALUES ('system', 0, 1, 'success');`)
 	must(err)
 }
 

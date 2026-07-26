@@ -18,7 +18,7 @@ import (
 // topic, datastores, config, the lifecycle gate, and callSafely. Embedded, so
 // its exported fields stay part of each type's public surface.
 type consumerBase[Message any] struct {
-	Topic     *topic.Topic // resolved by Register from the name given to the constructor
+	Topic     *topic.Topic // resolved by Register from the name/version given to the constructor
 	Datastore *ConsumerDatastore[Message]
 	Metrics   *metrics.ConsumerMetrics // resolved by Register alongside Topic
 	Config    *ConsumerConfig
@@ -26,32 +26,38 @@ type consumerBase[Message any] struct {
 
 	consumerGroup  string
 	topicName      string
+	version        topic.SchemaVersion
 	topicDatastore *topic.TopicDatastore
 	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
 }
 
 // cfg must already be defaulted and validated by the calling constructor.
-func newConsumerBase[Message any](consumerGroup string, topicName string, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (consumerBase[Message], error) {
+func newConsumerBase[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*consumerBase[Message], error) {
+	if version < 1 {
+		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
+	}
+
 	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger:       cfg.Logger,
 		Retry:        cfg.Retry,
 		MessageRetry: cfg.Backoff,
 	})
 	if err != nil {
-		return consumerBase[Message]{}, err
+		return nil, err
 	}
 
 	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
 	if err != nil {
-		return consumerBase[Message]{}, err
+		return nil, err
 	}
 
-	return consumerBase[Message]{
+	return &consumerBase[Message]{
 		Datastore:      consumerDatastore,
 		Config:         cfg,
 		Logger:         cfg.Logger,
 		consumerGroup:  consumerGroup,
 		topicName:      topicName,
+		version:        version,
 		topicDatastore: topicDatastore,
 	}, nil
 }
@@ -75,7 +81,7 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, b.consumerGroup, b.topicName, lifecycleContextHelp)
 	}
 
-	current, err := b.topicDatastore.GetTopic(ctx, b.topicName)
+	current, err := b.topicDatastore.GetTopic(ctx, b.topicName, b.version)
 	if err != nil {
 		return err
 	}

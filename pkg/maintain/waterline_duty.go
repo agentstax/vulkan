@@ -15,25 +15,29 @@ import (
 // - periodically rolling cursor.committed up behind the group's resolved work.
 // Scoped to (topic, group) -- one effective roller per cursor.
 type WaterlineRoller struct {
-	Topic     *topic.Topic // resolved by Register from the name given to NewWaterlineRoller
+	Topic     *topic.Topic // resolved by Register from the name/version given to NewWaterlineRoller
 	Datastore *MaintenanceDatastore
 	Config    *MaintainerConfig
 	Logger    logger.Logger // copied from Config.Logger at construction
 
 	consumerGroup  string
 	topicName      string
+	version        topic.SchemaVersion
 	topicDatastore *topic.TopicDatastore
 	duty           *dutyRunner // constructed by Register -- topic id and rate come from the registry row
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWaterlineRoller(consumerGroup string, topicName string, ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*WaterlineRoller, error) {
+func NewWaterlineRoller(consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*WaterlineRoller, error) {
 	if consumerGroup == "" {
 		return nil, errors.New("consumer group is required")
 	}
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
+	}
+	if version < 1 {
+		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
@@ -66,6 +70,7 @@ func NewWaterlineRoller(consumerGroup string, topicName string, ds *datastore.Po
 		Logger:         cfg.Logger,
 		consumerGroup:  consumerGroup,
 		topicName:      topicName,
+		version:        version,
 		topicDatastore: topicDatastore,
 	}, nil
 }
@@ -76,7 +81,7 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return fmt.Errorf("waterline roller for group %q on topic %q already registered", w.consumerGroup, w.topicName)
 	}
 
-	current, err := w.topicDatastore.GetTopic(ctx, w.topicName)
+	current, err := w.topicDatastore.GetTopic(ctx, w.topicName, w.version)
 	if err != nil {
 		return err
 	}

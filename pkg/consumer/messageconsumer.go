@@ -13,6 +13,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/maintain"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -22,7 +23,7 @@ import (
 // retries, no maintenance -- run Consumer instead for all of that, or compose
 // the pieces (ExceptionConsumer, pkg/maintain) yourself.
 type MessageConsumer[Message any] struct {
-	consumerBase[Message]
+	*consumerBase[Message]
 	PoolLimiter concurrency.PoolLimiter
 
 	buffer      *claimBuffer                   // wraps the queue given to NewMessageConsumer -- nothing outside processCursor needs the raw queue
@@ -31,7 +32,7 @@ type MessageConsumer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*MessageConsumer[Message], error) {
+func NewMessageConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*MessageConsumer[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -59,7 +60,7 @@ func NewMessageConsumer[Message any](consumerGroup string, topicName string, que
 		return nil, fmt.Errorf("queue cap (%d) must be >= BatchLimit (%d), otherwise prefetcher can never claim a full batch", queue.Cap(), cfg.BatchLimit)
 	}
 
-	base, err := newConsumerBase[Message](consumerGroup, topicName, ds, cfg)
+	base, err := newConsumerBase[Message](consumerGroup, topicName, version, ds, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -7,12 +7,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
+	"github.com/agentstax/vulkan/pkg/topic"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
 
-// systemEntityID is the fixed entity_id every system-scope schema_log row
+// systemEntityID is the fixed entity_id every system-scope migration_log row
 // carries -- the control plane is a singleton (see pkg/migrate/datastore).
 const systemEntityID = 0
 
@@ -98,7 +99,8 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		return []migrateTarget{{label: "system", entityType: migrate.EntitySystem, id: systemEntityID, current: current}}, nil
 
 	case scopeTopic:
-		found, err := mAdmin.GetTopic(ctx, name)
+		// version hardcoded until the --schema-version flag lands.
+		found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
 		if err != nil {
 			return nil, translateAdminError(err)
 		}

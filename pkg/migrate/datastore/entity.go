@@ -1,6 +1,6 @@
 package datastore
 
-// Entity types -- the schema_log.entity_type a step migrates under.
+// Entity types -- the migration_log.entity_type a step migrates under.
 const (
 	EntitySystem = "system"
 	EntityTopic  = "topic"

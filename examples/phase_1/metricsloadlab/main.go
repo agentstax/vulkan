@@ -67,10 +67,10 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{WaterlinePollRate: pollRate})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{WaterlinePollRate: pollRate})
 	must(err)
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, consumerDS, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), consumerDS, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	const rows = 100
@@ -84,7 +84,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	// BatchLimit >= rows -- everything claims in one Process tick, so the only
 	// variable left between the two runs is how long RollWaterline's own
 	// ticker takes to fire, isolating the thing this scenario measures.
-	wc, err := consumer.NewConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, consumerDS, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              rows * 2,
 		ClaimPollRate:           50 * time.Millisecond,
@@ -105,7 +105,7 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	cancel()
 	must(<-done)
 
-	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
 	fmt.Printf("  ✓ %s: committed caught up to head in %s\n", label, elapsed)
 	return elapsed
@@ -122,10 +122,10 @@ func runLiveReadoutScenario(ctx context.Context) {
 	must(err)
 
 	topicName := fmt.Sprintf("%s.readout.%d", group, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{WaterlinePollRate: 100 * time.Millisecond})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{WaterlinePollRate: 100 * time.Millisecond})
 	must(err)
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, consumerDS, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), consumerDS, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	const rows = 60
@@ -136,7 +136,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	pool, err := concurrency.NewWorkerPoolLimiter(10)
 	must(err)
 
-	wc, err := consumer.NewConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, consumerDS, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              20,
 		ClaimPollRate:           100 * time.Millisecond,
@@ -191,7 +191,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	cancel()
 	must(<-done)
 
-	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
 	if !sawException {
 		die("expected at least one retryable exception to appear during the run -- fail-rate injection produced none")

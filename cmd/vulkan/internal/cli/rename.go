@@ -47,7 +47,7 @@ func newTopicRenameCmd(g *globalFlags) *cobra.Command {
 				}
 			}
 
-			fmt.Fprintf(out, "%s renamed topic %q -> %q (id=%d)\n", glyphOK(), oldName, newName, renamed.Id)
+			fmt.Fprintf(out, "%s renamed topic %q -> %q (%d version(s))\n", glyphOK(), oldName, newName, len(renamed))
 			return nil
 		},
 	}

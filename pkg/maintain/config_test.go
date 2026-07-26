@@ -79,22 +79,28 @@ func TestNewMaintainerValidation(t *testing.T) {
 }
 
 func TestNewJanitorValidation(t *testing.T) {
-	if _, err := NewJanitor("", nil, nil); err == nil {
+	if _, err := NewJanitor("", 1, nil, nil); err == nil {
 		t.Fatal("NewJanitor accepted an empty topic name")
 	}
-	if _, err := NewJanitor("t", nil, nil); err == nil {
+	if _, err := NewJanitor("t", 0, nil, nil); err == nil {
+		t.Fatal("NewJanitor accepted a SchemaVersion < 1")
+	}
+	if _, err := NewJanitor("t", 1, nil, nil); err == nil {
 		t.Fatal("NewJanitor accepted a nil datastore")
 	}
 }
 
 func TestNewWaterlineRollerValidation(t *testing.T) {
-	if _, err := NewWaterlineRoller("", "t", nil, nil); err == nil {
+	if _, err := NewWaterlineRoller("", "t", 1, nil, nil); err == nil {
 		t.Fatal("NewWaterlineRoller accepted an empty consumer group")
 	}
-	if _, err := NewWaterlineRoller("g", "", nil, nil); err == nil {
+	if _, err := NewWaterlineRoller("g", "", 1, nil, nil); err == nil {
 		t.Fatal("NewWaterlineRoller accepted an empty topic name")
 	}
-	if _, err := NewWaterlineRoller("g", "t", nil, nil); err == nil {
+	if _, err := NewWaterlineRoller("g", "t", 0, nil, nil); err == nil {
+		t.Fatal("NewWaterlineRoller accepted a SchemaVersion < 1")
+	}
+	if _, err := NewWaterlineRoller("g", "t", 1, nil, nil); err == nil {
 		t.Fatal("NewWaterlineRoller accepted a nil datastore")
 	}
 }

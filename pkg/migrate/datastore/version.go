@@ -16,7 +16,7 @@ import (
 func Version(ctx context.Context, q datastore.Querier, entityType string, entityId int64) (int64, error) {
 	var v int64
 	err := q.QueryRow(ctx, `
-		SELECT schema_version FROM schema_log
+		SELECT migration_version FROM migration_log
 		WHERE entity_type = $1 AND entity_id = $2 AND status = 'success'
 		ORDER BY id DESC
 		LIMIT 1;

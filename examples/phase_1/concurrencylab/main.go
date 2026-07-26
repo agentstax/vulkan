@@ -58,11 +58,11 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("phase14a.concurrencylab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -109,7 +109,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 	pool, err := concurrency.NewWorkerPoolLimiter(poolSize)
 	must(err)
 
-	wc, err := consumer.NewConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		WorkTimeout:             10 * time.Second,
@@ -188,7 +188,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 	pool, err := concurrency.NewWorkerPoolLimiter(poolSize)
 	must(err)
 
-	wc, err := consumer.NewConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		WorkTimeout:             10 * time.Second,

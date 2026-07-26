@@ -38,21 +38,24 @@ func NewTopicDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Polic
 	}, nil
 }
 
-func (d *TopicDatastore) GetTopic(ctx context.Context, name string) (*Topic, error) {
+// GetTopic resolves topic (name, version).
+// Returns (nil, nil) if (name, version) is not found.
+func (d *TopicDatastore) GetTopic(ctx context.Context, name string, version SchemaVersion) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.getTopic(ctx, name)
+		topic, err = d.getTopic(ctx, name, version)
 		return err
 	})
 	return topic, err
 }
 
-func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, error) {
+func (d *TopicDatastore) getTopic(ctx context.Context, name string, version SchemaVersion) (*Topic, error) {
 	sql := `
 		SELECT
 			id,
 			name,
+			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -64,40 +67,9 @@ func (d *TopicDatastore) getTopic(ctx context.Context, name string) (*Topic, err
 			created_at,
 			updated_at
 		FROM topic
-		WHERE name = $1;
+		WHERE name = $1 AND schema_version = $2;
 	`
-
-	var t Topic
-	var retentionTTLNs int64
-	var idempotencyKeyTTLNs int64
-	var janitorPollRateNs int64
-	var waterlinePollRateNs int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, name).Scan(
-		&t.Id,
-		&t.Name,
-		&t.PartitionSize,
-		&retentionTTLNs,
-		&t.AllowDropPastCommitted,
-		&idempotencyKeyTTLNs,
-		&t.DisableDeliveryLog,
-		&janitorPollRateNs,
-		&t.JanitorSweepBatchSize,
-		&waterlinePollRateNs,
-		&t.CreatedAt,
-		&t.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	t.RetentionTTL = time.Duration(retentionTTLNs)
-	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
-	t.JanitorPollRate = time.Duration(janitorPollRateNs)
-	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
-
-	return &t, nil
+	return d.scanTopic(d.Datastore.Pool.QueryRow(ctx, sql, name, version))
 }
 
 func (d *TopicDatastore) ListTopics(ctx context.Context) ([]*Topic, error) {
@@ -115,6 +87,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 		SELECT
 			id,
 			name,
+			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -126,7 +99,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 			created_at,
 			updated_at
 		FROM topic
-		ORDER BY name;
+		ORDER BY name, schema_version;
 	`
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
@@ -137,32 +110,11 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 
 	var topics []*Topic
 	for rows.Next() {
-		var t Topic
-		var retentionTTLNs int64
-		var idempotencyKeyTTLNs int64
-		var janitorPollRateNs int64
-		var waterlinePollRateNs int64
-		if err := rows.Scan(
-			&t.Id,
-			&t.Name,
-			&t.PartitionSize,
-			&retentionTTLNs,
-			&t.AllowDropPastCommitted,
-			&idempotencyKeyTTLNs,
-			&t.DisableDeliveryLog,
-			&janitorPollRateNs,
-			&t.JanitorSweepBatchSize,
-			&waterlinePollRateNs,
-			&t.CreatedAt,
-			&t.UpdatedAt,
-		); err != nil {
+		t, err := d.scanTopic(rows)
+		if err != nil {
 			return nil, err
 		}
-		t.RetentionTTL = time.Duration(retentionTTLNs)
-		t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
-		t.JanitorPollRate = time.Duration(janitorPollRateNs)
-		t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
-		topics = append(topics, &t)
+		topics = append(topics, t)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -171,18 +123,18 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 	return topics, nil
 }
 
-// UpsertTopic resolves cfg.Name to its db identity, creating it if it doesn't exist.
-func (d *TopicDatastore) UpsertTopic(ctx context.Context, name string, cfg Config) (*Topic, error) {
+// UpsertTopic resolves (name, version) to its db identity, creating it if it doesn't exist.
+func (d *TopicDatastore) UpsertTopic(ctx context.Context, name string, version SchemaVersion, cfg Config) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.upsertTopic(ctx, name, cfg)
+		topic, err = d.upsertTopic(ctx, name, version, cfg)
 		return err
 	})
 	return topic, err
 }
 
-func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version SchemaVersion, cfg Config) (*Topic, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -190,16 +142,16 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 	defer tx.Rollback(ctx)
 
 	insertSql := `
-		INSERT INTO topic (name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (name) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
+		INSERT INTO topic (name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (name, schema_version) DO NOTHING -- no rows are returned on conflict -> must GetTopic later
 		RETURNING id, created_at, updated_at;
 	`
 
 	var id int64
 	var createdAt time.Time
 	var updatedAt time.Time
-	insertErr := tx.QueryRow(ctx, insertSql, name, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt)
+	insertErr := tx.QueryRow(ctx, insertSql, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt)
 
 	switch {
 	case insertErr == nil:
@@ -207,33 +159,33 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 		if err := d.createTopicLog(ctx, tx, id, cfg.PartitionSize); err != nil {
 			return nil, err
 		}
-		// add the schema baseline in the SAME txn
-		schemaSql := `
-			INSERT INTO schema_log (entity_type, entity_id, schema_version, status) 
+		// add the migration baseline in the SAME txn
+		migrationSql := `
+			INSERT INTO migration_log (entity_type, entity_id, migration_version, status)
 			VALUES ('topic', $1, 1, 'success');
 		`
-		if _, err := tx.Exec(ctx, schemaSql, id); err != nil {
+		if _, err := tx.Exec(ctx, migrationSql, id); err != nil {
 			return nil, err
 		}
-		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", name, "topic_id", id)
+		d.Logger.InfoContext(ctx, "topic registered (created)", "topic", name, "topic_id", id, "schema_version", version)
 	case errors.Is(insertErr, pgx.ErrNoRows):
 		// not writing here, so reading via the plain pool (not tx) is fine.
 		// private getTopic, not GetTopic -- otherwise would have nested retries.
-		found, err := d.getTopic(ctx, name)
+		found, err := d.getTopic(ctx, name, version)
 		if err != nil {
 			return nil, err
 		}
 		if found == nil {
-			return nil, fmt.Errorf("topic %s: lost the registration race and could not be resolved", name)
+			return nil, fmt.Errorf("topic %s version %d: lost the registration race and could not be resolved", name, version)
 		}
 		id = found.Id
 		createdAt = found.CreatedAt
 		updatedAt = found.UpdatedAt
-		want := cfg.ToTopic(id, name, createdAt, updatedAt)
+		want := cfg.ToTopic(id, name, version, createdAt, updatedAt)
 		if *found != *want {
-			return nil, fmt.Errorf("%w: topic %s: existing=%+v got=%+v", ErrTopicConfigMismatch, name, *found, *want)
+			return nil, fmt.Errorf("%w: topic %s version %d: existing=%+v got=%+v", ErrTopicConfigMismatch, name, version, *found, *want)
 		}
-		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", name, "topic_id", id)
+		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", name, "topic_id", id, "schema_version", version)
 	default:
 		return nil, insertErr
 	}
@@ -252,32 +204,35 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, cfg Confi
 		return nil, err
 	}
 
-	t := cfg.ToTopic(id, name, createdAt, updatedAt)
+	t := cfg.ToTopic(id, name, version, createdAt, updatedAt)
 	return t, nil
 }
 
-// UpdateTopic applies cfg's non-nil fields to name's row.
-// Returns (nil, nil) if no topic is registered under name.
-func (d *TopicDatastore) UpdateTopic(ctx context.Context, name string, cfg *AlterConfig) (*Topic, error) {
+// UpdateTopic applies cfg's non-nil fields to topic's (name, version).
+// Returns (nil, nil) if that (name, version) is not found.
+func (d *TopicDatastore) UpdateTopic(ctx context.Context, name string, version SchemaVersion, cfg *AlterConfig) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.updateTopic(ctx, name, cfg)
+		topic, err = d.updateTopic(ctx, name, version, cfg)
 		return err
 	})
 	return topic, err
 }
 
-func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *AlterConfig) (*Topic, error) {
+func (d *TopicDatastore) updateTopic(ctx context.Context, name string, version SchemaVersion, cfg *AlterConfig) (*Topic, error) {
 	// read-before-write is only for the old -> new log line
-	old, err := d.getTopic(ctx, name)
+	old, err := d.getTopic(ctx, name, version)
 	if err != nil {
 		return nil, err
 	}
 	if old == nil {
 		return nil, nil
 	}
+	return d.updateTopicByID(ctx, old, cfg)
+}
 
+func (d *TopicDatastore) updateTopicByID(ctx context.Context, old *Topic, cfg *AlterConfig) (*Topic, error) {
 	// a nil param reaches Postgres as NULL
 	// COALESCE keeps the column's current value if nil passed
 	sql := `
@@ -291,10 +246,11 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 			janitor_sweep_batch_size = COALESCE($7, janitor_sweep_batch_size),
 			waterline_poll_rate_ns = COALESCE($8, waterline_poll_rate_ns),
 			updated_at = NOW()
-		WHERE name = $1
+		WHERE id = $1
 		RETURNING
 			id,
 			name,
+			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -307,13 +263,8 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 			updated_at;
 	`
 
-	var t Topic
-	var retentionTTLNs int64
-	var idempotencyKeyTTLNs int64
-	var janitorPollRateNs int64
-	var waterlinePollRateNs int64
-	if err := d.Datastore.Pool.QueryRow(ctx, sql,
-		name,
+	row := d.Datastore.Pool.QueryRow(ctx, sql,
+		old.Id,
 		durationNs(cfg.RetentionTTL),
 		cfg.AllowDropPastCommitted,
 		durationNs(cfg.IdempotencyKeyTTL),
@@ -321,33 +272,18 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, cfg *Alte
 		durationNs(cfg.JanitorPollRate),
 		cfg.JanitorSweepBatchSize,
 		durationNs(cfg.WaterlinePollRate),
-	).Scan(
-		&t.Id,
-		&t.Name,
-		&t.PartitionSize,
-		&retentionTTLNs,
-		&t.AllowDropPastCommitted,
-		&idempotencyKeyTTLNs,
-		&t.DisableDeliveryLog,
-		&janitorPollRateNs,
-		&t.JanitorSweepBatchSize,
-		&waterlinePollRateNs,
-		&t.CreatedAt,
-		&t.UpdatedAt,
-	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// destroyed between the read and the update
-			return nil, nil
-		}
+	)
+	t, err := d.scanTopic(row)
+	if err != nil {
 		return nil, err
 	}
-	t.RetentionTTL = time.Duration(retentionTTLNs)
-	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
-	t.JanitorPollRate = time.Duration(janitorPollRateNs)
-	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
+	if t == nil {
+		// destroyed between the read and the update
+		return nil, nil
+	}
 
-	d.Logger.InfoContext(ctx, "topic altered", alterLogFields(old, &t)...)
-	return &t, nil
+	d.Logger.InfoContext(ctx, "topic altered", alterLogFields(old, t)...)
+	return t, nil
 }
 
 // durationNs widens *time.Duration to the *int64 the _ns columns store,
@@ -388,36 +324,28 @@ func alterLogFields(old, updated *Topic) []any {
 	return fields
 }
 
-// RenameTopic moves oldName's row to newName.
-// Returns (nil, nil) if no topic is registered under oldName
-// ErrTopicNameTaken if newName already is.
-func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newName string) (*Topic, error) {
-	var topic *Topic
+// RenameTopic moves every version under oldName to newName in one statement.
+// Returns (nil, nil) if no version is registered under oldName
+// ErrTopicNameTaken if newName already has any (name, version) registered.
+func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newName string) ([]*Topic, error) {
+	var topics []*Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.renameTopic(ctx, oldName, newName)
+		topics, err = d.renameTopic(ctx, oldName, newName)
 		return err
 	})
-	return topic, err
+	return topics, err
 }
 
-func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) (*Topic, error) {
-	// read-before-write pins the id
-	old, err := d.getTopic(ctx, oldName)
-	if err != nil {
-		return nil, err
-	}
-	if old == nil {
-		return nil, nil
-	}
-
+func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) ([]*Topic, error) {
 	sql := `
 		UPDATE topic
 		SET name = $2, updated_at = NOW()
-		WHERE id = $1
+		WHERE name = $1
 		RETURNING
 			id,
 			name,
+			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -430,29 +358,21 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 			updated_at;
 	`
 
-	var t Topic
-	var retentionTTLNs int64
-	var idempotencyKeyTTLNs int64
-	var janitorPollRateNs int64
-	var waterlinePollRateNs int64
-	if err := d.Datastore.Pool.QueryRow(ctx, sql, old.Id, newName).Scan(
-		&t.Id,
-		&t.Name,
-		&t.PartitionSize,
-		&retentionTTLNs,
-		&t.AllowDropPastCommitted,
-		&idempotencyKeyTTLNs,
-		&t.DisableDeliveryLog,
-		&janitorPollRateNs,
-		&t.JanitorSweepBatchSize,
-		&waterlinePollRateNs,
-		&t.CreatedAt,
-		&t.UpdatedAt,
-	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// destroyed between the read and the update
-			return nil, nil
+	rows, err := d.Datastore.Pool.Query(ctx, sql, oldName, newName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var topics []*Topic
+	for rows.Next() {
+		t, err := d.scanTopic(rows)
+		if err != nil {
+			return nil, err
 		}
+		topics = append(topics, t)
+	}
+	if err := rows.Err(); err != nil {
 		// 23505 = unqiue constraint violation ie name taken
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -460,13 +380,12 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 		}
 		return nil, err
 	}
-	t.RetentionTTL = time.Duration(retentionTTLNs)
-	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
-	t.JanitorPollRate = time.Duration(janitorPollRateNs)
-	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
+	if len(topics) == 0 {
+		return nil, nil
+	}
 
-	d.Logger.InfoContext(ctx, "topic renamed", "topic_id", t.Id, "name", fmt.Sprintf("%s -> %s", oldName, newName))
-	return &t, nil
+	d.Logger.InfoContext(ctx, "topic family renamed", "versions", len(topics), "name", fmt.Sprintf("%s -> %s", oldName, newName))
+	return topics, nil
 }
 
 // createTopicLog creates:
@@ -621,8 +540,8 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 		}
 	}
 
-	// remove this topic's schema history
-	if _, err := tx.Exec(ctx, `DELETE FROM schema_log WHERE entity_type = 'topic' AND entity_id = $1;`, topic.Id); err != nil {
+	// remove this topic's migration history
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = 'topic' AND entity_id = $1;`, topic.Id); err != nil {
 		return err
 	}
 
@@ -650,4 +569,41 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 
 	d.Logger.WarnContext(ctx, "topic destroyed", "topic", topic.Name, "topic_id", topic.Id)
 	return nil
+}
+
+// scanTopic scans a row shaped like getTopic's SELECT -- the column list
+// every one of those queries shares.
+func (d *TopicDatastore) scanTopic(row pgx.Row) (*Topic, error) {
+	var t Topic
+	var retentionTTLNs int64
+	var idempotencyKeyTTLNs int64
+	var janitorPollRateNs int64
+	var waterlinePollRateNs int64
+	err := row.Scan(
+		&t.Id,
+		&t.Name,
+		&t.SchemaVersion,
+		&t.PartitionSize,
+		&retentionTTLNs,
+		&t.AllowDropPastCommitted,
+		&idempotencyKeyTTLNs,
+		&t.DisableDeliveryLog,
+		&janitorPollRateNs,
+		&t.JanitorSweepBatchSize,
+		&waterlinePollRateNs,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	t.RetentionTTL = time.Duration(retentionTTLNs)
+	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
+	t.JanitorPollRate = time.Duration(janitorPollRateNs)
+	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
+
+	return &t, nil
 }

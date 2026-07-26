@@ -28,7 +28,8 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			found, err := mAdmin.GetTopic(ctx, name)
+			// version hardcoded until the --schema-version flag lands.
+			found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
 			if err != nil {
 				return translateAdminError(err)
 			}

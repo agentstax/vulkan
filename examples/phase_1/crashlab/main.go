@@ -90,7 +90,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topic.Config{})
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topic.Config{})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -99,7 +99,7 @@ func main() {
 	// Short lease (= WorkTimeout+QueueMargin+AckMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxAttempts so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
-	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    100,
 		MaxAttempts:   100,
 		ClaimPollRate: 200 * time.Millisecond,

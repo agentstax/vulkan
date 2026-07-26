@@ -17,21 +17,25 @@ import (
 // - idempotency-key sweep.
 // Scoped to (topic) -- one effective Janitor per topic
 type Janitor struct {
-	Topic     *topic.Topic // resolved by Register from the name given to NewJanitor
+	Topic     *topic.Topic // resolved by Register from the name/version given to NewJanitor
 	Datastore *MaintenanceDatastore
 	Config    *MaintainerConfig
 	Logger    logger.Logger // copied from Config.Logger at construction
 
 	topicName      string
+	version        topic.SchemaVersion
 	topicDatastore *topic.TopicDatastore
 	duty           *dutyRunner // constructed by Register -- topic id and rate come from the registry row
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJanitor(topicName string, ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Janitor, error) {
+func NewJanitor(topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Janitor, error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
+	}
+	if version < 1 {
+		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
@@ -63,6 +67,7 @@ func NewJanitor(topicName string, ds *datastore.PostgresDatastore, cfg *Maintain
 		Config:         cfg,
 		Logger:         cfg.Logger,
 		topicName:      topicName,
+		version:        version,
 		topicDatastore: topicDatastore,
 	}, nil
 }
@@ -73,7 +78,7 @@ func (j *Janitor) Register(ctx context.Context) error {
 		return fmt.Errorf("janitor for topic %q already registered", j.topicName)
 	}
 
-	current, err := j.topicDatastore.GetTopic(ctx, j.topicName)
+	current, err := j.topicDatastore.GetTopic(ctx, j.topicName, j.version)
 	if err != nil {
 		return err
 	}

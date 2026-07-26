@@ -21,6 +21,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -43,9 +44,9 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
-	topicRow, err := mAdmin.RegisterTopic(ctx, name, nil)
+	topicRow, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true})) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
 
 	// 1. supported schema -> Register succeeds -----------------------------------
 	section("producer Register succeeds at the supported schema (v1)")
@@ -74,7 +75,7 @@ func main() {
 }
 
 func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.Producer[event] {
-	p, err := producer.NewProducer[event](name, ds, nil)
+	p, err := producer.NewProducer[event](name, topic.SchemaVersion(1), ds, nil)
 	must(err)
 	return p
 }
@@ -82,12 +83,12 @@ func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.Pro
 // bump records a success at ver, so the gate reads that scope as version ver
 // without any matching schema change -- a database a newer binary migrated.
 func bump(ctx context.Context, pool *pgxpool.Pool, entityType string, entityID, ver int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO schema_log (entity_type, entity_id, schema_version, status) VALUES ($1, $2, $3, 'success');`, entityType, entityID, ver)
+	_, err := pool.Exec(ctx, `INSERT INTO migration_log (entity_type, entity_id, migration_version, status) VALUES ($1, $2, $3, 'success');`, entityType, entityID, ver)
 	must(err)
 }
 
 func unbump(ctx context.Context, pool *pgxpool.Pool, entityType string, entityID, ver int64) {
-	_, err := pool.Exec(ctx, `DELETE FROM schema_log WHERE entity_type = $1 AND entity_id = $2 AND schema_version = $3;`, entityType, entityID, ver)
+	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = $1 AND entity_id = $2 AND migration_version = $3;`, entityType, entityID, ver)
 	must(err)
 }
 

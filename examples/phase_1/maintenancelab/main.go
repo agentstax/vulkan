@@ -51,14 +51,14 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("maintenancelab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{
 		JanitorPollRate:   dutyRate,
 		WaterlinePollRate: dutyRate,
 	})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	for range seedRows {
@@ -142,7 +142,7 @@ func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName s
 	pool, err := concurrency.NewWorkerPoolLimiter(4)
 	must(err)
 
-	c, err := consumer.NewConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.ConsumerConfig{
+	c, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    50,
 		ClaimPollRate: 100 * time.Millisecond,
 	})

@@ -8,7 +8,7 @@ import (
 
 func (d *MigrateDatastore) RecordSuccess(ctx context.Context, q datastore.Querier, entityType string, entityId, version int64) error {
 	_, err := q.Exec(ctx,
-		`INSERT INTO schema_log (entity_type, entity_id, schema_version, status) VALUES ($1, $2, $3, 'success');`,
+		`INSERT INTO migration_log (entity_type, entity_id, migration_version, status) VALUES ($1, $2, $3, 'success');`,
 		entityType, entityId, version)
 	return err
 }
@@ -20,7 +20,7 @@ func (d *MigrateDatastore) TryRecordFailure(ctx context.Context, q datastore.Que
 	ctx = context.WithoutCancel(ctx)
 	err := d.Retry.Wrap(ctx, func() error {
 		_, e := q.Exec(ctx,
-			`INSERT INTO schema_log (entity_type, entity_id, schema_version, status, error) VALUES ($1, $2, $3, 'failure', $4);`,
+			`INSERT INTO migration_log (entity_type, entity_id, migration_version, status, error) VALUES ($1, $2, $3, 'failure', $4);`,
 			entityType, entityId, version, cause.Error())
 		return e
 	})

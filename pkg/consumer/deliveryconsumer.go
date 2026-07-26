@@ -18,6 +18,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/maintain"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -25,14 +26,14 @@ import (
 // into the group's own delivery rows, claim them, and resolve each one
 // independently through consumerFunc.
 type DeliveryConsumer[Message any] struct {
-	consumerBase[Message]
+	*consumerBase[Message]
 
 	maintenance *maintain.MaintenanceDatastore // cold-start partition create only, never duty work
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewDeliveryConsumer[Message any](consumerGroup string, topicName string, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*DeliveryConsumer[Message], error) {
+func NewDeliveryConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*DeliveryConsumer[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -48,7 +49,7 @@ func NewDeliveryConsumer[Message any](consumerGroup string, topicName string, ds
 		return nil, err
 	}
 
-	base, err := newConsumerBase[Message](consumerGroup, topicName, ds, cfg)
+	base, err := newConsumerBase[Message](consumerGroup, topicName, version, ds, cfg)
 	if err != nil {
 		return nil, err
 	}

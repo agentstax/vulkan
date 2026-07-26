@@ -55,13 +55,13 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("phase14a.compactionranklab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
 
 	cd, err := consumer.NewConsumerDatastore[RankedRecord](ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[RankedRecord](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[RankedRecord](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))

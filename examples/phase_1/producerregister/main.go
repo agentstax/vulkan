@@ -45,12 +45,12 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	const topicName = "test.producerregister"
-	_ = mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	_ = mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
 
-	p, err := producer.NewProducer[Message](tp.Name, ds, nil)
+	p, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, nil)
 	must(err)
 
 	// ===== produce before Register =====
@@ -85,7 +85,7 @@ func main() {
 
 	// ===== fire-and-forget escape hatch =====
 	step("fresh producer with DisableGracefulShutdown -- Background is accepted")
-	ff, err := producer.NewProducer[Message](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	ff, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(ff.Register(context.Background()))
 	_, err = ff.Produce(ctx, &Message{Data: "fire and forget"}, producer.ProduceOptions{})

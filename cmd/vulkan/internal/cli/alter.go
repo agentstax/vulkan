@@ -82,12 +82,13 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 			defer closeAdmin()
 
 			// Snapshot before so we can show old -> new for what changed.
-			before, err := mAdmin.GetTopic(ctx, name)
+			// version hardcoded until the --schema-version flag lands.
+			before, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
 			if err != nil {
 				return translateAdminError(err)
 			}
 
-			updated, err := mAdmin.AlterTopic(ctx, name, cfg)
+			updated, err := mAdmin.AlterTopic(ctx, name, topic.SchemaVersion(1), cfg)
 			if err != nil {
 				if errors.Is(err, topic.ErrTopicNotFound) {
 					return errTopicNotFound(name)

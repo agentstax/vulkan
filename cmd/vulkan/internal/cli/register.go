@@ -82,14 +82,15 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 			defer closeAdmin()
 
 			// Existed-before decides "registered" vs "already registered".
-			preTopic, err := mAdmin.GetTopic(ctx, name)
+			preTopic, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
 			if err != nil {
 				return translateAdminError(err)
 			}
 
 			// RegisterTopic mutates cfg (WithDefaults) -- after this call cfg holds
 			// the fully-defaulted config that was compared against the existing row.
-			registered, err := mAdmin.RegisterTopic(ctx, name, cfg)
+			// version hardcoded until the --schema-version flag lands.
+			registered, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), cfg)
 			if err != nil {
 				if errors.Is(err, topic.ErrTopicConfigMismatch) {
 					return printMismatch(cmd.ErrOrStderr(), name, preTopic, cfg)
@@ -141,7 +142,7 @@ func printMismatch(w io.Writer, name string, existing *topic.Topic, want *topic.
 
 	fmt.Fprintf(w, "error: topic %q already exists with a different configuration\n\n", name)
 
-	wantTopic := want.ToTopic(existing.Id, name, existing.CreatedAt, existing.UpdatedAt)
+	wantTopic := want.ToTopic(existing.Id, name, existing.SchemaVersion, existing.CreatedAt, existing.UpdatedAt)
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  FIELD\tEXISTING\tREQUESTED")
 	for _, d := range topicFieldDiffs(existing, wantTopic) {

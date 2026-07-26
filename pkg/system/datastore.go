@@ -20,7 +20,7 @@ import (
 // - binding
 // - topic
 // - compaction_head
-// - schema_log
+// - migration_log
 type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
@@ -51,13 +51,13 @@ func (d *SystemDatastore) RegisterSystem(ctx context.Context) error {
 }
 
 // IsRegistered reports whether RegisterSystem has run -- a system success row in
-// schema_log. A missing schema_log table (42P01) counts as not registered.
+// migration_log. A missing migration_log table (42P01) counts as not registered.
 func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
 	var registered bool
 	err := d.Datastore.Pool.QueryRow(ctx,
 		`SELECT EXISTS (
-			SELECT 1 FROM schema_log 
-			WHERE entity_type = 'system' 
+			SELECT 1 FROM migration_log
+			WHERE entity_type = 'system'
 				AND entity_id = 0 
 				AND status = 'success'
 		);`,
@@ -168,7 +168,8 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 	createTopicSql := `
 		CREATE TABLE IF NOT EXISTS topic (
 			id BIGSERIAL PRIMARY KEY,                                      -- corresponding id for table interpolation ie message_log_<id>
-			name TEXT UNIQUE NOT NULL,                                     -- user defined and displayed name
+			name TEXT NOT NULL,                                            -- user defined and displayed name
+			schema_version BIGINT NOT NULL,                                -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
 			partition_size BIGINT NOT NULL,                                -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
 			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                    -- nanoseconds, time.Duration's own unit; 0 disables retention
 			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,      -- opt into Kafka's "lagging consumer falls off the retention window" semantics
@@ -178,7 +179,8 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,            -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
 			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,     -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (name, schema_version)
 		);
 	`
 	if _, err := tx.Exec(ctx, createTopicSql); err != nil {
@@ -203,31 +205,31 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
-	// schema_log is the append-only history of schema-version changes
+	// migration_log is the append-only history of migration attempts
 	// -- one row per attempt. entity_type + entity_id say whose:
 	// ('system', 0) for the control plane, ('topic', topic_id) per topic.
-	createSchemaLogSql := `
-		CREATE TABLE IF NOT EXISTS schema_log (
+	createMigrationLogSql := `
+		CREATE TABLE IF NOT EXISTS migration_log (
 			id BIGSERIAL PRIMARY KEY,
 			entity_type TEXT NOT NULL,    -- 'system' | 'topic'
 			entity_id BIGINT NOT NULL,    -- 0 for system; topic_id for a topic
-			schema_version BIGINT NOT NULL,
+			migration_version BIGINT NOT NULL,
 			status TEXT NOT NULL,         -- 'success' | 'failure' (extensible)
 			error TEXT,                   -- populated when status = 'failure'
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 	`
-	if _, err := tx.Exec(ctx, createSchemaLogSql); err != nil {
+	if _, err := tx.Exec(ctx, createMigrationLogSql); err != nil {
 		return err
 	}
 
 	// Record the system v1 baseline, but only if there's no success row yet
 	recordBaselineSql := `
-		INSERT INTO schema_log (entity_type, entity_id, schema_version, status)
+		INSERT INTO migration_log (entity_type, entity_id, migration_version, status)
 		SELECT 'system', 0, 1, 'success'
 		WHERE NOT EXISTS (
-			SELECT 1 FROM schema_log 
-			WHERE entity_type = 'system' 
+			SELECT 1 FROM migration_log
+			WHERE entity_type = 'system'
 				AND entity_id = 0 
 				AND status = 'success'
 		);

@@ -75,9 +75,9 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("%s.%d", group, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
+	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
 
 	// ===== real OTel SDK + real Prometheus exporter, wired the way an
 	// operator actually would: a MeterProvider backed by a Prometheus
@@ -91,7 +91,7 @@ func main() {
 	defer func() { must(provider.Shutdown(ctx)) }()
 	meter := provider.Meter("otelexportlab")
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	seed(ctx, wp, 5)
@@ -101,7 +101,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(3)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              5,
 		WorkTimeout:             500 * time.Millisecond,

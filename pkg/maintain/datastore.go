@@ -8,6 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -61,6 +62,7 @@ type FleetDuty struct {
 	Duty          string
 	TopicID       int64
 	TopicName     string // duties register by topic name not id
+	SchemaVersion topic.SchemaVersion
 	ConsumerGroup string
 	Rate          time.Duration
 }
@@ -81,7 +83,7 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 	// each duty runs at its own topic's rate, so the rate switches on duty kind.
 	sql := `
 		SELECT
-			m.duty, m.consumer_group, t.id, t.name,
+			m.duty, m.consumer_group, t.id, t.name, t.schema_version,
 			CASE m.duty
 				WHEN 'janitor' THEN t.janitor_poll_rate_ns
 				WHEN 'waterline' THEN t.waterline_poll_rate_ns
@@ -101,7 +103,7 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 	for rows.Next() {
 		var f FleetDuty
 		var rateNs int64
-		if err := rows.Scan(&f.Duty, &f.ConsumerGroup, &f.TopicID, &f.TopicName, &rateNs); err != nil {
+		if err := rows.Scan(&f.Duty, &f.ConsumerGroup, &f.TopicID, &f.TopicName, &f.SchemaVersion, &rateNs); err != nil {
 			return nil, err
 		}
 		f.Rate = time.Duration(rateNs)

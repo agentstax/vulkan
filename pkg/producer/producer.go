@@ -70,9 +70,10 @@ func (o ProduceOptions) Validate() error {
 }
 
 type Producer[Message any] struct {
-	Topic *topic.Topic // resolved by Register from the name given to NewProducer
+	Topic *topic.Topic // resolved by Register from the (name, version) given to NewProducer
 
 	topicName      string
+	version        topic.SchemaVersion
 	datastore      *producerDatastore[Message]
 	topicDatastore *topic.TopicDatastore
 	batcher        *batcher[Message]
@@ -81,9 +82,12 @@ type Producer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducer[Message any](topicName string, ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
+func NewProducer[Message any](topicName string, version topic.SchemaVersion, ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
+	}
+	if version < 1 {
+		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
@@ -107,6 +111,7 @@ func NewProducer[Message any](topicName string, ds *coredatastore.PostgresDatast
 
 	return &Producer[Message]{
 		topicName:      topicName,
+		version:        version,
 		datastore:      producerDatastore,
 		topicDatastore: topicDatastore,
 	}, nil
@@ -132,7 +137,7 @@ func (p *Producer[Message]) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: producer for topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.topicName, lifecycleContextHelp)
 	}
 
-	current, err := p.topicDatastore.GetTopic(ctx, p.topicName)
+	current, err := p.topicDatastore.GetTopic(ctx, p.topicName, p.version)
 	if err != nil {
 		return err
 	}

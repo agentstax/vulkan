@@ -32,9 +32,9 @@ func (b *dutyBuilder) build(ctx context.Context, key FleetDuty) (Duty, error) {
 	var err error
 	switch key.Duty {
 	case DutyJanitor:
-		duty, err = NewJanitor(key.TopicName, b.ds, cfg)
+		duty, err = NewJanitor(key.TopicName, key.SchemaVersion, b.ds, cfg)
 	case DutyWaterline:
-		duty, err = NewWaterlineRoller(key.ConsumerGroup, key.TopicName, b.ds, cfg)
+		duty, err = NewWaterlineRoller(key.ConsumerGroup, key.TopicName, key.SchemaVersion, b.ds, cfg)
 	default:
 		err = fmt.Errorf("unknown duty kind %q", key.Duty) // ListDuties filters these; guards direct misuse
 	}

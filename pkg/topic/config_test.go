@@ -42,8 +42,11 @@ func TestAlterConfigWaterlinePollRate(t *testing.T) {
 
 func TestConfigToTopicCarriesWaterlinePollRate(t *testing.T) {
 	c := (&Config{WaterlinePollRate: 3 * time.Second}).WithDefaults()
-	topic := c.ToTopic(1, "t", time.Now(), time.Now())
+	topic := c.ToTopic(1, "t", SchemaVersion(1), time.Now(), time.Now())
 	if topic.WaterlinePollRate != 3*time.Second {
 		t.Fatalf("ToTopic WaterlinePollRate = %v, want 3s", topic.WaterlinePollRate)
+	}
+	if topic.SchemaVersion != 1 {
+		t.Fatalf("ToTopic SchemaVersion = %v, want 1", topic.SchemaVersion)
 	}
 }

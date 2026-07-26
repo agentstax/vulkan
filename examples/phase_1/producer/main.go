@@ -58,13 +58,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topic.Config{})
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topic.Config{})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	wp, err := producer.NewProducer[common.Work](t.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](t.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

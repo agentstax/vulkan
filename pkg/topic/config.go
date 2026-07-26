@@ -173,10 +173,11 @@ func (c *AlterConfig) Validate() error {
 	return nil
 }
 
-func (c *Config) ToTopic(id int64, name string, createdAt, updatedAt time.Time) *Topic {
+func (c *Config) ToTopic(id int64, name string, version SchemaVersion, createdAt, updatedAt time.Time) *Topic {
 	return &Topic{
 		Id:                     id,
 		Name:                   name,
+		SchemaVersion:          version,
 		PartitionSize:          c.PartitionSize,
 		RetentionTTL:           c.RetentionTTL,
 		AllowDropPastCommitted: c.AllowDropPastCommitted,

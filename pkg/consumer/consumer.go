@@ -10,6 +10,7 @@ import (
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/maintain"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -33,7 +34,7 @@ type Consumer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewConsumer[Message any](consumerGroup string, topicName string, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
+func NewConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
 	if cfg == nil {
 		cfg = &ConsumerConfig{}
 	}
@@ -53,7 +54,7 @@ func NewConsumer[Message any](consumerGroup string, topicName string, queue conc
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	}
-	janitor, err := maintain.NewJanitor(topicName, ds, maintainerConfig)
+	janitor, err := maintain.NewJanitor(topicName, version, ds, maintainerConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -61,23 +62,23 @@ func NewConsumer[Message any](consumerGroup string, topicName string, queue conc
 
 	switch cfg.Type {
 	case CURSOR:
-		consumer.MessageConsumer, err = NewMessageConsumer[Message](consumerGroup, topicName, queue, poolLimiter, ds, cfg)
+		consumer.MessageConsumer, err = NewMessageConsumer[Message](consumerGroup, topicName, version, queue, poolLimiter, ds, cfg)
 		if err != nil {
 			return nil, err
 		}
-		consumer.ExceptionConsumer, err = NewExceptionConsumer[Message](consumerGroup, topicName, ds, cfg)
+		consumer.ExceptionConsumer, err = NewExceptionConsumer[Message](consumerGroup, topicName, version, ds, cfg)
 		if err != nil {
 			return nil, err
 		}
 		// only the CURSOR path has a waterline to roll -- LIFECYCLE tracks
 		// state per delivery row
-		roller, err := maintain.NewWaterlineRoller(consumerGroup, topicName, ds, maintainerConfig)
+		roller, err := maintain.NewWaterlineRoller(consumerGroup, topicName, version, ds, maintainerConfig)
 		if err != nil {
 			return nil, err
 		}
 		duties = append(duties, roller)
 	case LIFECYCLE:
-		consumer.DeliveryConsumer, err = NewDeliveryConsumer[Message](consumerGroup, topicName, ds, cfg)
+		consumer.DeliveryConsumer, err = NewDeliveryConsumer[Message](consumerGroup, topicName, version, ds, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -120,9 +121,9 @@ func (c *Consumer[Message]) Register(ctx context.Context) error {
 // base is the registered part whose base carries this consumer's lifecycle.
 func (c *Consumer[Message]) base() *consumerBase[Message] {
 	if c.Config.Type == LIFECYCLE {
-		return &c.DeliveryConsumer.consumerBase
+		return c.DeliveryConsumer.consumerBase
 	}
-	return &c.MessageConsumer.consumerBase
+	return c.MessageConsumer.consumerBase
 }
 
 // Consume claims and processes messages with consumerFunc, blocking until

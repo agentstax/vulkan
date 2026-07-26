@@ -77,13 +77,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topic.Config{})
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topic.Config{})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
-	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, pressureQueue, workerPoolLimiter, ds, &consumer.ConsumerConfig{
+	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), pressureQueue, workerPoolLimiter, ds, &consumer.ConsumerConfig{
 		Type:          consumer.CURSOR,
 		BatchLimit:    10,
 		MaxAttempts:   3,

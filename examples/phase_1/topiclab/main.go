@@ -63,7 +63,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx))
 
 	register := func(name string) *topic.Topic {
-		t, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})
+		t, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
 		must(err)
 		return t
 	}
@@ -73,7 +73,7 @@ func main() {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.Topic{topicA, topicB, topicC, topicD} {
-			must(mAdmin.DestroyTopic(ctx, t.Name, admin.DestroyOptions{Force: true}))
+			must(mAdmin.DestroyTopic(ctx, t.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 		}
 	}()
 
@@ -84,10 +84,10 @@ func main() {
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
-	wpA, err := producer.NewProducer[common.Work](topicA.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpA, err := producer.NewProducer[common.Work](topicA.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wpA.Register(ctx))
-	wpB, err := producer.NewProducer[common.Work](topicB.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpB, err := producer.NewProducer[common.Work](topicB.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wpB.Register(ctx))
 	for range 3 {
@@ -122,7 +122,7 @@ func main() {
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
-	wpC, err := producer.NewProducer[common.Work](topicC.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpC, err := producer.NewProducer[common.Work](topicC.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wpC.Register(ctx))
 	groupRoute := "topiclab.route"
@@ -149,7 +149,7 @@ func main() {
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
-	wpD, err := producer.NewProducer[common.Work](topicD.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpD, err := producer.NewProducer[common.Work](topicD.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wpD.Register(ctx))
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
