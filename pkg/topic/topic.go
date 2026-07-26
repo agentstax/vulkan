@@ -4,8 +4,15 @@ import (
 	"time"
 )
 
-// SchemaVersion is a topic's version under a shared name.
-// A version bump is a whole new physical topic.
+// SchemaVersion is a contract for a topic's message compatibility.
+//
+// Bump only on a BREAKING change to Message:
+// - a field has a different type
+// - a field has been renamed
+// - a field has been removed
+//
+// Bumping SchemaVersion creates a brand new physical
+// topic under the same name.
 type SchemaVersion int64
 
 // Id addresses this topic's own message_log_<id>.

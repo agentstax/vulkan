@@ -2546,3 +2546,123 @@ published.
   name as a lookup key, so folding a `NewName` into the config patch would mix
   identity-change with config-change. One concept = one named thing.
 
+## Phase 14a (schema evolution) — Epoch-versioned topics, `CompactionRank`, `MessageMeta` & the bridge pattern
+
+**What it does, and the tradeoff:** solves message schema evolution by
+refusing to solve it in-place. A naive user who changes their `Message`
+struct and redeploys hits Go's JSON decode failing SILENTLY — renamed or
+removed fields zero-value instead of erroring, and the failure surfaces late
+and non-deterministically (the retention tail decodes for days, mixed-version
+instances win claims arbitrarily during a rolling deploy, parked exceptions
+replay weeks later into whatever struct exists then). `topic.SchemaVersion`
+makes a breaking change a required, explicit, typed constructor param: a
+version bump is a brand new physical topic (own log, id space, duties) under
+the same name, never a migration of the existing one. The tradeoff is
+isolation over cleverness — no per-row version column, no decode gating, no
+upgrader chains; a consumer just binds one version for its whole life. The
+cost lands somewhere: a compacted topic can't drain into a new version on its
+own (latest-per-key survives retention by design), so migrating one is
+explicit, user-space work — the BRIDGE CONSUMER pattern — instead of
+something the library can automate.
+
+**The aha:** the bridge pattern doesn't work without `CompactionRank`, and
+that dependency is why `CompactionRank` had to ship first. A bridge consumer
+re-producing old data into a live topic is racing the topic's own producers —
+without a caller-supplied clock, "arrival order wins" (today's compaction
+rule) means whichever one lands last wins, and a stale backfill landing after
+a fresh live write would silently overwrite it. Generalizing the winner rule
+to `max(compaction_rank, id)` turns that race into a declarative comparison:
+the bridge writes at rank −1, live producers write at their default rank 0,
+and a live write always wins regardless of which one the database actually
+committed first. The fork model (isolation) and the rank (a total order that
+survives migration-time races) are two separate ideas that only combine into
+a working *zero-pause* migration together — neither alone gets you there.
+
+### Explain it back
+
+**1. Why is a schema-evolution epoch a new physical topic (own log, id
+space, duties) instead of a version column on `message_log`?**
+
+**2. Why generalize compaction's winner rule to `max(compaction_rank, id)`
+rather than, say, giving the bridge a way to write with a backdated
+`created_at`?**
+
+**3. Why is `CompactionRank` signed, and what specifically breaks if the
+bridge could only write at rank 0 or higher?**
+
+**4. `MessageMeta` carries `Id`, `RoutingKey`, `CompactionKey`,
+`CompactionRank`, `CreatedAt` — why does it deliberately NOT carry the
+idempotency key?**
+
+**5. `FamilyHealth` never reports `Safe: true` for a compacted topic, even
+once a bridge has actually finished migrating it. Why is that the correct
+behavior rather than a gap the library should close?**
+
+**6. Why is the bridge a plain user-space consumer group instead of a
+library-provided `BackfillTopic` verb?**
+
+**7. Why does the bridge's `IdempotencyKey` need to be derived
+deterministically from the source message's id (UUIDv5-style) rather than
+generated fresh per attempt?**
+
+### Done
+
+- **`CompactionRank BIGINT NOT NULL DEFAULT 0`** on `message_log` and
+  `compaction_head` (the winner's rank is stored, not just its id).
+  `ProduceOptions.CompactionRank`, and both upsert guards
+  (`pkg/producer/datastore.go`'s `protectedInsertSQL` and `batch.go`'s batch
+  path) became the native row compare `(compaction_head.compaction_rank,
+  compaction_head.head_id) < (EXCLUDED..., EXCLUDED...)`. All-default traffic
+  reproduces today's semantics bit-for-bit; `examples/phase_1/
+  compactionranklab` proves the pin, the two-arrival-order bridge race, and
+  that every losing row stays physically present, just never claimed.
+- **`MessageMeta`/`consumer.MetaFromContext(ctx)`** — an unexported context
+  key set before `callSafely` on both the cursor-claim and exception-claim
+  paths, carrying `Id`, `RoutingKey`, `CompactionKey`, `CompactionRank`,
+  `CreatedAt`.
+- **The topic catalog grew a version axis**: `topic (name, schema_version)`
+  UNIQUE together, `RegisterTopic`/`GetTopic`/`AlterTopic`/`DestroyTopic` all
+  version-addressed, `RenameTopic` moves every version registered under a
+  name. `NewProducer`/`NewConsumer` (and the split consumers) take
+  `topic.SchemaVersion` as a required, positional, typed constructor param.
+- **Drain telegraphing**: `vulkan topic register/get` grow
+  `--schema-version`/a version dimension; `MessageAdmin.FamilyHealth` reports
+  every registered version's `Compacted` flag, per-group `GroupLag`
+  (`consumer/metrics.ConsumerGroupSnapshot.GroupLag()`), and a `Safe`/`Reason`
+  retire verdict — a compacted topic's reason is always "compacted: requires
+  bridge," never a lie that it's safe.
+- **`examples/phase_1/schemaevolutionlab`** — the bridge pattern's reference
+  implementation end to end: a live rank-0 write beats the bridge's rank −1
+  copy of the same key in either arrival order, a crashed-and-restarted
+  bridge resumes from its persisted cursor with no duplicate rows
+  (source-id-derived `IdempotencyKey`s), and `FamilyHealth` keeps refusing to
+  call the compacted source topic safe even once the lab's own checks prove
+  the migration complete.
+
+### Decisions
+
+- **The catalog column is named `schema_version`, accepting the name
+  overlap with `schema_log.schema_version`.** That column is the
+  DB-migration axis (`pkg/migrate`); this one is the compatibility-epoch
+  axis. They're never read in the same query and are documented at both
+  definitions, so disambiguating the name (e.g. `topic_version`) was judged
+  not worth losing the more natural word for what a user actually sets via
+  `--schema-version`.
+- **No unversioned `GetTopic(name)`.** Every read through `pkg/admin` and
+  `pkg/topic` is explicitly version-addressed; the "what does an unversioned
+  lookup mean, error or latest?" question resolved by never having that
+  overload rather than picking a default that could silently resolve to the
+  wrong physical topic.
+- **Display identity stays two structured fields, not `name@vN`.** Every log
+  line and metric already carries `"topic"` (id or name) and `"version"`
+  separately; concatenating them into one string would need parsing back
+  apart anywhere that wants to filter or aggregate by version alone.
+- **`FamilyHealth`/`VersionHealth` live in `pkg/admin`, not a `pkg/metrics`
+  composition.** A working `pkg/metrics.HealthMetrics` was built and then
+  deliberately reverted: the retire verdict is intrinsically
+  `DestroyTopic`'s own question (admin's lifecycle verb), not a general
+  metrics concern the way a running consumer's live gauges are. It reads
+  through `consumer/metrics.ConsumerMetricsDatastore` and
+  `topic/metrics.TopicMetricsDatastore` the same way any other caller would,
+  rather than owning its own copy of that data.
+
