@@ -304,7 +304,7 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 	if err := json.Unmarshal(item.row.Payload, &work); err != nil {
 		// bad payload will never deserialize -- no point retrying it
 		p.buffer.ResolveTerminal(item, err)
-	} else if err := p.callSafely(ctx, consumerFunc, &work, item.row.Id, 0); err != nil {
+	} else if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta()), consumerFunc, &work, item.row.Id, 0); err != nil {
 		p.buffer.ResolveException(item, err)
 	} else {
 		p.buffer.ResolveSuccess(item)

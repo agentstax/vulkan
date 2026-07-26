@@ -20,15 +20,12 @@ var (
 )
 
 type MessageRow struct {
-	Id      int64           `db:"id"`
-	Payload json.RawMessage `db:"payload"`
-	// Status      string          `db:"status"`
-	// Attempts    int             `db:"attempts"`
-	// CanRunAfter time.Time       `db:"can_run_after"`
-	// LeaseUntil  *time.Time      `db:"lease_until"` // nullable
-	// LeaseToken  pgtype.UUID     `db:"lease_token"` // nullable
-	// LastError   *string         `db:"last_error"`  // nullable
-	CreatedAt time.Time `db:"created_at"`
+	Id             int64           `db:"id"`
+	Payload        json.RawMessage `db:"payload"`
+	CreatedAt      time.Time       `db:"created_at"`
+	RoutingKey     string          `db:"routing_key"`    // "" if unset, COALESCE'd at read
+	CompactionKey  string          `db:"compaction_key"` // "" if unset, COALESCE'd at read
+	CompactionRank int64           `db:"compaction_rank"`
 }
 
 type LeaseRow struct {
@@ -70,12 +67,16 @@ type MessageTerminal struct {
 // one exception claimed off the exception window for (re)processing -- the lease
 // token guards its resolution the same way LeaseRow's does for a range.
 type ClaimedException struct {
-	ConsumerGroup string          `db:"consumer_group"`
-	TopicID       int64           `db:"topic_id"`
-	MessageId     int64           `db:"message_id"`
-	Attempts      int             `db:"attempts"`
-	LeaseToken    pgtype.UUID     `db:"lease_token"`
-	Payload       json.RawMessage `db:"payload"`
+	ConsumerGroup  string          `db:"consumer_group"`
+	TopicID        int64           `db:"topic_id"`
+	MessageId      int64           `db:"message_id"`
+	Attempts       int             `db:"attempts"`
+	LeaseToken     pgtype.UUID     `db:"lease_token"`
+	Payload        json.RawMessage `db:"payload"`
+	CreatedAt      time.Time       `db:"created_at"`
+	RoutingKey     string          `db:"routing_key"`
+	CompactionKey  string          `db:"compaction_key"`
+	CompactionRank int64           `db:"compaction_rank"`
 }
 
 // DeliveryRow is one (consumer_group, message_id) row of the per-topic
@@ -159,7 +160,6 @@ func (d *ConsumerDatastore[Message]) UpsertCursor(ctx context.Context, topicID i
 
 	return tx.Commit(ctx)
 }
-
 
 // Commit frees the range's lease, then parks any failures as sparse delivery
 // rows -- initialBackoff sets how long a freshly parked row waits before it's
@@ -518,7 +518,14 @@ func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 // readMessages reads topicID's message_log rows in (low, high], ordered by id.
 func (d *ConsumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx, topicID int64, consumerGroup string, low, high int64) ([]MessageRow, error) {
 	sql := fmt.Sprintf(`
-		SELECT m.id, m.payload, m.created_at FROM %s m
+		SELECT
+			m.id, 
+			m.payload, 
+			m.created_at,
+			COALESCE(m.routing_key, '') AS routing_key,
+			COALESCE(m.compaction_key, '') AS compaction_key,
+			m.compaction_rank
+		FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
@@ -880,7 +887,11 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 			c.message_id,
 			c.attempts,
 			c.lease_token,
-			m.payload
+			m.payload,
+			m.created_at,
+			COALESCE(m.routing_key, '') AS routing_key,
+			COALESCE(m.compaction_key, '') AS compaction_key,
+			m.compaction_rank
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;

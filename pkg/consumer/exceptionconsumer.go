@@ -128,7 +128,7 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 			return err
 		}
 
-		if err := p.callSafely(ctx, consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
+		if err := p.callSafely(withMeta(ctx, exception.toMessageMeta()), consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
 					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
