@@ -192,9 +192,10 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 	// total message volume.
 	createLatestKeySql := `
 		CREATE TABLE IF NOT EXISTS latest_key (
-			topic_id       BIGINT NOT NULL, -- PK
-			compaction_key TEXT   NOT NULL, -- PK
-			latest_id      BIGINT NOT NULL, -- highest message_log id seen for this key so far
+			topic_id        BIGINT NOT NULL,           -- PK
+			compaction_key  TEXT   NOT NULL,           -- PK
+			latest_id       BIGINT NOT NULL,           -- highest message_log id seen for this key so far
+			compaction_rank BIGINT NOT NULL DEFAULT 0, -- the current winner's rank
 			PRIMARY KEY (topic_id, compaction_key)
 		);
 	`

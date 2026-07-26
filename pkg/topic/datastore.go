@@ -505,6 +505,7 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 
 			routing_key TEXT,
 			compaction_key TEXT,
+			compaction_rank BIGINT NOT NULL DEFAULT 0,
 			payload JSONB NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		) PARTITION BY RANGE (id);

@@ -309,20 +309,22 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			), inserted AS (
-				INSERT INTO %s (payload, routing_key, compaction_key)
-				SELECT $2, NULLIF($3, ''), $4      -- if routing_key $3 is empty string '' insert as NULL
+				INSERT INTO %s (payload, routing_key, compaction_key, compaction_rank)
+				SELECT $2, NULLIF($3, ''), $4, $6  -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
-				INSERT INTO latest_key (topic_id, compaction_key, latest_id)
-				SELECT $5, $4, id FROM inserted
+				INSERT INTO latest_key (topic_id, compaction_key, latest_id, compaction_rank)
+				SELECT $5, $4, id, $6 FROM inserted
 				ON CONFLICT (topic_id, compaction_key) DO UPDATE
-				SET latest_id = EXCLUDED.latest_id
-				WHERE latest_key.latest_id < EXCLUDED.latest_id
+				SET latest_id = EXCLUDED.latest_id, compaction_rank = EXCLUDED.compaction_rank
+				-- lexicographic (rank, id) compare -- higher rank wins outright; equal rank
+				-- falls through to the id compare alone, today's rule unchanged
+				WHERE (latest_key.compaction_rank, latest_key.latest_id) < (EXCLUDED.compaction_rank, EXCLUDED.latest_id)
 			)
 			SELECT id FROM inserted;
 		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
-		args = append(args, opts.CompactionKey, topicID)
+		args = append(args, opts.CompactionKey, topicID, opts.CompactionRank)
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
@@ -333,11 +335,10 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, compaction_key)
+			INSERT INTO %s (payload, routing_key)
 			SELECT
 				$2,
-				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
-				NULL
+				NULLIF($3, '') -- if routing_key is empty string '' insert as NULL
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
 		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))

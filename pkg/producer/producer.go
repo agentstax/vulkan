@@ -38,6 +38,16 @@ type ProduceOptions struct {
 	// Ex: "user:123", "session:abc-def"
 	CompactionKey string
 
+	// CompactionRank - overrides arrival order when picking a CompactionKey's
+	// winner: higher rank wins, equal ranks fall to the id tiebreak.
+	// Default: 0 (arrival order decides).
+	//
+	// Rank is a COMMITMENT, not a hint: a high-rank write pins its key --
+	// lower ranks lose silently until something >= it arrives.
+	// Requires CompactionKey.
+	// Ex: a source system's row version, a priority tier, epoch micros.
+	CompactionRank int64
+
 	// IdempotencyKey - protects a retried AppendMessage (after a blip) from double-publishing.
 	// Default: uuid.Nil (a fresh key is generated per call, protecting only
 	// against retries within that one call).
@@ -49,6 +59,14 @@ type ProduceOptions struct {
 	// A caller-supplied key routes the call to a per-call transaction, never a batch.
 	// Ex: a UUIDv7 persisted alongside the work before the first Produce attempt.
 	IdempotencyKey uuid.UUID
+}
+
+// Validate rejects nonsensical option combinations.
+func (o ProduceOptions) Validate() error {
+	if o.CompactionRank != 0 && o.CompactionKey == "" {
+		return fmt.Errorf("CompactionRank %d set without CompactionKey -- rank has nothing to rank, set CompactionKey too", o.CompactionRank)
+	}
+	return nil
 }
 
 type Producer[Message any] struct {
@@ -148,6 +166,9 @@ func (p *Producer[Message]) Produce(ctx context.Context, message *Message, opts 
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
 
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
@@ -162,6 +183,9 @@ func (p *Producer[Message]) Produce(ctx context.Context, message *Message, opts 
 // the message's transaction -- your writes commit or roll back with it.
 func (p *Producer[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -186,6 +210,9 @@ func (p *Producer[Message]) ProduceFunc(ctx context.Context, producerFunc Produc
 // after this call extends how long that lock is held.
 func (p *Producer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
 	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 

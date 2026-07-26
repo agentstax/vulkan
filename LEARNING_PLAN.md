@@ -4738,7 +4738,9 @@ it.*
       API, abstract away required variables as plain params, keeping only
       truly optional params in the `Config` structs. `Config` structs
       should also be renamed to `OptionalConfig` to make that split
-      obvious at the call site.
+      obvious at the call site. Depending on what is decided could make it
+      such that compaction_key and compaction_rank are required params in
+      a single 'compaction' option to avoid validation
 - [] **Comment conventions and standardizations**. Public surfaces should follow
       a standard: description, defaults, errors, doc links
 - [ ] **Maintenance-tier surface joins the review** — everything the
