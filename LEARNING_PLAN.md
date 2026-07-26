@@ -88,12 +88,12 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**); janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
-| 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all three measure or test a surface that needs to stop moving first |
+| 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
 | 16 — Circuit breaker (implementation) | ⬜ | builds the two-tier design settled in 13 (per-instance trip unit, quorum globalization, refund-on-close reconciliation); K's absolute-vs-fraction question may pull in **13d**'s presence heartbeat work as a prerequisite |
-| 6.5d, 7b, 8d, 9b, 11b, 11.5b, 12b, 13b, 13c, 13d, 14d | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing + NATS-style selector, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, dynamic partition bounds, defer + policy-driven dispatch, consumer lifecycle extension point, RLS + chaos/fixture suite, presence heartbeat rows, research backlog) — pick up only if a real workload demands each; moved to the end of this document; 9b's prerequisite (Phase 13 settling the datastore boundary) is now satisfied, 11b should weigh 8d's outcome if both are ever picked up, and 13d is Phase 16's prerequisite if quorum-as-a-fraction wins |
+| 6.5d, 7b, 8d, 9b, 11b, 11.5b, 12b, 13b, 13c, 13d, 14d | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing + NATS-style selector, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, dynamic partition bounds, defer + policy-driven dispatch, consumer lifecycle extension point, RLS + chaos/fixture suite, presence heartbeat rows + automatic group expiration, research backlog) — pick up only if a real workload demands each; moved to the end of this document; 9b's prerequisite (Phase 13 settling the datastore boundary) is now satisfied, 11b should weigh 8d's outcome if both are ever picked up, and 13d is Phase 16's prerequisite if quorum-as-a-fraction wins |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -4380,6 +4380,25 @@ sequenced after both of these close.*
       Postgres; the fix is a small pkg/datastore field add (an explicit
       sslmode field or a passthrough param map, NOT a redesign) the first
       time someone points the CLI at a database that needs it.
+- [ ] **Group retirement, manual half: a destroy-group verb + CLI** (the
+      automated expiration half rides with **13d**, where the design
+      discussion is recorded). Today a retired consumer group has NO
+      deletion path short of destroying the topic: its cursor pins the
+      topic's retention floor forever (the only workaround,
+      `AllowDropPastCommitted`, waives the safety for live groups too),
+      the fleet daemon claims and no-op-rolls its waterline duty forever,
+      and `maintain status` shows the dead group ✓ ok — dead and healthy
+      are indistinguishable. Shape: a guarded admin verb mirroring
+      DestroyTopic — delete the group's cursor, waterline duty row,
+      bindings, lease rows, and parked delivery rows for one topic in one
+      transaction — plus the CLI command (naming at build: name after the
+      codebase's own verbs). Guards: refuse while the group holds an
+      unexpired lease (best-effort liveness until 13d presence) or parked
+      delivery rows (deleting them discards failures promised a retry);
+      force-override + confirm per the destroy precedent. The fleet needs
+      zero work — reconcile already stops a runner whose duty row
+      vanishes (the destroy-topic reap path). New public surface — 14b's
+      maintenance-tier review bullet covers it.
 - [x] **Janitor efficiency and concurrency** (folded from TODO.md). Built as
       the MAINTENANCE TIER. Both questions the bullet raised got answers, and
       neither answer is an opt-out flag:
@@ -4601,6 +4620,28 @@ work.*
       `bench/idempotency/RESULTS.md` before `SkipIdempotency` was removed;
       multi-topic contention was left on that benchmark's own deferred
       list and is still open.
+- [ ] **Idle-fleet duty-load benchmark** (settled in the maintenance-tier
+      discussion: measure BEFORE building any fix). A fully idle
+      deployment still pays per duty per interval: the winner's claim
+      UPDATE + no-op work each tick (waterline one advance query at 1s,
+      janitor ~4 small queries at 5s, ~0.5ms), and — the term that grows —
+      every fleet replica's LOSING claim attempt (R replicas × D duties ×
+      1/rate no-op UPDATEs; zero rows matched so no WAL, and the winner's
+      row update is HOT, but it's still query volume). Chunk-4's accepted
+      trade: per-duty claims lose to bulk only at 10k+ duties. Bench idle
+      `maintain run` at 100 / 1k / 10k duties × 1-3 replicas: Postgres
+      CPU, QPS, and where the curve actually hurts. The result picks a
+      rung on the SETTLED fix ladder (recorded here, cheapest first —
+      don't skip rungs): (1) the knob already exists — per-topic rates,
+      coarsen quiet topics, document; (2) idle backoff inside `dutyRunner`
+      only — no progress this tick backs off toward a cap (~10× rate),
+      any progress snaps back to base; cost is a committed-staleness
+      spike on wake bounded by the cap, janitor side already covered by
+      the producer's partition self-heal; (3) LISTEN/NOTIFY-woken duties
+      — rides the post-v1 pool's LISTEN/NOTIFY item, real complexity,
+      only if (2) measurably fails. Prior going in: rung 1 carries to
+      ~1k duties, rung 2 well past 10k, rung 3 never earns it — the
+      bench's job is to confirm or kill that prior.
 - [ ] **Cross-version compatibility matrix** (folded from TODO.md's
       testing-strategy entry): run a producer/consumer built against
       release N-1 on a database migrated by N — the combination a rolling
@@ -5454,6 +5495,30 @@ layer: an alert that can say "destroy blocked: producer X seen 2s ago"
 instead of a bare threshold is the version of that layer that explains
 itself.
 
+**Third consumer: automatic consumer-group expiration** (design settled in
+the maintenance-tier discussion; the manual destroy-group verb is 14a's).
+The Pulsar `subscriptionExpiration` / Kafka empty-group-offset-TTL pattern,
+vulkan-shaped: a janitor-style reap of a group idle past
+`topic.Config.GroupExpiration`, deleting the same rows as the manual verb
+(cursor + waterline duty + bindings). The default anchors to the topic's
+own retention — `max(RetentionTTL, 7d)`: once a group has been silent a
+full retention window, everything it missed would have dropped anyway had
+it not pinned it, so its claim to continuity has expired in spirit; the 7d
+floor keeps short-retention topics safe across incidents and holidays
+(Kafka's 1d→7d lesson). Retention-forever topics never expire groups
+(nothing is pinned — a dead cursor costs only duty-claim trickle and
+status noise). Expiry is recoverable by design: a returning group re-seeds
+its cursor and REPLAYS what retention holds — duplicate work, not data
+loss (unlike Kafka's reset-to-latest). It rides here and not 14a because
+idle detection wants presence: Kafka expires only EMPTY groups, and
+alive-but-lagging must never expire — lease rows are only a proxy for
+that; heartbeat rows are the real answer. Two hard rules from the
+discussion: expiry must telegraph, not surprise (`maintain status` /
+DutyState flag "idle 12d, expires in 18d" before the reaper runs), and
+parked delivery rows refuse-or-alert rather than silently drop. Config
+wrinkle for 14b's refinement pass: the default isn't "never", so
+0-as-unset and 0-as-never collide — needs an explicit never sentinel.
+
 **Build:**
 - [ ] Presence table + one row per instance: `registered_at` (written once
       at Register), `last_heartbeat`, `last_produced_at`/`last_consumed_at`;
@@ -5472,6 +5537,13 @@ itself.
       backstop.
 - [ ] Live-instance count query — the read Phase 16's quorum-as-a-fraction
       option needs.
+- [ ] Automatic group expiration: `topic.Config.GroupExpiration` (default
+      `max(RetentionTTL, 7d)`, never on retention-forever, explicit never
+      sentinel per the 0-collision wrinkle) enforced as a janitor-style
+      reap gated on presence (no ALIVE consumer in the group) — deletes
+      the same rows as 14a's manual verb. Idle/expiring visibility in
+      `maintain status`/DutyState ships BEFORE the reaper; parked delivery
+      rows refuse-or-alert, never silent drop.
 
 **Explain it back:**
 1. Why must the Destroy gate check ALIVE rather than ACTIVE, and why does
