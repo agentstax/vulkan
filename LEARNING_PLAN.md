@@ -4624,38 +4624,41 @@ sequenced after both of these close.*
       maintenance). The DB already IS their store; read them live and
       cold-truth is preserved (CLI `topic get` / `maintain status` see reality
       with nothing running — keep that).
-      (2) In-process metrics — today ONLY `AbandonedRoutines`, a per-consumer-
-      process counter with no DB home, invisible across replicas — go on a
-      compacted `__system.metrics` topic. Multiple replicas share a group (the
-      whole waterline design), so each PROCESS mints a UUID at construction and
-      periodically produces its in-proc snapshot keyed
-      `abandoned_routines/<topic-id>/<group>/<uuid>` (rank = monotonic
-      produced-at). Per-process keying is REQUIRED for correctness — a single
-      per-(group,topic) key would let the last replica clobber every other
-      replica's counts. Produce via the real `Producer[...]` (hand-copying the
-      compaction upsert would be the lab-staleness trap in production code).
+      (2) In-process metrics — today ONLY `AbandonedRoutines`, hard-timed-out
+      callSafely goroutines, with no DB home and invisible across replicas —
+      go on the `__system.metrics` topic as a raw EVENT stream. `Add` emits one
+      `abandoned` event, `Remove` one `cleared` event, each carrying the
+      abandonedKey (topicId, group, messageId, attempt) + a timestamp, routed
+      `abandoned_routine.<topicId>.<group>`. NO compaction key — it's a
+      retention-windowed event log; abandonment is rare-path so it's a trickle,
+      and steady state (no abandonment) writes nothing. The process computes
+      NOTHING — no in-mem total/outstanding/latency. Events are produced
+      BEST-EFFORT off the hot path via a buffered channel drained by a small
+      producer goroutine (dropped on overflow) so metric production can never
+      stall or fail message processing; produced via the real `Producer[...]`.
       `pkg/metrics` becomes THE SNAPSHOTTER: the single top-level read surface
       that live-reads the DB-snapshot metrics (consolidating the scattered
-      domain datastores) AND reads `__system.metrics` compaction heads for
-      in-proc metrics — aggregating across LIVE heads (sum outstanding/total,
-      weighted-avg latency) while DROPPING heads staler than a freshness TTL so
-      dead replicas age out — returning one merged `Snapshot`. It also owns the
-      OTel meter integration: gauges whose observe callback calls the
-      snapshotter, killing the copy-pasted meter-threading. Library still never
-      imports the otel SDK (snapshotter takes `metric.Meter`, noop default,
-      caller owns the provider). `admin/metrics.go` is an endpoint running the
-      snapshotter one-shot (noop meter, exporter-free, like `maintain status`)
-      and returning requested snapshots; the CLI owns FORMATTING them into
-      actionable content. `admin/health.go` STAYS SEPARATE — the retire-safety
-      verdict (Safe/Reason) is `DestroyTopic`'s own question, already once built
-      into `pkg/metrics` and deliberately reverted (see the schema-evolution
-      as-built above); reworked only to source data from the snapshotter, the
-      verdict logic unchanged.
-      RECORDED TRADEOFF (a consequence, not a bug to fix): moving
-      `AbandonedRoutines` off its synchronous otel Counter/UpDownCounter/
-      Histogram onto snapshotter-observed gauges LOSES the latency-histogram
-      DISTRIBUTION — it becomes a periodic gauge of the aggregated avg.
-      Accepted for v1.
+      domain datastores) AND reads the `__system.metrics` event stream,
+      DERIVING outstanding (abandoned events with no matching cleared), total
+      (distinct abandoned keys in the window), and self-clear latency avg (mean
+      of cleared−abandoned over matched pairs) — returning one merged
+      `Snapshot`. It also owns the OTel meter integration: gauges whose observe
+      callback calls the snapshotter, killing the copy-pasted meter-threading.
+      Library still never imports the otel SDK (snapshotter takes
+      `metric.Meter`, noop default, caller owns the provider). `admin/metrics.go`
+      is an endpoint running the snapshotter one-shot (noop meter,
+      exporter-free, like `maintain status`) and returning requested snapshots;
+      the CLI owns FORMATTING them into actionable content. `admin/health.go`
+      STAYS SEPARATE — the retire-safety verdict (Safe/Reason) is
+      `DestroyTopic`'s own question, already once built into `pkg/metrics` and
+      deliberately reverted (see the schema-evolution as-built above); reworked
+      only to source data from the snapshotter, the verdict logic unchanged.
+      METRIC SEMANTICS: chosen latency output is the AVG (the meaningful number
+      here); raw per-event durations sit in the stream if a distribution is
+      ever wanted. "Total" is fleet-wide + retention-windowed, NOT
+      per-process-lifetime-monotonic — expose it and any abandonment rate as a
+      gauge computed from the events, never an otel Counter (which must be
+      monotonic).
       `__system.metrics` reuses the SAME `__system.` reserved-prefix +
       idempotent system-topic-creation machinery as the default-alerts build —
       cross-plan dependency, both parked; whichever lands first owns it, the
@@ -4664,9 +4667,9 @@ sequenced after both of these close.*
       surface; changing the retire-verdict LOGIC (only its data source moves).
       Chunk plan: `~/.claude/plans/metrics-redesign.md` (5 chunks:
       snapshotter over live DB reads → `__system.metrics` topic + reserved
-      prefix → in-proc metrics onto the topic → snapshotter reads + aggregates
-      heads → admin/metrics.go + health.go rework + CLI + metricslab).
-      Build PARKED — not started yet.
+      prefix → in-proc metrics as an event stream → snapshotter derives metrics
+      from the event stream → admin/metrics.go + health.go rework + CLI +
+      metricslab). Build PARKED — not started yet.
 - [ ] **`cmd/vulkan` connection gap** (folded from the admin-surface entry):
       `datastore.PostgresConnectionConfig` has no sslmode /
       DSN-query-param field — it's User/Pass/Host/Port/Database/MaxConns

@@ -70,6 +70,9 @@ sweep-lab:
 topic-lab:
   go run examples/phase_1/topiclab/main.go
 
+reserved-topic-lab:
+  go run examples/phase_1/reservedtopiclab/main.go
+
 # log compaction lab: latest-per-key survives a claim, older rows stay
 # physically present, a delivered version isn't retroactively unsent, the
 # crash/reclaim race gives a superseded row zero delivery while its successor

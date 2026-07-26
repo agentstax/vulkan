@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
@@ -45,10 +47,17 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
+	if isReservedTopicName(name) {
+		return nil, fmt.Errorf("%w: %s", ErrReservedTopicName, name)
+	}
 	if version < 1 {
 		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 
+	return a.registerTopic(ctx, name, version, cfg)
+}
+
+func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.Config) (*topic.Topic, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
 	// otherwise UpsertTopic dies with a raw undefined-table error.
 	registered, err := a.systemDatastore.IsRegistered(ctx)
@@ -135,6 +144,9 @@ func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName str
 	if newName == name {
 		return nil, errors.New("new name matches the current name -- nothing to rename")
 	}
+	if isReservedTopicName(name) || isReservedTopicName(newName) {
+		return nil, fmt.Errorf("%w: %s -> %s", ErrReservedTopicName, name, newName)
+	}
 
 	renamed, err := a.topicDatastore.RenameTopic(ctx, name, newName)
 	if err != nil {
@@ -165,6 +177,9 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 	if name == "" {
 		return errors.New("topic name is required")
 	}
+	if isReservedTopicName(name) {
+		return fmt.Errorf("%w: %s", ErrReservedTopicName, name)
+	}
 
 	found, err := a.topicDatastore.GetTopic(ctx, name, version)
 	if err != nil {
@@ -189,4 +204,8 @@ func (a *MessageAdmin) destroyTopic(ctx context.Context, found *topic.Topic, opt
 	}
 
 	return a.topicDatastore.DeleteTopic(ctx, found)
+}
+
+func isReservedTopicName(name string) bool {
+	return strings.HasPrefix(name, common.SystemTopicPrefix)
 }
