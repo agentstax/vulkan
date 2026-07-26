@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/agentstax/vulkan/internal/topic"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -17,6 +18,12 @@ import (
 
 // TODO - we need to split this file up
 // TODO - this code needs a lot of work to read better it is currently jibberish
+
+// ddlLockTimeout caps how long the self-heal CREATE waits for its table lock.
+// WAITING is the hazard, not failing: postgres queues every later produce and
+// claim behind the lock, so a stuck lock holder would stall the whole topic --
+// better to fail this produce fast and let the caller's retry policy own it.
+const ddlLockTimeout = 2 * time.Second
 
 type producerDatastore[Message any] struct {
 	Datastore *coredatastore.PostgresDatastore
@@ -129,7 +136,20 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 			FOR VALUES FROM (%d) TO (%d);
 	`, topic.MessageLogPartitionTable(topicID, next), topic.MessageLogTable(topicID), next*partitionSize, (next+1)*partitionSize)
 
-	_, err := d.Datastore.Pool.Exec(ctx, createPartitionSql)
+	// one round trip -- a batch outside an explicit txn runs as one implicit
+	// transaction, which scopes the SET LOCAL to exactly these two statements
+	// instead of leaking it to whatever might use this pooled connection next
+	batch := &pgx.Batch{}
+	batch.Queue(fmt.Sprintf(`SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds()))
+	batch.Queue(createPartitionSql)
+
+	results := d.Datastore.Pool.SendBatch(ctx, batch)
+	if _, err := results.Exec(); err != nil {
+		results.Close()
+		return err
+	}
+	_, err := results.Exec()
+	closeErr := results.Close()
 	if err != nil {
 		// IF NOT EXISTS still races -- losing to a concurrent creator means it exists
 		var pgErr *pgconn.PgError
@@ -138,8 +158,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 		}
 		return err
 	}
-
-	return nil
+	return closeErr
 }
 
 func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*Message, error) {

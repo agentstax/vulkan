@@ -188,14 +188,14 @@ func (d *ConsumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Cont
 
 func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
-	// one statement (the Phase 2 state machine, now per-(group, topic, message) instead
-	// of per-message). SKIP LOCKED keeps competing workers from grabbing the same row.
+	// one statement, per (group, topic, message). SKIP LOCKED keeps competing
+	// workers from grabbing the same row.
 	//
 	// delivery only stores message_id, not the payload, so we join this topic's
 	// message_log back in -- the log stays immutable, all mutation lives in delivery.
 	//
-	// Phase 6 deliberately has no lease: a 'processing' row that never gets resolved
-	// (consumer crash) just sits there. Visibility-timeout reclaim is Phase 6.5.
+	// No lease here: the parked lifecycle path never grew crash recovery, so a
+	// 'processing' row that never gets resolved (consumer crash) just sits there.
 	sql := fmt.Sprintf(`
 		WITH claimed AS (
 			UPDATE %[1]s
@@ -259,7 +259,7 @@ func (d *ConsumerDatastore[Message]) recordSuccess(ctx context.Context, delivery
 // RecordFailure handles a processing error: retry until attempts are exhausted,
 // then hand off to RecordTerminal (the per-group DLQ). attempts was already
 // incremented at claim time, so >= maxAttempts means this was the last try.
-// Phase 6 has no backoff (the delivery table carries no can_run_after) -- a
+// No retry backoff (the delivery table carries no can_run_after) -- a
 // 'ready' row is simply re-claimed on the next poll.
 func (d *ConsumerDatastore[Message]) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryRow, failureErr error, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {

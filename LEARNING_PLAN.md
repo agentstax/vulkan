@@ -89,7 +89,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
 | 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
-| 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement — sequenced alongside **14a** |
+| 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all three measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
 | 16 — Circuit breaker (implementation) | ⬜ | builds the two-tier design settled in 13 (per-instance trip unit, quorum globalization, refund-on-close reconciliation); K's absolute-vs-fraction question may pull in **13d**'s presence heartbeat work as a prerequisite |
@@ -4560,6 +4560,20 @@ it.*
       obvious at the call site.
 - [] **Comment conventions and standardizations**. Public surfaces should follow
       a standard: description, defaults, errors, doc links
+- [ ] **Maintenance-tier surface joins the review** — everything the
+      maintenance tier exported postdates Phase 13's painstaking pass over
+      producer/consumer/topic, so it hasn't had one: `pkg/maintain`
+      (`MaintenanceDatastore`'s op verbs + `ListDuties`/`FleetDuty`,
+      `Janitor`/`WaterlineRoller`/`Maintainer`/`FleetMaintainer`, both
+      configs), `pkg/maintain/metrics` (`DutyState`/`DutyStatus`), the
+      consumer split (`Consumer`/`MessageConsumer`/`ExceptionConsumer`/
+      `DeliveryConsumer`, one shared `ConsumerConfig`), the renamed
+      `Producer`/`ProducerConfig`, and the `vulkan maintain` commands.
+      Same rigor as Phase 13 before v1 locks it. One deliberate trap to
+      re-examine: `NewMessageConsumer` KEPT its signature while changing
+      meaning (bundle → bare work loop) — fine while unreleased, but
+      decide whether the bare piece constructors should be harder to reach
+      for by accident (naming, placement, or docs steering to `NewConsumer`).
 
 **Done when:** every item above has a written decision and, where
 applicable, is applied consistently across the reviewed surface, NOTES.md,

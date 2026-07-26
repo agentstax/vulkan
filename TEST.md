@@ -39,7 +39,7 @@ Action: call `Produce` with a pre-cancelled ctx, then call `Produce` again with 
 Assert: first call errors before enqueue; probe call succeeds -- confirms the rejected call published zero rows and didn't wedge the batcher.
 
 ### P6 -- fire-and-forget (Background + DisableGracefulShutdown)
-Setup: `MessageProducerConfig{DisableGracefulShutdown: true}`.
+Setup: `ProducerConfig{DisableGracefulShutdown: true}`.
 Action: `Register(context.Background())`, then `Produce`.
 Assert: Register succeeds despite the non-cancellable ctx; Produce succeeds.
 
@@ -151,7 +151,7 @@ Action: `Register(context.Background())`.
 Assert: `ErrLifecycleContextNotCancellable` with the teaching snippet.
 
 ### C13 -- opt-out works (Consume's own ctx becomes the only off-switch)
-Setup: `MessageConsumerConfig{DisableGracefulShutdown: true}`.
+Setup: `ConsumerConfig{DisableGracefulShutdown: true}`.
 Action: `Register(context.Background())`, run `Consume` with a cancellable call ctx, cancel it.
 Assert: Register succeeds; `Consume` returns nil on the call ctx cancelling (since the lifecycle ctx itself can never cancel).
 
