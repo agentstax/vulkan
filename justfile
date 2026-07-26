@@ -281,6 +281,17 @@ producer-batch-lab:
 maintenance-lab:
   go run examples/phase_1/maintenancelab/main.go
 
+# Phase 14a chunk 7 lab: the end-to-end bridge pattern proof -- a user-space
+# consumer group transforms+re-produces v1's compacted winners into a newly
+# registered v2 at CompactionRank -1 while live producers write straight to
+# v2 at rank 0. Confirms zero-pause (live always beats the bridge, either
+# arrival order), a crashed-and-restarted bridge resumes from its cursor with
+# no duplicate rows, and that drain telegraphing never calls a compacted
+# topic safe on its own even once this lab proves it actually is -- that
+# stays an operator call. Registers both versions, destroys both on exit.
+schema-evolution-lab:
+  go run examples/phase_1/schemaevolutionlab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \
