@@ -78,6 +78,13 @@ topic-lab:
 compaction-lab:
   go run examples/phase_1/compactionlab/main.go
 
+# CompactionRank lab: a rank-100 pin ignores every normal-rank update after
+# it even at a higher id, a -1 backfill write never beats a live rank-0
+# write regardless of arrival order (the bridge's exact interleaving, both
+# orderings), and every losing row stays physically present but never claimed.
+compaction-rank-lab:
+  go run examples/phase_1/compactionranklab/main.go
+
 # log compaction width/planner lab: measures whether proving a row IS the
 # latest for its key (no early termination) actually costs more partition
 # scans than proving it ISN'T (can stop at the first match) -- and whether a
