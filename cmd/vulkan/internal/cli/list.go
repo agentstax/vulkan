@@ -47,7 +47,7 @@ func newTopicListCmd(g *globalFlags) *cobra.Command {
 
 func printTopicNames(w io.Writer, topics []*topic.Topic) {
 	for _, t := range topics {
-		fmt.Fprintln(w, t.Name)
+		fmt.Fprintf(w, "%s@v%d\n", t.Name, t.SchemaVersion)
 	}
 }
 
@@ -58,10 +58,11 @@ func printTopicsTable(w io.Writer, topics []*topic.Topic) {
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tCREATED\tUPDATED")
+	fmt.Fprintln(tw, "NAME\tVERSION\tCREATED\tUPDATED")
 	for _, t := range topics {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\n",
 			t.Name,
+			t.SchemaVersion,
 			timeCell(t.CreatedAt),
 			timeCell(t.UpdatedAt),
 		)

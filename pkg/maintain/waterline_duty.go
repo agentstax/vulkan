@@ -109,11 +109,11 @@ func (w *WaterlineRoller) Run(ctx context.Context) error {
 		return errors.New("waterline roller not registered -- call Register first")
 	}
 
-	w.Logger.InfoContext(ctx, "waterline duty loop starting", "topic", w.Topic.Id, "group", w.consumerGroup)
+	w.Logger.InfoContext(ctx, "waterline duty loop starting", "topic", w.Topic.Id, "version", w.version, "group", w.consumerGroup)
 
 	err := w.duty.run(ctx, w.roll)
 	if errors.Is(err, context.Canceled) {
-		w.Logger.InfoContext(ctx, "waterline roller stopped", "topic", w.Topic.Id, "group", w.consumerGroup)
+		w.Logger.InfoContext(ctx, "waterline roller stopped", "topic", w.Topic.Id, "version", w.version, "group", w.consumerGroup)
 		return nil
 	}
 	return err

@@ -80,7 +80,7 @@ func (p *DeliveryConsumer[Message]) Register(ctx context.Context) error {
 
 	// AbandonedRoutines only: the queue-state gauges read cursor claim
 	// frontiers this path doesn't drive.
-	abandoned, err := metrics.NewAbandonedRoutines(p.Config.Meter, p.consumerGroup, p.Topic.Name)
+	abandoned, err := metrics.NewAbandonedRoutines(p.Config.Meter, p.consumerGroup, p.Topic.Name, int64(p.version))
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (p *DeliveryConsumer[Message]) Consume(ctx context.Context, consumerFunc Co
 	runCtx, cancel := p.runCtx(ctx)
 	defer cancel()
 
-	p.Logger.InfoContext(runCtx, "delivery consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id)
+	p.Logger.InfoContext(runCtx, "delivery consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
 
 	g, gCtx := errgroup.WithContext(runCtx)
 	g.Go(func() error {
@@ -126,7 +126,7 @@ func (p *DeliveryConsumer[Message]) Consume(ctx context.Context, consumerFunc Co
 		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
 			reason = "lifecycle context cancelled"
 		}
-		p.Logger.InfoContext(ctx, "delivery consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id)
+		p.Logger.InfoContext(ctx, "delivery consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
 		err = nil
 	}
 	return err

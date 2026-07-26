@@ -43,7 +43,7 @@ type AbandonedRoutines struct {
 	selfClearLatencies *ConcurrentBoundedRingBuffer[time.Duration]
 }
 
-func NewAbandonedRoutines(meter metric.Meter, group string, topicName string) (*AbandonedRoutines, error) {
+func NewAbandonedRoutines(meter metric.Meter, group string, topicName string, topicVersion int64) (*AbandonedRoutines, error) {
 	total, err := meter.Int64Counter(
 		"vulkan.consumer.abandoned_routines.total",
 		metric.WithDescription("Total consumerFunc invocations abandoned after exceeding WorkTimeout + WorkTimeoutGrace. Monotonic, never decreases."),
@@ -82,6 +82,7 @@ func NewAbandonedRoutines(meter metric.Meter, group string, topicName string) (*
 	attrs := metric.WithAttributeSet(attribute.NewSet(
 		attribute.String("messaging.consumer.group.name", group),
 		attribute.String("messaging.destination.name", topicName),
+		attribute.Int64("vulkan.topic.schema_version", topicVersion),
 	))
 
 	return &AbandonedRoutines{

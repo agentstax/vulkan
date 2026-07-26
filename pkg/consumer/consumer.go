@@ -138,7 +138,7 @@ func (c *Consumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFu
 	runCtx, cancel := base.runCtx(ctx)
 	defer cancel()
 
-	c.Logger.InfoContext(runCtx, "consumer starting", "group", c.consumerGroup, "topic", c.topicName)
+	c.Logger.InfoContext(runCtx, "consumer starting", "group", c.consumerGroup, "topic", c.topicName, "version", base.version)
 
 	g, gCtx := errgroup.WithContext(runCtx)
 
@@ -167,7 +167,7 @@ func (c *Consumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFu
 		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
 			reason = "lifecycle context cancelled"
 		}
-		c.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", c.consumerGroup, "topic", c.topicName)
+		c.Logger.InfoContext(ctx, "consumer stopped", "reason", reason, "group", c.consumerGroup, "topic", c.topicName, "version", base.version)
 	}
 	return err
 }

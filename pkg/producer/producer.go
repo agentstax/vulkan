@@ -142,7 +142,7 @@ func (p *Producer[Message]) Register(ctx context.Context) error {
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName)
+		return fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName, p.version)
 	}
 	p.Topic = current
 

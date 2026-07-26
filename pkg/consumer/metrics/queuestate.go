@@ -52,7 +52,7 @@ type QueueState struct {
 	attrs metric.MeasurementOption
 }
 
-func NewQueueState(meter metric.Meter, group string, topicID int64, topicName string, ds *consumerMetricsDatastore) (*QueueState, error) {
+func NewQueueState(meter metric.Meter, group string, topicID int64, topicName string, topicVersion int64, ds *consumerMetricsDatastore) (*QueueState, error) {
 	head, err := meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.head",
 		metric.WithDescription("Highest message id ever appended to this topic's log -- the log frontier."),
@@ -162,6 +162,7 @@ func NewQueueState(meter metric.Meter, group string, topicID int64, topicName st
 		attrs: metric.WithAttributeSet(attribute.NewSet(
 			attribute.String("messaging.consumer.group.name", group),
 			attribute.String("messaging.destination.name", topicName),
+			attribute.Int64("vulkan.topic.schema_version", topicVersion),
 		)),
 	}
 

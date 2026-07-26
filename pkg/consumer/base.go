@@ -86,7 +86,7 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 		return err
 	}
 	if current == nil {
-		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, b.topicName)
+		return fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, b.topicName, b.version)
 	}
 	b.Topic = current
 

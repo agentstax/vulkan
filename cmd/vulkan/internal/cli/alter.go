@@ -117,7 +117,7 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 // fields that actually changed. before may be nil only under a lost race (the
 // topic appeared between our GetTopic and the alter) -- fall back to a bare line.
 func printAlterResult(w io.Writer, name string, before, updated *topic.Topic) {
-	fmt.Fprintf(w, "%s altered topic %q (id=%d)\n", glyphOK(), name, updated.Id)
+	fmt.Fprintf(w, "%s altered topic %q v%d (id=%d)\n", glyphOK(), name, updated.SchemaVersion, updated.Id)
 	if before == nil {
 		return
 	}

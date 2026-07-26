@@ -56,7 +56,7 @@ func (p *ExceptionConsumer[Message]) Register(ctx context.Context) error {
 
 	// AbandonedRoutines only: the queue-state gauges are the message loop's
 	// picture, and a second QueueState would double-poll the same rows.
-	abandoned, err := metrics.NewAbandonedRoutines(p.Config.Meter, p.consumerGroup, p.Topic.Name)
+	abandoned, err := metrics.NewAbandonedRoutines(p.Config.Meter, p.consumerGroup, p.Topic.Name, int64(p.version))
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (p *ExceptionConsumer[Message]) Consume(ctx context.Context, consumerFunc C
 	runCtx, cancel := p.runCtx(ctx)
 	defer cancel()
 
-	p.Logger.InfoContext(runCtx, "exception consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id)
+	p.Logger.InfoContext(runCtx, "exception consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
 
 	err := p.drainExceptions(runCtx, consumerFunc)
 	if errors.Is(err, context.Canceled) {
@@ -88,7 +88,7 @@ func (p *ExceptionConsumer[Message]) Consume(ctx context.Context, consumerFunc C
 		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
 			reason = "lifecycle context cancelled"
 		}
-		p.Logger.InfoContext(ctx, "exception consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id)
+		p.Logger.InfoContext(ctx, "exception consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
 		err = nil
 	}
 	return err
@@ -132,7 +132,7 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 		if err := p.callSafely(withMeta(ctx, exception.toMessageMeta()), consumerFunc, &work, exception.MessageId, exception.Attempts); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, p.Config.MaxAttempts, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
-					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
+					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
 					continue // reclaimed by the kill backstop or another worker -- not ours anymore
 				}
 				return recordErr
@@ -142,7 +142,7 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 
 		if err := p.Datastore.RecordExceptionSuccess(ctx, &exception); err != nil {
 			if errors.Is(err, ErrLeaseLost) {
-				p.Logger.DebugContext(ctx, "lease lost recording exception success, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "message_id", exception.MessageId)
+				p.Logger.DebugContext(ctx, "lease lost recording exception success, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
 				continue
 			}
 			return err

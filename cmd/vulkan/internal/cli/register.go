@@ -100,10 +100,10 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			if preTopic != nil {
-				fmt.Fprintf(out, "%s topic %q already registered (id=%d) -- no changes\n",
-					glyphOK(), name, registered.Id)
+				fmt.Fprintf(out, "%s topic %q v%d already registered (id=%d) -- no changes\n",
+					glyphOK(), name, registered.SchemaVersion, registered.Id)
 			} else {
-				fmt.Fprintf(out, "%s registered topic %q (id=%d)\n", glyphOK(), name, registered.Id)
+				fmt.Fprintf(out, "%s registered topic %q v%d (id=%d)\n", glyphOK(), name, registered.SchemaVersion, registered.Id)
 			}
 			return nil
 		},

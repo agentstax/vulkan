@@ -67,7 +67,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 				if !empty { // implies --force by the gate above
 					fmt.Fprintf(out, "%s topic %q still holds messages -- --force will delete them along with the topic.\n", glyphWarn(), name)
 				}
-				fmt.Fprintf(out, "This will PERMANENTLY delete topic %q (id=%d) and every message it holds.\n", name, found.Id)
+				fmt.Fprintf(out, "This will PERMANENTLY delete topic %q v%d (id=%d) and every message it holds.\n", name, found.SchemaVersion, found.Id)
 				fmt.Fprintln(out, "This cannot be undone.")
 				fmt.Fprintln(out)
 				fmt.Fprint(out, "Type the topic name to confirm: ")
@@ -87,7 +87,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 				return destroyError(name, err)
 			}
 			fmt.Fprintln(out, "done")
-			fmt.Fprintf(out, "%s topic %q destroyed\n", glyphOK(), name)
+			fmt.Fprintf(out, "%s topic %q v%d destroyed\n", glyphOK(), name, found.SchemaVersion)
 			return nil
 		},
 	}

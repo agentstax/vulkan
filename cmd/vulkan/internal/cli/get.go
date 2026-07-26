@@ -58,7 +58,7 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 }
 
 func printTopicDetail(w io.Writer, t *topic.Topic) {
-	fmt.Fprintf(w, "%s topic %q exists (id=%d)\n\n", glyphOK(), t.Name, t.Id)
+	fmt.Fprintf(w, "%s topic %q v%d exists (id=%d)\n\n", glyphOK(), t.Name, t.SchemaVersion, t.Id)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintf(tw, "  CreatedAt\t%s\n", timeCell(t.CreatedAt))

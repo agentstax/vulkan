@@ -106,11 +106,11 @@ func (j *Janitor) Run(ctx context.Context) error {
 		return errors.New("janitor not registered -- call Register first")
 	}
 
-	j.Logger.InfoContext(ctx, "janitor duty loop starting", "topic", j.Topic.Id)
+	j.Logger.InfoContext(ctx, "janitor duty loop starting", "topic", j.Topic.Id, "version", j.version)
 
 	err := j.duty.run(ctx, j.sweep)
 	if errors.Is(err, context.Canceled) {
-		j.Logger.InfoContext(ctx, "janitor stopped", "topic", j.Topic.Id)
+		j.Logger.InfoContext(ctx, "janitor stopped", "topic", j.Topic.Id, "version", j.version)
 		return nil
 	}
 	return err

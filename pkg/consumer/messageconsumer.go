@@ -96,7 +96,7 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 		return err
 	}
 
-	consumerMetrics, err := metrics.NewConsumerMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, p.Datastore.Datastore, &metrics.ConsumerMetricsDatastoreConfig{
+	consumerMetrics, err := metrics.NewConsumerMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, int64(p.version), p.Datastore.Datastore, &metrics.ConsumerMetricsDatastoreConfig{
 		Logger: p.Config.Logger,
 	})
 	if err != nil {
@@ -127,7 +127,7 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 	runCtx, cancel := p.runCtx(ctx)
 	defer cancel()
 
-	p.Logger.InfoContext(runCtx, "message consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id)
+	p.Logger.InfoContext(runCtx, "message consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
 
 	err := p.processCursor(runCtx, consumerFunc)
 	if errors.Is(err, context.Canceled) {
@@ -136,7 +136,7 @@ func (p *MessageConsumer[Message]) Consume(ctx context.Context, consumerFunc Con
 		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
 			reason = "lifecycle context cancelled"
 		}
-		p.Logger.InfoContext(ctx, "message consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id)
+		p.Logger.InfoContext(ctx, "message consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
 		err = nil
 	}
 	return err
@@ -181,7 +181,7 @@ func (p *MessageConsumer[Message]) Drain(ctx context.Context, wg *sync.WaitGroup
 	select {
 	case <-done:
 	case <-timer.C:
-		p.Logger.WarnContext(ctx, "in-flight work did not finish before ShutdownTimeout, stragglers settle via lease expiry", "group", p.consumerGroup, "topic", p.Topic.Id, "shutdown_timeout", p.Config.ShutdownTimeout)
+		p.Logger.WarnContext(ctx, "in-flight work did not finish before ShutdownTimeout, stragglers settle via lease expiry", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "shutdown_timeout", p.Config.ShutdownTimeout)
 	}
 }
 
@@ -205,14 +205,14 @@ func (p *MessageConsumer[Message]) closeRange(ctx context.Context, state *rangeS
 		defer cancel()
 
 		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Topic.Id, p.consumerGroup, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
-			p.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
+			p.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", state.lease.Low, "high", state.lease.High, "err", err)
 		}
 		return
 	}
 
 	lastProcessed, exceptions, terminals := state.contiguousResolved()
 	if err := p.CursorPartialCommit(ctx, lastProcessed, state.lease, exceptions, terminals); err != nil {
-		p.Logger.WarnContext(ctx, "partial commit failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
+		p.Logger.WarnContext(ctx, "partial commit failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", state.lease.Low, "high", state.lease.High, "err", err)
 	}
 }
 
@@ -332,11 +332,11 @@ func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rang
 	case err == nil:
 		p.buffer.Remove(commit.Lease.Token)
 	case errors.Is(err, ErrLeaseLost):
-		p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
+		p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", commit.Lease.Low, "high", commit.Lease.High)
 		p.buffer.Remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
 	default:
 		// stays tracked -- CloseOpenRanges retries it on the way out
-		p.Logger.WarnContext(ctx, "commit failed, range stays open for a retry at shutdown", "group", p.consumerGroup, "topic", p.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High, "err", err)
+		p.Logger.WarnContext(ctx, "commit failed, range stays open for a retry at shutdown", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", commit.Lease.Low, "high", commit.Lease.High, "err", err)
 	}
 }
 
@@ -355,7 +355,7 @@ func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, last
 	// range (including the already-resolved prefix) to sit out a full reclaim.
 	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.consumerGroup, lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "low", lease.Low, "high", lease.High)
+			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		// commitCtx expiring mid-call and PartialCommit's own DB error are

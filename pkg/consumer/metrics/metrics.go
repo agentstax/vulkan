@@ -10,18 +10,18 @@ type ConsumerMetrics struct {
 	AbandonedRoutines *AbandonedRoutines
 }
 
-func NewConsumerMetrics(meter metric.Meter, group string, topicID int64, topicName string, ds *datastore.PostgresDatastore, cfg *ConsumerMetricsDatastoreConfig) (*ConsumerMetrics, error) {
+func NewConsumerMetrics(meter metric.Meter, group string, topicID int64, topicName string, topicVersion int64, ds *datastore.PostgresDatastore, cfg *ConsumerMetricsDatastoreConfig) (*ConsumerMetrics, error) {
 	consumerDatastore, err := NewConsumerDatastore(ds, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	queueState, err := NewQueueState(meter, group, topicID, topicName, consumerDatastore)
+	queueState, err := NewQueueState(meter, group, topicID, topicName, topicVersion, consumerDatastore)
 	if err != nil {
 		return nil, err
 	}
 
-	abandonedRoutines, err := NewAbandonedRoutines(meter, group, topicName)
+	abandonedRoutines, err := NewAbandonedRoutines(meter, group, topicName, topicVersion)
 	if err != nil {
 		return nil, err
 	}
