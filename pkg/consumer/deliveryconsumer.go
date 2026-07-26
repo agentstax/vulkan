@@ -14,10 +14,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/maintain"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"golang.org/x/sync/errgroup"
 )
@@ -78,13 +78,11 @@ func (p *DeliveryConsumer[Message]) Register(ctx context.Context) error {
 		return err
 	}
 
-	// AbandonedRoutines only: the queue-state gauges read cursor claim
-	// frontiers this path doesn't drive.
-	abandoned, err := metrics.NewAbandonedRoutines(p.Config.Meter, p.consumerGroup, p.Topic.Name, int64(p.version))
+	consumerMetrics, err := metrics.NewMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, int64(p.version), p.Datastore.Datastore, p.Config.Logger)
 	if err != nil {
 		return err
 	}
-	p.Metrics = &metrics.ConsumerMetrics{AbandonedRoutines: abandoned}
+	p.Metrics = consumerMetrics
 
 	// cold-start guarantee: the next partition exists before the janitor
 	// duty's first (jittered) tick

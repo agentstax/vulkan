@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
-	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/maintain"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -96,9 +96,7 @@ func (p *MessageConsumer[Message]) Register(ctx context.Context) error {
 		return err
 	}
 
-	consumerMetrics, err := metrics.NewConsumerMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, int64(p.version), p.Datastore.Datastore, &metrics.ConsumerMetricsDatastoreConfig{
-		Logger: p.Config.Logger,
-	})
+	consumerMetrics, err := metrics.NewMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, int64(p.version), p.Datastore.Datastore, p.Config.Logger)
 	if err != nil {
 		return err
 	}

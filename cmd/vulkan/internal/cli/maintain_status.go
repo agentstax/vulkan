@@ -53,7 +53,7 @@ func newMaintainStatusCmd(g *globalFlags) *cobra.Command {
 	}
 }
 
-func printDutiesTable(w io.Writer, duties []metrics.DutyStatus) {
+func printDutiesTable(w io.Writer, duties []metrics.DutySnapshot) {
 	if len(duties) == 0 {
 		fmt.Fprintln(w, "no maintenance duties -- duties appear as topics and consumer groups register")
 		return

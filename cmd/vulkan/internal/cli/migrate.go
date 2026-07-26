@@ -86,7 +86,7 @@ type migrateTarget struct {
 // gatherTargets resolves the entities a scope covers and reads each one's current
 // schema version. Registration gaps surface here as teaching errors, before the
 // migrate call, so the operator never sees a raw undefined-table or ErrNotRegistered.
-func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpool.Pool, s scope, name string) ([]migrateTarget, error) {
+func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpool.Pool, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
 	switch s {
 	case scopeSystem:
 		current, err := migrate.Version(ctx, pool, migrate.EntitySystem, systemEntityID)
@@ -99,8 +99,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		return []migrateTarget{{label: "system", entityType: migrate.EntitySystem, id: systemEntityID, current: current}}, nil
 
 	case scopeTopic:
-		// version hardcoded until the --schema-version flag lands.
-		found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
+		found, err := mAdmin.GetTopic(ctx, name, version)
 		if err != nil {
 			return nil, translateAdminError(err)
 		}

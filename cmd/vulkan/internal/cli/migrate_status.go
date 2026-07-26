@@ -45,6 +45,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			// computed before anything prints.
 			type row struct {
 				name      string
+				version   string // blank for the system row -- topic rows disambiguate by version
 				current   int64
 				available int64
 			}
@@ -54,15 +55,15 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				if err != nil {
 					return translateAdminError(err)
 				}
-				rows = append(rows, row{name: t.Name, current: current, available: topicAvail})
+				rows = append(rows, row{name: t.Name, version: fmt.Sprintf("%d", t.SchemaVersion), current: current, available: topicAvail})
 			}
 
 			fmt.Fprintf(out, "latest available: system %d, topic %d\n\n", sysAvail, topicAvail)
 
 			tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(tw, "SCHEMA\tCURRENT\tAVAILABLE")
+			fmt.Fprintln(tw, "SCHEMA\tVERSION\tCURRENT\tAVAILABLE")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%d\t%d\n", r.name, r.current, r.available)
+				fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", r.name, r.version, r.current, r.available)
 			}
 			tw.Flush()
 

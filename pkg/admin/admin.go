@@ -1,17 +1,21 @@
 package admin
 
 import (
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topicmetrics "github.com/agentstax/vulkan/pkg/topic/metrics"
 )
 
 type MessageAdmin struct {
-	systemDatastore *system.SystemDatastore
-	topicDatastore  *topic.TopicDatastore
-	migrateRunner   *migrate.Runner
-	allowDestroy    bool
+	systemDatastore          *system.SystemDatastore
+	topicDatastore           *topic.TopicDatastore
+	topicMetricsDatastore    *topicmetrics.TopicMetricsDatastore
+	consumerMetricsDatastore *consumermetrics.ConsumerMetricsDatastore
+	migrateRunner            *migrate.Runner
+	allowDestroy             bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -33,15 +37,33 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	topicMetricsDatastore, err := topicmetrics.NewTopicMetricsDatastore(ds, &topicmetrics.TopicMetricsDatastoreConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	consumerMetricsDatastore, err := consumermetrics.NewConsumerMetricsDatastore(ds, &consumermetrics.ConsumerMetricsDatastoreConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	migrateRunner, err := migrate.NewRunner(ds, cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MessageAdmin{
-		systemDatastore: systemDatastore,
-		topicDatastore:  topicDatastore,
-		migrateRunner:   migrateRunner,
-		allowDestroy:    cfg.AllowDestroy,
+		systemDatastore:          systemDatastore,
+		topicDatastore:           topicDatastore,
+		topicMetricsDatastore:    topicMetricsDatastore,
+		consumerMetricsDatastore: consumerMetricsDatastore,
+		migrateRunner:            migrateRunner,
+		allowDestroy:             cfg.AllowDestroy,
 	}, nil
 }

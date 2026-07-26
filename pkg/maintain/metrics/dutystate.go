@@ -10,8 +10,8 @@ import (
 // overdueFactor: how many rates past its gate a duty counts as overdue.
 const overdueFactor = 10
 
-// DutyStatus is one maintenance row's health.
-type DutyStatus struct {
+// DutySnapshot is one maintenance row's health.
+type DutySnapshot struct {
 	Duty          string
 	TopicName     string
 	ConsumerGroup string
@@ -20,6 +20,7 @@ type DutyStatus struct {
 	Overdue       bool          // GateAge > overdueFactor * Rate -- nobody is maintaining this duty (or its owner is stuck)
 }
 
+// DutyState owns the otel ObservableGauge instruments for fleet-wide duty health.
 type DutyState struct {
 	datastore *maintenanceMetricsDatastore
 
@@ -91,12 +92,6 @@ func (d *DutyState) observe(ctx context.Context, o metric.Observer) error {
 
 // Snapshot is every duty's current health, queried live from Postgres --
 // works with no otel exporter/backend attached, same data observe reports.
-func (d *DutyState) Snapshot(ctx context.Context) ([]DutyStatus, error) {
-	var duties []DutyStatus
-	err := d.datastore.Retry.Wrap(ctx, func() error {
-		var err error
-		duties, err = d.datastore.dutyStatusSnapshot(ctx)
-		return err
-	})
-	return duties, err
+func (d *DutyState) Snapshot(ctx context.Context) ([]DutySnapshot, error) {
+	return d.datastore.DutySnapshots(ctx)
 }

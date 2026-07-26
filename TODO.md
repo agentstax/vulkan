@@ -71,3 +71,6 @@ refactor out queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimi
 need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
 
 Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
+
+Need to rethink metrics code design it is ass right now. Its not very composable and requires weird dependency management. I'm thinking we go the way of alert/advisory system with a compacted topic and then we can have a snapshotter for otel meter and cli commands
+- After we do above we need to redo how admin/health.go works out we should instead have an admin/metrics.go. Which utilizes the snapshotter. Then the cli should be the owner of how to parse the metrics data and format it

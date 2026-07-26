@@ -42,7 +42,19 @@ func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceMe
 	}, nil
 }
 
-func (d *maintenanceMetricsDatastore) dutyStatusSnapshot(ctx context.Context) ([]DutyStatus, error) {
+// DutySnapshots is every duty's current health, queried live from Postgres --
+// works cold, nothing needs to be running.
+func (d *maintenanceMetricsDatastore) DutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
+	var duties []DutySnapshot
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		duties, err = d.dutySnapshots(ctx)
+		return err
+	})
+	return duties, err
+}
+
+func (d *maintenanceMetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
 	// each duty runs at its own topic's rate, so the rate switches on duty
 	// kind. The WHERE mirrors the CASE: a kind this build doesn't know is
 	// skipped whole, not listed with a NULL rate that breaks the scan
@@ -66,9 +78,9 @@ func (d *maintenanceMetricsDatastore) dutyStatusSnapshot(ctx context.Context) ([
 	}
 	defer rows.Close()
 
-	var duties []DutyStatus
+	var duties []DutySnapshot
 	for rows.Next() {
-		var s DutyStatus
+		var s DutySnapshot
 		var rateNs int64
 		var gateAgeSecs float64
 		if err := rows.Scan(&s.Duty, &s.TopicName, &s.ConsumerGroup, &rateNs, &gateAgeSecs); err != nil {

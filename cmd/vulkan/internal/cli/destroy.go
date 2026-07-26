@@ -16,8 +16,9 @@ import (
 
 func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 	var (
-		force bool
-		yes   bool
+		schemaVersion int64
+		force         bool
+		yes           bool
 	)
 
 	cmd := &cobra.Command{
@@ -36,8 +37,8 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			defer closeAdmin()
 
 			// Check order matters: a doomed call must never waste a prompt.
-			// 1. exists? version hardcoded until the --schema-version flag lands.
-			found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
+			// 1. exists?
+			found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(schemaVersion))
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -82,7 +83,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 
 			// 4. destroy.
 			fmt.Fprintf(out, "destroying %q... ", name)
-			if err := mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: force}); err != nil {
+			if err := mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(schemaVersion), admin.DestroyOptions{Force: force}); err != nil {
 				fmt.Fprintln(out) // end the dangling "destroying..." line
 				return destroyError(name, err)
 			}
@@ -93,6 +94,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 	}
 
 	f := cmd.Flags()
+	f.Int64Var(&schemaVersion, "schema-version", 1, "which registered version of the topic to destroy")
 	f.BoolVar(&force, "force", false, "required to destroy a topic that still holds messages")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd

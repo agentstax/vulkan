@@ -6,10 +6,10 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -20,7 +20,7 @@ import (
 type consumerBase[Message any] struct {
 	Topic     *topic.Topic // resolved by Register from the name/version given to the constructor
 	Datastore *ConsumerDatastore[Message]
-	Metrics   *metrics.ConsumerMetrics // resolved by Register alongside Topic
+	Metrics   *metrics.Metrics // resolved by Register alongside Topic
 	Config    *ConsumerConfig
 	Logger    logger.Logger // copied from Config.Logger at construction
 

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -54,13 +54,11 @@ func (p *ExceptionConsumer[Message]) Register(ctx context.Context) error {
 		return err
 	}
 
-	// AbandonedRoutines only: the queue-state gauges are the message loop's
-	// picture, and a second QueueState would double-poll the same rows.
-	abandoned, err := metrics.NewAbandonedRoutines(p.Config.Meter, p.consumerGroup, p.Topic.Name, int64(p.version))
+	consumerMetrics, err := metrics.NewMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, int64(p.version), p.Datastore.Datastore, p.Config.Logger)
 	if err != nil {
 		return err
 	}
-	p.Metrics = &metrics.ConsumerMetrics{AbandonedRoutines: abandoned}
+	p.Metrics = consumerMetrics
 
 	// tracked for graceful shutdown draining / handling
 	p.lifecycleCtx = ctx

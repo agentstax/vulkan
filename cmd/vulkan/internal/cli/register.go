@@ -16,6 +16,7 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 	// ones the operator actually passed reach the Config, so WithDefaults stays
 	// the single source of truth for everything else.
 	var (
+		schemaVersion          int64
 		partitionSize          int64
 		retentionTTL           time.Duration
 		allowDropPastCommitted bool
@@ -82,15 +83,14 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 			defer closeAdmin()
 
 			// Existed-before decides "registered" vs "already registered".
-			preTopic, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
+			preTopic, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(schemaVersion))
 			if err != nil {
 				return translateAdminError(err)
 			}
 
 			// RegisterTopic mutates cfg (WithDefaults) -- after this call cfg holds
 			// the fully-defaulted config that was compared against the existing row.
-			// version hardcoded until the --schema-version flag lands.
-			registered, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), cfg)
+			registered, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(schemaVersion), cfg)
 			if err != nil {
 				if errors.Is(err, topic.ErrTopicConfigMismatch) {
 					return printMismatch(cmd.ErrOrStderr(), name, preTopic, cfg)
@@ -110,6 +110,7 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 	}
 
 	f := cmd.Flags()
+	f.Int64Var(&schemaVersion, "schema-version", 1, "topic's schema version -- a version bump is a new physical topic, own log/duties")
 	f.Int64Var(&partitionSize, "partition-size", 0, "rows per partition (library default)")
 	f.DurationVar(&retentionTTL, "retention-ttl", 0, "how long a message survives before retention drops it, e.g. 720h (library default)")
 	f.BoolVar(&allowDropPastCommitted, "allow-drop-past-committed", false, "let retention drop data a lagging consumer hasn't committed (library default)")

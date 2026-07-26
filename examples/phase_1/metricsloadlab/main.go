@@ -202,7 +202,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 
 // ---- shared polling helper ----
 
-// consumerQueueState is the subset of QueueStateSnapshot these scenarios poll on.
+// consumerQueueState is the subset of ConsumerGroupSnapshot these scenarios poll on.
 type consumerQueueState struct {
 	Head, Committed, DeadExceptions int64
 }
