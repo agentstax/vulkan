@@ -4513,10 +4513,11 @@ sequenced after both of these close.*
       routes, keys, or dedups — a consumer branching on a map key for
       delivery has rebuilt the rejected rule engine. Typed Value/Ceiling
       numeric fields REJECTED: checks measure differently-shaped things
-      (one int vs three rates), jsonb's JSON numbers are doubles so int64
-      precision above 2^53 was false anyway, and numeric time-series
-      belong to the otel gauges — the advisory carries judgment +
-      explanation.
+      (one int vs three rates), Go's encoding/json decodes map-of-any
+      numbers to float64 so int64 precision above 2^53 was false anyway
+      (jsonb itself stores exact numerics — the loss is at the Go decode
+      side), and numeric time-series belong to the otel gauges — the
+      advisory carries judgment + explanation.
       Routing key `advisory.<name>.<entity-name>.<severity>` — severity
       LAST so the common binding is an ends-with match
       (`advisory.*.critical`); known consequence: name-based bindings
@@ -4528,7 +4529,13 @@ sequenced after both of these close.*
       works FOR us: resolved advisories age out of current state
       naturally, while the repeat-interval re-fire re-produces firing
       keys far inside any sane TTL — the human reminder and the state
-      keepalive are the same produce.
+      keepalive are the same produce. Known schema limits, recorded not
+      solved: EntityName for a system-scoped advisory (EntityId 0) is
+      pinned by pkg/advisory's key derivation (decide there, once); and
+      consumer-group-scoped subjects are NOT addressable — groups are
+      TEXT keys with no id, so a future per-group check (waterline lag)
+      needs a schema extension. Fine for v1: both checks are
+      topic-scoped.
       Evaluation: a NEW `advisor` duty kind (row per topic in
       maintenance, claimable like janitor/waterline) — NOT a janitor
       passenger: janitor ticks ~5s for create-ahead, checks want
@@ -4552,9 +4559,14 @@ sequenced after both of these close.*
       per check via sparse-struct config (disable / threshold override),
       house style. `__system.` becomes the RESERVED topic-name prefix —
       RegisterTopic rejects user names under it (first name validation
-      in admin); the advisories topic is created by RegisterSystem,
-      backfilled by MigrateSystem (a schema epoch bump), and gets
-      janitor/waterline/advisor duties like any topic. Who runs it: the
+      in admin); the advisories topic is created idempotently at system
+      registration — NO migration step: pre-v1 the registries are empty
+      and baseline edits happen in place (house migration style), so
+      re-running system registration converges an existing deployment.
+      Lifecycle verbs against `__system.*` need guarding: Destroy and
+      Rename refused, Alter allowed (tuning advisory retention is
+      legitimate). The topic gets janitor/waterline/advisor duties like
+      any topic. Who runs it: the
       defaulted Consumer runs the maintenance tier, so most users get
       the advisor without asking; docs cover the rest, plus the
       Register-time layer and DutyState's overdue gauge (an unmanned
