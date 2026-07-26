@@ -88,12 +88,12 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution decision, default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**); janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor — design settled, build open), default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**), duty error backoff (maintenance `attempts` column + `CalculateDelay` gate pushes); janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
 | 16 — Circuit breaker (implementation) | ⬜ | builds the two-tier design settled in 13 (per-instance trip unit, quorum globalization, refund-on-close reconciliation); K's absolute-vs-fraction question may pull in **13d**'s presence heartbeat work as a prerequisite |
-| 6.5d, 7b, 8d, 9b, 11b, 11.5b, 12b, 13b, 13c, 13d, 14d | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing + NATS-style selector, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, dynamic partition bounds, defer + policy-driven dispatch, consumer lifecycle extension point, RLS + chaos/fixture suite, presence heartbeat rows + automatic group expiration, research backlog) — pick up only if a real workload demands each; moved to the end of this document; 9b's prerequisite (Phase 13 settling the datastore boundary) is now satisfied, 11b should weigh 8d's outcome if both are ever picked up, and 13d is Phase 16's prerequisite if quorum-as-a-fraction wins |
+| 6.5d, 7b, 8d, 9b, 11b, 11.5b, 12b, 13b, 13c, 13d, 14d | ⬜ | post-v1, unordered opt-in pool (lane sharding, header/content routing + NATS-style selector, `LISTEN/NOTIFY`, lease heartbeat, `pgx` vs. `database/sql`, dynamic partition bounds, defer + policy-driven dispatch, consumer lifecycle extension point, RLS + chaos/fixture suite, presence heartbeat rows + automatic group expiration, research backlog + `maintenance_log` duty-failure table) — pick up only if a real workload demands each; moved to the end of this document; 9b's prerequisite (Phase 13 settling the datastore boundary) is now satisfied, 11b should weigh 8d's outcome if both are ever picked up, and 13d is Phase 16's prerequisite if quorum-as-a-fraction wins |
 
 **Naming drift to resolve:** the plan's Phase 1 table is `jobs`; the migration
 created `message_log`. That name leans "log" while Phases 1–3 are pure *queue*
@@ -4325,10 +4325,137 @@ out of Phase 13) or the measurement/testing work in **14c** that's
 sequenced after both of these close.*
 
 **Build:**
-- [o] **Message/work-struct schema evolution.** Decide and document what
-      happens when a topic's `Message` shape changes after messages are
-      already on the log — the edge cases that break, and what guidance (if
-      any) the library gives users for handling it.
+- [ ] **Message/work-struct schema evolution** (design settled; build tasks
+      below). The problem, named precisely: a naive user changes their
+      `Message` struct and redeploys, and Go's JSON decode fails SILENTLY —
+      renamed/removed fields zero-value instead of erroring, and the
+      failure is delayed and non-deterministic (the retention tail decodes
+      for days, mixed-version instances win claims arbitrarily during a
+      rolling deploy, parked exceptions replay weeks later into whatever
+      struct exists then). Vulkan is a LOG with a queue's storage: the
+      River-camp discipline ("args drain in minutes, just deploy
+      carefully") doesn't hold when the compatibility window = the
+      retention window and group-expiry replay re-decodes all of it.
+      **Decision — epoch-versioned topics (fork model):**
+      - `SchemaVersion` = COMPATIBILITY EPOCH, a required typed
+        constructor param on producer AND consumer (not a config field —
+        it isn't optional). Bump only on BREAKING changes; a bump is a new
+        physical topic version (own log/id space), registered EXPLICITLY
+        via admin (`RegisterTopic` grows a version; `vulkan topic register
+        --schema-version N`) — producers/consumers NEVER create topics,
+        the admin-only lifecycle rule stands. Version is a TOPIC
+        attribute: no per-row version column (the row-stamp design was
+        fully explored and superseded — isolation beats decode gating),
+        consumers bind their epoch at Register, decode gating disappears
+        by construction.
+      - Within an epoch: the WEAK-SCHEMA contract, documented (protobuf's
+        evolution rules mapped to JSON): json tags are forever, additive
+        changes only, every field's zero value must be a valid meaning,
+        unknown fields ignored. The library never judges compatibility.
+      - Transition: the old consumer runs until every group drains the old
+        epoch; the library's job is DRAIN TELEGRAPHING (`vulkan topic get`
+        shows both versions + per-group lag + "safe to retire"; retire =
+        destroy the old epoch). Non-compacted topics need nothing else —
+        the tail expires.
+      - Compacted topics fracture at the fork (the old epoch NEVER drains:
+        latest-per-key survives retention by design, so its living state
+        is permanent until moved). Fix = the BRIDGE CONSUMER pattern, pure
+        user space, no library verb (a `BackfillTopic` verb was designed
+        and rejected as over-design): a consumer group on the old epoch
+        transforms and re-produces into the new one, idempotency keys
+        derived deterministically from the old message id (UUIDv5-style) =
+        crash-resumable exactly-once through the existing claim. With
+        `CompactionRank` (below) the bridge produces at −1 and live
+        producers default 0, making the cutover ZERO-PAUSE — every
+        stale-copy-after-fresh-write interleaving loses the winner
+        comparison declaratively, no produce stop, no sequencing
+        discipline.
+      **Build: `CompactionRank` — a caller-supplied compaction clock.**
+      Compaction is winner-selection over a key's candidates; today's rule
+      is `max(id)` (arrival clock). Generalize to lexicographic
+      `max(compaction_rank, id)` — an LWW register with a caller-supplied
+      clock, arrival as tiebreak (Cassandra `USING TIMESTAMP` precedent).
+      Mechanics: `compaction_rank BIGINT NOT NULL DEFAULT 0` on
+      message_log AND latest_key (the winner's rank is stored), signed
+      (the bridge needs −1), `ProduceOptions.CompactionRank`, and the
+      upsert guard becomes a native row compare `WHERE
+      (latest_key.compaction_rank, latest_key.latest_id) < (...)`. BIGINT
+      deliberately — the rank is MEANING-AGNOSTIC: priority tiers (small
+      ints), external versions (the source system's row version/aggregate
+      sequence decides, not arrival), or timestamps (epoch micros —
+      Cassandra's model) all ride the same single comparison. HIGHER wins
+      (messaging precedent — JMS, RabbitMQ — and tuple coherence: both
+      components point max-ward; scheduling's lower-wins `nice` tradition
+      explicitly rejected). All-default traffic reproduces today's
+      semantics BIT-FOR-BIT (same-rank falls through to the id tiebreak);
+      winner-id monotonicity is preserved (a winner change still requires
+      a higher id), so delivery-skip and retention logic are untouched —
+      losers now lose at insert instead of never existing. NAMED "rank"
+      not "priority": a version or timestamp isn't urgency, and
+      priority-based CLAIMING (12b defer/policy dispatch, the parked
+      LIFECYCLE claim order) owns that word for a different axis
+      ("compaction_version" also rejected — "version" means schema epochs
+      in this design); the pair reads beside `compaction_key` — the key
+      says which contest, the rank says who's winning it. Documented
+      foot-gun: rank is a COMMITMENT, not a hint — one stray high-rank
+      write wedges its key (every normal update loses silently) until
+      something ≥ it arrives; that pinning is also the feature
+      (authoritative overrides, the bridge). GENERIC compaction rules (a
+      configurable rule over a jsonb field, routing-header style) were
+      considered and PARKED pending 7b evidence: a winner rule is STORAGE
+      semantics — one per topic, insert-evaluated, retention-defining —
+      so it wants a total, stable, crisp order, not an open predicate bag
+      (that shape fits reader-side filtering, i.e. 7b headers); jsonb
+      extraction would tax the hottest statement in the system; an
+      alterable rule silently redefines which historical rows should have
+      survived; and every rule with a named need compiles down to
+      max(caller value, id) anyway — which BIGINT rank already is.
+      **Build: `MessageMeta` context accessor** (shape locked). Unexported
+      context key + `consumer.MetaFromContext(ctx) (MessageMeta, bool)` —
+      the Temporal `activity.GetInfo`/gRPC metadata idiom, NOT raw string
+      keys. Carries Id, RoutingKey, CompactionKey, CompactionRank,
+      CreatedAt. NO idempotency key — it does not exist on the message row
+      and that decorrelation is settled design. Reach: the three
+      consumers' claim SELECTs widen to carry the metadata columns, set
+      before callSafely; the EXCEPTIONS table must gain routing/compaction
+      columns (today it preserves payload but sheds the keys — a replayed
+      exception would get empty Meta; same time-capsule lesson as
+      versioning). 14b's signature review may still prefer widening
+      consumerFunc; the accessor doesn't foreclose it.
+      **Column gate (recorded rule):** a message_log column must be
+      metadata the ENGINE reads in SQL (routing_key: claim binding filter;
+      compaction_key/compaction_rank: winner upsert; created_at:
+      retention) — everything else lives in the payload, which stays
+      opaque (codec-compatible: a future BYTEA/`Codec[Message]` seam must
+      find nothing engine-read inside payload). The set is closed; the one
+      foreseeable pressure is 7b headers, which would BE the generic
+      escape valve (one column, not N).
+      **Parked — cross-language schema fingerprinting** (optional
+      enhancement, needs dedicated time; driver: eventual node/python/
+      java/rust SDKs). Catches the naive user who declares nothing: at
+      Register, derive a canonical descriptor from the `Message` type and
+      warn when the shape changed but the epoch didn't. Settled direction
+      if picked up: never hash language artifacts — define a minimal
+      canonical IR (fields sorted by json name; types collapsed to JSON
+      wire: string/number/bool/object/array/any; ONE optional bit = "may
+      be absent OR null on the wire", per-language constructs map
+      mechanically; record names excluded), JCS-serialize, SHA-256; the
+      deliverable is a FINGERPRINT SPEC with per-SDK mapping rules +
+      cross-language test vectors (Avro Parsing Canonical Form is the
+      precedent — and "just use Avro" was examined and rejected: it solves
+      schema→fingerprint but not native-type→schema, its richer IR
+      multiplies cross-language disagreement, and PCF's name sensitivity
+      is the wrong trigger). Zero-value-marshal serves as a probe for
+      opaque custom-marshaler types, not as the fingerprint. SDKs must pin
+      serializer settings regardless (declaration→wire determinism).
+      **Examined and dropped:** per-row schema_version stamping + consumer
+      version ranges + upgrader chains (all superseded by the fork model);
+      `BackfillTopic` (bridge pattern suffices); lazy topic
+      materialization (topic cost is minimal — duty idle load is owned by
+      14c's ladder, catalog growth is marginal; recorded finding: a seeded
+      duty against missing tables ERROR-LOOPS at full rate holding its
+      claim, live-verified — can't arise through the public API with
+      eager creation, and duty error backoff now bounds it anyway).
 - [o] **Default alerts** for approaching operational limits (full spec folded
       from TODO.md; this is now the canonical record). The problem: several
       failure modes in this project are silent until they happen — nothing
@@ -4399,6 +4526,41 @@ sequenced after both of these close.*
       zero work — reconcile already stops a runner whose duty row
       vanishes (the destroy-topic reap path). New public surface — 14b's
       maintenance-tier review bullet covers it.
+- [ ] **Duty error backoff.** Today a consistently-erroring duty retries at
+      FULL poll rate forever: the error path keeps the claim and the gate
+      was already set at claim+rate, so a broken duty means an ERROR log
+      every interval — live-verified by dropping a topic's tables out from
+      under a seeded janitor (42P01 error-loop at the 500ms rate). Worse,
+      `maintain status` shows that duty ✓ ok — claims succeed and the gate
+      rotates freshly, so erroring and healthy are indistinguishable
+      outside the claim-holder's own logs. Shape: `attempts INT NOT NULL
+      DEFAULT 0` on the `maintenance` table (named to mirror the delivery
+      table's column); `ClaimDuty` grows `RETURNING attempts` so the
+      runner learns the streak with its token; on failure ONE token-fenced
+      UPDATE sets `attempts = attempts + 1, can_run_after = now() + delay`
+      with delay computed in Go via `retry.Retry.CalculateDelay(attempts)`
+      — the third caller of the existing curve (precedent: the exception
+      path's `MessageRetry`, "never Wrap()'d, just CalculateDelay") — and
+      the duty policy's MaxDelay defaulting to 10×rate, the house alarm
+      line (hung-work WARN and Overdue both speak 10×). On success the
+      runner resets `attempts = 0` (token-fenced) only when the claim
+      returned attempts > 0 — the happy path writes NOTHING, same zero-WAL
+      discipline as loser claims. The counter lives in the ROW, not the
+      runner, deliberately: an in-process streak resets on fleet failover
+      (the next claimant starts at zero, capping effective backoff at
+      ~2×rate forever), while the row is already the coordination point —
+      the claim is the schedule, so schedule state belongs beside the gate
+      it drives. Fencing details: the ErrDutyLost branch skips the backoff
+      write (a runner that lost its claim must not shove the new owner's
+      gate), and the absolute `now() + delay` deliberately overwrites
+      whatever the renewal heartbeat left. Observability rides the same
+      column: `DutyState.Snapshot` and `maintain status` gain a failing
+      state (`attempts > 0` → ✗ failing (n)) beside ok/overdue, plus a
+      failing-duties gauge next to the existing two. Known cost, accepted:
+      after a root-cause fix a capped-out duty sleeps up to MaxDelay
+      before noticing (escape hatch if it ever bites: a `maintain kick`
+      verb zeroing the gate — not built now). The companion
+      `maintenance_log` failure-evidence table is deferred post-v1 (14d).
 - [x] **Janitor efficiency and concurrency** (folded from TODO.md). Built as
       the MAINTENANCE TIER. Both questions the bullet raised got answers, and
       neither answer is an opt-out flag:
@@ -5566,13 +5728,14 @@ liveness/pollers view is the operator-visibility version.
 
 ## 14d — Post-v1 research backlog (deferred, optional)
 
-*Cut from Phase 14 — these two aren't hardening work at all: neither has a
-design attached, neither blocks v1 (nothing about them is API-shape or
-correctness), and both are watch-and-mine-later items rather than build
-tasks. Kept together since they're the same shape of item ("go read/watch
-this, decide later whether it applies"), not because they're related to
-each other. Named `14d` (not `14b`) to leave `14a`/`14b`/`14c` for the
-mandatory pre-v1 phases those letters now name.*
+*Cut from Phase 14 — nothing here blocks v1 (nothing about these is
+API-shape or correctness). The first two are watch-and-mine-later items
+with no design attached ("go read/watch this, decide later whether it
+applies"); the `maintenance_log` entry is the exception — a designed build
+task parked here because 14a's duty-error backoff covers the operational
+need pre-v1 and this adds the debugging trail. Named `14d` (not `14b`) to
+leave `14a`/`14b`/`14c` for the mandatory pre-v1 phases those letters now
+name.*
 
 - [ ] **Contribute a `MIN_ACTIVE_ROWVERSION`-style primitive upstream to
       Postgres** (folded from TODO.md; no timeline, watch-and-propose
@@ -5595,6 +5758,24 @@ mandatory pre-v1 phases those letters now name.*
       design attached; the task is to read it once the API stops moving and
       mine it for anything applicable to the library's actual hot paths
       (claim, produce, janitor loops) rather than applying it speculatively.
+- [ ] **`maintenance_log` — duty-failure evidence table** (design settled
+      alongside 14a's duty-error-backoff task, which is the prerequisite —
+      the log rides that task's fenced failure UPDATE). One SHARED
+      append-only table mirroring the delivery-log idea for duties:
+      `maintenance_log (id BIGSERIAL PK, duty, topic_id, consumer_group,
+      error TEXT, attempts INT, created_at)` — failed duty runs only, with
+      explicit error messages for debugging; NO success or recovery rows
+      (absence of entry IS success). The write rides the backoff UPDATE's
+      fence as one data-modifying CTE (`WITH bumped AS (UPDATE maintenance
+      … WHERE token = $token RETURNING attempts) INSERT INTO
+      maintenance_log … FROM bumped`) — one round trip, and the evidence
+      row exists only if the fence held, so a runner that lost its claim
+      mid-run can't write noise about a duty it no longer owns. Retention:
+      each topic's janitor sweeps its own topic_id rows past a fixed ~7d
+      default in its existing pass — no new duty kind, no config knob
+      until someone asks. Surfacing: `maintain status` joins the latest
+      log row per failing duty, so ✗ failing (n) carries the actual error
+      text where the operator already looks.
 
 **Done when:** each item either has a written decision/outcome or is
 explicitly dropped as not worth pursuing, NOTES.md.
