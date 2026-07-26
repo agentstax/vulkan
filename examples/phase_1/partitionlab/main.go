@@ -25,8 +25,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -53,16 +53,16 @@ func main() {
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
 	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
 	for range 14 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
+		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	partitionCount := countPartitions(ctx, ds, tp.Id)
 	fmt.Printf("  %d partitions exist (0-2 hold ids 1-14, 3 is create-ahead headroom)\n", partitionCount)
@@ -84,7 +84,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
+func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})

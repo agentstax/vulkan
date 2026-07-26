@@ -29,6 +29,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -106,7 +107,9 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
@@ -138,7 +141,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 			case <-rollerDone:
 				return
 			case <-ticker.C:
-				if _, err := cd.AdvanceWaterline(ctx, tp.Id, group); err != nil {
+				if _, err := md.AdvanceWaterline(ctx, tp.Id, group); err != nil {
 					fmt.Printf("  (roller tick error, ignored: %v)\n", err)
 				}
 			}
@@ -178,7 +181,9 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
@@ -195,7 +200,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 
 		start := time.Now()
-		_, err = cd.AdvanceWaterline(ctx, tp.Id, group)
+		_, err = md.AdvanceWaterline(ctx, tp.Id, group)
 		must(err)
 		stalenesses = append(stalenesses, msSince(start))
 	}
@@ -258,7 +263,9 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
@@ -273,7 +280,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 		}
 		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 		if syncAdvance {
-			_, err := cd.AdvanceWaterline(ctx, tp.Id, group)
+			_, err := md.AdvanceWaterline(ctx, tp.Id, group)
 			must(err)
 		}
 	}
@@ -309,7 +316,9 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, group))
@@ -327,7 +336,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 				}
 				must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
 				if syncAdvance {
-					_, err := cd.AdvanceWaterline(ctx, tp.Id, group)
+					_, err := md.AdvanceWaterline(ctx, tp.Id, group)
 					must(err)
 				}
 			}
@@ -339,7 +348,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	for range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

@@ -70,7 +70,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -126,7 +126,7 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 
 // timeSequential runs n single-threaded publishes, keyFn(i) chosen per call,
 // returning total elapsed time in milliseconds.
-func timeSequential(ctx context.Context, wp *producer.MessageProducer[common.Work], n int, keyFn func(i int) string) float64 {
+func timeSequential(ctx context.Context, wp *producer.Producer[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -148,7 +148,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: largePartitionSize})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 

@@ -39,6 +39,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -82,7 +83,9 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -94,7 +97,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		WorkTimeout:             5 * time.Second,
@@ -127,7 +130,7 @@ func runPanicIsolation(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	assertLastErrorContains(ctx, ds, tp.Id, group, 2, "recovered from consumerFunc panic")
 	assert("range fully committed -- no leases left open", leases(ctx, ds, tp.Id, group), 0)
 
-	committed := advance(ctx, cd, tp.Id, group)
+	committed := advance(ctx, md, tp.Id, group)
 	assert("waterline pinned behind the unresolved exception, despite message 3 succeeding", committed, 1)
 
 	fmt.Println("  ✓ panic isolated to message 2 -- messages 1 and 3 processed normally, range still committed")
@@ -149,7 +152,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -161,7 +164,7 @@ func runHardTimeoutAbandon(ctx context.Context, ds *coredatastore.PostgresDatast
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		WorkTimeout:             1 * time.Second,
@@ -278,7 +281,7 @@ var _ net.Error = fakeNetError{}
 func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Work], consumerFunc consumer.ConsumerFunc[common.Work], timeout time.Duration, done func() bool) time.Duration {
 	runCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
-	go func() { errCh <- wc.Process(runCtx, consumerFunc) }()
+	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()
 
 	start := time.Now()
 	for !done() {
@@ -298,7 +301,7 @@ func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Wo
 	return elapsed
 }
 
-func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	for range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
@@ -307,8 +310,8 @@ func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int)
 	}
 }
 
-func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string) int64 {
-	c, err := cd.AdvanceWaterline(ctx, topicID, group)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, group string) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c
 }

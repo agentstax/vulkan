@@ -32,8 +32,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -75,7 +75,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -120,10 +120,10 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
@@ -161,7 +161,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 			case <-stop:
 				return
 			case <-ticker.C:
-				must(cd.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
+				must(md.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
 				if rows := tableRowCount(ctx, ds, idkTable); rows > peakRows.Load() {
 					peakRows.Store(rows)
 				}
@@ -177,7 +177,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	// one final sweep pass past ttl, so a fully-drained table proves the
 	// sweep -- not just the test ending -- is what kept it bounded
 	time.Sleep(ttl + 100*time.Millisecond)
-	must(cd.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
+	must(md.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
 	finalRows := tableRowCount(ctx, ds, idkTable)
 
 	total := published.Load()
@@ -212,7 +212,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 
 // ---- helpers ----
 
-func publishConcurrent(ctx context.Context, wp *producer.MessageProducer[common.Work], n, goroutines int) {
+func publishConcurrent(ctx context.Context, wp *producer.Producer[common.Work], n, goroutines int) {
 	perGoroutine := n / goroutines
 	remainder := n % goroutines
 

@@ -67,10 +67,10 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	must(mAdmin.RegisterSystem(ctx))
 
 	topicName := fmt.Sprintf("%s.catchup.%d", group, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{WaterlinePollRate: pollRate})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, consumerDS, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	const rows = 100
@@ -84,11 +84,10 @@ func runCatchUpScenario(ctx context.Context, label string, pollRate time.Duratio
 	// BatchLimit >= rows -- everything claims in one Process tick, so the only
 	// variable left between the two runs is how long RollWaterline's own
 	// ticker takes to fire, isolating the thing this scenario measures.
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              rows * 2,
 		ClaimPollRate:           50 * time.Millisecond,
-		WaterlinePollRate:       pollRate,
 	})
 	must(err)
 	must(wc.Register(ctx))
@@ -123,10 +122,10 @@ func runLiveReadoutScenario(ctx context.Context) {
 	must(err)
 
 	topicName := fmt.Sprintf("%s.readout.%d", group, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topic.Config{WaterlinePollRate: 100 * time.Millisecond})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, consumerDS, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, consumerDS, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	const rows = 60
@@ -137,11 +136,10 @@ func runLiveReadoutScenario(ctx context.Context) {
 	pool, err := concurrency.NewWorkerPoolLimiter(10)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, tp.Name, queue, pool, consumerDS, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              20,
 		ClaimPollRate:           100 * time.Millisecond,
-		WaterlinePollRate:       100 * time.Millisecond,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 		MaxAttempts:             5,
 	})
@@ -170,7 +168,7 @@ func runLiveReadoutScenario(ctx context.Context) {
 	lastPrint := time.Time{}
 	var final *consumerQueueState
 	for {
-		snap, err := wc.Metrics.Snapshot(ctx)
+		snap, err := wc.MessageConsumer.Metrics.Snapshot(ctx)
 		must(err)
 		if time.Since(lastPrint) >= 250*time.Millisecond {
 			fmt.Println(snap.String())
@@ -212,12 +210,12 @@ type consumerQueueState struct {
 // pollFor polls wc's queue-state snapshot until until(snap) is true or
 // timeout elapses, printing the debug readout at most every 250ms. Returns
 // the time spent polling.
-func pollFor(ctx context.Context, wc *consumer.MessageConsumer[common.Work], label string, timeout time.Duration, until func(consumerQueueState) bool) time.Duration {
+func pollFor(ctx context.Context, wc *consumer.Consumer[common.Work], label string, timeout time.Duration, until func(consumerQueueState) bool) time.Duration {
 	start := time.Now()
 	deadline := start.Add(timeout)
 	lastPrint := time.Time{}
 	for {
-		snap, err := wc.Metrics.QueueState.Snapshot(ctx)
+		snap, err := wc.MessageConsumer.Metrics.QueueState.Snapshot(ctx)
 		must(err)
 		s := consumerQueueState{Head: snap.Head, Committed: snap.Committed, DeadExceptions: snap.DeadExceptions}
 		if time.Since(lastPrint) >= 250*time.Millisecond {
@@ -246,7 +244,7 @@ func newDS(ctx context.Context) *coredatastore.PostgresDatastore {
 	return ds
 }
 
-func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	for range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

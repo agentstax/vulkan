@@ -267,6 +267,13 @@ schema-gate-lab:
 producer-batch-lab:
   go run examples/phase_1/producerbatchlab/main.go
 
+# maintenance lab: N consumers on one topic coordinate through duty claims --
+# counts duty executions via fencing-token rotations to prove one effective
+# janitor/waterline worker per interval (not N), failover to a survivor
+# within an interval when consumers die, and full stop when the last exits.
+maintenance-lab:
+  go run examples/phase_1/maintenancelab/main.go
+
 # EX: just peek 1
 peek topic_id:
   psql "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" \

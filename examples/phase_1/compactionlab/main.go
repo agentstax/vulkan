@@ -35,6 +35,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -75,7 +76,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[KeyedRecord](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[KeyedRecord](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	must(cd.UpsertCursor(ctx, tp.Id, cursorGroup))
@@ -102,7 +105,7 @@ func main() {
 	assertInt("all 6 rows still physically exist -- compaction filters, never deletes", rowCount(ctx, ds, tp.Id), 6)
 
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed := advance(ctx, cd, tp.Id)
+	committed := advance(ctx, md, tp.Id)
 	assertInt("committed advances over the whole range regardless of compaction", committed, 6)
 
 	// ===== a delivered version isn't retroactively unsent once superseded (ids 7-8) =====
@@ -112,7 +115,7 @@ func main() {
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 7)
 
 	publish(ctx, wp, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
@@ -120,7 +123,7 @@ func main() {
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assertInt("committed only ever moves forward", committed, 8)
 	assertTrue("v1 (id 7) is still physically present -- compaction never rewrites history", rowExists(ctx, ds, tp.Id, 7))
 
@@ -159,7 +162,7 @@ func main() {
 	fmt.Println("     once v2 superseded it, exactly like Kafka's own compacted-topic contract")
 
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim2.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assertInt("committed moves past the (empty) reclaimed range", committed, 9)
 
 	step("v2 still gets its own, independent delivery -- the obligation carried forward")
@@ -167,7 +170,7 @@ func main() {
 	must(err)
 	assertIDs("user:4 v2 delivered", ids(claim3.Messages), []int64{10})
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim3.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 10)
 
 	// ===== tombstones are a pure app convention (ids 11-12) =====
@@ -178,7 +181,7 @@ func main() {
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
 	assertTrue("payload's own Deleted field survives -- the query never special-cases it", decode(claim.Messages[0].Payload).Deleted)
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 11)
 
 	publish(ctx, wp, "user:6", 1, true)               // id 12, LIFECYCLE path
@@ -212,15 +215,15 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.MessageProducer[KeyedRecord], key string, version int, deleted bool) {
+func publish(ctx context.Context, wp *producer.Producer[KeyedRecord], key string, version int, deleted bool) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
 		return &KeyedRecord{Key: key, Version: version, Deleted: deleted}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)
 }
 
-func advance(ctx context.Context, cd *consumer.ConsumerDatastore[KeyedRecord], topicID int64) int64 {
-	c, err := cd.AdvanceWaterline(ctx, topicID, cursorGroup)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, cursorGroup)
 	must(err)
 	return c
 }

@@ -13,9 +13,10 @@ package main
 //  2. retrying that same message twice logs two MORE distinct rows
 //     (attempt=1, attempt=2) -- the PK is (consumer_group, message_id,
 //     attempt), so a retry can never collide with or overwrite a prior one.
-//  3. a topic registered with DisableDeliveryLog never even creates the
-//     table, and every write path silently skips it -- a failure still
-//     parks normally in delivery_<id>, just with no shadow row.
+//  3. a topic registered with DisableDeliveryLog silently skips every write
+//     path (the table itself always exists, so re-enabling needs no DDL) --
+//     a failure still parks normally in delivery_<id>, just with no shadow
+//     row.
 //  4. retention (dropPartition's whole-partition removal, sweepBatch's
 //     individually-expired-row reap) actually drains old delivery_log rows,
 //     not just delivery_<id>'s.
@@ -30,6 +31,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -130,17 +132,19 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	fmt.Println("PASS: two retries appended two distinct rows, no overwrite of the original")
 }
 
-// ---- scenario 3: DisableDeliveryLog skips the table and every write ----
+// ---- scenario 3: DisableDeliveryLog skips every write ----
 
 func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("SCENARIO 3: DisableDeliveryLog skips table creation and every write")
+	step("SCENARIO 3: DisableDeliveryLog skips every write (the table itself always exists)")
 
 	tp, cd, wp := newTopic(ctx, ds, "scenario3", topic.Config{DisableDeliveryLog: true})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
 
-	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), false)
+	// registration creates delivery_log_<id> regardless of the flag -- the
+	// flag gates the writes, so re-enabling later needs no DDL
+	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), true)
 
 	seed(ctx, wp, 1)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
@@ -148,12 +152,13 @@ func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresD
 	if claim == nil {
 		die("expected a fresh claim")
 	}
-	exceptions := []consumer.MessageException{{MessageId: claim.Messages[0].Id, Err: "should never be logged"}}
+	failingId := claim.Messages[0].Id
+	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "should never be logged"}}
 	must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 
-	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), false) // still never created
-	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                                // the real park still happened
-	fmt.Println("PASS: table never created, failure still parked normally in delivery_<id>, no error")
+	assertDeliveryLogCount(ctx, ds, tp.Id, group, failingId, 0) // the failure was never logged
+	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                   // the real park still happened
+	fmt.Println("PASS: no delivery_log row written, failure still parked normally in delivery_<id>, no error")
 }
 
 // ---- scenario 4: retention drains old delivery_log rows ----
@@ -163,6 +168,8 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 
 	const partitionSize = int64(4)
 	tp, cd, wp := newTopic(ctx, ds, "scenario4drop", topic.Config{PartitionSize: partitionSize})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
@@ -174,7 +181,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 1)
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
 
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 0)
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
@@ -186,6 +193,8 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
 	tp, cd, wp := newTopic(ctx, ds, "scenario4sweep", topic.Config{PartitionSize: partitionSize})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true})) }()
@@ -197,7 +206,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 1)
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
 
-	must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, 1000, tp.DisableDeliveryLog))
+	must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, 1000, tp.DisableDeliveryLog))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 0)
 	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
@@ -206,7 +215,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.MessageProducer[common.Work]) {
+func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.Producer[common.Work]) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -216,13 +225,13 @@ func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix s
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
 	must(cd.UpsertCursor(ctx, tp.Id, group))
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	return tp, cd, wp
 }
 
-func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	for range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
@@ -234,7 +243,7 @@ func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int)
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], wp *producer.MessageProducer[common.Work], tp *topic.Topic, n int) int64 {
+func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], wp *producer.Producer[common.Work], tp *topic.Topic, n int) int64 {
 	seed(ctx, wp, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, n, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)

@@ -30,6 +30,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -62,7 +63,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -103,7 +106,7 @@ func main() {
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
 	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed := advance(ctx, cd, tp.Id, cursorGroup)
+	committed := advance(ctx, md, tp.Id, cursorGroup)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
@@ -118,7 +121,7 @@ func main() {
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
 	must(cd.Commit(ctx, tp.Id, controlGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	advance(ctx, cd, tp.Id, controlGroup)
+	advance(ctx, md, tp.Id, controlGroup)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
@@ -137,7 +140,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.MessageProducer[common.Work], routingKey string) string {
+func publish(ctx context.Context, wp *producer.Producer[common.Work], routingKey string) string {
 	work, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})
@@ -171,8 +174,8 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consume
 	return head
 }
 
-func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string) int64 {
-	c, err := cd.AdvanceWaterline(ctx, topicID, group)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, group string) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c
 }

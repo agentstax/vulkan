@@ -1,7 +1,7 @@
 package main
 
 // multi-target transactional enqueue lab: does producer.InTransaction +
-// MessageProducer.ProduceInTx actually deliver the atomicity/isolation
+// Producer.ProduceInTx actually deliver the atomicity/isolation
 // guarantees the design promises?
 //
 // Four scenarios:
@@ -221,7 +221,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.MessageProducer[common.Work], func()) {
+func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.Producer[common.Work], func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx))
@@ -230,7 +230,7 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topic.Config{PartitionSize: partitionSize})
 	must(err)
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	return tp, wp, func() { must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true})) }

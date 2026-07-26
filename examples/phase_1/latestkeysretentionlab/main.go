@@ -26,8 +26,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -71,10 +71,10 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	// fill partition 0 with a dormant key + filler, then age past ttl
@@ -93,7 +93,7 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -111,10 +111,10 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	publish(ctx, wp, "dormant-key")
@@ -124,7 +124,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+	must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -133,14 +133,14 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	for range 3 {
 		publish(ctx, wp, "alive-key")
 		time.Sleep(ttl / 4)
-		must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+		must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 	}
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 }
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.MessageProducer[common.Work], key string) {
+func publish(ctx context.Context, wp *producer.Producer[common.Work], key string) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{CompactionKey: key})

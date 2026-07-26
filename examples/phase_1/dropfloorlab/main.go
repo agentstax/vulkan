@@ -34,6 +34,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -69,21 +70,23 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
 	for range 4 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
+		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	time.Sleep(ttl + ttlMargin)
 
 	step("publish ids 5-9 into message_log_<id>_1 -- fresh, rolls the active partition forward")
 	for range 5 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
+		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	assertPartitions("partitions 0/1/2 exist (2 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{0, 1, 2})
 
@@ -92,7 +95,7 @@ func main() {
 	setCursor(ctx, ds, tp.Id, groupPast, 4, 4)
 
 	step("drop -- floor sits at groupPast's committed=4, exactly partition 0's last id, so it's not blocked")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
+	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
 	assertPartitions("partition 0 dropped", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2})
 
 	step("groupPast claims on -- unaffected by the drop, reads real messages from partition 1")
@@ -113,16 +116,16 @@ func main() {
 	time.Sleep(ttl + ttlMargin)
 	for range 5 {
 		publish(ctx, wp)
-		must(cd.EnsureNextPartition(ctx, tp.Id, partitionSize))
+		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	assertPartitions("partitions 1/2/3 exist (3 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 
 	step("drop attempt -- groupInside's committed is still 0, floor blocks partition 1 (last id 9 > floor 0)")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
+	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
 	assertPartitions("partition 1 survives -- refused by the floor", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 
 	step("same drop, AllowDropPastCommitted=true -- the floor check is waived outright")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 	assertPartitions("partition 1 dropped once the floor is overridden", partitionNumbers(ctx, ds, tp.Id), []int64{2, 3})
 
 	fmt.Println("\n✅ DROP FLOOR LAB PASSED")
@@ -132,7 +135,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
+func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})

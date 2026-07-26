@@ -62,7 +62,7 @@ func main() {
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -77,7 +77,7 @@ func main() {
 
 // ---- scenario 1: ordering ----
 
-func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *producer.MessageProducer[common.Work], topicName string) {
+func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *producer.Producer[common.Work], topicName string) {
 	step("ORDERING -- one slow message, three fast ones, same batch")
 	seedSleep(ctx, wp, []int{slowMs, 0, 0, 0})
 
@@ -109,7 +109,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 	pool, err := concurrency.NewWorkerPoolLimiter(poolSize)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		WorkTimeout:             10 * time.Second,
@@ -158,7 +158,7 @@ const (
 	minSpeedup      = 3.0 // conservative vs pool=8's 8x theoretical ceiling -- avoids flaking on a loaded machine
 )
 
-func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *producer.MessageProducer[common.Work], topicName string) {
+func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *producer.Producer[common.Work], topicName string) {
 	step("THROUGHPUT -- 40 fixed-cost messages, pool=1 (serial) vs pool=8 (parallel)")
 
 	sleeps := make([]int, throughputCount)
@@ -188,7 +188,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 	pool, err := concurrency.NewWorkerPoolLimiter(poolSize)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, topicName, queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		WorkTimeout:             10 * time.Second,
@@ -222,7 +222,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 
 // ---- helpers ----
 
-func seedSleep(ctx context.Context, wp *producer.MessageProducer[common.Work], sleepMsList []int) {
+func seedSleep(ctx context.Context, wp *producer.Producer[common.Work], sleepMsList []int) {
 	for _, ms := range sleepMsList {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			work, err := common.NewWork(30, "admin@example.com")

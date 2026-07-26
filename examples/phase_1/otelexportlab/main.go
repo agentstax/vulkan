@@ -1,7 +1,7 @@
 package main
 
 // Phase 10 lab: point a REAL OTel Prometheus exporter at the metric.Meter
-// MessageConsumerConfig accepts, scrape it over a real HTTP server the way
+// ConsumerConfig accepts, scrape it over a real HTTP server the way
 // Prometheus itself would, and confirm every instrument registered by
 // pkg/consumer/metrics shows up on the other end -- proof the integration
 // works end-to-end, not just that it compiles against the API.
@@ -91,7 +91,7 @@ func main() {
 	defer func() { must(provider.Shutdown(ctx)) }()
 	meter := provider.Meter("otelexportlab")
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 	seed(ctx, wp, 5)
@@ -101,7 +101,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(3)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              5,
 		WorkTimeout:             500 * time.Millisecond,
@@ -187,7 +187,7 @@ func main() {
 func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Work], consumerFunc consumer.ConsumerFunc[common.Work], timeout time.Duration, done func() bool) time.Duration {
 	runCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
-	go func() { errCh <- wc.Process(runCtx, consumerFunc) }()
+	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()
 
 	start := time.Now()
 	for !done() {
@@ -206,7 +206,7 @@ func runProcessUntil(ctx context.Context, wc *consumer.MessageConsumer[common.Wo
 	return elapsed
 }
 
-func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	for range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

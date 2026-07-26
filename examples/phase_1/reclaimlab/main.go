@@ -27,6 +27,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -58,7 +59,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -85,7 +88,7 @@ func main() {
 	}
 	fmt.Printf("  claimed (%d,%d]  ids=%v  lease=%s\n",
 		claim1.Lease.Low, claim1.Lease.High, ids(claim1.Messages), shortTok(claim1.Lease.Token))
-	committed := advance(ctx, cd, tp.Id) // the lazy roller ticks while the range is in-flight
+	committed := advance(ctx, md, tp.Id) // the lazy roller ticks while the range is in-flight
 	fmt.Printf("  roller tick -> committed = %d\n", committed)
 	// *** CRASH: control never reaches Commit(claim1) ***
 	oldTok := shortTok(claim1.Lease.Token)
@@ -118,7 +121,7 @@ func main() {
 	fmt.Println("  token rotated -> the dead worker's stale commit will now no-op")
 
 	// committed is still pinned at lo while the reclaimed range is in-flight again
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	fmt.Printf("  roller tick (mid-reclaim) -> committed = %d\n", committed)
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
@@ -132,7 +135,7 @@ func main() {
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
 	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
 	snapshot(ctx, ds, tp.Id, "AFTER RECLAIM COMMITTED")
@@ -149,7 +152,7 @@ func main() {
 			break // caught up
 		}
 		must(cd.Commit(ctx, tp.Id, group, c.Lease.Token, nil, nil, 5*time.Second, false))
-		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, cd, tp.Id))
+		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, md, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
@@ -162,8 +165,8 @@ func main() {
 
 // ---- helpers ----
 
-func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64) int64 {
-	c, err := cd.AdvanceWaterline(ctx, topicID, group)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c
 }

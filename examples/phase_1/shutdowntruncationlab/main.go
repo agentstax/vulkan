@@ -42,6 +42,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -75,7 +76,9 @@ func main() {
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	must(err)
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -87,7 +90,7 @@ func main() {
 	pool, err := concurrency.NewWorkerPoolLimiter(1)
 	must(err)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.MessageConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		WorkTimeout:             1 * time.Second,
@@ -115,7 +118,7 @@ func main() {
 	// Process blocks until runCtx cancels (cancel() fires synchronously inside
 	// consumerFunc above) -- N=1 pool means dispatch can't reach message 3
 	// before that cancellation is already visible to it.
-	if err := wc.Process(runCtx, consumerFunc); err != nil && !errors.Is(err, context.Canceled) {
+	if err := wc.Consume(runCtx, consumerFunc); err != nil && !errors.Is(err, context.Canceled) {
 		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
 	}
 	assert("exactly 2 messages attempted", calls.Load(), 2)
@@ -129,7 +132,7 @@ func main() {
 	assertStatus(ctx, ds, tp.Id, 2, "ready")
 
 	step("waterline stays pinned behind the unresolved exception, even though the lease is already narrowed past it")
-	committed := advance(ctx, cd, tp.Id)
+	committed := advance(ctx, md, tp.Id)
 	assert("committed blocked at message 1 (exception at 2 still unresolved)", committed, 1)
 
 	step("sleep 5.5s — let the parked exception's initial backoff pass")
@@ -142,7 +145,7 @@ func main() {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
 	}
 	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0]))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assert("committed advances to the narrowed low", committed, 2)
 	assert("deliveries drained (exception pop-deleted)", deliveries(ctx, ds, tp.Id), 0)
 
@@ -160,7 +163,7 @@ func main() {
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
 	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second, false))
-	committed = advance(ctx, cd, tp.Id)
+	committed = advance(ctx, md, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
 
@@ -173,7 +176,7 @@ func main() {
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int) {
+func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	for range n {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
@@ -182,8 +185,8 @@ func seed(ctx context.Context, wp *producer.MessageProducer[common.Work], n int)
 	}
 }
 
-func advance(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64) int64 {
-	c, err := cd.AdvanceWaterline(ctx, topicID, group)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, group)
 	must(err)
 	return c
 }

@@ -73,8 +73,8 @@ func main() {
 	fmt.Println("   Register fails fast and legibly when the schema is outside the supported range.")
 }
 
-func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.MessageProducer[event] {
-	p, err := producer.NewMessageProducer[event](name, ds, nil)
+func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.Producer[event] {
+	p, err := producer.NewProducer[event](name, ds, nil)
 	must(err)
 	return p
 }

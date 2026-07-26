@@ -76,7 +76,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -128,7 +128,7 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewMessageProducer[json.RawMessage](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[json.RawMessage](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -177,7 +177,7 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -217,7 +217,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 
@@ -248,11 +248,11 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	const producers, msgs = 50, 400 // ~2s per arm -- sub-second runs are all warmup noise
 	total := producers * msgs
 
-	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wp *producer.MessageProducer[common.Work], work *common.Work) error {
+	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wp *producer.Producer[common.Work], work *common.Work) error {
 		_, err := wp.Produce(ctx, work, producer.ProduceOptions{})
 		return err
 	})
-	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wp *producer.MessageProducer[common.Work], work *common.Work) error {
+	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wp *producer.Producer[common.Work], work *common.Work) error {
 		_, err := wp.ProduceFunc(ctx, func(context.Context, producer.Tx, uuid.UUID) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
 		return err
 	})
@@ -263,7 +263,7 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	// batches ride at BatchMaxSize, which only the batched path can absorb
 	// (a per-call arm would need a pool connection per caller).
 	const satProducers, satMsgs = 800, 50
-	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wp *producer.MessageProducer[common.Work], work *common.Work) error {
+	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wp *producer.Producer[common.Work], work *common.Work) error {
 		_, err := wp.Produce(ctx, work, producer.ProduceOptions{})
 		return err
 	})
@@ -281,11 +281,11 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 // timeArm registers its own topic, warms the pool untimed, then times the
 // full concurrent run -- asserting afterward that every publish landed
 // exactly once (throughput that loses messages doesn't count).
-func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, producers, msgs int, produce func(wp *producer.MessageProducer[common.Work], work *common.Work) error) time.Duration {
+func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, producers, msgs int, produce func(wp *producer.Producer[common.Work], work *common.Work) error) time.Duration {
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
 

@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -54,7 +54,7 @@ func main() {
 	must(err)
 	defer ds.Close()
 
-	cd, err := consumer.NewConsumerDatastore[Record](ds, nil)
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -72,14 +72,14 @@ func main() {
 	defer func() { must(mAdmin.DestroyTopic(ctx, wideName, admin.DestroyOptions{Force: true})) }()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducer, err := producer.NewMessageProducer[Record](narrow.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	narrowProducer, err := producer.NewProducer[Record](narrow.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(narrowProducer.Register(ctx))
-	wideProducer, err := producer.NewMessageProducer[Record](wide.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wideProducer, err := producer.NewProducer[Record](wide.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wideProducer.Register(ctx))
-	seed(ctx, cd, narrowProducer, narrow.Id, narrowPartitionSize)
-	seed(ctx, cd, wideProducer, wide.Id, widePartitionSize)
+	seed(ctx, md, narrowProducer, narrow.Id, narrowPartitionSize)
+	seed(ctx, md, wideProducer, wide.Id, widePartitionSize)
 
 	narrowPartitions := countPartitions(ctx, ds, narrow.Id)
 	widePartitions := countPartitions(ctx, ds, wide.Id)
@@ -119,20 +119,20 @@ func main() {
 // key that's never superseded, ids 2-38 are unique filler (each its own key,
 // so none of them ever match another row's compaction subplan), and ids
 // 39/40 are two versions of one key published back to back.
-func seed(ctx context.Context, cd *consumer.ConsumerDatastore[Record], wp *producer.MessageProducer[Record], topicID, partitionSize int64) {
+func seed(ctx context.Context, md *maintain.MaintenanceDatastore, wp *producer.Producer[Record], topicID, partitionSize int64) {
 	publish(ctx, wp, "stale") // id 1 -- never superseded
-	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
+	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
 	for i := range 37 {
 		publish(ctx, wp, fmt.Sprintf("filler:%d", i)) // ids 2-38, each a distinct key
-		must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
+		must(md.EnsureNextPartition(ctx, topicID, partitionSize))
 	}
 	publish(ctx, wp, "fresh") // id 39, v1
-	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
+	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
 	publish(ctx, wp, "fresh") // id 40, v2 -- immediately supersedes id 39
-	must(cd.EnsureNextPartition(ctx, topicID, partitionSize))
+	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
 }
 
-func publish(ctx context.Context, wp *producer.MessageProducer[Record], key string) {
+func publish(ctx context.Context, wp *producer.Producer[Record], key string) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{CompactionKey: key})

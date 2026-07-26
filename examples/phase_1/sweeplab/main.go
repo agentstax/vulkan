@@ -26,8 +26,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
@@ -59,10 +59,10 @@ func main() {
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	wp, err := producer.NewMessageProducer[common.Work](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	step("publish 4 'old' messages, then let them age past ttl")
@@ -81,13 +81,13 @@ func main() {
 	fmt.Printf("  old ids (%d,%d], fresh ids (%d,%d]\n", oldLow, oldHigh, freshLow, freshHigh)
 
 	step("DropExpiredPartitions -- no-op, the topic's first partition is still active at this volume")
-	must(cd.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 	assertInt("partition 0 survives", partitionCount(ctx, ds, tp.Id), 1)
 	assertInt("old rows untouched by drop", countInRange(ctx, ds, tp.Id, oldLow, oldHigh), 4)
 	assertInt("fresh rows untouched by drop", countInRange(ctx, ds, tp.Id, freshLow, freshHigh), 3)
 
 	step("SweepExpiredPartitions -- deletes exactly the expired prefix")
-	must(cd.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+	must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 	assertInt("old rows swept", countInRange(ctx, ds, tp.Id, oldLow, oldHigh), 0)
 	assertInt("fresh rows survive -- not yet past ttl", countInRange(ctx, ds, tp.Id, freshLow, freshHigh), 3)
 	assertInt("partition 0 itself survives -- sweep deletes rows, not partitions", partitionCount(ctx, ds, tp.Id), 1)
@@ -99,7 +99,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.MessageProducer[common.Work]) {
+func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})

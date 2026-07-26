@@ -50,7 +50,7 @@ func main() {
 	must(err)
 	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true})) }()
 
-	p, err := producer.NewMessageProducer[Message](tp.Name, ds, nil)
+	p, err := producer.NewProducer[Message](tp.Name, ds, nil)
 	must(err)
 
 	// ===== produce before Register =====
@@ -85,7 +85,7 @@ func main() {
 
 	// ===== fire-and-forget escape hatch =====
 	step("fresh producer with DisableGracefulShutdown -- Background is accepted")
-	ff, err := producer.NewMessageProducer[Message](tp.Name, ds, &producer.MessageProducerConfig{DisableGracefulShutdown: true})
+	ff, err := producer.NewProducer[Message](tp.Name, ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(ff.Register(context.Background()))
 	_, err = ff.Produce(ctx, &Message{Data: "fire and forget"}, producer.ProduceOptions{})
