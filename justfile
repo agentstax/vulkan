@@ -95,29 +95,29 @@ compaction-width-lab:
 compaction-scale-lab:
   go run examples/phase_1/compactionscalelab/main.go
 
-# latest_keys correctness lab: N goroutines publish to the SAME key at once,
+# compaction_head correctness lab: N goroutines publish to the SAME key at once,
 # proving the write path's id-guard converges to the true max regardless of
 # commit order -- plus the O(1) counterpart to compaction-scale-lab's linear
-# curve, same checkpoints, EXPLAIN ANALYZEing the NEW latest_keys lookup
+# curve, same checkpoints, EXPLAIN ANALYZEing the NEW compaction_head lookup
 # instead of the old scan. Touched partitions must stay flat at every size.
-latest-keys-race-lab:
-  go run examples/phase_1/latestkeysracelab/main.go
+compaction-head-race-lab:
+  go run examples/phase_1/compactionheadracelab/main.go
 
-# latest_keys + retention lab: does 8a's retention correctly garbage collect
-# latest_keys when it reaps a compacted key's last surviving row? Covers both
+# compaction_head + retention lab: does 8a's retention correctly garbage collect
+# compaction_head when it reaps a compacted key's last surviving row? Covers both
 # janitor paths (dropPartition's whole-partition removal, sweepBatch's
 # individually-expired-row reap) and confirms a key touched inside the ttl
 # window survives every pass untouched, either path.
-latest-keys-retention-lab:
-  go run examples/phase_1/latestkeysretentionlab/main.go
+compaction-head-retention-lab:
+  go run examples/phase_1/compactionheadretentionlab/main.go
 
-# latest_keys write-cost lab: quantifies the tradeoff -- an O(1) read path
+# compaction_head write-cost lab: quantifies the tradeoff -- an O(1) read path
 # cost a second write on every keyed publish. Sequential/uncontended cost vs.
 # an unkeyed baseline, hot-key lock contention under concurrency (many
 # distinct keys vs. all publishers hammering ONE key), and the dead-tuple
 # growth that contention leaves behind for autovacuum.
-latest-keys-write-lab:
-  go run examples/phase_1/latestkeyswritelab/main.go
+compaction-head-write-lab:
+  go run examples/phase_1/compactionheadwritelab/main.go
 
 # idempotency_keys lab: does AppendMessage's retry-safety claim gate actually
 # prevent a double-publish, and does its cleanup actually drain it? Covers a
@@ -140,12 +140,12 @@ idempotency-keys-growth-lab:
 # idempotency_keys race lab: N goroutines sharing one idempotency key must
 # land exactly once under true concurrency (not just sequential retries),
 # and N goroutines each with their own distinct key must all land -- mirrors
-# latestkeysracelab's concurrent-race precedent.
+# compactionheadracelab's concurrent-race precedent.
 idempotency-keys-race-lab:
   go run examples/phase_1/idempotencykeysracelab/main.go
 
 # DeleteTopic cascade lab: seeds a row in every topic_id-scoped table
-# (cursors, leases, bindings, latest_keys) plus the per-topic deliveries and
+# (cursors, leases, bindings, compaction_head) plus the per-topic deliveries and
 # idempotency_keys tables -- including a still-open lease and an unclaimed
 # deliveries row, not just the already-resolved case -- then confirms
 # Destroy cleans up all of them, not just message_log and the topics row

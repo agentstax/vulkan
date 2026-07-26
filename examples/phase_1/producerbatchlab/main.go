@@ -12,8 +12,8 @@ package main
 //     rejects \u0000) and one client-side-unencodable payload each fail ONLY
 //     their own caller -- everyone sharing their batches still lands.
 //   - hotCompactionKeysScenario: hot compaction keys inside concurrent
-//     batches -- the per-batch key sort keeps latest_key lock order global,
-//     so nothing deadlocks and every latest_key row ends at its key's max id.
+//     batches -- the per-batch key sort keeps compaction_head lock order global,
+//     so nothing deadlocks and every compaction_head row ends at its key's max id.
 //   - partitionHealScenario: a burst that outruns the janitor's create-ahead
 //     (no janitor running at all here) self-heals missing partitions,
 //     sequentially and under concurrency.
@@ -166,11 +166,11 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // hotCompactionKeysScenario: 20 goroutines x 20 keyed produces across only 3
 // hot keys, with a tiny batch cap so multiple workers commit concurrently --
-// real cross-batch latest_key contention. A deadlock would surface as an
-// evicted operation's error; zero errors + every latest_key row at its key's
+// real cross-batch compaction_head contention. A deadlock would surface as an
+// evicted operation's error; zero errors + every compaction_head row at its key's
 // max id is the pass.
 func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
-	step("hot compaction keys: concurrent batches contend on latest_key without deadlock")
+	step("hot compaction keys: concurrent batches contend on compaction_head without deadlock")
 
 	const producers, msgs, keys = 20, 20, 3
 	tp, cleanup := registerTopic(ctx, ds, "hotkeys", largePartitionSize)
@@ -195,16 +195,16 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 
 	var stale int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT count(*) FROM latest_key lk
+		SELECT count(*) FROM compaction_head lk
 		JOIN (
 			SELECT compaction_key, max(id) AS max_id FROM message_log_%d GROUP BY compaction_key
 		) m ON m.compaction_key = lk.compaction_key
-		WHERE lk.topic_id = $1 AND lk.latest_id <> m.max_id;
+		WHERE lk.topic_id = $1 AND lk.head_id <> m.max_id;
 	`, tp.Id), tp.Id).Scan(&stale))
 	if stale != 0 {
-		die(fmt.Sprintf("%d latest_key rows not pointing at their key's max id", stale))
+		die(fmt.Sprintf("%d compaction_head rows not pointing at their key's max id", stale))
 	}
-	fmt.Printf("  ✓ every latest_key row points at its key's max id across %d hot keys\n", keys)
+	fmt.Printf("  ✓ every compaction_head row points at its key's max id across %d hot keys\n", keys)
 }
 
 // partitionHealScenario: PartitionSize 10 and no janitor, so produces past

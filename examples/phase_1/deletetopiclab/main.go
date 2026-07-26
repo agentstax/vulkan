@@ -2,7 +2,7 @@ package main
 
 // DeleteTopic cascade lab: confirms Destroy doesn't just drop message_log and
 // the topic row -- it also has to clean up every other table scoped by
-// topic_id (cursor, lease, binding, latest_key) and drop the per-topic
+// topic_id (cursor, lease, binding, compaction_head) and drop the per-topic
 // delivery_<id>/delivery_log_<id>/idempotency_key_<id> tables outright, or
 // that state is permanently orphaned (nothing else ever deletes it).
 //
@@ -31,7 +31,7 @@ import (
 
 const group = "phase9.deletetopiclab.group"
 
-var scopedTables = []string{"cursor", "lease", "binding", "latest_key"}
+var scopedTables = []string{"cursor", "lease", "binding", "compaction_head"}
 
 func main() {
 	ctx := context.Background()
@@ -65,7 +65,7 @@ func main() {
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
-	// CompactionKey seeds latest_key; the default (protected) idempotency
+	// CompactionKey seeds compaction_head; the default (protected) idempotency
 	// claim seeds idempotency_key -- one Produce call, two tables.
 	_, err = wp.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
@@ -111,7 +111,7 @@ func main() {
 	assertTableExists(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), false)
 
 	fmt.Println("\n✅ DELETE TOPIC CASCADE LAB PASSED")
-	fmt.Println("   cursor/lease/binding/latest_key are all cleaned up on Destroy, the")
+	fmt.Println("   cursor/lease/binding/compaction_head are all cleaned up on Destroy, the")
 	fmt.Println("   per-topic delivery/delivery_log/idempotency_key tables are all dropped")
 	fmt.Println("   outright, and neither the still-open lease nor the unclaimed delivery row")
 	fmt.Println("   survive.")

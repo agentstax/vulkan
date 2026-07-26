@@ -539,10 +539,10 @@ func (d *ConsumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 			AND (
 				-- unkeyed rows are never compacted
 				m.compaction_key IS NULL
-				-- keyed rows are eligible only if they're latest_key's current
+				-- keyed rows are eligible only if they're compaction_head's current
 				-- pointer for their key -- O(1) lookup, no per-row scan
 				OR m.id = (
-					SELECT latest_id FROM latest_key
+					SELECT head_id FROM compaction_head
 					WHERE topic_id = $4
 						AND compaction_key = m.compaction_key
 				)

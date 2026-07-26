@@ -99,10 +99,10 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			AND (
 				-- unkeyed rows are never compacted
 				b.compaction_key IS NULL
-				-- keyed rows materialize a delivery only if they're latest_key's
+				-- keyed rows materialize a delivery only if they're compaction_head's
 				-- current pointer for their key -- O(1) lookup, no per-row scan
 				OR b.id = (
-					SELECT latest_id FROM latest_key
+					SELECT head_id FROM compaction_head
 					WHERE topic_id = $2
 						AND compaction_key = b.compaction_key
 				)

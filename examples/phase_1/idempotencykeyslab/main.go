@@ -3,7 +3,7 @@ package main
 // idempotency-key lab: does AppendMessage's retry-safety claim gate
 // (idempotency_key) actually prevent a double-publish, and does its
 // cleanup (SweepExpiredIdempotencyKeys, Topic.IdempotencyKeyTTL) actually
-// drain it the way latestkeysretentionlab proves for compaction?
+// drain it the way compactionheadretentionlab proves for compaction?
 //
 // Five scenarios:
 //   - duplicateKeyScenario: the SAME idempotency key across repeated
@@ -18,8 +18,8 @@ package main
 //     explicit key are NOT mistaken for retries of one another.
 //   - sweepScenario: idempotency_key rows older than IdempotencyKeyTTL get
 //     swept by the janitor in bounded batches; a key inside the TTL window
-//     survives -- same shape as latestkeysretentionlab proves for
-//     latest_key.
+//     survives -- same shape as compactionheadretentionlab proves for
+//     compaction_head.
 //   - configRoundTripScenario: IdempotencyKeyTTL persists correctly through
 //     re-registration -- Topic-level config, not a per-call default that
 //     silently resets and trips ErrTopicConfigMismatch.

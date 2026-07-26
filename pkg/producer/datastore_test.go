@@ -20,8 +20,8 @@ func TestProtectedInsertSQLUnkeyedDefaultRank(t *testing.T) {
 	want := []any{key, "payload", "r"}
 	assertArgs(t, args, want)
 
-	if strings.Contains(sql, "latest_key") {
-		t.Fatal("unkeyed insert must not touch latest_key")
+	if strings.Contains(sql, "compaction_head") {
+		t.Fatal("unkeyed insert must not touch compaction_head")
 	}
 	if strings.Contains(sql, "compaction_rank") || strings.Contains(sql, "compaction_key") {
 		t.Fatalf("unkeyed insert should rely on the column defaults, not name them, got:\n%s", sql)
@@ -49,12 +49,12 @@ func TestProtectedInsertSQLKeyedDefaultRank(t *testing.T) {
 	want := []any{key, "payload", "r", "user:1", int64(7), int64(0)}
 	assertArgs(t, args, want)
 
-	if !strings.Contains(sql, "(latest_key.compaction_rank, latest_key.latest_id) < (EXCLUDED.compaction_rank, EXCLUDED.latest_id)") {
+	if !strings.Contains(sql, "(compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)") {
 		t.Fatalf("keyed insert missing the (rank, id) row comparison, got:\n%s", sql)
 	}
 	// same-rank traffic (the all-default case) must fall through to today's
 	// id-alone comparison -- true by construction since rank ties make the
-	// tuple compare degenerate to comparing latest_id alone.
+	// tuple compare degenerate to comparing head_id alone.
 }
 
 func TestProtectedInsertSQLNegativeRank(t *testing.T) {

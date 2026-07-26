@@ -261,7 +261,7 @@ func (d *MaintenanceDatastore) sweepBatch(ctx context.Context, topicID int64, n 
 	defer tx.Rollback(ctx)
 
 	// sweptRow is sweepBatch's own RETURNING shape -- CompactionKey only exists
-	// to tell whether the latest_key cleanup is worth running at all.
+	// to tell whether the compaction_head cleanup is worth running at all.
 	type sweptRow struct {
 		Id            int64   `db:"id"`
 		CompactionKey *string `db:"compaction_key"`
@@ -320,9 +320,9 @@ func (d *MaintenanceDatastore) sweepBatch(ctx context.Context, topicID int64, n 
 
 	if anyKeyed {
 		orphanKeySql := `
-			DELETE FROM latest_key
+			DELETE FROM compaction_head
 			WHERE topic_id = $1
-				AND latest_id = ANY($2);
+				AND head_id = ANY($2);
 		`
 		if _, err := tx.Exec(ctx, orphanKeySql, topicID, ids); err != nil {
 			return 0, err
@@ -382,10 +382,10 @@ func (d *MaintenanceDatastore) dropPartition(ctx context.Context, topicID int64,
 	// a dropped partition holding a key's latest row is a dormant key expiring
 	// drop the now-dangling pointer rather than leave it forever
 	orphanKeySql := `
-		DELETE FROM latest_key
+		DELETE FROM compaction_head
 		WHERE topic_id = $1
-			AND latest_id >= $2
-			AND latest_id < $3;
+			AND head_id >= $2
+			AND head_id < $3;
 	`
 	if _, err := tx.Exec(ctx, orphanKeySql, topicID, low, high); err != nil {
 		return err

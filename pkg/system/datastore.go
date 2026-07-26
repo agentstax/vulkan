@@ -19,7 +19,7 @@ import (
 // - maintenance
 // - binding
 // - topic
-// - latest_key
+// - compaction_head
 // - schema_log
 type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
@@ -185,21 +185,21 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
-	// O(1) index for compaction's "is this the latest for its key" lookup --
+	// O(1) index for compaction's "is this the winner for its key" lookup --
 	// upserted synchronously in the same transaction as every keyed publish,
 	// never a background job. Shared across topics (not per-topic like
 	// message_log) since it scales with DISTINCT compaction_key count, not
 	// total message volume.
-	createLatestKeySql := `
-		CREATE TABLE IF NOT EXISTS latest_key (
+	createCompactionHeadSql := `
+		CREATE TABLE IF NOT EXISTS compaction_head (
 			topic_id        BIGINT NOT NULL,           -- PK
 			compaction_key  TEXT   NOT NULL,           -- PK
-			latest_id       BIGINT NOT NULL,           -- highest message_log id seen for this key so far
-			compaction_rank BIGINT NOT NULL DEFAULT 0, -- the current winner's rank
+			head_id         BIGINT NOT NULL,           -- the winning message_log id for this key
+			compaction_rank BIGINT NOT NULL DEFAULT 0, -- the winner's rank
 			PRIMARY KEY (topic_id, compaction_key)
 		);
 	`
-	if _, err := tx.Exec(ctx, createLatestKeySql); err != nil {
+	if _, err := tx.Exec(ctx, createCompactionHeadSql); err != nil {
 		return err
 	}
 

@@ -614,7 +614,7 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 
 	// every other table scoped by topic_id
-	for _, table := range []string{"cursor", "lease", "maintenance", "binding", "latest_key"} {
+	for _, table := range []string{"cursor", "lease", "maintenance", "binding", "compaction_head"} {
 		deleteSql := fmt.Sprintf(`DELETE FROM %s WHERE topic_id = $1;`, table)
 		if _, err := tx.Exec(ctx, deleteSql, topic.Id); err != nil {
 			return err

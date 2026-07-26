@@ -5,7 +5,7 @@ package main
 // per-topic redesign -- every other idempotency lab only ever publishes
 // sequentially, so the claim+insert CTE's true concurrent behavior (as
 // opposed to sequential "retries") has never been exercised as a standing
-// test. Mirrors latestkeysracelab's concurrent-race precedent.
+// test. Mirrors compactionheadracelab's concurrent-race precedent.
 //
 // Two scenarios:
 //   - sameKeyConcurrentScenario: N goroutines publish under the SAME

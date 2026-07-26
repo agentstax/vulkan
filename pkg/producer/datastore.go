@@ -275,7 +275,7 @@ func (d *producerDatastore[Message]) insertProtectedSavepoint(ctx context.Contex
 	return br.Close()
 }
 
-// insertProtected runs the idempotency claim + message insert (+ latest_key
+// insertProtected runs the idempotency claim + message insert (+ compaction_head
 // upsert when keyed) in one round trip. landed=false means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
 func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) (id int64, landed bool, err error) {
@@ -292,7 +292,7 @@ func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx
 	return id, true, nil
 }
 
-// protectedInsertSQL builds the claim+insert(+latest_key upsert when keyed)
+// protectedInsertSQL builds the claim+insert(+compaction_head upsert when keyed)
 // CTE -- shared with the savepoint-batched path so both run the exact same
 // statement. Claims against idempotency_key_<topicID>
 func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, opts ProduceOptions) (string, []any) {
@@ -300,7 +300,7 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 
 	var sql string
 	if opts.CompactionKey != "" {
-		// claim + insert + latest_key upsert in one round trip -- inserted
+		// claim + insert + compaction_head upsert in one round trip -- inserted
 		// stays empty when the claim already existed, so latest never fires either.
 		sql = fmt.Sprintf(`
 			WITH claim AS (
@@ -314,13 +314,13 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
-				INSERT INTO latest_key (topic_id, compaction_key, latest_id, compaction_rank)
+				INSERT INTO compaction_head (topic_id, compaction_key, head_id, compaction_rank)
 				SELECT $5, $4, id, $6 FROM inserted
 				ON CONFLICT (topic_id, compaction_key) DO UPDATE
-				SET latest_id = EXCLUDED.latest_id, compaction_rank = EXCLUDED.compaction_rank
+				SET head_id = EXCLUDED.head_id, compaction_rank = EXCLUDED.compaction_rank
 				-- lexicographic (rank, id) compare -- higher rank wins outright; equal rank
 				-- falls through to the id compare alone, today's rule unchanged
-				WHERE (latest_key.compaction_rank, latest_key.latest_id) < (EXCLUDED.compaction_rank, EXCLUDED.latest_id)
+				WHERE (compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
 			)
 			SELECT id FROM inserted;
 		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))

@@ -14,7 +14,7 @@ package main
 //     (group, topic) cursor row -- Commit itself never touches that row
 //     today (only lease + delivery), so a synchronous AdvanceWaterline
 //     call is new contention on it, not a cost that already existed. Same
-//     shape as latestkeyswritelab's hot-key scenario, applied to cursor.
+//     shape as compactionheadwritelab's hot-key scenario, applied to cursor.
 //
 // Registers its own topics (destroyed on exit), self-seeded.
 
