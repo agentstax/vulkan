@@ -189,19 +189,6 @@ delivery-log-lab:
 shutdown-truncation-lab:
   go run examples/phase_1/shutdowntruncationlab/main.go
 
-# Phase 9 lab: induces all three failure modes through the real CursorClaim
-# path -- a panicking consumerFunc, one that hangs past WorkTimeout, and a
-# forced pkg/retry transient blip. Confirms each is isolated to the one
-# message/call it happened on: the panic and the hang each dead-letter/retry
-# just that message without blocking the other two in the same batch, the
-# abandoned-goroutine gauge tracks the hang while it's still running in the
-# background and self-clears once it finishes, and a DB blip that clears
-# within MaxRetries is fully invisible to the caller (building this lab
-# surfaced and fixed a real bug in pkg/retry.Wrap swallowing a successful
-# retry behind its own prior failures).
-fault-isolation-lab:
-  go run examples/phase_1/faultisolationlab/main.go
-
 # Phase 10 lab: measures the lazy-vs-synchronous AdvanceWaterline tradeoff.
 # Staleness (time from Commit to `committed` reflecting it: periodic roller
 # tick vs. calling AdvanceWaterline synchronously right after Commit), fixed
@@ -210,36 +197,6 @@ fault-isolation-lab:
 # itself never touches today.
 rollup-lab:
   go run examples/phase_1/rolluplab/main.go
-
-# Phase 10 lab: drives each failure mode the harness flags (--fail-rate,
-# --sleep, --crash-after) represent through the real WorkConsumer/Datastore
-# paths and diffs the metrics snapshot before/after -- asserts each induced
-# failure moves EXACTLY the number(s) it should and nothing else, the
-# executable form of LEARNING_PLAN.md's "if a failure doesn't move a number,
-# you have a blind spot" check.
-metrics-reaction-lab:
-  go run examples/phase_1/metricsreactionlab/main.go
-
-# Phase 10 lab: runs the real Consume loop under load with the debug readout
-# on. Measures committed-catch-up wall-clock time at a slow vs. fast
-# WaterlinePollRate (the live, end-to-end counterpart to rollup-lab's direct-
-# datastore-call staleness measurement), then a second run with injected
-# retryable failures -- watches exception counts rise and fully drain back
-# to zero live, with no manual intervention.
-metrics-load-lab:
-  go run examples/phase_1/metricsloadlab/main.go
-
-# Phase 10 lab: the only place in the repo that imports otel/sdk or a
-# specific exporter. Wires a real sdkmetric.MeterProvider backed by
-# otel/exporters/prometheus's Reader, drives real consumer activity
-# (including a hard-timeout abandon+self-clear so the synchronous
-# AbandonedRoutines instruments have a data point too, not just the
-# always-live QueueState gauges), then scrapes over a real HTTP server via
-# promhttp.HandlerFor -- confirms every instrument pkg/consumer/metrics
-# registers actually shows up on the wire, not just that it compiles against
-# the otel/metric API.
-otel-export-lab:
-  go run examples/phase_1/otelexportlab/main.go
 
 # multi-target transactional enqueue lab: two targets published inside one
 # producer.InTransaction closure commit together, a failure on either rolls

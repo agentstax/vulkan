@@ -6,10 +6,10 @@ import (
 	"runtime/debug"
 	"time"
 
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -18,11 +18,11 @@ import (
 // topic, datastores, config, the lifecycle gate, and callSafely. Embedded, so
 // its exported fields stay part of each type's public surface.
 type consumerBase[Message any] struct {
-	Topic     *topic.Topic // resolved by Register from the name/version given to the constructor
-	Datastore *ConsumerDatastore[Message]
-	Metrics   *metrics.Metrics // resolved by Register alongside Topic
-	Config    *ConsumerConfig
-	Logger    logger.Logger // copied from Config.Logger at construction
+	Topic           *topic.Topic // resolved by Register from the name/version given to the constructor
+	Datastore       *ConsumerDatastore[Message]
+	AbandonedEvents *consumermetrics.MetricEventProducer
+	Config          *ConsumerConfig
+	Logger          logger.Logger // copied from Config.Logger at construction
 
 	consumerGroup  string
 	topicName      string
@@ -51,14 +51,24 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		return nil, err
 	}
 
+	abandonedEvents, err := consumermetrics.NewMetricEventProducer(consumerGroup, ds, &consumermetrics.MetricEventConfig{
+		DisableGracefulShutdown: cfg.DisableGracefulShutdown,
+		Logger:                  cfg.Logger,
+		Retry:                   cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &consumerBase[Message]{
-		Datastore:      consumerDatastore,
-		Config:         cfg,
-		Logger:         cfg.Logger,
-		consumerGroup:  consumerGroup,
-		topicName:      topicName,
-		version:        version,
-		topicDatastore: topicDatastore,
+		Datastore:       consumerDatastore,
+		AbandonedEvents: abandonedEvents,
+		Config:          cfg,
+		Logger:          cfg.Logger,
+		consumerGroup:   consumerGroup,
+		topicName:       topicName,
+		version:         version,
+		topicDatastore:  topicDatastore,
 	}, nil
 }
 
@@ -91,6 +101,10 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 	b.Topic = current
 
 	if err := migrate.AssertSchemaSupported(ctx, b.topicDatastore.Datastore.Pool, current.Id); err != nil {
+		return err
+	}
+
+	if err := b.AbandonedEvents.Register(ctx); err != nil {
 		return err
 	}
 
@@ -128,13 +142,13 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
 	// if this hard timeout is called go thread will be left hanging / abandoned
 	case <-time.After(b.Config.WorkTimeout + b.Config.WorkTimeoutGrace):
-		b.Metrics.AbandonedRoutines.Add(ctx, messageID, attempt)
+		b.AbandonedEvents.Add(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
 		// reaper -- done is buffered(1) and nothing else reads it past this
 		// point, so this receive fires exactly when the abandoned goroutine
 		// finally returns. Spawned after Add, so Remove can never precede it.
 		go func() {
 			<-done
-			b.Metrics.AbandonedRoutines.Remove(ctx, messageID, attempt)
+			b.AbandonedEvents.Remove(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
 		}()
 
 		// don't print out work in case of sensitive values

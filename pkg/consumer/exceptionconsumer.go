@@ -8,7 +8,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
-	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -53,12 +52,6 @@ func (p *ExceptionConsumer[Message]) Register(ctx context.Context) error {
 	if err := p.register(ctx); err != nil {
 		return err
 	}
-
-	consumerMetrics, err := metrics.NewMetrics(p.Config.Meter, p.consumerGroup, p.Topic.Id, p.Topic.Name, int64(p.version), p.Datastore.Datastore, p.Config.Logger)
-	if err != nil {
-		return err
-	}
-	p.Metrics = consumerMetrics
 
 	// tracked for graceful shutdown draining / handling
 	p.lifecycleCtx = ctx
