@@ -1,4 +1,4 @@
-package metrics
+package datastore
 
 import (
 	"fmt"
@@ -8,12 +8,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-type MaintenanceMetricsDatastoreConfig struct {
+type MetricsDatastoreConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Retry  *retry.Policy // Default: retry.NewDefaultRetryPolicy(). Metric polling may want a shorter policy than the default.
 }
 
-func (c *MaintenanceMetricsDatastoreConfig) WithDefaults() *MaintenanceMetricsDatastoreConfig {
+func (c *MetricsDatastoreConfig) WithDefaults() *MetricsDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -23,7 +23,7 @@ func (c *MaintenanceMetricsDatastoreConfig) WithDefaults() *MaintenanceMetricsDa
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *MaintenanceMetricsDatastoreConfig) Validate() error {
+func (c *MetricsDatastoreConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}

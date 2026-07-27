@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
+	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -14,7 +14,7 @@ import (
 type VersionHealth struct {
 	Topic     *topic.Topic
 	Compacted bool
-	Groups    []consumermetrics.GroupLag
+	Groups    []metricsDatastore.GroupLag
 	Safe      bool
 	Reason    string
 }
@@ -48,19 +48,19 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 }
 
 func (a *MessageAdmin) versionHealth(ctx context.Context, t *topic.Topic) (*VersionHealth, error) {
-	compacted, err := a.topicMetricsDatastore.IsCompacted(ctx, t.Id)
+	compacted, err := a.metricsDatastore.IsCompacted(ctx, t.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	groupNames, err := a.topicMetricsDatastore.ListConsumerGroups(ctx, t.Id)
+	groupNames, err := a.metricsDatastore.ListConsumerGroups(ctx, t.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	groups := make([]consumermetrics.GroupLag, 0, len(groupNames))
+	groups := make([]metricsDatastore.GroupLag, 0, len(groupNames))
 	for _, group := range groupNames {
-		snapshot, err := a.consumerMetricsDatastore.ConsumerGroupSnapshot(ctx, t.Id, group)
+		snapshot, err := a.metricsDatastore.ConsumerGroupSnapshot(ctx, t.Id, group)
 		if err != nil {
 			return nil, err
 		}

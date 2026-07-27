@@ -8,7 +8,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/maintain/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
@@ -19,8 +18,7 @@ import (
 type FleetMaintainer struct {
 	Datastore *MaintenanceDatastore
 	Config    *FleetMaintainerConfig
-	Metrics   *metrics.DutyState // resolved by Register
-	Logger    logger.Logger      // copied from Config.Logger at construction
+	Logger    logger.Logger // copied from Config.Logger at construction
 
 	registered bool
 	duties     *dutyPool
@@ -66,19 +64,6 @@ func (f *FleetMaintainer) Register(ctx context.Context) error {
 	if err := migrate.AssertSystemSchemaSupported(ctx, f.Datastore.Datastore.Pool); err != nil {
 		return err
 	}
-
-	metricsDatastore, err := metrics.NewMaintenanceDatastore(f.Datastore.Datastore, &metrics.MaintenanceMetricsDatastoreConfig{
-		Logger: f.Config.Logger,
-		Retry:  f.Config.Retry,
-	})
-	if err != nil {
-		return err
-	}
-	dutyState, err := metrics.NewDutyState(f.Config.Meter, metricsDatastore)
-	if err != nil {
-		return err
-	}
-	f.Metrics = dutyState
 
 	f.registered = true
 	return nil

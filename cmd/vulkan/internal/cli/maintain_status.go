@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/maintain/metrics"
+	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
+	"github.com/agentstax/vulkan/pkg/metrics/monitor"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/metric/noop"
 )
 
 func newMaintainStatusCmd(g *globalFlags) *cobra.Command {
@@ -29,20 +29,16 @@ func newMaintainStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeDS()
 
-			metricsDatastore, err := metrics.NewMaintenanceDatastore(ds, &metrics.MaintenanceMetricsDatastoreConfig{
+			// MonitorConfig defaults its Meter to noop -- keeps this one-shot
+			// read exporter-free; the query runs live either way
+			monitor, err := monitor.NewMonitor(ds, &monitor.MonitorConfig{
 				Logger: logger.NewDefaultLogger(os.Stderr, slog.LevelError),
 			})
 			if err != nil {
 				return failOp("%s", err.Error())
 			}
-			// DutyState's gauges want a meter; a noop one keeps this one-shot
-			// read exporter-free -- Snapshot queries live either way
-			state, err := metrics.NewDutyState(noop.NewMeterProvider().Meter("vulkan-cli"), metricsDatastore)
-			if err != nil {
-				return failOp("%s", err.Error())
-			}
 
-			duties, err := state.Snapshot(ctx)
+			duties, err := monitor.Datastore.DutySnapshots(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -53,7 +49,7 @@ func newMaintainStatusCmd(g *globalFlags) *cobra.Command {
 	}
 }
 
-func printDutiesTable(w io.Writer, duties []metrics.DutySnapshot) {
+func printDutiesTable(w io.Writer, duties []metricsDatastore.DutySnapshot) {
 	if len(duties) == 0 {
 		fmt.Fprintln(w, "no maintenance duties -- duties appear as topics and consumer groups register")
 		return

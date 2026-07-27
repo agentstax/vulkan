@@ -1,50 +1,26 @@
-package metrics
+package datastore
 
 import (
 	"context"
-	"errors"
 	"time"
-
-	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-type maintenanceMetricsDatastore struct {
-	Datastore *datastore.PostgresDatastore
-	Retry     *retry.DatastoreRetry
-	Logger    logger.Logger
-}
+// overdueFactor: how many rates past its gate a duty counts as overdue.
+const overdueFactor = 10
 
-// cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
-func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceMetricsDatastoreConfig) (*maintenanceMetricsDatastore, error) {
-	if ds == nil {
-		return nil, errors.New("datastore must not be nil")
-	}
-	if cfg == nil {
-		cfg = &MaintenanceMetricsDatastoreConfig{}
-	}
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
-	if err != nil {
-		return nil, err
-	}
-
-	return &maintenanceMetricsDatastore{
-		Datastore: ds,
-		Retry:     dsRetry,
-		Logger:    cfg.Logger,
-	}, nil
+// DutySnapshot is one maintenance row's health.
+type DutySnapshot struct {
+	Duty          string
+	TopicName     string
+	ConsumerGroup string
+	Rate          time.Duration
+	GateAge       time.Duration // now() - can_run_after: negative while claimed into the future, positive once eligible and unclaimed
+	Overdue       bool          // GateAge > overdueFactor * Rate -- nobody is maintaining this duty (or its owner is stuck)
 }
 
 // DutySnapshots is every duty's current health, queried live from Postgres --
 // works cold, nothing needs to be running.
-func (d *maintenanceMetricsDatastore) DutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
+func (d *MetricsDatastore) DutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
 	var duties []DutySnapshot
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
@@ -54,7 +30,7 @@ func (d *maintenanceMetricsDatastore) DutySnapshots(ctx context.Context) ([]Duty
 	return duties, err
 }
 
-func (d *maintenanceMetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
+func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
 	// each duty runs at its own topic's rate, so the rate switches on duty
 	// kind. The WHERE mirrors the CASE: a kind this build doesn't know is
 	// skipped whole, not listed with a NULL rate that breaks the scan

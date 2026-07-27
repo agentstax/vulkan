@@ -1,21 +1,19 @@
 package admin
 
 import (
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topicmetrics "github.com/agentstax/vulkan/pkg/topic/metrics"
 )
 
 type MessageAdmin struct {
-	systemDatastore          *system.SystemDatastore
-	topicDatastore           *topic.TopicDatastore
-	topicMetricsDatastore    *topicmetrics.TopicMetricsDatastore
-	consumerMetricsDatastore *consumermetrics.ConsumerMetricsDatastore
-	migrateRunner            *migrate.Runner
-	allowDestroy             bool
+	systemDatastore  *system.SystemDatastore
+	topicDatastore   *topic.TopicDatastore
+	metricsDatastore *metricsDatastore.MetricsDatastore
+	migrateRunner    *migrate.Runner
+	allowDestroy     bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -37,15 +35,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	topicMetricsDatastore, err := topicmetrics.NewTopicMetricsDatastore(ds, &topicmetrics.TopicMetricsDatastoreConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	consumerMetricsDatastore, err := consumermetrics.NewConsumerMetricsDatastore(ds, &consumermetrics.ConsumerMetricsDatastoreConfig{
+	metricsDatastore, err := metricsDatastore.NewMetricsDatastore(ds, &metricsDatastore.MetricsDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -59,11 +49,10 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	return &MessageAdmin{
-		systemDatastore:          systemDatastore,
-		topicDatastore:           topicDatastore,
-		topicMetricsDatastore:    topicMetricsDatastore,
-		consumerMetricsDatastore: consumerMetricsDatastore,
-		migrateRunner:            migrateRunner,
-		allowDestroy:             cfg.AllowDestroy,
+		systemDatastore:  systemDatastore,
+		topicDatastore:   topicDatastore,
+		metricsDatastore: metricsDatastore,
+		migrateRunner:    migrateRunner,
+		allowDestroy:     cfg.AllowDestroy,
 	}, nil
 }
