@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"strings"
 
-	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
+	"github.com/agentstax/vulkan/pkg/metrics/monitor"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// VersionHealth is one registered topic's (name, version) consumption picture
+// TODO - probably makes more sense to use TopicSnapshot and derive Safe / Reason from that
 type VersionHealth struct {
 	Topic     *topic.Topic
 	Compacted bool
-	Groups    []metricsDatastore.GroupLag
+	Groups    []monitor.GroupSnapshot
 	Safe      bool
 	Reason    string
 }
@@ -48,26 +48,12 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 }
 
 func (a *MessageAdmin) versionHealth(ctx context.Context, t *topic.Topic) (*VersionHealth, error) {
-	compacted, err := a.metricsDatastore.IsCompacted(ctx, t.Id)
+	snapshot, err := a.monitor.TopicSnapshot(ctx, t.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	groupNames, err := a.metricsDatastore.ListConsumerGroups(ctx, t.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	groups := make([]metricsDatastore.GroupLag, 0, len(groupNames))
-	for _, group := range groupNames {
-		snapshot, err := a.metricsDatastore.ConsumerGroupSnapshot(ctx, t.Id, group)
-		if err != nil {
-			return nil, err
-		}
-		groups = append(groups, snapshot.GroupLag())
-	}
-
-	h := &VersionHealth{Topic: t, Compacted: compacted, Groups: groups}
+	h := &VersionHealth{Topic: t, Compacted: snapshot.Compacted, Groups: snapshot.Groups}
 	h.evaluate()
 
 	return h, nil
@@ -90,7 +76,8 @@ func (h *VersionHealth) evaluate() {
 
 	var lagging []string
 	for _, g := range h.Groups {
-		if g.Lag > 0 || g.ParkedExceptions > 0 {
+		lag := g.Queue.GroupLag()
+		if lag.Lag > 0 || lag.ParkedExceptions > 0 {
 			lagging = append(lagging, g.ConsumerGroup)
 		}
 	}

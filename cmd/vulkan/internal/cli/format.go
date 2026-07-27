@@ -37,3 +37,16 @@ func pluralize(n int, noun string) string {
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
 }
+
+// latencyCell renders an average self-clear latency: "-" when nothing has
+// ever cleared (zero is not yet a measurement), sub-second kept to
+// millisecond detail, anything larger rounds to seconds.
+func latencyCell(d time.Duration) string {
+	if d == 0 {
+		return "-"
+	}
+	if d.Abs() < time.Second {
+		return d.Round(time.Millisecond).String()
+	}
+	return d.Round(time.Second).String()
+}

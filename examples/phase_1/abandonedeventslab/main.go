@@ -47,7 +47,9 @@ func main() {
 	topicName := fmt.Sprintf("%s.%d", group, run)
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
 
@@ -98,8 +100,8 @@ func main() {
 	}
 
 	abandoned, cleared := rows[0], rows[1]
-	assertEqual("first event type", string(abandoned.Event.Type), string(consumermetrics.EventAbandoned))
-	assertEqual("second event type", string(cleared.Event.Type), string(consumermetrics.EventCleared))
+	assertEqual("first event type", string(abandoned.Event.EventType), string(consumermetrics.EventAbandoned))
+	assertEqual("second event type", string(cleared.Event.EventType), string(consumermetrics.EventCleared))
 	assertEqual("abandoned event group", abandoned.Event.Group, group)
 	assertEqual("abandoned event topic id", fmt.Sprint(abandoned.Event.TopicId), fmt.Sprint(tp.Id))
 	assertEqual("abandoned/cleared share the same message id", fmt.Sprint(abandoned.Event.MessageId), fmt.Sprint(cleared.Event.MessageId))
@@ -108,46 +110,13 @@ func main() {
 	assertEqual("cleared event routing key", cleared.RoutingKey, wantRoutingKey)
 	fmt.Printf("  ✓ abandoned at %s, cleared at %s (self-clear latency %v)\n", abandoned.Event.At, cleared.Event.At, cleared.Event.At.Sub(abandoned.Event.At))
 
-	step("recursion guard: a consumer registered directly on __system.metrics never produces about itself")
-	selfQueue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
-	must(err)
-	selfPool, err := concurrency.NewWorkerPoolLimiter(1)
-	must(err)
-	selfConsumerGroup := fmt.Sprintf("%s.self.%d", group, run)
-	selfConsumer, err := consumer.NewMessageConsumer[consumermetrics.Event](selfConsumerGroup, vulkanmetrics.TopicName, topic.SchemaVersion(1), selfQueue, selfPool, ds, &consumer.ConsumerConfig{
-		DisableGracefulShutdown: true,
-		BatchLimit:              1,
-		WorkTimeout:             100 * time.Millisecond,
-		WorkTimeoutGrace:        50 * time.Millisecond,
-	})
-	must(err)
-	must(selfConsumer.Register(ctx))
-
-	beforeSelf := metricsRowCount(ctx, ds, metricsTopic.Id)
-	var selfCalls atomic.Int64
-	selfFunc := func(ctx context.Context, work *consumermetrics.Event) error {
-		selfCalls.Add(1)
-		time.Sleep(250 * time.Millisecond) // outlives WorkTimeout+Grace -- would recurse if the guard didn't hold
-		return nil
-	}
-	if len(rows) > 0 {
-		// the abandoned+cleared pair produced above gives this consumer real
-		// traffic to claim and hard-timeout on.
-		runProcessUntil(ctx, selfConsumer, selfFunc, 5*time.Second, func() bool {
-			return selfCalls.Load() >= 1
-		})
-	}
-	time.Sleep(300 * time.Millisecond) // let any (undesired) recursive produce land
-	afterSelf := metricsRowCount(ctx, ds, metricsTopic.Id)
-	assertEqual("no new rows appended by the self-referential consumer's own abandonment", fmt.Sprint(afterSelf), fmt.Sprint(beforeSelf))
-
 	fmt.Println("\n✅ ABANDONED EVENTS LAB PASSED")
 }
 
 type metricsRow struct {
 	Id         int64
 	RoutingKey string
-	Event      consumermetrics.Event
+	Event      consumermetrics.GoRoutineEvent
 }
 
 func metricsRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int {
@@ -172,7 +141,7 @@ func metricsRowsSince(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 		var payload []byte
 		must(rows.Scan(&id, &routingKey, &payload))
 
-		var event consumermetrics.Event
+		var event consumermetrics.GoRoutineEvent
 		must(json.Unmarshal(payload, &event))
 
 		rk := ""

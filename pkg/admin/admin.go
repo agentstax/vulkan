@@ -2,18 +2,18 @@ package admin
 
 import (
 	"github.com/agentstax/vulkan/pkg/datastore"
-	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
+	"github.com/agentstax/vulkan/pkg/metrics/monitor"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type MessageAdmin struct {
-	systemDatastore  *system.SystemDatastore
-	topicDatastore   *topic.TopicDatastore
-	metricsDatastore *metricsDatastore.MetricsDatastore
-	migrateRunner    *migrate.Runner
-	allowDestroy     bool
+	systemDatastore *system.SystemDatastore
+	topicDatastore  *topic.TopicDatastore
+	monitor         *monitor.Monitor
+	migrateRunner   *migrate.Runner
+	allowDestroy    bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -35,7 +35,9 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	metricsDatastore, err := metricsDatastore.NewMetricsDatastore(ds, &metricsDatastore.MetricsDatastoreConfig{
+	// no Meter set -- Monitor defaults to noop, exactly what a cold one-shot
+	// read (health verdicts, the metrics endpoint) wants: no exporter wiring.
+	metricsMonitor, err := monitor.NewMonitor(ds, &monitor.MonitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -49,10 +51,10 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	return &MessageAdmin{
-		systemDatastore:  systemDatastore,
-		topicDatastore:   topicDatastore,
-		metricsDatastore: metricsDatastore,
-		migrateRunner:    migrateRunner,
-		allowDestroy:     cfg.AllowDestroy,
+		systemDatastore: systemDatastore,
+		topicDatastore:  topicDatastore,
+		monitor:         metricsMonitor,
+		migrateRunner:   migrateRunner,
+		allowDestroy:    cfg.AllowDestroy,
 	}, nil
 }

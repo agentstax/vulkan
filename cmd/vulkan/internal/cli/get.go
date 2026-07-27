@@ -94,10 +94,12 @@ func printVersionHealth(w io.Writer, h *admin.VersionHealth) {
 	if len(h.Groups) > 0 {
 		fmt.Fprintln(w)
 		tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(tw, "  GROUP\tCOMMITTED\tHEAD\tLAG\tPARKED")
+		fmt.Fprintln(tw, "  GROUP\tCOMMITTED\tHEAD\tLAG\tPARKED\tABANDONED\tOUTSTANDING\tAVG SELF-CLEAR")
 		for _, group := range h.Groups {
-			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%d\n",
-				group.ConsumerGroup, commaInt(group.Committed), commaInt(group.Head), commaInt(group.Lag), group.ParkedExceptions)
+			lag := group.Queue.GroupLag()
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\n",
+				group.ConsumerGroup, commaInt(lag.Committed), commaInt(lag.Head), commaInt(lag.Lag), lag.ParkedExceptions,
+				group.Events.Total, group.Events.Outstanding, latencyCell(group.Events.SelfClearLatencyAvg))
 		}
 		tw.Flush()
 	}

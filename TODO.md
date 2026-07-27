@@ -76,7 +76,8 @@ Need to rethink metrics code design it is ass right now. Its not very composable
 - After we do above we need to redo how admin/health.go works out we should instead have an admin/metrics.go. Which utilizes the snapshotter. Then the cli should be the owner of how to parse the metrics data and format it
 - DESIGN SETTLED 2026-07-26 (build PARKED): canonical record = LEARNING_PLAN 14a "Metrics redesign" bullet; chunk plan = ~/.claude/plans/metrics-redesign.md (hybrid: DB-snapshot metrics stay live reads, in-proc metrics go on __system.metrics, pkg/metrics = the snapshotter, health.go verdict stays in admin)
 
-Need to go through all the comment in pkg/metrics*, pkg/consumer/metrics and make sure they are okay
+Need to go through all the code and comment in pkg/admin/health.go pkg/metrics*, pkg/consumer/metrics and make sure they are okay
+- pkg/admin/health really should be a thin facade over what metrics package can do. Should set a state / reason on topicSnapshot directly if desired
 
 Need to redo how admin/health.go is done. Ideally the majority of calculation code should be somewhere in pkg/metrics
 
