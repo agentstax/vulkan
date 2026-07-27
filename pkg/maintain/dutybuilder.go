@@ -26,6 +26,7 @@ func (b *dutyBuilder) build(ctx context.Context, key FleetDuty) (Duty, error) {
 		JitterFraction: b.config.JitterFraction,
 		Logger:         b.config.Logger,
 		Retry:          b.config.Retry,
+		DutyRetry:      b.config.DutyRetry,
 	}
 
 	var duty Duty

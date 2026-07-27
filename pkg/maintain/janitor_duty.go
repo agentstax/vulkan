@@ -50,8 +50,9 @@ func NewJanitor(topicName string, version topic.SchemaVersion, ds *datastore.Pos
 	}
 
 	maintenanceDatastore, err := NewMaintenanceDatastore(ds, &MaintenanceDatastoreConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
+		Logger:    cfg.Logger,
+		Retry:     cfg.Retry,
+		DutyRetry: cfg.DutyRetry,
 	})
 	if err != nil {
 		return nil, err

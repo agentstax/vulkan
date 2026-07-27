@@ -10,8 +10,8 @@ func TestMaintainerConfigWithDefaults(t *testing.T) {
 	if c.JitterFraction != 0.1 {
 		t.Fatalf("JitterFraction default = %v, want 0.1", c.JitterFraction)
 	}
-	if c.Logger == nil || c.Retry == nil {
-		t.Fatal("Logger/Retry defaults not filled")
+	if c.Logger == nil || c.Retry == nil || c.DutyRetry == nil {
+		t.Fatal("Logger/Retry/DutyRetry defaults not filled")
 	}
 
 	set := (&MaintainerConfig{JitterFraction: 0.5}).WithDefaults()
@@ -42,8 +42,8 @@ func TestFleetMaintainerConfigWithDefaults(t *testing.T) {
 	if c.JitterFraction != 0.1 {
 		t.Fatalf("JitterFraction default = %v, want 0.1", c.JitterFraction)
 	}
-	if c.Logger == nil || c.Retry == nil {
-		t.Fatal("Logger/Retry defaults not filled")
+	if c.Logger == nil || c.Retry == nil || c.DutyRetry == nil {
+		t.Fatal("Logger/Retry/DutyRetry defaults not filled")
 	}
 
 	set := (&FleetMaintainerConfig{PollRate: 5 * time.Second}).WithDefaults()

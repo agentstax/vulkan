@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // releaseWindow caps the release of a duty on shutdown.
@@ -89,19 +88,19 @@ func (d *dutyRunner) run(ctx context.Context, work func(context.Context) error) 
 // it doesn't take the process down -- so every outcome
 // logs and waits for the next interval.
 func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error) {
-	token, err := d.ds.ClaimDuty(ctx, d.kind, d.topicID, d.group, d.rate)
+	claim, err := d.ds.ClaimDuty(ctx, d.kind, d.topicID, d.group, d.rate)
 	if err != nil {
 		if ctx.Err() == nil {
 			d.logger.ErrorContext(ctx, "duty claim failed", "duty", d.kind, "topic", d.topicID, "group", d.group, "error", err)
 		}
 		return
 	}
-	if token == nil {
+	if claim == nil {
 		return // another maintainer's turn
 	}
 
 	workCtx, stopWork := context.WithCancelCause(ctx)
-	heartbeatDone := d.startRenewalHeartbeat(workCtx, stopWork, *token)
+	heartbeatDone := d.startRenewalHeartbeat(workCtx, stopWork, claim)
 
 	err = work(workCtx)
 
@@ -109,6 +108,9 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 	<-heartbeatDone // wait for heartbeat to drain
 
 	if err == nil {
+		if err := d.ds.ResetDuty(ctx, claim); err != nil && !errors.Is(err, ErrDutyLost) {
+			d.logger.WarnContext(ctx, "duty reset failed", "duty", d.kind, "topic", d.topicID, "group", d.group, "error", err)
+		}
 		return // success keeps the claim -- the claim IS the schedule
 	}
 
@@ -119,20 +121,24 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 		// worthless -- the claim is already expired and nothing needs released.
 		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), min(d.rate, releaseWindow))
 		defer cancel()
-		if err := d.ds.ReleaseDuty(releaseCtx, d.kind, d.topicID, d.group, *token); err != nil && !errors.Is(err, ErrDutyLost) {
+		if err := d.ds.ReleaseDuty(releaseCtx, claim); err != nil && !errors.Is(err, ErrDutyLost) {
 			d.logger.WarnContext(releaseCtx, "duty release failed on shutdown -- next run waits out the interval", "duty", d.kind, "topic", d.topicID, "group", d.group, "error", err)
 		}
 	case errors.Is(err, ErrDutyLost) || errors.Is(context.Cause(workCtx), ErrDutyLost):
 		d.logger.InfoContext(ctx, "duty ceded mid-run to another maintainer", "duty", d.kind, "topic", d.topicID, "group", d.group)
 	default:
-		d.logger.ErrorContext(ctx, "duty run failed -- claim kept, retrying next interval", "duty", d.kind, "topic", d.topicID, "group", d.group, "error", err)
+		delay, backoffErr := d.ds.BackoffDuty(ctx, claim)
+		if backoffErr != nil && !errors.Is(backoffErr, ErrDutyLost) {
+			d.logger.WarnContext(ctx, "duty backoff write failed", "duty", d.kind, "topic", d.topicID, "group", d.group, "error", backoffErr)
+		}
+		d.logger.ErrorContext(ctx, "duty run failed -- backing off", "duty", d.kind, "topic", d.topicID, "group", d.group, "attempts", claim.Attempts, "delay", delay, "error", err)
 	}
 }
 
 // startRenewalHeartbeat renews the claim every rate/2 while the duty works.
 // ErrDutyLost cancels the work: the fence tripped, another maintainer owns
 // the duty. The returned channel closes when the heartbeat is fully stopped.
-func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork context.CancelCauseFunc, token pgtype.UUID) <-chan struct{} {
+func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork context.CancelCauseFunc, claim *DutyClaim) <-chan struct{} {
 	done := make(chan struct{})
 
 	go func() {
@@ -152,7 +158,7 @@ func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork con
 					d.logger.WarnContext(workCtx, "duty work still running -- possibly hung", "duty", d.kind, "topic", d.topicID, "group", d.group, "running_for", time.Duration(ticks)*d.rate/2)
 				}
 
-				err := d.ds.RenewDuty(workCtx, d.kind, d.topicID, d.group, token, d.rate)
+				err := d.ds.RenewDuty(workCtx, claim, d.rate)
 				if err == nil {
 					continue
 				}

@@ -25,9 +25,10 @@ const (
 var ErrDutyLost = errors.New("duty lost: claimed by another maintainer")
 
 type MaintenanceDatastore struct {
-	Datastore *datastore.PostgresDatastore
-	Retry     *retry.DatastoreRetry
-	Logger    logger.Logger
+	Datastore      *datastore.PostgresDatastore
+	DatastoreRetry *retry.DatastoreRetry
+	DutyRetry      *retry.Retry // used to calculate delay for backoff retry logic of duties
+	Logger         logger.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -44,15 +45,21 @@ func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceDa
 		return nil, err
 	}
 
-	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	datastoreRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	if err != nil {
+		return nil, err
+	}
+
+	dutyRetry, err := retry.NewRetry(cfg.DutyRetry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MaintenanceDatastore{
-		Datastore: ds,
-		Retry:     dsRetry,
-		Logger:    cfg.Logger,
+		Datastore:      ds,
+		DatastoreRetry: datastoreRetry,
+		DutyRetry:      dutyRetry,
+		Logger:         cfg.Logger,
 	}, nil
 }
 
@@ -71,7 +78,7 @@ type FleetDuty struct {
 // claiming stays with each spawned duty's own runner.
 func (d *MaintenanceDatastore) ListDuties(ctx context.Context) ([]FleetDuty, error) {
 	var duties []FleetDuty
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		duties, err = d.listDuties(ctx)
 		return err
@@ -112,35 +119,47 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 	return duties, rows.Err()
 }
 
-// ClaimDuty races the duty's gate -- the winner owns it until can_run_after,
-// and renew/release fence on the returned token. nil token = claim lost.
-func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*pgtype.UUID, error) {
-	var token *pgtype.UUID
-	err := d.Retry.Wrap(ctx, func() error {
-		var err error
-		token, err = d.claimDuty(ctx, duty, topicID, consumerGroup, rate)
-		return err
-	})
-	return token, err
+// DutyClaim is one maintenance row, matching the table's column order.
+type DutyClaim struct {
+	Duty          string
+	TopicID       int64
+	ConsumerGroup string
+	Token         pgtype.UUID
+	CanRunAfter   time.Time
+	Attempts      int
 }
 
-func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*pgtype.UUID, error) {
+// ClaimDuty races the duty's gate -- the winner owns it until can_run_after,
+// and renew/release fence on the returned Duty's token. nil = claim lost.
+func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*DutyClaim, error) {
+	var claimed *DutyClaim
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		claimed, err = d.claimDuty(ctx, duty, topicID, consumerGroup, rate)
+		return err
+	})
+	return claimed, err
+}
+
+func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*DutyClaim, error) {
 	// auto-commit: winner does duty work, losers skip.
 	// now() is DB time on both sides -- N replicas' clocks never agree, the DB's does.
 	sql := `
 		UPDATE maintenance
 		SET
+			token = gen_random_uuid(),
 			can_run_after = now() + make_interval(secs => $4),
-			token = gen_random_uuid()
+			attempts = attempts + 1
 		WHERE duty = $1
 			AND topic_id = $2
 			AND consumer_group = $3
 			AND can_run_after <= now()
-		RETURNING token;
+		RETURNING duty, topic_id, consumer_group, token, can_run_after, attempts;
 	`
 
-	var token pgtype.UUID
-	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, topicID, consumerGroup, rate.Seconds()).Scan(&token)
+	var claimed DutyClaim
+	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, topicID, consumerGroup, rate.Seconds()).
+		Scan(&claimed.Duty, &claimed.TopicID, &claimed.ConsumerGroup, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
 	if err != nil {
 		// no row: another maintainer won, or the duty was never seeded
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -148,12 +167,15 @@ func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topic
 		}
 		return nil, err
 	}
-	return &token, nil
+	return &claimed, nil
 }
 
-// RenewDuty extends a claim the caller already won.
-func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, token pgtype.UUID, rate time.Duration) error {
-	return d.Retry.Wrap(ctx, func() error {
+// BackoffDuty pushes a failed duty's retry gate out by its Nth-attempt delay
+// from DutyRetry. Returns the delay it wrote, for the caller's own logging.
+func (d *MaintenanceDatastore) BackoffDuty(ctx context.Context, duty *DutyClaim) (time.Duration, error) {
+	delay := d.DutyRetry.CalculateDelay(duty.Attempts - 1)
+
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		sql := `
 			UPDATE maintenance
 			SET can_run_after = now() + make_interval(secs => $5)
@@ -162,7 +184,52 @@ func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty string, topic
 				AND consumer_group = $3
 				AND token = $4;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty, topicID, consumerGroup, token, rate.Seconds())
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token, delay.Seconds())
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrDutyLost
+		}
+		return nil
+	})
+	return delay, err
+}
+
+// Reset's duty after successful attempt
+func (d *MaintenanceDatastore) ResetDuty(ctx context.Context, duty *DutyClaim) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		sql := `
+			UPDATE maintenance
+			SET attempts = 0
+			WHERE duty = $1
+				AND topic_id = $2
+				AND consumer_group = $3
+				AND token = $4;
+		`
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrDutyLost
+		}
+		return nil
+	})
+}
+
+// RenewDuty extends a claim the caller already won.
+func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty *DutyClaim, rate time.Duration) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		sql := `
+			UPDATE maintenance
+			SET can_run_after = now() + make_interval(secs => $5)
+			WHERE duty = $1
+				AND topic_id = $2
+				AND consumer_group = $3
+				AND token = $4;
+		`
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token, rate.Seconds())
 		if err != nil {
 			return err
 		}
@@ -179,8 +246,8 @@ func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty string, topic
 // Never call after a FAILED duty run: the unreleased claim keeps
 // can_run_after in the future, so the retry waits out the interval instead
 // of every replica immediately re-claiming and re-failing in a loop.
-func (d *MaintenanceDatastore) ReleaseDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, token pgtype.UUID) error {
-	return d.Retry.Wrap(ctx, func() error {
+func (d *MaintenanceDatastore) ReleaseDuty(ctx context.Context, duty *DutyClaim) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
 		sql := `
 			UPDATE maintenance
 			SET can_run_after = now()
@@ -189,7 +256,7 @@ func (d *MaintenanceDatastore) ReleaseDuty(ctx context.Context, duty string, top
 				AND consumer_group = $3
 				AND token = $4;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty, topicID, consumerGroup, token)
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token)
 		if err != nil {
 			return err
 		}

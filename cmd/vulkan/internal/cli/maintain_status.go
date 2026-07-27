@@ -57,7 +57,7 @@ func printDutiesTable(w io.Writer, duties []metricsDatastore.DutySnapshot) {
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "TOPIC\tDUTY\tGROUP\tRATE\tGATE AGE\tSTATUS")
-	overdue := 0
+	overdue, failing := 0, 0
 	for _, d := range duties {
 		group := d.ConsumerGroup
 		if group == "" {
@@ -67,7 +67,11 @@ func printDutiesTable(w io.Writer, duties []metricsDatastore.DutySnapshot) {
 		// escapes as width, so a colored inner cell would skew every column
 		// after it
 		status := glyphOK() + " ok"
-		if d.Overdue {
+		switch {
+		case d.Attempts > 0:
+			status = glyphWarn() + fmt.Sprintf(" failing (%d)", d.Attempts)
+			failing++
+		case d.Overdue:
 			status = glyphWarn() + " overdue"
 			overdue++
 		}
@@ -82,7 +86,7 @@ func printDutiesTable(w io.Writer, duties []metricsDatastore.DutySnapshot) {
 	if len(duties) == 1 {
 		noun = "duty"
 	}
-	fmt.Fprintf(w, "\n%d %s, %d overdue\n", len(duties), noun, overdue)
+	fmt.Fprintf(w, "\n%d %s, %d overdue, %d failing\n", len(duties), noun, overdue, failing)
 }
 
 // compactDuration is the RATE cell: "720h", "1h", "5s" -- collapse to the

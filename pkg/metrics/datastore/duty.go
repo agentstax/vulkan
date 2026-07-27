@@ -16,6 +16,7 @@ type DutySnapshot struct {
 	Rate          time.Duration
 	GateAge       time.Duration // now() - can_run_after: negative while claimed into the future, positive once eligible and unclaimed
 	Overdue       bool          // GateAge > overdueFactor * Rate -- nobody is maintaining this duty (or its owner is stuck)
+	Attempts      int
 }
 
 // DutySnapshots is every duty's current health, queried live from Postgres --
@@ -41,7 +42,8 @@ func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, e
 				WHEN 'janitor' THEN t.janitor_poll_rate_ns
 				WHEN 'waterline' THEN t.waterline_poll_rate_ns
 			END,
-			EXTRACT(EPOCH FROM (now() - m.can_run_after))
+			EXTRACT(EPOCH FROM (now() - m.can_run_after)),
+			m.attempts
 		FROM maintenance m
 		JOIN topic t ON t.id = m.topic_id
 		WHERE m.duty IN ('janitor', 'waterline')
@@ -59,7 +61,7 @@ func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, e
 		var s DutySnapshot
 		var rateNs int64
 		var gateAgeSecs float64
-		if err := rows.Scan(&s.Duty, &s.TopicName, &s.ConsumerGroup, &rateNs, &gateAgeSecs); err != nil {
+		if err := rows.Scan(&s.Duty, &s.TopicName, &s.ConsumerGroup, &rateNs, &gateAgeSecs, &s.Attempts); err != nil {
 			return nil, err
 		}
 		s.Rate = time.Duration(rateNs)

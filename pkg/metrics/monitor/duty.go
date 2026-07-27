@@ -13,6 +13,7 @@ type dutyGauges struct {
 	monitor       *Monitor
 	overdueDuties metric.Int64ObservableGauge
 	oldestGateAge metric.Int64ObservableGauge
+	failingDuties metric.Int64ObservableGauge
 }
 
 // RegisterDutyGauges registers the fleet-wide duty-health gauges against the
@@ -37,17 +38,27 @@ func (m *Monitor) RegisterDutyGauges() error {
 		return err
 	}
 
+	failingDuties, err := m.meter.Int64ObservableGauge(
+		"vulkan.maintain.duty_state.failing_duties",
+		metric.WithDescription("Duties with a nonzero failure streak -- erroring and backed off, independent of overdue."),
+		metric.WithUnit("{duty}"),
+	)
+	if err != nil {
+		return err
+	}
+
 	g := &dutyGauges{
 		monitor:       m,
 		overdueDuties: overdueDuties,
 		oldestGateAge: oldestGateAge,
+		failingDuties: failingDuties,
 	}
 
-	_, err = m.meter.RegisterCallback(g.observe, overdueDuties, oldestGateAge)
+	_, err = m.meter.RegisterCallback(g.observe, overdueDuties, oldestGateAge, failingDuties)
 	return err
 }
 
-// observe is the callback behind both duty gauges -- one DutySnapshots call
+// observe is the callback behind all three duty gauges -- one DutySnapshots call
 // per collection cycle feeds them, not one query per instrument.
 func (g *dutyGauges) observe(ctx context.Context, o metric.Observer) error {
 	duties, err := g.monitor.Datastore.DutySnapshots(ctx)
@@ -55,11 +66,14 @@ func (g *dutyGauges) observe(ctx context.Context, o metric.Observer) error {
 		return err
 	}
 
-	var overdue int64
+	var overdue, failing int64
 	var oldest time.Duration
 	for i, duty := range duties {
 		if duty.Overdue {
 			overdue++
+		}
+		if duty.Attempts > 0 {
+			failing++
 		}
 		if i == 0 || duty.GateAge > oldest {
 			oldest = duty.GateAge
@@ -68,6 +82,7 @@ func (g *dutyGauges) observe(ctx context.Context, o metric.Observer) error {
 
 	o.ObserveInt64(g.overdueDuties, overdue)
 	o.ObserveInt64(g.oldestGateAge, oldest.Milliseconds())
+	o.ObserveInt64(g.failingDuties, failing)
 
 	return nil
 }

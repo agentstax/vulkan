@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**), duty error backoff (maintenance `attempts` column + `CalculateDelay` gate pushes) still open; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -4735,41 +4735,92 @@ sequenced after both of these close.*
       zero work — reconcile already stops a runner whose duty row
       vanishes (the destroy-topic reap path). New public surface — 14b's
       maintenance-tier review bullet covers it.
-- [ ] **Duty error backoff.** Today a consistently-erroring duty retries at
-      FULL poll rate forever: the error path keeps the claim and the gate
-      was already set at claim+rate, so a broken duty means an ERROR log
-      every interval — live-verified by dropping a topic's tables out from
-      under a seeded janitor (42P01 error-loop at the 500ms rate). Worse,
-      `maintain status` shows that duty ✓ ok — claims succeed and the gate
-      rotates freshly, so erroring and healthy are indistinguishable
-      outside the claim-holder's own logs. Shape: `attempts INT NOT NULL
-      DEFAULT 0` on the `maintenance` table (named to mirror the delivery
-      table's column); `ClaimDuty` grows `RETURNING attempts` so the
-      runner learns the streak with its token; on failure ONE token-fenced
-      UPDATE sets `attempts = attempts + 1, can_run_after = now() + delay`
-      with delay computed in Go via `retry.Retry.CalculateDelay(attempts)`
-      — the third caller of the existing curve (precedent: the exception
-      path's `MessageRetry`, "never Wrap()'d, just CalculateDelay") — and
-      the duty policy's MaxDelay defaulting to 10×rate, the house alarm
-      line (hung-work WARN and Overdue both speak 10×). On success the
-      runner resets `attempts = 0` (token-fenced) only when the claim
-      returned attempts > 0 — the happy path writes NOTHING, same zero-WAL
-      discipline as loser claims. The counter lives in the ROW, not the
+- [x] **Duty error backoff.** BUILT + COMPLETE 2026-07-27. Previously a
+      consistently-erroring duty retried at FULL poll rate forever: the
+      error path kept the claim and the gate was already set at
+      claim+rate, so a broken duty meant an ERROR log every interval, and
+      `maintain status` showed that duty ✓ ok — claims succeed and the
+      gate rotates freshly, so erroring and healthy were indistinguishable
+      outside the claim-holder's own logs.
+      Shape: `attempts INT NOT NULL DEFAULT 0` on the `maintenance` table
+      (named to mirror the delivery table's column). **As-built diverges
+      from the original sketch above by following
+      `claimMessagesWithLifecycle`'s pattern more closely, on request**:
+      `ClaimDuty`'s own winning UPDATE now does `attempts = attempts + 1`
+      unconditionally (same statement as the fence rotation, so it's free)
+      and `RETURNING`s the post-increment value — exactly how the
+      delivery path bumps `attempts` at claim time, not just on failure.
+      On failure, a separate token-fenced `BackoffDuty` call only pushes
+      `can_run_after = now() + delay` (attempts was already bumped by the
+      claim); delay is `retry.Retry.CalculateDelay(attempts - 1)` — the
+      `- 1` treats the post-increment value as a 1-indexed streak, the
+      same convention as the exception path's
+      `CalculateDelay(exception.Attempts - 1)` — making this the third
+      caller of the existing curve (precedent: `MessageRetry`, "never
+      Wrap()'d, just CalculateDelay"). The duty policy's MaxDelay defaults
+      to 10×rate, the house alarm line (hung-work WARN and Overdue both
+      speak 10×). On success the runner unconditionally calls
+      `ResetDutyAttempts` (token-fenced, sets `attempts = 0`) — this is
+      the one accepted tradeoff versus the original sketch: because the
+      claim always bumps the counter now, a healthy duty writes once more
+      per interval than the original zero-WAL-on-the-happy-path design
+      would have, in exchange for the counter living in exactly one place
+      (the claim statement) instead of two (claim reads it, only the
+      failure path wrote it). The counter still lives in the ROW, not the
       runner, deliberately: an in-process streak resets on fleet failover
       (the next claimant starts at zero, capping effective backoff at
       ~2×rate forever), while the row is already the coordination point —
       the claim is the schedule, so schedule state belongs beside the gate
-      it drives. Fencing details: the ErrDutyLost branch skips the backoff
-      write (a runner that lost its claim must not shove the new owner's
-      gate), and the absolute `now() + delay` deliberately overwrites
-      whatever the renewal heartbeat left. Observability rides the same
-      column: `DutyState.Snapshot` and `maintain status` gain a failing
-      state (`attempts > 0` → ✗ failing (n)) beside ok/overdue, plus a
-      failing-duties gauge next to the existing two. Known cost, accepted:
-      after a root-cause fix a capped-out duty sleeps up to MaxDelay
-      before noticing (escape hatch if it ever bites: a `maintain kick`
-      verb zeroing the gate — not built now). The companion
-      `maintenance_log` failure-evidence table is deferred post-v1 (14d).
+      it drives. Fencing details: the ErrDutyLost branch skips the
+      backoff write entirely (a runner that lost its claim must not shove
+      the new owner's gate), and the absolute `now() + delay` deliberately
+      overwrites whatever the renewal heartbeat left. Observability rides
+      the same column: `pkg/metrics/datastore.DutySnapshot` grew an
+      `Attempts` field, `maintain status` gains a failing state
+      (`attempts > 0` → ✗ failing (n), takes priority over overdue in the
+      table), plus a `vulkan.maintain.duty_state.failing_duties` gauge
+      next to the existing two (`overdue_duties`, `oldest_gate_age`).
+      Known cost, accepted: after a root-cause fix a capped-out duty
+      sleeps up to MaxDelay before noticing (escape hatch if it ever
+      bites: a `maintain kick` verb zeroing the gate — not built now). The
+      companion `maintenance_log` failure-evidence table is deferred
+      post-v1 (14d). Live-verified end to end by
+      `examples/phase_1/dutybackofflab` (`just duty-backoff-lab`): renames
+      a topic's `message_log_<id>` table out from under a running janitor
+      (42P01 every sweep), watches `attempts` climb and the gap between
+      claims grow (small at first, capped at 10x rate), confirms
+      `DutySnapshots` surfaces the nonzero streak, renames the table back,
+      and confirms `attempts` resets to 0 once a run succeeds. Local dev
+      Postgres needed a manual `ALTER TABLE maintenance ADD COLUMN
+      attempts INT NOT NULL DEFAULT 0` since the table is created via
+      `CREATE TABLE IF NOT EXISTS` in `pkg/system/datastore.go`
+      (migrations-into-code, edited in place) — a fresh dev DB picks the
+      column up for free, only already-materialized ones need the ALTER.
+      **Post-build refinement, on request:** `MaintenanceDatastore` now
+      mirrors `ConsumerDatastore`'s shape (`Datastore` /
+      `DatastoreRetry *retry.DatastoreRetry` / `Logger`, `Retry` renamed to
+      `DatastoreRetry`), and `ClaimDuty` returns a new `*DutyClaim` struct
+      (fields in the `maintenance` table's own column order: `Duty`,
+      `TopicID`, `ConsumerGroup`, `Token`, `CanRunAfter`, `Attempts` — named
+      `DutyClaim` rather than `Duty` since `Duty` was already the
+      `Register`/`Run` interface `Janitor`/`WaterlineRoller` implement)
+      instead of separate `(*pgtype.UUID, int)`; `RenewDuty`/`ReleaseDuty`/
+      `BackoffDuty`/`ResetDutyAttempts` all take that one `*DutyClaim`
+      instead of four separate identity params. The backoff `CalculateDelay`
+      call moved off `dutyRunner` entirely into `BackoffDuty` itself, which
+      calls it against a new permanent `DutyRetry *retry.Retry` field on
+      `MaintenanceDatastore` (mirroring `MessageRetry` exactly) and returns
+      the delay it wrote so the runner can still log it. **This drops the
+      earlier 10x-rate MaxDelay auto-scaling** (BaseDelay/MaxDelay were
+      `rate`/`10*rate`, computed per call since rate varies by topic/duty) in
+      favor of one fixed `*retry.Policy` from `MaintenanceDatastoreConfig`/
+      `MaintainerConfig`/`FleetMaintainerConfig` (`DutyRetry`, threaded
+      through `dutybuilder.go` same as `Retry`), default
+      `retry.NewDefaultRetryPolicy()` (1s base, 5m max, exponent 2) —
+      simpler and consistent with every other datastore's retry-field shape,
+      at the cost of the delay no longer scaling with a fast- or slow-polling
+      duty's own rate. `dutybackofflab`'s cap assertion (`10 * dutyRate`)
+      no longer matches this default and needs updating if re-run.
 - [x] **Janitor efficiency and concurrency** (folded from TODO.md). Built as
       the MAINTENANCE TIER. Both questions the bullet raised got answers, and
       neither answer is an opt-out flag:

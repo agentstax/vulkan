@@ -24,7 +24,7 @@ const ddlLockTimeout = 2 * time.Second
 // - idempotency-key sweep.
 // All topicID-scoped; each is idempotent and concurrent-safe.
 func (d *MaintenanceDatastore) EnsureNextPartition(ctx context.Context, topicID int64, partitionSize int64) error {
-	return d.Retry.Wrap(ctx, func() error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.ensureNextPartition(ctx, topicID, partitionSize)
 	})
 }
@@ -87,7 +87,7 @@ func (d *MaintenanceDatastore) ensureNextPartition(ctx context.Context, topicID 
 // track that through cursor.committed. disableDeliveryLog skips the
 // delivery_log_<topic_id> half of each drop's orphan cleanup.
 func (d *MaintenanceDatastore) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
-	return d.Retry.Wrap(ctx, func() error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, disableDeliveryLog)
 	})
 }
@@ -208,7 +208,7 @@ func (d *MaintenanceDatastore) partitionExpired(ctx context.Context, topicID int
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
 func (d *MaintenanceDatastore) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
-	return d.Retry.Wrap(ctx, func() error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize, disableDeliveryLog)
 	})
 }
@@ -404,7 +404,7 @@ func (d *MaintenanceDatastore) dropPartition(ctx context.Context, topicID int64,
 
 // SweepExpiredIdempotencyKeys drains idempotency_key rows older than ttl for this topic.
 func (d *MaintenanceDatastore) SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
-	return d.Retry.Wrap(ctx, func() error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.sweepExpiredIdempotencyKeys(ctx, topicID, ttl, batchSize)
 	})
 }

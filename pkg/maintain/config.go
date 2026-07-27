@@ -18,8 +18,9 @@ type MaintainerConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for the maintenance datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	Logger    logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Retry     *retry.Policy // transient-error retry policy for the maintenance datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	DutyRetry *retry.Policy // duty failure can_run_after curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
 }
 
 func (c *MaintainerConfig) WithDefaults() *MaintainerConfig {
@@ -30,6 +31,7 @@ func (c *MaintainerConfig) WithDefaults() *MaintainerConfig {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
+	c.DutyRetry = c.DutyRetry.WithDefaults()
 	return c
 }
 
@@ -41,6 +43,9 @@ func (c *MaintainerConfig) Validate() error {
 	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
+	}
+	if err := c.DutyRetry.Validate(); err != nil {
+		return fmt.Errorf("DutyRetry: %w", err)
 	}
 	return nil
 }
@@ -58,9 +63,10 @@ type FleetMaintainerConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for the maintenance datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
-	Meter  metric.Meter  // feeds the fleet's duty-state gauges. Default: a noop meter.
+	Logger    logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Retry     *retry.Policy // transient-error retry policy for the maintenance datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	DutyRetry *retry.Policy // duty failure can_run_after curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
+	Meter     metric.Meter  // feeds the fleet's duty-state gauges. Default: a noop meter.
 }
 
 func (c *FleetMaintainerConfig) WithDefaults() *FleetMaintainerConfig {
@@ -74,6 +80,7 @@ func (c *FleetMaintainerConfig) WithDefaults() *FleetMaintainerConfig {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
+	c.DutyRetry = c.DutyRetry.WithDefaults()
 	if c.Meter == nil {
 		// metric/noop, not the global otel.GetMeterProvider() -- reading the
 		// global registry requires the top-level otel package, which brings
@@ -95,12 +102,16 @@ func (c *FleetMaintainerConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}
+	if err := c.DutyRetry.Validate(); err != nil {
+		return fmt.Errorf("DutyRetry: %w", err)
+	}
 	return nil
 }
 
 type MaintenanceDatastoreConfig struct {
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for this datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	Logger    logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Retry     *retry.Policy // transient-error retry policy for this datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	DutyRetry *retry.Policy // duty failure can_run_after curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
 }
 
 func (c *MaintenanceDatastoreConfig) WithDefaults() *MaintenanceDatastoreConfig {
@@ -108,6 +119,7 @@ func (c *MaintenanceDatastoreConfig) WithDefaults() *MaintenanceDatastoreConfig 
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
+	c.DutyRetry = c.DutyRetry.WithDefaults()
 	return c
 }
 
@@ -116,6 +128,9 @@ func (c *MaintenanceDatastoreConfig) WithDefaults() *MaintenanceDatastoreConfig 
 func (c *MaintenanceDatastoreConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
+	}
+	if err := c.DutyRetry.Validate(); err != nil {
+		return fmt.Errorf("DutyRetry: %w", err)
 	}
 	return nil
 }

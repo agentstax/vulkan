@@ -72,11 +72,10 @@ need to rename consumer waterline stuff to something like cursor.committed. Wate
 
 Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
 
-Metrics redesign: BUILT + COMPLETE 2026-07-26 — canonical record = LEARNING_PLAN
-14a "Metrics redesign" bullet (as-built diverged from the original single-
-`pkg/metrics` shape: split into `pkg/metrics/datastore` + `pkg/metrics/monitor`).
-Routing key (`AbandonedRoutineKey`) and `GoRoutineEvent` shape reviewed, no
-changes, considered locked.
+Review code / comments in:
+- pkg/metrics
+- pkg/admin (health / metrics specifically) 
+- pkg/consumer/metrics (comments specifically)
 
 Still open: `pkg/admin/health.go` carries a `// TODO - probably makes more
 sense to use TopicSnapshot and derive Safe / Reason from that` comment that
@@ -85,3 +84,5 @@ kept in admin, separate from `pkg/metrics/monitor`). Whoever picks this up:
 confirm which is current before changing anything — either delete the stray
 comment (settled design wins) or do the refactor and update the LEARNING_PLAN
 record to match.
+
+Add retry backoff for deliveries exception logic table

@@ -22,7 +22,7 @@ import (
 //	began -- so cursor comes back fresh, lease stale.
 func (d *MaintenanceDatastore) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
 	var committed int64
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		committed, err = d.advanceWaterline(ctx, topicID, consumerGroup)
 		return err
