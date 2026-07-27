@@ -98,7 +98,7 @@ func stalenessScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) ([]rangeEvent, []sample) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})

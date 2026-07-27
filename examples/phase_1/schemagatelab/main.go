@@ -41,7 +41,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
 	topicRow, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)

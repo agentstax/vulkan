@@ -29,7 +29,7 @@ func main() {
 	must(err)
 
 	step("RegisterSystem creates __system.metrics idempotently")
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 	metricsTopic, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	must(err)
 	if metricsTopic == nil {
@@ -63,7 +63,7 @@ func main() {
 	assertDuration("retention altered", altered.RetentionTTL, newRetention)
 
 	step("re-running RegisterSystem converges without reverting the alter")
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)

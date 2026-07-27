@@ -42,7 +42,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 
 	const topicName = "test.producerregister"
 	_ = mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run

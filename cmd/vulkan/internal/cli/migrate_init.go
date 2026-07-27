@@ -24,7 +24,7 @@ func newMigrateInitCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			if err := mAdmin.RegisterSystem(ctx); err != nil {
+			if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
 				return translateAdminError(err)
 			}
 

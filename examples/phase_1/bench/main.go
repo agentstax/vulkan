@@ -76,7 +76,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	if err := mAdmin.RegisterSystem(ctx); err != nil {
+	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}

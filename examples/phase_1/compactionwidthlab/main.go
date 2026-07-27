@@ -59,7 +59,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
 	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, topic.SchemaVersion(1), &topic.Config{PartitionSize: narrowPartitionSize})

@@ -46,7 +46,7 @@ func main() {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 
 	runner, err := migrate.NewRunner(ds, nil, logger.NewDefaultLogger(os.Stderr, slog.LevelError))
 	must(err)

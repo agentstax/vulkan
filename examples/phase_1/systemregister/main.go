@@ -26,7 +26,7 @@ func main() {
 	mAdmin, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
 
-	must(mAdmin.RegisterSystem(ctx))
+	must(mAdmin.RegisterSystem(ctx, nil))
 	fmt.Println("system schema registered")
 }
 

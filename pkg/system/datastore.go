@@ -3,12 +3,15 @@ package system
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -44,9 +47,9 @@ func NewSystemDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Poli
 	}, nil
 }
 
-func (d *SystemDatastore) RegisterSystem(ctx context.Context) error {
+func (d *SystemDatastore) RegisterSystem(ctx context.Context, cfg Config) error {
 	return d.Retry.Wrap(ctx, func() error {
-		return d.registerSystem(ctx)
+		return d.registerSystem(ctx, cfg)
 	})
 }
 
@@ -79,7 +82,7 @@ func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
 //
 // This is the BASELINE, after v1 shipped changes to system should be done
 // via migration steps.
-func (d *SystemDatastore) registerSystem(ctx context.Context) error {
+func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -224,6 +227,20 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
+	// system: the singleton config row. id pinned to 0.
+	createSystemSql := `
+		CREATE TABLE IF NOT EXISTS system (
+			id INT PRIMARY KEY DEFAULT 0,
+			advisor_poll_rate_ns BIGINT NOT NULL,          -- nanoseconds; how often the advisor duty runs
+			advisory_repeat_interval_ns BIGINT NOT NULL,   -- nanoseconds; how long a firing advisory stays quiet before re-emitting
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+	`
+	if _, err := tx.Exec(ctx, createSystemSql); err != nil {
+		return err
+	}
+
 	// Record the system v1 baseline, but only if there's no success row yet
 	recordBaselineSql := `
 		INSERT INTO migration_log (entity_type, entity_id, migration_version, status)
@@ -239,10 +256,144 @@ func (d *SystemDatastore) registerSystem(ctx context.Context) error {
 		return err
 	}
 
+	// Seed the config row with cfg. ON CONFLICT DO NOTHING -- the first register
+	// wins, later ones no-op. A later register whose cfg DIFFERS returns a mismatch error.
+	seedSystemSql := `
+		INSERT INTO system (id, advisor_poll_rate_ns, advisory_repeat_interval_ns)
+		VALUES (0, $1, $2)
+		ON CONFLICT (id) DO NOTHING -- no row returned on conflict -> getConfig and compare (below)
+		RETURNING id;
+	`
+	var seededId int
+	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AdvisorPollRate), int64(cfg.AdvisoryRepeatInterval)).Scan(&seededId)
+	switch {
+	case seedErr == nil:
+		// won the seed -- the row now holds exactly cfg
+	case errors.Is(seedErr, pgx.ErrNoRows):
+		existing, err := d.getConfig(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return fmt.Errorf("system config row missing right after seed -- unexpected")
+		}
+		want := cfg.ToSystem(existing.CreatedAt, existing.UpdatedAt)
+		if *existing != *want {
+			return fmt.Errorf("%w: existing=%+v got=%+v", ErrSystemConfigMismatch, *existing, *want)
+		}
+	default:
+		return seedErr
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
 
 	d.Logger.InfoContext(ctx, "system schema registered")
 	return nil
+}
+
+// GetConfig returns the singleton system config, or (nil, nil) if the system
+// hasn't been registered.
+func (d *SystemDatastore) GetConfig(ctx context.Context) (*System, error) {
+	var sys *System
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		sys, err = d.getConfig(ctx, d.Datastore.Pool)
+		return err
+	})
+	return sys, err
+}
+
+// getConfig reads the singleton system row. Returns (nil, nil) if the row isn't there yet.
+func (d *SystemDatastore) getConfig(ctx context.Context, q datastore.Querier) (*System, error) {
+	sql := `
+		SELECT advisor_poll_rate_ns, advisory_repeat_interval_ns, created_at, updated_at
+		FROM system
+		WHERE id = 0;
+	`
+	var advisorPollRateNs, advisoryRepeatIntervalNs int64
+	var createdAt, updatedAt time.Time
+	err := q.QueryRow(ctx, sql).Scan(&advisorPollRateNs, &advisoryRepeatIntervalNs, &createdAt, &updatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return NewSystem(time.Duration(advisorPollRateNs), time.Duration(advisoryRepeatIntervalNs), createdAt, updatedAt)
+}
+
+// UpdateConfig applies cfg's non-nil fields to the singleton system row and
+// returns the updated config. Returns (nil, nil) if the row isn't there.
+func (d *SystemDatastore) UpdateConfig(ctx context.Context, cfg *AlterConfig) (*System, error) {
+	var sys *System
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		sys, err = d.updateConfig(ctx, cfg)
+		return err
+	})
+	return sys, err
+}
+
+func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*System, error) {
+	// read-before-write is only for the old -> new log line
+	old, err := d.getConfig(ctx, d.Datastore.Pool)
+	if err != nil {
+		return nil, err
+	}
+	if old == nil {
+		return nil, nil
+	}
+
+	// a nil param reaches Postgres as NULL; COALESCE keeps the current value.
+	sql := `
+		UPDATE system
+		SET
+			advisor_poll_rate_ns = COALESCE($1, advisor_poll_rate_ns),
+			advisory_repeat_interval_ns = COALESCE($2, advisory_repeat_interval_ns),
+			updated_at = NOW()
+		WHERE id = 0
+		RETURNING advisor_poll_rate_ns, advisory_repeat_interval_ns, created_at, updated_at;
+	`
+	var advisorPollRateNs, advisoryRepeatIntervalNs int64
+	var createdAt, updatedAt time.Time
+	err = d.Datastore.Pool.QueryRow(ctx, sql, durationNs(cfg.AdvisorPollRate), durationNs(cfg.AdvisoryRepeatInterval)).
+		Scan(&advisorPollRateNs, &advisoryRepeatIntervalNs, &createdAt, &updatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// destroyed between the read and the update
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	updated, err := NewSystem(time.Duration(advisorPollRateNs), time.Duration(advisoryRepeatIntervalNs), createdAt, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	d.Logger.InfoContext(ctx, "system config altered", alterLogFields(old, updated)...)
+	return updated, nil
+}
+
+// durationNs widens *time.Duration to the *int64 the _ns columns store, passing
+// nil through so COALESCE sees NULL.
+func durationNs(d *time.Duration) *int64 {
+	if d == nil {
+		return nil
+	}
+	ns := int64(*d)
+	return &ns
+}
+
+// alterLogFields renders old -> new pairs for just the fields that changed.
+func alterLogFields(old, updated *System) []any {
+	fields := []any{}
+	if old.AdvisorPollRate != updated.AdvisorPollRate {
+		fields = append(fields, "advisor_poll_rate", fmt.Sprintf("%v -> %v", old.AdvisorPollRate, updated.AdvisorPollRate))
+	}
+	if old.AdvisoryRepeatInterval != updated.AdvisoryRepeatInterval {
+		fields = append(fields, "advisory_repeat_interval", fmt.Sprintf("%v -> %v", old.AdvisoryRepeatInterval, updated.AdvisoryRepeatInterval))
+	}
+	return fields
 }
