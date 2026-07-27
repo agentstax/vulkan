@@ -4704,18 +4704,41 @@ sequenced after both of these close.*
       match the final `GoRoutineEvent`/`.EventType` names — its recursion-guard
       assertions were also stale from a since-superseded design and were
       dropped, not replaced).
-- [ ] **`cmd/vulkan` connection gap** (folded from the admin-surface entry):
-      `datastore.PostgresConnectionConfig` has no sslmode /
-      DSN-query-param field — it's User/Pass/Host/Port/Database/MaxConns
-      only, built into a plain postgres:// string (only pool_max_conns
-      supported). The CLI parses `--database-url` /
-      `VULKAN_ADMIN_DATABASE_URL` itself into that struct, so anything
-      beyond user/pass/host/port/db (sslmode=require, connect_timeout,
-      ...) is SILENTLY DROPPED today — the CLI at least warns on stderr
-      about unsupported query params it drops. Fine for local/CI
-      Postgres; the fix is a small pkg/datastore field add (an explicit
-      sslmode field or a passthrough param map, NOT a redesign) the first
-      time someone points the CLI at a database that needs it.
+- [x] **`cmd/vulkan` connection gap** (folded from the admin-surface entry).
+      BUILT 2026-07-27. First pass reached for a `Params map[string]string`
+      passthrough, then **revised on request** to strong types mirroring
+      `pgconn.Config` instead — a stringly-typed grab bag for ~24 rarely-used
+      keys was rejected in favor of promoting only the two that are
+      actually load-bearing. `datastore.PostgresConnectionConfig` gained
+      `ConnectTimeout time.Duration` and `TLSConfig *tls.Config` (same
+      names/types as the fields on `pgconn.Config` itself); `Params` is
+      gone. `NewPostgresDatastore` now goes through `pgxpool.ParseConfig`
+      + `NewWithConfig` instead of `pgxpool.New` on a bare string, so it
+      can overlay `MaxConns`/`ConnectTimeout`/`TLSConfig` onto the parsed
+      `*pgxpool.Config` before dialing (`ConnConfig.ConnectTimeout`,
+      `ConnConfig.TLSConfig`, `pgxpool.Config.MaxConns` -- the last is a
+      pgxpool-level field, not pgconn, so it's set directly rather than
+      via the `pool_max_conns` DSN key pgxpool would otherwise parse back
+      out). `TLSConfig` is real Go embedder territory: a `*tls.Config` is
+      something application code builds (custom CA bundle, client certs),
+      not something a URL query string can produce without reimplementing
+      pgconn's own sslmode/cert-fallback negotiation -- deliberately not
+      attempted here.
+      `cmd/vulkan/internal/cli/conn.go`'s `parseConnConfig` maps
+      `pool_max_conns`/`connect_timeout` query params onto
+      `MaxConns`/`ConnectTimeout` (plain scalars, safe to hand-parse) and
+      warns-and-drops everything else (`sslmode` included) same as before
+      this bullet started -- the CLI can't synthesize a `*tls.Config` from
+      a bare string, so `sslmode` support from `--database-url` stays a
+      known gap until someone actually needs it, at which point the
+      obvious next step is a dedicated CLI flag that builds the
+      `tls.Config` in Go, not a query-param mapper. Fixed one small latent
+      bug found along the way: the CLI's `pool_max_conns` query param was
+      previously matched and `continue`'d past without ever being applied
+      to `cfg.MaxConns` -- silently a no-op even though the struct already
+      supported it. It's now parsed and assigned like any other
+      flag-derived field, erroring via `failUsage` on a non-numeric value
+      the same way `--database-url`'s port parsing already did.
 - [ ] **Group retirement, manual half: a destroy-group verb + CLI** (the
       automated expiration half rides with **13d**, where the design
       discussion is recorded). Today a retired consumer group has NO
@@ -4760,7 +4783,7 @@ sequenced after both of these close.*
       Wrap()'d, just CalculateDelay"). The duty policy's MaxDelay defaults
       to 10×rate, the house alarm line (hung-work WARN and Overdue both
       speak 10×). On success the runner unconditionally calls
-      `ResetDutyAttempts` (token-fenced, sets `attempts = 0`) — this is
+      `ResetDuty` (token-fenced, sets `attempts = 0`) — this is
       the one accepted tradeoff versus the original sketch: because the
       claim always bumps the counter now, a healthy duty writes once more
       per interval than the original zero-WAL-on-the-happy-path design
@@ -4788,7 +4811,7 @@ sequenced after both of these close.*
       `examples/phase_1/dutybackofflab` (`just duty-backoff-lab`): renames
       a topic's `message_log_<id>` table out from under a running janitor
       (42P01 every sweep), watches `attempts` climb and the gap between
-      claims grow (small at first, capped at 10x rate), confirms
+      claims grow (small at first, capped at DutyRetry's MaxDelay), confirms
       `DutySnapshots` surfaces the nonzero streak, renames the table back,
       and confirms `attempts` resets to 0 once a run succeeds. Local dev
       Postgres needed a manual `ALTER TABLE maintenance ADD COLUMN
@@ -4805,7 +4828,7 @@ sequenced after both of these close.*
       `DutyClaim` rather than `Duty` since `Duty` was already the
       `Register`/`Run` interface `Janitor`/`WaterlineRoller` implement)
       instead of separate `(*pgtype.UUID, int)`; `RenewDuty`/`ReleaseDuty`/
-      `BackoffDuty`/`ResetDutyAttempts` all take that one `*DutyClaim`
+      `BackoffDuty`/`ResetDuty` all take that one `*DutyClaim`
       instead of four separate identity params. The backoff `CalculateDelay`
       call moved off `dutyRunner` entirely into `BackoffDuty` itself, which
       calls it against a new permanent `DutyRetry *retry.Retry` field on
@@ -4819,8 +4842,10 @@ sequenced after both of these close.*
       `retry.NewDefaultRetryPolicy()` (1s base, 5m max, exponent 2) —
       simpler and consistent with every other datastore's retry-field shape,
       at the cost of the delay no longer scaling with a fast- or slow-polling
-      duty's own rate. `dutybackofflab`'s cap assertion (`10 * dutyRate`)
-      no longer matches this default and needs updating if re-run.
+      duty's own rate. `dutybackofflab`'s cap assertion was updated to match:
+      it now configures its own fast `DutyRetry` (`BaseDelay=300ms,
+      MaxDelay=1.5s`) via `MaintainerConfig` instead of deriving the cap from
+      `10 * dutyRate`, and re-passed live against dev Postgres.
 - [x] **Janitor efficiency and concurrency** (folded from TODO.md). Built as
       the MAINTENANCE TIER. Both questions the bullet raised got answers, and
       neither answer is an opt-out flag:

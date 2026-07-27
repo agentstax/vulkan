@@ -26,11 +26,22 @@ func NewPostgresDatastore(ctx context.Context, cfg *PostgresConnectionConfig) (*
 	connectionString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
 		cfg.User, cfg.Pass, cfg.Host, strconv.Itoa(cfg.Port), cfg.Database,
 	)
+
+	poolConfig, err := pgxpool.ParseConfig(connectionString)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.MaxConns > 0 {
-		connectionString += fmt.Sprintf("?pool_max_conns=%d", cfg.MaxConns)
+		poolConfig.MaxConns = int32(cfg.MaxConns)
+	}
+	if cfg.ConnectTimeout > 0 {
+		poolConfig.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
+	}
+	if cfg.TLSConfig != nil {
+		poolConfig.ConnConfig.TLSConfig = cfg.TLSConfig
 	}
 
-	pool, err := pgxpool.New(ctx, connectionString)
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -17,9 +18,13 @@ const databaseURLEnv = "VULKAN_ADMIN_DATABASE_URL"
 
 // parseConnConfig turns a postgres:// URL into the struct pkg/datastore takes.
 // pkg/datastore has no URL constructor today, so the CLI owns the parse -- see
-// ADMIN_CLI.md's connection-wiring caveat. Query params beyond the core fields
-// (sslmode et al.) are dropped by that struct; we warn rather than drop silent,
-// since an ignored sslmode is a security footgun, not a cosmetic loss.
+// ADMIN_CLI.md's connection-wiring caveat. pool_max_conns and connect_timeout
+// map onto MaxConns/ConnectTimeout -- plain scalars, safe to parse here.
+// TLSConfig has no such mapping: it's a real *tls.Config for embedders
+// building one in code (mirroring pgconn.Config), not something a URL query
+// param can produce without reimplementing pgx's own sslmode/cert negotiation
+// -- so sslmode and any other unrecognized param are warned about, not
+// silently dropped.
 func parseConnConfig(raw string) (*datastore.PostgresConnectionConfig, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -47,11 +52,23 @@ func parseConnConfig(raw string) (*datastore.PostgresConnectionConfig, error) {
 		cfg.Port = port
 	}
 
-	for key := range u.Query() {
-		if key == "pool_max_conns" {
-			continue
+	for key, vals := range u.Query() {
+		switch key {
+		case "pool_max_conns":
+			maxConns, err := strconv.Atoi(vals[0])
+			if err != nil {
+				return nil, failUsage("database URL has a non-numeric pool_max_conns %q", vals[0])
+			}
+			cfg.MaxConns = maxConns
+		case "connect_timeout":
+			secs, err := strconv.Atoi(vals[0])
+			if err != nil {
+				return nil, failUsage("database URL has a non-numeric connect_timeout %q", vals[0])
+			}
+			cfg.ConnectTimeout = time.Duration(secs) * time.Second
+		default:
+			fmt.Fprintf(os.Stderr, "warning: database URL parameter %q is not supported yet and was ignored\n", key)
 		}
-		fmt.Fprintf(os.Stderr, "warning: database URL parameter %q is not supported yet and was ignored\n", key)
 	}
 
 	cfg.WithDefaults()

@@ -86,3 +86,5 @@ comment (settled design wins) or do the refactor and update the LEARNING_PLAN
 record to match.
 
 Add retry backoff for deliveries exception logic table
+
+Need a destroy system
