@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**), duty error backoff (maintenance `attempts` column + `CalculateDelay` gate pushes) still open; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**), duty error backoff (maintenance `attempts` column + `CalculateDelay` gate pushes) still open; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -4606,7 +4606,7 @@ sequenced after both of these close.*
       overdue count by duty kind + oldest gate age); still open whether
       duties should also emit WORK metrics (partitions dropped, rows swept,
       roll distance) now that they run separately from consumers.
-- [ ] **Metrics redesign** (full spec folded from TODO.md; this is now the
+- [x] **Metrics redesign** (full spec folded from TODO.md; this is now the
       canonical record). The problem: the metrics code is not composable and
       needs weird dependency management. Concretely — every metric supports
       BOTH a live-SQL path AND an otel path (double surface); the meter is
@@ -4616,8 +4616,8 @@ sequenced after both of these close.*
       four domain metrics packages directly; the wiring line is copy-pasted
       across three consumer constructors; instrument registration is
       one-gauge-at-a-time boilerplate.
-      DESIGN SETTLED 2026-07-26 (build open, PARKED). The unlock: there are
-      TWO kinds of metric and they want different homes.
+      DESIGN SETTLED 2026-07-26, BUILT + COMPLETE 2026-07-26. The unlock: there
+      were TWO kinds of metric and they wanted different homes.
       (1) DB-snapshot metrics — queue_state (head/claimed/committed/backlog/
       exceptions/leases) and duty health (overdue/oldest gate age) — are
       DERIVED LIVE from rows that already exist (cursor/delivery/lease/
@@ -4631,28 +4631,54 @@ sequenced after both of these close.*
       abandonedKey (topicId, group, messageId, attempt) + a timestamp, routed
       `abandoned_routine.<topicId>.<group>`. NO compaction key — it's a
       retention-windowed event log; abandonment is rare-path so it's a trickle,
-      and steady state (no abandonment) writes nothing. The process computes
-      NOTHING — no in-mem total/outstanding/latency. Events are produced
+      and steady state (no abandonment) writes nothing (this REJECTS the
+      per-process-UUID + compacted-snapshot model that preceded this design —
+      a raw event log needs no per-process identity or winner-selection at
+      all). The process computes NOTHING — no in-mem total/outstanding/latency,
+      no mirror/ring-buffer/atomic counter, no synchronous otel instruments.
+      Events are produced
       BEST-EFFORT off the hot path via a buffered channel drained by a small
       producer goroutine (dropped on overflow) so metric production can never
       stall or fail message processing; produced via the real `Producer[...]`.
-      `pkg/metrics` becomes THE SNAPSHOTTER: the single top-level read surface
-      that live-reads the DB-snapshot metrics (consolidating the scattered
-      domain datastores) AND reads the `__system.metrics` event stream,
-      DERIVING outstanding (abandoned events with no matching cleared), total
-      (distinct abandoned keys in the window), and self-clear latency avg (mean
-      of cleared−abandoned over matched pairs) — returning one merged
-      `Snapshot`. It also owns the OTel meter integration: gauges whose observe
-      callback calls the snapshotter, killing the copy-pasted meter-threading.
-      Library still never imports the otel SDK (snapshotter takes
-      `metric.Meter`, noop default, caller owns the provider). `admin/metrics.go`
-      is an endpoint running the snapshotter one-shot (noop meter,
-      exporter-free, like `maintain status`) and returning requested snapshots;
-      the CLI owns FORMATTING them into actionable content. `admin/health.go`
-      STAYS SEPARATE — the retire-safety verdict (Safe/Reason) is
-      `DestroyTopic`'s own question, already once built into `pkg/metrics` and
-      deliberately reverted (see the schema-evolution as-built above); reworked
-      only to source data from the snapshotter, the verdict logic unchanged.
+      **As-built (diverged from the original "one `pkg/metrics` snapshotter"
+      shape above, mid-build, by direct edit):** the snapshotter split into
+      two subpackages instead of staying one file — `pkg/metrics/datastore`
+      (`MetricsDatastore`, the live-SQL reads: `ConsumerGroupSnapshot`,
+      `ListConsumerGroups`, `IsCompacted`, `DutySnapshots`, and
+      `EventSnapshot` deriving Outstanding/Total/SelfClearLatencyAvg off
+      `__system.metrics` via TWO separate queries — one per event type,
+      paired in Go by (message_id, attempt) — not a single CASE/HAVING
+      query, for readability) and `pkg/metrics/monitor` (`Monitor`, renamed
+      from `Snapshotter`; owns the OTel gauges plus the new
+      `TopicSnapshot(ctx, topicID)` one-shot merge of compacted + per-group
+      queue-state + event-derived numbers into `TopicSnapshot{Compacted,
+      Groups []GroupSnapshot}`). The root `pkg/metrics` package shrank to
+      just `TopicName`/`TopicConfig()` plus `AbandonedRoutineKey` (the
+      routing-key formatter, shared by the producer and the reader so the
+      two can't drift). `admin/metrics.go`'s `MessageAdmin.TopicMetrics(ctx,
+      name, version)` is the one-shot endpoint exactly as designed.
+      `admin/health.go` STAYS SEPARATE as designed — the retire-safety
+      verdict (Safe/Reason) is `DestroyTopic`'s own question, already once
+      built into `pkg/metrics` and deliberately reverted (see the
+      schema-evolution as-built above); reworked only to source data from
+      `Monitor.TopicSnapshot`, the verdict logic (`evaluate()`) unchanged.
+      **Still open, surfaced during close-out, NOT decided:** a
+      `// TODO - probably makes more sense to use TopicSnapshot and derive
+      Safe / Reason from that` comment sits directly on `VersionHealth` in
+      `pkg/admin/health.go`, contradicting the "stays separate" call two
+      sentences up. Nobody has re-confirmed which one is current — resolve
+      before treating either as settled.
+      CLI placement SETTLED: the event-derived columns
+      (ABANDONED/OUTSTANDING/AVG SELF-CLEAR) were added to the existing
+      `vulkan topic get` per-group table rather than a new `vulkan metrics`
+      command — user-confirmed 2026-07-26, `TopicMetrics`/`TopicSnapshot`
+      still exist as standalone endpoints if a metrics-only view is wanted
+      later.
+      Routing-key/event shape REVIEWED, no changes: `AbandonedRoutineKey`
+      (`abandoned_routine.<topicId>.<group>`) and `GoRoutineEvent{EventType,
+      TopicId, Group, MessageId, Attempt, At}` are exercised by two labs
+      (cross-process aggregation, group isolation) and considered locked —
+      the weak-schema contract means only additive fields from here.
       METRIC SEMANTICS: chosen latency output is the AVG (the meaningful number
       here); raw per-event durations sit in the stream if a distribution is
       ever wanted. "Total" is fleet-wide + retention-windowed, NOT
@@ -4661,15 +4687,23 @@ sequenced after both of these close.*
       monotonic).
       `__system.metrics` reuses the SAME `__system.` reserved-prefix +
       idempotent system-topic-creation machinery as the default-alerts build —
-      cross-plan dependency, both parked; whichever lands first owns it, the
-      other consumes it. Out of scope: duty WORK metrics (the open question
-      above); any new otel metric beyond today's set; a health-check HTTP
-      surface; changing the retire-verdict LOGIC (only its data source moves).
+      cross-plan dependency; metrics landed first and owns it, default-alerts
+      (still parked) will consume it. Out of scope, unchanged: duty WORK
+      metrics (the open question above); any new otel metric beyond today's
+      set; a health-check HTTP surface; changing the retire-verdict LOGIC
+      (only its data source moved).
       Chunk plan: `~/.claude/plans/metrics-redesign.md` (5 chunks:
       snapshotter over live DB reads → `__system.metrics` topic + reserved
       prefix → in-proc metrics as an event stream → snapshotter derives metrics
       from the event stream → admin/metrics.go + health.go rework + CLI +
-      metricslab). Build PARKED — not started yet.
+      metricslab). BUILT — all 5 chunks landed and live-verified against dev
+      Postgres. Labs: `eventsnapshotlab` (`just event-snapshot-lab`),
+      `metricslab` (`just metrics-lab`, two real `MessageConsumer` instances
+      sharing a group, proving cross-process event aggregation),
+      `abandonedeventslab` (`just abandoned-events-lab`, fixed post-build to
+      match the final `GoRoutineEvent`/`.EventType` names — its recursion-guard
+      assertions were also stale from a since-superseded design and were
+      dropped, not replaced).
 - [ ] **`cmd/vulkan` connection gap** (folded from the admin-surface entry):
       `datastore.PostgresConnectionConfig` has no sslmode /
       DSN-query-param field — it's User/Pass/Host/Port/Database/MaxConns

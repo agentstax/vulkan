@@ -72,13 +72,16 @@ need to rename consumer waterline stuff to something like cursor.committed. Wate
 
 Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
 
-Need to rethink metrics code design it is ass right now. Its not very composable and requires weird dependency management. I'm thinking we go the way of alert/advisory system with a compacted topic and then we can have a snapshotter for otel meter and cli commands
-- After we do above we need to redo how admin/health.go works out we should instead have an admin/metrics.go. Which utilizes the snapshotter. Then the cli should be the owner of how to parse the metrics data and format it
-- DESIGN SETTLED 2026-07-26 (build PARKED): canonical record = LEARNING_PLAN 14a "Metrics redesign" bullet; chunk plan = ~/.claude/plans/metrics-redesign.md (hybrid: DB-snapshot metrics stay live reads, in-proc metrics go on __system.metrics, pkg/metrics = the snapshotter, health.go verdict stays in admin)
+Metrics redesign: BUILT + COMPLETE 2026-07-26 — canonical record = LEARNING_PLAN
+14a "Metrics redesign" bullet (as-built diverged from the original single-
+`pkg/metrics` shape: split into `pkg/metrics/datastore` + `pkg/metrics/monitor`).
+Routing key (`AbandonedRoutineKey`) and `GoRoutineEvent` shape reviewed, no
+changes, considered locked.
 
-Need to go through all the code and comment in pkg/admin/health.go pkg/metrics*, pkg/consumer/metrics and make sure they are okay
-- pkg/admin/health really should be a thin facade over what metrics package can do. Should set a state / reason on topicSnapshot directly if desired
-
-Need to redo how admin/health.go is done. Ideally the majority of calculation code should be somewhere in pkg/metrics
-
-Need to heavily look at the routing key for AbandonedRoutineKey and the GoRoutineEvent struct. They will be difficult to change later
+Still open: `pkg/admin/health.go` carries a `// TODO - probably makes more
+sense to use TopicSnapshot and derive Safe / Reason from that` comment that
+contradicts LEARNING_PLAN 14a's recorded decision (verdict logic deliberately
+kept in admin, separate from `pkg/metrics/monitor`). Whoever picks this up:
+confirm which is current before changing anything — either delete the stray
+comment (settled design wins) or do the refactor and update the LEARNING_PLAN
+record to match.

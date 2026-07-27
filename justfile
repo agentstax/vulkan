@@ -79,6 +79,9 @@ event-snapshot-lab:
 metrics-lab:
   go run examples/phase_1/metricslab/main.go
 
+abandoned-events-lab:
+  go run examples/phase_1/abandonedeventslab/main.go
+
 # log compaction lab: latest-per-key survives a claim, older rows stay
 # physically present, a delivered version isn't retroactively unsent, the
 # crash/reclaim race gives a superseded row zero delivery while its successor
