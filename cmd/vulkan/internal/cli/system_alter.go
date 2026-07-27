@@ -23,7 +23,7 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 		Short: "Change the system config (only the fields you pass)",
 		Long: "Change one or more fields on the singleton system config. A patch --\n" +
 			"fields you don't pass are left untouched.\n\n" +
-			"The alert duty snapshots this config at its Register, so an alter takes\n" +
+			"A running consumer snapshots this config at startup, so an alter takes\n" +
 			"effect on its next restart, not live.",
 		Example: "vulkan system alter --alert-poll-rate 2m --alert-repeat-interval 4h",
 		Args:    cobra.NoArgs,
@@ -70,7 +70,7 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.DurationVar(&alertPollRate, "alert-poll-rate", 0, "how often the alert duty runs its structural checks, e.g. 2m")
+	f.DurationVar(&alertPollRate, "alert-poll-rate", 0, "how often the alert checks run, e.g. 2m")
 	f.DurationVar(&alertRepeatInterval, "alert-repeat-interval", 0, "how long a firing alert stays quiet before re-emitting, e.g. 4h")
 
 	return cmd
