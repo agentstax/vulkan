@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -81,8 +80,7 @@ func (e *MetricEventProducer) drain(ctx context.Context) {
 }
 
 func (e *MetricEventProducer) produce(ctx context.Context, event *GoRoutineEvent) {
-	// abandoned_routine.<topic-id>.<group>
-	routingKey := fmt.Sprintf("abandoned_routine.%d.%s", event.TopicId, event.Group)
+	routingKey := metrics.AbandonedRoutineKey(event.TopicId, event.Group)
 
 	if _, err := e.producer.Produce(ctx, event, producer.ProduceOptions{RoutingKey: routingKey}); err != nil {
 		e.logger.WarnContext(ctx, "abandoned event produce failed", "group", event.Group, "topic_id", event.TopicId, "type", event.EventType, "err", err)
