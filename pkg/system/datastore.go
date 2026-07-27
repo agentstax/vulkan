@@ -24,6 +24,7 @@ import (
 // - topic
 // - compaction_head
 // - migration_log
+// - system
 type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
@@ -61,7 +62,7 @@ func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
 		`SELECT EXISTS (
 			SELECT 1 FROM migration_log
 			WHERE entity_type = 'system'
-				AND entity_id = 0 
+				AND entity_id = 0
 				AND status = 'success'
 		);`,
 	).Scan(&registered)
@@ -78,10 +79,8 @@ func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
 
 // registerSystem creates the shared control-plane schema. Every statement is
 // CREATE IF NOT EXISTS -- a no-op against a database that already has the
-// tables, a full bootstrap against a fresh one.
-//
-// This is the BASELINE, after v1 shipped changes to system should be done
-// via migration steps.
+// tables, a full bootstrap against a fresh one. This is the BASELINE; later
+// schema changes go through migration steps, not edits here.
 func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
@@ -231,8 +230,8 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	createSystemSql := `
 		CREATE TABLE IF NOT EXISTS system (
 			id INT PRIMARY KEY DEFAULT 0,
-			advisor_poll_rate_ns BIGINT NOT NULL,          -- nanoseconds; how often the advisor duty runs
-			advisory_repeat_interval_ns BIGINT NOT NULL,   -- nanoseconds; how long a firing advisory stays quiet before re-emitting
+			alert_poll_rate_ns BIGINT NOT NULL,       -- nanoseconds; how often the alert checks run
+			alert_repeat_interval_ns BIGINT NOT NULL, -- nanoseconds; how long a firing alert stays quiet before re-emitting
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
@@ -241,14 +240,14 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		return err
 	}
 
-	// Record the system v1 baseline, but only if there's no success row yet
+	// Record the baseline in migration_log, but only if there's no success row yet.
 	recordBaselineSql := `
 		INSERT INTO migration_log (entity_type, entity_id, migration_version, status)
 		SELECT 'system', 0, 1, 'success'
 		WHERE NOT EXISTS (
 			SELECT 1 FROM migration_log
 			WHERE entity_type = 'system'
-				AND entity_id = 0 
+				AND entity_id = 0
 				AND status = 'success'
 		);
 	`
@@ -259,13 +258,13 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	// Seed the config row with cfg. ON CONFLICT DO NOTHING -- the first register
 	// wins, later ones no-op. A later register whose cfg DIFFERS returns a mismatch error.
 	seedSystemSql := `
-		INSERT INTO system (id, advisor_poll_rate_ns, advisory_repeat_interval_ns)
+		INSERT INTO system (id, alert_poll_rate_ns, alert_repeat_interval_ns)
 		VALUES (0, $1, $2)
 		ON CONFLICT (id) DO NOTHING -- no row returned on conflict -> getConfig and compare (below)
 		RETURNING id;
 	`
 	var seededId int
-	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AdvisorPollRate), int64(cfg.AdvisoryRepeatInterval)).Scan(&seededId)
+	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AlertPollRate), int64(cfg.AlertRepeatInterval)).Scan(&seededId)
 	switch {
 	case seedErr == nil:
 		// won the seed -- the row now holds exactly cfg
@@ -308,20 +307,20 @@ func (d *SystemDatastore) GetConfig(ctx context.Context) (*System, error) {
 // getConfig reads the singleton system row. Returns (nil, nil) if the row isn't there yet.
 func (d *SystemDatastore) getConfig(ctx context.Context, q datastore.Querier) (*System, error) {
 	sql := `
-		SELECT advisor_poll_rate_ns, advisory_repeat_interval_ns, created_at, updated_at
+		SELECT alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at
 		FROM system
 		WHERE id = 0;
 	`
-	var advisorPollRateNs, advisoryRepeatIntervalNs int64
+	var alertPollRateNs, alertRepeatIntervalNs int64
 	var createdAt, updatedAt time.Time
-	err := q.QueryRow(ctx, sql).Scan(&advisorPollRateNs, &advisoryRepeatIntervalNs, &createdAt, &updatedAt)
+	err := q.QueryRow(ctx, sql).Scan(&alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return NewSystem(time.Duration(advisorPollRateNs), time.Duration(advisoryRepeatIntervalNs), createdAt, updatedAt)
+	return NewSystem(time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
 }
 
 // UpdateConfig applies cfg's non-nil fields to the singleton system row and
@@ -350,16 +349,16 @@ func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*
 	sql := `
 		UPDATE system
 		SET
-			advisor_poll_rate_ns = COALESCE($1, advisor_poll_rate_ns),
-			advisory_repeat_interval_ns = COALESCE($2, advisory_repeat_interval_ns),
+			alert_poll_rate_ns = COALESCE($1, alert_poll_rate_ns),
+			alert_repeat_interval_ns = COALESCE($2, alert_repeat_interval_ns),
 			updated_at = NOW()
 		WHERE id = 0
-		RETURNING advisor_poll_rate_ns, advisory_repeat_interval_ns, created_at, updated_at;
+		RETURNING alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at;
 	`
-	var advisorPollRateNs, advisoryRepeatIntervalNs int64
+	var alertPollRateNs, alertRepeatIntervalNs int64
 	var createdAt, updatedAt time.Time
-	err = d.Datastore.Pool.QueryRow(ctx, sql, durationNs(cfg.AdvisorPollRate), durationNs(cfg.AdvisoryRepeatInterval)).
-		Scan(&advisorPollRateNs, &advisoryRepeatIntervalNs, &createdAt, &updatedAt)
+	err = d.Datastore.Pool.QueryRow(ctx, sql, durationNs(cfg.AlertPollRate), durationNs(cfg.AlertRepeatInterval)).
+		Scan(&alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// destroyed between the read and the update
@@ -368,7 +367,7 @@ func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*
 		return nil, err
 	}
 
-	updated, err := NewSystem(time.Duration(advisorPollRateNs), time.Duration(advisoryRepeatIntervalNs), createdAt, updatedAt)
+	updated, err := NewSystem(time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -389,11 +388,11 @@ func durationNs(d *time.Duration) *int64 {
 // alterLogFields renders old -> new pairs for just the fields that changed.
 func alterLogFields(old, updated *System) []any {
 	fields := []any{}
-	if old.AdvisorPollRate != updated.AdvisorPollRate {
-		fields = append(fields, "advisor_poll_rate", fmt.Sprintf("%v -> %v", old.AdvisorPollRate, updated.AdvisorPollRate))
+	if old.AlertPollRate != updated.AlertPollRate {
+		fields = append(fields, "alert_poll_rate", fmt.Sprintf("%v -> %v", old.AlertPollRate, updated.AlertPollRate))
 	}
-	if old.AdvisoryRepeatInterval != updated.AdvisoryRepeatInterval {
-		fields = append(fields, "advisory_repeat_interval", fmt.Sprintf("%v -> %v", old.AdvisoryRepeatInterval, updated.AdvisoryRepeatInterval))
+	if old.AlertRepeatInterval != updated.AlertRepeatInterval {
+		fields = append(fields, "alert_repeat_interval", fmt.Sprintf("%v -> %v", old.AlertRepeatInterval, updated.AlertRepeatInterval))
 	}
 	return fields
 }

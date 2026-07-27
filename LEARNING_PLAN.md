@@ -4517,16 +4517,17 @@ sequenced after both of these close.*
       producer/consumer Register (Sidekiq's boot-check pattern — the
       process's most-watched moment), log-only, no claim, no topic write.
       Covers every library user even when maintenance never runs.
-      (3) The `__system.advisories` topic (NATS advisories-as-messages):
+      (3) The `__system.alerts` topic (NATS alerts-as-messages):
       alerts published as ordinary messages, inheriting delivery,
       routing, retention, replay, and multi-consumer-group semantics for
       free. This is the integration surface (a consumer group forwarding
       to Slack/PagerDuty is ~20 lines of user code) and the CLI's
       "what's firing now" read surface (compaction heads = current state).
-      The `Advisory` schema (pkg/advisory, user-facing — consumers decode
-      `MessageConsumer[advisory.Advisory]`): typed identity fields Name
-      ("partition_count"), EntityId (rename-proof machine identity,
-      schema_log's entity pattern, 0 = system), EntityName (human
+      The `Alert` schema (pkg/alert, user-facing — consumers decode
+      `MessageConsumer[alert.Alert]`): typed identity fields Name
+      ("partition_count"), EntityType ("system"|"topic",
+      migration_log's entity_type/entity_id pattern), EntityId
+      (rename-proof machine identity, 0 = system), EntityName (human
       handle), Status ("firing"|"resolved"), Severity ("warn"; "critical"
       reserved — the field ships in v1 so the routing key never changes
       shape); the prose triple Message/Detail/Hint; and two jsonb maps —
@@ -4541,40 +4542,43 @@ sequenced after both of these close.*
       numbers to float64 so int64 precision above 2^53 was false anyway
       (jsonb itself stores exact numerics — the loss is at the Go decode
       side), and numeric time-series belong to the otel gauges — the
-      advisory carries judgment + explanation.
-      Routing key `advisory.<name>.<entity-name>.<severity>` — severity
+      alert carries judgment + explanation.
+      Routing key `alert.<name>.<entity-type>.<entity-name>.<severity>`
+      — entity-type before entity-name so names can't collide across types;
+      severity
       LAST so the common binding is an ends-with match
-      (`advisory.*.critical`); known consequence: name-based bindings
+      (`alert.*.critical`); known consequence: name-based bindings
       silently stop matching after a topic rename (EntityId in the
-      payload is the durable handle). Compaction key `<name>/<entity-id>`
+      payload is the durable handle). Compaction key `<name>/<entity-type>/<entity-id>`
+      (entity-type keeps id spaces from colliding across types)
       — firing→resolved are versions of one key, so the topic IS the
       state store: current alert state = compaction heads, history = the
       uncompacted log under ordinary retention. The retention interplay
-      works FOR us: resolved advisories age out of current state
+      works FOR us: resolved alerts age out of current state
       naturally, while the repeat-interval re-fire re-produces firing
       keys far inside any sane TTL — the human reminder and the state
       keepalive are the same produce. Known schema limits, recorded not
-      solved: EntityName for a system-scoped advisory (EntityId 0) is
-      pinned by pkg/advisory's key derivation (decide there, once); and
+      solved: EntityName for a system-scoped alert (EntityId 0) is
+      pinned by pkg/alert's key derivation (decide there, once); and
       consumer-group-scoped subjects are NOT addressable — groups are
       TEXT keys with no id, so a future per-group check (waterline lag)
       needs a schema extension. Fine for v1: both checks are
       topic-scoped.
-      Evaluation: a NEW `advisor` duty kind (row per topic in
+      Evaluation: a NEW `alert` duty kind (row per topic in
       maintenance, claimable like janitor/waterline) — NOT a janitor
       passenger: janitor ticks ~5s for create-ahead, checks want
       minutes-to-hours, and the duty registry IS the gating clock;
-      janitor cleans, advisor watches. Edge-triggering is restart-proof:
-      the advisor reads its own alert key's compaction head, compares
+      janitor cleans, alert watches. Edge-triggering is restart-proof:
+      the alert reads its own alert key's compaction head, compares
       status, produces only on transition or past the repeat interval —
       the topic is its own dedup memory, and duty claiming already
-      guarantees one evaluator per topic. The advisor publishes through
-      the real `Producer[advisory.Advisory]` (maintain→producer imports
+      guarantees one evaluator per topic. The alert publishes through
+      the real `Producer[alert.Alert]` (maintain→producer imports
       cleanly; hand-copying the compaction upsert would be the
       lab-staleness trap in production code). Checks live in
-      pkg/advisory as pure functions (measurements in → *Advisory or nil
+      pkg/alert as pure functions (measurements in → *Alert or nil
       out), closed set, classify+switch, no plugin registry; the duty
-      wiring (advisor.go/advisor_duty.go mirroring janitor's file
+      wiring (alert.go/alert_duty.go mirroring janitor's file
       pattern) lives in pkg/maintain.
       Thresholds computed LIVE where possible (query
       max_locks_per_transaction, derive the real partition ceiling —
@@ -4583,23 +4587,23 @@ sequenced after both of these close.*
       per check via sparse-struct config (disable / threshold override),
       house style. `__system.` becomes the RESERVED topic-name prefix —
       RegisterTopic rejects user names under it (first name validation
-      in admin); the advisories topic is created idempotently at system
+      in admin); the alerts topic is created idempotently at system
       registration — NO migration step: pre-v1 the registries are empty
       and baseline edits happen in place (house migration style), so
       re-running system registration converges an existing deployment.
       Lifecycle verbs against `__system.*` need guarding: Destroy and
-      Rename refused, Alter allowed (tuning advisory retention is
-      legitimate). The topic gets janitor/waterline/advisor duties like
+      Rename refused, Alter allowed (tuning alert retention is
+      legitimate). The topic gets janitor/waterline/alert duties like
       any topic. Who runs it: the
       defaulted Consumer runs the maintenance tier, so most users get
-      the advisor without asking; docs cover the rest, plus the
+      the alert without asking; docs cover the rest, plus the
       Register-time layer and DutyState's overdue gauge (an unmanned
-      advisor duty is itself visible).
+      alert duty is itself visible).
       The presence design (13d) remains the substrate that would let an
       alert say "destroy blocked: producer X seen 2s ago" instead of a
       bare threshold.
-      Chunk plan: `~/.claude/plans/default-alerts-advisories.md` (5
-      chunks: pkg/advisory → reserved prefix + system topic → advisor
+      Chunk plan: `~/.claude/plans/default-alerts.md` (5
+      chunks: pkg/alert → reserved prefix + system topic → alert
       duty → Register-time findings → CLI + lab). Build PARKED — not
       started yet, deliberately.
       Duty HEALTH metrics now exist (`pkg/maintain/metrics` `DutyState`:

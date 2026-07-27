@@ -14,8 +14,8 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 	// Flags map 1:1 to system.AlterConfig's pointer fields. Only the ones the
 	// operator actually passed become non-nil -- a patch, not a full replace.
 	var (
-		advisorPollRate        time.Duration
-		advisoryRepeatInterval time.Duration
+		alertPollRate       time.Duration
+		alertRepeatInterval time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -23,9 +23,9 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 		Short: "Change the system config (only the fields you pass)",
 		Long: "Change one or more fields on the singleton system config. A patch --\n" +
 			"fields you don't pass are left untouched.\n\n" +
-			"The advisor duty snapshots this config at its Register, so an alter takes\n" +
+			"The alert duty snapshots this config at its Register, so an alter takes\n" +
 			"effect on its next restart, not live.",
-		Example: "vulkan system alter --advisor-poll-rate 2m --advisory-repeat-interval 4h",
+		Example: "vulkan system alter --alert-poll-rate 2m --alert-repeat-interval 4h",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -34,11 +34,11 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 			// Build a sparse patch from only the flags that were passed.
 			cfg := &system.AlterConfig{}
 			f := cmd.Flags()
-			if f.Changed("advisor-poll-rate") {
-				cfg.AdvisorPollRate = &advisorPollRate
+			if f.Changed("alert-poll-rate") {
+				cfg.AlertPollRate = &alertPollRate
 			}
-			if f.Changed("advisory-repeat-interval") {
-				cfg.AdvisoryRepeatInterval = &advisoryRepeatInterval
+			if f.Changed("alert-repeat-interval") {
+				cfg.AlertRepeatInterval = &alertRepeatInterval
 			}
 
 			// Validate up front for a clean usage error (exit 2) instead of the raw
@@ -70,8 +70,8 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.DurationVar(&advisorPollRate, "advisor-poll-rate", 0, "how often the advisor duty runs its structural checks, e.g. 2m")
-	f.DurationVar(&advisoryRepeatInterval, "advisory-repeat-interval", 0, "how long a firing advisory stays quiet before re-emitting, e.g. 4h")
+	f.DurationVar(&alertPollRate, "alert-poll-rate", 0, "how often the alert duty runs its structural checks, e.g. 2m")
+	f.DurationVar(&alertRepeatInterval, "alert-repeat-interval", 0, "how long a firing alert stays quiet before re-emitting, e.g. 4h")
 
 	return cmd
 }
@@ -83,11 +83,11 @@ func printSystemAlterResult(w io.Writer, before, updated *system.System) {
 
 	type diff struct{ name, old, new string }
 	var diffs []diff
-	if before.AdvisorPollRate != updated.AdvisorPollRate {
-		diffs = append(diffs, diff{"AdvisorPollRate", before.AdvisorPollRate.String(), updated.AdvisorPollRate.String()})
+	if before.AlertPollRate != updated.AlertPollRate {
+		diffs = append(diffs, diff{"AlertPollRate", before.AlertPollRate.String(), updated.AlertPollRate.String()})
 	}
-	if before.AdvisoryRepeatInterval != updated.AdvisoryRepeatInterval {
-		diffs = append(diffs, diff{"AdvisoryRepeatInterval", before.AdvisoryRepeatInterval.String(), updated.AdvisoryRepeatInterval.String()})
+	if before.AlertRepeatInterval != updated.AlertRepeatInterval {
+		diffs = append(diffs, diff{"AlertRepeatInterval", before.AlertRepeatInterval.String(), updated.AlertRepeatInterval.String()})
 	}
 
 	if len(diffs) == 0 {

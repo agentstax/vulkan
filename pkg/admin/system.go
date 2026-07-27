@@ -57,12 +57,12 @@ func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
 }
 
 // AlterSystem applies cfg's non-nil fields to the singleton system config and
-// returns the updated config.
-// Returns migrate.ErrNotRegistered if RegisterSystem hasn't run.
+// returns the updated config. Returns migrate.ErrNotRegistered if
+// RegisterSystem hasn't run.
 //
-// Two consequences, same as AlterTopic:
-//   - The advisor duty snapshots this at its Register, so an alter takes effect
-//     on its NEXT restart, not live.
+// Two consequences:
+//   - A consumer of this config snapshots it at startup, so an alter takes
+//     effect on its NEXT restart, not live.
 //   - A RegisterSystem call still passing the pre-alter cfg fails with
 //     system.ErrSystemConfigMismatch.
 func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *system.AlterConfig) (*system.System, error) {

@@ -40,7 +40,7 @@ func printSystemDetail(w io.Writer, s *system.System) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintf(tw, "  CreatedAt\t%s\n", timeCell(s.CreatedAt))
 	fmt.Fprintf(tw, "  UpdatedAt\t%s\n", timeCell(s.UpdatedAt))
-	fmt.Fprintf(tw, "  AdvisorPollRate\t%s\n", s.AdvisorPollRate.String())
-	fmt.Fprintf(tw, "  AdvisoryRepeatInterval\t%s\n", s.AdvisoryRepeatInterval.String())
+	fmt.Fprintf(tw, "  AlertPollRate\t%s\n", s.AlertPollRate.String())
+	fmt.Fprintf(tw, "  AlertRepeatInterval\t%s\n", s.AlertRepeatInterval.String())
 	tw.Flush()
 }

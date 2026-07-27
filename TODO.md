@@ -34,6 +34,8 @@ A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor g
 
 Consider storing messages a binary data (maybe as an compressed option). Would prevent users from easily searching fields in db but could make for more efficent network requests and faster unmarshalling if we did something similar to protocol buffers (grpc). https://github.com/Apaezmx/pgproto
 
+How could we generalize this system to be a debezium like replication system. ie which a generic table and stream data to ??? (different table etc)
+
 ## BEFORE V1
 
 review / refine the comments in fanOut (pkg/consumer/datastore.go) -- both the Go
@@ -88,3 +90,5 @@ record to match.
 Add retry backoff for deliveries exception logic table
 
 Need a destroy system
+
+consider making entities its own table with an id, entity_type, entity_id, entity_name - could make for a more modular setup
