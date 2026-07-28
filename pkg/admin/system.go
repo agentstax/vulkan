@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
@@ -31,7 +32,20 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *system.Config) e
 		return err
 	}
 
-	existing, err := a.topicDatastore.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	// Make sure the system's owned topics are registered:
+	// - __system.metrics
+	// - __system.alerts
+	if err := a.ensureSystemTopic(ctx, metrics.TopicName, metrics.TopicConfig()); err != nil {
+		return err
+	}
+	if err := a.ensureSystemTopic(ctx, alert.TopicName, alert.TopicConfig()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *MessageAdmin) ensureSystemTopic(ctx context.Context, name string, cfg *topic.Config) error {
+	existing, err := a.topicDatastore.GetTopic(ctx, name, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
@@ -39,7 +53,8 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *system.Config) e
 		return nil
 	}
 
-	_, err = a.registerTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), metrics.TopicConfig())
+	// registerTopic bypasses the __system. reserved-name guard that RegisterTopic enforces.
+	_, err = a.registerTopic(ctx, name, topic.SchemaVersion(1), cfg)
 	return err
 }
 
