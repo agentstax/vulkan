@@ -190,10 +190,10 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version S
 		return nil, insertErr
 	}
 
-	// seed the janitor maintenance duty
+	// seed the janitor and alert maintenance duty
 	seedDutySql := `
 		INSERT INTO maintenance (duty, topic_id)
-		VALUES ('janitor', $1)
+		VALUES ('janitor', $1), ('alert', $1)
 		ON CONFLICT DO NOTHING;
 	`
 	if _, err := tx.Exec(ctx, seedDutySql, id); err != nil {

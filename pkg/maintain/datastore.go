@@ -13,10 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// The two claimable duties in the maintenance table.
+// The claimable duty kinds in the maintenance table.
 const (
 	DutyJanitor   = "janitor"
 	DutyWaterline = "waterline"
+	DutyAlert     = "alert"
 )
 
 // ErrDutyLost fences an overrunning owner: the claim expired mid-work and
@@ -94,10 +95,13 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 			CASE m.duty
 				WHEN 'janitor' THEN t.janitor_poll_rate_ns
 				WHEN 'waterline' THEN t.waterline_poll_rate_ns
+				WHEN 'alert' THEN s.alert_poll_rate_ns
 			END
 		FROM maintenance m
 		JOIN topic t ON t.id = m.topic_id
-		WHERE m.duty IN ('janitor', 'waterline');
+		LEFT JOIN system s ON true -- singleton (id 0); LEFT so janitor/waterline
+		                           -- discovery never depends on the system row
+		WHERE m.duty IN ('janitor', 'waterline', 'alert');
 	`
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)

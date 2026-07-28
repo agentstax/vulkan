@@ -135,7 +135,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	// "what duties exist" and "whose turn" are the same query.
 	createMaintenanceSql := `
 		CREATE TABLE IF NOT EXISTS maintenance (
-			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline'
+			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'alert'
 			topic_id BIGINT NOT NULL,
 			consumer_group TEXT NOT NULL DEFAULT '',          -- '' for topic-scoped duties (janitor)
 			token UUID NOT NULL DEFAULT gen_random_uuid(),    -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim

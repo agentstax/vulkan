@@ -36,6 +36,8 @@ func (b *dutyBuilder) build(ctx context.Context, key FleetDuty) (Duty, error) {
 		duty, err = NewJanitor(key.TopicName, key.SchemaVersion, b.ds, cfg)
 	case DutyWaterline:
 		duty, err = NewWaterlineRoller(key.ConsumerGroup, key.TopicName, key.SchemaVersion, b.ds, cfg)
+	case DutyAlert:
+		duty, err = NewAlerter(key.TopicName, key.SchemaVersion, b.ds, cfg)
 	default:
 		err = fmt.Errorf("unknown duty kind %q", key.Duty) // ListDuties filters these; guards direct misuse
 	}
