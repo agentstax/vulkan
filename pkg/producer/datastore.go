@@ -318,13 +318,15 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				SELECT $5, $4, id, $6 FROM inserted
 				ON CONFLICT (topic_id, compaction_key) DO UPDATE
 				SET head_id = EXCLUDED.head_id, compaction_rank = EXCLUDED.compaction_rank
-				-- lexicographic (rank, id) compare -- higher rank wins outright; equal rank
-				-- falls through to the id compare alone, today's rule unchanged
-				WHERE (compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+				WHERE %s -- rank, id, payload and olderThan comparisons
 			)
 			SELECT id FROM inserted;
-		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
-		args = append(args, opts.CompactionKey, topicID, opts.CompactionRank)
+		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID), headAdvanceWhere(topicID, opts))
+
+		args = append(args, opts.CompactionKey, topicID, opts.CompactionRank) // $4, $5, $6
+		if opts.ReplaceOlderThan != 0 {
+			args = append(args, opts.ReplaceOlderThan.Seconds()) // $7, read by headAdvanceWhere
+		}
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
@@ -345,6 +347,47 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 	}
 
 	return sql, args
+}
+
+// headAdvanceWhere is the ON CONFLICT predicate deciding whether a keyed write
+// supersedes the current head.
+// ReplaceOlderThan reads its interval from $7, which protectedInsertSQL binds.
+func headAdvanceWhere(topicID int64, opts ProduceOptions) string {
+	table := topic.MessageLogTable(topicID)
+
+	// payload changed OR head older than the interval
+	if opts.ReplaceOnChange && opts.ReplaceOlderThan != 0 {
+		return fmt.Sprintf(`COALESCE((
+					SELECT (head.compaction_rank, head.id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+					   AND (head.payload IS DISTINCT FROM $2::jsonb
+					     OR head.created_at < now() - make_interval(secs => $7))
+					FROM %s head
+					WHERE head.id = compaction_head.head_id
+				), true)`, table)
+	}
+
+	// payload changed
+	if opts.ReplaceOnChange {
+		return fmt.Sprintf(`COALESCE((
+					SELECT (head.compaction_rank, head.id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+					   AND head.payload IS DISTINCT FROM $2::jsonb
+					FROM %s head
+					WHERE head.id = compaction_head.head_id
+				), true)`, table)
+	}
+
+	// head older than the interval
+	if opts.ReplaceOlderThan != 0 {
+		return fmt.Sprintf(`COALESCE((
+					SELECT (head.compaction_rank, head.id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+					   AND head.created_at < now() - make_interval(secs => $7)
+					FROM %s head
+					WHERE head.id = compaction_head.head_id
+				), true)`, table)
+	}
+
+	// standard (rank, head_id) compare, no head-row lookup needed.
+	return `(compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)`
 }
 
 // resolveIdempotencyKey generates a fresh UUIDv7 unless the caller supplied

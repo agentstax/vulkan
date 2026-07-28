@@ -3,6 +3,7 @@ package producer
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -75,6 +76,57 @@ func TestProtectedInsertSQLHigherRankArg(t *testing.T) {
 
 	want := []any{key, "payload", "", "k", int64(1), int64(100)}
 	assertArgs(t, args, want)
+}
+
+func TestProtectedInsertSQLReplaceOnChange(t *testing.T) {
+	// the change guard swaps the plain compare for the head-row subquery; no age
+	// term means no extra arg.
+	key := uuid.New()
+	sql, args := protectedInsertSQL(1, key, "payload", ProduceOptions{CompactionKey: "k", ReplaceOnChange: true})
+
+	assertArgs(t, args, []any{key, "payload", "", "k", int64(1), int64(0)})
+
+	if !strings.Contains(sql, "head.payload IS DISTINCT FROM $2::jsonb") {
+		t.Fatalf("missing payload-change guard, got:\n%s", sql)
+	}
+	if strings.Contains(sql, "make_interval") {
+		t.Fatalf("no age guard set, make_interval should be absent, got:\n%s", sql)
+	}
+}
+
+func TestProtectedInsertSQLReplaceOlderThan(t *testing.T) {
+	// the age guard binds its interval (seconds) as $7; no change guard means no
+	// payload compare.
+	key := uuid.New()
+	sql, args := protectedInsertSQL(1, key, "payload", ProduceOptions{CompactionKey: "k", ReplaceOlderThan: 4 * time.Hour})
+
+	assertArgs(t, args, []any{key, "payload", "", "k", int64(1), int64(0), (4 * time.Hour).Seconds()})
+
+	if !strings.Contains(sql, "head.created_at < now() - make_interval(secs => $7)") {
+		t.Fatalf("missing age guard bound to $7, got:\n%s", sql)
+	}
+	if strings.Contains(sql, "IS DISTINCT FROM") {
+		t.Fatalf("no change guard set, payload compare should be absent, got:\n%s", sql)
+	}
+}
+
+func TestProtectedInsertSQLReplaceBothOrGuards(t *testing.T) {
+	// both guards -> the head is stale on change OR age, so the write wins on
+	// either, and the plain compaction_head compare gives way to the head-row join.
+	key := uuid.New()
+	sql, args := protectedInsertSQL(1, key, "payload", ProduceOptions{CompactionKey: "k", ReplaceOnChange: true, ReplaceOlderThan: time.Hour})
+
+	assertArgs(t, args, []any{key, "payload", "", "k", int64(1), int64(0), time.Hour.Seconds()})
+
+	if !strings.Contains(sql, "head.payload IS DISTINCT FROM $2::jsonb") || !strings.Contains(sql, "make_interval(secs => $7)") {
+		t.Fatalf("both guards should appear, got:\n%s", sql)
+	}
+	if strings.Contains(sql, "(compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)") {
+		t.Fatalf("guarded insert should weigh the head's own row, not compaction_head, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "WHERE head.id = compaction_head.head_id") {
+		t.Fatalf("guarded insert should join the head's message_log row, got:\n%s", sql)
+	}
 }
 
 func assertArgs(t *testing.T, got, want []any) {
