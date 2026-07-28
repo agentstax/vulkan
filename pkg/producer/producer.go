@@ -49,20 +49,6 @@ type ProduceOptions struct {
 	// Ex: a source system's row version, a priority tier, epoch micros.
 	CompactionRank int64
 
-	// ReplaceOnChange - become the head only if this payload DIFFERS from the
-	// current head's. An unchanged payload still lands in the log but doesn't
-	// advance the head, so head-only consumers see nothing for a repeated state.
-	// ORs with ReplaceOlderThan.
-	// Default: false (every keyed write advances the head).
-	// Requires CompactionKey.
-	ReplaceOnChange bool
-
-	// ReplaceOlderThan - become the head if the current head is older than this.
-	// ORs with ReplaceOnChange.
-	// Default: 0 (age is not a factor).
-	// Requires CompactionKey.
-	ReplaceOlderThan time.Duration
-
 	// IdempotencyKey - protects a retried AppendMessage (after a blip) from double-publishing.
 	// Default: uuid.Nil (a fresh key is generated per call, protecting only
 	// against retries within that one call).
@@ -81,16 +67,32 @@ func (o ProduceOptions) Validate() error {
 	if o.CompactionRank != 0 && o.CompactionKey == "" {
 		return fmt.Errorf("CompactionRank %d set without CompactionKey -- rank has nothing to rank, set CompactionKey too", o.CompactionRank)
 	}
-	if o.ReplaceOnChange && o.CompactionKey == "" {
-		return errors.New("ReplaceOnChange set without CompactionKey -- there is no head to compare against")
-	}
-	if o.ReplaceOlderThan < 0 {
-		return fmt.Errorf("ReplaceOlderThan must be >= 0, got %v", o.ReplaceOlderThan)
-	}
-	if o.ReplaceOlderThan > 0 && o.CompactionKey == "" {
-		return errors.New("ReplaceOlderThan set without CompactionKey -- there is no head to age out")
-	}
 	return nil
+}
+
+// TODO - this might need to be a common type,
+// it differs from consumer.MessageRow by Message vs Payload (raw json)
+type MessageRow[Message any] struct {
+	Id             int64
+	Message        *Message
+	CreatedAt      time.Time
+	RoutingKey     string
+	CompactionKey  string
+	CompactionRank int64
+}
+
+func NewMessageRow[Message any](id int64, message *Message, createdAt time.Time, routingKey, compactionKey string, compactionRank int64) (*MessageRow[Message], error) {
+	if message == nil {
+		return nil, errors.New("message must not be nil")
+	}
+	return &MessageRow[Message]{
+		Message:        message,
+		Id:             id,
+		CreatedAt:      createdAt,
+		RoutingKey:     routingKey,
+		CompactionKey:  compactionKey,
+		CompactionRank: compactionRank,
+	}, nil
 }
 
 type Producer[Message any] struct {
@@ -246,6 +248,32 @@ func (p *Producer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc
 	}
 
 	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+}
+
+// GetCompactionHead returns the current compaction head under compactionKey, or nil if
+// nothing has been published under it.
+func (p *Producer[Message]) GetCompactionHead(ctx context.Context, compactionKey string) (*MessageRow[Message], error) {
+	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+	if compactionKey == "" {
+		return nil, errors.New("compaction key is required")
+	}
+	return p.datastore.GetCompactionHead(ctx, p.Topic.Id, compactionKey)
+}
+
+// GetCompactionHeadInTx returns the current compaction head under compactionKey,
+// or nil if nothing has been published under it.
+// It does so within the transaction and locks the found row in a FOR UPDATE
+// allowing for race-free compare and set.
+func (p *Producer[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, compactionKey string) (*MessageRow[Message], error) {
+	if err := p.lifecycleErr(); err != nil {
+		return nil, err
+	}
+	if compactionKey == "" {
+		return nil, errors.New("compaction key is required")
+	}
+	return p.datastore.GetCompactionHeadInTx(ctx, tx.Raw(), p.Topic.Id, compactionKey)
 }
 
 // InTransaction opens one transaction, runs transactionFunc against it, and

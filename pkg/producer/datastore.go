@@ -2,13 +2,14 @@ package producer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/agentstax/vulkan/internal/topic"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ import (
 const ddlLockTimeout = 2 * time.Second
 
 type producerDatastore[Message any] struct {
-	Datastore *coredatastore.PostgresDatastore
+	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger    logger.Logger
 
@@ -34,7 +35,7 @@ type producerDatastore[Message any] struct {
 }
 
 // cfg is already resolved (WithDefaults + Validate) by NewProducer.
-func newProducerDatastore[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*producerDatastore[Message], error) {
+func newProducerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*producerDatastore[Message], error) {
 	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
@@ -318,15 +319,13 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				SELECT $5, $4, id, $6 FROM inserted
 				ON CONFLICT (topic_id, compaction_key) DO UPDATE
 				SET head_id = EXCLUDED.head_id, compaction_rank = EXCLUDED.compaction_rank
-				WHERE %s -- rank, id, payload and olderThan comparisons
+				-- compare rank first, if rank equal -> head_id is compared
+				WHERE (compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
 			)
 			SELECT id FROM inserted;
-		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID), headAdvanceWhere(topicID, opts))
+		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
 
 		args = append(args, opts.CompactionKey, topicID, opts.CompactionRank) // $4, $5, $6
-		if opts.ReplaceOlderThan != 0 {
-			args = append(args, opts.ReplaceOlderThan.Seconds()) // $7, read by headAdvanceWhere
-		}
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
@@ -349,45 +348,63 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 	return sql, args
 }
 
-// headAdvanceWhere is the ON CONFLICT predicate deciding whether a keyed write
-// supersedes the current head.
-// ReplaceOlderThan reads its interval from $7, which protectedInsertSQL binds.
-func headAdvanceWhere(topicID int64, opts ProduceOptions) string {
-	table := topic.MessageLogTable(topicID)
+// GetCompactionHead reads the current compaction head under compactionKey on its own round
+// trip, nil if the key has no head.
+func (d *producerDatastore[Message]) GetCompactionHead(ctx context.Context, topicID int64, compactionKey string) (*MessageRow[Message], error) {
+	sql := fmt.Sprintf(`
+		SELECT m.id, m.payload, m.created_at, COALESCE(m.routing_key, ''), m.compaction_key, m.compaction_rank
+		FROM compaction_head h
+		JOIN %s m ON m.id = h.head_id
+		WHERE h.topic_id = $1 AND h.compaction_key = $2;
+	`, topic.MessageLogTable(topicID))
 
-	// payload changed OR head older than the interval
-	if opts.ReplaceOnChange && opts.ReplaceOlderThan != 0 {
-		return fmt.Sprintf(`COALESCE((
-					SELECT (head.compaction_rank, head.id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
-					   AND (head.payload IS DISTINCT FROM $2::jsonb
-					     OR head.created_at < now() - make_interval(secs => $7))
-					FROM %s head
-					WHERE head.id = compaction_head.head_id
-				), true)`, table)
+	var head *MessageRow[Message]
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		head, err = d.getCompactionHead(ctx, d.Datastore.Pool, sql, topicID, compactionKey)
+		return err
+	})
+	return head, err
+}
+
+// GetCompactionHeadInTx reads the head against the caller's tx, locking it FOR UPDATE so a
+// following produce on the same key is a race-free compare-and-set. No retry:
+// the tx owns its own error handling.
+func (d *producerDatastore[Message]) GetCompactionHeadInTx(ctx context.Context, tx pgx.Tx, topicID int64, compactionKey string) (*MessageRow[Message], error) {
+	sql := fmt.Sprintf(`
+		SELECT m.id, m.payload, m.created_at, COALESCE(m.routing_key, ''), m.compaction_key, m.compaction_rank
+		FROM compaction_head h
+		JOIN %s m ON m.id = h.head_id
+		WHERE h.topic_id = $1 AND h.compaction_key = $2
+		FOR UPDATE OF h;
+	`, topic.MessageLogTable(topicID))
+
+	return d.getCompactionHead(ctx, tx, sql, topicID, compactionKey)
+}
+
+func (d *producerDatastore[Message]) getCompactionHead(ctx context.Context, q datastore.Querier, sql string, topicID int64, compactionKey string) (*MessageRow[Message], error) {
+	var (
+		id             int64
+		payload        json.RawMessage
+		createdAt      time.Time
+		routingKey     string
+		key            string
+		compactionRank int64
+	)
+
+	err := q.QueryRow(ctx, sql, topicID, compactionKey).Scan(&id, &payload, &createdAt, &routingKey, &key, &compactionRank)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	// payload changed
-	if opts.ReplaceOnChange {
-		return fmt.Sprintf(`COALESCE((
-					SELECT (head.compaction_rank, head.id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
-					   AND head.payload IS DISTINCT FROM $2::jsonb
-					FROM %s head
-					WHERE head.id = compaction_head.head_id
-				), true)`, table)
+	var message Message
+	if err := json.Unmarshal(payload, &message); err != nil {
+		return nil, err
 	}
-
-	// head older than the interval
-	if opts.ReplaceOlderThan != 0 {
-		return fmt.Sprintf(`COALESCE((
-					SELECT (head.compaction_rank, head.id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
-					   AND head.created_at < now() - make_interval(secs => $7)
-					FROM %s head
-					WHERE head.id = compaction_head.head_id
-				), true)`, table)
-	}
-
-	// standard (rank, head_id) compare, no head-row lookup needed.
-	return `(compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)`
+	return NewMessageRow(id, &message, createdAt, routingKey, key, compactionRank)
 }
 
 // resolveIdempotencyKey generates a fresh UUIDv7 unless the caller supplied
