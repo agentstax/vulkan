@@ -58,7 +58,8 @@ type ConsumerConfig struct {
 
 	// MessageMax - per-option ceilings: lowers any resolved option above these.
 	// Concurrency is not orderable and must stay unset.
-	// Default: nil (no ceilings).
+	// Default: Message's values -- messages cannot request above the group's
+	// defaults unless raised here.
 	MessageMax *common.MessageOptions
 
 	// ConcurrencyOverride - this group runs every message under this policy,
@@ -112,6 +113,11 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	}
 
 	c.Message = c.Message.WithDefaults()
+
+	// ceilings must always exist -- lease sizing and the kill backstop need them
+	bounds := *c.Message
+	bounds.Concurrency = "" // should never be set for a 'bound'
+	c.MessageMax = c.MessageMax.Fill(&bounds)
 
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = c.Message.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
@@ -190,25 +196,62 @@ func (c *ConsumerConfig) Validate() error {
 	if c.MessageMin != nil && c.MessageMin.Concurrency != "" {
 		return fmt.Errorf("MessageMin must not set Concurrency -- a policy is not orderable, got %q", c.MessageMin.Concurrency)
 	}
-	if c.MessageMax != nil && c.MessageMax.Concurrency != "" {
+	if c.MessageMax.Concurrency != "" {
 		return fmt.Errorf("MessageMax must not set Concurrency -- a policy is not orderable, got %q", c.MessageMax.Concurrency)
 	}
 	if err := c.ConcurrencyOverride.Validate(); err != nil {
 		return fmt.Errorf("ConcurrencyOverride: %w", err)
 	}
+	return c.validateMessageBounds()
+}
+
+// enforces MessageMin <= Message <= MessageMax per field, so every resolved
+// option lands inside the bounds
+func (c *ConsumerConfig) validateMessageBounds() error {
+	if c.MessageMin != nil {
+		if c.MessageMin.WorkTimeout > c.Message.WorkTimeout {
+			return fmt.Errorf("MessageMin.WorkTimeout (%v) must be <= Message.WorkTimeout (%v)", c.MessageMin.WorkTimeout, c.Message.WorkTimeout)
+		}
+		if r := c.MessageMin.Retry; r != nil {
+			if r.MaxRetries > c.Message.Retry.MaxRetries {
+				return fmt.Errorf("MessageMin.Retry.MaxRetries (%d) must be <= Message.Retry.MaxRetries (%d)", r.MaxRetries, c.Message.Retry.MaxRetries)
+			}
+			if r.BaseDelay > c.Message.Retry.BaseDelay {
+				return fmt.Errorf("MessageMin.Retry.BaseDelay (%v) must be <= Message.Retry.BaseDelay (%v)", r.BaseDelay, c.Message.Retry.BaseDelay)
+			}
+			if r.MaxDelay > c.Message.Retry.MaxDelay {
+				return fmt.Errorf("MessageMin.Retry.MaxDelay (%v) must be <= Message.Retry.MaxDelay (%v)", r.MaxDelay, c.Message.Retry.MaxDelay)
+			}
+			if r.Exponent > c.Message.Retry.Exponent {
+				return fmt.Errorf("MessageMin.Retry.Exponent (%d) must be <= Message.Retry.Exponent (%d)", r.Exponent, c.Message.Retry.Exponent)
+			}
+		}
+	}
+	if c.Message.WorkTimeout > c.MessageMax.WorkTimeout {
+		return fmt.Errorf("Message.WorkTimeout (%v) must be <= MessageMax.WorkTimeout (%v)", c.Message.WorkTimeout, c.MessageMax.WorkTimeout)
+	}
+	if c.Message.Retry.MaxRetries > c.MessageMax.Retry.MaxRetries {
+		return fmt.Errorf("Message.Retry.MaxRetries (%d) must be <= MessageMax.Retry.MaxRetries (%d)", c.Message.Retry.MaxRetries, c.MessageMax.Retry.MaxRetries)
+	}
+	if c.Message.Retry.BaseDelay > c.MessageMax.Retry.BaseDelay {
+		return fmt.Errorf("Message.Retry.BaseDelay (%v) must be <= MessageMax.Retry.BaseDelay (%v)", c.Message.Retry.BaseDelay, c.MessageMax.Retry.BaseDelay)
+	}
+	if c.Message.Retry.MaxDelay > c.MessageMax.Retry.MaxDelay {
+		return fmt.Errorf("Message.Retry.MaxDelay (%v) must be <= MessageMax.Retry.MaxDelay (%v)", c.Message.Retry.MaxDelay, c.MessageMax.Retry.MaxDelay)
+	}
+	if c.Message.Retry.Exponent > c.MessageMax.Retry.Exponent {
+		return fmt.Errorf("Message.Retry.Exponent (%d) must be <= MessageMax.Retry.Exponent (%d)", c.Message.Retry.Exponent, c.MessageMax.Retry.Exponent)
+	}
 	return nil
 }
 
-// resolveMessageOptions is the single resolution path for a message's options:
-// consumer bounds > message > consumer defaults.
 func (c *ConsumerConfig) resolveMessageOptions(msg *common.MessageOptions) *common.MessageOptions {
 	return msg.Fill(c.Message).Clamp(c.MessageMin, c.MessageMax)
 }
 
 type ConsumerDatastoreConfig struct {
-	Logger       logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry        *retry.Policy // transient-error retry policy for this datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
-	MessageRetry *retry.Policy // exception/terminal retry-delay curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
+	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *retry.Policy // transient-error retry policy for this datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
 }
 
 func (c *ConsumerDatastoreConfig) WithDefaults() *ConsumerDatastoreConfig {
@@ -216,7 +259,6 @@ func (c *ConsumerDatastoreConfig) WithDefaults() *ConsumerDatastoreConfig {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
-	c.MessageRetry = c.MessageRetry.WithDefaults()
 	return c
 }
 
@@ -225,9 +267,6 @@ func (c *ConsumerDatastoreConfig) WithDefaults() *ConsumerDatastoreConfig {
 func (c *ConsumerDatastoreConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
-	}
-	if err := c.MessageRetry.Validate(); err != nil {
-		return fmt.Errorf("MessageRetry: %w", err)
 	}
 	return nil
 }

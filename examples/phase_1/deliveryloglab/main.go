@@ -33,6 +33,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
@@ -75,7 +76,9 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	seed(ctx, wp, 2)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 2, 3, 5*time.Second, tp.DisableDeliveryLog)
@@ -101,7 +104,9 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	tp, cd, wp := newTopic(ctx, ds, "scenario2", topic.Config{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	seed(ctx, wp, 1)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
@@ -124,7 +129,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
-		must(cd.RecordExceptionFailure(ctx, maxAttempts, &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog))
+		must(cd.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog))
 		assertDeliveryLogRow(ctx, ds, tp.Id, group, failingId, attempt, errText, true)
 	}
 
@@ -140,7 +145,9 @@ func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cd, wp := newTopic(ctx, ds, "scenario3", topic.Config{DisableDeliveryLog: true})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	// registration creates delivery_log_<id> regardless of the flag -- the
 	// flag gates the writes, so re-enabling later needs no DDL
@@ -172,7 +179,9 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, 4) // fills partition 0 (ids 1-4), fails id 1
 	time.Sleep(ttl + ttlMargin)
@@ -197,7 +206,9 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, 1)
 	time.Sleep(ttl + ttlMargin)

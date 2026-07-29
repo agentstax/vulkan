@@ -3,7 +3,6 @@ package retry
 import (
 	"context"
 	"errors"
-	"math"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
@@ -35,13 +34,6 @@ func NewRetry(policy *Policy, log logger.Logger) (*Retry, error) {
 		Policy: policy,
 		Logger: log,
 	}, nil
-}
-
-// CalculateDelay returns the clamped exponential backoff
-// Algo: BaseDelay * Exponent^attempt, floored at 0 and ceiled at MaxDelay.
-func (r *Retry) CalculateDelay(attempt int) time.Duration {
-	d := time.Duration(float64(r.BaseDelay) * math.Pow(float64(r.Exponent), float64(attempt)))
-	return max(MIN_DELAY, min(d, r.MaxDelay))
 }
 
 func (r *Retry) Wrap(ctx context.Context, retryableFunc RetryableFunc) error {

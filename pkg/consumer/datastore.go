@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
@@ -20,12 +21,13 @@ var (
 )
 
 type MessageRow struct {
-	Id             int64           `db:"id"`
-	Payload        json.RawMessage `db:"payload"`
-	CreatedAt      time.Time       `db:"created_at"`
-	RoutingKey     string          `db:"routing_key"`    // "" if unset, COALESCE'd at read
-	CompactionKey  string          `db:"compaction_key"` // "" if unset, COALESCE'd at read
-	CompactionRank int64           `db:"compaction_rank"`
+	Id             int64                  `db:"id"`
+	Payload        json.RawMessage        `db:"payload"`
+	CreatedAt      time.Time              `db:"created_at"`
+	RoutingKey     string                 `db:"routing_key"`    // "" if unset, COALESCE'd at read
+	CompactionKey  string                 `db:"compaction_key"` // "" if unset, COALESCE'd at read
+	CompactionRank int64                  `db:"compaction_rank"`
+	Options        *common.MessageOptions `db:"options"`
 }
 
 type LeaseRow struct {
@@ -67,16 +69,17 @@ type MessageTerminal struct {
 // one exception claimed off the exception window for (re)processing -- the lease
 // token guards its resolution the same way LeaseRow's does for a range.
 type ClaimedException struct {
-	ConsumerGroup  string          `db:"consumer_group"`
-	TopicID        int64           `db:"topic_id"`
-	MessageId      int64           `db:"message_id"`
-	Attempts       int             `db:"attempts"`
-	LeaseToken     pgtype.UUID     `db:"lease_token"`
-	Payload        json.RawMessage `db:"payload"`
-	CreatedAt      time.Time       `db:"created_at"`
-	RoutingKey     string          `db:"routing_key"`
-	CompactionKey  string          `db:"compaction_key"`
-	CompactionRank int64           `db:"compaction_rank"`
+	ConsumerGroup  string                 `db:"consumer_group"`
+	TopicID        int64                  `db:"topic_id"`
+	MessageId      int64                  `db:"message_id"`
+	Attempts       int                    `db:"attempts"`
+	LeaseToken     pgtype.UUID            `db:"lease_token"`
+	Payload        json.RawMessage        `db:"payload"`
+	CreatedAt      time.Time              `db:"created_at"`
+	RoutingKey     string                 `db:"routing_key"`
+	CompactionKey  string                 `db:"compaction_key"`
+	CompactionRank int64                  `db:"compaction_rank"`
+	Options        *common.MessageOptions `db:"options"`
 }
 
 // DeliveryRow is one (consumer_group, message_id) row of the per-topic
@@ -86,18 +89,18 @@ type ClaimedException struct {
 // path never sets the lease columns (lease_until / lease_token) -- no crash
 // recovery there; the exception window is what leases through them.
 type DeliveryRow struct {
-	ConsumerGroup string          `db:"consumer_group"`
-	TopicID       int64           `db:"topic_id"`
-	MessageId     int64           `db:"message_id"`
-	Payload       json.RawMessage `db:"payload"`
-	Status        string          `db:"status"`
-	Attempts      int             `db:"attempts"`
+	ConsumerGroup string                 `db:"consumer_group"`
+	TopicID       int64                  `db:"topic_id"`
+	MessageId     int64                  `db:"message_id"`
+	Payload       json.RawMessage        `db:"payload"`
+	Status        string                 `db:"status"`
+	Attempts      int                    `db:"attempts"`
+	Options       *common.MessageOptions `db:"options"`
 }
 
 type ConsumerDatastore[Message any] struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *retry.DatastoreRetry // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
-	MessageRetry   *retry.Retry          // exception/terminal can_run_after curve -- never Wrap()'d, just CalculateDelay
 	Logger         logger.Logger
 }
 
@@ -119,15 +122,10 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 	if err != nil {
 		return nil, err
 	}
-	messageRetry, err := retry.NewRetry(cfg.MessageRetry, cfg.Logger)
-	if err != nil {
-		return nil, err
-	}
 
 	return &ConsumerDatastore[Message]{
 		Datastore:      ds,
 		DatastoreRetry: dsRetry,
-		MessageRetry:   messageRetry,
 		Logger:         cfg.Logger,
 	}, nil
 }
@@ -524,7 +522,8 @@ func (d *ConsumerDatastore[Message]) readMessages(ctx context.Context, tx pgx.Tx
 			m.created_at,
 			COALESCE(m.routing_key, '') AS routing_key,
 			COALESCE(m.compaction_key, '') AS compaction_key,
-			m.compaction_rank
+			m.compaction_rank,
+			m.options
 		FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
@@ -795,17 +794,17 @@ func (d *ConsumerDatastore[Message]) ClaimMessages(
 // ClaimExceptions drains the sparse exception window: kill exhausted delivery
 // rows, then claim. The kill backstop is itself a failure record --
 // disableDeliveryLog skips its delivery_log_<topic_id> write too.
-func (d *ConsumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
+func (d *ConsumerDatastore[Message]) ClaimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxRetries int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
 	var claimed []ClaimedException
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimExceptions(ctx, topicID, consumerGroup, limit, maxAttempts, leaseDuration, disableDeliveryLog)
+		claimed, err = d.claimExceptions(ctx, topicID, consumerGroup, limit, maxRetries, leaseDuration, disableDeliveryLog)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxAttempts int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
+func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicID int64, consumerGroup string, limit, maxRetries int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ClaimedException, error) {
 	// an exception that causes a crash loop never resolves normally -- without this
 	// backstop it would reclaim forever, pinning committed below it forever.
 	var killSql string
@@ -845,7 +844,7 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 			SELECT consumer_group, message_id, attempts, last_error FROM killed;
 		`, topic.DeliveryTable(topicID), topic.DeliveryLogTable(topicID))
 	}
-	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, consumerGroup, maxAttempts)
+	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, consumerGroup, maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -891,7 +890,8 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 			m.created_at,
 			COALESCE(m.routing_key, '') AS routing_key,
 			COALESCE(m.compaction_key, '') AS compaction_key,
-			m.compaction_rank
+			m.compaction_rank,
+			m.options
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
@@ -932,15 +932,15 @@ func (d *ConsumerDatastore[Message]) recordExceptionSuccess(ctx context.Context,
 }
 
 // RecordExceptionFailure handles a retried exception's failure: attempts was already
-// incremented at claim time, so >= maxAttempts means this was the last try.
-func (d *ConsumerDatastore[Message]) RecordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
+// incremented at claim time, so >= retryPolicy.MaxRetries means this was the last try.
+func (d *ConsumerDatastore[Message]) RecordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionFailure(ctx, maxAttempts, exception, failureErr, disableDeliveryLog)
+		return d.recordExceptionFailure(ctx, retryPolicy, exception, failureErr, disableDeliveryLog)
 	})
 }
 
-func (d *ConsumerDatastore[Message]) recordExceptionFailure(ctx context.Context, maxAttempts int, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
-	if exception.Attempts >= maxAttempts {
+func (d *ConsumerDatastore[Message]) recordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ClaimedException, failureErr error, disableDeliveryLog bool) error {
+	if exception.Attempts >= retryPolicy.MaxRetries {
 		var sql string
 		if disableDeliveryLog {
 			sql = fmt.Sprintf(`
@@ -1032,7 +1032,7 @@ func (d *ConsumerDatastore[Message]) recordExceptionFailure(ctx context.Context,
 		`, topic.DeliveryTable(exception.TopicID), topic.DeliveryLogTable(exception.TopicID))
 	}
 
-	args := []any{exception.ConsumerGroup, exception.MessageId, failureErr.Error(), d.MessageRetry.CalculateDelay(exception.Attempts - 1).Seconds(), exception.LeaseToken}
+	args := []any{exception.ConsumerGroup, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - 1).Seconds(), exception.LeaseToken}
 	if !disableDeliveryLog {
 		args = append(args, exception.Attempts)
 	}

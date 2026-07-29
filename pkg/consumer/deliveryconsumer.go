@@ -183,9 +183,10 @@ func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerF
 			continue
 		}
 
-		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId, delivery.Attempts); err != nil {
+		resolvedOptions := p.Config.resolveMessageOptions(delivery.Options)
+		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.WorkTimeout); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
-			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.Message.Retry.MaxRetries, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
+			if recordErr := p.Datastore.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
 			}
 			continue

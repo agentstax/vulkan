@@ -219,7 +219,8 @@ func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Cont
 			c.message_id,
 			c.status,
 			c.attempts,
-			m.payload
+			m.payload,
+			m.options
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;

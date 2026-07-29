@@ -5046,10 +5046,25 @@ the scheduler (cron_jobs need entities as owners).*
         the consumer's risk: WorkTimeout bounds via MessageMax (can't
         demand more runtime than the group sized its leases for),
         Retry.BaseDelay via MessageMin (a 1ms curve would hot-loop the
-        group), Retry.MaxRetries via MessageMax. Exclusive is an enum,
+        group), Retry.MaxRetries via MessageMax. Concurrency is an enum,
         not ordered — Validate() REJECTS it in MessageMin/MessageMax.
-        Zero values: Min/Max zero = unconstrained, Message zero = system
-        defaults via WithDefaults(), an empty Config behaves like today.
+        Zero values (REVISED at build 2026-07-29, k8s-LimitRange-shaped):
+        MessageMax unset fills FROM Message in WithDefaults — a concrete
+        ceiling ALWAYS exists, because lease sizing and the crash-loop
+        kill backstop need finite numbers ("unconstrained" was a lie
+        that forced every infra site to derive its own ceiling; that
+        version produced GREATEST/COALESCE options-JSON SQL and two
+        ad-hoc ceiling helpers, all deleted). So messages cannot request
+        above the group's defaults unless MessageMax is raised
+        explicitly. Validate enforces MessageMin <= Message <=
+        MessageMax per field. MessageMin zero = no floor. Message zero =
+        system defaults via WithDefaults(), an empty Config behaves like
+        today. Semantics are RabbitMQ-TTL-style effective-min: the
+        message's stored options are never rewritten, the tighter budget
+        wins, and observability names which one fired — callSafely's
+        timeout cause appends "message requested X, the group ceiling
+        applied", and MessageMeta.Options carries the RESOLVED options
+        into consumerFunc.
       - Discipline rule: an option joins MessageOptions only when a real
         producer needs per-message variance, and joins the bounds only
         when a real consumer needs to distrust messages; the

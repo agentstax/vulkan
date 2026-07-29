@@ -222,7 +222,7 @@ func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
 
 		// leaseDuration should always have an extra time buffer (QueueMargin) to not
 		// potentially overlap with another worker reclaiming (double processing)
-		leaseDuration := p.Config.Message.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
+		leaseDuration := p.Config.MessageMax.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 		limit := min(room, p.Config.BatchLimit)
 
 		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
@@ -284,10 +284,12 @@ func (p *MessageConsumer[Message]) dispatch(ctx context.Context, wg *sync.WaitGr
 
 // processClaim runs consumerFunc for one dispatched message and folds the outcome into p.buffer.
 func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffered, consumerFunc ConsumerFunc[Message]) {
+	resolvedOptions := p.Config.resolveMessageOptions(item.row.Options)
+
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.Until.Before(time.Now().Add(p.Config.Message.WorkTimeout).Add(p.Config.AckMargin)) {
+	if item.lease.Until.Before(time.Now().Add(resolvedOptions.WorkTimeout).Add(p.Config.AckMargin)) {
 		p.buffer.MarkStale(item.lease.Token)
 		return
 	}
@@ -296,7 +298,7 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 	if err := json.Unmarshal(item.row.Payload, &work); err != nil {
 		// bad payload will never deserialize -- no point retrying it
 		p.buffer.ResolveTerminal(item, err)
-	} else if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta()), consumerFunc, &work, item.row.Id, 0); err != nil {
+	} else if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta(resolvedOptions)), consumerFunc, &work, item.row.Id, 0, item.row.Options, resolvedOptions.WorkTimeout); err != nil {
 		p.buffer.ResolveException(item, err)
 	} else {
 		p.buffer.ResolveSuccess(item)

@@ -2,6 +2,7 @@ package retry
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -11,6 +12,13 @@ type Policy struct {
 	BaseDelay  time.Duration `json:"base_delay,omitempty"`
 	MaxDelay   time.Duration `json:"max_delay,omitempty"`
 	Exponent   int           `json:"exponent,omitempty"`
+}
+
+// CalculateDelay returns the clamped exponential backoff
+// Algo: BaseDelay * Exponent^attempt, floored at 0 and ceiled at MaxDelay.
+func (p *Policy) CalculateDelay(attempt int) time.Duration {
+	d := time.Duration(float64(p.BaseDelay) * math.Pow(float64(p.Exponent), float64(attempt)))
+	return max(MIN_DELAY, min(d, p.MaxDelay))
 }
 
 func NewDefaultRetryPolicy() *Policy {
