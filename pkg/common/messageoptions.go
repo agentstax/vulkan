@@ -16,6 +16,15 @@ const (
 	ConcurrencyDefer  ConcurrencyPolicy = "defer"  // current key busy -> new same-keyed message is queued to run after current finishes
 )
 
+func (p ConcurrencyPolicy) Validate() error {
+	switch p {
+	case "", ConcurrencyAllow, ConcurrencyForbid, ConcurrencyDefer:
+		return nil
+	default:
+		return fmt.Errorf("must be one of %q, %q, %q, got %q", ConcurrencyAllow, ConcurrencyForbid, ConcurrencyDefer, p)
+	}
+}
+
 // MessageOptions are the per-message knobs a producer may REQUEST and a
 // consumer may CLAMP. Any unset field means "the consumer decides".
 //
@@ -36,6 +45,23 @@ type MessageOptions struct {
 	// to the consumer's policy per-field.
 	// Default: nil (the consumer's policy applies whole).
 	Retry *retry.Policy `json:"retry,omitempty"`
+}
+
+func (o *MessageOptions) WithDefaults() *MessageOptions {
+	if o == nil {
+		o = &MessageOptions{}
+	}
+	if o.WorkTimeout == 0 {
+		o.WorkTimeout = 30 * time.Second
+	}
+	if o.Retry == nil {
+		o.Retry = &retry.Policy{}
+	}
+	if o.Retry.MaxRetries == 0 {
+		o.Retry.MaxRetries = 3 // redelivery caps at 3 attempts by default -- the Policy default of 6 is tuned for internal retries
+	}
+	o.Retry = o.Retry.WithDefaults()
+	return o
 }
 
 func (o *MessageOptions) Fill(defaults *MessageOptions) *MessageOptions {
@@ -77,10 +103,8 @@ func (o *MessageOptions) Validate() error {
 	if o == nil {
 		return nil
 	}
-	switch o.Concurrency {
-	case "", ConcurrencyAllow, ConcurrencyForbid, ConcurrencyDefer:
-	default:
-		return fmt.Errorf("Concurrency must be one of %q, %q, %q, got %q", ConcurrencyAllow, ConcurrencyForbid, ConcurrencyDefer, o.Concurrency)
+	if err := o.Concurrency.Validate(); err != nil {
+		return fmt.Errorf("Concurrency: %w", err)
 	}
 	if o.WorkTimeout < 0 {
 		return fmt.Errorf("WorkTimeout must be >= 0, got %v", o.WorkTimeout)

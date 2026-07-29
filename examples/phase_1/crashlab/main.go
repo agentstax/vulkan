@@ -27,6 +27,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -102,9 +103,8 @@ func main() {
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    100,
-		Backoff:       &retry.Policy{MaxRetries: 100},
+		Message:       &vulkancommon.MessageOptions{WorkTimeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
 		ClaimPollRate: 200 * time.Millisecond,
-		WorkTimeout:   2 * time.Second,
 		QueueMargin:   1 * time.Second,
 		AckMargin:     1 * time.Second,
 	})

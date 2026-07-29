@@ -40,7 +40,7 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger:       cfg.Logger,
 		Retry:        cfg.Retry,
-		MessageRetry: cfg.Backoff,
+		MessageRetry: cfg.Message.Retry,
 	})
 	if err != nil {
 		return nil, err
@@ -120,8 +120,8 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], work *Message, messageID int64, attempt int) error {
 	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
 	// instead attempt to finish inflight requests bounded by timeout
-	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), b.Config.WorkTimeout,
-		fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d", b.Config.WorkTimeout, messageID, attempt))
+	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), b.Config.Message.WorkTimeout,
+		fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d", b.Config.Message.WorkTimeout, messageID, attempt))
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -141,7 +141,7 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 		return err
 	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
 	// if this hard timeout is called go thread will be left hanging / abandoned
-	case <-time.After(b.Config.WorkTimeout + b.Config.WorkTimeoutGrace):
+	case <-time.After(b.Config.Message.WorkTimeout + b.Config.WorkTimeoutGrace):
 		b.AbandonedEvents.Add(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
 		// reaper -- done is buffered(1) and nothing else reads it past this
 		// point, so this receive fires exactly when the abandoned goroutine
@@ -155,8 +155,8 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
 		// it has bad side effects
-		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", b.Config.WorkTimeout+b.Config.WorkTimeoutGrace)
-		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", b.Config.WorkTimeout+b.Config.WorkTimeoutGrace, messageID)
+		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", b.Config.Message.WorkTimeout+b.Config.WorkTimeoutGrace)
+		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", b.Config.Message.WorkTimeout+b.Config.WorkTimeoutGrace, messageID)
 	}
 }
 

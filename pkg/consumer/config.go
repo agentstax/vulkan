@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"go.opentelemetry.io/otel/metric"
@@ -29,7 +30,6 @@ type ConsumerConfig struct {
 	FanOutBatchLimit int // max log rows FanOut scans per tick (LIFECYCLE only) -- bounds a cold group's catch-up scan; new messages materialize this many per tick until caught up
 	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
 	ClaimPollRate    time.Duration
-	WorkTimeout      time.Duration // bounds consumerFunc itself -- enforced via ctx and the hard-abandon fallback below
 	QueueMargin      time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
 	AckMargin        time.Duration // lease padding for recording success/failure after consumerFunc returns
 	// WorkTimeoutGrace is scheduling slack for a consumerFunc that DID respect
@@ -41,12 +41,30 @@ type ConsumerConfig struct {
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
 	WorkTimeoutGrace        time.Duration
-	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
-	Backoff                 *retry.Policy // message redelivery policy: MaxRetries caps delivery attempts, the curve sets can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy() with MaxRetries 3.
-	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- unrelated to Backoff, which shapes message redelivery. Default: retry.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case plus recording its outcome
+	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
+	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: retry.NewDefaultRetryPolicy().
+	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: Message.WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
+
+	// Message - default MessageOptions: fills any option the produced message left unset.
+	// Default: WorkTimeout 30s; Retry MaxRetries 3 with the default curve.
+	Message *common.MessageOptions
+
+	// MessageMin - per-option floors: raises any resolved option below these.
+	// Concurrency is not orderable and must stay unset.
+	// Default: nil (no floors).
+	MessageMin *common.MessageOptions
+
+	// MessageMax - per-option ceilings: lowers any resolved option above these.
+	// Concurrency is not orderable and must stay unset.
+	// Default: nil (no ceilings).
+	MessageMax *common.MessageOptions
+
+	// ConcurrencyOverride - this group runs every message under this policy,
+	// beating whatever the message requested.
+	// Default: "" (honor each message's own policy).
+	ConcurrencyOverride common.ConcurrencyPolicy
 
 	// DisableGracefulShutdown - lets Register accept a lifecycle context that
 	// can never be cancelled (e.g. context.Background()), this leaves Consume's
@@ -77,10 +95,6 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 		c.ClaimPollRate = 5 * time.Second
 	}
 
-	if c.WorkTimeout == 0 {
-		c.WorkTimeout = 30 * time.Second
-	}
-
 	if c.QueueMargin == 0 {
 		c.QueueMargin = 5 * time.Second
 	}
@@ -97,17 +111,11 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 		c.ExceptionInitialBackoff = 5 * time.Second
 	}
 
-	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = c.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
-	}
+	c.Message = c.Message.WithDefaults()
 
-	if c.Backoff == nil {
-		c.Backoff = &retry.Policy{}
+	if c.ShutdownTimeout == 0 {
+		c.ShutdownTimeout = c.Message.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
 	}
-	if c.Backoff.MaxRetries == 0 {
-		c.Backoff.MaxRetries = 3 // redelivery caps at 3 attempts by default -- the Policy default of 6 is tuned for internal retries
-	}
-	c.Backoff = c.Backoff.WithDefaults()
 
 	if c.Retry == nil {
 		c.Retry = &retry.Policy{}
@@ -143,12 +151,12 @@ func (c *ConsumerConfig) Validate() error {
 
 	// non-positive durations break their respective loops/timers:
 	// ClaimPollRate<=0 -> SleepWithContext/WaitForRoom timers fire immediately (busy loop),
-	// WorkTimeout/QueueMargin/AckMargin<=0 -> the lease window math degenerates.
+	// Message.WorkTimeout/QueueMargin/AckMargin<=0 -> the lease window math degenerates.
 	if c.ClaimPollRate <= 0 {
 		return fmt.Errorf("ClaimPollRate must be > 0, got %v", c.ClaimPollRate)
 	}
-	if c.WorkTimeout <= 0 {
-		return fmt.Errorf("WorkTimeout must be > 0, got %v", c.WorkTimeout)
+	if c.Message.WorkTimeout <= 0 {
+		return fmt.Errorf("Message.WorkTimeout must be > 0, got %v", c.Message.WorkTimeout)
 	}
 	if c.QueueMargin <= 0 {
 		return fmt.Errorf("QueueMargin must be > 0, got %v", c.QueueMargin)
@@ -166,13 +174,35 @@ func (c *ConsumerConfig) Validate() error {
 		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)
 	}
 
-	if err := c.Backoff.Validate(); err != nil {
-		return fmt.Errorf("Backoff: %w", err)
+	if err := c.Message.Retry.Validate(); err != nil {
+		return fmt.Errorf("Message.Retry: %w", err)
 	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}
+
+	if err := c.MessageMin.Validate(); err != nil {
+		return fmt.Errorf("MessageMin: %w", err)
+	}
+	if err := c.MessageMax.Validate(); err != nil {
+		return fmt.Errorf("MessageMax: %w", err)
+	}
+	if c.MessageMin != nil && c.MessageMin.Concurrency != "" {
+		return fmt.Errorf("MessageMin must not set Concurrency -- a policy is not orderable, got %q", c.MessageMin.Concurrency)
+	}
+	if c.MessageMax != nil && c.MessageMax.Concurrency != "" {
+		return fmt.Errorf("MessageMax must not set Concurrency -- a policy is not orderable, got %q", c.MessageMax.Concurrency)
+	}
+	if err := c.ConcurrencyOverride.Validate(); err != nil {
+		return fmt.Errorf("ConcurrencyOverride: %w", err)
+	}
 	return nil
+}
+
+// resolveMessageOptions is the single resolution path for a message's options:
+// consumer bounds > message > consumer defaults.
+func (c *ConsumerConfig) resolveMessageOptions(msg *common.MessageOptions) *common.MessageOptions {
+	return msg.Fill(c.Message).Clamp(c.MessageMin, c.MessageMax)
 }
 
 type ConsumerDatastoreConfig struct {

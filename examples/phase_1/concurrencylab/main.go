@@ -33,6 +33,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -60,7 +61,9 @@ func main() {
 	topicName := fmt.Sprintf("phase14a.concurrencylab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -112,7 +115,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
-		WorkTimeout:             10 * time.Second,
+		Message:                 &vulkancommon.MessageOptions{WorkTimeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})
@@ -191,7 +194,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
-		WorkTimeout:             10 * time.Second,
+		Message:                 &vulkancommon.MessageOptions{WorkTimeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})

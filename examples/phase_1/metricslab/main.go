@@ -27,6 +27,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -79,7 +80,7 @@ func main() {
 
 	cfg := &consumer.ConsumerConfig{
 		BatchLimit:       2,
-		WorkTimeout:      300 * time.Millisecond,
+		Message:          &vulkancommon.MessageOptions{WorkTimeout: 300 * time.Millisecond},
 		WorkTimeoutGrace: 100 * time.Millisecond,
 		QueueMargin:      200 * time.Millisecond,
 		AckMargin:        200 * time.Millisecond,

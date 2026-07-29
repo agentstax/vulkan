@@ -185,7 +185,7 @@ func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerF
 
 		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId, delivery.Attempts); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
-			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.Backoff.MaxRetries, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
+			if recordErr := p.Datastore.RecordFailure(ctx, p.Config.Message.Retry.MaxRetries, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
 			}
 			continue

@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -105,7 +106,9 @@ func main() {
 	step("register v2 alongside v1 -- same name, a new physical topic")
 	v2, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(2), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(2), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(2), admin.DestroyOptions{Force: true}))
+	}()
 
 	wp2, err := producer.NewProducer[V2Order](name, topic.SchemaVersion(2), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -222,7 +225,7 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 	c, err := consumer.NewConsumer[V1Order](group, name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:              1,
 		ClaimPollRate:           50 * time.Millisecond,
-		WorkTimeout:             2 * time.Second,
+		Message:                 &common.MessageOptions{WorkTimeout: 2 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
 		AckMargin:               500 * time.Millisecond,
 		ExceptionInitialBackoff: 200 * time.Millisecond,

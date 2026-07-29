@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
@@ -67,7 +68,7 @@ func main() {
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
-		WorkTimeout:             300 * time.Millisecond,
+		Message:                 &vulkancommon.MessageOptions{WorkTimeout: 300 * time.Millisecond},
 		WorkTimeoutGrace:        50 * time.Millisecond,
 	})
 	must(err)

@@ -222,7 +222,7 @@ func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
 
 		// leaseDuration should always have an extra time buffer (QueueMargin) to not
 		// potentially overlap with another worker reclaiming (double processing)
-		leaseDuration := p.Config.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
+		leaseDuration := p.Config.Message.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 		limit := min(room, p.Config.BatchLimit)
 
 		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
@@ -287,7 +287,7 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.Until.Before(time.Now().Add(p.Config.WorkTimeout).Add(p.Config.AckMargin)) {
+	if item.lease.Until.Before(time.Now().Add(p.Config.Message.WorkTimeout).Add(p.Config.AckMargin)) {
 		p.buffer.MarkStale(item.lease.Token)
 		return
 	}

@@ -96,7 +96,7 @@ Action: cancel the lifecycle ctx after a short settle.
 Assert: `Consume` returns nil within a few hundred ms.
 
 ### C2 -- lifecycle cancels mid-work -> in-flight consumerFunc finishes first
-Setup: Register, `WorkTimeout: 3s`; seed one message; `consumerFunc` sleeps 600ms and flips a `finished` flag.
+Setup: Register, `Message.WorkTimeout: 3s`; seed one message; `consumerFunc` sleeps 600ms and flips a `finished` flag.
 Action: cancel the lifecycle ctx once the handler is confirmed running (not before).
 Assert: `Consume` returns nil AND `finished` is true -- the in-flight handler ran to completion, `Consume` didn't return out from under it.
 
@@ -136,12 +136,12 @@ Action: run `Consume(ctx, ...)` and `Janitor(ctx)` concurrently (both on the sha
 Assert: both return nil -- one lifecycle cancel stops every loop hanging off it, whether started via `Consume` or a standalone `Janitor` call.
 
 ### C10 -- hung consumerFunc past WorkTimeout+Grace -> hard-abandoned, Consume still exits
-Setup: Register, `WorkTimeout: 300ms`, `WorkTimeoutGrace: 100ms`; seed one message; handler blocks forever on an unbuffered receive, ignoring ctx entirely.
+Setup: Register, `Message.WorkTimeout: 300ms`, `WorkTimeoutGrace: 100ms`; seed one message; handler blocks forever on an unbuffered receive, ignoring ctx entirely.
 Action: confirm the handler started, wait past `WorkTimeout+Grace` so the hard-abandon fires, then cancel the lifecycle ctx.
 Assert: log shows "consumerFunc hard timeout, goroutine abandoned"; `Consume` returns nil promptly -- it does not block on the permanently-hung goroutine (by design: Go has no goroutine kill, so it's abandoned/leaked, not waited on).
 
 ### C11 -- consumerFunc panic is recovered, not fatal
-Setup: Register, `Backoff: &retry.Policy{MaxRetries: 2}`; seed two messages, "boom" and "fine".
+Setup: Register, `Message.Retry: &retry.Policy{MaxRetries: 2}`; seed two messages, "boom" and "fine".
 Action: handler for "boom" does a nil-map write (panics); handler for "fine" just marks a flag.
 Assert: both flags eventually flip (panic recovered as an exception, doesn't kill the loop); the sibling message still gets processed; process never crashes; `Consume` returns nil after lifecycle cancel.
 
@@ -166,7 +166,7 @@ Action: `kill -TERM` ~1.5s after start.
 Assert: process exits 0 within ~150ms.
 
 ### C15b -- double-signal escalation forces exit past a stuck handler (FIXED)
-Setup: subprocess consumer, `-hang` mode: `WorkTimeout: 20s`, `WorkTimeoutGrace: 1s`, handler ignores ctx and blocks forever once it picks up a message.
+Setup: subprocess consumer, `-hang` mode: `Message.WorkTimeout: 20s`, `WorkTimeoutGrace: 1s`, handler ignores ctx and blocks forever once it picks up a message.
 Action: send SIGTERM once the handler is confirmed hung; wait 2s; send SIGTERM again.
 Assert: process exits immediately (code 128+15) on the second signal, never waiting for `WorkTimeout+Grace` -- `LifecycleContext`'s own goroutine blocks on a second `<-sigs` independently of whatever `Consume` is doing and force-exits via `os.Exit` regardless of whether the stuck call ever returns. Confirmed this session via a minimal `LifecycleContext` harness (60s stuck call, two SIGTERMs 1s apart): exits in ~1s, code 143.
 

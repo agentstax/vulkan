@@ -15,7 +15,7 @@ func (c *Consumer[Message]) WithBatchLimit(batchLimit int) *Consumer[Message] {
 }
 
 func (c *Consumer[Message]) WithWorkTimeout(workTimeout time.Duration) *Consumer[Message] {
-	c.Config.WorkTimeout = workTimeout
+	c.Config.Message.WorkTimeout = workTimeout
 	return c
 }
 
@@ -34,7 +34,7 @@ func (c *Consumer[Message]) WithClaimPollRate(claimPollRate time.Duration) *Cons
 	return c
 }
 
-func (c *Consumer[Message]) WithBackoff(backoff *retry.Policy) *Consumer[Message] {
-	c.Config.Backoff = backoff
+func (c *Consumer[Message]) WithMessageRetry(policy *retry.Policy) *Consumer[Message] {
+	c.Config.Message.Retry = policy
 	return c
 }

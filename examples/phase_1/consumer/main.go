@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
@@ -87,9 +88,8 @@ func main() {
 	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), pressureQueue, workerPoolLimiter, ds, &consumer.ConsumerConfig{
 		Type:          consumer.CURSOR,
 		BatchLimit:    10,
-		Backoff:       &retry.Policy{MaxRetries: 3},
+		Message:       &vulkancommon.MessageOptions{WorkTimeout: 5 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
 		ClaimPollRate: 1 * time.Second,
-		WorkTimeout:   5 * time.Second,
 		QueueMargin:   2 * time.Second,
 		AckMargin:     1 * time.Second,
 	})
