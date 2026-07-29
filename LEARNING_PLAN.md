@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1 |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1; generic-systems refactor folded in 2026-07-29 from `refactor-plan.md` (delete that file when done): `retry.Policy` consolidation (count inside the policy, root `MaxAttempts` deleted), MessageOptions + `Message`/`MessageMin`/`MessageMax` config trio + `IgnoreExclusive` veto, `entity` table (control-plane lifecycle root, cascade via admin-only destroy), exclusive consumption (`key_lease`, `Exclusive: Skip|Defer`, supersede-before-lease, 'superseded'/'deferred' kinds), `cron_job` + 1-min scheduler + compacted `job_request` topic |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -4481,7 +4481,16 @@ sequenced after both of these close.*
       `topic/metrics.TopicMetricsDatastore` the same way any other reader
       would.
 - [o] **Default alerts** for approaching operational limits (full spec folded
-      from TODO.md; this is now the canonical record). The problem: several
+      from TODO.md; this is now the canonical record).
+      **PARKED (2026-07-28):** the in-progress alert code (pkg/alert + the
+      pkg/maintain/alert* files) lives UNCOMMITTED on branch `default-alerts`
+      as a single WIP commit, off main. It was pulled off main to keep the
+      tree clean for a maintenance/duty-system redesign (the duty tier isn't
+      generic/composable enough for per-alert duties + injectable alert
+      logic). Resume after the duty refactor lands on main: `git rebase main`
+      on `default-alerts`, then `git reset --soft HEAD~1` to get the alert
+      changes back as an uncommitted diff on top of the refactor. Chunk plan:
+      `~/.claude/plans/default-alerts.md`. The problem: several
       failure modes in this project are silent until they happen — nothing
       warns a user before they cross an operational cliff, and the only way
       to know one is coming is to independently re-derive the math. The two
@@ -4981,6 +4990,205 @@ sequenced after both of these close.*
       proof this no longer holds at N>1. Reference for the original
       (deleted) Prefetch/Dispatch design this reincarnates:
       https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
+
+*Generic-systems refactor (design settled 2026-07-28, folded in
+2026-07-29 from `refactor-plan.md` — the five bullets below are that
+file's entire content made self-contained; DELETE `refactor-plan.md`
+once all five close). Motivation: the alerts build exposed how coupled
+the maintenance/duty wiring is; these rebuild the same needs as generic
+primitives instead of per-feature plumbing. Dependency order: retry
+consolidation → message options → exclusive consumption → cron
+scheduler; the entity table is independent and can land any time before
+the scheduler (cron_jobs need entities as owners).*
+
+- [ ] **`retry.Policy` consolidation (prerequisite sweep).** ONE construct
+      for message redelivery: `*retry.Policy {MaxRetries, BaseDelay,
+      MaxDelay, Exponent}` — the count lives INSIDE the policy. Delete
+      the root `consumer.Config.MaxAttempts` field; `Retry.MaxRetries`
+      becomes actually read (today it's dead weight in the Backoff role:
+      the curve is used, the count ignored). The infra-retry family
+      (`consumer.Config.Retry`, `producer.Config.Retry`, datastore
+      `Retry`, metrics `Retry` — transient-error loops for the process's
+      OWN Postgres calls via `retry.Wrap`) NEVER enters the
+      message-options system: consumer-only mechanics, untouched.
+      `consumer.Config.Backoff` / datastore `MessageRetry` are the
+      delivery-curve role — they fold into `Config.Message.Retry` (next
+      bullet). Rejected: a `retry.Curve`/`Policy` type split —
+      consolidate on the whole Policy instead.
+
+- [ ] **MessageOptions & config layering.** Resolution model in one
+      sentence: consumer bounds > message > consumer defaults > system
+      defaults — messages REQUEST, consumers PROTECT THEMSELVES,
+      defaults FILL SILENCE.
+      - The shape: `MessageOptions{Exclusive ExclusivePolicy
+        (None|Skip|Defer), WorkTimeout time.Duration, Retry
+        *retry.Policy}` — sparse, zero value = "consumer decides",
+        `Retry` nil = consumer default, merges field-wise. Producer
+        side: `ProduceOptions.Message` per produce, plus
+        `producer.Config.Message` as per-topic defaults merged under
+        every produce. Consumer side: root Config keeps ONLY
+        consumer-only mechanics (QueueMargin, AckMargin,
+        WorkTimeoutGrace, ShutdownTimeout, infra Retry — knobs a message
+        could never own) plus the trio `Message` (defaults — fill what
+        the message left unset) / `MessageMin` (floors — consumer wins
+        upward) / `MessageMax` (ceilings — consumer wins downward), all
+        three typed MessageOptions, plus flat `IgnoreExclusive bool`
+        (veto — a veto is not a bound, deliberately outside the trio;
+        zero value = honor = the safe executor default; renamed from
+        HonorExclusive for exactly that zero-value reason).
+      - Resolution, field-wise: `resolved = clamp(fill(msg,
+        cfg.Message), cfg.MessageMin, cfg.MessageMax)`. Why the trio:
+        the override fields ARE the message-options struct, so names can
+        never drift and a new MessageOptions field is automatically
+        defaultable + boundable, compiler-enforced; clamp DIRECTION is
+        structural (which trio field you set), not named (no
+        MaxWorkTimeout/MinBackoff names to invent). Direction follows
+        the consumer's risk: WorkTimeout bounds via MessageMax (can't
+        demand more runtime than the group sized its leases for),
+        Retry.BaseDelay via MessageMin (a 1ms curve would hot-loop the
+        group), Retry.MaxRetries via MessageMax. Exclusive is an enum,
+        not ordered — Validate() REJECTS it in MessageMin/MessageMax.
+        Zero values: Min/Max zero = unconstrained, Message zero = system
+        defaults via WithDefaults(), an empty Config behaves like today.
+      - Discipline rule: an option joins MessageOptions only when a real
+        producer needs per-message variance, and joins the bounds only
+        when a real consumer needs to distrust messages; the
+        root/Message boundary IS the consumer-only/shared
+        classification, made structural. Rejected: consumer-supplied
+        resolver hook (policy-as-code — can't introspect, can't show in
+        status, can't validate at Register); a separate Overrides struct
+        with Max*/Min*-named fields (names drift from the fields they
+        override).
+      - Migration cost, budget it: root Config.WorkTimeout / Backoff /
+        MaxAttempts move into Config.Message.* — touches every consumer
+        construction site; grep labs for hand-copied config while
+        sweeping (labs go silently stale). MessageOptions persistence on
+        the message row (typed columns vs metadata) is internals,
+        decided at build.
+
+- [ ] **`entity` table — internal resource identity + lifecycle root.**
+      `entity(id BIGSERIAL PRIMARY KEY, type TEXT NOT NULL)` —
+      first-class INTERNAL resource ids; users never see them. The rule:
+      CONTROL-PLANE rows enroll (topic, consumer_group — enroll NOW,
+      cron_jobs need them as owners; nothing else until a feature
+      actually references it), DATA-PLANE rows never do
+      (messages/deliveries/exceptions — DELETE overhead + vacuum churn).
+      NO name column — admin.Rename exists and a second copy of name
+      drifts; display resolution = classify+switch on type + join to the
+      owning table. Enrolled tables carry `entity_id BIGINT NOT NULL
+      UNIQUE REFERENCES entity(id) ON DELETE CASCADE`; entity is the
+      LIFECYCLE ROOT: admin.Destroy deletes the entity row and
+      everything downstream (resource row, its cron_jobs, later its
+      alerts) goes transactionally. CASCADE is implicit deletion,
+      acceptable ONLY because pkg/admin is the sole lifecycle write path
+      and Destroy is double-guarded — do not add a second delete path.
+      Each package's Register owns its entity insert (same txn) so
+      enrollment is never a separate forgettable step. cron_job itself
+      is NOT enrolled (nothing targets cron_jobs yet; enroll later if
+      e.g. alerts reference them). Alerts are the obvious second
+      customer (typed identity in Data → entity refs), but that is
+      their refactor, not this one.
+
+- [ ] **Exclusive consumption — keyed concurrency policy (the generic
+      primitive).** Per-MESSAGE, set at produce via
+      `MessageOptions.Exclusive`: `Skip` = k8s Forbid (key busy → the
+      slot is dropped, never runs); `Defer` = reconciler/workqueue
+      semantic (key busy → park in exception window, run the latest when
+      the key frees). Gives at most one in-flight delivery per
+      compaction key per consumer group. Rules: all messages sharing a
+      compaction key MUST carry the same policy (upheld naturally when
+      one producer owns a key's traffic); exclusive produce onto a
+      non-compacted topic errors at produce time.
+      - Dispatch predicate (base.go, before consumerFunc) — ORDER IS
+        LOAD-BEARING: the supersede check MUST precede the lease attempt
+        or a hot key floods the exception window (with it, at most one
+        window entry per busy key — the sparse-window premise survives):
+        `CompactionHead(msg.key) > msg.rank` → resolveSuperseded
+        (stale); else lease busy → Skip: resolveSuperseded, Defer:
+        resolveDeferred; else run, then recordOutcome + releaseKeyLease
+        in ONE transaction. Invariant: a message runs iff it is the
+        compaction head at the moment it wins the key lease.
+      - `key_lease` table: PRIMARY KEY (topic_id, consumer_group,
+        compaction_key) + `lease_token UUID` + `expires_at TIMESTAMPTZ`
+        (resolved WorkTimeout + Grace + AckMargin). Acquire = `INSERT
+        ... ON CONFLICT DO UPDATE ... WHERE expires_at < now()`
+        (steal-on-expiry built in; rowcount 0 = busy). Release = `DELETE
+        ... WHERE lease_token = $mine`, in the same txn as
+        RecordSuccess/RecordFailure. Fence by PER-ATTEMPT lease_token,
+        NOT message_id (reuse the claim lease-token identity): the same
+        message re-attempted after a steal would let the stale holder
+        free the new attempt's lease → concurrent runs under Forbid.
+        Tiny hot table: NOT partitioned, NOT append-only — locks are
+        irreducibly mutable state (append-only acquire/release event log
+        and permanent per-key rows both rejected).
+      - New vocabulary (one concept one name): terminal kind
+        'superseded' — ALWAYS recorded in the delivery log (debugging
+        Forbid is "why didn't 12:05 run?"; status derives
+        last-run/last-skipped from the log, no new columns) — and
+        exception kind 'deferred' — own short/fixed retry cadence, does
+        NOT consume the message's resolved Retry.MaxRetries. No
+        defer-TTL needed: a crash-looping holder burns its own attempts
+        and frees the key; newer slots supersede parked ones.
+      - Per-group escape hatch is the `IgnoreExclusive` veto (previous
+        bullet) so observer/audit groups aren't silently dropped on by
+        an executor's policy. Honesty caveat, keep documented: the
+        overlap guarantee is only as strong as ctx-respect — an
+        abandoned goroutine past WorkTimeout+Grace can't be killed (k8s
+        escapes this only by SIGKILLing pods).
+      - Torture lab: two consumers fighting one key through crash /
+        lease-steal / supersession chains / wedged-key starvation.
+
+- [ ] **`cron_job` + job scheduler + `job_request` topic** —
+      k8s-cronjob-shaped scheduled work as a generic system.
+      - Schema (settled incl. hygiene): `id BIGSERIAL PRIMARY KEY`;
+        `owner_entity_id BIGINT NULL REFERENCES entity(id) ON DELETE
+        CASCADE` — GC metadata ONLY (k8s ownerReferences: "whose
+        lifecycle I'm bound to"; the scheduler NEVER reads it, Postgres
+        alone acts on it at destroy; NULL = standalone job); `name TEXT
+        NOT NULL UNIQUE`; `handler TEXT NOT NULL` (which runner is
+        valid, like image); `schedule TEXT NOT NULL` ('* * * * *');
+        `concurrency TEXT NOT NULL DEFAULT 'allow'`
+        ('allow'|'forbid', 'defer' later) → maps to
+        MessageOptions.Exclusive; `timeout INTERVAL NOT NULL` (job
+        spec, the k8s activeDeadlineSeconds analogue — scheduler stamps
+        it into MessageOptions.WorkTimeout); `suspended BOOLEAN NOT NULL
+        DEFAULT false`; `data JSONB` (OPAQUE handler payload incl. the
+        actual target, decoded only by handlers — never resource refs
+        the system must act on; rejected: target refs inside data as
+        the GC mechanism, opaque blobs are un-garbage-collectable —
+        admin.Destroy can't find dependents it can't decode); `metadata
+        JSONB` (labels/annotations); `next_scheduled_time TIMESTAMPTZ
+        NOT NULL`. Partial index `(next_scheduled_time) WHERE NOT
+        suspended` = the poll predicate. Also rejected: cron_job's own
+        entity enrollment (nothing references cron_jobs yet).
+      - Registration validation — a SANITY check, not correctness
+        (key_lease owns overlap): schedule parses; minimum firing gap >=
+        timeout. Self-contained because timeout is the job's own spec —
+        no handler registry needed; consumer Grace/AckMargin are epsilon
+        and ignored; a consumer MessageMax clamping the request down
+        only makes the check more conservative. Both errors land safe.
+      - Scheduler: 1-min poll loop (anything sub-minute stays a
+        long-lived worker); one txn per tick: `SELECT ... WHERE
+        next_scheduled_time <= now() AND NOT suspended FOR UPDATE SKIP
+        LOCKED` → ProduceInTx (produce + advance commit atomically) →
+        `next_scheduled_time` computed FROM now() (missed runs are
+        dropped, fire once). The scheduler produces EVERY due slot
+        unconditionally — concurrency policy is enforced at consume time
+        (rejected: scheduler-side forbid via a last_message_id
+        resolved-check — dual enforcement layers). Unsuspend admin op
+        RECOMPUTES next_scheduled_time from now() — resume on schedule,
+        no surprise fire from the stale past-due timestamp (k8s
+        spec.suspend semantics).
+      - job_request topic: compacted, compaction key = cron_job identity
+        (bounds the topic at ~1 row per job); routing_key
+        `cronjob.<handler>.<name>` (handler first → bindings are
+        `cronjob.<handler>.*`); idempotency key = deterministic
+        v7-layout UUID — scheduled_time in the 48 timestamp bits,
+        hash(cron_job.id) in the rest (preserves index locality); manual
+        "run now" uses a RANDOM key so it doesn't dedupe against the
+        slot; the message is stamped with the slot time it represents.
+        Handlers consume via the existing retry machinery and must
+        respect ctx cancellation (WorkTimeout).
 
 **Done when:** every item above is either fixed or has a written decision,
 NOTES.md, `git tag phase-14a`.
