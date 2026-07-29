@@ -14,11 +14,6 @@ func (c *Consumer[Message]) WithBatchLimit(batchLimit int) *Consumer[Message] {
 	return c
 }
 
-func (c *Consumer[Message]) WithMaxAttempts(maxAttempts int) *Consumer[Message] {
-	c.Config.MaxAttempts = maxAttempts
-	return c
-}
-
 func (c *Consumer[Message]) WithWorkTimeout(workTimeout time.Duration) *Consumer[Message] {
 	c.Config.WorkTimeout = workTimeout
 	return c

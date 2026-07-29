@@ -30,6 +30,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -97,11 +98,11 @@ func main() {
 	}
 
 	// Short lease (= WorkTimeout+QueueMargin+AckMargin = 4s) so in-flight rows
-	// reclaim quickly after the crash. High MaxAttempts so reprocessing never
+	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    100,
-		MaxAttempts:   100,
+		Backoff:       &retry.Policy{MaxRetries: 100},
 		ClaimPollRate: 200 * time.Millisecond,
 		WorkTimeout:   2 * time.Second,
 		QueueMargin:   1 * time.Second,

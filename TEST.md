@@ -141,7 +141,7 @@ Action: confirm the handler started, wait past `WorkTimeout+Grace` so the hard-a
 Assert: log shows "consumerFunc hard timeout, goroutine abandoned"; `Consume` returns nil promptly -- it does not block on the permanently-hung goroutine (by design: Go has no goroutine kill, so it's abandoned/leaked, not waited on).
 
 ### C11 -- consumerFunc panic is recovered, not fatal
-Setup: Register, `MaxAttempts: 2`; seed two messages, "boom" and "fine".
+Setup: Register, `Backoff: &retry.Policy{MaxRetries: 2}`; seed two messages, "boom" and "fine".
 Action: handler for "boom" does a nil-map write (panics); handler for "fine" just marks a flag.
 Assert: both flags eventually flip (panic recovered as an exception, doesn't kill the loop); the sibling message still gets processed; process never crashes; `Consume` returns nil after lifecycle cancel.
 

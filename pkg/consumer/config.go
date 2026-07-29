@@ -27,7 +27,6 @@ type ConsumerConfig struct {
 	Type             ConsumerType
 	BatchLimit       int
 	FanOutBatchLimit int // max log rows FanOut scans per tick (LIFECYCLE only) -- bounds a cold group's catch-up scan; new messages materialize this many per tick until caught up
-	MaxAttempts      int
 	MaxRangeReclaims int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
 	ClaimPollRate    time.Duration
 	WorkTimeout      time.Duration // bounds consumerFunc itself -- enforced via ctx and the hard-abandon fallback below
@@ -43,7 +42,7 @@ type ConsumerConfig struct {
 	// same-region network round trip's worth of slack.
 	WorkTimeoutGrace        time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Backoff takes over on later retries
-	Backoff                 *retry.Policy // curve for can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy().
+	Backoff                 *retry.Policy // message redelivery policy: MaxRetries caps delivery attempts, the curve sets can_run_after on every retry after the first (see ExceptionInitialBackoff). Default: retry.NewDefaultRetryPolicy() with MaxRetries 3.
 	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- unrelated to Backoff, which shapes message redelivery. Default: retry.NewDefaultRetryPolicy().
 	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
@@ -61,50 +60,71 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	if c.Type == "" {
 		c.Type = CURSOR
 	}
+
 	if c.BatchLimit == 0 {
 		c.BatchLimit = 1 // no batching by default
 	}
+
 	if c.FanOutBatchLimit == 0 {
 		c.FanOutBatchLimit = 1000 // fanout rows are cheap next to processing -- a wide default so only genuinely cold groups feel the cap
 	}
-	if c.MaxAttempts == 0 {
-		c.MaxAttempts = 3
-	}
+
 	if c.MaxRangeReclaims == 0 {
 		c.MaxRangeReclaims = 3
 	}
+
 	if c.ClaimPollRate == 0 {
 		c.ClaimPollRate = 5 * time.Second
 	}
+
 	if c.WorkTimeout == 0 {
 		c.WorkTimeout = 30 * time.Second
 	}
+
 	if c.QueueMargin == 0 {
 		c.QueueMargin = 5 * time.Second
 	}
+
 	if c.AckMargin == 0 {
 		c.AckMargin = 2 * time.Second
 	}
+
 	if c.WorkTimeoutGrace == 0 {
 		c.WorkTimeoutGrace = 100 * time.Millisecond
 	}
+
 	if c.ExceptionInitialBackoff == 0 {
 		c.ExceptionInitialBackoff = 5 * time.Second
 	}
+
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = c.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
 	}
+
+	if c.Backoff == nil {
+		c.Backoff = &retry.Policy{}
+	}
+	if c.Backoff.MaxRetries == 0 {
+		c.Backoff.MaxRetries = 3 // redelivery caps at 3 attempts by default -- the Policy default of 6 is tuned for internal retries
+	}
 	c.Backoff = c.Backoff.WithDefaults()
+
+	if c.Retry == nil {
+		c.Retry = &retry.Policy{}
+	}
 	c.Retry = c.Retry.WithDefaults()
+
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
+
 	if c.Meter == nil {
 		// metric/noop, not the global otel.GetMeterProvider() -- reading the
 		// global registry requires the top-level otel package, which is
 		// bring the trace/baggage/go-logr dependencies ie bloat.
 		c.Meter = noop.NewMeterProvider().Meter("github.com/agentstax/vulkan/pkg/consumer")
 	}
+
 	return c
 }
 
@@ -116,9 +136,6 @@ func (c *ConsumerConfig) Validate() error {
 	}
 	if c.FanOutBatchLimit < 1 {
 		return fmt.Errorf("FanOutBatchLimit must be >= 1, got %d", c.FanOutBatchLimit)
-	}
-	if c.MaxAttempts < 1 {
-		return fmt.Errorf("MaxAttempts must be >= 1, got %d", c.MaxAttempts)
 	}
 	if c.MaxRangeReclaims < 1 {
 		return fmt.Errorf("MaxRangeReclaims must be >= 1, got %d", c.MaxRangeReclaims)

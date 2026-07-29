@@ -16,6 +16,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -86,7 +87,7 @@ func main() {
 	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), pressureQueue, workerPoolLimiter, ds, &consumer.ConsumerConfig{
 		Type:          consumer.CURSOR,
 		BatchLimit:    10,
-		MaxAttempts:   3,
+		Backoff:       &retry.Policy{MaxRetries: 3},
 		ClaimPollRate: 1 * time.Second,
 		WorkTimeout:   5 * time.Second,
 		QueueMargin:   2 * time.Second,

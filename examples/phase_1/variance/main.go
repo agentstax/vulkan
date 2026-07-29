@@ -23,6 +23,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -87,7 +88,7 @@ func main() {
 
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    100,
-		MaxAttempts:   3,
+		Backoff:       &retry.Policy{MaxRetries: 3},
 		ClaimPollRate: 500 * time.Millisecond,
 		WorkTimeout:   10 * time.Second, // must exceed the slowest payload sleep
 		QueueMargin:   3 * time.Second,
