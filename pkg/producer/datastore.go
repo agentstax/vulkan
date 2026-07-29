@@ -310,8 +310,8 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			), inserted AS (
-				INSERT INTO %s (payload, routing_key, compaction_key, compaction_rank)
-				SELECT $2, NULLIF($3, ''), $4, $6  -- if routing_key $3 is empty string '' insert as NULL
+				INSERT INTO %s (payload, routing_key, compaction_key, compaction_rank, options)
+				SELECT $2, NULLIF($3, ''), $4, $6, $7  -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
@@ -325,7 +325,7 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 			SELECT id FROM inserted;
 		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
 
-		args = append(args, opts.CompactionKey, topicID, opts.CompactionRank) // $4, $5, $6
+		args = append(args, opts.CompactionKey, topicID, opts.CompactionRank, opts.Message) // $4, $5, $6, $7
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
@@ -336,13 +336,16 @@ func protectedInsertSQL(topicID int64, idempotencyKey uuid.UUID, message any, op
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key)
+			INSERT INTO %s (payload, routing_key, options)
 			SELECT
 				$2,
-				NULLIF($3, '') -- if routing_key is empty string '' insert as NULL
+				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
+				$4
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
 		`, topic.IdempotencyKeyTable(topicID), topic.MessageLogTable(topicID))
+
+		args = append(args, opts.Message) // $4
 	}
 
 	return sql, args

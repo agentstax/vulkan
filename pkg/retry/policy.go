@@ -5,12 +5,12 @@ import (
 	"time"
 )
 
-// Policy is the tunable retry knobs that users see
+// Policy is the tunable retry config
 type Policy struct {
-	MaxRetries int
-	BaseDelay  time.Duration
-	MaxDelay   time.Duration
-	Exponent   int
+	MaxRetries int           `json:"max_retries,omitempty"`
+	BaseDelay  time.Duration `json:"base_delay,omitempty"`
+	MaxDelay   time.Duration `json:"max_delay,omitempty"`
+	Exponent   int           `json:"exponent,omitempty"`
 }
 
 func NewDefaultRetryPolicy() *Policy {

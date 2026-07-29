@@ -3,7 +3,9 @@ package producer
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -11,13 +13,15 @@ import (
 // shape. The row-comparison it emits is proven live against a real winner
 // contest in the CompactionRank read/retention chunk, not here.
 
+// noOptions is the trailing options arg for messages that request nothing --
+// bound as a typed nil so the column lands NULL.
+var noOptions *common.MessageOptions
+
 func TestProtectedInsertSQLUnkeyedDefaultRank(t *testing.T) {
 	key := uuid.New()
 	sql, args := protectedInsertSQL(1, key, "payload", ProduceOptions{RoutingKey: "r"})
 
-	// all-default traffic: args shape is unchanged from before CompactionRank
-	// existed -- unkeyed inserts never bind it, the column default (0) applies.
-	want := []any{key, "payload", "r"}
+	want := []any{key, "payload", "r", noOptions}
 	assertArgs(t, args, want)
 
 	if strings.Contains(sql, "compaction_head") {
@@ -34,11 +38,11 @@ func TestProtectedInsertSQLUnkeyedIgnoresCallerRank(t *testing.T) {
 	key := uuid.New()
 	sql, args := protectedInsertSQL(1, key, "payload", ProduceOptions{RoutingKey: "r", CompactionRank: 99})
 
-	want := []any{key, "payload", "r"}
+	want := []any{key, "payload", "r", noOptions}
 	assertArgs(t, args, want)
 
-	if strings.Contains(sql, "$4") {
-		t.Fatalf("unkeyed insert must not bind the caller's rank, got a 4th placeholder:\n%s", sql)
+	if strings.Contains(sql, "$5") {
+		t.Fatalf("unkeyed insert must not bind the caller's rank, got a 5th placeholder:\n%s", sql)
 	}
 }
 
@@ -46,7 +50,7 @@ func TestProtectedInsertSQLKeyedDefaultRank(t *testing.T) {
 	key := uuid.New()
 	sql, args := protectedInsertSQL(7, key, "payload", ProduceOptions{RoutingKey: "r", CompactionKey: "user:1"})
 
-	want := []any{key, "payload", "r", "user:1", int64(7), int64(0)}
+	want := []any{key, "payload", "r", "user:1", int64(7), int64(0), noOptions}
 	assertArgs(t, args, want)
 
 	if !strings.Contains(sql, "(compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)") {
@@ -63,7 +67,7 @@ func TestProtectedInsertSQLNegativeRank(t *testing.T) {
 	key := uuid.New()
 	_, args := protectedInsertSQL(1, key, "payload", ProduceOptions{CompactionKey: "k", CompactionRank: -1})
 
-	want := []any{key, "payload", "", "k", int64(1), int64(-1)}
+	want := []any{key, "payload", "", "k", int64(1), int64(-1), noOptions}
 	assertArgs(t, args, want)
 }
 
@@ -73,8 +77,28 @@ func TestProtectedInsertSQLHigherRankArg(t *testing.T) {
 	key := uuid.New()
 	_, args := protectedInsertSQL(1, key, "payload", ProduceOptions{CompactionKey: "k", CompactionRank: 100})
 
-	want := []any{key, "payload", "", "k", int64(1), int64(100)}
+	want := []any{key, "payload", "", "k", int64(1), int64(100), noOptions}
 	assertArgs(t, args, want)
+}
+
+func TestProtectedInsertSQLMessageOptionsBound(t *testing.T) {
+	// a message that requests something binds a pointer (jsonb column); one
+	// that requests nothing binds the typed nil above (NULL column) -- covered
+	// by every other test here.
+	key := uuid.New()
+	opts := ProduceOptions{Message: &common.MessageOptions{WorkTimeout: time.Minute}}
+
+	sql, args := protectedInsertSQL(1, key, "payload", opts)
+	if !strings.Contains(sql, "options") {
+		t.Fatalf("insert missing the options column, got:\n%s", sql)
+	}
+	bound, ok := args[len(args)-1].(*common.MessageOptions)
+	if !ok || bound == nil {
+		t.Fatalf("last arg = %#v, want *common.MessageOptions", args[len(args)-1])
+	}
+	if bound.WorkTimeout != time.Minute {
+		t.Fatalf("bound options = %+v, want WorkTimeout %v", bound, time.Minute)
+	}
 }
 
 func assertArgs(t *testing.T, got, want []any) {

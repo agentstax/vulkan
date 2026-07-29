@@ -103,6 +103,7 @@ parked cursor/LIFECYCLE surface (`ClaimedRange`, `LeaseRow`, `MessageException`,
 | `producer.Producer[M]` | `Register` · `Produce` · `ProduceFunc` · `ProduceInTx` |
 | `producer.ProducerConfig` | `WithDefaults` · `Validate` |
 | `producer.ProduceOptions` | `Validate` |
+| `common.MessageOptions` | `Fill` · `Clamp` · `Validate` — nil-safe, always held as `*MessageOptions` (+ `common.ExclusivePolicy`: `None` · `Skip` · `Defer`) |
 | `consumer.Consumer[M]` | `Register` · `Consume` · builders: `WithBatchLimit` · `WithWorkTimeout` · `WithQueueMargin` · `WithAckMargin` · `WithClaimPollRate` · `WithBackoff` |
 | `consumer.MessageConsumer[M]` | `Register` · `Consume` · `Drain` |
 | `consumer.DeliveryConsumer[M]` | `Register` · `Consume` · `DeliveryClaim` |

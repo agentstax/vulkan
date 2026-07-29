@@ -5001,7 +5001,7 @@ consolidation → message options → exclusive consumption → cron
 scheduler; the entity table is independent and can land any time before
 the scheduler (cron_jobs need entities as owners).*
 
-- [ ] **`retry.Policy` consolidation (prerequisite sweep).** ONE construct
+- [x] **`retry.Policy` consolidation (prerequisite sweep).** ONE construct
       for message redelivery: `*retry.Policy {MaxRetries, BaseDelay,
       MaxDelay, Exponent}` — the count lives INSIDE the policy. Delete
       the root `consumer.Config.MaxAttempts` field; `Retry.MaxRetries`
@@ -5088,6 +5088,12 @@ the scheduler (cron_jobs need entities as owners).*
       e.g. alerts reference them). Alerts are the obvious second
       customer (typed identity in Data → entity refs), but that is
       their refactor, not this one.
+      Chunk plan: `~/.claude/plans/entity-table.md` (3 chunks: entity
+      table + topic enrollment → consumer_group registry + enrollment
+      → convergence/sweep/close-out). Survey headline: no
+      consumer_group table exists today — groups are lazy TEXT keys
+      materialized in UpsertCursor — so "enroll consumer_group" means
+      BUILDING the registry, and Chunk 2 is mostly that.
 
 - [ ] **Exclusive consumption — keyed concurrency policy (the generic
       primitive).** Per-MESSAGE, set at produce via
