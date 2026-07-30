@@ -21,6 +21,7 @@ import (
 // - lease
 // - maintenance
 // - binding
+// - entity
 // - topic
 // - compaction_head
 // - migration_log
@@ -168,22 +169,41 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		return err
 	}
 
+	// entity table provides:
+	// - lifecycle management
+	// - global resource id
+	// for system resources only.
+	// Managed tables should FK it ON DELETE CASCADE for strong constraints and cleanup
+	createEntitySql := `
+		CREATE TABLE IF NOT EXISTS entity (
+			id BIGSERIAL PRIMARY KEY, -- global resource id
+			type TEXT NOT NULL,       -- 'topic' | 'consumer_group'
+			UNIQUE (id, type)         -- required for resource table composite foreign key references
+		);
+	`
+	if _, err := tx.Exec(ctx, createEntitySql); err != nil {
+		return err
+	}
+
 	createTopicSql := `
 		CREATE TABLE IF NOT EXISTS topic (
-			id BIGSERIAL PRIMARY KEY,                                      -- corresponding id for table interpolation ie message_log_<id>
-			name TEXT NOT NULL,                                            -- user defined and displayed name
-			schema_version BIGINT NOT NULL,                                -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
-			partition_size BIGINT NOT NULL,                                -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
-			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                    -- nanoseconds, time.Duration's own unit; 0 disables retention
-			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,      -- opt into Kafka's "lagging consumer falls off the retention window" semantics
-			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000, -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
-			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,           -- opt out of delivery_log_<id> (per-attempt failure audit trail)
-			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,       -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
-			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,            -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
-			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,     -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
+			id BIGSERIAL PRIMARY KEY,                                       -- corresponding id for table interpolation ie message_log_<id>
+			entity_id BIGINT NOT NULL UNIQUE,                               -- global resource id
+			entity_type TEXT NOT NULL GENERATED ALWAYS AS ('topic') STORED, -- pins the composite FK to entity rows typed 'topic'
+			name TEXT NOT NULL,                                             -- user defined and displayed name
+			schema_version BIGINT NOT NULL,                                 -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
+			partition_size BIGINT NOT NULL,                                 -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
+			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                     -- nanoseconds, time.Duration's own unit; 0 disables retention
+			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,       -- opt into Kafka's "lagging consumer falls off the retention window" semantics
+			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000,  -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
+			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,            -- opt out of delivery_log_<id> (per-attempt failure audit trail)
+			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,        -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
+			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,             -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,      -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (name, schema_version)
+			UNIQUE (name, schema_version),
+			FOREIGN KEY (entity_id, entity_type) REFERENCES entity (id, type) ON DELETE CASCADE
 		);
 	`
 	if _, err := tx.Exec(ctx, createTopicSql); err != nil {

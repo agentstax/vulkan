@@ -5016,7 +5016,7 @@ the scheduler (cron_jobs need entities as owners).*
       bullet). Rejected: a `retry.Curve`/`Policy` type split —
       consolidate on the whole Policy instead.
 
-- [ ] **MessageOptions & config layering.** Resolution model in one
+- [x] **MessageOptions & config layering.** Resolution model in one
       sentence: consumer bounds > message > consumer defaults > system
       defaults — messages REQUEST, consumers PROTECT THEMSELVES,
       defaults FILL SILENCE.
@@ -5158,6 +5158,19 @@ the scheduler (cron_jobs need entities as owners).*
         escapes this only by SIGKILLing pods).
       - Torture lab: two consumers fighting one key through crash /
         lease-steal / supersession chains / wedged-key starvation.
+      Chunk plan: `~/.claude/plans/exclusive-consumption.md` (4 chunks:
+      key_lease table + datastore primitives → cursor-path dispatch
+      predicate + 'superseded' + Forbid → Defer + 'deferred' +
+      ExceptionConsumer → produce guard + torture lab + close-out).
+      Survey headline: the vocabulary is already BUILT as
+      ConcurrencyPolicy Allow|Forbid|Defer + ConcurrencyOverride (this
+      bullet's Exclusive None|Skip|Defer / IgnoreExclusive spellings
+      are the pre-rename design vocab), but ConcurrencyOverride is
+      read NOWHERE yet; outcome recording is range-batched in
+      Commit/PartialCommit, so WHERE the key release rides
+      (range-commit piggyback vs per-message txn) is the main open
+      build decision; key_lease must join deleteTopic's scoped-delete
+      table list or destroyed topics leak lease rows.
 
 - [ ] **`cron_job` + job scheduler + `job_request` topic** —
       k8s-cronjob-shaped scheduled work as a generic system.
@@ -6196,7 +6209,32 @@ own retention — `max(RetentionTTL, 7d)`: once a group has been silent a
 full retention window, everything it missed would have dropped anyway had
 it not pinned it, so its claim to continuity has expired in spirit; the 7d
 floor keeps short-retention topics safe across incidents and holidays
-(Kafka's 1d→7d lesson). Retention-forever topics never expire groups
+(Kafka's 1d→7d lesson). Default open question (2026-07-29 research round):
+that retention-anchored default predates the research — the industry ships
+expiry OFF by default (Pulsar's `subscriptionExpirationTimeMinutes=0`
+means never; NATS durables are opt-in and couldn't expire at all before
+server 2.9; Kafka is the lone always-on outlier at 7d-after-Empty), every
+project having judged silent deletion of a durable cursor scarier than
+garbage accumulation, and the discussion leaned a separate opt-in option —
+re-settle default-off vs retention-anchored at build. What raises the
+stakes on having the verb at all: with `allow_drop_past_committed=false`
+(the default) an abandoned group's cursor pins partition drops — vulkan is
+in Pulsar's data-pinning quadrant (producers eventually pay for a dead
+group), not Kafka's offsets-only one.
+Mechanism (settled 2026-07-29): the janitor computes idleness
+DYNAMICALLY — `now() - GREATEST(newest heartbeat, group registered_at)` —
+rather than recording a became-empty transition; transition detection can
+be missed on a crash, the derived form is idempotent and needs no extra
+state. Idleness keys on MEMBERSHIP (heartbeats), never activity
+timestamps: Kafka (KAFKA-4682) and Pulsar (#17573) independently shipped
+GC that deleted state under live-but-quiet groups by keying on
+last-commit/cursor-activity times, and both fixed it by anchoring to
+membership. Two prerequisites this puts on the presence rows: the newest
+heartbeat must SURVIVE instance departure (retain the last row per group,
+or roll `last_seen` up onto the 14a consumer_group registry row), and
+never-consumed groups floor at registration time (Kafka needed the same
+carve-out for its permanently-Empty standalone consumers).
+Retention-forever topics never expire groups
 (nothing is pinned — a dead cursor costs only duty-claim trickle and
 status noise). Expiry is recoverable by design: a returning group re-seeds
 its cursor and REPLAYS what retention holds — duplicate work, not data
