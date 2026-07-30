@@ -103,7 +103,9 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -112,7 +114,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
 	watcherDone := make(chan struct{})
@@ -127,7 +129,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 				samplesCh <- samples
 				return
 			case <-ticker.C:
-				samples = append(samples, sample{t: time.Now(), val: committedCol(ctx, ds, group, tp.Id)})
+				samples = append(samples, sample{t: time.Now(), val: committedCol(ctx, ds, groupID, tp.Id)})
 			}
 		}
 	}()
@@ -141,7 +143,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 			case <-rollerDone:
 				return
 			case <-ticker.C:
-				if _, err := md.AdvanceWaterline(ctx, tp.Id, group); err != nil {
+				if _, err := md.AdvanceWaterline(ctx, tp.Id, groupID); err != nil {
 					fmt.Printf("  (roller tick error, ignored: %v)\n", err)
 				}
 			}
@@ -150,13 +152,13 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var events []rangeEvent
 	for i := range numRanges {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, int(batchSize), maxRangeReclaims, lease, false)
+		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
+		must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
 		events = append(events, rangeEvent{commitTime: time.Now(), high: claim.Lease.High})
 	}
 
@@ -177,7 +179,9 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -186,21 +190,21 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
 	var stalenesses []float64
 	for i := range numRanges {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, int(batchSize), maxRangeReclaims, lease, false)
+		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
+		must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
 
 		start := time.Now()
-		_, err = md.AdvanceWaterline(ctx, tp.Id, group)
+		_, err = md.AdvanceWaterline(ctx, tp.Id, groupID)
 		must(err)
 		stalenesses = append(stalenesses, msSince(start))
 	}
@@ -259,7 +263,9 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -268,19 +274,19 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	seed(ctx, wp, int(n))
 
 	start := time.Now()
 	for range int(n) {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, maxRangeReclaims, lease, false)
+		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
 		}
-		must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
+		must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
 		if syncAdvance {
-			_, err := md.AdvanceWaterline(ctx, tp.Id, group)
+			_, err := md.AdvanceWaterline(ctx, tp.Id, groupID)
 			must(err)
 		}
 	}
@@ -312,7 +318,9 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -321,7 +329,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	seed(ctx, wp, total)
 
 	start := time.Now()
@@ -329,14 +337,14 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	for range goroutines {
 		wg.Go(func() {
 			for range perGoroutine {
-				claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, maxRangeReclaims, lease, false)
+				claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
 				must(err)
 				if claim == nil {
 					return
 				}
-				must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, nil, nil, 5*time.Second, false))
+				must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
 				if syncAdvance {
-					_, err := md.AdvanceWaterline(ctx, tp.Id, group)
+					_, err := md.AdvanceWaterline(ctx, tp.Id, groupID)
 					must(err)
 				}
 			}
@@ -357,9 +365,9 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	}
 }
 
-func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, consumerGroup string, topicID int64) int64 {
+func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, topicID int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group=$1 AND topic_id=$2`, consumerGroup, topicID).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID).Scan(&v))
 	return v
 }
 
@@ -398,3 +406,5 @@ func die(msg string) {
 	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
 	os.Exit(1)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

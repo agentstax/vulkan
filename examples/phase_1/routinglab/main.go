@@ -59,7 +59,9 @@ func main() {
 	topicName := fmt.Sprintf("phase7.routinglab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -69,7 +71,8 @@ func main() {
 	must(err)
 	must(wp.Register(ctx))
 
-	head := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
+	head, gids := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
+	cursorGroupID, controlGroupID, lifecycleGroupID := gids[cursorGroup], gids[controlGroup], gids[lifecycleGroup]
 	fmt.Printf("topic=%q id=%d message_log head = %d\n", topicName, tp.Id, head)
 
 	// ===== publish msg1 BEFORE any binding exists =====
@@ -79,8 +82,8 @@ func main() {
 
 	// ===== bind cursorGroup and lifecycleGroup, THEN publish the rest =====
 	step("bind cursorGroup to orders.*.created, lifecycleGroup to payments.*")
-	must(cd.Bind(ctx, tp.Id, cursorGroup, "orders.*.created"))
-	must(cd.Bind(ctx, tp.Id, lifecycleGroup, "payments.*"))
+	must(cd.Bind(ctx, tp.Id, cursorGroupID, "orders.*.created"))
+	must(cd.Bind(ctx, tp.Id, lifecycleGroupID, "payments.*"))
 
 	msg2 := publish(ctx, wp, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
 	msg3 := publish(ctx, wp, "orders.eu.updated")          // wrong tail, does not match
@@ -94,7 +97,7 @@ func main() {
 
 	// ===== CURSOR path: cursorGroup only sees the 2 matching messages =====
 	step("cursorGroup claims (head, head+5] -- expect only msg1 and msg2 back")
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroup, limit, maxRangeReclaims, lease, false)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, limit, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -105,13 +108,13 @@ func main() {
 	assertIDs("only msg1 (published before the binding existed) and msg2 (deeper hierarchy) match",
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
-	must(cd.Commit(ctx, tp.Id, cursorGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed := advance(ctx, md, tp.Id, cursorGroup)
+	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	committed := advance(ctx, md, tp.Id, cursorGroupID)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
 	step("controlGroup claims the identical range -- expect all 5 back, unaffected by cursorGroup's binding")
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, controlGroup, limit, maxRangeReclaims, lease, false)
+	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, limit, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -120,13 +123,13 @@ func main() {
 	assertIDs("an unbound group receives every message, including the NULL routing_key one",
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
-	must(cd.Commit(ctx, tp.Id, controlGroup, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	advance(ctx, md, tp.Id, controlGroup)
+	must(cd.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	advance(ctx, md, tp.Id, controlGroupID)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
-	must(cd.FanOut(ctx, tp.Id, lifecycleGroup, 100))
-	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroup, limit)
+	must(cd.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
+	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, limit)
 	must(err)
 	fmt.Printf("  claimed deliveries: %v\n", deliveryIDs(deliveries))
 	assertIDs("payments.charge is the only message materialized as a delivery",
@@ -151,31 +154,34 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work], routingKey
 // resets all three groups to a clean slate and fast-forwards their cursors to
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
-func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumer.ConsumerDatastore[common.Work], topicID int64, groups ...string) int64 {
+func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumer.ConsumerDatastore[common.Work], topicID int64, groups ...string) (int64, map[string]int64) {
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
+	gids := map[string]int64{}
 	for _, g := range groups {
+		gID := mustGroupID(cd.UpsertGroup(ctx, topicID, g))
+		gids[g] = gID
 		for _, q := range []string{
-			`DELETE FROM lease WHERE consumer_group=$1 AND topic_id=$2`,
-			`DELETE FROM cursor WHERE consumer_group=$1 AND topic_id=$2`,
+			`DELETE FROM lease WHERE consumer_group_id=$1 AND topic_id=$2`,
+			`DELETE FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`,
 		} {
-			_, err := ds.Pool.Exec(ctx, q, g, topicID)
+			_, err := ds.Pool.Exec(ctx, q, gID, topicID)
 			must(err)
 		}
-		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group=$1`, topicID), g)
+		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), gID)
 		must(err)
-		must(cd.ClearBindings(ctx, topicID, g))
-		must(cd.UpsertCursor(ctx, topicID, g))
+		must(cd.ClearBindings(ctx, topicID, gID))
+		mustGroupID(cd.UpsertGroup(ctx, topicID, g)) // recreate the cursor row just deleted
 		// settled/pending must ride along -- the claim gate assumes
 		// gate >= settled >= claimed; bumping claimed alone breaks that and a
 		// poll where the fresh pair doesn't prove would regress the cursor
-		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3, settled_head=$3, pending_head=$3 WHERE consumer_group=$1 AND topic_id=$2`, g, topicID, head)
+		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3, settled_head=$3, pending_head=$3 WHERE consumer_group_id=$1 AND topic_id=$2`, gID, topicID, head)
 		must(err)
 	}
-	return head
+	return head, gids
 }
 
-func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, group string) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, group)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, groupID int64) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }
@@ -229,3 +235,5 @@ func assertIDs(label string, got, want []int64) {
 	}
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

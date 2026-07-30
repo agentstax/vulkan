@@ -133,7 +133,7 @@ func (p *DeliveryConsumer[Message]) project(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.consumerGroup, p.Config.FanOutBatchLimit); err != nil {
+			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.Group.Id, p.Config.FanOutBatchLimit); err != nil {
 				return err
 			}
 		}
@@ -168,7 +168,7 @@ func (p *DeliveryConsumer[Message]) processDeliveries(ctx context.Context, consu
 // No lease handling here: the parked lifecycle path never grew crash recovery,
 // so a delivery left in 'processing' (consumer died mid-process) just sits there.
 func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Topic.Id, p.consumerGroup, p.Config.BatchLimit)
+	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit)
 	if err != nil {
 		return err
 	}

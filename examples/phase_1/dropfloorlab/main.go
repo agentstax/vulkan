@@ -49,6 +49,9 @@ const (
 	groupInside = "phase8a.drop.inside" // cursor still sits inside it
 )
 
+// set by main from UpsertGroup -- helpers are id-keyed
+var groupID int64
+
 func main() {
 	ctx := context.Background()
 
@@ -66,7 +69,9 @@ func main() {
 	topicName := fmt.Sprintf("phase8a.dropfloorlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -143,25 +148,27 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 }
 
 func reset(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
+	groupID = mustGroupID(cd.UpsertGroup(ctx, topicID, group))
 	for _, q := range []string{
-		`DELETE FROM lease WHERE consumer_group=$1 AND topic_id=$2`,
-		`DELETE FROM cursor WHERE consumer_group=$1 AND topic_id=$2`,
+		`DELETE FROM lease WHERE consumer_group_id=$1 AND topic_id=$2`,
+		`DELETE FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`,
 	} {
-		_, err := ds.Pool.Exec(ctx, q, group, topicID)
+		_, err := ds.Pool.Exec(ctx, q, groupID, topicID)
 		must(err)
 	}
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
 	must(err)
-	must(cd.UpsertCursor(ctx, topicID, group))
+	mustGroupID(cd.UpsertGroup(ctx, topicID, group)) // recreate the cursor row just deleted
 }
 
 func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group=$1 AND topic_id=$2`, group, topicID, claimed, committed)
+	_ = group // groups are id-keyed; the name stays in the signature for the call sites' readability
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID, claimed, committed)
 	must(err)
 }
 
 func freshClaim(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string, limit int) *consumer.ClaimedRange {
-	claim, err := cd.ClaimMessagesWithCursor(ctx, topicID, group, limit, 3, 30*time.Second, false)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, topicID, groupID, limit, 3, 30*time.Second, false)
 	must(err)
 	if claim == nil {
 		die(fmt.Sprintf("%s: expected a claim, got nil (already caught up?)", group))
@@ -219,3 +226,5 @@ func assertPartitions(label string, got, want []int64) {
 	}
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

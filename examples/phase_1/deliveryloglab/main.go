@@ -72,7 +72,7 @@ func main() {
 func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("SCENARIO 1: a fresh failure logs one delivery_log row, a success logs none")
 
-	tp, cd, wp := newTopic(ctx, ds, "scenario1", topic.Config{})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario1", topic.Config{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
@@ -81,7 +81,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	}()
 
 	seed(ctx, wp, 2)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 2, 3, 5*time.Second, tp.DisableDeliveryLog)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 2, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)
 	if claim == nil || len(claim.Messages) != 2 {
 		die("expected a fresh claim of 2 messages")
@@ -89,10 +89,10 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	failingId, successId := claim.Messages[0].Id, claim.Messages[1].Id
 
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "simulated processing failure"}}
-	must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 
-	assertDeliveryLogRow(ctx, ds, tp.Id, group, failingId, 0, "simulated processing failure", true)
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, successId, 0)
+	assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, 0, "simulated processing failure", true)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, successId, 0)
 	fmt.Println("PASS: failure logged exactly one row, success logged none")
 }
 
@@ -101,7 +101,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
-	tp, cd, wp := newTopic(ctx, ds, "scenario2", topic.Config{})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario2", topic.Config{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
@@ -109,7 +109,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	}()
 
 	seed(ctx, wp, 1)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim")
@@ -117,23 +117,23 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	failingId := claim.Messages[0].Id
 
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "attempt 0 failure"}}
-	must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
-	assertDeliveryLogRow(ctx, ds, tp.Id, group, failingId, 0, "attempt 0 failure", true)
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, 0, "attempt 0 failure", true)
 
 	const maxAttempts = 5 // stays well below dead-letter for both retries below
 	for _, attempt := range []int{1, 2} {
 		time.Sleep(1500 * time.Millisecond) // outlives both the 300ms initial and CalculateDelay(0)=1s can_run_after
-		claimed, err := cd.ClaimExceptions(ctx, tp.Id, group, 10, maxAttempts, 5*time.Second, tp.DisableDeliveryLog)
+		claimed, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, maxAttempts, 5*time.Second, tp.DisableDeliveryLog)
 		must(err)
 		if len(claimed) != 1 || claimed[0].MessageId != failingId {
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
 		must(cd.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog))
-		assertDeliveryLogRow(ctx, ds, tp.Id, group, failingId, attempt, errText, true)
+		assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, attempt, errText, true)
 	}
 
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, failingId, 3) // attempt 0, 1, 2 -- three distinct rows
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, failingId, 3) // attempt 0, 1, 2 -- three distinct rows
 	fmt.Println("PASS: two retries appended two distinct rows, no overwrite of the original")
 }
 
@@ -142,7 +142,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("SCENARIO 3: DisableDeliveryLog skips every write (the table itself always exists)")
 
-	tp, cd, wp := newTopic(ctx, ds, "scenario3", topic.Config{DisableDeliveryLog: true})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario3", topic.Config{DisableDeliveryLog: true})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
@@ -154,17 +154,17 @@ func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresD
 	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), true)
 
 	seed(ctx, wp, 1)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim")
 	}
 	failingId := claim.Messages[0].Id
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "should never be logged"}}
-	must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, failingId, 0) // the failure was never logged
-	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                   // the real park still happened
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, failingId, 0) // the failure was never logged
+	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                     // the real park still happened
 	fmt.Println("PASS: no delivery_log row written, failure still parked normally in delivery_<id>, no error")
 }
 
@@ -174,7 +174,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 	step("SCENARIO 4a: dropPartition reaps a dormant message's delivery_log row")
 
 	const partitionSize = int64(4)
-	tp, cd, wp := newTopic(ctx, ds, "scenario4drop", topic.Config{PartitionSize: partitionSize})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4drop", topic.Config{PartitionSize: partitionSize})
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -183,17 +183,17 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	dormantId := failOne(ctx, cd, wp, tp, 4) // fills partition 0 (ids 1-4), fails id 1
+	dormantId := failOne(ctx, cd, wp, tp, groupID, 4) // fills partition 0 (ids 1-4), fails id 1
 	time.Sleep(ttl + ttlMargin)
-	aliveId := failOne(ctx, cd, wp, tp, 4) // rolls into partition 1 (ids 5-8), fails id 5 -- well inside ttl
+	aliveId := failOne(ctx, cd, wp, tp, groupID, 4) // rolls into partition 1 (ids 5-8), fails id 5 -- well inside ttl
 
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 1)
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 1)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
 
 	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 0)
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 0)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
 	fmt.Println("PASS: dropPartition reaped the dormant message's delivery_log row, left the alive one")
 }
 
@@ -201,7 +201,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 	step("SCENARIO 4b: sweepBatch reaps a dormant message's delivery_log row individually")
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
-	tp, cd, wp := newTopic(ctx, ds, "scenario4sweep", topic.Config{PartitionSize: partitionSize})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4sweep", topic.Config{PartitionSize: partitionSize})
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -210,23 +210,23 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	dormantId := failOne(ctx, cd, wp, tp, 1)
+	dormantId := failOne(ctx, cd, wp, tp, groupID, 1)
 	time.Sleep(ttl + ttlMargin)
-	aliveId := failOne(ctx, cd, wp, tp, 1) // well inside ttl
+	aliveId := failOne(ctx, cd, wp, tp, groupID, 1) // well inside ttl
 
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 1)
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 1)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
 
 	must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, 1000, tp.DisableDeliveryLog))
 
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, dormantId, 0)
-	assertDeliveryLogCount(ctx, ds, tp.Id, group, aliveId, 1)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 0)
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
 	fmt.Println("PASS: sweepBatch reaped the dormant message's delivery_log row, left the alive one")
 }
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.Producer[common.Work]) {
+func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.Producer[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -235,11 +235,11 @@ func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix s
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	return tp, cd, wp
+	return tp, cd, wp, groupID
 }
 
 func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
@@ -254,25 +254,25 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], wp *producer.Producer[common.Work], tp *topic.Topic, n int) int64 {
+func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], wp *producer.Producer[common.Work], tp *topic.Topic, groupID int64, n int) int64 {
 	seed(ctx, wp, n)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, n, 3, 5*time.Second, tp.DisableDeliveryLog)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, n, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim")
 	}
 	failingId := claim.Messages[0].Id
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "retention scenario failure"}}
-	must(cd.Commit(ctx, tp.Id, group, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 	return failingId
 }
 
-func assertDeliveryLogRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, consumerGroup string, messageID int64, attempt int, wantErr string, wantExists bool) {
+func assertDeliveryLogRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, groupID int64, messageID int64, attempt int, wantErr string, wantExists bool) {
 	var gotErr string
-	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT error FROM delivery_log_%d WHERE consumer_group = $1 AND message_id = $2 AND attempt = $3;`, topicID), consumerGroup, messageID, attempt).Scan(&gotErr)
+	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT error FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, topicID), groupID, messageID, attempt).Scan(&gotErr)
 	exists := err == nil
 	if exists != wantExists {
-		die(fmt.Sprintf("delivery_log_%d[group=%s message=%d attempt=%d] exists=%v, want %v (err=%v)", topicID, consumerGroup, messageID, attempt, exists, wantExists, err))
+		die(fmt.Sprintf("delivery_log_%d[group=%d message=%d attempt=%d] exists=%v, want %v (err=%v)", topicID, groupID, messageID, attempt, exists, wantExists, err))
 	}
 	if wantExists && gotErr != wantErr {
 		die(fmt.Sprintf("delivery_log_%d[message=%d attempt=%d] error=%q, want %q", topicID, messageID, attempt, gotErr, wantErr))
@@ -287,9 +287,9 @@ func errSuffix(wantExists bool, gotErr string) string {
 	return fmt.Sprintf(" error=%q", gotErr)
 }
 
-func assertDeliveryLogCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, consumerGroup string, messageID int64, want int) {
+func assertDeliveryLogCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, groupID int64, messageID int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group = $1 AND message_id = $2;`, topicID), consumerGroup, messageID).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2;`, topicID), groupID, messageID).Scan(&count))
 	if count != want {
 		die(fmt.Sprintf("delivery_log_%d[message=%d] has %d rows, want %d", topicID, messageID, count, want))
 	}
@@ -325,3 +325,5 @@ func die(msg string) {
 	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
 	os.Exit(1)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

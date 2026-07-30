@@ -56,7 +56,9 @@ func main() {
 		WaterlinePollRate: dutyRate,
 	})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -108,7 +110,7 @@ func main() {
 
 	// ===== the duties actually did their jobs =====
 	step("END STATE: the coordinated duties did real work")
-	assertInt("waterline reached head", scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group=$1 AND topic_id=$2`, group, tp.Id), head)
+	assertInt("waterline reached head", scalar(ctx, ds, `SELECT c.committed FROM cursor c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1 AND c.topic_id=$2`, group, tp.Id), head)
 	partitions := scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid

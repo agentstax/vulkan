@@ -23,6 +23,7 @@ import (
 // - binding
 // - entity
 // - topic
+// - consumer_group
 // - compaction_head
 // - migration_log
 // - system
@@ -94,10 +95,42 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		return err
 	}
 
-	// consumer group cursors for tracking offset in message_log
+	// entity table provides:
+	// - lifecycle management
+	// - global resource id
+	// for system resources only.
+	// Managed tables should FK it ON DELETE CASCADE for strong constraints and cleanup
+	createEntitySql := `
+		CREATE TABLE IF NOT EXISTS entity (
+			id BIGSERIAL PRIMARY KEY, -- global resource id
+			type TEXT NOT NULL,       -- 'topic' | 'consumer_group'
+			UNIQUE (id, type)         -- required for resource table composite foreign key references
+		);
+	`
+	if _, err := tx.Exec(ctx, createEntitySql); err != nil {
+		return err
+	}
+
+	// consumer_group table provides:
+	// - lifcycle management for child ownershipt model (cursor, binding, maintainence)
+	createConsumerGroupSql := `
+		CREATE TABLE IF NOT EXISTS consumer_group (
+			id BIGSERIAL PRIMARY KEY,                                                -- what children reference
+			entity_id BIGINT NOT NULL UNIQUE,                                        -- global resource id
+			entity_type TEXT NOT NULL GENERATED ALWAYS AS ('consumer_group') STORED, -- pins the composite FK to entity rows typed 'consumer_group'
+			name TEXT NOT NULL UNIQUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			FOREIGN KEY (entity_id, entity_type) REFERENCES entity (id, type) ON DELETE CASCADE
+		);
+	`
+	if _, err := tx.Exec(ctx, createConsumerGroupSql); err != nil {
+		return err
+	}
+
+	// consumer group cursors for tracking offset in message_log.
 	createCursorSql := `
 		CREATE TABLE IF NOT EXISTS cursor (
-			consumer_group TEXT NOT NULL,
+			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
 			topic_id BIGINT NOT NULL,               -- a group tracks an independent cursor per topic
 			claimed BIGINT NOT NULL DEFAULT 0,      -- the read frontier 'inflight' work
 			committed BIGINT NOT NULL DEFAULT 0,    -- every message id > committed is in an end state done / dead
@@ -106,7 +139,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 			settled_head BIGINT NOT NULL DEFAULT 0, -- highest id proven to have nothing uncommitted at or below it
 			pending_head BIGINT NOT NULL DEFAULT 0, -- candidate head awaiting that proof
 			pending_xmax XID8,                      -- txid fence read in the same snapshot as pending_head
-			PRIMARY KEY (consumer_group, topic_id)
+			PRIMARY KEY (consumer_group_id, topic_id)
 		);
 	`
 	if _, err := tx.Exec(ctx, createCursorSql); err != nil {
@@ -116,13 +149,13 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	createLeaseSql := `
 		CREATE TABLE IF NOT EXISTS lease (
 			token UUID NOT NULL DEFAULT gen_random_uuid(),
-			consumer_group TEXT NOT NULL,
+			consumer_group_id BIGINT NOT NULL,
 			topic_id BIGINT NOT NULL,        -- this is for range interpretation (which message_log_<id>)
 			low BIGINT NOT NULL,             -- low of claimed range of lease
 			high BIGINT NOT NULL,            -- high of claimed range of lease
 			until TIMESTAMPTZ NOT NULL,      -- when the lease is considered expired and should be reclaimed
 			reclaims INT NOT NULL DEFAULT 0, -- times this range has been reclaimed; past MaxReclaims it's quarantined
-			PRIMARY KEY (token, consumer_group)
+			PRIMARY KEY (token, consumer_group_id)
 		);
 	`
 	if _, err := tx.Exec(ctx, createLeaseSql); err != nil {
@@ -138,11 +171,11 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		CREATE TABLE IF NOT EXISTS maintenance (
 			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'alert'
 			topic_id BIGINT NOT NULL,
-			consumer_group TEXT NOT NULL DEFAULT '',          -- '' for topic-scoped duties (janitor)
+			consumer_group_id BIGINT NOT NULL DEFAULT 0,      -- 0 for topic-scoped duties (janitor)
 			token UUID NOT NULL DEFAULT gen_random_uuid(),    -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			attempts INT NOT NULL DEFAULT 0,                  -- incremented on every claim. resets on success
-			PRIMARY KEY (duty, topic_id, consumer_group)
+			PRIMARY KEY (duty, topic_id, consumer_group_id)
 		);
 	`
 	if _, err := tx.Exec(ctx, createMaintenanceSql); err != nil {
@@ -155,7 +188,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	createBindingSql := `
 		CREATE TABLE IF NOT EXISTS binding (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group TEXT NOT NULL,
+			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
 			topic_id BIGINT NOT NULL,
 			pattern TEXT NOT NULL,   -- POSIX regex translated from the NATS-style pattern
 			display TEXT             -- original NATS pattern, for humans
@@ -164,24 +197,8 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	if _, err := tx.Exec(ctx, createBindingSql); err != nil {
 		return err
 	}
-	createBindingIndexSql := `CREATE INDEX IF NOT EXISTS binding_group ON binding (consumer_group, topic_id);`
+	createBindingIndexSql := `CREATE INDEX IF NOT EXISTS binding_group ON binding (consumer_group_id, topic_id);`
 	if _, err := tx.Exec(ctx, createBindingIndexSql); err != nil {
-		return err
-	}
-
-	// entity table provides:
-	// - lifecycle management
-	// - global resource id
-	// for system resources only.
-	// Managed tables should FK it ON DELETE CASCADE for strong constraints and cleanup
-	createEntitySql := `
-		CREATE TABLE IF NOT EXISTS entity (
-			id BIGSERIAL PRIMARY KEY, -- global resource id
-			type TEXT NOT NULL,       -- 'topic' | 'consumer_group'
-			UNIQUE (id, type)         -- required for resource table composite foreign key references
-		);
-	`
-	if _, err := tx.Exec(ctx, createEntitySql); err != nil {
 		return err
 	}
 

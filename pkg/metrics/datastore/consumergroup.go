@@ -63,6 +63,11 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicID in
 }
 
 func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID int64, consumerGroup string) (*ConsumerGroupSnapshot, error) {
+	var consumerGroupID int64
+	if err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE name = $1;`, consumerGroup).Scan(&consumerGroupID); err != nil {
+		return nil, err
+	}
+
 	sql := fmt.Sprintf(`
 		SELECT
 			c.claimed,
@@ -74,35 +79,35 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID in
 			COALESCE((
 				SELECT COUNT(*)
 				FROM %[2]s
-				WHERE consumer_group = $1 AND status = 'ready'
+				WHERE consumer_group_id = $1 AND status = 'ready'
 			), 0) AS ready_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
 				FROM %[2]s
-				WHERE consumer_group = $1 AND status = 'inflight'
+				WHERE consumer_group_id = $1 AND status = 'inflight'
 			), 0) AS inflight_exceptions,
 			COALESCE((
 				SELECT COUNT(*)
 				FROM %[2]s
-				WHERE consumer_group = $1 AND status = 'dead'
+				WHERE consumer_group_id = $1 AND status = 'dead'
 			), 0) AS dead_exceptions,
 			(
 				SELECT MIN(created_at)
 				FROM %[2]s
-				WHERE consumer_group = $1 AND status IN ('ready', 'inflight')
+				WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight')
 			) AS oldest_unacked_at,
 			COALESCE((
 				SELECT COUNT(*)
 				FROM lease
-				WHERE consumer_group = $1 AND topic_id = $2
+				WHERE consumer_group_id = $1 AND topic_id = $2
 			), 0) AS open_leases
 		FROM cursor c
-		WHERE c.consumer_group = $1 AND c.topic_id = $2;
+		WHERE c.consumer_group_id = $1 AND c.topic_id = $2;
 	`, topic.MessageLogTable(topicID), topic.DeliveryTable(topicID))
 
 	var s ConsumerGroupSnapshot
 	var oldestUnackedAt *time.Time
-	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroup, topicID).Scan(
+	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupID, topicID).Scan(
 		&s.Claimed,
 		&s.Committed,
 		&s.Head,
@@ -139,8 +144,14 @@ func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicID int64
 }
 
 func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicID int64) ([]string, error) {
-	rows, err := d.Datastore.Pool.Query(ctx,
-		`SELECT consumer_group FROM cursor WHERE topic_id = $1 ORDER BY consumer_group;`, topicID)
+	sql := `
+		SELECT g.name 
+		FROM cursor c 
+		JOIN consumer_group g ON g.id = c.consumer_group_id 
+		WHERE c.topic_id = $1 ORDER BY g.name;
+	`
+
+	rows, err := d.Datastore.Pool.Query(ctx, sql, topicID)
 	if err != nil {
 		return nil, err
 	}

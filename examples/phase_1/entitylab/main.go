@@ -122,7 +122,8 @@ func main() {
 		SELECT COUNT(*)
 		FROM entity e
 		LEFT JOIN topic t ON t.entity_id = e.id
-		WHERE t.entity_id IS NULL;
+		LEFT JOIN consumer_group g ON g.entity_id = e.id
+		WHERE t.entity_id IS NULL AND g.entity_id IS NULL;
 	`).Scan(&orphans))
 	if orphans != 0 {
 		die(fmt.Sprintf("%d orphaned entity rows -- a register or destroy path leaked", orphans))

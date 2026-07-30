@@ -91,7 +91,7 @@ func (j *Janitor) Register(ctx context.Context) error {
 		return err
 	}
 
-	duty, err := newDutyRunner(j.Datastore, j.Logger, j.Config.JitterFraction, DutyJanitor, current.Id, "", current.JanitorPollRate)
+	duty, err := newDutyRunner(j.Datastore, j.Logger, j.Config.JitterFraction, DutyJanitor, current.Id, 0, current.JanitorPollRate)
 	if err != nil {
 		return err
 	}

@@ -51,7 +51,9 @@ func main() {
 	topicName := fmt.Sprintf("phase8a.partitionlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -109,12 +111,12 @@ func explainReadMessages(ctx context.Context, ds *coredatastore.PostgresDatastor
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
-				NOT EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group = $3 AND b.topic_id = $4)
-				OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group = $3 AND b.topic_id = $4 AND m.routing_key ~ b.pattern)
+				NOT EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = $3 AND b.topic_id = $4)
+				OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = $3 AND b.topic_id = $4 AND m.routing_key ~ b.pattern)
 			)
 		ORDER BY m.id;
 	`, logTable)
-	rows, err := ds.Pool.Query(ctx, sql, low, high, "phase8a.partition.lab", topicID)
+	rows, err := ds.Pool.Query(ctx, sql, low, high, 0, topicID) // no binding rows exist for group id 0 -- the NOT EXISTS arm is what the plan exercises
 	must(err)
 	defer rows.Close()
 

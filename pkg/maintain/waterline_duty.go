@@ -21,10 +21,11 @@ type WaterlineRoller struct {
 	Logger    logger.Logger // copied from Config.Logger at construction
 
 	consumerGroup  string
+	groupID        int64
 	topicName      string
 	version        topic.SchemaVersion
 	topicDatastore *topic.TopicDatastore
-	duty           *dutyRunner // constructed by Register -- topic id and rate come from the registry row
+	duty           *dutyRunner
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -94,12 +95,21 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return err
 	}
 
-	duty, err := newDutyRunner(w.Datastore, w.Logger, w.Config.JitterFraction, DutyWaterline, current.Id, w.consumerGroup, current.WaterlinePollRate)
+	groupID, err := w.Datastore.GetGroupId(ctx, w.consumerGroup)
+	if err != nil {
+		return err
+	}
+	if groupID == 0 {
+		return fmt.Errorf("consumer group %q is not registered -- the consumer's Register creates it", w.consumerGroup)
+	}
+
+	duty, err := newDutyRunner(w.Datastore, w.Logger, w.Config.JitterFraction, DutyWaterline, current.Id, groupID, current.WaterlinePollRate)
 	if err != nil {
 		return err
 	}
 
 	w.Topic = current
+	w.groupID = groupID
 	w.duty = duty
 	return nil
 }
@@ -121,6 +131,6 @@ func (w *WaterlineRoller) Run(ctx context.Context) error {
 }
 
 func (w *WaterlineRoller) roll(ctx context.Context) error {
-	_, err := w.Datastore.AdvanceWaterline(ctx, w.Topic.Id, w.consumerGroup)
+	_, err := w.Datastore.AdvanceWaterline(ctx, w.Topic.Id, w.groupID)
 	return err
 }

@@ -195,7 +195,7 @@ func (p *MessageConsumer[Message]) closeRange(ctx context.Context, state *rangeS
 			fmt.Errorf("force reclaim exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
 		defer cancel()
 
-		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Topic.Id, p.consumerGroup, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
+		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Topic.Id, p.Group.Id, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
 			p.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", state.lease.Low, "high", state.lease.High, "err", err)
 		}
 		return
@@ -225,7 +225,7 @@ func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
 		leaseDuration := p.Config.MessageMax.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
 		limit := min(room, p.Config.BatchLimit)
 
-		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.consumerGroup, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
+		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group.Id, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
 		if err != nil {
 			// ctx cancellation is a real shutdown -> propagate and stop
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -320,7 +320,7 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
 	// range always frees -- the lazy waterline roller advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	err := p.Datastore.Commit(ctx, p.Topic.Id, p.consumerGroup, commit.Lease.Token, commit.Exceptions, commit.Terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog)
+	err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group.Id, commit.Lease.Token, commit.Exceptions, commit.Terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog)
 	switch {
 	case err == nil:
 		p.buffer.Remove(commit.Lease.Token)
@@ -346,7 +346,7 @@ func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, last
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.consumerGroup, lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
+	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group.Id, lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here

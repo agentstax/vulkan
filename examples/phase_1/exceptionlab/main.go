@@ -36,6 +36,9 @@ const (
 	seedRows = 20
 )
 
+// set by main from UpsertGroup -- helpers are id-keyed
+var groupID int64
+
 func main() {
 	ctx := context.Background()
 
@@ -53,7 +56,9 @@ func main() {
 	topicName := fmt.Sprintf("phase65c.exceptionlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
@@ -63,7 +68,7 @@ func main() {
 	must(err)
 	must(wp.Register(ctx))
 
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID = mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	for range seedRows {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
@@ -79,7 +84,7 @@ func main() {
 
 	// ===== range 1: message 3 fails, the rest succeed =====
 	step("claim range 1 (ids 1-5), message 3 fails processing")
-	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, batch, maxRangeReclaims, lease, false)
+	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -88,7 +93,7 @@ func main() {
 
 	const failingId = int64(3)
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "simulated processing failure"}}
-	must(cd.Commit(ctx, tp.Id, group, claim1.Lease.Token, exceptions, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, exceptions, nil, 5*time.Second, false))
 	assert("one parked exception", deliveries(ctx, ds, tp.Id), 1)
 
 	committed := advance(ctx, md, tp.Id)
@@ -97,12 +102,12 @@ func main() {
 
 	// ===== range 2: fully succeeds, but committed stays pinned on message 3 =====
 	step("claim + commit range 2 (ids 6-10), all succeed")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, batch, maxRangeReclaims, lease, false)
+	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a fresh claim, got nil")
 	}
-	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
@@ -116,7 +121,7 @@ func main() {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, group, batch, 3, lease, false)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, false)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))
@@ -134,12 +139,12 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, batch, maxRangeReclaims, lease, false)
+		c, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 		must(err)
 		if c == nil {
 			break // caught up
 		}
-		must(cd.Commit(ctx, tp.Id, group, c.Lease.Token, nil, nil, 5*time.Second, false))
+		must(cd.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, nil, 5*time.Second, false))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, md, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
@@ -153,19 +158,19 @@ func main() {
 // ---- helpers ----
 
 func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, group)
+	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }
 
 func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID)
 }
 func claimedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
@@ -198,3 +203,5 @@ func assert(label string, got, want int64) {
 	}
 	fmt.Printf("  ✓ %s (%d)\n", label, got)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

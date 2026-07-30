@@ -59,8 +59,8 @@ func main() {
 
 	step("seed a row in every topic-scoped table")
 
-	must(cd.UpsertCursor(ctx, tp.Id, group))
-	must(cd.Bind(ctx, tp.Id, group, "orders.*"))
+	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	must(cd.Bind(ctx, tp.Id, groupID, "orders.*"))
 
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
@@ -70,19 +70,19 @@ func main() {
 	_, err = wp.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 10, 3, 5*time.Second, false)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, false)
 	must(err)
 	if claim == nil {
 		die("expected a claim, got nil")
 	}
 	// deliberately never Commit -- leaves the lease open
 
-	must(cd.FanOut(ctx, tp.Id, group, 100)) // materializes a 'ready' delivery row, left unclaimed
+	must(cd.FanOut(ctx, tp.Id, groupID, 100)) // materializes a 'ready' delivery row, left unclaimed
 
 	// claim it via the lifecycle path and fail it once -- status flips
 	// ready->inflight->ready in place (still 1 delivery row) while parking one
 	// delivery_log row, without touching cursor/lease (lifecycle path skips both).
-	claimedLifecycle, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, group, 10)
+	claimedLifecycle, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, groupID, 10)
 	must(err)
 	if len(claimedLifecycle) != 1 {
 		die(fmt.Sprintf("expected 1 lifecycle claim, got %d", len(claimedLifecycle)))
@@ -182,3 +182,5 @@ func die(msg string) {
 	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
 	os.Exit(1)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

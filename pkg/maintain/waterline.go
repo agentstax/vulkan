@@ -20,17 +20,17 @@ import (
 //	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursor comes back fresh, lease stale.
-func (d *MaintenanceDatastore) AdvanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
+func (d *MaintenanceDatastore) AdvanceWaterline(ctx context.Context, topicID int64, groupID int64) (int64, error) {
 	var committed int64
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		committed, err = d.advanceWaterline(ctx, topicID, consumerGroup)
+		committed, err = d.advanceWaterline(ctx, topicID, groupID)
 		return err
 	})
 	return committed, err
 }
 
-func (d *MaintenanceDatastore) advanceWaterline(ctx context.Context, topicID int64, consumerGroup string) (int64, error) {
+func (d *MaintenanceDatastore) advanceWaterline(ctx context.Context, topicID int64, groupID int64) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
 	// 		earliest unresolved exception (dead doesn't count -- only ready/inflight block)
@@ -38,16 +38,16 @@ func (d *MaintenanceDatastore) advanceWaterline(ctx context.Context, topicID int
 	// LEAST ignores NULLs so any/all of those can be absent.
 	targetSql := fmt.Sprintf(`
 		SELECT LEAST(
-			(SELECT MIN(low) FROM lease WHERE consumer_group = $1 AND topic_id = $2),
-			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group = $1 AND status IN ('ready', 'inflight')),
+			(SELECT MIN(low) FROM lease WHERE consumer_group_id = $1 AND topic_id = $2),
+			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight')),
 			claimed
 		)
 		FROM cursor
-		WHERE consumer_group = $1 AND topic_id = $2;
+		WHERE consumer_group_id = $1 AND topic_id = $2;
 	`, topic.DeliveryTable(topicID))
 
 	var target int64
-	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, consumerGroup, topicID).Scan(&target); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupID, topicID).Scan(&target); err != nil {
 		return 0, err
 	}
 
@@ -55,11 +55,11 @@ func (d *MaintenanceDatastore) advanceWaterline(ctx context.Context, topicID int
 	const rollSql = `
 		UPDATE cursor
 		SET committed = GREATEST(committed, $3)
-		WHERE consumer_group = $1 AND topic_id = $2
+		WHERE consumer_group_id = $1 AND topic_id = $2
 		RETURNING committed;
 	`
 
 	var committed int64
-	err := d.Datastore.Pool.QueryRow(ctx, rollSql, consumerGroup, topicID, target).Scan(&committed)
+	err := d.Datastore.Pool.QueryRow(ctx, rollSql, groupID, topicID, target).Scan(&committed)
 	return committed, err
 }

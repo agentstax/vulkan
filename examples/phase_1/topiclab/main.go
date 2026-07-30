@@ -110,11 +110,11 @@ func main() {
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
-	must(cd.UpsertCursor(ctx, topicA.Id, groupA))
-	setCursor(ctx, ds, topicA.Id, groupA, 5, 5)
+	groupAID := mustGroupID(cd.UpsertGroup(ctx, topicA.Id, groupA))
+	setCursor(ctx, ds, topicA.Id, groupAID, 5, 5)
 
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
-	must(cd.UpsertCursor(ctx, topicB.Id, groupB))
+	mustGroupID(cd.UpsertGroup(ctx, topicB.Id, groupB))
 
 	must(md.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
 	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1, 2}) // 2 is the janitor's empty create-ahead
@@ -126,25 +126,25 @@ func main() {
 	must(err)
 	must(wpC.Register(ctx))
 	groupRoute := "topiclab.route"
-	must(cd.UpsertCursor(ctx, topicC.Id, groupRoute))
+	groupRouteID := mustGroupID(cd.UpsertGroup(ctx, topicC.Id, groupRoute))
 
 	headBefore := head(ctx, ds, topicC.Id) // topicC is fresh, this is 0
 	publish(ctx, wpC, "orders.created")    // id headBefore+1, published BEFORE any binding exists
-	must(cd.Bind(ctx, topicC.Id, groupRoute, "orders.*"))
+	must(cd.Bind(ctx, topicC.Id, groupRouteID, "orders.*"))
 	publish(ctx, wpC, "orders.updated")  // id headBefore+2, matches, published AFTER the binding
 	publish(ctx, wpC, "payments.charge") // id headBefore+3, does not match
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
 		headBefore+1, headBefore+2, headBefore+3, headBefore+1, headBefore+1, headBefore+2)
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, topicC.Id, groupRoute, 10, 3, 30*time.Second, false)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 10, 3, 30*time.Second, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
 	}
 	assertInt64s("retroactive binding applies to the pre-existing message, CURSOR path filters out the non-match",
 		ids(claim.Messages), []int64{headBefore + 1, headBefore + 2})
-	must(cd.Commit(ctx, topicC.Id, groupRoute, claim.Lease.Token, nil, nil, 5*time.Second, false))
-	committed := advance(ctx, md, topicC.Id, groupRoute)
+	must(cd.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	committed := advance(ctx, md, topicC.Id, groupRouteID)
 	assertInt("committed still advances over the WHOLE range, not just the matches", committed, claim.Lease.High)
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
@@ -154,10 +154,10 @@ func main() {
 	must(wpD.Register(ctx))
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
-	must(cd.Bind(ctx, topicD.Id, groupX, "sliceX.*"))
-	must(cd.Bind(ctx, topicD.Id, groupY, "sliceY.*"))
-	must(cd.UpsertCursor(ctx, topicD.Id, groupX))
-	must(cd.UpsertCursor(ctx, topicD.Id, groupY))
+	groupXID := mustGroupID(cd.UpsertGroup(ctx, topicD.Id, groupX))
+	groupYID := mustGroupID(cd.UpsertGroup(ctx, topicD.Id, groupY))
+	must(cd.Bind(ctx, topicD.Id, groupXID, "sliceX.*"))
+	must(cd.Bind(ctx, topicD.Id, groupYID, "sliceY.*"))
 
 	for range 5 { // fills topicD's partition 0 at width 5, all in sliceX
 		publish(ctx, wpD, "sliceX.event")
@@ -165,13 +165,13 @@ func main() {
 	must(md.EnsureNextPartition(ctx, topicD.Id, partitionSize))
 	time.Sleep(ttl + ttlMargin)
 
-	claimX, err := cd.ClaimMessagesWithCursor(ctx, topicD.Id, groupX, 10, 3, 30*time.Second, false)
+	claimX, err := cd.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, false)
 	must(err)
 	if claimX == nil {
 		die("expected groupX to claim a fresh range")
 	}
-	must(cd.Commit(ctx, topicD.Id, groupX, claimX.Lease.Token, nil, nil, 5*time.Second, false))
-	advance(ctx, md, topicD.Id, groupX)
+	must(cd.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, nil, 5*time.Second, false))
+	advance(ctx, md, topicD.Id, groupXID)
 	fmt.Println("  groupX (sliceX reader) is now fully caught up on the only traffic that exists")
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,
 	// simulating a slice consumer that's stuck or never started.
@@ -209,14 +209,14 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work], routingKey
 	must(err)
 }
 
-func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, group string) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, group)
+func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, groupID int64) int64 {
+	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }
 
-func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group=$1 AND topic_id=$2`, group, topicID, claimed, committed)
+func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, groupID int64, claimed, committed int64) {
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID, claimed, committed)
 	must(err)
 }
 
@@ -299,3 +299,5 @@ func assertInt64s(label string, got, want []int64) {
 	}
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }

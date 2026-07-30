@@ -494,8 +494,8 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 
 	createDeliverySql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			consumer_group TEXT NOT NULL, -- PK
-			message_id BIGINT NOT NULL,   -- PK
+			consumer_group_id BIGINT NOT NULL, -- PK
+			message_id BIGINT NOT NULL,        -- PK
 			status TEXT NOT NULL,
 			attempts INT NOT NULL default 0,
 			lease_until TIMESTAMPTZ,
@@ -504,7 +504,7 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 			last_error TEXT,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (consumer_group, message_id)
+			PRIMARY KEY (consumer_group_id, message_id)
 		);
 	`, iTopic.DeliveryTable(id))
 	if _, err := tx.Exec(ctx, createDeliverySql); err != nil {
@@ -514,12 +514,12 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 	// delivery_log_<id> exists even when DisableDeliveryLog
 	createDeliveryLogSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			consumer_group TEXT NOT NULL,        -- PK
+			consumer_group_id BIGINT NOT NULL,   -- PK
 			message_id BIGINT NOT NULL,          -- PK
 			attempt INT NOT NULL,                -- PK
 			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			error TEXT NOT NULL,                 -- always populated -- a row only ever exists for a failed attempt
-			PRIMARY KEY (consumer_group, message_id, attempt)
+			PRIMARY KEY (consumer_group_id, message_id, attempt)
 		);
 	`, iTopic.DeliveryLogTable(id))
 	_, err := tx.Exec(ctx, createDeliveryLogSql)

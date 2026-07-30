@@ -76,7 +76,7 @@ func main() {
 	var samples []sample
 	deadline := start.Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		attempts := scalarInt(ctx, ds, `SELECT attempts FROM maintenance WHERE duty='janitor' AND topic_id=$1 AND consumer_group=''`, tp.Id)
+		attempts := scalarInt(ctx, ds, `SELECT attempts FROM maintenance WHERE duty='janitor' AND topic_id=$1 AND consumer_group_id=0`, tp.Id)
 		if len(samples) == 0 || attempts != samples[len(samples)-1].attempts {
 			samples = append(samples, sample{attempts, time.Since(start)})
 			fmt.Printf("  attempts=%d at %v\n", attempts, time.Since(start).Round(time.Millisecond))
@@ -128,7 +128,7 @@ func main() {
 	deadline = time.Now().Add(10 * time.Second)
 	var final int
 	for time.Now().Before(deadline) {
-		final = scalarInt(ctx, ds, `SELECT attempts FROM maintenance WHERE duty='janitor' AND topic_id=$1 AND consumer_group=''`, tp.Id)
+		final = scalarInt(ctx, ds, `SELECT attempts FROM maintenance WHERE duty='janitor' AND topic_id=$1 AND consumer_group_id=0`, tp.Id)
 		if final == 0 {
 			break
 		}

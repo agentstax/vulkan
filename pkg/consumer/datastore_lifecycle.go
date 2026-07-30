@@ -15,13 +15,13 @@ import (
 // FanOut materializes one delivery row per message this group is bound to
 // receive. Scans only above the group's mark (cursor.committed), so
 // steady-state cost is O(new messages) per tick, not O(whole log).
-func (d *ConsumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error {
+func (d *ConsumerDatastore[Message]) FanOut(ctx context.Context, topicID int64, groupID int64, limit int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.fanOut(ctx, topicID, consumerGroup, limit)
+		return d.fanOut(ctx, topicID, groupID, limit)
 	})
 }
 
-func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, consumerGroup string, limit int) error {
+func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, groupID int64, limit int) error {
 	// take the (head, xmax) pair the scan statement's gate below proves
 	// against -- the same fence as FreshClaimMessagesWithCursor.
 	snapshotSql := fmt.Sprintf(`
@@ -31,14 +31,14 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			c.committed,
 			c.pending_head
 		FROM cursor c
-		WHERE c.consumer_group = $1 AND c.topic_id = $2;
+		WHERE c.consumer_group_id = $1 AND c.topic_id = $2;
 	`, topic.MessageLogTable(topicID))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
-	if err := d.Datastore.Pool.QueryRow(ctx, snapshotSql, consumerGroup, topicID).Scan(&snapshotHead, &snapshotXmax, &committed, &pendingHead); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, snapshotSql, groupID, topicID).Scan(&snapshotHead, &snapshotXmax, &committed, &pendingHead); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("no cursor for group %s on topic %d -- was Register called?", consumerGroup, topicID)
+			return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
 		}
 		return err
 	}
@@ -52,7 +52,7 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 	scanSql := fmt.Sprintf(`
 		WITH old_values AS (
 			SELECT * FROM cursor
-			WHERE consumer_group = $1 AND topic_id = $2
+			WHERE consumer_group_id = $1 AND topic_id = $2
 			-- FOR UPDATE so a racing same-group peer's committed advance is
 			-- visible to our scan start (same race as the cursor claim path)
 			FOR UPDATE
@@ -78,19 +78,19 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			LIMIT $3
 		),
 		materialized AS (
-			INSERT INTO %[1]s (consumer_group, message_id, status) -- [1] = delivery table
+			INSERT INTO %[1]s (consumer_group_id, message_id, status) -- [1] = delivery table
 			SELECT $1, b.id, 'ready'
 			FROM batch b
 			WHERE (
-				-- no bindings for (consumer_group, topic_id) exists
+				-- no bindings for (consumer_group_id, topic_id) exists
 				NOT EXISTS (
 					SELECT 1 FROM binding bi
-					WHERE bi.consumer_group = $1 AND bi.topic_id = $2
+					WHERE bi.consumer_group_id = $1 AND bi.topic_id = $2
 				)
-				-- bindings for (consumer_group, topic_id) exists and match routing_key pattern
+				-- bindings for (consumer_group_id, topic_id) exists and match routing_key pattern
 				OR EXISTS (
 					SELECT 1 FROM binding bi
-					WHERE bi.consumer_group = $1 AND bi.topic_id = $2
+					WHERE bi.consumer_group_id = $1 AND bi.topic_id = $2
 						AND b.routing_key ~ bi.pattern
 				)
 				-- if bindings exist but our routing_key does not match any of them
@@ -161,32 +161,32 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			pending_head = GREATEST(cursor.pending_head, $4),
 			pending_xmax = GREATEST(cursor.pending_xmax, $5::xid8) -- also skips the initial NULL
 		FROM mark
-		WHERE cursor.consumer_group = $1 AND cursor.topic_id = $2;
+		WHERE cursor.consumer_group_id = $1 AND cursor.topic_id = $2;
 	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 
-	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, consumerGroup, topicID, limit, snapshotHead, snapshotXmax)
+	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupID, topicID, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		// cursor row deleted between the two statements
-		return fmt.Errorf("no cursor for group %s on topic %d -- was Register called?", consumerGroup, topicID)
+		return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
 	}
 
 	return nil
 }
 
-func (d *ConsumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
+func (d *ConsumerDatastore[Message]) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, groupID int64, limit int) ([]DeliveryRow, error) {
 	var deliveries []DeliveryRow
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		deliveries, err = d.claimMessagesWithLifecycle(ctx, topicID, consumerGroup, limit)
+		deliveries, err = d.claimMessagesWithLifecycle(ctx, topicID, groupID, limit)
 		return err
 	})
 	return deliveries, err
 }
 
-func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Context, topicID int64, consumerGroup string, limit int) ([]DeliveryRow, error) {
+func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Context, topicID int64, groupID int64, limit int) ([]DeliveryRow, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
 	// one statement, per (group, topic, message). SKIP LOCKED keeps competing
 	// workers from grabbing the same row.
@@ -203,18 +203,18 @@ func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Cont
 				status = 'processing',
 				attempts = attempts + 1,
 				updated_at = now()
-			WHERE (consumer_group, message_id) IN (
-				SELECT consumer_group, message_id FROM %[1]s
-				WHERE consumer_group = $1
+			WHERE (consumer_group_id, message_id) IN (
+				SELECT consumer_group_id, message_id FROM %[1]s
+				WHERE consumer_group_id = $1
 					AND status = 'ready'
 				ORDER BY message_id
 				LIMIT $2
 				FOR UPDATE SKIP LOCKED
 			)
-			RETURNING consumer_group, message_id, status, attempts
+			RETURNING consumer_group_id, message_id, status, attempts
 		)
 		SELECT
-			c.consumer_group,
+			c.consumer_group_id,
 			$3::bigint AS topic_id,
 			c.message_id,
 			c.status,
@@ -226,7 +226,7 @@ func (d *ConsumerDatastore[Message]) claimMessagesWithLifecycle(ctx context.Cont
 		ORDER BY c.message_id;
 	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql, consumerGroup, limit, topicID)
+	rows, err := d.Datastore.Pool.Query(ctx, sql, groupID, limit, topicID)
 	if err != nil {
 		return nil, err
 	}
@@ -249,11 +249,11 @@ func (d *ConsumerDatastore[Message]) recordSuccess(ctx context.Context, delivery
 			status = 'done',
 			last_error = NULL,
 			updated_at = now()
-		WHERE consumer_group = $1
+		WHERE consumer_group_id = $1
 			AND message_id = $2;
 	`, topic.DeliveryTable(delivery.TopicID))
 
-	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroup, delivery.MessageId)
+	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroupId, delivery.MessageId)
 	return err
 }
 
@@ -277,7 +277,7 @@ func (d *ConsumerDatastore[Message]) recordFailure(ctx context.Context, maxAttem
 	}
 
 	var sql string
-	args := []any{delivery.ConsumerGroup, delivery.MessageId, failureErr.Error()}
+	args := []any{delivery.ConsumerGroupId, delivery.MessageId, failureErr.Error()}
 	if disableDeliveryLog {
 		sql = fmt.Sprintf(`
 			UPDATE %s
@@ -285,7 +285,7 @@ func (d *ConsumerDatastore[Message]) recordFailure(ctx context.Context, maxAttem
 				status = 'ready',
 				last_error = $3,
 				updated_at = now()
-			WHERE consumer_group = $1
+			WHERE consumer_group_id = $1
 				AND message_id = $2;
 		`, topic.DeliveryTable(delivery.TopicID))
 	} else {
@@ -296,11 +296,11 @@ func (d *ConsumerDatastore[Message]) recordFailure(ctx context.Context, maxAttem
 					status = 'ready',
 					last_error = $3,
 					updated_at = now()
-				WHERE consumer_group = $1
+				WHERE consumer_group_id = $1
 					AND message_id = $2
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group, message_id, attempt, error)
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
 		`, topic.DeliveryTable(delivery.TopicID), topic.DeliveryLogTable(delivery.TopicID))
@@ -312,7 +312,7 @@ func (d *ConsumerDatastore[Message]) recordFailure(ctx context.Context, maxAttem
 }
 
 // RecordTerminal dead-letters a delivery: no more retries. The DLQ for a group is
-// just `WHERE consumer_group = $1 AND status = 'dead'`; one group can dead-letter a
+// just `WHERE consumer_group_id = $1 AND status = 'dead'`; one group can dead-letter a
 // message while another processes the same offset fine.
 func (d *ConsumerDatastore[Message]) RecordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
@@ -322,7 +322,7 @@ func (d *ConsumerDatastore[Message]) RecordTerminal(ctx context.Context, deliver
 
 func (d *ConsumerDatastore[Message]) recordTerminal(ctx context.Context, delivery *DeliveryRow, terminalErr error, disableDeliveryLog bool) error {
 	var sql string
-	args := []any{delivery.ConsumerGroup, delivery.MessageId, terminalErr.Error()}
+	args := []any{delivery.ConsumerGroupId, delivery.MessageId, terminalErr.Error()}
 	if disableDeliveryLog {
 		sql = fmt.Sprintf(`
 			UPDATE %s
@@ -330,7 +330,7 @@ func (d *ConsumerDatastore[Message]) recordTerminal(ctx context.Context, deliver
 				status = 'dead',
 				last_error = $3,
 				updated_at = now()
-			WHERE consumer_group = $1
+			WHERE consumer_group_id = $1
 				AND message_id = $2;
 		`, topic.DeliveryTable(delivery.TopicID))
 	} else {
@@ -341,11 +341,11 @@ func (d *ConsumerDatastore[Message]) recordTerminal(ctx context.Context, deliver
 					status = 'dead',
 					last_error = $3,
 					updated_at = now()
-				WHERE consumer_group = $1
+				WHERE consumer_group_id = $1
 					AND message_id = $2
 				RETURNING 1
 			)
-			INSERT INTO %[2]s (consumer_group, message_id, attempt, error)
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
 		`, topic.DeliveryTable(delivery.TopicID), topic.DeliveryLogTable(delivery.TopicID))
@@ -356,6 +356,6 @@ func (d *ConsumerDatastore[Message]) recordTerminal(ctx context.Context, deliver
 		return err
 	}
 
-	d.Logger.WarnContext(ctx, "message dead-lettered", "group", delivery.ConsumerGroup, "topic_id", delivery.TopicID, "message_id", delivery.MessageId, "error", terminalErr)
+	d.Logger.WarnContext(ctx, "message dead-lettered", "group_id", delivery.ConsumerGroupId, "topic_id", delivery.TopicID, "message_id", delivery.MessageId, "error", terminalErr)
 	return nil
 }

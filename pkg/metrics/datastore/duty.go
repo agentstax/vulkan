@@ -37,7 +37,7 @@ func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, e
 	// skipped whole, not listed with a NULL rate that breaks the scan
 	sql := `
 		SELECT
-			m.duty, t.name, m.consumer_group,
+			m.duty, t.name, COALESCE(g.name, ''),
 			CASE m.duty
 				WHEN 'janitor' THEN t.janitor_poll_rate_ns
 				WHEN 'waterline' THEN t.waterline_poll_rate_ns
@@ -46,8 +46,9 @@ func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, e
 			m.attempts
 		FROM maintenance m
 		JOIN topic t ON t.id = m.topic_id
+		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
 		WHERE m.duty IN ('janitor', 'waterline')
-		ORDER BY t.name, m.duty, m.consumer_group;
+		ORDER BY t.name, m.duty, g.name;
 	`
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)

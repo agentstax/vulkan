@@ -97,3 +97,10 @@ don't like how listDuties has a case statement joining many tables. Makes it fee
 that is set with a poll rate instead of these values being set on topic, system etc.
 
 rethink making GetCompactionHead live on producer. It could want to be used and called in many different places
+
+cursor, lease remove topic_id as it can be looked up if necessary
+cursor getting unique id column? unsure about this one. does group <-> cursor always be 1 to 1 mapping
+maintenance table using entity_id/type
+fix dutySnapshots coalesce after maintenance table refactor
+
+having to have func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, name string) (int64, error) in maintenance datastore because of circular dependencies with consumer is a code smell and means we have couple things incorrectly

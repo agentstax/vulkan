@@ -18,30 +18,30 @@ import (
 //
 // TODO - this is a true wildcard, not a NATS-style selector -- it can't pin an
 // exact token depth (see TODO.md).
-func (d *ConsumerDatastore[Message]) Bind(ctx context.Context, topicID int64, consumerGroup, pattern string) error {
+func (d *ConsumerDatastore[Message]) Bind(ctx context.Context, topicID int64, groupID int64, pattern string) error {
 	rx, err := wildcardToRegex(pattern)
 	if err != nil {
 		return err
 	}
 
 	sql := `
-		INSERT INTO binding (consumer_group, topic_id, pattern, display)
+		INSERT INTO binding (consumer_group_id, topic_id, pattern, display)
 		VALUES ($1, $2, $3, $4);
 	`
 
-	_, err = d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID, rx, pattern)
+	_, err = d.Datastore.Pool.Exec(ctx, sql, groupID, topicID, rx, pattern)
 	return err
 }
 
 // removes every binding for a group on this topic -> it goes back to matching
 // all events on this topic, forward only (see Bind).
-func (d *ConsumerDatastore[Message]) ClearBindings(ctx context.Context, topicID int64, consumerGroup string) error {
+func (d *ConsumerDatastore[Message]) ClearBindings(ctx context.Context, topicID int64, groupID int64) error {
 	sql := `
 		DELETE FROM binding
-		WHERE consumer_group = $1 AND topic_id = $2;
+		WHERE consumer_group_id = $1 AND topic_id = $2;
 	`
 
-	_, err := d.Datastore.Pool.Exec(ctx, sql, consumerGroup, topicID)
+	_, err := d.Datastore.Pool.Exec(ctx, sql, groupID, topicID)
 	return err
 }
 

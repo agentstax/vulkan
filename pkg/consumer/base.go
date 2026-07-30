@@ -20,6 +20,7 @@ import (
 // its exported fields stay part of each type's public surface.
 type consumerBase[Message any] struct {
 	Topic           *topic.Topic // resolved by Register from the name/version given to the constructor
+	Group           *Group       // resolved by Register from consumerGroup -- children are keyed by Group.Id
 	Datastore       *ConsumerDatastore[Message]
 	AbandonedEvents *consumermetrics.MetricEventProducer
 	Config          *ConsumerConfig
@@ -108,10 +109,12 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 		return err
 	}
 
-	// both consumption paths track the log through this row (CURSOR claims
-	// through it, LIFECYCLE records fan-out progress in committed), and it
-	// seeds the group's waterline duty
-	return b.Datastore.UpsertCursor(ctx, b.Topic.Id, b.consumerGroup)
+	group, err := b.Datastore.UpsertGroup(ctx, b.Topic.Id, b.consumerGroup)
+	if err != nil {
+		return err
+	}
+	b.Group = group
+	return nil
 }
 
 // callSafely catches an in-process Go panic  and turns it into an ordinary error.

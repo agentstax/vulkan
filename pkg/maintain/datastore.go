@@ -64,6 +64,21 @@ func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceDa
 	}, nil
 }
 
+// GetGroupId resolves a consumer group's id by name.
+// Returns (0, nil) if name is not registered.
+func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, name string) (int64, error) {
+	var id int64
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE name = $1;`, name).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			id = 0
+			return nil
+		}
+		return err
+	})
+	return id, err
+}
+
 // FleetDuty is one row of the fleet's discovery view. The whole struct is
 // the fleet's reconcile key.
 type FleetDuty struct {
@@ -71,7 +86,7 @@ type FleetDuty struct {
 	TopicID       int64
 	TopicName     string // duties register by topic name not id
 	SchemaVersion topic.SchemaVersion
-	ConsumerGroup string
+	ConsumerGroup string // duties register by group name not id ('' = topic-scoped)
 	Rate          time.Duration
 }
 
@@ -89,9 +104,11 @@ func (d *MaintenanceDatastore) ListDuties(ctx context.Context) ([]FleetDuty, err
 
 func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, error) {
 	// each duty runs at its own topic's rate, so the rate switches on duty kind.
+	// group joined by id for its NAME -- rollers register by name, resolving
+	// the id themselves ('' for topic-scoped duties, consumer_group_id 0)
 	sql := `
 		SELECT
-			m.duty, m.consumer_group, t.id, t.name, t.schema_version,
+			m.duty, COALESCE(g.name, ''), t.id, t.name, t.schema_version,
 			CASE m.duty
 				WHEN 'janitor' THEN t.janitor_poll_rate_ns
 				WHEN 'waterline' THEN t.waterline_poll_rate_ns
@@ -99,6 +116,7 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 			END
 		FROM maintenance m
 		JOIN topic t ON t.id = m.topic_id
+		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
 		LEFT JOIN system s ON true -- singleton (id 0); LEFT so janitor/waterline
 		                           -- discovery never depends on the system row
 		WHERE m.duty IN ('janitor', 'waterline', 'alert');
@@ -125,27 +143,27 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 
 // DutyClaim is one maintenance row, matching the table's column order.
 type DutyClaim struct {
-	Duty          string
-	TopicID       int64
-	ConsumerGroup string
-	Token         pgtype.UUID
-	CanRunAfter   time.Time
-	Attempts      int
+	Duty            string
+	TopicID         int64
+	ConsumerGroupId int64
+	Token           pgtype.UUID
+	CanRunAfter     time.Time
+	Attempts        int
 }
 
 // ClaimDuty races the duty's gate -- the winner owns it until can_run_after,
 // and renew/release fence on the returned Duty's token. nil = claim lost.
-func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*DutyClaim, error) {
+func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, topicID int64, groupID int64, rate time.Duration) (*DutyClaim, error) {
 	var claimed *DutyClaim
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimDuty(ctx, duty, topicID, consumerGroup, rate)
+		claimed, err = d.claimDuty(ctx, duty, topicID, groupID, rate)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topicID int64, consumerGroup string, rate time.Duration) (*DutyClaim, error) {
+func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topicID int64, groupID int64, rate time.Duration) (*DutyClaim, error) {
 	// auto-commit: winner does duty work, losers skip.
 	// now() is DB time on both sides -- N replicas' clocks never agree, the DB's does.
 	sql := `
@@ -156,14 +174,14 @@ func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topic
 			attempts = attempts + 1
 		WHERE duty = $1
 			AND topic_id = $2
-			AND consumer_group = $3
+			AND consumer_group_id = $3
 			AND can_run_after <= now()
-		RETURNING duty, topic_id, consumer_group, token, can_run_after, attempts;
+		RETURNING duty, topic_id, consumer_group_id, token, can_run_after, attempts;
 	`
 
 	var claimed DutyClaim
-	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, topicID, consumerGroup, rate.Seconds()).
-		Scan(&claimed.Duty, &claimed.TopicID, &claimed.ConsumerGroup, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, topicID, groupID, rate.Seconds()).
+		Scan(&claimed.Duty, &claimed.TopicID, &claimed.ConsumerGroupId, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
 	if err != nil {
 		// no row: another maintainer won, or the duty was never seeded
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -185,10 +203,10 @@ func (d *MaintenanceDatastore) BackoffDuty(ctx context.Context, duty *DutyClaim)
 			SET can_run_after = now() + make_interval(secs => $5)
 			WHERE duty = $1
 				AND topic_id = $2
-				AND consumer_group = $3
+				AND consumer_group_id = $3
 				AND token = $4;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token, delay.Seconds())
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token, delay.Seconds())
 		if err != nil {
 			return err
 		}
@@ -208,10 +226,10 @@ func (d *MaintenanceDatastore) ResetDuty(ctx context.Context, duty *DutyClaim) e
 			SET attempts = 0
 			WHERE duty = $1
 				AND topic_id = $2
-				AND consumer_group = $3
+				AND consumer_group_id = $3
 				AND token = $4;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token)
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token)
 		if err != nil {
 			return err
 		}
@@ -230,10 +248,10 @@ func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty *DutyClaim, r
 			SET can_run_after = now() + make_interval(secs => $5)
 			WHERE duty = $1
 				AND topic_id = $2
-				AND consumer_group = $3
+				AND consumer_group_id = $3
 				AND token = $4;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token, rate.Seconds())
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token, rate.Seconds())
 		if err != nil {
 			return err
 		}
@@ -257,10 +275,10 @@ func (d *MaintenanceDatastore) ReleaseDuty(ctx context.Context, duty *DutyClaim)
 			SET can_run_after = now()
 			WHERE duty = $1
 				AND topic_id = $2
-				AND consumer_group = $3
+				AND consumer_group_id = $3
 				AND token = $4;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroup, duty.Token)
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token)
 		if err != nil {
 			return err
 		}

@@ -56,6 +56,9 @@ const group = "phase9.shutdowntruncationlab"
 // the same way.
 const lease = 2 * time.Second
 
+// set by main from UpsertGroup -- helpers are id-keyed
+var groupID int64
+
 func main() {
 	ctx := context.Background()
 
@@ -85,7 +88,7 @@ func main() {
 	must(err)
 	must(wp.Register(ctx))
 
-	must(cd.UpsertCursor(ctx, tp.Id, group))
+	groupID = mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
 	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
@@ -142,7 +145,7 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, group, 10, 3, lease, false)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, false)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
@@ -155,7 +158,7 @@ func main() {
 	// the narrowed lease's 2s duration already elapsed during the 5.5s backoff
 	// sleep above -- no separate wait needed before reclaiming it.
 	step("reclaim: only the untouched suffix comes back, not the resolved prefix")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, group, 3, 3, lease, false)
+	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 3, 3, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -165,7 +168,7 @@ func main() {
 	assert("reclaimed exactly the untouched suffix (1 message)", int64(len(claim2.Messages)), 1)
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
-	must(cd.Commit(ctx, tp.Id, group, claim2.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
@@ -189,7 +192,7 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 }
 
 func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, group)
+	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }
@@ -198,15 +201,15 @@ type leaseBounds struct{ low, high int64 }
 
 func onlyLease(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) leaseBounds {
 	var lb leaseBounds
-	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID).Scan(&lb.low, &lb.high))
+	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM lease WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID).Scan(&lb.low, &lb.high))
 	return lb
 }
 
 func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group=$1 AND topic_id=$2`, group, topicID)
+	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group=$1`, topicID), group)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
@@ -217,7 +220,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 
 func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, messageID int64, want string) {
 	var got string
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group=$1 AND message_id=$2`, topicID), group, messageID).Scan(&got))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group_id=$1 AND message_id=$2`, topicID), groupID, messageID).Scan(&got))
 	if got != want {
 		die(fmt.Sprintf("message %d status: got %q, want %q", messageID, got, want))
 	}
@@ -240,3 +243,5 @@ func assert(label string, got, want int64) {
 	}
 	fmt.Printf("  ✓ %s (%d)\n", label, got)
 }
+
+func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
