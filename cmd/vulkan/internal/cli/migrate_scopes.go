@@ -182,7 +182,7 @@ func printMigrateResult(w io.Writer, s scope, dir direction, targets []migrateTa
 
 func singleLabel(s scope, targets []migrateTarget) string {
 	if s == scopeTopic {
-		return fmt.Sprintf("topic %q", targets[0].label)
+		return fmt.Sprintf("topic %q", targets[0].owner.Name)
 	}
 	return "system"
 }

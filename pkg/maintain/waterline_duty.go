@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -95,7 +96,7 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return err
 	}
 
-	groupID, err := w.Datastore.GetGroupId(ctx, w.consumerGroup)
+	groupID, err := w.Datastore.GetGroupId(ctx, current.Id, w.consumerGroup)
 	if err != nil {
 		return err
 	}
@@ -103,7 +104,11 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return fmt.Errorf("consumer group %q is not registered -- the consumer's Register creates it", w.consumerGroup)
 	}
 
-	duty, err := newDutyRunner(w.Datastore, w.Logger, w.Config.JitterFraction, DutyWaterline, current.Id, groupID, current.WaterlinePollRate)
+	owner, err := common.NewConsumerGroupOwner(current.Id, groupID, w.consumerGroup)
+	if err != nil {
+		return err
+	}
+	duty, err := newDutyRunner(w.Datastore, w.Logger, w.Config.JitterFraction, DutyWaterline, owner, current.WaterlinePollRate)
 	if err != nil {
 		return err
 	}

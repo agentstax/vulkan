@@ -172,11 +172,15 @@ func (d *MaintenanceDatastore) existingPartitions(ctx context.Context, topicID i
 }
 
 // cursorFloor is the waterline floor: the most-lagging group's committed
-// offset within this topic (nil if none exist yet). Scoped to topic_id so a
-// lagging group on another topic can't block this topic's drops/sweeps.
+// offset within this topic (nil if none exist yet). Scoped through the group
+// registry so a lagging group on another topic can't block this topic's
+// drops/sweeps.
 func (d *MaintenanceDatastore) cursorFloor(ctx context.Context, topicID int64) (*int64, error) {
 	sql := `
-		SELECT MIN(committed) FROM cursor WHERE topic_id = $1;
+		SELECT MIN(c.committed)
+		FROM cursor c
+		JOIN consumer_group g ON g.id = c.consumer_group_id
+		WHERE g.topic_id = $1;
 	`
 
 	var floor *int64

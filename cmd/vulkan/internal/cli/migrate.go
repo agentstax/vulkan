@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -12,10 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
-
-// systemEntityID is the fixed entity_id every system-scope migration_log row
-// carries -- the control plane is a singleton (see pkg/migrate/datastore).
-const systemEntityID = 0
 
 // availableSystemVersion / availableTopicVersion are the version ceilings this
 // binary knows: the v1 baseline plus every step compiled into the registry. The
@@ -44,7 +41,7 @@ func newMigrateCmd(g *globalFlags) *cobra.Command {
 type scope int
 
 const (
-	scopeSystem scope = iota // the shared control-plane schema (one entity)
+	scopeSystem scope = iota // the shared control-plane schema (a singleton)
 	scopeTopics              // every registered topic
 	scopeTopic               // one topic, by name
 )
@@ -74,29 +71,27 @@ func (s scope) ceiling() int64 {
 	return availableTopicVersion()
 }
 
-// migrateTarget is one entity a run touches, paired with its current DB version
+// migrateTarget is one target a run touches, paired with its current DB version
 // so the direction guard and the no-op check can reason about it before any DDL.
 type migrateTarget struct {
-	label      string // "system" or a topic name, for messages
-	entityType string
-	id         int64
-	current    int64
+	owner   common.Owner
+	current int64
 }
 
-// gatherTargets resolves the entities a scope covers and reads each one's current
+// gatherTargets resolves the targets a scope covers and reads each one's current
 // schema version. Registration gaps surface here as teaching errors, before the
 // migrate call, so the operator never sees a raw undefined-table or ErrNotRegistered.
 func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpool.Pool, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
 	switch s {
 	case scopeSystem:
-		current, err := migrate.Version(ctx, pool, migrate.EntitySystem, systemEntityID)
+		current, err := migrate.Version(ctx, pool, common.NewSystemOwner())
 		if err != nil {
 			if errors.Is(err, migrate.ErrNotRegistered) {
 				return nil, errSystemNotRegistered()
 			}
 			return nil, translateAdminError(err)
 		}
-		return []migrateTarget{{label: "system", entityType: migrate.EntitySystem, id: systemEntityID, current: current}}, nil
+		return []migrateTarget{{owner: common.NewSystemOwner(), current: current}}, nil
 
 	case scopeTopic:
 		found, err := mAdmin.GetTopic(ctx, name, version)
@@ -106,11 +101,15 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		if found == nil {
 			return nil, failOp("topic %q not found", name)
 		}
-		current, err := migrate.Version(ctx, pool, migrate.EntityTopic, found.Id)
+		owner, err := common.NewTopicOwner(found.Id, found.Name)
+		if err != nil {
+			return nil, err
+		}
+		current, err := migrate.Version(ctx, pool, owner)
 		if err != nil {
 			return nil, translateAdminError(err)
 		}
-		return []migrateTarget{{label: found.Name, entityType: migrate.EntityTopic, id: found.Id, current: current}}, nil
+		return []migrateTarget{{owner: owner, current: current}}, nil
 
 	default: // scopeTopics
 		topics, err := mAdmin.ListTopics(ctx)
@@ -119,11 +118,15 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		}
 		targets := make([]migrateTarget, 0, len(topics))
 		for _, t := range topics {
-			current, err := migrate.Version(ctx, pool, migrate.EntityTopic, t.Id)
+			owner, err := common.NewTopicOwner(t.Id, t.Name)
+			if err != nil {
+				return nil, err
+			}
+			current, err := migrate.Version(ctx, pool, owner)
 			if err != nil {
 				return nil, translateAdminError(err)
 			}
-			targets = append(targets, migrateTarget{label: t.Name, entityType: migrate.EntityTopic, id: t.Id, current: current})
+			targets = append(targets, migrateTarget{owner: owner, current: current})
 		}
 		return targets, nil
 	}
@@ -138,9 +141,9 @@ func guardDirection(targets []migrateTarget, dir direction, to int64) (moving in
 	for _, t := range targets {
 		switch {
 		case dir == dirUp && to < t.current:
-			return 0, failUsage("%s is at version %d; --to %d is a downgrade -- use `down` to roll back", t.label, t.current, to)
+			return 0, failUsage("%s is at version %d; --to %d is a downgrade -- use `down` to roll back", t.owner.Name, t.current, to)
 		case dir == dirDown && to > t.current:
-			return 0, failUsage("%s is at version %d; --to %d is not a downgrade -- use `up` to move forward", t.label, t.current, to)
+			return 0, failUsage("%s is at version %d; --to %d is not a downgrade -- use `up` to move forward", t.owner.Name, t.current, to)
 		}
 		if to != t.current {
 			moving++

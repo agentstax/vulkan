@@ -13,6 +13,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -33,7 +34,6 @@ type MessageRow struct {
 type LeaseRow struct {
 	Token           pgtype.UUID `db:"token"`
 	ConsumerGroupId int64       `db:"consumer_group_id"`
-	TopicID         int64       `db:"topic_id"`
 	Low             int64       `db:"low"`
 	High            int64       `db:"high"`
 	Until           time.Time   `db:"until"`
@@ -130,26 +130,26 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 	}, nil
 }
 
-// GetGroup resolves a consumer group by name.
-// Returns (nil, nil) if name is not registered.
-func (d *ConsumerDatastore[Message]) GetGroup(ctx context.Context, name string) (*Group, error) {
+// GetGroup resolves a consumer group by its owning topic and name.
+// Returns (nil, nil) if the group is not registered on that topic.
+func (d *ConsumerDatastore[Message]) GetGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
 	var group *Group
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		group, err = d.getGroup(ctx, d.Datastore.Pool, name)
+		group, err = d.getGroup(ctx, d.Datastore.Pool, topicID, name)
 		return err
 	})
 	return group, err
 }
 
-func (d *ConsumerDatastore[Message]) getGroup(ctx context.Context, q datastore.Querier, name string) (*Group, error) {
+func (d *ConsumerDatastore[Message]) getGroup(ctx context.Context, q datastore.Querier, topicID int64, name string) (*Group, error) {
 	sql := `
-		SELECT id, name, entity_id, created_at
+		SELECT id, topic_id, name, created_at
 		FROM consumer_group
-		WHERE name = $1;
+		WHERE topic_id = $1 AND name = $2;
 	`
 	var g Group
-	err := q.QueryRow(ctx, sql, name).Scan(&g.Id, &g.Name, &g.EntityId, &g.CreatedAt)
+	err := q.QueryRow(ctx, sql, topicID, name).Scan(&g.Id, &g.TopicId, &g.Name, &g.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -159,7 +159,7 @@ func (d *ConsumerDatastore[Message]) getGroup(ctx context.Context, q datastore.Q
 	return &g, nil
 }
 
-// UpsertGroup registers the entity group, cursor,
+// UpsertGroup registers the group, cursor,
 // and maintainence duties if it doesn't exist.
 func (d *ConsumerDatastore[Message]) UpsertGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
 	var group *Group
@@ -171,7 +171,7 @@ func (d *ConsumerDatastore[Message]) UpsertGroup(ctx context.Context, topicID in
 	return group, err
 }
 
-// upsertGroup registers behind a per-name advisory lock, NOT ON CONFLICT.
+// upsertGroup registers behind a per-(topic,name) advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
 func (d *ConsumerDatastore[Message]) upsertGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -181,59 +181,57 @@ func (d *ConsumerDatastore[Message]) upsertGroup(ctx context.Context, topicID in
 	defer tx.Rollback(ctx)
 
 	// private getGroup, not GetGroup -- otherwise would have nested retries.
-	found, err := d.getGroup(ctx, tx, name)
+	found, err := d.getGroup(ctx, tx, topicID, name)
 	if err != nil {
 		return nil, err
 	}
-	if found == nil {
-		// txn-scoped, per-name -- auto-released at commit/rollback
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('consumer_group:' || $1));`, name); err != nil {
-			return nil, err
-		}
-		// re-check under the lock -- a racing registration may have committed while we waited
-		found, err = d.getGroup(ctx, tx, name)
-		if err != nil {
-			return nil, err
-		}
+	if found != nil {
+		return found, nil
 	}
 
-	created := false
-	if found == nil {
-		// entity first -- consumer_group's entity_id FK needs it
-		var entityId int64
-		if err := tx.QueryRow(ctx, `INSERT INTO entity (type) VALUES ('consumer_group') RETURNING id;`).Scan(&entityId); err != nil {
-			return nil, err
-		}
-
-		insertSql := `
-			INSERT INTO consumer_group (name, entity_id)
-			VALUES ($1, $2)
-			RETURNING id, name, entity_id, created_at;
-		`
-		var g Group
-		if err := tx.QueryRow(ctx, insertSql, name, entityId).Scan(&g.Id, &g.Name, &g.EntityId, &g.CreatedAt); err != nil {
-			return nil, err
-		}
-		found = &g
-		created = true
+	// txn-scoped, per-(topic, name) -- auto-released at commit/rollback
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint, $2::text)));`, topicID, name); err != nil {
+		return nil, err
+	}
+	// re-check under the lock -- a racing registration may have committed while we waited
+	found, err = d.getGroup(ctx, tx, topicID, name)
+	if err != nil {
+		return nil, err
+	}
+	if found != nil {
+		return found, nil
 	}
 
-	cursorSql := `
-		INSERT INTO cursor (consumer_group_id, topic_id)
+	insertSql := `
+		INSERT INTO consumer_group (topic_id, name)
 		VALUES ($1, $2)
-		ON CONFLICT DO NOTHING;
+		RETURNING id, topic_id, name, created_at;
 	`
-	if _, err := tx.Exec(ctx, cursorSql, found.Id, topicID); err != nil {
+	var g Group
+	if err := tx.QueryRow(ctx, insertSql, topicID, name).Scan(&g.Id, &g.TopicId, &g.Name, &g.CreatedAt); err != nil {
+		// 23503 = the topic_id FK -- name the real problem, not the constraint
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return nil, fmt.Errorf("topic %d is not registered -- register it with MessageAdmin.RegisterTopic first", topicID)
+		}
 		return nil, err
 	}
 
-	// a cursor must never exist without a waterline duty
-	dutySql := `
-		INSERT INTO maintenance (duty, topic_id, consumer_group_id)
-		VALUES ('waterline', $2, $1)
-		ON CONFLICT DO NOTHING;
+	cursorSql := `
+		INSERT INTO cursor (consumer_group_id)
+		VALUES ($1);
 	`
-	if _, err := tx.Exec(ctx, dutySql, found.Id, topicID); err != nil {
+	if _, err := tx.Exec(ctx, cursorSql, g.Id); err != nil {
+		return nil, err
+	}
+
+	// a cursor must never exist without a waterline duty. Group-owned:
+	// the row carries no topic_id, the group implies it.
+	dutySql := `
+		INSERT INTO maintenance (duty, consumer_group_id)
+		VALUES ('waterline', $1);
+	`
+	if _, err := tx.Exec(ctx, dutySql, g.Id); err != nil {
 		return nil, err
 	}
 
@@ -241,10 +239,8 @@ func (d *ConsumerDatastore[Message]) upsertGroup(ctx context.Context, topicID in
 		return nil, err
 	}
 
-	if created {
-		d.Logger.InfoContext(ctx, "consumer group registered (created)", "consumer_group", found.Name, "entity_id", found.EntityId)
-	}
-	return found, nil
+	d.Logger.InfoContext(ctx, "consumer group registered (created)", "consumer_group", g.Name, "topic_id", g.TopicId, "group_id", g.Id)
+	return &g, nil
 }
 
 // Commit frees the range's lease, then parks any failures as sparse delivery
@@ -267,16 +263,13 @@ func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 	}
 	defer tx.Rollback(ctx)
 
-	// topic_id isn't load-bearing here -- token alone already disambiguates a
-	// lease row -- but every lease query stays topic-scoped by convention.
 	freeSql := `
 		DELETE FROM lease
 		WHERE consumer_group_id = $1
-			AND token = $2
-			AND topic_id = $3;
+			AND token = $2;
 	`
 
-	tag, err := tx.Exec(ctx, freeSql, groupID, token, topicID)
+	tag, err := tx.Exec(ctx, freeSql, groupID, token)
 	if err != nil {
 		return err
 	}
@@ -356,13 +349,12 @@ func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 	// hasParkedRows guard below.
 	truncateSql := `
 		UPDATE lease
-		SET low = $4
+		SET low = $3
 		WHERE consumer_group_id = $1
-			AND token = $2
-			AND topic_id = $3;
+			AND token = $2;
 	`
 
-	tag, err := tx.Exec(ctx, truncateSql, groupID, token, topicID, lastProcessed)
+	tag, err := tx.Exec(ctx, truncateSql, groupID, token, lastProcessed)
 	if err != nil {
 		return err
 	}
@@ -427,13 +419,13 @@ func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 // ForceReclaimRange surrenders a range nobody ever started -- unlike
 // PartialCommit this expires the WHOLE lease immediately so the next
 // ReclaimWithCursor can pick it straight back up.
-func (d *ConsumerDatastore[Message]) ForceReclaimRange(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID) error {
+func (d *ConsumerDatastore[Message]) ForceReclaimRange(ctx context.Context, groupID int64, token pgtype.UUID) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.forceReclaimRange(ctx, topicID, groupID, token)
+		return d.forceReclaimRange(ctx, groupID, token)
 	})
 }
 
-func (d *ConsumerDatastore[Message]) forceReclaimRange(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID) error {
+func (d *ConsumerDatastore[Message]) forceReclaimRange(ctx context.Context, groupID int64, token pgtype.UUID) error {
 	// reclaims goes negative on purpose: the next ReclaimWithCursor's
 	// unconditional +1 nets it back to 0 -- this must not count as a real reclaim.
 	sql := `
@@ -443,11 +435,10 @@ func (d *ConsumerDatastore[Message]) forceReclaimRange(ctx context.Context, topi
 			reclaims = GREATEST(reclaims - 1, -1), -- should never go under -1
 			token = gen_random_uuid()              -- rotate token so any retry matches 0 rows instead of double decrementing
 		WHERE consumer_group_id = $1
-			AND token = $2
-			AND topic_id = $3;
+			AND token = $2;
 	`
 
-	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupID, token, topicID)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupID, token)
 	if err != nil {
 		return err
 	}
@@ -506,7 +497,6 @@ func (d *ConsumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 		WHERE (token, consumer_group_id) IN (
 			SELECT token, consumer_group_id FROM lease
 			WHERE consumer_group_id = $1
-				AND topic_id = $3
 				AND until < now()
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -514,7 +504,7 @@ func (d *ConsumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 		RETURNING *;
 	`
 
-	leaseRows, err := tx.Query(ctx, reclaimSql, groupID, leaseDuration.Seconds(), topicID)
+	leaseRows, err := tx.Query(ctx, reclaimSql, groupID, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +522,7 @@ func (d *ConsumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 	d.Logger.InfoContext(ctx, "lease reclaimed from expired worker", "group_id", groupID, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	if lease.Reclaims >= maxRangeReclaims {
-		if err := d.quarantine(ctx, tx, groupID, lease, disableDeliveryLog); err != nil {
+		if err := d.quarantine(ctx, tx, topicID, groupID, lease, disableDeliveryLog); err != nil {
 			return nil, err
 		}
 		return nil, tx.Commit(ctx)
@@ -558,8 +548,8 @@ func (d *ConsumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 // exact same exception-window machinery as an ordinary message-loop failure --
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
-func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, groupID int64, lease LeaseRow, disableDeliveryLog bool) error {
-	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group_id", groupID, "topic_id", lease.TopicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, lease LeaseRow, disableDeliveryLog bool) error {
+	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group_id", groupID, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var parkSql string
 	if disableDeliveryLog {
@@ -569,7 +559,7 @@ func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
-		`, topic.DeliveryTable(lease.TopicID), topic.MessageLogTable(lease.TopicID))
+		`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 	} else {
 		// parked CTE + INSERT keeps the range-wide park and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message parked, same first-recorded-attempt
@@ -585,7 +575,7 @@ func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 			)
 			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM parked;
-		`, topic.DeliveryTable(lease.TopicID), topic.MessageLogTable(lease.TopicID), topic.DeliveryLogTable(lease.TopicID))
+		`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID), topic.DeliveryLogTable(topicID))
 	}
 	if _, err := tx.Exec(ctx, parkSql, groupID, lease.Low, lease.High); err != nil {
 		return err
@@ -594,10 +584,9 @@ func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, 
 	freeSql := `
 		DELETE FROM lease
 		WHERE consumer_group_id = $1
-			AND token = $2
-			AND topic_id = $3;
+			AND token = $2;
 	`
-	_, err := tx.Exec(ctx, freeSql, groupID, lease.Token, lease.TopicID)
+	_, err := tx.Exec(ctx, freeSql, groupID, lease.Token)
 	return err
 }
 
@@ -677,12 +666,12 @@ func (d *ConsumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 			c.settled_head,
 			c.pending_head
 		FROM cursor c
-		WHERE c.consumer_group_id = $1 AND c.topic_id = $2;
+		WHERE c.consumer_group_id = $1;
 	`, topic.MessageLogTable(topicID))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
-	if err := tx.QueryRow(ctx, snapshotSql, groupID, topicID).Scan(&snapshotHead, &snapshotXmax, &claimed, &settledHead, &pendingHead); err != nil {
+	if err := tx.QueryRow(ctx, snapshotSql, groupID).Scan(&snapshotHead, &snapshotXmax, &claimed, &settledHead, &pendingHead); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
 		}
@@ -699,7 +688,7 @@ func (d *ConsumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 	cursorSql := `
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
 			SELECT * FROM cursor
-			WHERE consumer_group_id = $1 AND topic_id = $3
+			WHERE consumer_group_id = $1
 			-- must FOR UPDATE, get race if using a basic snapshot read
 			-- two same-group workers racing on one cursor row (claimed=0, head=200, limit=100):
 			--
@@ -763,8 +752,8 @@ func (d *ConsumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 			--                       messages wait one more poll if this is used
 			SELECT GREATEST(
 				o.settled_head,
-				CASE WHEN pg_snapshot_xmin(pg_current_snapshot()) >= $5::xid8 -- $5 is snapshotXmax
-					THEN $4 ELSE 0 END,                                         -- $4 is snapshotHead
+				CASE WHEN pg_snapshot_xmin(pg_current_snapshot()) >= $4::xid8 -- $4 is snapshotXmax
+					THEN $3 ELSE 0 END,                                         -- $3 is snapshotHead
 				CASE WHEN o.pending_xmax IS NOT NULL
 						AND pg_snapshot_xmin(pg_current_snapshot()) >= o.pending_xmax
 					THEN o.pending_head ELSE 0 END
@@ -782,11 +771,10 @@ func (d *ConsumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 				-- store the fresh pair for the next poll: ideally its txns will
 				-- have finished by then, making it the next provable head.
 				-- GREATEST so a racing peer's older pair can't overwrite a newer one
-				pending_head = GREATEST(cursor.pending_head, $4),
-				pending_xmax = GREATEST(cursor.pending_xmax, $5::xid8) -- also skips the initial NULL
+				pending_head = GREATEST(cursor.pending_head, $3),
+				pending_xmax = GREATEST(cursor.pending_xmax, $4::xid8) -- also skips the initial NULL
 			FROM old_values, gate
 			WHERE cursor.consumer_group_id = $1
-				AND cursor.topic_id = $3
 			RETURNING
 				old_values.claimed AS low,
 				cursor.claimed AS high
@@ -803,7 +791,7 @@ func (d *ConsumerDatastore[Message]) FreshClaimMessagesWithCursor(ctx context.Co
 		SELECT u.low, u.high FROM updated u;
 	`
 
-	cursorRows, err := tx.Query(ctx, cursorSql, groupID, limit, topicID, snapshotHead, snapshotXmax)
+	cursorRows, err := tx.Query(ctx, cursorSql, groupID, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
 	}
@@ -846,18 +834,17 @@ func (d *ConsumerDatastore[Message]) ClaimMessages(
 
 	// get new lease associated with range
 	leaseSql := `
-		INSERT INTO lease (consumer_group_id, topic_id, low, high, until)
+		INSERT INTO lease (consumer_group_id, low, high, until)
 		VALUES (
 			$1,
 			$2,
 			$3,
-			$4,
-			now() + make_interval(secs => $5)
+			now() + make_interval(secs => $4)
 		)
 		RETURNING *;
 	`
 
-	leaseRows, err := tx.Query(ctx, leaseSql, groupID, topicID, low, high, leaseDuration.Seconds())
+	leaseRows, err := tx.Query(ctx, leaseSql, groupID, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
 	}

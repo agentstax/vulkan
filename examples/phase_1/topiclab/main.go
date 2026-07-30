@@ -111,7 +111,7 @@ func main() {
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
 	groupAID := mustGroupID(cd.UpsertGroup(ctx, topicA.Id, groupA))
-	setCursor(ctx, ds, topicA.Id, groupAID, 5, 5)
+	setCursor(ctx, ds, groupAID, 5, 5)
 
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
 	mustGroupID(cd.UpsertGroup(ctx, topicB.Id, groupB))
@@ -130,7 +130,7 @@ func main() {
 
 	headBefore := head(ctx, ds, topicC.Id) // topicC is fresh, this is 0
 	publish(ctx, wpC, "orders.created")    // id headBefore+1, published BEFORE any binding exists
-	must(cd.Bind(ctx, topicC.Id, groupRouteID, "orders.*"))
+	must(cd.Bind(ctx, groupRouteID, "orders.*"))
 	publish(ctx, wpC, "orders.updated")  // id headBefore+2, matches, published AFTER the binding
 	publish(ctx, wpC, "payments.charge") // id headBefore+3, does not match
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
@@ -156,8 +156,8 @@ func main() {
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
 	groupXID := mustGroupID(cd.UpsertGroup(ctx, topicD.Id, groupX))
 	groupYID := mustGroupID(cd.UpsertGroup(ctx, topicD.Id, groupY))
-	must(cd.Bind(ctx, topicD.Id, groupXID, "sliceX.*"))
-	must(cd.Bind(ctx, topicD.Id, groupYID, "sliceY.*"))
+	must(cd.Bind(ctx, groupXID, "sliceX.*"))
+	must(cd.Bind(ctx, groupYID, "sliceY.*"))
 
 	for range 5 { // fills topicD's partition 0 at width 5, all in sliceX
 		publish(ctx, wpD, "sliceX.event")
@@ -215,8 +215,8 @@ func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int
 	return c
 }
 
-func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, groupID int64, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID, claimed, committed)
+func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, claimed, committed int64) {
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupID, claimed, committed)
 	must(err)
 }
 

@@ -164,10 +164,10 @@ func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int
 }
 
 func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID)
+	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupID)
 }
 func claimedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID)
+	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1`, groupID)
 }
 func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)

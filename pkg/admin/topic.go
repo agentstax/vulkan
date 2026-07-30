@@ -122,13 +122,17 @@ func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, version to
 		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
 	}
 
-	return a.migrateRunner.RunOnce(ctx, targetVersion, migrate.EntityTopic, found.Id, topicMigrations.Registry)
+	owner, err := common.NewTopicOwner(found.Id, found.Name)
+	if err != nil {
+		return err
+	}
+	return a.migrateRunner.RunOnce(ctx, targetVersion, owner, topicMigrations.Registry)
 }
 
 // MigrateTopics moves every registered topic's schema to targetVersion.
 // A no-op, not an error, if no topics are registered.
 func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) error {
-	return a.migrateRunner.RunAll(ctx, targetVersion, migrate.EntityTopic, topicMigrations.Registry)
+	return a.migrateRunner.RunAll(ctx, targetVersion, common.OwnerTopic, topicMigrations.Registry)
 }
 
 // RenameTopic changes the name of every version registered under name.

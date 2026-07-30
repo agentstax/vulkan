@@ -54,7 +54,6 @@ func (d *TopicDatastore) getTopic(ctx context.Context, q datastore.Querier, name
 	sql := `
 		SELECT
 			id,
-			entity_id,
 			name,
 			schema_version,
 			partition_size,
@@ -87,7 +86,6 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 	sql := `
 		SELECT
 			id,
-			entity_id,
 			name,
 			schema_version,
 			partition_size,
@@ -176,21 +174,15 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version S
 		return found, nil
 	}
 
-	// entity first -- topic's entity_id FK needs it
-	var entityId int64
-	if err := tx.QueryRow(ctx, `INSERT INTO entity (type) VALUES ('topic') RETURNING id;`).Scan(&entityId); err != nil {
-		return nil, err
-	}
-
 	insertSql := `
-		INSERT INTO topic (entity_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO topic (name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at;
 	`
 	var id int64
 	var createdAt time.Time
 	var updatedAt time.Time
-	if err := tx.QueryRow(ctx, insertSql, entityId, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt); err != nil {
+	if err := tx.QueryRow(ctx, insertSql, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 
@@ -200,8 +192,8 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version S
 
 	// add the migration baseline in the SAME txn
 	migrationSql := `
-		INSERT INTO migration_log (entity_type, entity_id, migration_version, status)
-		VALUES ('topic', $1, 1, 'success');
+		INSERT INTO migration_log (topic_id, migration_version, status)
+		VALUES ($1, 1, 'success');
 	`
 	if _, err := tx.Exec(ctx, migrationSql, id); err != nil {
 		return nil, err
@@ -222,12 +214,12 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version S
 	}
 
 	d.Logger.InfoContext(ctx, "topic registered (created)", "topic", name, "topic_id", id, "schema_version", version)
-	return cfg.ToTopic(id, entityId, name, version, createdAt, updatedAt), nil
+	return cfg.ToTopic(id, name, version, createdAt, updatedAt), nil
 }
 
 func (d *TopicDatastore) assertConfigMatches(found *Topic, cfg Config) error {
 	// found's db-assigned fields thread into the compare -- a Config carries none of them
-	want := cfg.ToTopic(found.Id, found.EntityId, found.Name, found.SchemaVersion, found.CreatedAt, found.UpdatedAt)
+	want := cfg.ToTopic(found.Id, found.Name, found.SchemaVersion, found.CreatedAt, found.UpdatedAt)
 	if *found != *want {
 		return fmt.Errorf("%w: topic %s version %d: existing=%+v got=%+v", ErrTopicConfigMismatch, found.Name, found.SchemaVersion, *found, *want)
 	}
@@ -275,7 +267,6 @@ func (d *TopicDatastore) updateTopicByID(ctx context.Context, old *Topic, cfg *A
 		WHERE id = $1
 		RETURNING
 			id,
-			entity_id,
 			name,
 			schema_version,
 			partition_size,
@@ -371,7 +362,6 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 		WHERE name = $1
 		RETURNING
 			id,
-			entity_id,
 			name,
 			schema_version,
 			partition_size,
@@ -557,21 +547,19 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 	}
 	defer tx.Rollback(ctx)
 
-	// this also deletes the topic row entry via the ON DELETE CASCADE
-	if _, err := tx.Exec(ctx, `DELETE FROM entity WHERE id = $1;`, topic.EntityId); err != nil {
+	leaseSql := `
+		DELETE FROM lease
+		WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE topic_id = $1);
+	`
+	if _, err := tx.Exec(ctx, leaseSql, topic.Id); err != nil {
 		return err
 	}
 
-	// every other table scoped by topic_id
-	for _, table := range []string{"cursor", "lease", "maintenance", "binding", "compaction_head"} {
-		deleteSql := fmt.Sprintf(`DELETE FROM %s WHERE topic_id = $1;`, table)
-		if _, err := tx.Exec(ctx, deleteSql, topic.Id); err != nil {
-			return err
-		}
+	if _, err := tx.Exec(ctx, `DELETE FROM topic WHERE id = $1;`, topic.Id); err != nil {
+		return err
 	}
 
-	// remove this topic's migration history
-	if _, err := tx.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = 'topic' AND entity_id = $1;`, topic.Id); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM compaction_head WHERE topic_id = $1;`, topic.Id); err != nil {
 		return err
 	}
 
@@ -611,7 +599,6 @@ func (d *TopicDatastore) scanTopic(row pgx.Row) (*Topic, error) {
 	var waterlinePollRateNs int64
 	err := row.Scan(
 		&t.Id,
-		&t.EntityId,
 		&t.Name,
 		&t.SchemaVersion,
 		&t.PartitionSize,

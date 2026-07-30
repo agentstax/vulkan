@@ -367,7 +367,7 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 
 func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, topicID int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupID).Scan(&v))
 	return v
 }
 

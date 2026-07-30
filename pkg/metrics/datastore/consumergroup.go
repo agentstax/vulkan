@@ -64,7 +64,7 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicID in
 
 func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID int64, consumerGroup string) (*ConsumerGroupSnapshot, error) {
 	var consumerGroupID int64
-	if err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE name = $1;`, consumerGroup).Scan(&consumerGroupID); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicID, consumerGroup).Scan(&consumerGroupID); err != nil {
 		return nil, err
 	}
 
@@ -99,15 +99,15 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID in
 			COALESCE((
 				SELECT COUNT(*)
 				FROM lease
-				WHERE consumer_group_id = $1 AND topic_id = $2
+				WHERE consumer_group_id = $1
 			), 0) AS open_leases
 		FROM cursor c
-		WHERE c.consumer_group_id = $1 AND c.topic_id = $2;
+		WHERE c.consumer_group_id = $1;
 	`, topic.MessageLogTable(topicID), topic.DeliveryTable(topicID))
 
 	var s ConsumerGroupSnapshot
 	var oldestUnackedAt *time.Time
-	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupID, topicID).Scan(
+	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupID).Scan(
 		&s.Claimed,
 		&s.Committed,
 		&s.Head,
@@ -131,7 +131,7 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID in
 	return &s, nil
 }
 
-// ListConsumerGroups is every group with a cursor on topicID -- the groups a
+// ListConsumerGroups is every group registered on topicID -- the groups a
 // health view must account for before the topic can be considered drained.
 func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicID int64) ([]string, error) {
 	var groups []string
@@ -145,10 +145,9 @@ func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicID int64
 
 func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicID int64) ([]string, error) {
 	sql := `
-		SELECT g.name 
-		FROM cursor c 
-		JOIN consumer_group g ON g.id = c.consumer_group_id 
-		WHERE c.topic_id = $1 ORDER BY g.name;
+		SELECT name
+		FROM consumer_group
+		WHERE topic_id = $1 ORDER BY name;
 	`
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicID)

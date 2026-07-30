@@ -38,28 +38,28 @@ func (d *MaintenanceDatastore) advanceWaterline(ctx context.Context, topicID int
 	// LEAST ignores NULLs so any/all of those can be absent.
 	targetSql := fmt.Sprintf(`
 		SELECT LEAST(
-			(SELECT MIN(low) FROM lease WHERE consumer_group_id = $1 AND topic_id = $2),
+			(SELECT MIN(low) FROM lease WHERE consumer_group_id = $1),
 			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight')),
 			claimed
 		)
 		FROM cursor
-		WHERE consumer_group_id = $1 AND topic_id = $2;
+		WHERE consumer_group_id = $1;
 	`, topic.DeliveryTable(topicID))
 
 	var target int64
-	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupID, topicID).Scan(&target); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupID).Scan(&target); err != nil {
 		return 0, err
 	}
 
 	// 2. apply it. GREATEST -> committed only ever moves forward.
 	const rollSql = `
 		UPDATE cursor
-		SET committed = GREATEST(committed, $3)
-		WHERE consumer_group_id = $1 AND topic_id = $2
+		SET committed = GREATEST(committed, $2)
+		WHERE consumer_group_id = $1
 		RETURNING committed;
 	`
 
 	var committed int64
-	err := d.Datastore.Pool.QueryRow(ctx, rollSql, groupID, topicID, target).Scan(&committed)
+	err := d.Datastore.Pool.QueryRow(ctx, rollSql, groupID, target).Scan(&committed)
 	return committed, err
 }

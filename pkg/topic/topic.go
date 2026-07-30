@@ -18,7 +18,6 @@ type SchemaVersion int64
 // Id addresses this topic's own message_log_<id>.
 type Topic struct {
 	Id                     int64
-	EntityId               int64
 	Name                   string
 	SchemaVersion          SchemaVersion
 	PartitionSize          int64

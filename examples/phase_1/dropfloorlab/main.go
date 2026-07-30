@@ -97,7 +97,7 @@ func main() {
 
 	step("groupPast fast-forwards past partition 0's range (claimed=committed=4) before the drop")
 	reset(ctx, cd, ds, tp.Id, groupPast)
-	setCursor(ctx, ds, tp.Id, groupPast, 4, 4)
+	setCursor(ctx, ds, groupPast, 4, 4)
 
 	step("drop -- floor sits at groupPast's committed=4, exactly partition 0's last id, so it's not blocked")
 	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
@@ -149,21 +149,17 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 
 func reset(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
 	groupID = mustGroupID(cd.UpsertGroup(ctx, topicID, group))
-	for _, q := range []string{
-		`DELETE FROM lease WHERE consumer_group_id=$1 AND topic_id=$2`,
-		`DELETE FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`,
-	} {
-		_, err := ds.Pool.Exec(ctx, q, groupID, topicID)
-		must(err)
-	}
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
+	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupID)
 	must(err)
-	mustGroupID(cd.UpsertGroup(ctx, topicID, group)) // recreate the cursor row just deleted
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
+	must(err)
+	_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, groupID)
+	must(err)
 }
 
-func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, group string, claimed, committed int64) {
+func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, group string, claimed, committed int64) {
 	_ = group // groups are id-keyed; the name stays in the signature for the call sites' readability
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$4 WHERE consumer_group_id=$1 AND topic_id=$2`, groupID, topicID, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupID, claimed, committed)
 	must(err)
 }
 

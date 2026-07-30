@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -45,22 +46,22 @@ func NewStep(
 	}, nil
 }
 
-// RunStep validates + applies one step against an entity, then records its
+// RunStep validates + applies one step against an owner, then records its
 // version as a success. The whole unit retried on a transient blip, so steps
 // must be idempotent.
-func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, entityType string, entityId int64, step *Step) error {
+func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, step *Step) error {
 	if step.NoTxn {
 		return d.Retry.Wrap(ctx, func() error {
-			return d.runStepWithoutTx(ctx, conn, entityType, entityId, step)
+			return d.runStepWithoutTx(ctx, conn, owner, step)
 		})
 	}
 	return d.Retry.Wrap(ctx, func() error {
-		return d.runStepWithTx(ctx, conn, entityType, entityId, step)
+		return d.runStepWithTx(ctx, conn, owner, step)
 	})
 }
 
 // txn step does all three atomically
-func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn, entityType string, entityId int64, step *Step) error {
+func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, step *Step) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
@@ -68,28 +69,28 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 	defer tx.Rollback(ctx)
 
 	if step.Validate != nil {
-		if err := step.Validate(ctx, tx, entityId); err != nil {
+		if err := step.Validate(ctx, tx, owner.TopicId); err != nil {
 			return err
 		}
 	}
-	if err := step.Apply(ctx, tx, entityId); err != nil {
+	if err := step.Apply(ctx, tx, owner.TopicId); err != nil {
 		return err
 	}
-	if err := d.RecordSuccess(ctx, tx, entityType, entityId, step.Version); err != nil {
+	if err := d.RecordSuccess(ctx, tx, owner, step.Version); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
 // NoTxn step runs on the bare connection and records separately once its apply returns
-func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.Conn, entityType string, entityId int64, step *Step) error {
+func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, step *Step) error {
 	if step.Validate != nil {
-		if err := step.Validate(ctx, conn, entityId); err != nil {
+		if err := step.Validate(ctx, conn, owner.TopicId); err != nil {
 			return err
 		}
 	}
-	if err := step.Apply(ctx, conn, entityId); err != nil {
+	if err := step.Apply(ctx, conn, owner.TopicId); err != nil {
 		return err
 	}
-	return d.RecordSuccess(ctx, conn, entityType, entityId, step.Version)
+	return d.RecordSuccess(ctx, conn, owner, step.Version)
 }

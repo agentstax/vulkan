@@ -1,21 +1,21 @@
 package main
 
-// consumer group registry lab: a group is the RESOURCE (one registry row, one
-// entity), its cursor + waterline duty per-topic children -- UpsertGroup
-// creates group and children in ONE txn. Destroy runs THROUGH the entity:
-// deleting the entity row removes the registry row AND (via the cursor FK) the
-// group's cursors, cascade proven, not assumed.
+// consumer group registry lab: a group is a resource owned by exactly one
+// topic -- one registry row whose topic_id FK CASCADE is its whole lifecycle.
+// Group + cursor + waterline duty are created in ONE txn; destroying the
+// topic (or deleting the group row) cascades everything, proven, not assumed.
 //
 // Confirms:
-//  1. UpsertGroup registers the group -- one consumer_group row + one entity
-//     typed 'consumer_group' -- and GetGroup resolves it.
-//  2. re-upserting the group for a SECOND topic's cursor reuses the one entity.
-//  3. N concurrent first-registrations leave exactly one registry row, one
-//     entity, zero orphans -- the advisory-lock shape under real contention.
-//  4. destroying a topic deletes the group's cursor there but does NOT touch
-//     the registry.
-//  5. deleting the group's entity row cascades the registry row away.
-//  6. standing orphan scan across BOTH enrolled tables comes back zero.
+//  1. UpsertGroup registers the group with its cursor and waterline duty in
+//     one txn, and GetGroup resolves it by (topic, name).
+//  2. the same name on a SECOND topic is a DIFFERENT group -- own registry
+//     row. Names are scoped per topic, not global.
+//  3. N concurrent first-registrations leave exactly one registry row --
+//     the advisory-lock shape under real contention.
+//  4. destroying a topic destroys ITS groups (registry row, cursor, duty)
+//     and leaves the same-named group on the other topic untouched.
+//  5. deleting a group row directly cascades its cursor and waterline duty
+//     away -- the future group-Destroy verb is exactly this delete.
 
 import (
 	"context"
@@ -54,35 +54,27 @@ func main() {
 	topicB, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), topic.SchemaVersion(1), nil)
 	must(err)
 
-	step("UpsertGroup registers the group")
+	step("UpsertGroup registers the group with its children in one txn")
 	group := fmt.Sprintf("consumergrouplab.group.%d", suffix)
 	registered, err := cd.UpsertGroup(ctx, topicA.Id, group)
 	must(err)
-	entityId := groupEntity(ctx, ds, group)
-	if registered.EntityId != entityId {
-		die(fmt.Sprintf("UpsertGroup returned entity %d, registry holds %d", registered.EntityId, entityId))
-	}
-	assertEntityType(ctx, ds, entityId, "consumer_group")
-	g, err := cd.GetGroup(ctx, group)
+	g, err := cd.GetGroup(ctx, topicA.Id, group)
 	must(err)
-	if g == nil || g.EntityId != entityId || g.CreatedAt.IsZero() {
-		die(fmt.Sprintf("GetGroup returned %+v, want entity %d with created_at set", g, entityId))
+	if g == nil || g.Id != registered.Id || g.TopicId != topicA.Id || g.CreatedAt.IsZero() {
+		die(fmt.Sprintf("GetGroup returned %+v, want id %d on topic %d with created_at set", g, registered.Id, topicA.Id))
 	}
-	fmt.Printf("  ✓ group %q owns entity %d typed 'consumer_group', GetGroup resolves it\n", group, entityId)
+	assertChildren(ctx, ds, registered.Id, 1, "at registration")
+	fmt.Printf("  ✓ group %q (id %d) on topic %d, cursor + waterline duty created with it\n", group, registered.Id, topicA.Id)
 
-	step("same group on a second topic reuses the one entity")
-	before := entityCount(ctx, ds)
-	again, err := cd.UpsertGroup(ctx, topicB.Id, group)
+	step("same name on a second topic is a DIFFERENT group")
+	other, err := cd.UpsertGroup(ctx, topicB.Id, group)
 	must(err)
-	if again.EntityId != entityId {
-		die(fmt.Sprintf("second topic re-registered the group: entity %d, want %d", again.EntityId, entityId))
+	if other.Id == registered.Id {
+		die(fmt.Sprintf("second topic reused the first topic's group: %+v", other))
 	}
-	if after := entityCount(ctx, ds); after != before {
-		die(fmt.Sprintf("second topic changed entity count %d -> %d", before, after))
-	}
-	fmt.Printf("  ✓ entity %d reused, entity count unchanged\n", entityId)
+	fmt.Printf("  ✓ own registry row (id %d vs %d)\n", other.Id, registered.Id)
 
-	step("concurrent first-registrations leave exactly one entity")
+	step("concurrent first-registrations leave exactly one registry row")
 	race := fmt.Sprintf("consumergrouplab.race.%d", suffix)
 	var wg sync.WaitGroup
 	errs := make(chan error, 10)
@@ -100,95 +92,57 @@ func main() {
 		must(err)
 	}
 	var raceRows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE name = $1;`, race).Scan(&raceRows))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicA.Id, race).Scan(&raceRows))
 	if raceRows != 1 {
 		die(fmt.Sprintf("race group has %d registry rows, want 1", raceRows))
 	}
-	raceEntityId := groupEntity(ctx, ds, race)
-	assertEntityType(ctx, ds, raceEntityId, "consumer_group")
-	fmt.Printf("  ✓ 10 concurrent registrations -> one registry row, one entity %d\n", raceEntityId)
+	fmt.Printf("  ✓ 10 concurrent registrations -> one registry row\n")
 
-	step("destroying a topic does NOT touch the registry")
+	step("destroying a topic destroys ITS groups and no one else's")
 	must(mAdmin.DestroyTopic(ctx, topicB.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
-	if got := groupEntity(ctx, ds, group); got != entityId {
-		die(fmt.Sprintf("topic destroy changed the group's entity: %d, want %d", got, entityId))
+	var bRows int
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`, other.Id).Scan(&bRows))
+	if bRows != 0 {
+		die("topicB's group survived its topic's Destroy")
 	}
-	var cursors int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`, registered.Id).Scan(&cursors))
-	if cursors != 1 {
-		die(fmt.Sprintf("group has %d cursors after topic destroy, want 1 (topicA's)", cursors))
+	assertChildren(ctx, ds, other.Id, 0, "after topicB's destroy")
+	if g, err := cd.GetGroup(ctx, topicA.Id, group); err != nil || g == nil || g.Id != registered.Id {
+		die(fmt.Sprintf("topic destroy touched the OTHER topic's group: %+v err=%v", g, err))
 	}
-	fmt.Printf("  ✓ registry intact, only the destroyed topic's cursor is gone\n")
+	assertChildren(ctx, ds, registered.Id, 1, "after topicB's destroy")
+	fmt.Printf("  ✓ topicB's group + children cascaded away, topicA's same-named group untouched\n")
 
-	step("deleting the group's entity cascades the registry row")
-	if _, err := ds.Pool.Exec(ctx, `DELETE FROM entity WHERE id = $1;`, entityId); err != nil {
+	step("deleting a group row cascades its cursor and waterline duty")
+	if _, err := ds.Pool.Exec(ctx, `DELETE FROM consumer_group WHERE id = $1;`, registered.Id); err != nil {
 		die(err.Error())
 	}
-	var remaining int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE name = $1;`, group).Scan(&remaining))
-	if remaining != 0 {
-		die("registry row survived its entity's delete")
-	}
-	gone, err := cd.GetGroup(ctx, group)
+	gone, err := cd.GetGroup(ctx, topicA.Id, group)
 	must(err)
 	if gone != nil {
-		die(fmt.Sprintf("GetGroup still resolves the destroyed group: %+v", gone))
+		die(fmt.Sprintf("GetGroup still resolves the deleted group: %+v", gone))
 	}
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`, registered.Id).Scan(&cursors))
-	if cursors != 0 {
-		die(fmt.Sprintf("group still has %d cursors after its entity's delete -- cursor FK cascade didn't fire", cursors))
-	}
-	fmt.Printf("  ✓ entity %d deleted, registry row AND cursors cascaded away, GetGroup returns nil\n", entityId)
+	assertChildren(ctx, ds, registered.Id, 0, "after the group row's delete")
+	fmt.Printf("  ✓ group %d deleted, cursor AND waterline duty cascaded away\n", registered.Id)
 
-	// cleanup so the orphan scan sees a settled world
-	_, err = ds.Pool.Exec(ctx, `DELETE FROM entity WHERE id = $1;`, raceEntityId)
+	// cleanup
+	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
 	must(err)
 	must(mAdmin.DestroyTopic(ctx, topicA.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
-
-	step("standing orphan scan -- zero entity rows unowned by any enrolled table")
-	var orphans int
-	must(ds.Pool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM entity e
-		LEFT JOIN topic t ON t.entity_id = e.id
-		LEFT JOIN consumer_group g ON g.entity_id = e.id
-		WHERE t.entity_id IS NULL AND g.entity_id IS NULL;
-	`).Scan(&orphans))
-	if orphans != 0 {
-		die(fmt.Sprintf("%d orphaned entity rows -- a register or destroy path leaked", orphans))
-	}
-	fmt.Printf("  ✓ zero orphaned entity rows\n")
 
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
 }
 
 // ---- helpers ----
 
-// groupEntity resolves the registry row's entity_id, dying if the group isn't registered.
-func groupEntity(ctx context.Context, ds *coredatastore.PostgresDatastore, group string) int64 {
-	var entityId int64
-	err := ds.Pool.QueryRow(ctx, `SELECT entity_id FROM consumer_group WHERE name = $1;`, group).Scan(&entityId)
-	if err != nil {
-		die(fmt.Sprintf("group %q: %v", group, err))
+// assertChildren counts the group's cursor row and waterline duty row -- they
+// exist and die together with the registry row (want 1 or 0 of each).
+func assertChildren(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, want int, when string) {
+	var cursors, duties int
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`, groupID).Scan(&cursors))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM maintenance WHERE duty = 'waterline' AND consumer_group_id = $1;`, groupID).Scan(&duties))
+	if cursors != want || duties != want {
+		die(fmt.Sprintf("group %d has %d cursors and %d waterline duties %s, want %d of each", groupID, cursors, duties, when, want))
 	}
-	return entityId
-}
-
-func assertEntityType(ctx context.Context, ds *coredatastore.PostgresDatastore, entityId int64, wantType string) {
-	var gotType string
-	err := ds.Pool.QueryRow(ctx, `SELECT type FROM entity WHERE id = $1;`, entityId).Scan(&gotType)
-	if err != nil {
-		die(fmt.Sprintf("entity %d: %v", entityId, err))
-	}
-	if gotType != wantType {
-		die(fmt.Sprintf("entity %d has type %q, want %q", entityId, gotType, wantType))
-	}
-}
-
-func entityCount(ctx context.Context, ds *coredatastore.PostgresDatastore) int {
-	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM entity;`).Scan(&count))
-	return count
 }
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }

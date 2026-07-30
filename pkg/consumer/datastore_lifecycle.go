@@ -31,12 +31,12 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			c.committed,
 			c.pending_head
 		FROM cursor c
-		WHERE c.consumer_group_id = $1 AND c.topic_id = $2;
+		WHERE c.consumer_group_id = $1;
 	`, topic.MessageLogTable(topicID))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
-	if err := d.Datastore.Pool.QueryRow(ctx, snapshotSql, groupID, topicID).Scan(&snapshotHead, &snapshotXmax, &committed, &pendingHead); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, snapshotSql, groupID).Scan(&snapshotHead, &snapshotXmax, &committed, &pendingHead); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
 		}
@@ -52,7 +52,7 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 	scanSql := fmt.Sprintf(`
 		WITH old_values AS (
 			SELECT * FROM cursor
-			WHERE consumer_group_id = $1 AND topic_id = $2
+			WHERE consumer_group_id = $1
 			-- FOR UPDATE so a racing same-group peer's committed advance is
 			-- visible to our scan start (same race as the cursor claim path)
 			FOR UPDATE
@@ -82,15 +82,15 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			SELECT $1, b.id, 'ready'
 			FROM batch b
 			WHERE (
-				-- no bindings for (consumer_group_id, topic_id) exists
+				-- no bindings for consumer_group exists
 				NOT EXISTS (
 					SELECT 1 FROM binding bi
-					WHERE bi.consumer_group_id = $1 AND bi.topic_id = $2
+					WHERE bi.consumer_group_id = $1
 				)
-				-- bindings for (consumer_group_id, topic_id) exists and match routing_key pattern
+				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
 					SELECT 1 FROM binding bi
-					WHERE bi.consumer_group_id = $1 AND bi.topic_id = $2
+					WHERE bi.consumer_group_id = $1
 						AND b.routing_key ~ bi.pattern
 				)
 				-- if bindings exist but our routing_key does not match any of them
@@ -161,7 +161,7 @@ func (d *ConsumerDatastore[Message]) fanOut(ctx context.Context, topicID int64, 
 			pending_head = GREATEST(cursor.pending_head, $4),
 			pending_xmax = GREATEST(cursor.pending_xmax, $5::xid8) -- also skips the initial NULL
 		FROM mark
-		WHERE cursor.consumer_group_id = $1 AND cursor.topic_id = $2;
+		WHERE cursor.consumer_group_id = $1;
 	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupID, topicID, limit, snapshotHead, snapshotXmax)

@@ -17,13 +17,12 @@ import (
 
 // SystemDatastore owns the shared control-plane schema.
 // Tables:
+// - topic
+// - consumer_group
 // - cursor
 // - lease
 // - maintenance
 // - binding
-// - entity
-// - topic
-// - consumer_group
 // - compaction_head
 // - migration_log
 // - system
@@ -63,8 +62,8 @@ func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
 	err := d.Datastore.Pool.QueryRow(ctx,
 		`SELECT EXISTS (
 			SELECT 1 FROM migration_log
-			WHERE entity_type = 'system'
-				AND entity_id = 0
+			WHERE topic_id IS NULL
+				AND consumer_group_id IS NULL
 				AND status = 'success'
 		);`,
 	).Scan(&registered)
@@ -95,19 +94,25 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		return err
 	}
 
-	// entity table provides:
-	// - lifecycle management
-	// - global resource id
-	// for system resources only.
-	// Managed tables should FK it ON DELETE CASCADE for strong constraints and cleanup
-	createEntitySql := `
-		CREATE TABLE IF NOT EXISTS entity (
-			id BIGSERIAL PRIMARY KEY, -- global resource id
-			type TEXT NOT NULL,       -- 'topic' | 'consumer_group'
-			UNIQUE (id, type)         -- required for resource table composite foreign key references
+	createTopicSql := `
+		CREATE TABLE IF NOT EXISTS topic (
+			id BIGSERIAL PRIMARY KEY,                                       -- corresponding id for table interpolation ie message_log_<id>
+			name TEXT NOT NULL,                                             -- user defined and displayed name
+			schema_version BIGINT NOT NULL,                                 -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
+			partition_size BIGINT NOT NULL,                                 -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
+			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                     -- nanoseconds, time.Duration's own unit; 0 disables retention
+			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,       -- opt into Kafka's "lagging consumer falls off the retention window" semantics
+			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000,  -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
+			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,            -- opt out of delivery_log_<id> (per-attempt failure audit trail)
+			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,        -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
+			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,             -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,      -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (name, schema_version)
 		);
 	`
-	if _, err := tx.Exec(ctx, createEntitySql); err != nil {
+	if _, err := tx.Exec(ctx, createTopicSql); err != nil {
 		return err
 	}
 
@@ -115,12 +120,11 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	// - lifcycle management for child ownershipt model (cursor, binding, maintainence)
 	createConsumerGroupSql := `
 		CREATE TABLE IF NOT EXISTS consumer_group (
-			id BIGSERIAL PRIMARY KEY,                                                -- what children reference
-			entity_id BIGINT NOT NULL UNIQUE,                                        -- global resource id
-			entity_type TEXT NOT NULL GENERATED ALWAYS AS ('consumer_group') STORED, -- pins the composite FK to entity rows typed 'consumer_group'
-			name TEXT NOT NULL UNIQUE,
+			id BIGSERIAL PRIMARY KEY,                                         -- what children reference
+			topic_id BIGINT NOT NULL REFERENCES topic (id) ON DELETE CASCADE, -- owning topic
+			name TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			FOREIGN KEY (entity_id, entity_type) REFERENCES entity (id, type) ON DELETE CASCADE
+			UNIQUE (topic_id, name)
 		);
 	`
 	if _, err := tx.Exec(ctx, createConsumerGroupSql); err != nil {
@@ -128,18 +132,18 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	}
 
 	// consumer group cursors for tracking offset in message_log.
+	// UNIQUE keeps group <-> cursor 1:1
 	createCursorSql := `
 		CREATE TABLE IF NOT EXISTS cursor (
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
-			topic_id BIGINT NOT NULL,               -- a group tracks an independent cursor per topic
+			id BIGSERIAL PRIMARY KEY,
+			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group (id) ON DELETE CASCADE,
 			claimed BIGINT NOT NULL DEFAULT 0,      -- the read frontier 'inflight' work
 			committed BIGINT NOT NULL DEFAULT 0,    -- every message id > committed is in an end state done / dead
 			-- the snapshot fence: claims stop at settled_head, not the raw MAX(id),
 			-- MAX(id) can sit above uncommitted lower ids -- see FreshClaimMessagesWithCursor
 			settled_head BIGINT NOT NULL DEFAULT 0, -- highest id proven to have nothing uncommitted at or below it
 			pending_head BIGINT NOT NULL DEFAULT 0, -- candidate head awaiting that proof
-			pending_xmax XID8,                      -- txid fence read in the same snapshot as pending_head
-			PRIMARY KEY (consumer_group_id, topic_id)
+			pending_xmax XID8                       -- txid fence read in the same snapshot as pending_head
 		);
 	`
 	if _, err := tx.Exec(ctx, createCursorSql); err != nil {
@@ -150,7 +154,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		CREATE TABLE IF NOT EXISTS lease (
 			token UUID NOT NULL DEFAULT gen_random_uuid(),
 			consumer_group_id BIGINT NOT NULL,
-			topic_id BIGINT NOT NULL,        -- this is for range interpretation (which message_log_<id>)
 			low BIGINT NOT NULL,             -- low of claimed range of lease
 			high BIGINT NOT NULL,            -- high of claimed range of lease
 			until TIMESTAMPTZ NOT NULL,      -- when the lease is considered expired and should be reclaimed
@@ -169,17 +172,29 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	// "what duties exist" and "whose turn" are the same query.
 	createMaintenanceSql := `
 		CREATE TABLE IF NOT EXISTS maintenance (
+			id BIGSERIAL PRIMARY KEY,
+			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'alert'
-			topic_id BIGINT NOT NULL,
-			consumer_group_id BIGINT NOT NULL DEFAULT 0,      -- 0 for topic-scoped duties (janitor)
 			token UUID NOT NULL DEFAULT gen_random_uuid(),    -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			attempts INT NOT NULL DEFAULT 0,                  -- incremented on every claim. resets on success
-			PRIMARY KEY (duty, topic_id, consumer_group_id)
+			CHECK (num_nonnulls(topic_id, consumer_group_id) <= 1)
 		);
 	`
 	if _, err := tx.Exec(ctx, createMaintenanceSql); err != nil {
 		return err
+	}
+
+	// one duty of each kind per owner: system, topic, group
+	for _, indexSql := range []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_topic_duty ON maintenance (duty, topic_id) WHERE topic_id IS NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_group_duty ON maintenance (duty, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_system_duty ON maintenance (duty) WHERE topic_id IS NULL AND consumer_group_id IS NULL;`,
+	} {
+		if _, err := tx.Exec(ctx, indexSql); err != nil {
+			return err
+		}
 	}
 
 	// bindings: routing rules. A group with no binding matches all events; a
@@ -189,7 +204,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		CREATE TABLE IF NOT EXISTS binding (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
-			topic_id BIGINT NOT NULL,
 			pattern TEXT NOT NULL,   -- POSIX regex translated from the NATS-style pattern
 			display TEXT             -- original NATS pattern, for humans
 		);
@@ -197,33 +211,9 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	if _, err := tx.Exec(ctx, createBindingSql); err != nil {
 		return err
 	}
-	createBindingIndexSql := `CREATE INDEX IF NOT EXISTS binding_group ON binding (consumer_group_id, topic_id);`
-	if _, err := tx.Exec(ctx, createBindingIndexSql); err != nil {
-		return err
-	}
 
-	createTopicSql := `
-		CREATE TABLE IF NOT EXISTS topic (
-			id BIGSERIAL PRIMARY KEY,                                       -- corresponding id for table interpolation ie message_log_<id>
-			entity_id BIGINT NOT NULL UNIQUE,                               -- global resource id
-			entity_type TEXT NOT NULL GENERATED ALWAYS AS ('topic') STORED, -- pins the composite FK to entity rows typed 'topic'
-			name TEXT NOT NULL,                                             -- user defined and displayed name
-			schema_version BIGINT NOT NULL,                                 -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
-			partition_size BIGINT NOT NULL,                                 -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
-			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                     -- nanoseconds, time.Duration's own unit; 0 disables retention
-			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,       -- opt into Kafka's "lagging consumer falls off the retention window" semantics
-			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000,  -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
-			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,            -- opt out of delivery_log_<id> (per-attempt failure audit trail)
-			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,        -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
-			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,             -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
-			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,      -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE (name, schema_version),
-			FOREIGN KEY (entity_id, entity_type) REFERENCES entity (id, type) ON DELETE CASCADE
-		);
-	`
-	if _, err := tx.Exec(ctx, createTopicSql); err != nil {
+	createBindingIndexSql := `CREATE INDEX IF NOT EXISTS binding_group ON binding (consumer_group_id);`
+	if _, err := tx.Exec(ctx, createBindingIndexSql); err != nil {
 		return err
 	}
 
@@ -246,17 +236,17 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	}
 
 	// migration_log is the append-only history of migration attempts
-	// -- one row per attempt. entity_type + entity_id say whose:
-	// ('system', 0) for the control plane, ('topic', topic_id) per topic.
+	// -- one row per attempt.
 	createMigrationLogSql := `
 		CREATE TABLE IF NOT EXISTS migration_log (
 			id BIGSERIAL PRIMARY KEY,
-			entity_type TEXT NOT NULL,    -- 'system' | 'topic'
-			entity_id BIGINT NOT NULL,    -- 0 for system; topic_id for a topic
+			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			migration_version BIGINT NOT NULL,
 			status TEXT NOT NULL,         -- 'success' | 'failure' (extensible)
 			error TEXT,                   -- populated when status = 'failure'
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			CHECK (num_nonnulls(topic_id, consumer_group_id) <= 1)
 		);
 	`
 	if _, err := tx.Exec(ctx, createMigrationLogSql); err != nil {
@@ -279,12 +269,12 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 
 	// Record the baseline in migration_log, but only if there's no success row yet.
 	recordBaselineSql := `
-		INSERT INTO migration_log (entity_type, entity_id, migration_version, status)
-		SELECT 'system', 0, 1, 'success'
+		INSERT INTO migration_log (topic_id, migration_version, status)
+		SELECT NULL, 1, 'success'
 		WHERE NOT EXISTS (
 			SELECT 1 FROM migration_log
-			WHERE entity_type = 'system'
-				AND entity_id = 0
+			WHERE topic_id IS NULL
+				AND consumer_group_id IS NULL
 				AND status = 'success'
 		);
 	`

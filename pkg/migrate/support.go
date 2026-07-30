@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	mDatastore "github.com/agentstax/vulkan/pkg/migrate/datastore"
 )
 
-// Supported schema version ranges -- the versions of each entities' schema this
-// build understands.
+// Supported schema version ranges -- the versions of each owner kind's schema
+// this build understands.
 const (
 	MinSystemVersion int64 = 1
 	MaxSystemVersion int64 = 1
@@ -24,24 +25,28 @@ func AssertSchemaSupported(ctx context.Context, q datastore.Querier, topicID int
 	if err := AssertSystemSchemaSupported(ctx, q); err != nil {
 		return err
 	}
-	return assertEntity(ctx, q, mDatastore.EntityTopic, topicID, MinTopicVersion, MaxTopicVersion)
+	owner, err := common.NewTopicOwner(topicID, "")
+	if err != nil {
+		return err
+	}
+	return assertOwner(ctx, q, owner, MinTopicVersion, MaxTopicVersion)
 }
 
 // AssertSystemSchemaSupported is the topic-less half of AssertSchemaSupported.
 func AssertSystemSchemaSupported(ctx context.Context, q datastore.Querier) error {
-	return assertEntity(ctx, q, mDatastore.EntitySystem, 0, MinSystemVersion, MaxSystemVersion)
+	return assertOwner(ctx, q, common.NewSystemOwner(), MinSystemVersion, MaxSystemVersion)
 }
 
-func assertEntity(ctx context.Context, q datastore.Querier, entityType string, entityID, minV, maxV int64) error {
-	v, err := mDatastore.Version(ctx, q, entityType, entityID)
+func assertOwner(ctx context.Context, q datastore.Querier, owner common.Owner, minV, maxV int64) error {
+	v, err := mDatastore.Version(ctx, q, owner)
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
 	switch {
 	case v < minV:
-		return fmt.Errorf("%s schema is version %d but this build needs at least %d -- migrate the database up first", entityType, v, minV)
+		return fmt.Errorf("%s schema is version %d but this build needs at least %d -- migrate the database up first", owner.Kind(), v, minV)
 	case v > maxV:
-		return fmt.Errorf("%s schema is version %d but this build only understands up to %d -- upgrade the binary", entityType, v, maxV)
+		return fmt.Errorf("%s schema is version %d but this build only understands up to %d -- upgrade the binary", owner.Kind(), v, maxV)
 	}
 	return nil
 }

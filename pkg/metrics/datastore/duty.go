@@ -34,7 +34,9 @@ func (d *MetricsDatastore) DutySnapshots(ctx context.Context) ([]DutySnapshot, e
 func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
 	// each duty runs at its own topic's rate, so the rate switches on duty
 	// kind. The WHERE mirrors the CASE: a kind this build doesn't know is
-	// skipped whole, not listed with a NULL rate that breaks the scan
+	// skipped whole, not listed with a NULL rate that breaks the scan.
+	// The owner decides the topic join: topic-owned rows carry topic_id,
+	// group-owned rows (waterline) reach it through the group
 	sql := `
 		SELECT
 			m.duty, t.name, COALESCE(g.name, ''),
@@ -45,8 +47,8 @@ func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, e
 			EXTRACT(EPOCH FROM (now() - m.can_run_after)),
 			m.attempts
 		FROM maintenance m
-		JOIN topic t ON t.id = m.topic_id
 		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
+		JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id)
 		WHERE m.duty IN ('janitor', 'waterline')
 		ORDER BY t.name, m.duty, g.name;
 	`

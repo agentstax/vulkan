@@ -4,7 +4,7 @@ package main
 // registry (the real registries are empty). This is the linear-history
 // enforcement golang-migrate's file layout used to give for free.
 //
-// It borrows the SYSTEM entity against throwaway scratch tables and resets the
+// It borrows the SYSTEM scope against throwaway scratch tables and resets the
 // system migration_log to its v1 baseline on exit -- nothing real is touched.
 //
 // Proves:
@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -57,31 +58,31 @@ func main() {
 
 	// 1. fresh == migrate ------------------------------------------------------
 	section("migrate v1 -> v4 builds the same schema as a fresh create-at-4")
-	must(runner.RunOnce(ctx, maxV, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV, common.NewSystemOwner(), reg))
 	must(createFresh(ctx, pool))
 	check(sameColumns(ctx, pool), "stepwise migration == fresh-create-at-4 (information_schema)")
 
 	// 2. up -> down -> up ------------------------------------------------------
 	section("Down inverts Up, and re-up reproduces the schema")
-	must(runner.RunOnce(ctx, 1, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, 1, common.NewSystemOwner(), reg))
 	check(!tableExists(ctx, pool, stepwise), "full down dropped the table")
-	must(runner.RunOnce(ctx, maxV, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV, common.NewSystemOwner(), reg))
 	check(sameColumns(ctx, pool), "re-up reproduced the identical schema")
 
 	// 3. Up idempotency: version says v3 but the DDL is already at v4, so the
 	// re-run re-applies step 4's Up against an object that already exists.
 	section("Up is idempotent under an ambiguous-commit re-run")
 	forgetVersion(ctx, pool, maxV)
-	must(runner.RunOnce(ctx, maxV, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV, common.NewSystemOwner(), reg))
 	check(currentVersion(ctx, pool) == maxV && sameColumns(ctx, pool),
 		"re-applied Up over existing schema -> no-op, schema unchanged")
 
 	// 4. Down idempotency: drop c3 (now at v3), then claim v4 again so the
 	// re-run re-applies step 4's Down against a column that's already gone.
 	section("Down is idempotent under an ambiguous-commit re-run")
-	must(runner.RunOnce(ctx, maxV-1, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV-1, common.NewSystemOwner(), reg))
 	claimVersion(ctx, pool, maxV)
-	must(runner.RunOnce(ctx, maxV-1, migrate.EntitySystem, 0, reg))
+	must(runner.RunOnce(ctx, maxV-1, common.NewSystemOwner(), reg))
 	check(currentVersion(ctx, pool) == maxV-1 && !hasColumn(ctx, pool, stepwise, "c3"),
 		"re-applied Down over absent column -> no-op")
 
@@ -165,33 +166,33 @@ func hasColumn(ctx context.Context, pool *pgxpool.Pool, table, col string) bool 
 
 func currentVersion(ctx context.Context, pool *pgxpool.Pool) int64 {
 	var v int64
-	must(pool.QueryRow(ctx, `SELECT migration_version FROM migration_log WHERE entity_type = 'system' AND entity_id = 0 AND status = 'success' ORDER BY id DESC LIMIT 1;`).Scan(&v))
+	must(pool.QueryRow(ctx, `SELECT migration_version FROM migration_log WHERE topic_id IS NULL AND consumer_group_id IS NULL AND status = 'success' ORDER BY id DESC LIMIT 1;`).Scan(&v))
 	return v
 }
 
 // forgetVersion drops the success records at/above v, so the engine reads the
 // current version as v-1 while the DDL is already at v -- an interrupted migrate.
 func forgetVersion(ctx context.Context, pool *pgxpool.Pool, v int64) {
-	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = 'system' AND entity_id = 0 AND migration_version >= $1;`, v)
+	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE topic_id IS NULL AND consumer_group_id IS NULL AND migration_version >= $1;`, v)
 	must(err)
 }
 
 // claimVersion records a success at v without doing v's DDL -- the mirror of
 // forgetVersion, so the engine believes it's ahead of where the schema is.
 func claimVersion(ctx context.Context, pool *pgxpool.Pool, v int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO migration_log (entity_type, entity_id, migration_version, status) VALUES ('system', 0, $1, 'success');`, v)
+	_, err := pool.Exec(ctx, `INSERT INTO migration_log (topic_id, migration_version, status) VALUES (NULL, $1, 'success');`, v)
 	must(err)
 }
 
 // reset drops the scratch tables and returns the system migration_log to exactly
-// one v1 baseline row -- the lab only ever borrowed the system entity, and its
+// one v1 baseline row -- the lab only ever borrowed the system scope, and its
 // round trips leave extra v1 rows (each down-to-baseline records one).
 func reset(ctx context.Context, pool *pgxpool.Pool) {
 	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS `+stepwise+`, `+fresh+`;`)
 	must(err)
-	_, err = pool.Exec(ctx, `DELETE FROM migration_log WHERE entity_type = 'system' AND entity_id = 0;`)
+	_, err = pool.Exec(ctx, `DELETE FROM migration_log WHERE topic_id IS NULL AND consumer_group_id IS NULL;`)
 	must(err)
-	_, err = pool.Exec(ctx, `INSERT INTO migration_log (entity_type, entity_id, migration_version, status) VALUES ('system', 0, 1, 'success');`)
+	_, err = pool.Exec(ctx, `INSERT INTO migration_log (topic_id, migration_version, status) VALUES (NULL, 1, 'success');`)
 	must(err)
 }
 

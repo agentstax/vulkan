@@ -82,8 +82,8 @@ func main() {
 
 	// ===== bind cursorGroup and lifecycleGroup, THEN publish the rest =====
 	step("bind cursorGroup to orders.*.created, lifecycleGroup to payments.*")
-	must(cd.Bind(ctx, tp.Id, cursorGroupID, "orders.*.created"))
-	must(cd.Bind(ctx, tp.Id, lifecycleGroupID, "payments.*"))
+	must(cd.Bind(ctx, cursorGroupID, "orders.*.created"))
+	must(cd.Bind(ctx, lifecycleGroupID, "payments.*"))
 
 	msg2 := publish(ctx, wp, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
 	msg3 := publish(ctx, wp, "orders.eu.updated")          // wrong tail, does not match
@@ -160,21 +160,15 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consume
 	for _, g := range groups {
 		gID := mustGroupID(cd.UpsertGroup(ctx, topicID, g))
 		gids[g] = gID
-		for _, q := range []string{
-			`DELETE FROM lease WHERE consumer_group_id=$1 AND topic_id=$2`,
-			`DELETE FROM cursor WHERE consumer_group_id=$1 AND topic_id=$2`,
-		} {
-			_, err := ds.Pool.Exec(ctx, q, gID, topicID)
-			must(err)
-		}
-		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), gID)
+		_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, gID)
 		must(err)
-		must(cd.ClearBindings(ctx, topicID, gID))
-		mustGroupID(cd.UpsertGroup(ctx, topicID, g)) // recreate the cursor row just deleted
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), gID)
+		must(err)
+		must(cd.ClearBindings(ctx, gID))
 		// settled/pending must ride along -- the claim gate assumes
 		// gate >= settled >= claimed; bumping claimed alone breaks that and a
 		// poll where the fresh pair doesn't prove would regress the cursor
-		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$3, committed=$3, settled_head=$3, pending_head=$3 WHERE consumer_group_id=$1 AND topic_id=$2`, gID, topicID, head)
+		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, gID, head)
 		must(err)
 	}
 	return head, gids

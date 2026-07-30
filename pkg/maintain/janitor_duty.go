@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -91,7 +92,11 @@ func (j *Janitor) Register(ctx context.Context) error {
 		return err
 	}
 
-	duty, err := newDutyRunner(j.Datastore, j.Logger, j.Config.JitterFraction, DutyJanitor, current.Id, 0, current.JanitorPollRate)
+	owner, err := common.NewTopicOwner(current.Id, current.Name)
+	if err != nil {
+		return err
+	}
+	duty, err := newDutyRunner(j.Datastore, j.Logger, j.Config.JitterFraction, DutyJanitor, owner, current.JanitorPollRate)
 	if err != nil {
 		return err
 	}

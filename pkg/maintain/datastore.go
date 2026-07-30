@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
@@ -64,12 +65,12 @@ func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceDa
 	}, nil
 }
 
-// GetGroupId resolves a consumer group's id by name.
-// Returns (0, nil) if name is not registered.
-func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, name string) (int64, error) {
+// GetGroupId resolves a consumer group's id by its owning topic and name.
+// Returns (0, nil) if the group is not registered on that topic.
+func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, topicID int64, name string) (int64, error) {
 	var id int64
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
-		err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE name = $1;`, name).Scan(&id)
+		err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicID, name).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			id = 0
 			return nil
@@ -104,8 +105,10 @@ func (d *MaintenanceDatastore) ListDuties(ctx context.Context) ([]FleetDuty, err
 
 func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, error) {
 	// each duty runs at its own topic's rate, so the rate switches on duty kind.
-	// group joined by id for its NAME -- rollers register by name, resolving
-	// the id themselves ('' for topic-scoped duties, consumer_group_id 0)
+	// The owner decides the topic join: topic-owned rows carry topic_id, group-
+	// owned rows (waterline) reach it through the group. Group joined for its
+	// NAME -- rollers register by name, resolving the id themselves ('' for
+	// topic-scoped duties)
 	sql := `
 		SELECT
 			m.duty, COALESCE(g.name, ''), t.id, t.name, t.schema_version,
@@ -115,8 +118,8 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 				WHEN 'alert' THEN s.alert_poll_rate_ns
 			END
 		FROM maintenance m
-		JOIN topic t ON t.id = m.topic_id
 		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
+		JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id)
 		LEFT JOIN system s ON true -- singleton (id 0); LEFT so janitor/waterline
 		                           -- discovery never depends on the system row
 		WHERE m.duty IN ('janitor', 'waterline', 'alert');
@@ -141,29 +144,28 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 	return duties, rows.Err()
 }
 
-// DutyClaim is one maintenance row, matching the table's column order.
 type DutyClaim struct {
-	Duty            string
-	TopicID         int64
-	ConsumerGroupId int64
-	Token           pgtype.UUID
-	CanRunAfter     time.Time
-	Attempts        int
+	Id          int64
+	Duty        string
+	Owner       common.Owner
+	Token       pgtype.UUID
+	CanRunAfter time.Time
+	Attempts    int
 }
 
 // ClaimDuty races the duty's gate -- the winner owns it until can_run_after,
 // and renew/release fence on the returned Duty's token. nil = claim lost.
-func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, topicID int64, groupID int64, rate time.Duration) (*DutyClaim, error) {
+func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, owner common.Owner, rate time.Duration) (*DutyClaim, error) {
 	var claimed *DutyClaim
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimDuty(ctx, duty, topicID, groupID, rate)
+		claimed, err = d.claimDuty(ctx, duty, owner, rate)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topicID int64, groupID int64, rate time.Duration) (*DutyClaim, error) {
+func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, owner common.Owner, rate time.Duration) (*DutyClaim, error) {
 	// auto-commit: winner does duty work, losers skip.
 	// now() is DB time on both sides -- N replicas' clocks never agree, the DB's does.
 	sql := `
@@ -173,15 +175,15 @@ func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, topic
 			can_run_after = now() + make_interval(secs => $4),
 			attempts = attempts + 1
 		WHERE duty = $1
-			AND topic_id = $2
-			AND consumer_group_id = $3
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3
 			AND can_run_after <= now()
-		RETURNING duty, topic_id, consumer_group_id, token, can_run_after, attempts;
+		RETURNING id, duty, COALESCE(topic_id, 0), COALESCE(consumer_group_id, 0), token, can_run_after, attempts;
 	`
 
 	var claimed DutyClaim
-	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, topicID, groupID, rate.Seconds()).
-		Scan(&claimed.Duty, &claimed.TopicID, &claimed.ConsumerGroupId, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), rate.Seconds()).
+		Scan(&claimed.Id, &claimed.Duty, &claimed.Owner.TopicId, &claimed.Owner.ConsumerGroupId, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
 	if err != nil {
 		// no row: another maintainer won, or the duty was never seeded
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -200,13 +202,11 @@ func (d *MaintenanceDatastore) BackoffDuty(ctx context.Context, duty *DutyClaim)
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		sql := `
 			UPDATE maintenance
-			SET can_run_after = now() + make_interval(secs => $5)
-			WHERE duty = $1
-				AND topic_id = $2
-				AND consumer_group_id = $3
-				AND token = $4;
+			SET can_run_after = now() + make_interval(secs => $3)
+			WHERE id = $1
+				AND token = $2;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token, delay.Seconds())
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Id, duty.Token, delay.Seconds())
 		if err != nil {
 			return err
 		}
@@ -224,12 +224,10 @@ func (d *MaintenanceDatastore) ResetDuty(ctx context.Context, duty *DutyClaim) e
 		sql := `
 			UPDATE maintenance
 			SET attempts = 0
-			WHERE duty = $1
-				AND topic_id = $2
-				AND consumer_group_id = $3
-				AND token = $4;
+			WHERE id = $1
+				AND token = $2;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token)
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Id, duty.Token)
 		if err != nil {
 			return err
 		}
@@ -245,13 +243,11 @@ func (d *MaintenanceDatastore) RenewDuty(ctx context.Context, duty *DutyClaim, r
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		sql := `
 			UPDATE maintenance
-			SET can_run_after = now() + make_interval(secs => $5)
-			WHERE duty = $1
-				AND topic_id = $2
-				AND consumer_group_id = $3
-				AND token = $4;
+			SET can_run_after = now() + make_interval(secs => $3)
+			WHERE id = $1
+				AND token = $2;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token, rate.Seconds())
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Id, duty.Token, rate.Seconds())
 		if err != nil {
 			return err
 		}
@@ -273,12 +269,10 @@ func (d *MaintenanceDatastore) ReleaseDuty(ctx context.Context, duty *DutyClaim)
 		sql := `
 			UPDATE maintenance
 			SET can_run_after = now()
-			WHERE duty = $1
-				AND topic_id = $2
-				AND consumer_group_id = $3
-				AND token = $4;
+			WHERE id = $1
+				AND token = $2;
 		`
-		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Duty, duty.TopicID, duty.ConsumerGroupId, duty.Token)
+		tag, err := d.Datastore.Pool.Exec(ctx, sql, duty.Id, duty.Token)
 		if err != nil {
 			return err
 		}

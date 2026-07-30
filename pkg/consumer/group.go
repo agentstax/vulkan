@@ -4,12 +4,13 @@ import (
 	"time"
 )
 
-// a consumer group is global by name -- one resource tracking an independent
-// cursor per topic. Children reference Id (name is a mutable display/lookup
-// attribute); EntityId is its lifecycle root row in entity.
+// a consumer group is owned by exactly one topic -- names are unique per
+// topic, not globally. Children (cursor, lease, binding) reference Id and
+// carry no topic_id of their own; the topic_id FK cascade is the group's
+// lifecycle -- destroying the topic destroys it.
 type Group struct {
 	Id        int64
+	TopicId   int64
 	Name      string
-	EntityId  int64
 	CreatedAt time.Time
 }

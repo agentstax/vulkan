@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/alert"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
@@ -101,6 +102,5 @@ func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *system.AlterConfig)
 // MigrateSystem moves the system schema to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {
-	// 0 = system entityId by convention
-	return a.migrateRunner.RunOnce(ctx, targetVersion, migrate.EntitySystem, 0, systemMigrations.Registry)
+	return a.migrateRunner.RunOnce(ctx, targetVersion, common.NewSystemOwner(), systemMigrations.Registry)
 }

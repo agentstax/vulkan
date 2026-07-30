@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/logger"
 )
 
@@ -28,13 +29,12 @@ type dutyRunner struct {
 	logger logger.Logger
 	jitter float64
 
-	kind    string // DutyJanitor | DutyWaterline | DutyAlert
-	topicID int64
-	groupID int64 // 0 for topic-scoped duties
-	rate    time.Duration
+	kind  string // DutyJanitor | DutyWaterline | DutyAlert
+	owner common.Owner
+	rate  time.Duration
 }
 
-func newDutyRunner(ds *MaintenanceDatastore, log logger.Logger, jitter float64, kind string, topicID int64, groupID int64, rate time.Duration) (*dutyRunner, error) {
+func newDutyRunner(ds *MaintenanceDatastore, log logger.Logger, jitter float64, kind string, owner common.Owner, rate time.Duration) (*dutyRunner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -44,20 +44,16 @@ func newDutyRunner(ds *MaintenanceDatastore, log logger.Logger, jitter float64, 
 	if kind != DutyJanitor && kind != DutyWaterline && kind != DutyAlert {
 		return nil, fmt.Errorf("unknown duty kind %q", kind)
 	}
-	if topicID <= 0 {
-		return nil, fmt.Errorf("topicID must be > 0, got %d", topicID)
-	}
 	if rate <= 0 {
 		return nil, fmt.Errorf("rate must be > 0, got %v", rate)
 	}
 	return &dutyRunner{
-		ds:      ds,
-		logger:  log,
-		jitter:  jitter,
-		kind:    kind,
-		topicID: topicID,
-		groupID: groupID,
-		rate:    rate,
+		ds:     ds,
+		logger: log,
+		jitter: jitter,
+		kind:   kind,
+		owner:  owner,
+		rate:   rate,
 	}, nil
 }
 
@@ -88,10 +84,10 @@ func (d *dutyRunner) run(ctx context.Context, work func(context.Context) error) 
 // it doesn't take the process down -- so every outcome
 // logs and waits for the next interval.
 func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error) {
-	claim, err := d.ds.ClaimDuty(ctx, d.kind, d.topicID, d.groupID, d.rate)
+	claim, err := d.ds.ClaimDuty(ctx, d.kind, d.owner, d.rate)
 	if err != nil {
 		if ctx.Err() == nil {
-			d.logger.ErrorContext(ctx, "duty claim failed", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "error", err)
+			d.logger.ErrorContext(ctx, "duty claim failed", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "error", err)
 		}
 		return
 	}
@@ -109,7 +105,7 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 
 	if err == nil {
 		if err := d.ds.ResetDuty(ctx, claim); err != nil && !errors.Is(err, ErrDutyLost) {
-			d.logger.WarnContext(ctx, "duty reset failed", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "error", err)
+			d.logger.WarnContext(ctx, "duty reset failed", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "error", err)
 		}
 		return // success keeps the claim -- the claim IS the schedule
 	}
@@ -122,16 +118,16 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), min(d.rate, releaseWindow))
 		defer cancel()
 		if err := d.ds.ReleaseDuty(releaseCtx, claim); err != nil && !errors.Is(err, ErrDutyLost) {
-			d.logger.WarnContext(releaseCtx, "duty release failed on shutdown -- next run waits out the interval", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "error", err)
+			d.logger.WarnContext(releaseCtx, "duty release failed on shutdown -- next run waits out the interval", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "error", err)
 		}
 	case errors.Is(err, ErrDutyLost) || errors.Is(context.Cause(workCtx), ErrDutyLost):
-		d.logger.InfoContext(ctx, "duty ceded mid-run to another maintainer", "duty", d.kind, "topic", d.topicID, "group", d.groupID)
+		d.logger.InfoContext(ctx, "duty ceded mid-run to another maintainer", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId)
 	default:
 		delay, backoffErr := d.ds.BackoffDuty(ctx, claim)
 		if backoffErr != nil && !errors.Is(backoffErr, ErrDutyLost) {
-			d.logger.WarnContext(ctx, "duty backoff write failed", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "error", backoffErr)
+			d.logger.WarnContext(ctx, "duty backoff write failed", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "error", backoffErr)
 		}
-		d.logger.ErrorContext(ctx, "duty run failed -- backing off", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "attempts", claim.Attempts, "delay", delay, "error", err)
+		d.logger.ErrorContext(ctx, "duty run failed -- backing off", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "attempts", claim.Attempts, "delay", delay, "error", err)
 	}
 }
 
@@ -155,7 +151,7 @@ func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork con
 				// track if work is taking too long ie 'hung'
 				ticks++
 				if ticks%(2*hungWorkFactor) == 0 {
-					d.logger.WarnContext(workCtx, "duty work still running -- possibly hung", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "running_for", time.Duration(ticks)*d.rate/2)
+					d.logger.WarnContext(workCtx, "duty work still running -- possibly hung", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "running_for", time.Duration(ticks)*d.rate/2)
 				}
 
 				err := d.ds.RenewDuty(workCtx, claim, d.rate)
@@ -169,7 +165,7 @@ func (d *dutyRunner) startRenewalHeartbeat(workCtx context.Context, stopWork con
 				if workCtx.Err() == nil {
 					// keep working unrenewed -- worst case the claim lapses and
 					// another maintainer overlaps, which the ops tolerate
-					d.logger.WarnContext(workCtx, "duty renewal failed", "duty", d.kind, "topic", d.topicID, "group", d.groupID, "error", err)
+					d.logger.WarnContext(workCtx, "duty renewal failed", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "error", err)
 				}
 			}
 		}

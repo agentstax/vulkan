@@ -3,24 +3,29 @@ package datastore
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ListTopics yields one entity per topic
-func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]Entity, error) {
+func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]common.Owner, error) {
 	rows, err := conn.Query(ctx, `SELECT id, name FROM topic ORDER BY id;`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var topics []Entity
+	var topics []common.Owner
 	for rows.Next() {
-		var e Entity
-		if err := rows.Scan(&e.Id, &e.Name); err != nil {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
 			return nil, err
 		}
-		topics = append(topics, e)
+		owner, err := common.NewTopicOwner(id, name)
+		if err != nil {
+			return nil, err
+		}
+		topics = append(topics, owner)
 	}
 	return topics, rows.Err()
 }

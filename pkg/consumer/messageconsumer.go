@@ -195,7 +195,7 @@ func (p *MessageConsumer[Message]) closeRange(ctx context.Context, state *rangeS
 			fmt.Errorf("force reclaim exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
 		defer cancel()
 
-		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Topic.Id, p.Group.Id, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
+		if err := p.Datastore.ForceReclaimRange(reclaimCtx, p.Group.Id, state.lease.Token); err != nil && !errors.Is(err, ErrLeaseLost) {
 			p.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", state.lease.Low, "high", state.lease.High, "err", err)
 		}
 		return
