@@ -14,3 +14,9 @@ import (
 func Version(ctx context.Context, q datastore.Querier, owner common.Owner) (int64, error) {
 	return mDatastore.Version(ctx, q, owner)
 }
+
+// SystemOwner resolves the singleton system row to its owner, re-exported like
+// Version. Returns ErrNotRegistered if RegisterSystem hasn't run.
+func SystemOwner(ctx context.Context, q datastore.Querier) (common.Owner, error) {
+	return mDatastore.SystemOwner(ctx, q)
+}

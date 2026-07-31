@@ -58,14 +58,17 @@ func TestAlterConfigValidate(t *testing.T) {
 
 func TestNewSystem(t *testing.T) {
 	now := time.Unix(0, 0)
-	if _, err := NewSystem(-1, time.Hour, now, now); err == nil {
+	if _, err := NewSystem(0, time.Minute, time.Hour, now, now); err == nil {
+		t.Error("non-positive id: want error, got nil")
+	}
+	if _, err := NewSystem(1, -1, time.Hour, now, now); err == nil {
 		t.Error("negative alertPollRate: want error, got nil")
 	}
-	if _, err := NewSystem(time.Minute, -1, now, now); err == nil {
+	if _, err := NewSystem(1, time.Minute, -1, now, now); err == nil {
 		t.Error("negative alertRepeatInterval: want error, got nil")
 	}
 
-	s, err := NewSystem(2*time.Minute, 4*time.Hour, now, now)
+	s, err := NewSystem(1, 2*time.Minute, 4*time.Hour, now, now)
 	if err != nil {
 		t.Fatalf("valid: want nil, got %v", err)
 	}

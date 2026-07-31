@@ -57,8 +57,8 @@ func (c *AlterConfig) Validate() error {
 	return nil
 }
 
-// ToSystem builds the System cfg describes, with the given timestamps.
-func (c *Config) ToSystem(createdAt, updatedAt time.Time) *System {
-	s, _ := NewSystem(c.AlertPollRate, c.AlertRepeatInterval, createdAt, updatedAt)
+// ToSystem builds the System cfg describes, with the given identity and timestamps.
+func (c *Config) ToSystem(id int64, createdAt, updatedAt time.Time) *System {
+	s, _ := NewSystem(id, c.AlertPollRate, c.AlertRepeatInterval, createdAt, updatedAt)
 	return s
 }

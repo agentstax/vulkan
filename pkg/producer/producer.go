@@ -182,7 +182,7 @@ func (p *Producer[Message]) Register(ctx context.Context) error {
 	p.Topic = current
 
 	// fail fast if the db's schema is outside the range this build understands
-	if err := migrate.AssertSchemaSupported(ctx, p.topicDatastore.Datastore.Pool, current.Id); err != nil {
+	if err := migrate.AssertSchemaSupported(ctx, p.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
 		return err
 	}
 

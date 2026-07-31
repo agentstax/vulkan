@@ -21,20 +21,29 @@ const (
 // AssertSchemaSupported gates producer/consumer startup: the shared system
 // schema and this topic's schema must both sit within the range this build
 // understands. Too new -> upgrade the binary; too old -> migrate the database.
-func AssertSchemaSupported(ctx context.Context, q datastore.Querier, topicID int64) error {
-	if err := AssertSystemSchemaSupported(ctx, q); err != nil {
-		return err
-	}
-	owner, err := common.NewTopicOwner(topicID, "")
+func AssertSchemaSupported(ctx context.Context, q datastore.Querier, systemID int64, topicID int64) error {
+	systemOwner, err := common.NewSystemOwner(systemID)
 	if err != nil {
 		return err
 	}
-	return assertOwner(ctx, q, owner, MinTopicVersion, MaxTopicVersion)
+	if err := assertOwner(ctx, q, systemOwner, MinSystemVersion, MaxSystemVersion); err != nil {
+		return err
+	}
+	topicOwner, err := common.NewTopicOwner(systemID, topicID, "")
+	if err != nil {
+		return err
+	}
+	return assertOwner(ctx, q, topicOwner, MinTopicVersion, MaxTopicVersion)
 }
 
-// AssertSystemSchemaSupported is the topic-less half of AssertSchemaSupported.
+// AssertSystemSchemaSupported is the topic-less half of AssertSchemaSupported,
+// for callers that hold no topic row to read the system id from.
 func AssertSystemSchemaSupported(ctx context.Context, q datastore.Querier) error {
-	return assertOwner(ctx, q, common.NewSystemOwner(), MinSystemVersion, MaxSystemVersion)
+	owner, err := mDatastore.SystemOwner(ctx, q)
+	if err != nil {
+		return err
+	}
+	return assertOwner(ctx, q, owner, MinSystemVersion, MaxSystemVersion)
 }
 
 func assertOwner(ctx context.Context, q datastore.Querier, owner common.Owner, minV, maxV int64) error {

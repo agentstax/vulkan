@@ -60,11 +60,11 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.Config) (*topic.Topic, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
 	// otherwise UpsertTopic dies with a raw undefined-table error.
-	registered, err := a.systemDatastore.IsRegistered(ctx)
+	sys, err := a.systemDatastore.GetConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !registered {
+	if sys == nil {
 		return nil, fmt.Errorf("register the system with RegisterSystem before registering topic %q: %w", name, migrate.ErrNotRegistered)
 	}
 
@@ -76,7 +76,7 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 		return nil, err
 	}
 
-	return a.topicDatastore.UpsertTopic(ctx, name, version, *cfg)
+	return a.topicDatastore.UpsertTopic(ctx, sys.Id, name, version, *cfg)
 }
 
 // AlterTopic applies cfg's non-nil fields to topic (name, version) and
@@ -122,7 +122,7 @@ func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, version to
 		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
 	}
 
-	owner, err := common.NewTopicOwner(found.Id, found.Name)
+	owner, err := common.NewTopicOwner(found.SystemId, found.Id, found.Name)
 	if err != nil {
 		return err
 	}

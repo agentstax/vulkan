@@ -102,5 +102,16 @@ func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *system.AlterConfig)
 // MigrateSystem moves the system schema to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {
-	return a.migrateRunner.RunOnce(ctx, targetVersion, common.NewSystemOwner(), systemMigrations.Registry)
+	sys, err := a.systemDatastore.GetConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if sys == nil {
+		return migrate.ErrNotRegistered
+	}
+	owner, err := common.NewSystemOwner(sys.Id)
+	if err != nil {
+		return err
+	}
+	return a.migrateRunner.RunOnce(ctx, targetVersion, owner, systemMigrations.Registry)
 }

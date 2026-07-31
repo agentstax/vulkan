@@ -92,7 +92,7 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, w.topicName)
 	}
 
-	if err := migrate.AssertSchemaSupported(ctx, w.topicDatastore.Datastore.Pool, current.Id); err != nil {
+	if err := migrate.AssertSchemaSupported(ctx, w.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
 		return err
 	}
 
@@ -104,7 +104,7 @@ func (w *WaterlineRoller) Register(ctx context.Context) error {
 		return fmt.Errorf("consumer group %q is not registered -- the consumer's Register creates it", w.consumerGroup)
 	}
 
-	owner, err := common.NewConsumerGroupOwner(current.Id, groupID, w.consumerGroup)
+	owner, err := common.NewConsumerGroupOwner(current.SystemId, current.Id, groupID, w.consumerGroup)
 	if err != nil {
 		return err
 	}

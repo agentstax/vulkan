@@ -98,10 +98,10 @@ that is set with a poll rate instead of these values being set on topic, system 
 
 rethink making GetCompactionHead live on producer. It could want to be used and called in many different places
 
+having to have func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, name string) (int64, error) in maintenance datastore because of circular dependencies with consumer is a code smell and means we have coupled things incorrectly
 
-having to have func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, name string) (int64, error) in maintenance datastore because of circular dependencies with consumer is a code smell and means we have couple things incorrectly
-
-pkg/migrate/support.go is not in line with our dependency injection patterns
-- owner.name not being a required field because of above is a code smell
+pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is not in line with our dependency injection patterns
+- common.Owner.name not being a required field because of above is a code smell
+- having to have random SystemOwner in pkg/migrate/datastore/system.go not good
 
 should go ahead and add a system_id column to be consistent and allow us to be flexible in future

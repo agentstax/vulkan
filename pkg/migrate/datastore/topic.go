@@ -8,7 +8,7 @@ import (
 )
 
 func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]common.Owner, error) {
-	rows, err := conn.Query(ctx, `SELECT id, name FROM topic ORDER BY id;`)
+	rows, err := conn.Query(ctx, `SELECT id, system_id, name FROM topic ORDER BY id;`)
 	if err != nil {
 		return nil, err
 	}
@@ -17,11 +17,12 @@ func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) (
 	var topics []common.Owner
 	for rows.Next() {
 		var id int64
+		var systemId int64
 		var name string
-		if err := rows.Scan(&id, &name); err != nil {
+		if err := rows.Scan(&id, &systemId, &name); err != nil {
 			return nil, err
 		}
-		owner, err := common.NewTopicOwner(id, name)
+		owner, err := common.NewTopicOwner(systemId, id, name)
 		if err != nil {
 			return nil, err
 		}

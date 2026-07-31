@@ -143,7 +143,7 @@ func printMismatch(w io.Writer, name string, existing *topic.Topic, want *topic.
 
 	fmt.Fprintf(w, "error: topic %q already exists with a different configuration\n\n", name)
 
-	wantTopic := want.ToTopic(existing.Id, name, existing.SchemaVersion, existing.CreatedAt, existing.UpdatedAt)
+	wantTopic := want.ToTopic(existing.Id, existing.SystemId, name, existing.SchemaVersion, existing.CreatedAt, existing.UpdatedAt)
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  FIELD\tEXISTING\tREQUESTED")
 	for _, d := range topicFieldDiffs(existing, wantTopic) {

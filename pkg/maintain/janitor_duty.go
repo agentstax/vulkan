@@ -88,11 +88,11 @@ func (j *Janitor) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, j.topicName)
 	}
 
-	if err := migrate.AssertSchemaSupported(ctx, j.topicDatastore.Datastore.Pool, current.Id); err != nil {
+	if err := migrate.AssertSchemaSupported(ctx, j.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
 		return err
 	}
 
-	owner, err := common.NewTopicOwner(current.Id, current.Name)
+	owner, err := common.NewTopicOwner(current.SystemId, current.Id, current.Name)
 	if err != nil {
 		return err
 	}

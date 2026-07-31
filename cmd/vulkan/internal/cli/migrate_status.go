@@ -25,7 +25,15 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			sysCurrent, err := migrate.Version(ctx, ds.Pool, common.NewSystemOwner())
+			sysOwner, err := migrate.SystemOwner(ctx, ds.Pool)
+			if err != nil {
+				if errors.Is(err, migrate.ErrNotRegistered) {
+					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
+					return nil
+				}
+				return translateAdminError(err)
+			}
+			sysCurrent, err := migrate.Version(ctx, ds.Pool, sysOwner)
 			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
@@ -52,7 +60,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			rows := []row{{name: "system", current: sysCurrent, available: sysAvail}}
 			for _, t := range topics {
-				owner, err := common.NewTopicOwner(t.Id, t.Name)
+				owner, err := common.NewTopicOwner(t.SystemId, t.Id, t.Name)
 				if err != nil {
 					return err
 				}

@@ -101,7 +101,7 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 	}
 	b.Topic = current
 
-	if err := migrate.AssertSchemaSupported(ctx, b.topicDatastore.Datastore.Pool, current.Id); err != nil {
+	if err := migrate.AssertSchemaSupported(ctx, b.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
 		return err
 	}
 

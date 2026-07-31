@@ -21,6 +21,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,6 +48,9 @@ func main() {
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
 	topicRow, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)
 	must(err)
+
+	sysOwner, err := migrate.SystemOwner(ctx, pool)
+	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
@@ -57,21 +61,21 @@ func main() {
 
 	// 2. system schema ahead of the binary --------------------------------------
 	section("system schema ahead of the binary -> Register refused")
-	bump(ctx, pool, common.NewSystemOwner(), 2)
+	bump(ctx, pool, sysOwner, 2)
 	err = newProducer(name, ds).Register(ctx)
 	show(err)
 	check(err != nil && strings.Contains(err.Error(), "system schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version and the fix")
-	unbump(ctx, pool, common.NewSystemOwner(), 2)
+	unbump(ctx, pool, sysOwner, 2)
 
 	// 3. topic schema ahead of the binary ---------------------------------------
 	section("topic schema ahead of the binary -> Register refused")
-	bump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.Id, topicRow.Name)), 2)
+	bump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
 	err = newProducer(name, ds).Register(ctx)
 	show(err)
 	check(err != nil && strings.Contains(err.Error(), "topic schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the topic version and the fix")
-	unbump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.Id, topicRow.Name)), 2)
+	unbump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
 
 	fmt.Println("\n✅ SCHEMA GATE LAB PASSED")
 	fmt.Println("   Register fails fast and legibly when the schema is outside the supported range.")
@@ -86,12 +90,12 @@ func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.Pro
 // bump records a success at ver, so the gate reads that scope as version ver
 // without any matching schema change -- a database a newer binary migrated.
 func bump(ctx context.Context, pool *pgxpool.Pool, owner common.Owner, ver int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO migration_log (topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, 'success');`, owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
+	_, err := pool.Exec(ctx, `INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
 	must(err)
 }
 
 func unbump(ctx context.Context, pool *pgxpool.Pool, owner common.Owner, ver int64) {
-	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE topic_id IS NOT DISTINCT FROM $1 AND consumer_group_id IS NOT DISTINCT FROM $2 AND migration_version = $3;`, owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
+	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE system_id IS NOT DISTINCT FROM $1 AND topic_id IS NOT DISTINCT FROM $2 AND consumer_group_id IS NOT DISTINCT FROM $3 AND migration_version = $4;`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
 	must(err)
 }
 

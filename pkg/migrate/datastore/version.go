@@ -18,15 +18,16 @@ func Version(ctx context.Context, q datastore.Querier, owner common.Owner) (int6
 	// IS NOT DISTINCT FROM: NULL-safe equality against the owner's columns
 	sql := `
 		SELECT migration_version FROM migration_log
-		WHERE topic_id IS NOT DISTINCT FROM $1
-			AND consumer_group_id IS NOT DISTINCT FROM $2
+		WHERE system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3
 			AND status = 'success'
 		ORDER BY id DESC
 		LIMIT 1;
 	`
 
 	var v int64
-	if err := q.QueryRow(ctx, sql, owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).Scan(&v); err != nil {
+	if err := q.QueryRow(ctx, sql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).Scan(&v); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, ErrNotRegistered
 		}

@@ -54,6 +54,7 @@ func (d *TopicDatastore) getTopic(ctx context.Context, q datastore.Querier, name
 	sql := `
 		SELECT
 			id,
+			system_id,
 			name,
 			schema_version,
 			partition_size,
@@ -86,6 +87,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 	sql := `
 		SELECT
 			id,
+			system_id,
 			name,
 			schema_version,
 			partition_size,
@@ -124,11 +126,11 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 }
 
 // UpsertTopic resolves (name, version) to its db identity, creating it if it doesn't exist.
-func (d *TopicDatastore) UpsertTopic(ctx context.Context, name string, version SchemaVersion, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) UpsertTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.upsertTopic(ctx, name, version, cfg)
+		topic, err = d.upsertTopic(ctx, systemID, name, version, cfg)
 		return err
 	})
 	return topic, err
@@ -136,7 +138,7 @@ func (d *TopicDatastore) UpsertTopic(ctx context.Context, name string, version S
 
 // upsertTopic registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version SchemaVersion, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) upsertTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
 	// private getTopic, not GetTopic -- otherwise would have nested retries.
 	found, err := d.getTopic(ctx, d.Datastore.Pool, name, version)
 	if err != nil {
@@ -175,14 +177,14 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version S
 	}
 
 	insertSql := `
-		INSERT INTO topic (name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at, updated_at;
 	`
 	var id int64
 	var createdAt time.Time
 	var updatedAt time.Time
-	if err := tx.QueryRow(ctx, insertSql, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt); err != nil {
+	if err := tx.QueryRow(ctx, insertSql, systemID, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 
@@ -214,12 +216,12 @@ func (d *TopicDatastore) upsertTopic(ctx context.Context, name string, version S
 	}
 
 	d.Logger.InfoContext(ctx, "topic registered (created)", "topic", name, "topic_id", id, "schema_version", version)
-	return cfg.ToTopic(id, name, version, createdAt, updatedAt), nil
+	return cfg.ToTopic(id, systemID, name, version, createdAt, updatedAt), nil
 }
 
 func (d *TopicDatastore) assertConfigMatches(found *Topic, cfg Config) error {
 	// found's db-assigned fields thread into the compare -- a Config carries none of them
-	want := cfg.ToTopic(found.Id, found.Name, found.SchemaVersion, found.CreatedAt, found.UpdatedAt)
+	want := cfg.ToTopic(found.Id, found.SystemId, found.Name, found.SchemaVersion, found.CreatedAt, found.UpdatedAt)
 	if *found != *want {
 		return fmt.Errorf("%w: topic %s version %d: existing=%+v got=%+v", ErrTopicConfigMismatch, found.Name, found.SchemaVersion, *found, *want)
 	}
@@ -267,6 +269,7 @@ func (d *TopicDatastore) updateTopicByID(ctx context.Context, old *Topic, cfg *A
 		WHERE id = $1
 		RETURNING
 			id,
+			system_id,
 			name,
 			schema_version,
 			partition_size,
@@ -362,6 +365,7 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 		WHERE name = $1
 		RETURNING
 			id,
+			system_id,
 			name,
 			schema_version,
 			partition_size,
@@ -599,6 +603,7 @@ func (d *TopicDatastore) scanTopic(row pgx.Row) (*Topic, error) {
 	var waterlinePollRateNs int64
 	err := row.Scan(
 		&t.Id,
+		&t.SystemId,
 		&t.Name,
 		&t.SchemaVersion,
 		&t.PartitionSize,

@@ -84,14 +84,21 @@ type migrateTarget struct {
 func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpool.Pool, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
 	switch s {
 	case scopeSystem:
-		current, err := migrate.Version(ctx, pool, common.NewSystemOwner())
+		owner, err := migrate.SystemOwner(ctx, pool)
 		if err != nil {
 			if errors.Is(err, migrate.ErrNotRegistered) {
 				return nil, errSystemNotRegistered()
 			}
 			return nil, translateAdminError(err)
 		}
-		return []migrateTarget{{owner: common.NewSystemOwner(), current: current}}, nil
+		current, err := migrate.Version(ctx, pool, owner)
+		if err != nil {
+			if errors.Is(err, migrate.ErrNotRegistered) {
+				return nil, errSystemNotRegistered()
+			}
+			return nil, translateAdminError(err)
+		}
+		return []migrateTarget{{owner: owner, current: current}}, nil
 
 	case scopeTopic:
 		found, err := mAdmin.GetTopic(ctx, name, version)
@@ -101,7 +108,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		if found == nil {
 			return nil, failOp("topic %q not found", name)
 		}
-		owner, err := common.NewTopicOwner(found.Id, found.Name)
+		owner, err := common.NewTopicOwner(found.SystemId, found.Id, found.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +125,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		}
 		targets := make([]migrateTarget, 0, len(topics))
 		for _, t := range topics {
-			owner, err := common.NewTopicOwner(t.Id, t.Name)
+			owner, err := common.NewTopicOwner(t.SystemId, t.Id, t.Name)
 			if err != nil {
 				return nil, err
 			}

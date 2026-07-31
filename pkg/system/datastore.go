@@ -17,6 +17,7 @@ import (
 
 // SystemDatastore owns the shared control-plane schema.
 // Tables:
+// - system
 // - topic
 // - consumer_group
 // - cursor
@@ -25,7 +26,6 @@ import (
 // - binding
 // - compaction_head
 // - migration_log
-// - system
 type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
@@ -55,29 +55,6 @@ func (d *SystemDatastore) RegisterSystem(ctx context.Context, cfg Config) error 
 	})
 }
 
-// IsRegistered reports whether RegisterSystem has run -- a system success row in
-// migration_log. A missing migration_log table (42P01) counts as not registered.
-func (d *SystemDatastore) IsRegistered(ctx context.Context) (bool, error) {
-	var registered bool
-	err := d.Datastore.Pool.QueryRow(ctx,
-		`SELECT EXISTS (
-			SELECT 1 FROM migration_log
-			WHERE topic_id IS NULL
-				AND consumer_group_id IS NULL
-				AND status = 'success'
-		);`,
-	).Scan(&registered)
-	if err != nil {
-		// 42P01 = table does not exist
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
-			return false, nil
-		}
-		return false, err
-	}
-	return registered, nil
-}
-
 // registerSystem creates the shared control-plane schema. Every statement is
 // CREATE IF NOT EXISTS -- a no-op against a database that already has the
 // tables, a full bootstrap against a fresh one. This is the BASELINE; later
@@ -94,19 +71,62 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		return err
 	}
 
+	createSystemSql := `
+		CREATE TABLE IF NOT EXISTS system (
+			id BIGSERIAL PRIMARY KEY,
+			alert_poll_rate_ns BIGINT NOT NULL,       -- nanoseconds; how often the alert checks run
+			alert_repeat_interval_ns BIGINT NOT NULL, -- nanoseconds; how long a firing alert stays quiet before re-emitting
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+	`
+	if _, err := tx.Exec(ctx, createSystemSql); err != nil {
+		return err
+	}
+
+	// Seed the config row. WHERE NOT EXISTS first register wins
+	seedSystemSql := `
+		INSERT INTO system (alert_poll_rate_ns, alert_repeat_interval_ns)
+		SELECT $1, $2
+		WHERE NOT EXISTS (SELECT 1 FROM system)
+		RETURNING id;
+	`
+	var systemId int64
+	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AlertPollRate), int64(cfg.AlertRepeatInterval)).Scan(&systemId)
+	switch {
+	case seedErr == nil:
+		// won the seed -- the row now holds exactly cfg
+	case errors.Is(seedErr, pgx.ErrNoRows):
+		existing, err := d.getConfig(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return fmt.Errorf("system config row missing right after seed -- unexpected")
+		}
+		want := cfg.ToSystem(existing.Id, existing.CreatedAt, existing.UpdatedAt)
+		if *existing != *want {
+			return fmt.Errorf("%w: existing=%+v got=%+v", ErrSystemConfigMismatch, *existing, *want)
+		}
+		systemId = existing.Id
+	default:
+		return seedErr
+	}
+
 	createTopicSql := `
 		CREATE TABLE IF NOT EXISTS topic (
-			id BIGSERIAL PRIMARY KEY,                                       -- corresponding id for table interpolation ie message_log_<id>
-			name TEXT NOT NULL,                                             -- user defined and displayed name
-			schema_version BIGINT NOT NULL,                                 -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
-			partition_size BIGINT NOT NULL,                                 -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
-			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                     -- nanoseconds, time.Duration's own unit; 0 disables retention
-			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,       -- opt into Kafka's "lagging consumer falls off the retention window" semantics
-			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000,  -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
-			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,            -- opt out of delivery_log_<id> (per-attempt failure audit trail)
-			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,        -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
-			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,             -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
-			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,      -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
+			id BIGSERIAL PRIMARY KEY,                                           -- corresponding id for table interpolation ie message_log_<id>
+			system_id BIGINT NOT NULL REFERENCES system (id) ON DELETE CASCADE, -- owning system
+			name TEXT NOT NULL,                                                 -- user defined and displayed name
+			schema_version BIGINT NOT NULL,                                     -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
+			partition_size BIGINT NOT NULL,                                     -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed
+			retention_ttl_ns BIGINT NOT NULL DEFAULT 0,                         -- nanoseconds, time.Duration's own unit; 0 disables retention
+			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,           -- opt into Kafka's "lagging consumer falls off the retention window" semantics
+			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000,      -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
+			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,                -- opt out of delivery_log_<id> (per-attempt failure audit trail)
+			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,            -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
+			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,                 -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
+			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,          -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE (name, schema_version)
@@ -173,13 +193,14 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	createMaintenanceSql := `
 		CREATE TABLE IF NOT EXISTS maintenance (
 			id BIGSERIAL PRIMARY KEY,
+			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'alert'
 			token UUID NOT NULL DEFAULT gen_random_uuid(),    -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			attempts INT NOT NULL DEFAULT 0,                  -- incremented on every claim. resets on success
-			CHECK (num_nonnulls(topic_id, consumer_group_id) <= 1)
+			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1)
 		);
 	`
 	if _, err := tx.Exec(ctx, createMaintenanceSql); err != nil {
@@ -190,7 +211,7 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	for _, indexSql := range []string{
 		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_topic_duty ON maintenance (duty, topic_id) WHERE topic_id IS NOT NULL;`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_group_duty ON maintenance (duty, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_system_duty ON maintenance (duty) WHERE topic_id IS NULL AND consumer_group_id IS NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_system_duty ON maintenance (duty, system_id) WHERE system_id IS NOT NULL;`,
 	} {
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err
@@ -240,75 +261,31 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	createMigrationLogSql := `
 		CREATE TABLE IF NOT EXISTS migration_log (
 			id BIGSERIAL PRIMARY KEY,
+			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			migration_version BIGINT NOT NULL,
 			status TEXT NOT NULL,         -- 'success' | 'failure' (extensible)
 			error TEXT,                   -- populated when status = 'failure'
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			CHECK (num_nonnulls(topic_id, consumer_group_id) <= 1)
+			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1)
 		);
 	`
 	if _, err := tx.Exec(ctx, createMigrationLogSql); err != nil {
 		return err
 	}
 
-	// system: the singleton config row. id pinned to 0.
-	createSystemSql := `
-		CREATE TABLE IF NOT EXISTS system (
-			id INT PRIMARY KEY DEFAULT 0,
-			alert_poll_rate_ns BIGINT NOT NULL,       -- nanoseconds; how often the alert checks run
-			alert_repeat_interval_ns BIGINT NOT NULL, -- nanoseconds; how long a firing alert stays quiet before re-emitting
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-	`
-	if _, err := tx.Exec(ctx, createSystemSql); err != nil {
-		return err
-	}
-
 	// Record the baseline in migration_log, but only if there's no success row yet.
 	recordBaselineSql := `
-		INSERT INTO migration_log (topic_id, migration_version, status)
-		SELECT NULL, 1, 'success'
+		INSERT INTO migration_log (system_id, migration_version, status)
+		SELECT $1, 1, 'success'
 		WHERE NOT EXISTS (
 			SELECT 1 FROM migration_log
-			WHERE topic_id IS NULL
-				AND consumer_group_id IS NULL
-				AND status = 'success'
+			WHERE system_id = $1 AND status = 'success'
 		);
 	`
-	if _, err := tx.Exec(ctx, recordBaselineSql); err != nil {
+	if _, err := tx.Exec(ctx, recordBaselineSql, systemId); err != nil {
 		return err
-	}
-
-	// Seed the config row with cfg. ON CONFLICT DO NOTHING -- the first register
-	// wins, later ones no-op. A later register whose cfg DIFFERS returns a mismatch error.
-	seedSystemSql := `
-		INSERT INTO system (id, alert_poll_rate_ns, alert_repeat_interval_ns)
-		VALUES (0, $1, $2)
-		ON CONFLICT (id) DO NOTHING -- no row returned on conflict -> getConfig and compare (below)
-		RETURNING id;
-	`
-	var seededId int
-	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AlertPollRate), int64(cfg.AlertRepeatInterval)).Scan(&seededId)
-	switch {
-	case seedErr == nil:
-		// won the seed -- the row now holds exactly cfg
-	case errors.Is(seedErr, pgx.ErrNoRows):
-		existing, err := d.getConfig(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return fmt.Errorf("system config row missing right after seed -- unexpected")
-		}
-		want := cfg.ToSystem(existing.CreatedAt, existing.UpdatedAt)
-		if *existing != *want {
-			return fmt.Errorf("%w: existing=%+v got=%+v", ErrSystemConfigMismatch, *existing, *want)
-		}
-	default:
-		return seedErr
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -331,23 +308,29 @@ func (d *SystemDatastore) GetConfig(ctx context.Context) (*System, error) {
 	return sys, err
 }
 
-// getConfig reads the singleton system row. Returns (nil, nil) if the row isn't there yet.
+// getConfig reads the singleton system row. Returns (nil, nil) if the row (or
+// the table itself, 42P01) isn't there yet.
 func (d *SystemDatastore) getConfig(ctx context.Context, q datastore.Querier) (*System, error) {
 	sql := `
-		SELECT alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at
-		FROM system
-		WHERE id = 0;
+		SELECT id, alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at
+		FROM system;
 	`
+	var id int64
 	var alertPollRateNs, alertRepeatIntervalNs int64
 	var createdAt, updatedAt time.Time
-	err := q.QueryRow(ctx, sql).Scan(&alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
+	err := q.QueryRow(ctx, sql).Scan(&id, &alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
+		// 42P01 = table does not exist
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+			return nil, nil
+		}
 		return nil, err
 	}
-	return NewSystem(time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
+	return NewSystem(id, time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
 }
 
 // UpdateConfig applies cfg's non-nil fields to the singleton system row and
@@ -376,16 +359,17 @@ func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*
 	sql := `
 		UPDATE system
 		SET
-			alert_poll_rate_ns = COALESCE($1, alert_poll_rate_ns),
-			alert_repeat_interval_ns = COALESCE($2, alert_repeat_interval_ns),
+			alert_poll_rate_ns = COALESCE($2, alert_poll_rate_ns),
+			alert_repeat_interval_ns = COALESCE($3, alert_repeat_interval_ns),
 			updated_at = NOW()
-		WHERE id = 0
-		RETURNING alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at;
+		WHERE id = $1
+		RETURNING id, alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at;
 	`
+	var id int64
 	var alertPollRateNs, alertRepeatIntervalNs int64
 	var createdAt, updatedAt time.Time
-	err = d.Datastore.Pool.QueryRow(ctx, sql, durationNs(cfg.AlertPollRate), durationNs(cfg.AlertRepeatInterval)).
-		Scan(&alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
+	err = d.Datastore.Pool.QueryRow(ctx, sql, old.Id, durationNs(cfg.AlertPollRate), durationNs(cfg.AlertRepeatInterval)).
+		Scan(&id, &alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// destroyed between the read and the update
@@ -394,7 +378,7 @@ func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*
 		return nil, err
 	}
 
-	updated, err := NewSystem(time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
+	updated, err := NewSystem(id, time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
 	if err != nil {
 		return nil, err
 	}

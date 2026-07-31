@@ -120,7 +120,7 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 		FROM maintenance m
 		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
 		JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id)
-		LEFT JOIN system s ON true -- singleton (id 0); LEFT so janitor/waterline
+		LEFT JOIN system s ON true -- singleton; LEFT so janitor/waterline
 		                           -- discovery never depends on the system row
 		WHERE m.duty IN ('janitor', 'waterline', 'alert');
 	`
@@ -172,18 +172,19 @@ func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, owner
 		UPDATE maintenance
 		SET
 			token = gen_random_uuid(),
-			can_run_after = now() + make_interval(secs => $4),
+			can_run_after = now() + make_interval(secs => $5),
 			attempts = attempts + 1
 		WHERE duty = $1
-			AND topic_id IS NOT DISTINCT FROM $2
-			AND consumer_group_id IS NOT DISTINCT FROM $3
+			AND system_id IS NOT DISTINCT FROM $2
+			AND topic_id IS NOT DISTINCT FROM $3
+			AND consumer_group_id IS NOT DISTINCT FROM $4
 			AND can_run_after <= now()
-		RETURNING id, duty, COALESCE(topic_id, 0), COALESCE(consumer_group_id, 0), token, can_run_after, attempts;
+		RETURNING id, duty, COALESCE(system_id, 0), COALESCE(topic_id, 0), COALESCE(consumer_group_id, 0), token, can_run_after, attempts;
 	`
 
 	var claimed DutyClaim
-	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), rate.Seconds()).
-		Scan(&claimed.Id, &claimed.Duty, &claimed.Owner.TopicId, &claimed.Owner.ConsumerGroupId, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), rate.Seconds()).
+		Scan(&claimed.Id, &claimed.Duty, &claimed.Owner.SystemId, &claimed.Owner.TopicId, &claimed.Owner.ConsumerGroupId, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
 	if err != nil {
 		// no row: another maintainer won, or the duty was never seeded
 		if errors.Is(err, pgx.ErrNoRows) {

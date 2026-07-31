@@ -9,8 +9,8 @@ import (
 
 func (d *MigrateDatastore) RecordSuccess(ctx context.Context, q datastore.Querier, owner common.Owner, version int64) error {
 	_, err := q.Exec(ctx,
-		`INSERT INTO migration_log (topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, 'success');`,
-		owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version)
+		`INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`,
+		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version)
 	return err
 }
 
@@ -21,8 +21,8 @@ func (d *MigrateDatastore) TryRecordFailure(ctx context.Context, q datastore.Que
 	ctx = context.WithoutCancel(ctx)
 	err := d.Retry.Wrap(ctx, func() error {
 		_, e := q.Exec(ctx,
-			`INSERT INTO migration_log (topic_id, consumer_group_id, migration_version, status, error) VALUES ($1, $2, $3, 'failure', $4);`,
-			owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version, cause.Error())
+			`INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status, error) VALUES ($1, $2, $3, $4, 'failure', $5);`,
+			owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version, cause.Error())
 		return e
 	})
 	if err != nil {

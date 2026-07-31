@@ -11,7 +11,7 @@ const (
 )
 
 // Owner is which resource owns a row in a polymorphic table (maintenance,
-// migration_log). Zero value = system-owned.
+// migration_log).
 type Owner struct {
 	SystemId        int64
 	TopicId         int64
@@ -19,25 +19,34 @@ type Owner struct {
 	Name            string // diagnostics only, "" = unnamed
 }
 
-func NewSystemOwner() Owner {
-	return Owner{Name: "system"}
+func NewSystemOwner(systemId int64) (Owner, error) {
+	if systemId <= 0 {
+		return Owner{}, fmt.Errorf("systemId must be > 0, got %d", systemId)
+	}
+	return Owner{SystemId: systemId, Name: "system"}, nil
 }
 
-func NewTopicOwner(topicId int64, name string) (Owner, error) {
+func NewTopicOwner(systemId int64, topicId int64, name string) (Owner, error) {
+	if systemId <= 0 {
+		return Owner{}, fmt.Errorf("systemId must be > 0, got %d", systemId)
+	}
 	if topicId <= 0 {
 		return Owner{}, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
-	return Owner{TopicId: topicId, Name: name}, nil
+	return Owner{SystemId: systemId, TopicId: topicId, Name: name}, nil
 }
 
-func NewConsumerGroupOwner(topicId int64, consumerGroupId int64, name string) (Owner, error) {
+func NewConsumerGroupOwner(systemId int64, topicId int64, consumerGroupId int64, name string) (Owner, error) {
+	if systemId <= 0 {
+		return Owner{}, fmt.Errorf("systemId must be > 0, got %d", systemId)
+	}
 	if topicId <= 0 {
 		return Owner{}, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if consumerGroupId <= 0 {
 		return Owner{}, fmt.Errorf("consumerGroupId must be > 0, got %d", consumerGroupId)
 	}
-	return Owner{TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil
+	return Owner{SystemId: systemId, TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil
 }
 
 func (o Owner) Kind() OwnerKind {
@@ -49,6 +58,14 @@ func (o Owner) Kind() OwnerKind {
 	default:
 		return OwnerSystem
 	}
+}
+
+// the value stored in the table's system_id column: id or NULL
+func (o Owner) SystemIdColumn() *int64 {
+	if o.Kind() == OwnerSystem {
+		return &o.SystemId
+	}
+	return nil
 }
 
 // the value stored in the table's topic_id column: id or NULL
