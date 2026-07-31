@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1; generic-systems refactor folded in 2026-07-29 from `refactor-plan.md` (delete that file when done): `retry.Policy` consolidation (count inside the policy, root `MaxAttempts` deleted), MessageOptions + `Message`/`MessageMin`/`MessageMax` config trio + `IgnoreExclusive` veto, `entity` table (control-plane lifecycle root, cascade via admin-only destroy), exclusive consumption (`key_lease`, `Exclusive: Skip|Defer`, supersede-before-lease, 'superseded'/'deferred' kinds), `cron_job` + 1-min scheduler + compacted `job_request` topic |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1; generic-systems refactor folded in 2026-07-29 from `refactor-plan.md` (delete that file when done): `retry.Policy` consolidation (count inside the policy, root `MaxAttempts` deleted), MessageOptions + `Message`/`MessageMin`/`MessageMax` config trio + `IgnoreExclusive` veto, resource-ownership model (entity table built then deleted; FK ownership chain + owner-column polymorphic tables + `common.Owner`, done), exclusive consumption (`key_lease`, `Exclusive: Skip|Defer`, supersede-before-lease, 'superseded'/'deferred' kinds), `cron_job` + 1-min scheduler + compacted `job_request` topic |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -4534,10 +4534,12 @@ sequenced after both of these close.*
       "what's firing now" read surface (compaction heads = current state).
       The `Alert` schema (pkg/alert, user-facing — consumers decode
       `MessageConsumer[alert.Alert]`): typed identity fields Name
-      ("partition_count"), EntityType ("system"|"topic",
-      migration_log's entity_type/entity_id pattern), EntityId
+      ("partition_count"), EntityType ("system"|"topic"), EntityId
       (rename-proof machine identity, 0 = system), EntityName (human
-      handle), Status ("firing"|"resolved"), Severity ("warn"; "critical"
+      handle — NOTE 2026-07-30: this payload vocabulary predates
+      `common.Owner`; whether these fields adopt Owner's
+      kind/ids/name spelling is an alerts-Chunk-2 build decision),
+      Status ("firing"|"resolved"), Severity ("warn"; "critical"
       reserved — the field ships in v1 so the routing key never changes
       shape); the prose triple Message/Detail/Hint; and two jsonb maps —
       Data (measurements about the entity: the check's evidence) and
@@ -4998,8 +5000,8 @@ once all five close). Motivation: the alerts build exposed how coupled
 the maintenance/duty wiring is; these rebuild the same needs as generic
 primitives instead of per-feature plumbing. Dependency order: retry
 consolidation → message options → exclusive consumption → cron
-scheduler; the entity table is independent and can land any time before
-the scheduler (cron_jobs need entities as owners).*
+scheduler; the resource-ownership model landed independently
+(cron_job's owner columns build on it).*
 
 - [x] **`retry.Policy` consolidation (prerequisite sweep).** ONE construct
       for message redelivery: `*retry.Policy {MaxRetries, BaseDelay,
@@ -5081,34 +5083,71 @@ the scheduler (cron_jobs need entities as owners).*
         the message row (typed columns vs metadata) is internals,
         decided at build.
 
-- [ ] **`entity` table — internal resource identity + lifecycle root.**
-      `entity(id BIGSERIAL PRIMARY KEY, type TEXT NOT NULL)` —
-      first-class INTERNAL resource ids; users never see them. The rule:
-      CONTROL-PLANE rows enroll (topic, consumer_group — enroll NOW,
-      cron_jobs need them as owners; nothing else until a feature
-      actually references it), DATA-PLANE rows never do
-      (messages/deliveries/exceptions — DELETE overhead + vacuum churn).
-      NO name column — admin.Rename exists and a second copy of name
-      drifts; display resolution = classify+switch on type + join to the
-      owning table. Enrolled tables carry `entity_id BIGINT NOT NULL
-      UNIQUE REFERENCES entity(id) ON DELETE CASCADE`; entity is the
-      LIFECYCLE ROOT: admin.Destroy deletes the entity row and
-      everything downstream (resource row, its cron_jobs, later its
-      alerts) goes transactionally. CASCADE is implicit deletion,
-      acceptable ONLY because pkg/admin is the sole lifecycle write path
-      and Destroy is double-guarded — do not add a second delete path.
-      Each package's Register owns its entity insert (same txn) so
-      enrollment is never a separate forgettable step. cron_job itself
-      is NOT enrolled (nothing targets cron_jobs yet; enroll later if
-      e.g. alerts reference them). Alerts are the obvious second
-      customer (typed identity in Data → entity refs), but that is
-      their refactor, not this one.
-      Chunk plan: `~/.claude/plans/entity-table.md` (3 chunks: entity
-      table + topic enrollment → consumer_group registry + enrollment
-      → convergence/sweep/close-out). Survey headline: no
-      consumer_group table exists today — groups are lazy TEXT keys
-      materialized in UpsertCursor — so "enroll consumer_group" means
-      BUILDING the registry, and Chunk 2 is mostly that.
+- [x] **Resource ownership model (was: `entity` table).** DONE
+      2026-07-30, but not as designed: the entity table was built
+      (Chunk 1: entity + topic enrollment), then four review rounds
+      pushed the smells to their root and the table was DELETED. The
+      lesson that survives: enrolling a child with ONE fixed owner
+      type (consumer_group) into a generic identity table was the
+      mistake — the owner edge, the owner_entity_type column, and the
+      composite MATCH FULL FK were all compensation. With a CLOSED
+      owner set (system/topic/group), plain relational ownership wins.
+      Final model, as shipped:
+      - **Ownership chain, all real FKs**: `system` (BIGSERIAL id,
+        singleton seeded `WHERE NOT EXISTS` under the register
+        advisory lock — the old pinned `id 0` died because 0 collides
+        with Go's unset convention) → `topic.system_id NOT NULL FK
+        CASCADE` → `consumer_group.topic_id NOT NULL FK CASCADE`
+        (+ UNIQUE(topic_id, name) — groups are born per topic, never
+        global by name) → cursor/binding via `consumer_group_id FK
+        CASCADE`. Data-plane stays FK-free (lease, delivery tables,
+        compaction_head — insert-rate test).
+      - **Polymorphic tables (maintenance, migration_log)**: one
+        nullable FK column per owner type, ordered `system_id →
+        topic_id → consumer_group_id`, `CHECK (num_nonnulls(...) = 1)`
+        — every row names its owner outright, nothing implied by
+        absence; partial UNIQUE indexes per owner column replace
+        sentinel keys. Cascade deletes ride the owner FK.
+      - **`common.Owner`** is the Go currency: `NewSystemOwner(systemId)`
+        / `NewTopicOwner(systemId, topicId, name)` /
+        `NewConsumerGroupOwner(systemId, topicId, groupId, name)`, all
+        `(*Owner, error)`; `Kind()` classifies, `SystemIdColumn()`/
+        `TopicIdColumn()`/`ConsumerGroupIdColumn()` return id-or-nil so
+        one SQL statement serves every owner kind (`IS NOT DISTINCT
+        FROM` in the two find-by-owner lookups; duty fences address
+        rows by `id + token` instead). Name is diagnostics-only. Owner
+        absorbed pkg/migrate's Scope vocabulary and flows as a pointer
+        through migrate + maintain (DutyClaim.Owner, dutyRunner).
+      - **Group registry built** (the survey's hidden cost):
+        `UpsertGroup(ctx, topicID, name)` = one txn under a per-
+        (topic, name) advisory lock creating group + cursor +
+        waterline duty, early-exit on found; UpsertCursor deleted;
+        consumers resolve name → Group.Id once at Register.
+      - **DestroyTopic** = drain partitions → lease delete via
+        group-id subselect (no FK, must precede) → `DELETE FROM topic`
+        (cascades everything FK'd) → compaction_head manual → table
+        drops.
+      - **Deferred, on record**: admin group verbs — Destroy is an
+        operational need, not polish (an abandoned group's cursor pins
+        partition drops under the default
+        allow_drop_past_committed=false); the cascade for it is
+        already proven (`DELETE FROM consumer_group WHERE id`,
+        consumergrouplab), the verb rides with whatever first needs it
+        (cron scheduler or 13d expiry). migrate's group-scope Go
+        vocabulary waits until group migrations exist — but
+        migration_log carries the consumer_group_id column from day
+        one, so system readers pin ALL owner columns and topic readers
+        pin consumer_group_id NULL.
+      - Rejected on the way (don't revive): supertype/entity table for
+        a closed owner set (returns only if some table ever needs an
+        OPEN owner set); FK-less type+id pairs (the old
+        migration_log entity_type/entity_id WAS that antipattern);
+        CTE dual-insert registration (PG §7.8.2 orphan); name-keyed
+        child references (k8s-UID lesson, caught twice).
+      Proofs: consumergrouplab + deletetopiclab (cascade directions),
+      invariantlab/schemagatelab (owner-column migration_log SQL),
+      dutybackofflab/maintenancelab (duty owner columns); entitylab
+      deleted with its subject.
 
 - [ ] **Exclusive consumption — keyed concurrency policy (the generic
       primitive).** Per-MESSAGE, set at produce via
@@ -5174,11 +5213,15 @@ the scheduler (cron_jobs need entities as owners).*
 
 - [ ] **`cron_job` + job scheduler + `job_request` topic** —
       k8s-cronjob-shaped scheduled work as a generic system.
-      - Schema (settled incl. hygiene): `id BIGSERIAL PRIMARY KEY`;
-        `owner_entity_id BIGINT NULL REFERENCES entity(id) ON DELETE
-        CASCADE` — GC metadata ONLY (k8s ownerReferences: "whose
-        lifecycle I'm bound to"; the scheduler NEVER reads it, Postgres
-        alone acts on it at destroy; NULL = standalone job); `name TEXT
+      - Schema (settled incl. hygiene; owner shape RESETTLED 2026-07-30
+        after the entity table died): `id BIGSERIAL PRIMARY KEY`; owner
+        = the maintenance/migration_log owner-column shape — nullable
+        `system_id`/`topic_id`/`consumer_group_id` FKs ON DELETE
+        CASCADE + `CHECK (num_nonnulls(...) <= 1)` (`<= 1`, not `= 1`:
+        all NULL = standalone job) — GC metadata ONLY (k8s
+        ownerReferences: "whose lifecycle I'm bound to"; the scheduler
+        NEVER reads it, Postgres alone acts on it at destroy);
+        `common.Owner` is the Go currency for it; `name TEXT
         NOT NULL UNIQUE`; `handler TEXT NOT NULL` (which runner is
         valid, like image); `schedule TEXT NOT NULL` ('* * * * *');
         `concurrency TEXT NOT NULL DEFAULT 'allow'`
@@ -5193,8 +5236,9 @@ the scheduler (cron_jobs need entities as owners).*
         admin.Destroy can't find dependents it can't decode); `metadata
         JSONB` (labels/annotations); `next_scheduled_time TIMESTAMPTZ
         NOT NULL`. Partial index `(next_scheduled_time) WHERE NOT
-        suspended` = the poll predicate. Also rejected: cron_job's own
-        entity enrollment (nothing references cron_jobs yet).
+        suspended` = the poll predicate. Also rejected: making
+        cron_job itself an ownable resource (nothing references
+        cron_jobs yet).
       - Registration validation — a SANITY check, not correctness
         (key_lease owns overlap): schedule parses; minimum firing gap >=
         timeout. Self-contained because timeout is the job's own spec —

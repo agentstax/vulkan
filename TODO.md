@@ -91,8 +91,6 @@ Add retry backoff for deliveries exception logic table
 
 Need a destroy system
 
-consider making entities its own table with an id, entity_type, entity_id, entity_name - could make for a more modular setup
-
 don't like how listDuties has a case statement joining many tables. Makes it feel like duties needs to be a higher level abstraction
 that is set with a poll rate instead of these values being set on topic, system etc.
 
