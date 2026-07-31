@@ -135,5 +135,8 @@ func (j *Janitor) sweep(ctx context.Context) error {
 	if err := j.Datastore.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.JanitorSweepBatchSize, t.DisableDeliveryLog); err != nil {
 		return err
 	}
-	return j.Datastore.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, t.JanitorSweepBatchSize)
+	if err := j.Datastore.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, t.JanitorSweepBatchSize); err != nil {
+		return err
+	}
+	return j.Datastore.SweepExpiredKeyLeases(ctx, t.Id, t.JanitorSweepBatchSize)
 }

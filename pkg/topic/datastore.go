@@ -559,6 +559,14 @@ func (d *TopicDatastore) deleteTopic(ctx context.Context, topic *Topic) error {
 		return err
 	}
 
+	keyLeaseSql := `
+		DELETE FROM key_lease
+		WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE topic_id = $1);
+	`
+	if _, err := tx.Exec(ctx, keyLeaseSql, topic.Id); err != nil {
+		return err
+	}
+
 	if _, err := tx.Exec(ctx, `DELETE FROM topic WHERE id = $1;`, topic.Id); err != nil {
 		return err
 	}

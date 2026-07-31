@@ -1122,6 +1122,147 @@ func (d *ConsumerDatastore[Message]) recordExceptionFailure(ctx context.Context,
 	return nil
 }
 
+// KeyLeaseVerdict classifies a ClaimKeyLease attempt.
+type KeyLeaseVerdict string
+
+const (
+	KeyLeaseAcquired   KeyLeaseVerdict = "acquired"   // the caller holds the key until release or expiry
+	KeyLeaseBusy       KeyLeaseVerdict = "busy"       // another delivery holds the key
+	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the message is no longer its key's compaction head -- never run it
+)
+
+// KeyLeaseClaim is one ClaimKeyLease outcome. Token is set only when
+// acquired; ReleaseKeyLease matches on it.
+type KeyLeaseClaim struct {
+	Verdict         KeyLeaseVerdict
+	ConsumerGroupId int64
+	CompactionKey   string
+	Token           pgtype.UUID
+}
+
+// ClaimKeyLease attempts to acquire the exclusive right to run a keyed
+// message.
+// Acquired guarantees the message was still its key's compaction head
+// AFTER the lease was won.
+// An expired lease is never freed, only taken over by the next claim on
+// its key or deleted by janitor sweep.
+func (d *ConsumerDatastore[Message]) ClaimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration) (*KeyLeaseClaim, error) {
+	var claim *KeyLeaseClaim
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		claim, err = d.claimKeyLease(ctx, topicID, groupID, key, messageID, duration)
+		return err
+	})
+	return claim, err
+}
+
+func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration) (*KeyLeaseClaim, error) {
+	// the head check gates the insert -- a superseded message never creates
+	// or locks a lease row.
+	claimSql := `
+		WITH head AS (
+			SELECT head_id
+			FROM compaction_head
+			WHERE topic_id = $1
+				AND compaction_key = $2
+		), attempt AS (
+			INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at)
+			SELECT $3, $2, gen_random_uuid(), now() + make_interval(secs => $5)
+			WHERE EXISTS (SELECT 1 FROM head WHERE head_id = $4)
+			ON CONFLICT (consumer_group_id, compaction_key) DO UPDATE
+			SET
+				lease_token = gen_random_uuid(),
+				expires_at = now() + make_interval(secs => $5)
+			WHERE key_lease.expires_at < now()
+			RETURNING lease_token
+		)
+		SELECT
+			EXISTS (SELECT 1 FROM head WHERE head_id = $4),
+			(SELECT lease_token FROM attempt);
+	`
+
+	// the claimSql head CTE snapshot could be stale on the INSERT
+	// that follows, this verifies head snapshot hasn't changed
+	recheckSql := `
+		SELECT head_id
+		FROM compaction_head
+		WHERE topic_id = $1
+			AND compaction_key = $2;
+	`
+
+	// one round trip
+	batch := &pgx.Batch{}
+	batch.Queue(claimSql, topicID, key, groupID, messageID, duration.Seconds())
+	batch.Queue(recheckSql, topicID, key)
+
+	claim := KeyLeaseClaim{ConsumerGroupId: groupID, CompactionKey: key}
+	var isHead bool
+	var recheckHead int64
+
+	// claimSql
+	results := d.Datastore.Pool.SendBatch(ctx, batch)
+	if err := results.QueryRow().Scan(&isHead, &claim.Token); err != nil {
+		results.Close()
+		return nil, err
+	}
+
+	// recheckSql
+	err := results.QueryRow().Scan(&recheckHead)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) { // no head row -> recheckHead stays 0 -> head moved
+		results.Close()
+		return nil, err
+	}
+	if err := results.Close(); err != nil {
+		return nil, err
+	}
+
+	switch {
+	case !isHead:
+		claim.Verdict = KeyLeaseSuperseded
+	case !claim.Token.Valid:
+		claim.Verdict = KeyLeaseBusy
+	default:
+		claim.Verdict = KeyLeaseAcquired
+	}
+
+	// the head moved mid-claim -- the newer version must run, not this one
+	if claim.Verdict == KeyLeaseAcquired && recheckHead != messageID {
+		if _, err := d.releaseKeyLease(ctx, d.Datastore.Pool, &claim); err != nil {
+			return nil, err
+		}
+		claim.Verdict = KeyLeaseSuperseded
+		claim.Token = pgtype.UUID{}
+	}
+	return &claim, nil
+}
+
+// ReleaseKeyLease frees an acquired key.
+// false -> no row matched the claim's Token: the lease expired, and the
+// row was taken over or deleted by the janitor.
+func (d *ConsumerDatastore[Message]) ReleaseKeyLease(ctx context.Context, claim *KeyLeaseClaim) (bool, error) {
+	var released bool
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		released, err = d.releaseKeyLease(ctx, d.Datastore.Pool, claim)
+		return err
+	})
+	return released, err
+}
+
+func (d *ConsumerDatastore[Message]) releaseKeyLease(ctx context.Context, q datastore.Querier, claim *KeyLeaseClaim) (bool, error) {
+	sql := `
+		DELETE FROM key_lease
+		WHERE consumer_group_id = $1
+			AND compaction_key = $2
+			AND lease_token = $3;
+	`
+	tag, err := q.Exec(ctx, sql, claim.ConsumerGroupId, claim.CompactionKey, claim.Token)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // execBatch sends every queued statement as one pipelined round trip instead
 // of N sequential ones, surfacing the first failure
 func execBatch(ctx context.Context, tx pgx.Tx, batch *pgx.Batch) error {

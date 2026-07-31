@@ -22,6 +22,7 @@ import (
 // - consumer_group
 // - cursor
 // - lease
+// - key_lease
 // - maintenance
 // - binding
 // - compaction_head
@@ -182,6 +183,21 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		);
 	`
 	if _, err := tx.Exec(ctx, createLeaseSql); err != nil {
+		return err
+	}
+
+	// key_lease: at most one in-flight delivery per compaction key per
+	// consumer group.
+	createKeyLeaseSql := `
+		CREATE TABLE IF NOT EXISTS key_lease (
+			consumer_group_id BIGINT NOT NULL, -- PK
+			compaction_key TEXT NOT NULL,      -- PK
+			lease_token UUID NOT NULL,
+			expires_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY (consumer_group_id, compaction_key)
+		);
+	`
+	if _, err := tx.Exec(ctx, createKeyLeaseSql); err != nil {
 		return err
 	}
 

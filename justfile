@@ -85,6 +85,9 @@ abandoned-events-lab:
 duty-backoff-lab:
   go run examples/phase_1/dutybackofflab/main.go
 
+key-lease-lab:
+  go run examples/phase_1/keyleaselab/main.go
+
 # log compaction lab: latest-per-key survives a claim, older rows stay
 # physically present, a delivered version isn't retroactively unsent, the
 # crash/reclaim race gives a superseded row zero delivery while its successor
