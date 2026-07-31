@@ -71,7 +71,9 @@ func main() {
 	topicName := fmt.Sprintf("phase8c.compactionscalelab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	step("insert the never-superseded row -- id=1, compaction_key=\"stale\"")
 	insertStaleRow(ctx, ds, tp.Id)

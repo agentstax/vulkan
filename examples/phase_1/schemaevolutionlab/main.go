@@ -225,7 +225,7 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 	c, err := consumer.NewConsumer[V1Order](group, name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:              1,
 		ClaimPollRate:           50 * time.Millisecond,
-		Message:                 &common.MessageOptions{WorkTimeout: 2 * time.Second},
+		Message:                 &common.MessageOptions{Timeout: 2 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
 		AckMargin:               500 * time.Millisecond,
 		ExceptionInitialBackoff: 200 * time.Millisecond,

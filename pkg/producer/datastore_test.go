@@ -86,7 +86,7 @@ func TestProtectedInsertSQLMessageOptionsBound(t *testing.T) {
 	// that requests nothing binds the typed nil above (NULL column) -- covered
 	// by every other test here.
 	key := uuid.New()
-	opts := ProduceOptions{Message: &common.MessageOptions{WorkTimeout: time.Minute}}
+	opts := ProduceOptions{Message: &common.MessageOptions{Timeout: time.Minute}}
 
 	sql, args := protectedInsertSQL(1, key, "payload", opts)
 	if !strings.Contains(sql, "options") {
@@ -96,8 +96,8 @@ func TestProtectedInsertSQLMessageOptionsBound(t *testing.T) {
 	if !ok || bound == nil {
 		t.Fatalf("last arg = %#v, want *common.MessageOptions", args[len(args)-1])
 	}
-	if bound.WorkTimeout != time.Minute {
-		t.Fatalf("bound options = %+v, want WorkTimeout %v", bound, time.Minute)
+	if bound.Timeout != time.Minute {
+		t.Fatalf("bound options = %+v, want Timeout %v", bound, time.Minute)
 	}
 }
 

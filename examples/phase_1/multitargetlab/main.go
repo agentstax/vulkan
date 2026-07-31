@@ -233,7 +233,9 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	return tp, wp, func() { must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }
+	return tp, wp, func() {
+		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}
 }
 
 // setupDeferredFKFixture builds a scratch FK relationship whose violation is

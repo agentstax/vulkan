@@ -14,8 +14,8 @@ func (c *Consumer[Message]) WithBatchLimit(batchLimit int) *Consumer[Message] {
 	return c
 }
 
-func (c *Consumer[Message]) WithWorkTimeout(workTimeout time.Duration) *Consumer[Message] {
-	c.Config.Message.WorkTimeout = workTimeout
+func (c *Consumer[Message]) WithTimeout(timeout time.Duration) *Consumer[Message] {
+	c.Config.Message.Timeout = timeout
 	return c
 }
 

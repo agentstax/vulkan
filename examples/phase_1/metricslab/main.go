@@ -79,11 +79,11 @@ func main() {
 	}
 
 	cfg := &consumer.ConsumerConfig{
-		BatchLimit:       2,
-		Message:          &vulkancommon.MessageOptions{WorkTimeout: 300 * time.Millisecond},
-		WorkTimeoutGrace: 100 * time.Millisecond,
-		QueueMargin:      200 * time.Millisecond,
-		AckMargin:        200 * time.Millisecond,
+		BatchLimit:   2,
+		Message:      &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
+		TimeoutGrace: 100 * time.Millisecond,
+		QueueMargin:  200 * time.Millisecond,
+		AckMargin:    200 * time.Millisecond,
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)

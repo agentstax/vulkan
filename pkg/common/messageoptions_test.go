@@ -8,12 +8,12 @@ import (
 )
 
 func TestFillSetFieldsWin(t *testing.T) {
-	msg := &MessageOptions{WorkTimeout: time.Minute}
-	defaults := &MessageOptions{Concurrency: ConcurrencyDefer, WorkTimeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
+	msg := &MessageOptions{Timeout: time.Minute}
+	defaults := &MessageOptions{Concurrency: ConcurrencyDefer, Timeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
 
 	got := msg.Fill(defaults)
-	if got.WorkTimeout != time.Minute {
-		t.Fatalf("WorkTimeout = %v, want the message's %v", got.WorkTimeout, time.Minute)
+	if got.Timeout != time.Minute {
+		t.Fatalf("Timeout = %v, want the message's %v", got.Timeout, time.Minute)
 	}
 	if got.Concurrency != ConcurrencyDefer {
 		t.Fatalf("Concurrency = %q, want the default %q", got.Concurrency, ConcurrencyDefer)
@@ -38,13 +38,13 @@ func TestFillRetryMergesFieldWise(t *testing.T) {
 }
 
 func TestFillNeverAliasesItsInputs(t *testing.T) {
-	defaults := &MessageOptions{WorkTimeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
+	defaults := &MessageOptions{Timeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
 
 	var msg *MessageOptions
 	got := msg.Fill(defaults)
-	got.WorkTimeout = time.Minute
+	got.Timeout = time.Minute
 	got.Retry.MaxRetries = 9
-	if defaults.WorkTimeout != time.Second || defaults.Retry.MaxRetries != 5 {
+	if defaults.Timeout != time.Second || defaults.Retry.MaxRetries != 5 {
 		t.Fatalf("writes to Fill's result reached its defaults: %+v", defaults)
 	}
 }
@@ -64,15 +64,15 @@ func TestResolveConcurrency(t *testing.T) {
 
 func TestClampBoundsFieldWise(t *testing.T) {
 	msg := &MessageOptions{
-		WorkTimeout: time.Hour,
-		Retry:       &retry.Policy{MaxRetries: 100, BaseDelay: time.Millisecond},
+		Timeout: time.Hour,
+		Retry:   &retry.Policy{MaxRetries: 100, BaseDelay: time.Millisecond},
 	}
 	min := &MessageOptions{Retry: &retry.Policy{BaseDelay: time.Second}}
-	max := &MessageOptions{WorkTimeout: time.Minute, Retry: &retry.Policy{MaxRetries: 10}}
+	max := &MessageOptions{Timeout: time.Minute, Retry: &retry.Policy{MaxRetries: 10}}
 
 	got := msg.Clamp(min, max)
-	if got.WorkTimeout != time.Minute {
-		t.Fatalf("WorkTimeout = %v, want ceiling %v", got.WorkTimeout, time.Minute)
+	if got.Timeout != time.Minute {
+		t.Fatalf("Timeout = %v, want ceiling %v", got.Timeout, time.Minute)
 	}
 	if got.Retry.MaxRetries != 10 {
 		t.Fatalf("Retry.MaxRetries = %d, want ceiling 10", got.Retry.MaxRetries)
@@ -83,10 +83,10 @@ func TestClampBoundsFieldWise(t *testing.T) {
 }
 
 func TestClampZeroBoundsAreUnconstrained(t *testing.T) {
-	msg := &MessageOptions{WorkTimeout: time.Hour, Retry: &retry.Policy{MaxRetries: 100}}
+	msg := &MessageOptions{Timeout: time.Hour, Retry: &retry.Policy{MaxRetries: 100}}
 
 	got := msg.Clamp(nil, nil)
-	if got.WorkTimeout != time.Hour || got.Retry.MaxRetries != 100 {
+	if got.Timeout != time.Hour || got.Retry.MaxRetries != 100 {
 		t.Fatalf("zero bounds changed the message: %+v", got)
 	}
 }
@@ -106,7 +106,7 @@ func TestValidateSparse(t *testing.T) {
 
 	invalid := []*MessageOptions{
 		{Concurrency: "sometimes"},
-		{WorkTimeout: -time.Second},
+		{Timeout: -time.Second},
 		{Retry: &retry.Policy{MaxRetries: -1}},
 		{Retry: &retry.Policy{BaseDelay: time.Minute, MaxDelay: time.Second}},
 	}
@@ -118,12 +118,12 @@ func TestValidateSparse(t *testing.T) {
 }
 
 func TestNilFill(t *testing.T) {
-	defaults := &MessageOptions{WorkTimeout: time.Second}
+	defaults := &MessageOptions{Timeout: time.Second}
 	var msg *MessageOptions
-	if got := msg.Fill(defaults); got == nil || got.WorkTimeout != time.Second {
+	if got := msg.Fill(defaults); got == nil || got.Timeout != time.Second {
 		t.Fatalf("nil.Fill(defaults) = %+v, want defaults' values", got)
 	}
-	if got := defaults.Fill(nil); got == nil || got.WorkTimeout != time.Second {
+	if got := defaults.Fill(nil); got == nil || got.Timeout != time.Second {
 		t.Fatalf("defaults.Fill(nil) = %+v, want the receiver's values", got)
 	}
 	if got := msg.Fill(nil); got != nil {

@@ -73,7 +73,9 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -118,7 +120,9 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.keepup.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)

@@ -132,7 +132,7 @@ const (
 func (b *consumerBase[Message]) claimKeyedRun(ctx context.Context, key string, messageID int64, resolved *common.MessageOptions) (dispatchVerdict, *KeyLeaseClaim, error) {
 	// same window the range lease pads for: the run itself, ctx-cancel
 	// unwinding, and recording the outcome
-	duration := resolved.WorkTimeout + b.Config.WorkTimeoutGrace + b.Config.AckMargin
+	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.AckMargin
 
 	claim, err := b.Datastore.ClaimKeyLease(ctx, b.Topic.Id, b.Group.Id, key, messageID, duration)
 	if err != nil {
@@ -152,16 +152,16 @@ func (b *consumerBase[Message]) claimKeyedRun(ctx context.Context, key string, m
 // callSafely catches an in-process Go panic  and turns it into an ordinary error.
 // Handles: nil map write, index out of range, bad type assertion
 // Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
-func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], message *Message, messageID int64, attempt int, requested *common.MessageOptions, workTimeout time.Duration) error {
+func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], message *Message, messageID int64, attempt int, requested *common.MessageOptions, timeout time.Duration) error {
 	// the timeout cause names which side's budget fired
-	cause := fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d", workTimeout, messageID, attempt)
-	if requested != nil && requested.WorkTimeout > workTimeout {
-		cause = fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d -- message requested %s, the group ceiling applied", workTimeout, messageID, attempt, requested.WorkTimeout)
+	cause := fmt.Errorf("Timeout (%s) exceeded for message %d attempt %d", timeout, messageID, attempt)
+	if requested != nil && requested.Timeout > timeout {
+		cause = fmt.Errorf("Timeout (%s) exceeded for message %d attempt %d -- message requested %s, the group ceiling applied", timeout, messageID, attempt, requested.Timeout)
 	}
 
 	// work should not be immediately cancelled on a SIGINT/SIGTERM (cancel or shutdown)
 	// instead attempt to finish inflight requests bounded by timeout
-	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), workTimeout, cause)
+	ctx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), timeout, cause)
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -179,9 +179,9 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 	select {
 	case err := <-done:
 		return err
-	// hard cutoff for consumerFunc after WorkTimeout + grace (to ideally allow user handling of context timeout instead)
+	// hard cutoff for consumerFunc after Timeout + grace (to ideally allow user handling of context timeout instead)
 	// if this hard timeout is called go thread will be left hanging / abandoned
-	case <-time.After(workTimeout + b.Config.WorkTimeoutGrace):
+	case <-time.After(timeout + b.Config.TimeoutGrace):
 		b.AbandonedEvents.Add(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
 		// reaper -- done is buffered(1) and nothing else reads it past this
 		// point, so this receive fires exactly when the abandoned goroutine
@@ -193,10 +193,10 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 
 		// don't print out the message in case of sensitive values
 		// TODO - documentation should have this known error mesage and how to help prevent it
-		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
+		// ie handle context.Done or increase TimeoutGrace, we don't want this error to happen often
 		// it has bad side effects
-		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", workTimeout+b.Config.WorkTimeoutGrace)
-		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", workTimeout+b.Config.WorkTimeoutGrace, messageID)
+		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", timeout+b.Config.TimeoutGrace)
+		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", timeout+b.Config.TimeoutGrace, messageID)
 	}
 }
 

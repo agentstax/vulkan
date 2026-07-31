@@ -68,8 +68,8 @@ func main() {
 	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
-		Message:                 &vulkancommon.MessageOptions{WorkTimeout: 300 * time.Millisecond},
-		WorkTimeoutGrace:        50 * time.Millisecond,
+		Message:                 &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
+		TimeoutGrace:            50 * time.Millisecond,
 	})
 	must(err)
 	must(wc.Register(ctx))

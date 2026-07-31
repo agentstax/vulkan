@@ -115,7 +115,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
-		Message:                 &vulkancommon.MessageOptions{WorkTimeout: 10 * time.Second},
+		Message:                 &vulkancommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})
@@ -194,7 +194,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
-		Message:                 &vulkancommon.MessageOptions{WorkTimeout: 10 * time.Second},
+		Message:                 &vulkancommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})

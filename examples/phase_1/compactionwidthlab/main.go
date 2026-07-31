@@ -64,12 +64,16 @@ func main() {
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
 	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, topic.SchemaVersion(1), &topic.Config{PartitionSize: narrowPartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, narrowName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, narrowName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
 	wide, err := mAdmin.RegisterTopic(ctx, wideName, topic.SchemaVersion(1), &topic.Config{PartitionSize: widePartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, wideName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, wideName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	step("seed both topics with the identical 40-message workload")
 	narrowProducer, err := producer.NewProducer[Record](narrow.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})

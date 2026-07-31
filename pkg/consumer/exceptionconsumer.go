@@ -102,7 +102,7 @@ func (p *ExceptionConsumer[Message]) drainExceptions(ctx context.Context, consum
 }
 
 func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	leaseDuration := p.Config.MessageMax.WorkTimeout + p.Config.WorkTimeoutGrace + p.Config.QueueMargin + p.Config.AckMargin
+	leaseDuration := p.Config.MessageMax.Timeout + p.Config.TimeoutGrace + p.Config.QueueMargin + p.Config.AckMargin
 
 	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit, p.Config.MessageMax.Retry.MaxRetries, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
@@ -121,7 +121,7 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 		}
 
 		resolvedOptions := p.Config.resolveMessageOptions(exception.Options)
-		if err := p.callSafely(withMeta(ctx, exception.toMessageMeta(resolvedOptions)), consumerFunc, &message, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.WorkTimeout); err != nil {
+		if err := p.callSafely(withMeta(ctx, exception.toMessageMeta(resolvedOptions)), consumerFunc, &message, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.Timeout); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, resolvedOptions.Retry, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
 					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)

@@ -36,9 +36,9 @@ type MessageOptions struct {
 	// Default: ConcurrencyAllow (allow overlapping concurrent per-key processing)
 	Concurrency ConcurrencyPolicy `json:"concurrency,omitempty"`
 
-	// WorkTimeout - how long this message's consumerFunc may run.
-	// Default: 0 (the consumer's own WorkTimeout applies).
-	WorkTimeout time.Duration `json:"work_timeout,omitempty"`
+	// Timeout - how long this message's consumerFunc may run.
+	// Default: 0 (the consumer's own Timeout applies).
+	Timeout time.Duration `json:"timeout,omitempty"`
 
 	// Retry - redelivery policy for this message. Unset fields fall
 	// to the consumer's policy per-field.
@@ -50,8 +50,8 @@ func (o *MessageOptions) WithDefaults() *MessageOptions {
 	if o == nil {
 		o = &MessageOptions{}
 	}
-	if o.WorkTimeout == 0 {
-		o.WorkTimeout = 30 * time.Second
+	if o.Timeout == 0 {
+		o.Timeout = 30 * time.Second
 	}
 	if o.Retry == nil {
 		o.Retry = &retry.Policy{}
@@ -79,8 +79,8 @@ func (o *MessageOptions) Fill(defaults *MessageOptions) *MessageOptions {
 	if filled.Concurrency == "" {
 		filled.Concurrency = d.Concurrency
 	}
-	if filled.WorkTimeout == 0 {
-		filled.WorkTimeout = d.WorkTimeout
+	if filled.Timeout == 0 {
+		filled.Timeout = d.Timeout
 	}
 	filled.Retry = fillPolicy(filled.Retry, d.Retry)
 	return &filled
@@ -100,7 +100,7 @@ func (o *MessageOptions) Clamp(min, max *MessageOptions) *MessageOptions {
 		hi = *max
 	}
 	clamped := *o
-	clamped.WorkTimeout = clampDuration(clamped.WorkTimeout, lo.WorkTimeout, hi.WorkTimeout)
+	clamped.Timeout = clampDuration(clamped.Timeout, lo.Timeout, hi.Timeout)
 	clamped.Retry = clampPolicy(clamped.Retry, lo.Retry, hi.Retry)
 	return &clamped
 }
@@ -128,8 +128,8 @@ func (o *MessageOptions) Validate() error {
 	if err := o.Concurrency.Validate(); err != nil {
 		return fmt.Errorf("Concurrency: %w", err)
 	}
-	if o.WorkTimeout < 0 {
-		return fmt.Errorf("WorkTimeout must be >= 0, got %v", o.WorkTimeout)
+	if o.Timeout < 0 {
+		return fmt.Errorf("Timeout must be >= 0, got %v", o.Timeout)
 	}
 	if o.Retry != nil {
 		if err := validateSparsePolicy(o.Retry); err != nil {

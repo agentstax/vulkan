@@ -98,12 +98,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Short lease (= WorkTimeout+QueueMargin+AckMargin = 4s) so in-flight rows
+	// Short lease (= Timeout+QueueMargin+AckMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    100,
-		Message:       &vulkancommon.MessageOptions{WorkTimeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
+		Message:       &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
 		ClaimPollRate: 200 * time.Millisecond,
 		QueueMargin:   1 * time.Second,
 		AckMargin:     1 * time.Second,

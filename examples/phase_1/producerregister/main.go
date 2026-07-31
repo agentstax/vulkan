@@ -48,7 +48,9 @@ func main() {
 	_ = mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	p, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, nil)
 	must(err)

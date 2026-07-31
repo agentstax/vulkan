@@ -32,7 +32,7 @@ type ConsumerConfig struct {
 	ClaimPollRate    time.Duration
 	QueueMargin      time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
 	AckMargin        time.Duration // lease padding for recording success/failure after consumerFunc returns
-	// WorkTimeoutGrace is scheduling slack for a consumerFunc that DID respect
+	// TimeoutGrace is scheduling slack for a consumerFunc that DID respect
 	// ctx.Done() to actually unwind and send on the result channel before the
 	// hard cutoff abandons it -- not extra time to keep working. Go's own
 	// scheduler wakeup after a context deadline fires is sub-millisecond at p99
@@ -40,15 +40,15 @@ type ConsumerConfig struct {
 	// own cancellation-response time (e.g. a DB driver's cancel-request round
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
-	WorkTimeoutGrace        time.Duration
+	TimeoutGrace            time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: retry.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: MessageMax.WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
+	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
 
 	// Message - default MessageOptions: fills any option the produced message left unset.
-	// Default: WorkTimeout 30s; Retry MaxRetries 3 with the default curve.
+	// Default: Timeout 30s; Retry MaxRetries 3 with the default curve.
 	Message *common.MessageOptions
 
 	// MessageMin - per-option floors: raises any resolved option below these.
@@ -104,8 +104,8 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 		c.AckMargin = 2 * time.Second
 	}
 
-	if c.WorkTimeoutGrace == 0 {
-		c.WorkTimeoutGrace = 100 * time.Millisecond
+	if c.TimeoutGrace == 0 {
+		c.TimeoutGrace = 100 * time.Millisecond
 	}
 
 	if c.ExceptionInitialBackoff == 0 {
@@ -120,7 +120,7 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	c.MessageMax = c.MessageMax.Fill(&bounds)
 
 	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = c.MessageMax.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
+		c.ShutdownTimeout = c.MessageMax.Timeout + c.TimeoutGrace + c.AckMargin
 	}
 
 	if c.Retry == nil {
@@ -157,12 +157,12 @@ func (c *ConsumerConfig) Validate() error {
 
 	// non-positive durations break their respective loops/timers:
 	// ClaimPollRate<=0 -> SleepWithContext/WaitForRoom timers fire immediately (busy loop),
-	// Message.WorkTimeout/QueueMargin/AckMargin<=0 -> the lease window math degenerates.
+	// Message.Timeout/QueueMargin/AckMargin<=0 -> the lease window math degenerates.
 	if c.ClaimPollRate <= 0 {
 		return fmt.Errorf("ClaimPollRate must be > 0, got %v", c.ClaimPollRate)
 	}
-	if c.Message.WorkTimeout <= 0 {
-		return fmt.Errorf("Message.WorkTimeout must be > 0, got %v", c.Message.WorkTimeout)
+	if c.Message.Timeout <= 0 {
+		return fmt.Errorf("Message.Timeout must be > 0, got %v", c.Message.Timeout)
 	}
 	if c.QueueMargin <= 0 {
 		return fmt.Errorf("QueueMargin must be > 0, got %v", c.QueueMargin)
@@ -170,8 +170,8 @@ func (c *ConsumerConfig) Validate() error {
 	if c.AckMargin <= 0 {
 		return fmt.Errorf("AckMargin must be > 0, got %v", c.AckMargin)
 	}
-	if c.WorkTimeoutGrace <= 0 {
-		return fmt.Errorf("WorkTimeoutGrace must be > 0, got %v", c.WorkTimeoutGrace)
+	if c.TimeoutGrace <= 0 {
+		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)
 	}
 	if c.ExceptionInitialBackoff <= 0 {
 		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", c.ExceptionInitialBackoff)
@@ -209,8 +209,8 @@ func (c *ConsumerConfig) Validate() error {
 // option lands inside the bounds
 func (c *ConsumerConfig) validateMessageBounds() error {
 	if c.MessageMin != nil {
-		if c.MessageMin.WorkTimeout > c.Message.WorkTimeout {
-			return fmt.Errorf("MessageMin.WorkTimeout (%v) must be <= Message.WorkTimeout (%v)", c.MessageMin.WorkTimeout, c.Message.WorkTimeout)
+		if c.MessageMin.Timeout > c.Message.Timeout {
+			return fmt.Errorf("MessageMin.Timeout (%v) must be <= Message.Timeout (%v)", c.MessageMin.Timeout, c.Message.Timeout)
 		}
 		if r := c.MessageMin.Retry; r != nil {
 			if r.MaxRetries > c.Message.Retry.MaxRetries {
@@ -227,8 +227,8 @@ func (c *ConsumerConfig) validateMessageBounds() error {
 			}
 		}
 	}
-	if c.Message.WorkTimeout > c.MessageMax.WorkTimeout {
-		return fmt.Errorf("Message.WorkTimeout (%v) must be <= MessageMax.WorkTimeout (%v)", c.Message.WorkTimeout, c.MessageMax.WorkTimeout)
+	if c.Message.Timeout > c.MessageMax.Timeout {
+		return fmt.Errorf("Message.Timeout (%v) must be <= MessageMax.Timeout (%v)", c.Message.Timeout, c.MessageMax.Timeout)
 	}
 	if c.Message.Retry.MaxRetries > c.MessageMax.Retry.MaxRetries {
 		return fmt.Errorf("Message.Retry.MaxRetries (%d) must be <= MessageMax.Retry.MaxRetries (%d)", c.Message.Retry.MaxRetries, c.MessageMax.Retry.MaxRetries)

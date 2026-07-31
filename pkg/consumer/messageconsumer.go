@@ -223,7 +223,7 @@ func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
 
 		// worst-case -- a freshly claimed range always passes processClaim's
 		// staleness check with the full QueueMargin left for queue wait.
-		leaseDuration := p.Config.MessageMax.WorkTimeout + p.Config.WorkTimeoutGrace + p.Config.QueueMargin + p.Config.AckMargin
+		leaseDuration := p.Config.MessageMax.Timeout + p.Config.TimeoutGrace + p.Config.QueueMargin + p.Config.AckMargin
 		limit := min(room, p.Config.BatchLimit)
 
 		claimed, err := p.Datastore.ClaimMessagesWithCursor(ctx, p.Topic.Id, p.Group.Id, limit, p.Config.MaxRangeReclaims, leaseDuration, p.Topic.DisableDeliveryLog)
@@ -290,7 +290,7 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.Until.Before(time.Now().Add(resolvedOptions.WorkTimeout + p.Config.WorkTimeoutGrace + p.Config.AckMargin)) {
+	if item.lease.Until.Before(time.Now().Add(resolvedOptions.Timeout + p.Config.TimeoutGrace + p.Config.AckMargin)) {
 		p.buffer.MarkStale(item.lease.Token)
 		return
 	}
@@ -338,7 +338,7 @@ func (p *MessageConsumer[Message]) runItem(ctx context.Context, item *Buffered, 
 		return
 	}
 
-	if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta(resolvedOptions)), consumerFunc, &message, item.row.Id, 0, item.row.Options, resolvedOptions.WorkTimeout); err != nil {
+	if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta(resolvedOptions)), consumerFunc, &message, item.row.Id, 0, item.row.Options, resolvedOptions.Timeout); err != nil {
 		p.buffer.ResolveException(item, err)
 	} else {
 		p.buffer.ResolveSuccess(item)

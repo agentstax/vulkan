@@ -324,7 +324,9 @@ func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, lab
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
 	must(err)
-	return tp, func() { must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }
+	return tp, func() {
+		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}
 }
 
 // produceConcurrently fans producers goroutines x msgs calls each and dies on

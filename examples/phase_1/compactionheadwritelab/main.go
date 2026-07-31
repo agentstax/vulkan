@@ -68,7 +68,9 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	topicName := fmt.Sprintf("phase8c.compactionheadwritelab.fixed.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize})
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -98,14 +100,18 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 	manyKeysMs, manyKeysTopic := timeConcurrent(ctx, ds, "manykeys", goroutines, perGoroutine, func(g, i int) string {
 		return fmt.Sprintf("key-%d", g) // each goroutine owns a distinct key -- no cross-goroutine contention
 	})
-	defer func() { must(mAdmin.DestroyTopic(ctx, manyKeysTopic, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, manyKeysTopic, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	before := dumpTableStats(ctx, ds, "compaction_head")
 
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
-	defer func() { must(mAdmin.DestroyTopic(ctx, oneKeyTopic, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, oneKeyTopic, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
 	after := dumpTableStats(ctx, ds, "compaction_head")

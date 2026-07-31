@@ -91,7 +91,7 @@ func main() {
 
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), pressureQueue, pool, ds, &consumer.ConsumerConfig{
 		BatchLimit:    batch,
-		Message:       &vulkancommon.MessageOptions{WorkTimeout: 30 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
+		Message:       &vulkancommon.MessageOptions{Timeout: 30 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
 		ClaimPollRate: 500 * time.Millisecond,
 		QueueMargin:   10 * time.Second,
 		AckMargin:     5 * time.Second,
