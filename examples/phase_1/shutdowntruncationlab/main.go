@@ -145,12 +145,12 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, false)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
 	}
-	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0]))
+	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
 	committed = advance(ctx, md, tp.Id)
 	assert("committed advances to the narrowed low", committed, 2)
 	assert("deliveries drained (exception pop-deleted)", deliveries(ctx, ds, tp.Id), 0)

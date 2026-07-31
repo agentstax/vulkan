@@ -313,7 +313,6 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 // outcome -- unless the message's concurrency policy resolves it without a
 // run (superseded or deferred).
 func (p *MessageConsumer[Message]) runItem(ctx context.Context, item *Buffered, consumerFunc ConsumerFunc[Message], resolvedOptions *common.MessageOptions) {
-	// should defer logic be considered?
 	if item.row.CompactionKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
 		verdict, claim, err := p.claimKeyedRun(ctx, item.row.CompactionKey, item.row.Id, resolvedOptions)
 		switch {

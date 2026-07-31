@@ -121,13 +121,13 @@ func main() {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, false)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))
 	}
 	fmt.Printf("  claimed exception message_id=%d attempts=%d\n", claimedExceptions[0].MessageId, claimedExceptions[0].Attempts)
-	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0]))
+	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
 	assert("exception pop-deleted on success", deliveries(ctx, ds, tp.Id), 0)
 
 	// ===== committed jumps straight past the resolved exception =====

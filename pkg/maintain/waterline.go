@@ -33,13 +33,13 @@ func (d *MaintenanceDatastore) AdvanceWaterline(ctx context.Context, topicID int
 func (d *MaintenanceDatastore) advanceWaterline(ctx context.Context, topicID int64, groupID int64) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
-	// 		earliest unresolved exception (dead doesn't count -- only ready/inflight block)
+	// 		earliest unresolved delivery -- 'dead' be definition does not count
 	// 		claimed (its caught up to head of log)
 	// LEAST ignores NULLs so any/all of those can be absent.
 	targetSql := fmt.Sprintf(`
 		SELECT LEAST(
 			(SELECT MIN(low) FROM lease WHERE consumer_group_id = $1),
-			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight')),
+			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')),
 			claimed
 		)
 		FROM cursor

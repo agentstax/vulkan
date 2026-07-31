@@ -123,13 +123,13 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	const maxAttempts = 5 // stays well below dead-letter for both retries below
 	for _, attempt := range []int{1, 2} {
 		time.Sleep(1500 * time.Millisecond) // outlives both the 300ms initial and CalculateDelay(0)=1s can_run_after
-		claimed, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, maxAttempts, 5*time.Second, tp.DisableDeliveryLog)
+		claimed, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, maxAttempts, 5*time.Second)
 		must(err)
 		if len(claimed) != 1 || claimed[0].MessageId != failingId {
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
-		must(cd.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog))
+		must(cd.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog, nil))
 		assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, attempt, errText, true)
 	}
 

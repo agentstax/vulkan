@@ -18,6 +18,14 @@
 //   - a message claimed as head but no longer head at dispatch resolves
 //     superseded: never runs, delivery_log status 'superseded', no delivery row.
 //   - a failing Defer message still frees the key.
+//   - redemption: a stale 'deferred' row resolves superseded with its log row
+//     and never runs; the head's row runs and pops.
+//   - a row whose compaction key has an unexpired key_lease is never claimed:
+//     no attempts motion, no log rows; the kill backstop never touches a
+//     'deferred' row; the run lands once the key frees.
+//   - a failed holder's retry passes the key gate and resolves superseded once
+//     a newer head exists, its claim-time attempts increment decremented back.
+//   - a crashed holder's expired key lease: redemption takes the key over.
 //   - destroying the topic drops the delivery table cleanly.
 package main
 
@@ -198,7 +206,7 @@ func main() {
 		die(fmt.Sprintf("want the key released after the holder finished, count=%d", n))
 	}
 	if ran("u:4", 2) || ran("u:4", 3) {
-		die("deferred messages must stay inert -- nothing claims them yet")
+		die("deferred messages must stay inert until an ExceptionConsumer runs")
 	}
 	if deliveryStatus(ctx, g5, v2) != "deferred" || deliveryStatus(ctx, g5, v3) != "deferred" {
 		die("both 'deferred' rows must survive the holder's release untouched")
@@ -263,6 +271,167 @@ func main() {
 	}
 	fmt.Println("  ✓ key freed, 'ready' row, status failure")
 
+	step("redemption: the stale 'deferred' row resolves superseded, the head runs and pops")
+	stopRedeem := startExceptionConsumer(ctx, tp.Name, "deferlab.g5", func(ctx context.Context, message *Rec) error {
+		record(message)
+		return nil
+	})
+	// ran() flips inside consumerFunc, before the outcome lands -- wait on the
+	// recorded state, not the run
+	waitFor(func() bool {
+		return ran("u:4", 3) && deliveryStatus(ctx, g5, v2) == "superseded" && deliveryStatus(ctx, g5, v3) == ""
+	}, "v3 to run and pop, v2 to resolve superseded")
+	stopRedeem()
+	if ran("u:4", 2) {
+		die("a stale 'deferred' message must never run")
+	}
+	if n := deliveryAttempts(ctx, g5, v2); n != 0 {
+		die(fmt.Sprintf("a superseded 'deferred' row never ran, attempts must net 0, got %d", n))
+	}
+	// v2's audit trail: 'deferred' at attempt 0 from its range commit,
+	// 'superseded' at attempt 1 from redemption
+	statuses := logStatuses(ctx, g5, v2)
+	if len(statuses) != 2 || statuses[0] != "deferred" || statuses[1] != "superseded" {
+		die(fmt.Sprintf("v2's log rows = %v, want deferred at 0 and superseded at 1", statuses))
+	}
+	if n := logCount(ctx, g5, v3); n != 1 {
+		die(fmt.Sprintf("a redeemed success leaves only its commit-time 'deferred' log row, got %d rows", n))
+	}
+	if n := leaseCount(ctx, g5); n != 0 {
+		die(fmt.Sprintf("want the key released after redemption, count=%d", n))
+	}
+	fmt.Println("  ✓ v2 superseded with full audit, v3 ran and popped")
+
+	step("a held key excludes its 'deferred' row from the claim, kill backstop blind to it")
+	g8 := groupID(ctx, cd, "deferlab.g8")
+	started8 := make(chan struct{})
+	release8 := make(chan struct{})
+	var once8 sync.Once
+	stopCursor8 := startConsumer(ctx, tp.Name, "deferlab.g8", 3, func(ctx context.Context, message *Rec) error {
+		if message.Key == "u:7" && message.Version == 1 {
+			once8.Do(func() { close(started8) })
+			<-release8
+		}
+		record(message)
+		return nil
+	})
+	publish(ctx, wp, "u:7", 1, common.ConcurrencyDefer)
+	<-started8 // v1 is running and holds the key
+	publish(ctx, wp, "u:7", 2, common.ConcurrencyDefer)
+	v7 := messageID(ctx, "u:7", 2)
+	waitFor(func() bool { return deliveryStatus(ctx, g8, v7) == "deferred" }, "v2's 'deferred' row")
+
+	// exhausted-looking or not, a 'deferred' row is outside the kill
+	// backstop's 'inflight' predicate. Driven directly so no consumer touches
+	// the row mid-check.
+	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
+	must(cd.KillExceptions(ctx, tp.Id, g8, 3, false))
+	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
+		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
+	}
+	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second); err != nil {
+		die(fmt.Sprintf("ClaimExceptions: %v", err))
+	}
+	if n := deliveryAttempts(ctx, g8, v7); n != 99 {
+		die(fmt.Sprintf("an exhausted row must not be claimed, attempts = %d", n))
+	}
+	// the unexpired key_lease alone must exclude the row -- attempts back at
+	// 0, well under the ceiling
+	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
+	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second); err != nil {
+		die(fmt.Sprintf("ClaimExceptions: %v", err))
+	}
+	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
+		die(fmt.Sprintf("a row whose compaction key has an unexpired key_lease must not be claimed, got status %q attempts %d", s, n))
+	}
+
+	stopRedeem8 := startExceptionConsumer(ctx, tp.Name, "deferlab.g8", func(ctx context.Context, message *Rec) error {
+		record(message)
+		return nil
+	})
+	time.Sleep(300 * time.Millisecond) // several claim polls against the held key
+	if ran("u:7", 2) {
+		die("nothing may run while another delivery holds the key")
+	}
+	// the row is never claimed while the key is held -- status and attempts
+	// hold still, so read them directly, no sampling
+	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
+		die(fmt.Sprintf("live claim polls must leave the excluded row untouched, got status %q attempts %d", s, n))
+	}
+	if n := logCount(ctx, g8, v7); n != 1 {
+		die(fmt.Sprintf("an unclaimed row must not grow log rows, got %d", n))
+	}
+
+	close(release8)
+	waitFor(func() bool { return ran("u:7", 2) }, "v2 to run once the key freed")
+	waitFor(func() bool { return deliveryStatus(ctx, g8, v7) == "" && leaseCount(ctx, g8) == 0 }, "v2's row to pop and the key to free")
+	stopCursor8()
+	stopRedeem8()
+	fmt.Println("  ✓ excluded from the claim while held, survived the backstop, ran on release")
+
+	step("a failed holder's retry supersedes once a newer head runs")
+	g9 := groupID(ctx, cd, "deferlab.g9")
+	failV1 := func(ctx context.Context, message *Rec) error {
+		record(message)
+		if message.Key == "u:8" && message.Version == 1 {
+			return errors.New("deferlab: synthetic holder failure")
+		}
+		return nil
+	}
+	stopCursor9 := startConsumer(ctx, tp.Name, "deferlab.g9", 3, failV1)
+	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "deferlab.g9", failV1)
+	publish(ctx, wp, "u:8", 1, common.ConcurrencyDefer)
+	v8old := messageID(ctx, "u:8", 1)
+	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "ready" }, "v1 to fail and go 'ready'")
+	publish(ctx, wp, "u:8", 2, common.ConcurrencyDefer)
+	waitFor(func() bool { return ran("u:8", 2) }, "v2 to run on the freed key")
+	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "superseded" }, "v1's retry to resolve superseded")
+	stopCursor9()
+	stopRedeem9()
+	// the superseded log row lands one above the last counted attempt --
+	// RecordExceptionSuperseded decremented the refused claim's increment back
+	statuses9 := logStatuses(ctx, g9, v8old)
+	sup := -1
+	for attempt, s := range statuses9 {
+		if s == "superseded" {
+			sup = attempt
+		}
+	}
+	if sup == -1 {
+		die(fmt.Sprintf("v1's log rows = %v, want a superseded row", statuses9))
+	}
+	if att := deliveryAttempts(ctx, g9, v8old); sup != att+1 {
+		die(fmt.Sprintf("superseded logged at attempt %d with attempts %d, want attempts + 1", sup, att))
+	}
+	if n := leaseCount(ctx, g9); n != 0 {
+		die(fmt.Sprintf("want the key released, count=%d", n))
+	}
+	fmt.Println("  ✓ retry gate refused v1, attempts decremented back, superseded logged")
+
+	step("a crashed holder's expired key lease: redemption takes the key over")
+	g10 := groupID(ctx, cd, "deferlab.g10")
+	// a crashed holder's key_lease row: unexpired, never released
+	execSql(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, g10)
+	publish(ctx, wp, "u:10", 1, common.ConcurrencyDefer)
+	v10 := messageID(ctx, "u:10", 1)
+	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", 3, func(ctx context.Context, message *Rec) error {
+		record(message)
+		return nil
+	})
+	stopRedeem10 := startExceptionConsumer(ctx, tp.Name, "deferlab.g10", func(ctx context.Context, message *Rec) error {
+		record(message)
+		return nil
+	})
+	waitFor(func() bool { return deliveryStatus(ctx, g10, v10) == "deferred" }, "v1 to defer behind the crashed holder's key")
+	if ran("u:10", 1) {
+		die("nothing may run while the crashed holder's lease is live")
+	}
+	waitFor(func() bool { return ran("u:10", 1) }, "redemption to take the expired key over")
+	waitFor(func() bool { return deliveryStatus(ctx, g10, v10) == "" && leaseCount(ctx, g10) == 0 }, "the row to pop and the key to free")
+	stopCursor10()
+	stopRedeem10()
+	fmt.Println("  ✓ deferred behind the crashed holder, ran after expiry via takeover")
+
 	step("destroying the topic drops the delivery table")
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	fmt.Println("  ✓ destroyed")
@@ -303,6 +472,58 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 	cancel()
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		die(fmt.Sprintf("Consume returned an unexpected error: %v", err))
+	}
+}
+
+// startConsumer runs a MessageConsumer for group until the returned stop is
+// called.
+func startConsumer(ctx context.Context, topicName, group string, pool int, consumerFunc consumer.ConsumerFunc[Rec]) func() {
+	cfg := &consumer.ConsumerConfig{
+		DisableGracefulShutdown: true,
+		BatchLimit:              50,
+		ClaimPollRate:           50 * time.Millisecond,
+	}
+	queue, err := concurrency.NewPressureQueue[consumer.Buffered](50)
+	must(err)
+	limiter, err := concurrency.NewWorkerPoolLimiter(pool)
+	must(err)
+	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), queue, limiter, ds, cfg)
+	must(err)
+	must(wc.Register(ctx))
+
+	runCtx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()
+	return func() {
+		cancel()
+		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+			die(fmt.Sprintf("Consume returned an unexpected error: %v", err))
+		}
+	}
+}
+
+// startExceptionConsumer runs an ExceptionConsumer (exception retries +
+// deferred redemption, one claim) for group until the returned stop is
+// called.
+func startExceptionConsumer(ctx context.Context, topicName, group string, consumerFunc consumer.ConsumerFunc[Rec]) func() {
+	cfg := &consumer.ConsumerConfig{
+		DisableGracefulShutdown: true,
+		BatchLimit:              50,
+		ClaimPollRate:           50 * time.Millisecond,
+		ExceptionInitialBackoff: 50 * time.Millisecond,
+	}
+	ec, err := consumer.NewExceptionConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
+	must(err)
+	must(ec.Register(ctx))
+
+	runCtx, cancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- ec.Consume(runCtx, consumerFunc) }()
+	return func() {
+		cancel()
+		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+			die(fmt.Sprintf("exception Consume returned an unexpected error: %v", err))
+		}
 	}
 }
 
@@ -369,6 +590,36 @@ func deliveryStatus(ctx context.Context, groupID int64, messageID int64) string 
 	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
 	must(ds.Pool.QueryRow(ctx, sql, groupID, messageID).Scan(&s))
 	return s
+}
+
+func deliveryAttempts(ctx context.Context, groupID int64, messageID int64) int {
+	var n int
+	sql := fmt.Sprintf(`SELECT attempts FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
+	must(ds.Pool.QueryRow(ctx, sql, groupID, messageID).Scan(&n))
+	return n
+}
+
+// logStatuses returns the message's delivery_log statuses keyed by attempt.
+func logStatuses(ctx context.Context, groupID int64, messageID int64) map[int]string {
+	sql := fmt.Sprintf(`SELECT attempt, status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
+	rows, err := ds.Pool.Query(ctx, sql, groupID, messageID)
+	must(err)
+	defer rows.Close()
+
+	statuses := map[int]string{}
+	for rows.Next() {
+		var attempt int
+		var status string
+		must(rows.Scan(&attempt, &status))
+		statuses[attempt] = status
+	}
+	must(rows.Err())
+	return statuses
+}
+
+func execSql(ctx context.Context, sql string, args ...any) {
+	_, err := ds.Pool.Exec(ctx, sql, args...)
+	must(err)
 }
 
 func logCount(ctx context.Context, groupID int64, messageID int64) int {
