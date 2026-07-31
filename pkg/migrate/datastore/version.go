@@ -14,7 +14,7 @@ import (
 // a downgrade (which records a LOWER version) reads back correctly.
 //
 // There is no implied baseline but every owner is recorded at creation.
-func Version(ctx context.Context, q datastore.Querier, owner common.Owner) (int64, error) {
+func Version(ctx context.Context, q datastore.Querier, owner *common.Owner) (int64, error) {
 	// IS NOT DISTINCT FROM: NULL-safe equality against the owner's columns
 	sql := `
 		SELECT migration_version FROM migration_log

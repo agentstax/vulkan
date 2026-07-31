@@ -11,12 +11,12 @@ import (
 // Version reads an owner's current schema version from migration_log,
 // re-exported so callers depend only on pkg/migrate, not its datastore
 // subpackage. Returns ErrNotRegistered if there is no baseline record.
-func Version(ctx context.Context, q datastore.Querier, owner common.Owner) (int64, error) {
+func Version(ctx context.Context, q datastore.Querier, owner *common.Owner) (int64, error) {
 	return mDatastore.Version(ctx, q, owner)
 }
 
 // SystemOwner resolves the singleton system row to its owner, re-exported like
 // Version. Returns ErrNotRegistered if RegisterSystem hasn't run.
-func SystemOwner(ctx context.Context, q datastore.Querier) (common.Owner, error) {
+func SystemOwner(ctx context.Context, q datastore.Querier) (*common.Owner, error) {
 	return mDatastore.SystemOwner(ctx, q)
 }

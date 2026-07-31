@@ -89,12 +89,12 @@ func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.Pro
 
 // bump records a success at ver, so the gate reads that scope as version ver
 // without any matching schema change -- a database a newer binary migrated.
-func bump(ctx context.Context, pool *pgxpool.Pool, owner common.Owner, ver int64) {
+func bump(ctx context.Context, pool *pgxpool.Pool, owner *common.Owner, ver int64) {
 	_, err := pool.Exec(ctx, `INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
 	must(err)
 }
 
-func unbump(ctx context.Context, pool *pgxpool.Pool, owner common.Owner, ver int64) {
+func unbump(ctx context.Context, pool *pgxpool.Pool, owner *common.Owner, ver int64) {
 	_, err := pool.Exec(ctx, `DELETE FROM migration_log WHERE system_id IS NOT DISTINCT FROM $1 AND topic_id IS NOT DISTINCT FROM $2 AND consumer_group_id IS NOT DISTINCT FROM $3 AND migration_version = $4;`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
 	must(err)
 }
@@ -117,4 +117,4 @@ func must(err error) {
 	}
 }
 
-func mustOwner(o common.Owner, err error) common.Owner { must(err); return o }
+func mustOwner(o *common.Owner, err error) *common.Owner { must(err); return o }

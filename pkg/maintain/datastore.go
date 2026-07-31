@@ -147,7 +147,7 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 type DutyClaim struct {
 	Id          int64
 	Duty        string
-	Owner       common.Owner
+	Owner       *common.Owner
 	Token       pgtype.UUID
 	CanRunAfter time.Time
 	Attempts    int
@@ -155,7 +155,7 @@ type DutyClaim struct {
 
 // ClaimDuty races the duty's gate -- the winner owns it until can_run_after,
 // and renew/release fence on the returned Duty's token. nil = claim lost.
-func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, owner common.Owner, rate time.Duration) (*DutyClaim, error) {
+func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, owner *common.Owner, rate time.Duration) (*DutyClaim, error) {
 	var claimed *DutyClaim
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -165,7 +165,7 @@ func (d *MaintenanceDatastore) ClaimDuty(ctx context.Context, duty string, owner
 	return claimed, err
 }
 
-func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, owner common.Owner, rate time.Duration) (*DutyClaim, error) {
+func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, owner *common.Owner, rate time.Duration) (*DutyClaim, error) {
 	// auto-commit: winner does duty work, losers skip.
 	// now() is DB time on both sides -- N replicas' clocks never agree, the DB's does.
 	sql := `
@@ -182,7 +182,7 @@ func (d *MaintenanceDatastore) claimDuty(ctx context.Context, duty string, owner
 		RETURNING id, duty, COALESCE(system_id, 0), COALESCE(topic_id, 0), COALESCE(consumer_group_id, 0), token, can_run_after, attempts;
 	`
 
-	var claimed DutyClaim
+	claimed := DutyClaim{Owner: &common.Owner{}}
 	err := d.Datastore.Pool.QueryRow(ctx, sql, duty, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), rate.Seconds()).
 		Scan(&claimed.Id, &claimed.Duty, &claimed.Owner.SystemId, &claimed.Owner.TopicId, &claimed.Owner.ConsumerGroupId, &claimed.Token, &claimed.CanRunAfter, &claimed.Attempts)
 	if err != nil {

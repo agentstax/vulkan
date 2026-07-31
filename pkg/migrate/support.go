@@ -46,7 +46,7 @@ func AssertSystemSchemaSupported(ctx context.Context, q datastore.Querier) error
 	return assertOwner(ctx, q, owner, MinSystemVersion, MaxSystemVersion)
 }
 
-func assertOwner(ctx context.Context, q datastore.Querier, owner common.Owner, minV, maxV int64) error {
+func assertOwner(ctx context.Context, q datastore.Querier, owner *common.Owner, minV, maxV int64) error {
 	v, err := mDatastore.Version(ctx, q, owner)
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error

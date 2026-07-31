@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
-func (d *MigrateDatastore) RecordSuccess(ctx context.Context, q datastore.Querier, owner common.Owner, version int64) error {
+func (d *MigrateDatastore) RecordSuccess(ctx context.Context, q datastore.Querier, owner *common.Owner, version int64) error {
 	_, err := q.Exec(ctx,
 		`INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`,
 		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version)
@@ -17,7 +17,7 @@ func (d *MigrateDatastore) RecordSuccess(ctx context.Context, q datastore.Querie
 // TryRecordFailure commits a diagnostic failure row after a step rolled back --
 // best-effort, on a fresh context so the cancel that caused the failure doesn't
 // also drop the record.
-func (d *MigrateDatastore) TryRecordFailure(ctx context.Context, q datastore.Querier, owner common.Owner, version int64, cause error) {
+func (d *MigrateDatastore) TryRecordFailure(ctx context.Context, q datastore.Querier, owner *common.Owner, version int64, cause error) {
 	ctx = context.WithoutCancel(ctx)
 	err := d.Retry.Wrap(ctx, func() error {
 		_, e := q.Exec(ctx,

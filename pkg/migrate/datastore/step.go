@@ -49,7 +49,7 @@ func NewStep(
 // RunStep validates + applies one step against an owner, then records its
 // version as a success. The whole unit retried on a transient blip, so steps
 // must be idempotent.
-func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, step *Step) error {
+func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
 	if step.NoTxn {
 		return d.Retry.Wrap(ctx, func() error {
 			return d.runStepWithoutTx(ctx, conn, owner, step)
@@ -61,7 +61,7 @@ func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owne
 }
 
 // txn step does all three atomically
-func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, step *Step) error {
+func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 }
 
 // NoTxn step runs on the bare connection and records separately once its apply returns
-func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, step *Step) error {
+func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
 	if step.Validate != nil {
 		if err := step.Validate(ctx, conn, owner.TopicId); err != nil {
 			return err

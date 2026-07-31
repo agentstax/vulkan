@@ -74,7 +74,7 @@ func (s scope) ceiling() int64 {
 // migrateTarget is one target a run touches, paired with its current DB version
 // so the direction guard and the no-op check can reason about it before any DDL.
 type migrateTarget struct {
-	owner   common.Owner
+	owner   *common.Owner
 	current int64
 }
 

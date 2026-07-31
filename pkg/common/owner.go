@@ -19,34 +19,34 @@ type Owner struct {
 	Name            string // diagnostics only, "" = unnamed
 }
 
-func NewSystemOwner(systemId int64) (Owner, error) {
+func NewSystemOwner(systemId int64) (*Owner, error) {
 	if systemId <= 0 {
-		return Owner{}, fmt.Errorf("systemId must be > 0, got %d", systemId)
+		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
-	return Owner{SystemId: systemId, Name: "system"}, nil
+	return &Owner{SystemId: systemId, Name: "system"}, nil
 }
 
-func NewTopicOwner(systemId int64, topicId int64, name string) (Owner, error) {
+func NewTopicOwner(systemId int64, topicId int64, name string) (*Owner, error) {
 	if systemId <= 0 {
-		return Owner{}, fmt.Errorf("systemId must be > 0, got %d", systemId)
+		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
 	if topicId <= 0 {
-		return Owner{}, fmt.Errorf("topicId must be > 0, got %d", topicId)
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
-	return Owner{SystemId: systemId, TopicId: topicId, Name: name}, nil
+	return &Owner{SystemId: systemId, TopicId: topicId, Name: name}, nil
 }
 
-func NewConsumerGroupOwner(systemId int64, topicId int64, consumerGroupId int64, name string) (Owner, error) {
+func NewConsumerGroupOwner(systemId int64, topicId int64, consumerGroupId int64, name string) (*Owner, error) {
 	if systemId <= 0 {
-		return Owner{}, fmt.Errorf("systemId must be > 0, got %d", systemId)
+		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
 	if topicId <= 0 {
-		return Owner{}, fmt.Errorf("topicId must be > 0, got %d", topicId)
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if consumerGroupId <= 0 {
-		return Owner{}, fmt.Errorf("consumerGroupId must be > 0, got %d", consumerGroupId)
+		return nil, fmt.Errorf("consumerGroupId must be > 0, got %d", consumerGroupId)
 	}
-	return Owner{SystemId: systemId, TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil
+	return &Owner{SystemId: systemId, TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil
 }
 
 func (o Owner) Kind() OwnerKind {

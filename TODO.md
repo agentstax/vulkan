@@ -103,5 +103,4 @@ having to have func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, na
 pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is not in line with our dependency injection patterns
 - common.Owner.name not being a required field because of above is a code smell
 - having to have random SystemOwner in pkg/migrate/datastore/system.go not good
-
-should go ahead and add a system_id column to be consistent and allow us to be flexible in future
+- really just the entire pkg/migrate codebase needs a comb through and update

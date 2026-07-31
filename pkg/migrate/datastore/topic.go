@@ -7,14 +7,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]common.Owner, error) {
+func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]*common.Owner, error) {
 	rows, err := conn.Query(ctx, `SELECT id, system_id, name FROM topic ORDER BY id;`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var topics []common.Owner
+	var topics []*common.Owner
 	for rows.Next() {
 		var id int64
 		var systemId int64

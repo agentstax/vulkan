@@ -40,7 +40,7 @@ func NewRunner(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log l
 }
 
 // RunOnce migrates a single owner's schema to targetVersion using registry.
-func (r *Runner) RunOnce(ctx context.Context, targetVersion int64, owner common.Owner, registry []Migration) error {
+func (r *Runner) RunOnce(ctx context.Context, targetVersion int64, owner *common.Owner, registry []Migration) error {
 	if err := Validate(registry); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (r *Runner) RunAll(ctx context.Context, targetVersion int64, kind common.Ow
 	return errors.Join(errs...)
 }
 
-func (r *Runner) owners(ctx context.Context, conn *pgxpool.Conn, kind common.OwnerKind) ([]common.Owner, error) {
+func (r *Runner) owners(ctx context.Context, conn *pgxpool.Conn, kind common.OwnerKind) ([]*common.Owner, error) {
 	switch kind {
 	case common.OwnerSystem:
 		return nil, fmt.Errorf("system is a singleton -- use RunOnce, not RunAll")
@@ -104,7 +104,7 @@ func (r *Runner) owners(ctx context.Context, conn *pgxpool.Conn, kind common.Own
 }
 
 // migrateOwner walks one owner between its current version and targetVersion.
-func (r *Runner) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner common.Owner, targetVersion, maxVersion int64, registry []Migration) error {
+func (r *Runner) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, targetVersion, maxVersion int64, registry []Migration) error {
 	current, err := mDatastore.Version(ctx, conn, owner)
 	if err != nil {
 		return err

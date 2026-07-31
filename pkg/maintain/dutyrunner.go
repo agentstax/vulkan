@@ -30,11 +30,11 @@ type dutyRunner struct {
 	jitter float64
 
 	kind  string // DutyJanitor | DutyWaterline | DutyAlert
-	owner common.Owner
+	owner *common.Owner
 	rate  time.Duration
 }
 
-func newDutyRunner(ds *MaintenanceDatastore, log logger.Logger, jitter float64, kind string, owner common.Owner, rate time.Duration) (*dutyRunner, error) {
+func newDutyRunner(ds *MaintenanceDatastore, log logger.Logger, jitter float64, kind string, owner *common.Owner, rate time.Duration) (*dutyRunner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
