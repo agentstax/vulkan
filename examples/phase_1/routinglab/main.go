@@ -108,7 +108,7 @@ func main() {
 	assertIDs("only msg1 (published before the binding existed) and msg2 (deeper hierarchy) match",
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 	committed := advance(ctx, md, tp.Id, cursorGroupID)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
@@ -123,7 +123,7 @@ func main() {
 	assertIDs("an unbound group receives every message, including the NULL routing_key one",
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
-	must(cd.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 	advance(ctx, md, tp.Id, controlGroupID)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====

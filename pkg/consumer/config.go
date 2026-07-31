@@ -246,7 +246,7 @@ func (c *ConsumerConfig) validateMessageBounds() error {
 }
 
 func (c *ConsumerConfig) resolveMessageOptions(msg *common.MessageOptions) *common.MessageOptions {
-	return msg.Fill(c.Message).Clamp(c.MessageMin, c.MessageMax)
+	return msg.Fill(c.Message).Clamp(c.MessageMin, c.MessageMax).ResolveConcurrency(c.ConcurrencyOverride)
 }
 
 type ConsumerDatastoreConfig struct {

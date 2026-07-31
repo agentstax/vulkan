@@ -9,14 +9,14 @@ import (
 
 func TestFillSetFieldsWin(t *testing.T) {
 	msg := &MessageOptions{WorkTimeout: time.Minute}
-	defaults := &MessageOptions{Concurrency: ConcurrencyForbid, WorkTimeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
+	defaults := &MessageOptions{Concurrency: ConcurrencyDefer, WorkTimeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
 
 	got := msg.Fill(defaults)
 	if got.WorkTimeout != time.Minute {
 		t.Fatalf("WorkTimeout = %v, want the message's %v", got.WorkTimeout, time.Minute)
 	}
-	if got.Concurrency != ConcurrencyForbid {
-		t.Fatalf("Concurrency = %q, want the default %q", got.Concurrency, ConcurrencyForbid)
+	if got.Concurrency != ConcurrencyDefer {
+		t.Fatalf("Concurrency = %q, want the default %q", got.Concurrency, ConcurrencyDefer)
 	}
 	if got.Retry == nil || got.Retry.MaxRetries != 5 {
 		t.Fatalf("Retry = %+v, want the default policy", got.Retry)
@@ -34,6 +34,31 @@ func TestFillRetryMergesFieldWise(t *testing.T) {
 	// merge must not have written through the message's own policy
 	if msg.Retry.MaxRetries != 0 {
 		t.Fatalf("Fill mutated its input policy: %+v", msg.Retry)
+	}
+}
+
+func TestFillNeverAliasesItsInputs(t *testing.T) {
+	defaults := &MessageOptions{WorkTimeout: time.Second, Retry: &retry.Policy{MaxRetries: 5}}
+
+	var msg *MessageOptions
+	got := msg.Fill(defaults)
+	got.WorkTimeout = time.Minute
+	got.Retry.MaxRetries = 9
+	if defaults.WorkTimeout != time.Second || defaults.Retry.MaxRetries != 5 {
+		t.Fatalf("writes to Fill's result reached its defaults: %+v", defaults)
+	}
+}
+
+func TestResolveConcurrency(t *testing.T) {
+	msg := &MessageOptions{Concurrency: ConcurrencyDefer}
+	if got := msg.ResolveConcurrency(""); got.Concurrency != ConcurrencyDefer {
+		t.Fatalf("Concurrency = %q, want the message's %q kept", got.Concurrency, ConcurrencyDefer)
+	}
+	if got := msg.ResolveConcurrency(ConcurrencyAllow); got.Concurrency != ConcurrencyAllow {
+		t.Fatalf("Concurrency = %q, want the override %q", got.Concurrency, ConcurrencyAllow)
+	}
+	if got := (&MessageOptions{}).ResolveConcurrency(""); got.Concurrency != ConcurrencyAllow {
+		t.Fatalf("Concurrency = %q, want unset to resolve to %q", got.Concurrency, ConcurrencyAllow)
 	}
 }
 
@@ -92,13 +117,16 @@ func TestValidateSparse(t *testing.T) {
 	}
 }
 
-func TestNilFillIdentity(t *testing.T) {
+func TestNilFill(t *testing.T) {
 	defaults := &MessageOptions{WorkTimeout: time.Second}
 	var msg *MessageOptions
-	if got := msg.Fill(defaults); got != defaults {
-		t.Fatalf("nil.Fill(defaults) = %+v, want defaults verbatim", got)
+	if got := msg.Fill(defaults); got == nil || got.WorkTimeout != time.Second {
+		t.Fatalf("nil.Fill(defaults) = %+v, want defaults' values", got)
 	}
-	if got := defaults.Fill(nil); got != defaults {
-		t.Fatalf("defaults.Fill(nil) = %+v, want the receiver verbatim", got)
+	if got := defaults.Fill(nil); got == nil || got.WorkTimeout != time.Second {
+		t.Fatalf("defaults.Fill(nil) = %+v, want the receiver's values", got)
+	}
+	if got := msg.Fill(nil); got != nil {
+		t.Fatalf("nil.Fill(nil) = %+v, want nil", got)
 	}
 }

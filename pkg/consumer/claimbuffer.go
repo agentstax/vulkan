@@ -111,6 +111,14 @@ func (b *claimBuffer) ResolveTerminal(item *Buffered, err error) {
 	b.resolve(item, kindTerminal, err.Error())
 }
 
+func (b *claimBuffer) ResolveSuperseded(item *Buffered) {
+	b.resolve(item, kindSuperseded, "a newer message on the same compaction key superseded this delivery")
+}
+
+func (b *claimBuffer) ResolveDeferred(item *Buffered) {
+	b.resolve(item, kindDeferred, "another delivery held the compaction key at dispatch")
+}
+
 func (b *claimBuffer) resolve(item *Buffered, kind outcomeKind, err string) {
 	state := b.lookup(item.lease.Token)
 	if state == nil {

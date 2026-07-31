@@ -15,7 +15,7 @@ import (
 )
 
 // ideally idempotent func
-type ConsumerFunc[Message any] func(ctx context.Context, work *Message) error
+type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
 
 // Consumer runs a consumer group on one topic: hand Consume a function and
 // every message reaches it. Failed messages retry with backoff, and the

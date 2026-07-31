@@ -66,6 +66,22 @@ type MessageTerminal struct {
 	Err       string
 }
 
+// one keyed message dropped unrun from a claimed range because a newer message
+// on its compaction key exists -- records a delivery_log row only, never a
+// delivery row.
+type MessageSuperseded struct {
+	MessageId int64
+	Err       string
+}
+
+// one keyed message from a claimed range that never ran because another
+// delivery held its key -- the commit writes its 'deferred' delivery row and
+// log row.
+type MessageDeferred struct {
+	MessageId int64
+	Err       string
+}
+
 // one exception claimed off the exception window for (re)processing -- the lease
 // token guards its resolution the same way LeaseRow's does for a range.
 type ClaimedException struct {
@@ -243,20 +259,20 @@ func (d *ConsumerDatastore[Message]) upsertGroup(ctx context.Context, topicID in
 	return &g, nil
 }
 
-// Commit frees the range's lease, then parks any failures as sparse delivery
-// rows -- initialBackoff sets how long a freshly parked row waits before it's
-// first eligible for ClaimExceptions (RecordExceptionFailure's own
-// MessageRetry takes over on later retries). disableDeliveryLog skips the
-// parallel delivery_log_<topic_id> audit write.
+// Commit frees the range's lease, then records failures and deferred messages
+// as sparse delivery rows -- initialBackoff sets how long a freshly parked row
+// waits before it's first eligible for ClaimExceptions
+// (RecordExceptionFailure's own MessageRetry takes over on later retries).
+// disableDeliveryLog skips the parallel delivery_log_<topic_id> audit write.
 // The lease is freed FIRST, token-guarded -- so a reclaimed worker's stale
 // commit bails before parking any phantom exception rows.
-func (d *ConsumerDatastore[Message]) Commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) Commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, superseded []MessageSuperseded, deferred []MessageDeferred, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.commit(ctx, topicID, groupID, token, exceptions, terminals, initialBackoff, disableDeliveryLog)
+		return d.commit(ctx, topicID, groupID, token, exceptions, terminals, superseded, deferred, initialBackoff, disableDeliveryLog)
 	})
 }
 
-func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, exceptions []MessageException, terminals []MessageTerminal, superseded []MessageSuperseded, deferred []MessageDeferred, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -294,8 +310,8 @@ func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 
 	// freshly parked rows are always the first recorded attempt (0) for this
 	logSql := fmt.Sprintf(`
-		INSERT INTO %s (consumer_group_id, message_id, attempt, error)
-		VALUES ($1, $2, 0, $3);
+		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
+		VALUES ($1, $2, 0, $3, $4);
 	`, topic.DeliveryLogTable(topicID))
 
 	// queued and sent as one pipelined round trip
@@ -303,13 +319,24 @@ func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 	for _, e := range exceptions {
 		batch.Queue(parkSql, groupID, e.MessageId, "ready", e.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			batch.Queue(logSql, groupID, e.MessageId, e.Err)
+			batch.Queue(logSql, groupID, e.MessageId, "failure", e.Err)
 		}
 	}
 	for _, t := range terminals {
 		batch.Queue(parkSql, groupID, t.MessageId, "dead", t.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			batch.Queue(logSql, groupID, t.MessageId, t.Err)
+			batch.Queue(logSql, groupID, t.MessageId, "failure", t.Err)
+		}
+	}
+	for _, s := range superseded {
+		if !disableDeliveryLog {
+			batch.Queue(logSql, groupID, s.MessageId, "superseded", s.Err)
+		}
+	}
+	for _, df := range deferred {
+		batch.Queue(parkSql, groupID, df.MessageId, "deferred", nil, 0.0)
+		if !disableDeliveryLog {
+			batch.Queue(logSql, groupID, df.MessageId, "deferred", df.Err)
 		}
 	}
 	if err := execBatch(ctx, tx, batch); err != nil {
@@ -329,13 +356,13 @@ func (d *ConsumerDatastore[Message]) commit(ctx context.Context, topicID int64, 
 // PartialCommit narrows a still-open lease to lastProcessed and parks whatever
 // resolved before an interruption. The lease token isnt freed, it
 // naturally expires and gets reclaimed.
-func (d *ConsumerDatastore[Message]) PartialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) PartialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, superseded []MessageSuperseded, deferred []MessageDeferred, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.partialCommit(ctx, topicID, groupID, token, lastProcessed, exceptions, terminals, initialBackoff, disableDeliveryLog)
+		return d.partialCommit(ctx, topicID, groupID, token, lastProcessed, exceptions, terminals, superseded, deferred, initialBackoff, disableDeliveryLog)
 	})
 }
 
-func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, exceptions []MessageException, terminals []MessageTerminal, superseded []MessageSuperseded, deferred []MessageDeferred, initialBackoff time.Duration, disableDeliveryLog bool) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -377,8 +404,8 @@ func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 
 	// same first-recorded-attempt convention as commit's own logSql.
 	logSql := fmt.Sprintf(`
-		INSERT INTO %s (consumer_group_id, message_id, attempt, error)
-		VALUES ($1, $2, 0, $3);
+		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
+		VALUES ($1, $2, 0, $3, $4);
 	`, topic.DeliveryLogTable(topicID))
 
 	// queued and sent as one pipelined round trip
@@ -386,13 +413,24 @@ func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 	for _, e := range exceptions {
 		batch.Queue(parkSql, groupID, e.MessageId, "ready", e.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			batch.Queue(logSql, groupID, e.MessageId, e.Err)
+			batch.Queue(logSql, groupID, e.MessageId, "failure", e.Err)
 		}
 	}
 	for _, t := range terminals {
 		batch.Queue(parkSql, groupID, t.MessageId, "dead", t.Err, initialBackoff.Seconds())
 		if !disableDeliveryLog {
-			batch.Queue(logSql, groupID, t.MessageId, t.Err)
+			batch.Queue(logSql, groupID, t.MessageId, "failure", t.Err)
+		}
+	}
+	for _, s := range superseded {
+		if !disableDeliveryLog {
+			batch.Queue(logSql, groupID, s.MessageId, "superseded", s.Err)
+		}
+	}
+	for _, df := range deferred {
+		batch.Queue(parkSql, groupID, df.MessageId, "deferred", nil, 0.0)
+		if !disableDeliveryLog {
+			batch.Queue(logSql, groupID, df.MessageId, "deferred", df.Err)
 		}
 	}
 	if err := execBatch(ctx, tx, batch); err != nil {
@@ -401,13 +439,13 @@ func (d *ConsumerDatastore[Message]) partialCommit(ctx context.Context, topicID 
 
 	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
 	// ack, not whether it landed. Unlike commit, truncateSql's UPDATE isn't
-	// self-consuming, so a retry that already landed would reach parkSql again
-	// and hit delivery's PK -- only safe to retry when nothing was parked.
+	// self-consuming, so a retry that already landed would reach parkSql (or
+	// logSql's PK) again -- only safe to retry when nothing was recorded.
 	if err := tx.Commit(ctx); err != nil {
-		if len(exceptions)+len(terminals) > 0 {
+		if len(exceptions)+len(terminals)+len(superseded)+len(deferred) > 0 {
 			return retry.NewPermanentError(err)
 		}
-		return err // nothing parked -- safe for Retry to auto-classify
+		return err // nothing recorded -- safe for Retry to auto-classify
 	}
 
 	if len(terminals) > 0 {
@@ -899,7 +937,7 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 		`, topic.DeliveryTable(topicID))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
-		// atomic in one statement
+		// atomic in one statement.
 		killSql = fmt.Sprintf(`
 			WITH killed AS (
 				UPDATE %[1]s
@@ -907,16 +945,16 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 					status = 'dead',
 					lease_token = NULL,
 					lease_until = NULL,
-					updated_at = now(),
-					last_error = concat(last_error, ' [killed: crash-loop hit max attempts]')
+					updated_at = now()
 				WHERE consumer_group_id = $1
 					AND status = 'inflight'
 					AND lease_until < now()
 					AND attempts >= $2
 				RETURNING consumer_group_id, message_id, attempts, last_error
 			)
-			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
-			SELECT consumer_group_id, message_id, attempts, last_error FROM killed;
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			SELECT consumer_group_id, message_id, attempts, 'killed', concat('crash-loop hit max attempts; last error: ', last_error)
+			FROM killed;
 		`, topic.DeliveryTable(topicID), topic.DeliveryLogTable(topicID))
 	}
 	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupID, maxRetries)

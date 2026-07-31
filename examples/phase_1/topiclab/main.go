@@ -143,7 +143,7 @@ func main() {
 	}
 	assertInt64s("retroactive binding applies to the pre-existing message, CURSOR path filters out the non-match",
 		ids(claim.Messages), []int64{headBefore + 1, headBefore + 2})
-	must(cd.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 	committed := advance(ctx, md, topicC.Id, groupRouteID)
 	assertInt("committed still advances over the WHOLE range, not just the matches", committed, claim.Lease.High)
 
@@ -170,7 +170,7 @@ func main() {
 	if claimX == nil {
 		die("expected groupX to claim a fresh range")
 	}
-	must(cd.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 	advance(ctx, md, topicD.Id, groupXID)
 	fmt.Println("  groupX (sliceX reader) is now fully caught up on the only traffic that exists")
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,

@@ -505,14 +505,20 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 		return err
 	}
 
-	// delivery_log_<id> exists even when DisableDeliveryLog
+	// delivery_log_<id> exists even when DisableDeliveryLog.
+	// One row per delivery event that is not a success:
+	//   - 'failure': the attempt ran and returned an error
+	//   - 'superseded': dropped unrun -- a newer message on its compaction key exists
+	//   - 'deferred': never ran -- another delivery held its compaction key
+	//   - 'killed': dead-lettered by the crash-loop backstop
 	createDeliveryLogSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			consumer_group_id BIGINT NOT NULL,   -- PK
-			message_id BIGINT NOT NULL,          -- PK
-			attempt INT NOT NULL,                -- PK
+			consumer_group_id BIGINT NOT NULL,    -- PK
+			message_id BIGINT NOT NULL,           -- PK
+			attempt INT NOT NULL,                 -- PK
+			status TEXT NOT NULL DEFAULT 'failure',
+			error TEXT NOT NULL,
 			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			error TEXT NOT NULL,                 -- always populated -- a row only ever exists for a failed attempt
 			PRIMARY KEY (consumer_group_id, message_id, attempt)
 		);
 	`, iTopic.DeliveryLogTable(id))

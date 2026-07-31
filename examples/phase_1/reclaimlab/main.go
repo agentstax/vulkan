@@ -131,7 +131,7 @@ func main() {
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
 	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
-	if err := cd.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, nil, 5*time.Second, false); !errors.Is(err, consumer.ErrLeaseLost) {
+	if err := cd.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, nil, nil, nil, 5*time.Second, false); !errors.Is(err, consumer.ErrLeaseLost) {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)
@@ -139,7 +139,7 @@ func main() {
 	fmt.Println("  dead worker's stale Commit was rejected with ErrLeaseLost")
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
-	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
@@ -156,7 +156,7 @@ func main() {
 		if c == nil {
 			break // caught up
 		}
-		must(cd.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, nil, 5*time.Second, false))
+		must(cd.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, md, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)

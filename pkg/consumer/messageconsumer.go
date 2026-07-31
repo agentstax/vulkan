@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
@@ -201,8 +202,8 @@ func (p *MessageConsumer[Message]) closeRange(ctx context.Context, state *rangeS
 		return
 	}
 
-	lastProcessed, exceptions, terminals := state.contiguousResolved()
-	if err := p.CursorPartialCommit(ctx, lastProcessed, state.lease, exceptions, terminals); err != nil {
+	lastProcessed, exceptions, terminals, superseded, deferred := state.contiguousResolved()
+	if err := p.CursorPartialCommit(ctx, lastProcessed, state.lease, exceptions, terminals, superseded, deferred); err != nil {
 		p.Logger.WarnContext(ctx, "partial commit failed at shutdown, range rides out lease expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", state.lease.Low, "high", state.lease.High, "err", err)
 	}
 }
@@ -248,7 +249,7 @@ func (p *MessageConsumer[Message]) prefetch(ctx context.Context) error {
 		if len(claimed.Messages) == 0 {
 			// every message in the range compacted away -- nothing to dispatch or
 			// resolve, so commit it directly to immediately move on
-			p.commitRange(ctx, newRangeSnapshot(claimed.Lease, nil, nil))
+			p.commitRange(ctx, newRangeSnapshot(claimed.Lease, nil, nil, nil, nil))
 			continue
 		}
 		if err := p.buffer.Add(ctx, claimed); err != nil {
@@ -294,15 +295,7 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 		return
 	}
 
-	var work Message
-	if err := json.Unmarshal(item.row.Payload, &work); err != nil {
-		// bad payload will never deserialize -- no point retrying it
-		p.buffer.ResolveTerminal(item, err)
-	} else if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta(resolvedOptions)), consumerFunc, &work, item.row.Id, 0, item.row.Options, resolvedOptions.WorkTimeout); err != nil {
-		p.buffer.ResolveException(item, err)
-	} else {
-		p.buffer.ResolveSuccess(item)
-	}
+	p.runItem(ctx, item, consumerFunc, resolvedOptions)
 
 	// is the entire range full of messages resolve
 	// ie was this item the final message to be processed in the range
@@ -316,11 +309,65 @@ func (p *MessageConsumer[Message]) processClaim(ctx context.Context, item *Buffe
 	p.commitRange(ctx, snapshot)
 }
 
+// runItem runs consumerFunc for one dispatched message and resolves the
+// outcome -- unless the message's concurrency policy resolves it without a
+// run (superseded or deferred).
+func (p *MessageConsumer[Message]) runItem(ctx context.Context, item *Buffered, consumerFunc ConsumerFunc[Message], resolvedOptions *common.MessageOptions) {
+	// should defer logic be considered?
+	if item.row.CompactionKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
+		verdict, claim, err := p.claimKeyedRun(ctx, item.row.CompactionKey, item.row.Id, resolvedOptions)
+		switch {
+		case err != nil:
+			// record as an exception so it still runs later
+			p.buffer.ResolveException(item, err)
+			return
+		case verdict == dispatchSuperseded:
+			p.buffer.ResolveSuperseded(item)
+			return
+		case verdict == dispatchDeferred:
+			p.buffer.ResolveDeferred(item)
+			return
+		}
+		defer p.releaseKey(ctx, claim)
+	}
+
+	var message Message
+	if err := json.Unmarshal(item.row.Payload, &message); err != nil {
+		// bad payload will never deserialize -- no point retrying it
+		p.buffer.ResolveTerminal(item, err)
+		return
+	}
+
+	if err := p.callSafely(withMeta(ctx, item.row.toMessageMeta(resolvedOptions)), consumerFunc, &message, item.row.Id, 0, item.row.Options, resolvedOptions.WorkTimeout); err != nil {
+		p.buffer.ResolveException(item, err)
+	} else {
+		p.buffer.ResolveSuccess(item)
+	}
+}
+
+func (p *MessageConsumer[Message]) releaseKey(ctx context.Context, claim *KeyLeaseClaim) {
+	// runs after consumerFunc, when a shutdown may already have cancelled ctx
+	releaseCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
+		fmt.Errorf("key lease release exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
+	defer cancel()
+
+	released, err := p.Datastore.ReleaseKeyLease(releaseCtx, claim)
+	if err != nil {
+		p.Logger.WarnContext(ctx, "key lease release failed, key frees on expiry instead", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "compaction_key", claim.CompactionKey, "err", err)
+		return
+	}
+	if !released {
+		// the run outlived its lease -- another delivery on the key may have
+		// overlapped it
+		p.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "compaction_key", claim.CompactionKey)
+	}
+}
+
 // commitRange finalizes a range once every message has resolved in it
 func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
 	// range always frees -- the lazy waterline roller advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group.Id, commit.Lease.Token, commit.Exceptions, commit.Terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog)
+	err := p.Datastore.Commit(ctx, p.Topic.Id, p.Group.Id, commit.Lease.Token, commit.Exceptions, commit.Terminals, commit.Superseded, commit.Deferred, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog)
 	switch {
 	case err == nil:
 		p.buffer.Remove(commit.Lease.Token)
@@ -333,8 +380,8 @@ func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rang
 	}
 }
 
-func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, lease LeaseRow, exceptions []MessageException, terminals []MessageTerminal) error {
-	if lastProcessed == lease.Low && len(exceptions) == 0 && len(terminals) == 0 {
+func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, lastProcessed int64, lease LeaseRow, exceptions []MessageException, terminals []MessageTerminal, superseded []MessageSuperseded, deferred []MessageDeferred) error {
+	if lastProcessed == lease.Low && len(exceptions) == 0 && len(terminals) == 0 && len(superseded) == 0 && len(deferred) == 0 {
 		return nil // interrupted before resolving anything -- leave the lease exactly as claimed
 	}
 
@@ -346,7 +393,7 @@ func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, last
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group.Id, lease.Token, lastProcessed, exceptions, terminals, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
+	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group.Id, lease.Token, lastProcessed, exceptions, terminals, superseded, deferred, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
 			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here

@@ -86,7 +86,7 @@ func main() {
 		die("expected a fresh claim, got nil")
 	}
 	assertIDs("only the pinned row comes back for user:1", ids(claim.Messages), []int64{2})
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 	assertInt("v1/v3/v4 still physically exist -- compaction filters, never deletes", rowCount(ctx, ds, tp.Id), 4)
 
 	// ===== the bridge interleaving: -1 never beats 0, either arrival order (ids 5-8) =====
@@ -106,7 +106,7 @@ func main() {
 		die("expected a fresh claim, got nil")
 	}
 	assertIDs("only the two live-rank winners come back, neither backfill", ids(claim.Messages), []int64{5, 8})
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, 5*time.Second, false))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
 
 	step("both backfill rows still physically exist, just never claimed")
 	assertTrue("user:2's backfill row (id 6) still exists", rowExists(ctx, ds, tp.Id, 6))

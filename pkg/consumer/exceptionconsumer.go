@@ -110,18 +110,18 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 	}
 
 	for _, exception := range claimed {
-		var work Message
+		var message Message
 		// this payload already deserialized once, in the message loop, to reach
 		// the exception window in the first place -- same immutable message_log
 		// row, so it cannot fail to unmarshal here. a failure means an invariant
 		// broke elsewhere; surface it loudly instead of building unreachable
 		// recovery.
-		if err := json.Unmarshal(exception.Payload, &work); err != nil {
+		if err := json.Unmarshal(exception.Payload, &message); err != nil {
 			return err
 		}
 
 		resolvedOptions := p.Config.resolveMessageOptions(exception.Options)
-		if err := p.callSafely(withMeta(ctx, exception.toMessageMeta(resolvedOptions)), consumerFunc, &work, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.WorkTimeout); err != nil {
+		if err := p.callSafely(withMeta(ctx, exception.toMessageMeta(resolvedOptions)), consumerFunc, &message, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.WorkTimeout); err != nil {
 			if recordErr := p.Datastore.RecordExceptionFailure(ctx, resolvedOptions.Retry, &exception, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				if errors.Is(recordErr, ErrLeaseLost) {
 					p.Logger.DebugContext(ctx, "lease lost recording exception failure, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)

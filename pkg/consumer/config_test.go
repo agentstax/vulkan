@@ -82,7 +82,7 @@ func TestValidateRejectsBoundsOutOfOrder(t *testing.T) {
 func TestValidateRejectsConcurrencyInBounds(t *testing.T) {
 	for _, field := range []string{"MessageMin", "MessageMax"} {
 		cfg := &ConsumerConfig{}
-		bound := &common.MessageOptions{Concurrency: common.ConcurrencyForbid}
+		bound := &common.MessageOptions{Concurrency: common.ConcurrencyDefer}
 		if field == "MessageMin" {
 			cfg.MessageMin = bound
 		} else {

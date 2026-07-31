@@ -11,17 +11,16 @@ import (
 type ConcurrencyPolicy string
 
 const (
-	ConcurrencyAllow  ConcurrencyPolicy = "allow"  // current key busy -> new same-keyed message run concurrently
-	ConcurrencyForbid ConcurrencyPolicy = "forbid" // current key busy -> new same-keyed message is dropped
-	ConcurrencyDefer  ConcurrencyPolicy = "defer"  // current key busy -> new same-keyed message is queued to run after current finishes
+	ConcurrencyAllow ConcurrencyPolicy = "allow" // current key busy -> new same-keyed message run concurrently
+	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message is queued to run after current finishes
 )
 
 func (p ConcurrencyPolicy) Validate() error {
 	switch p {
-	case "", ConcurrencyAllow, ConcurrencyForbid, ConcurrencyDefer:
+	case "", ConcurrencyAllow, ConcurrencyDefer:
 		return nil
 	default:
-		return fmt.Errorf("must be one of %q, %q, %q, got %q", ConcurrencyAllow, ConcurrencyForbid, ConcurrencyDefer, p)
+		return fmt.Errorf("must be one of %q, %q, got %q", ConcurrencyAllow, ConcurrencyDefer, p)
 	}
 }
 
@@ -64,28 +63,35 @@ func (o *MessageOptions) WithDefaults() *MessageOptions {
 	return o
 }
 
+// returns new copy not modified pointer
 func (o *MessageOptions) Fill(defaults *MessageOptions) *MessageOptions {
-	if o == nil {
-		return defaults
+	if o == nil && defaults == nil {
+		return nil
 	}
-	if defaults == nil {
-		return o
+
+	var filled, d MessageOptions
+	if o != nil {
+		filled = *o
 	}
-	filled := *o
+	if defaults != nil {
+		d = *defaults
+	}
 	if filled.Concurrency == "" {
-		filled.Concurrency = defaults.Concurrency
+		filled.Concurrency = d.Concurrency
 	}
 	if filled.WorkTimeout == 0 {
-		filled.WorkTimeout = defaults.WorkTimeout
+		filled.WorkTimeout = d.WorkTimeout
 	}
-	filled.Retry = fillPolicy(filled.Retry, defaults.Retry)
+	filled.Retry = fillPolicy(filled.Retry, d.Retry)
 	return &filled
 }
 
+// returns new copy not modified pointer
 func (o *MessageOptions) Clamp(min, max *MessageOptions) *MessageOptions {
-	if o == nil || (min == nil && max == nil) {
-		return o
+	if o == nil {
+		return nil
 	}
+
 	var lo, hi MessageOptions
 	if min != nil {
 		lo = *min
@@ -97,6 +103,22 @@ func (o *MessageOptions) Clamp(min, max *MessageOptions) *MessageOptions {
 	clamped.WorkTimeout = clampDuration(clamped.WorkTimeout, lo.WorkTimeout, hi.WorkTimeout)
 	clamped.Retry = clampPolicy(clamped.Retry, lo.Retry, hi.Retry)
 	return &clamped
+}
+
+// returns new copy not modified pointer
+func (o *MessageOptions) ResolveConcurrency(override ConcurrencyPolicy) *MessageOptions {
+	var resolved MessageOptions
+	if o != nil {
+		resolved = *o
+	}
+
+	switch {
+	case override != "":
+		resolved.Concurrency = override
+	case resolved.Concurrency == "":
+		resolved.Concurrency = ConcurrencyAllow
+	}
+	return &resolved
 }
 
 func (o *MessageOptions) Validate() error {
@@ -136,33 +158,40 @@ func validateSparsePolicy(p *retry.Policy) error {
 	return nil
 }
 
+// returns new copy not modified pointer
 func fillPolicy(p, defaults *retry.Policy) *retry.Policy {
-	if p == nil {
-		return defaults
+	if p == nil && defaults == nil {
+		return nil
 	}
-	if defaults == nil {
-		return p
+
+	var merged, d retry.Policy
+	if p != nil {
+		merged = *p
 	}
-	merged := *p
+	if defaults != nil {
+		d = *defaults
+	}
 	if merged.MaxRetries == 0 {
-		merged.MaxRetries = defaults.MaxRetries
+		merged.MaxRetries = d.MaxRetries
 	}
 	if merged.BaseDelay == 0 {
-		merged.BaseDelay = defaults.BaseDelay
+		merged.BaseDelay = d.BaseDelay
 	}
 	if merged.MaxDelay == 0 {
-		merged.MaxDelay = defaults.MaxDelay
+		merged.MaxDelay = d.MaxDelay
 	}
 	if merged.Exponent == 0 {
-		merged.Exponent = defaults.Exponent
+		merged.Exponent = d.Exponent
 	}
 	return &merged
 }
 
+// returns new copy not modified pointer
 func clampPolicy(p, min, max *retry.Policy) *retry.Policy {
-	if p == nil || (min == nil && max == nil) {
-		return p
+	if p == nil {
+		return nil
 	}
+
 	var lo, hi retry.Policy
 	if min != nil {
 		lo = *min

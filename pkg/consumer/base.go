@@ -117,10 +117,42 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 	return nil
 }
 
+// dispatchVerdict is claimKeyedRun's decision for one keyed message.
+type dispatchVerdict string
+
+const (
+	dispatchRun        dispatchVerdict = "run"        // key lease acquired -- run now
+	dispatchDeferred   dispatchVerdict = "deferred"   // key busy -- the range commit writes its 'deferred' row
+	dispatchSuperseded dispatchVerdict = "superseded" // a newer message on the key exists -- never run this one
+)
+
+// claimKeyedRun decides whether a keyed message may run right now.
+// The returned KeyLeaseClaim is set only on dispatchRun; the caller releases
+// it after recording the message's outcome.
+func (b *consumerBase[Message]) claimKeyedRun(ctx context.Context, key string, messageID int64, resolved *common.MessageOptions) (dispatchVerdict, *KeyLeaseClaim, error) {
+	// same window the range lease pads for: the run itself, ctx-cancel
+	// unwinding, and recording the outcome
+	duration := resolved.WorkTimeout + b.Config.WorkTimeoutGrace + b.Config.AckMargin
+
+	claim, err := b.Datastore.ClaimKeyLease(ctx, b.Topic.Id, b.Group.Id, key, messageID, duration)
+	if err != nil {
+		return "", nil, err
+	}
+	switch claim.Verdict {
+	case KeyLeaseAcquired:
+		return dispatchRun, claim, nil
+	case KeyLeaseSuperseded:
+		return dispatchSuperseded, nil, nil
+	}
+
+	// busy: another delivery holds the key
+	return dispatchDeferred, nil, nil
+}
+
 // callSafely catches an in-process Go panic  and turns it into an ordinary error.
 // Handles: nil map write, index out of range, bad type assertion
 // Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
-func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], work *Message, messageID int64, attempt int, requested *common.MessageOptions, workTimeout time.Duration) error {
+func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], message *Message, messageID int64, attempt int, requested *common.MessageOptions, workTimeout time.Duration) error {
 	// the timeout cause names which side's budget fired
 	cause := fmt.Errorf("WorkTimeout (%s) exceeded for message %d attempt %d", workTimeout, messageID, attempt)
 	if requested != nil && requested.WorkTimeout > workTimeout {
@@ -141,7 +173,7 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 				done <- fmt.Errorf("recovered from consumerFunc panic: %v\n%s", r, debug.Stack())
 			}
 		}()
-		done <- consumerFunc(ctx, work)
+		done <- consumerFunc(ctx, message)
 	}()
 
 	select {
@@ -159,7 +191,7 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 			b.AbandonedEvents.Remove(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
 		}()
 
-		// don't print out work in case of sensitive values
+		// don't print out the message in case of sensitive values
 		// TODO - documentation should have this known error mesage and how to help prevent it
 		// ie handle context.Done or increase WorkTimeoutGrace, we don't want this error to happen often
 		// it has bad side effects

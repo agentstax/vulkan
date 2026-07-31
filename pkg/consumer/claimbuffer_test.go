@@ -31,9 +31,9 @@ func testRange(token pgtype.UUID, ids ...int64) *ClaimedRange {
 	}
 }
 
-// pokes a slot directly, mirroring what claimBuffer.resolve writes -- used to
+// pokes a result directly, mirroring what claimBuffer.resolve writes -- used to
 // set up rangeState fixtures without going through WaitForNext/Resolve*.
-func resolveSlot(state *rangeState, index int, kind outcomeKind, err string) {
+func resolveResult(state *rangeState, index int, kind outcomeKind, err string) {
 	state.results[index].kind = kind
 	state.results[index].err = err
 	state.results[index].done.Store(true)
@@ -163,7 +163,7 @@ func TestClaimBuffer_WaitForNextConcurrentDispatchCount(t *testing.T) {
 }
 
 // exactly one of N concurrent resolve-then-TryGetRangeSnapshot chains for a
-// range's N distinct slots must win the commit snapshot -- run under -race.
+// range's N distinct results must win the commit snapshot -- run under -race.
 func TestClaimBuffer_ResolveLastResolverCommitsExactlyOnce(t *testing.T) {
 	const n = 100
 	buf := newTestBuffer(t, n)
@@ -209,7 +209,7 @@ func TestClaimBuffer_ResolveLastResolverCommitsExactlyOnce(t *testing.T) {
 
 // disjoint-index concurrent Resolves must never race (run under -race) and
 // must all be reflected in the final commit's exceptions/terminals.
-func TestClaimBuffer_ResolveSlotExclusivity(t *testing.T) {
+func TestClaimBuffer_ResolveResultExclusivity(t *testing.T) {
 	const n = 60
 	buf := newTestBuffer(t, n)
 	ids := make([]int64, n)
@@ -256,7 +256,7 @@ func TestClaimBuffer_ResolveSlotExclusivity(t *testing.T) {
 
 	commit := finalCommit.Load()
 	if commit == nil {
-		t.Fatal("expected a commit once every slot resolved")
+		t.Fatal("expected a commit once every result resolved")
 	}
 	wantExceptions, wantTerminals := 0, 0
 	for i := range n {
@@ -393,12 +393,12 @@ func TestRangeState_ContiguousResolvedStopsAtGap(t *testing.T) {
 	state := newRangeState(rng)
 
 	// resolve everything except index 1 (id 102) -- a gap in the middle
-	resolveSlot(state, 0, kindSuccess, "")
-	resolveSlot(state, 2, kindException, "retryable")
-	resolveSlot(state, 3, kindTerminal, "bad payload")
-	resolveSlot(state, 4, kindSuccess, "")
+	resolveResult(state, 0, kindSuccess, "")
+	resolveResult(state, 2, kindException, "retryable")
+	resolveResult(state, 3, kindTerminal, "bad payload")
+	resolveResult(state, 4, kindSuccess, "")
 
-	lastProcessed, exceptions, terminals := state.contiguousResolved()
+	lastProcessed, exceptions, terminals, _, _ := state.contiguousResolved()
 	if lastProcessed != 101 {
 		t.Fatalf("lastProcessed = %d, want 101 (stop before the gap at 102)", lastProcessed)
 	}
@@ -414,11 +414,11 @@ func TestRangeState_ContiguousResolvedNoGap(t *testing.T) {
 	rng := testRange(testToken(14), 201, 202, 203)
 	state := newRangeState(rng)
 
-	resolveSlot(state, 0, kindSuccess, "")
-	resolveSlot(state, 1, kindException, "retryable")
-	resolveSlot(state, 2, kindTerminal, "bad payload")
+	resolveResult(state, 0, kindSuccess, "")
+	resolveResult(state, 1, kindException, "retryable")
+	resolveResult(state, 2, kindTerminal, "bad payload")
 
-	lastProcessed, exceptions, terminals := state.contiguousResolved()
+	lastProcessed, exceptions, terminals, _, _ := state.contiguousResolved()
 	if lastProcessed != 203 {
 		t.Fatalf("lastProcessed = %d, want 203", lastProcessed)
 	}
@@ -431,12 +431,35 @@ func TestRangeState_ContiguousResolvedNothingDone(t *testing.T) {
 	rng := testRange(testToken(15), 301, 302)
 	state := newRangeState(rng)
 
-	lastProcessed, exceptions, terminals := state.contiguousResolved()
+	lastProcessed, exceptions, terminals, _, _ := state.contiguousResolved()
 	if lastProcessed != rng.Lease.Low {
 		t.Fatalf("lastProcessed = %d, want %d (untouched -> stays at Low)", lastProcessed, rng.Lease.Low)
 	}
 	if exceptions != nil || terminals != nil {
 		t.Fatal("expected no exceptions/terminals when nothing resolved")
+	}
+}
+
+func TestRangeState_SupersededAndDeferredCollected(t *testing.T) {
+	rng := testRange(testToken(17), 401, 402, 403)
+	state := newRangeState(rng)
+
+	resolveResult(state, 0, kindSuperseded, "newer message on the key")
+	resolveResult(state, 1, kindDeferred, "key busy")
+	resolveResult(state, 2, kindSuccess, "")
+
+	lastProcessed, exceptions, terminals, superseded, deferred := state.contiguousResolved()
+	if lastProcessed != 403 {
+		t.Fatalf("lastProcessed = %d, want 403 (superseded and deferred both count as resolved)", lastProcessed)
+	}
+	if len(exceptions) != 0 || len(terminals) != 0 {
+		t.Fatalf("exceptions=%d terminals=%d, want 0 and 0", len(exceptions), len(terminals))
+	}
+	if len(superseded) != 1 || superseded[0].MessageId != 401 {
+		t.Fatalf("superseded = %+v, want exactly message 401", superseded)
+	}
+	if len(deferred) != 1 || deferred[0].MessageId != 402 || deferred[0].Err != "key busy" {
+		t.Fatalf("deferred = %+v, want exactly message 402 with its reason", deferred)
 	}
 }
 

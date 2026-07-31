@@ -174,8 +174,8 @@ func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerF
 	}
 
 	for _, delivery := range deliveries {
-		var work Message
-		if err := json.Unmarshal(delivery.Payload, &work); err != nil {
+		var message Message
+		if err := json.Unmarshal(delivery.Payload, &message); err != nil {
 			// a bad payload will never deserialize -> straight to the DLQ, no retries
 			if recordErr := p.Datastore.RecordTerminal(ctx, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
@@ -184,7 +184,7 @@ func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerF
 		}
 
 		resolvedOptions := p.Config.resolveMessageOptions(delivery.Options)
-		if err := p.callSafely(ctx, consumerFunc, &work, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.WorkTimeout); err != nil {
+		if err := p.callSafely(ctx, consumerFunc, &message, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.WorkTimeout); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
 			if recordErr := p.Datastore.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr

@@ -89,7 +89,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	failingId, successId := claim.Messages[0].Id, claim.Messages[1].Id
 
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "simulated processing failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 
 	assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, 0, "simulated processing failure", true)
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, successId, 0)
@@ -117,7 +117,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	failingId := claim.Messages[0].Id
 
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "attempt 0 failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 	assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, 0, "attempt 0 failure", true)
 
 	const maxAttempts = 5 // stays well below dead-letter for both retries below
@@ -161,7 +161,7 @@ func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresD
 	}
 	failingId := claim.Messages[0].Id
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "should never be logged"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, failingId, 0) // the failure was never logged
 	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                     // the real park still happened
@@ -263,7 +263,7 @@ func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], w
 	}
 	failingId := claim.Messages[0].Id
 	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "retention scenario failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
 	return failingId
 }
 
