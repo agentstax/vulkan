@@ -102,7 +102,7 @@ func (p *ExceptionConsumer[Message]) drainExceptions(ctx context.Context, consum
 }
 
 func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	leaseDuration := p.Config.MessageMax.WorkTimeout + p.Config.QueueMargin + p.Config.AckMargin
+	leaseDuration := p.Config.MessageMax.WorkTimeout + p.Config.WorkTimeoutGrace + p.Config.QueueMargin + p.Config.AckMargin
 
 	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit, p.Config.MessageMax.Retry.MaxRetries, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {

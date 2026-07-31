@@ -43,7 +43,7 @@ type ConsumerConfig struct {
 	WorkTimeoutGrace        time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: retry.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: Message.WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case plus recording its outcome
+	ShutdownTimeout         time.Duration // bounds how long Drain waits for in-flight processClaim calls to finish before CloseOpenRanges settles whatever's left. Default: MessageMax.WorkTimeout + WorkTimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Meter                   metric.Meter
 
@@ -120,7 +120,7 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	c.MessageMax = c.MessageMax.Fill(&bounds)
 
 	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = c.Message.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
+		c.ShutdownTimeout = c.MessageMax.WorkTimeout + c.WorkTimeoutGrace + c.AckMargin
 	}
 
 	if c.Retry == nil {
