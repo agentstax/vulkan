@@ -87,8 +87,6 @@ confirm which is current before changing anything — either delete the stray
 comment (settled design wins) or do the refactor and update the LEARNING_PLAN
 record to match.
 
-Add retry backoff for deliveries exception logic table
-
 Need a destroy system
 
 don't like how listDuties has a case statement joining many tables. Makes it feel like duties needs to be a higher level abstraction
@@ -102,3 +100,5 @@ pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is
 - common.Owner.name not being a required field because of above is a code smell
 - having to have random SystemOwner in pkg/migrate/datastore/system.go not good
 - really just the entire pkg/migrate codebase needs a comb through and update
+
+DONT FORGET - you just spent a lot of time making the cron jobs system a lot better we should make the same time investment for long lived background workers like janitor and waterline

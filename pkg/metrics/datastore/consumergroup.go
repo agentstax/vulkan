@@ -23,9 +23,10 @@ type ConsumerGroupSnapshot struct {
 
 	ReadyExceptions    int64 // retryable, will be reclaimed
 	InflightExceptions int64 // currently leased out to a retry attempt
+	DeferredExceptions int64 // waiting for their compaction key's key_lease to free
 	DeadExceptions     int64 // DLQ size
 
-	OldestUnackedAge time.Duration // age of the oldest ready/inflight exception; 0 if none outstanding
+	OldestUnackedAge time.Duration // age of the oldest ready/inflight/deferred exception; 0 if none outstanding
 
 	OpenLeases int64
 }
@@ -37,7 +38,7 @@ type GroupLag struct {
 	Committed        int64
 	Head             int64
 	Lag              int64 // Head - Committed, floored at 0
-	ParkedExceptions int64 // delivery rows still 'ready' or 'inflight'
+	ParkedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
 }
 
 func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
@@ -46,7 +47,7 @@ func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
 		Committed:        s.Committed,
 		Head:             s.Head,
 		Lag:              max(s.Backlog, 0),
-		ParkedExceptions: s.ReadyExceptions + s.InflightExceptions,
+		ParkedExceptions: s.ReadyExceptions + s.InflightExceptions + s.DeferredExceptions,
 	}
 }
 
@@ -89,12 +90,17 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID in
 			COALESCE((
 				SELECT COUNT(*)
 				FROM %[2]s
+				WHERE consumer_group_id = $1 AND status = 'deferred'
+			), 0) AS deferred_exceptions,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM %[2]s
 				WHERE consumer_group_id = $1 AND status = 'dead'
 			), 0) AS dead_exceptions,
 			(
 				SELECT MIN(created_at)
 				FROM %[2]s
-				WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight')
+				WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')
 			) AS oldest_unacked_at,
 			COALESCE((
 				SELECT COUNT(*)
@@ -113,6 +119,7 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicID in
 		&s.Head,
 		&s.ReadyExceptions,
 		&s.InflightExceptions,
+		&s.DeferredExceptions,
 		&s.DeadExceptions,
 		&oldestUnackedAt,
 		&s.OpenLeases,

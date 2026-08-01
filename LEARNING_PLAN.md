@@ -5149,67 +5149,113 @@ scheduler; the resource-ownership model landed independently
       dutybackofflab/maintenancelab (duty owner columns); entitylab
       deleted with its subject.
 
-- [ ] **Exclusive consumption — keyed concurrency policy (the generic
-      primitive).** Per-MESSAGE, set at produce via
-      `MessageOptions.Exclusive`: `Skip` = k8s Forbid (key busy → the
-      slot is dropped, never runs); `Defer` = reconciler/workqueue
-      semantic (key busy → park in exception window, run the latest when
-      the key frees). Gives at most one in-flight delivery per
-      compaction key per consumer group. Rules: all messages sharing a
-      compaction key MUST carry the same policy (upheld naturally when
-      one producer owns a key's traffic); exclusive produce onto a
-      non-compacted topic errors at produce time.
-      - Dispatch predicate (base.go, before consumerFunc) — ORDER IS
-        LOAD-BEARING: the supersede check MUST precede the lease attempt
-        or a hot key floods the exception window (with it, at most one
-        window entry per busy key — the sparse-window premise survives):
-        `CompactionHead(msg.key) > msg.rank` → resolveSuperseded
-        (stale); else lease busy → Skip: resolveSuperseded, Defer:
-        resolveDeferred; else run, then recordOutcome + releaseKeyLease
-        in ONE transaction. Invariant: a message runs iff it is the
-        compaction head at the moment it wins the key lease.
-      - `key_lease` table: PRIMARY KEY (topic_id, consumer_group,
-        compaction_key) + `lease_token UUID` + `expires_at TIMESTAMPTZ`
-        (resolved WorkTimeout + Grace + AckMargin). Acquire = `INSERT
-        ... ON CONFLICT DO UPDATE ... WHERE expires_at < now()`
-        (steal-on-expiry built in; rowcount 0 = busy). Release = `DELETE
-        ... WHERE lease_token = $mine`, in the same txn as
-        RecordSuccess/RecordFailure. Fence by PER-ATTEMPT lease_token,
-        NOT message_id (reuse the claim lease-token identity): the same
-        message re-attempted after a steal would let the stale holder
-        free the new attempt's lease → concurrent runs under Forbid.
-        Tiny hot table: NOT partitioned, NOT append-only — locks are
-        irreducibly mutable state (append-only acquire/release event log
-        and permanent per-key rows both rejected).
-      - New vocabulary (one concept one name): terminal kind
-        'superseded' — ALWAYS recorded in the delivery log (debugging
-        Forbid is "why didn't 12:05 run?"; status derives
-        last-run/last-skipped from the log, no new columns) — and
-        exception kind 'deferred' — own short/fixed retry cadence, does
-        NOT consume the message's resolved Retry.MaxRetries. No
-        defer-TTL needed: a crash-looping holder burns its own attempts
-        and frees the key; newer slots supersede parked ones.
-      - Per-group escape hatch is the `IgnoreExclusive` veto (previous
-        bullet) so observer/audit groups aren't silently dropped on by
-        an executor's policy. Honesty caveat, keep documented: the
-        overlap guarantee is only as strong as ctx-respect — an
-        abandoned goroutine past WorkTimeout+Grace can't be killed (k8s
-        escapes this only by SIGKILLing pods).
-      - Torture lab: two consumers fighting one key through crash /
-        lease-steal / supersession chains / wedged-key starvation.
-      Chunk plan: `~/.claude/plans/exclusive-consumption.md` (4 chunks:
-      key_lease table + datastore primitives → cursor-path dispatch
-      predicate + 'superseded' + Forbid → Defer + 'deferred' +
-      ExceptionConsumer → produce guard + torture lab + close-out).
-      Survey headline: the vocabulary is already BUILT as
-      ConcurrencyPolicy Allow|Forbid|Defer + ConcurrencyOverride (this
-      bullet's Exclusive None|Skip|Defer / IgnoreExclusive spellings
-      are the pre-rename design vocab), but ConcurrencyOverride is
-      read NOWHERE yet; outcome recording is range-batched in
-      Commit/PartialCommit, so WHERE the key release rides
-      (range-commit piggyback vs per-message txn) is the main open
-      build decision; key_lease must join deleteTopic's scoped-delete
-      table list or destroyed topics leak lease rows.
+- [x] **Exclusive consumption — keyed concurrency policy (the generic
+      primitive).** DONE 2026-07-31 (4 chunks, all committed; chunk-by-
+      chunk history incl. every review round lives in
+      `~/.claude/plans/exclusive-consumption.md`). As built:
+      per-MESSAGE policy `MessageOptions.Concurrency` —
+      `ConcurrencyPolicy` **Allow|Defer**. This bullet's original
+      Exclusive None|Skip|Defer / IgnoreExclusive spellings were the
+      pre-rename design vocab; **Skip/Forbid was REMOVED at the pitfall
+      review**: no industry precedent (SQS FIFO/Pulsar/Kafka serialize;
+      conflation systems drop the OLDEST; graphile's unsafe_dedupe is
+      discouraged by its own docs) and it could permanently lose a
+      key's final message. Resolution lives entirely in
+      resolveMessageOptions (override > message > ""→Allow); the
+      per-group escape hatch is `ConsumerConfig.ConcurrencyOverride`
+      (observer groups set Allow; unkeyed messages run Allow even under
+      override Defer — no key, no lock domain). Defer without a
+      CompactionKey errors at produce time — a post-Fill check at the
+      three producer.go sites, so a producer-DEFAULT Defer is caught
+      too (Validate runs pre-merge and cannot host it). Same-policy-
+      per-key stays a documented convention; a deliberate Allow message
+      on a normally-Defer key is the manual run-now idiom.
+      - **The gate** (`consumerBase.claimKeyedRun`, shared by cursor
+        dispatch and exception redemption — never mirrored):
+        `ClaimKeyLease` = head-gated upsert + a token-matched
+        conditional-DELETE head recheck, both in ONE pgx.Batch implicit
+        transaction. The lease token is generated CLIENT-side
+        (uuid.NewV7, outside the retry loop): a DatastoreRetry retry
+        after an ambiguous commit re-takes its OWN lease via
+        `OR lease_token = $token` instead of misreading it as busy, and
+        the recheck DELETE both undoes a head-moved acquisition and
+        cleans up a prior attempt's committed lease — a failed batch
+        rolls the insert back, so no path orphans a lease. Acquired ⇒
+        the message was still its key's compaction head AFTER the lease
+        was won ⇒ per-key old-then-new run order is total. Release =
+        fenced DELETE on the per-attempt token: per-message releaseKey
+        (WithoutCancel+AckMargin) on the cursor path, riding the
+        outcome-recording transaction (recordAndReleaseKey — the
+        release commits even when the outcome fence matches 0 rows) on
+        the exception path.
+      - **A busy verdict at dispatch writes NOTHING**: it resolves
+        deferred in memory and the RANGE COMMIT writes one bare
+        `INSERT (consumer_group_id, message_id, 'deferred')` per
+        deferred message plus its 'deferred'@0 log row. INVARIANT: a
+        'deferred' row exists ⇔ its range committed ⇔ the cursor can
+        never redeliver it — the whole leftover-row family is
+        unrepresentable. No per-key uniqueness: several 'deferred' rows
+        per key exist transiently under head churn; "which version is
+        current" has exactly ONE authority, compaction_head, consulted
+        at every claim and every redemption.
+      - **Redemption reuses the exception machinery wholesale**: ONE
+        claim (ClaimExceptions eligibility arms 'ready'+can_run_after |
+        expired-'inflight' | 'deferred', all under the attempts<max
+        ceiling; kill backstop split out as KillExceptions and blind to
+        'deferred' by construction), one per-row handler
+        (processException, shaped like runItem), outcome verbs
+        record{Success,Failure,Terminal,Superseded} mirroring the
+        buffer's Resolve* family. The claim is key_lease-AWARE:
+        `NOT EXISTS (unexpired key_lease on the row's compaction key)`
+        across ALL arms — a row that cannot run is never claimed, so no
+        attempts motion ever goes unrecorded (the interim
+        busy-decrement design was rejected exactly for that: an
+        unauditable counter mutation delivery_log's PK
+        (group, message, attempt) cannot log). Redemption-superseded =
+        status mark + the claim's attempts increment decremented back +
+        'superseded' log row at attempts+1, above the commit-time
+        'deferred'@0. An unmarshal failure is immediately terminal
+        (RecordExceptionTerminal). Busy at the gate provably means
+        another worker re-claimed this very row (only a claimant of the
+        row can hold its key while the row is head) → warn + cede,
+        exactly like ErrLeaseLost, never a consumer teardown. Both
+        consumer paths pre-check their claim's lease_until covers
+        Timeout+TimeoutGrace+AckMargin before starting — a row that sat
+        too long behind its batch is skipped for reclaim instead of
+        risking an avoidable overlapping run.
+      - Audit story: delivery_log status ∈
+        'failure'|'superseded'|'deferred'|'killed'; every deferred fate
+        ends recorded (ran, failed, or superseded); the ONLY silent
+        drop is claim-time compaction. Waterline blockers =
+        ('ready','inflight','deferred') — an unredeemed 'deferred' row
+        pins committed, which also pins its message against partition
+        truncation. Metrics: ConsumerGroupSnapshot gained
+        DeferredExceptions, 'deferred' joined oldest_unacked and
+        GroupLag.ParkedExceptions (a group with only deferred rows is
+        NOT drained), plus the matching otel gauge.
+      - Accepted costs: a non-head 'deferred' row waits out its key's
+        lease (≤ one term) before auditing 'superseded'; a 'deferred'
+        row is claimable only after its range commits (bounded by that
+        range's slowest sibling — Defer is cadence-based, not
+        latency-sensitive); an Allow message sharing a key with Defer
+        messages waits out an unexpired key_lease before its exception
+        retry claims. Honesty caveat kept in godoc: the per-attempt
+        token fences the RELEASE only — overlap protection is as
+        strong as consumerFunc's ctx-respect, no stronger.
+      - REJECTED on the way (full failure chains in the chunk plan,
+        don't revive): the one-active-deferred partial unique index +
+        mark-older-at-write choreography (23505-as-control-flow;
+        dispatch-time writes created leftover-row states that broke
+        commit's bare-INSERT premise); a dedicated deferred-marker
+        table; logging busy requeues (delivery_log PK); the
+        *WithKeyClaim method-pair split; FOR SHARE on the head row;
+        scheduler-side enforcement; Forbid.
+      Proofs: deferlab 13 sections (incl. the torture section: two
+      cursor + two exception consumers fight one key through an
+      abandoned past-Timeout holder and head churn — the final head
+      runs exactly once, every other version audits out 'superseded'
+      or is claim-time compacted, nothing left unresolved) +
+      keyleaselab; full fresh-DB suite green 2026-07-31.
 
 - [ ] **`cron_job` + job scheduler + `job_request` topic** —
       k8s-cronjob-shaped scheduled work as a generic system.
@@ -5606,7 +5652,9 @@ is the other half of the parked LIFECYCLE path's revival story: Phase 12
 gives the revived delivery table its ordering **constraint** (per-key FIFO);
 this section gives it its ordering **policy** (priority, delay, load
 shedding). The defer feature is the only user-facing ask so far, and it is
-FEATURE ONLY — no impl decided.*
+FEATURE ONLY — no impl decided. A revived lifecycle path must also wire
+the exclusive-consumption key gate (`consumerBase.claimKeyedRun`) —
+DeliveryConsumer predates it and would run keyed Defer messages ungated.*
 
 **Concept:** consumers currently control neither WHEN a message comes back
 nor WHICH pending message runs next. Time: returning an error is the only

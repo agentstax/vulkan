@@ -69,9 +69,13 @@ type ProduceOptions struct {
 }
 
 // Validate rejects nonsensical option combinations.
+// Mus be called after Fill().
 func (o ProduceOptions) Validate() error {
 	if o.CompactionRank != 0 && o.CompactionKey == "" {
 		return fmt.Errorf("CompactionRank %d set without CompactionKey -- rank has nothing to rank, set CompactionKey too", o.CompactionRank)
+	}
+	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyDefer && o.CompactionKey == "" {
+		return errors.New("Concurrency 'defer' set without CompactionKey -- defer has nothing to defer on, set CompactionKey too")
 	}
 	if err := o.Message.Validate(); err != nil {
 		return fmt.Errorf("Message: %w", err)
@@ -206,10 +210,10 @@ func (p *Producer[Message]) Produce(ctx context.Context, message *Message, opts 
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
+	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
@@ -226,10 +230,10 @@ func (p *Producer[Message]) ProduceFunc(ctx context.Context, producerFunc Produc
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
+	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 
 	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 	if err != nil {
@@ -254,10 +258,10 @@ func (p *Producer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc
 	if err := p.lifecycleErr(); err != nil {
 		return nil, err
 	}
+	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 
 	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }

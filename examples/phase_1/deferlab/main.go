@@ -26,6 +26,11 @@
 //   - a failed holder's retry passes the key gate and resolves superseded once
 //     a newer head exists, its claim-time attempts increment decremented back.
 //   - a crashed holder's expired key lease: redemption takes the key over.
+//   - Concurrency Defer without a CompactionKey is refused at produce time.
+//   - torture: two cursor consumers and two exception consumers fight one key
+//     through an abandoned (past-Timeout) holder and head churn -- only the
+//     final head ever runs, exactly once, every other version audits out
+//     'superseded'.
 //   - destroying the topic drops the delivery table cleanly.
 package main
 
@@ -272,7 +277,7 @@ func main() {
 	fmt.Println("  ✓ key freed, 'ready' row, status failure")
 
 	step("redemption: the stale 'deferred' row resolves superseded, the head runs and pops")
-	stopRedeem := startExceptionConsumer(ctx, tp.Name, "deferlab.g5", func(ctx context.Context, message *Rec) error {
+	stopRedeem := startExceptionConsumer(ctx, tp.Name, "deferlab.g5", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
@@ -307,7 +312,7 @@ func main() {
 	started8 := make(chan struct{})
 	release8 := make(chan struct{})
 	var once8 sync.Once
-	stopCursor8 := startConsumer(ctx, tp.Name, "deferlab.g8", 3, func(ctx context.Context, message *Rec) error {
+	stopCursor8 := startConsumer(ctx, tp.Name, "deferlab.g8", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:7" && message.Version == 1 {
 			once8.Do(func() { close(started8) })
 			<-release8
@@ -345,7 +350,7 @@ func main() {
 		die(fmt.Sprintf("a row whose compaction key has an unexpired key_lease must not be claimed, got status %q attempts %d", s, n))
 	}
 
-	stopRedeem8 := startExceptionConsumer(ctx, tp.Name, "deferlab.g8", func(ctx context.Context, message *Rec) error {
+	stopRedeem8 := startExceptionConsumer(ctx, tp.Name, "deferlab.g8", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
@@ -378,8 +383,8 @@ func main() {
 		}
 		return nil
 	}
-	stopCursor9 := startConsumer(ctx, tp.Name, "deferlab.g9", 3, failV1)
-	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "deferlab.g9", failV1)
+	stopCursor9 := startConsumer(ctx, tp.Name, "deferlab.g9", nil, 3, failV1)
+	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "deferlab.g9", nil, failV1)
 	publish(ctx, wp, "u:8", 1, common.ConcurrencyDefer)
 	v8old := messageID(ctx, "u:8", 1)
 	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "ready" }, "v1 to fail and go 'ready'")
@@ -414,11 +419,11 @@ func main() {
 	execSql(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, g10)
 	publish(ctx, wp, "u:10", 1, common.ConcurrencyDefer)
 	v10 := messageID(ctx, "u:10", 1)
-	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", 3, func(ctx context.Context, message *Rec) error {
+	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
-	stopRedeem10 := startExceptionConsumer(ctx, tp.Name, "deferlab.g10", func(ctx context.Context, message *Rec) error {
+	stopRedeem10 := startExceptionConsumer(ctx, tp.Name, "deferlab.g10", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
@@ -431,6 +436,93 @@ func main() {
 	stopCursor10()
 	stopRedeem10()
 	fmt.Println("  ✓ deferred behind the crashed holder, ran after expiry via takeover")
+
+	step("Defer without a CompactionKey is refused at produce time")
+	if _, err := wp.Produce(ctx, &Rec{Version: 1}, producer.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyDefer}}); err == nil {
+		die("produce must refuse Defer without a CompactionKey")
+	}
+	fmt.Println("  ✓ refused")
+
+	step("torture: two consumers per loop fight one key through an abandoned holder and head churn")
+	g11 := groupID(ctx, cd, "deferlab.g11")
+	// a short per-message Timeout so v1's sleeping run is abandoned mid-hold --
+	// its failure recording frees the key while the goroutine sleeps on
+	tortureCfg := func() *consumer.ConsumerConfig {
+		return &consumer.ConsumerConfig{Message: &common.MessageOptions{Timeout: 500 * time.Millisecond}}
+	}
+	started11 := make(chan struct{})
+	var once11 sync.Once
+	tortureFunc := func(ctx context.Context, message *Rec) error {
+		record(message)
+		if message.Key == "u:11" && message.Version == 1 {
+			once11.Do(func() { close(started11) })
+			time.Sleep(2 * time.Second) // ignores ctx -- abandoned at Timeout
+		}
+		return nil
+	}
+	stopCursor11a := startConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), 3, tortureFunc)
+	stopCursor11b := startConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), 3, tortureFunc)
+	stopRedeem11a := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), tortureFunc)
+	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), tortureFunc)
+
+	publish(ctx, wp, "u:11", 1, common.ConcurrencyDefer)
+	tv1 := messageID(ctx, "u:11", 1)
+	<-started11 // v1 runs holding the key
+	publish(ctx, wp, "u:11", 2, common.ConcurrencyDefer)
+	publish(ctx, wp, "u:11", 3, common.ConcurrencyDefer)
+	publish(ctx, wp, "u:11", 4, common.ConcurrencyDefer)
+	tv2 := messageID(ctx, "u:11", 2)
+	tv3 := messageID(ctx, "u:11", 3)
+	tv4 := messageID(ctx, "u:11", 4)
+
+	// interleaving-robust: whichever versions deferred vs superseded at
+	// dispatch, the end state is fixed -- v4 runs and pops, everything else
+	// resolves without running, nothing is left unresolved
+	waitFor(func() bool {
+		return runCount("u:11", 4) == 1 &&
+			deliveryStatus(ctx, g11, tv4) == "" &&
+			deliveryStatus(ctx, g11, tv1) == "superseded" &&
+			deliveryCount(ctx, g11, "ready") == 0 &&
+			deliveryCount(ctx, g11, "inflight") == 0 &&
+			deliveryCount(ctx, g11, "deferred") == 0 &&
+			leaseCount(ctx, g11) == 0
+	}, "v4 to run once, v1's retry to resolve superseded, every row to resolve")
+	stopCursor11a()
+	stopCursor11b()
+	stopRedeem11a()
+	stopRedeem11b()
+
+	if n := runCount("u:11", 1); n != 1 {
+		die(fmt.Sprintf("the abandoned holder must have run exactly once, ran %d times", n))
+	}
+	if n := runCount("u:11", 4); n != 1 {
+		die(fmt.Sprintf("the final head must run exactly once across four racing consumers, ran %d times", n))
+	}
+	// a non-head ends one of three ways: claim-time compacted (no rows at
+	// all -- the documented silent drop), dispatch-superseded (log row only),
+	// or 'deferred' then redemption-superseded (delivery row + log row)
+	for version, id := range map[int]int64{2: tv2, 3: tv3} {
+		if ran("u:11", version) {
+			die(fmt.Sprintf("non-head v%d must never run", version))
+		}
+		status := deliveryStatus(ctx, g11, id)
+		if status != "superseded" && status != "" {
+			die(fmt.Sprintf("v%d must end superseded or dropped, got status %q", version, status))
+		}
+		sup := 0
+		for _, s := range logStatuses(ctx, g11, id) {
+			if s == "superseded" {
+				sup++
+			}
+		}
+		if sup > 1 {
+			die(fmt.Sprintf("v%d must never audit more than one 'superseded' log row, got %d", version, sup))
+		}
+		if status == "superseded" && sup != 1 {
+			die(fmt.Sprintf("v%d's 'superseded' delivery row needs its log row, got %d", version, sup))
+		}
+	}
+	fmt.Printf("  ✓ v4 ran once, v1-v3 audited out superseded (v1=%d v2=%d v3=%d v4=%d)\n", tv1, tv2, tv3, tv4)
 
 	step("destroying the topic drops the delivery table")
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -476,13 +568,14 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 }
 
 // startConsumer runs a MessageConsumer for group until the returned stop is
-// called.
-func startConsumer(ctx context.Context, topicName, group string, pool int, consumerFunc consumer.ConsumerFunc[Rec]) func() {
-	cfg := &consumer.ConsumerConfig{
-		DisableGracefulShutdown: true,
-		BatchLimit:              50,
-		ClaimPollRate:           50 * time.Millisecond,
+// called. cfg may be nil.
+func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.ConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec]) func() {
+	if cfg == nil {
+		cfg = &consumer.ConsumerConfig{}
 	}
+	cfg.DisableGracefulShutdown = true
+	cfg.BatchLimit = 50
+	cfg.ClaimPollRate = 50 * time.Millisecond
 	queue, err := concurrency.NewPressureQueue[consumer.Buffered](50)
 	must(err)
 	limiter, err := concurrency.NewWorkerPoolLimiter(pool)
@@ -504,14 +597,15 @@ func startConsumer(ctx context.Context, topicName, group string, pool int, consu
 
 // startExceptionConsumer runs an ExceptionConsumer (exception retries +
 // deferred redemption, one claim) for group until the returned stop is
-// called.
-func startExceptionConsumer(ctx context.Context, topicName, group string, consumerFunc consumer.ConsumerFunc[Rec]) func() {
-	cfg := &consumer.ConsumerConfig{
-		DisableGracefulShutdown: true,
-		BatchLimit:              50,
-		ClaimPollRate:           50 * time.Millisecond,
-		ExceptionInitialBackoff: 50 * time.Millisecond,
+// called. cfg may be nil.
+func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *consumer.ConsumerConfig, consumerFunc consumer.ConsumerFunc[Rec]) func() {
+	if cfg == nil {
+		cfg = &consumer.ConsumerConfig{}
 	}
+	cfg.DisableGracefulShutdown = true
+	cfg.BatchLimit = 50
+	cfg.ClaimPollRate = 50 * time.Millisecond
+	cfg.ExceptionInitialBackoff = 50 * time.Millisecond
 	ec, err := consumer.NewExceptionConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
 	must(err)
 	must(ec.Register(ctx))
@@ -531,6 +625,12 @@ func record(message *Rec) {
 	runsMu.Lock()
 	defer runsMu.Unlock()
 	runs[fmt.Sprintf("%s:%d", message.Key, message.Version)]++
+}
+
+func runCount(key string, version int) int {
+	runsMu.Lock()
+	defer runsMu.Unlock()
+	return runs[fmt.Sprintf("%s:%d", key, version)]
 }
 
 func ran(key string, version int) bool {

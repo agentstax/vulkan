@@ -11,8 +11,8 @@ import (
 type ConcurrencyPolicy string
 
 const (
-	ConcurrencyAllow ConcurrencyPolicy = "allow" // current key busy -> new same-keyed message run concurrently
-	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message is queued to run after current finishes
+	ConcurrencyAllow ConcurrencyPolicy = "allow" // current key busy -> new same-keyed message runs concurrently
+	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message waits; when the key frees, only the key's most recent head runs
 )
 
 func (p ConcurrencyPolicy) Validate() error {
@@ -31,9 +31,9 @@ func (p ConcurrencyPolicy) Validate() error {
 // - consumer clamp > produced message > consumer defaults > system defaults
 // Messages REQUEST, consumers PROTECT THEMSELVES.
 type MessageOptions struct {
-	// Concurrency - Concurrency policy for this message's compaction key.
-	// Requires a CompactionKey.
-	// Default: ConcurrencyAllow (allow overlapping concurrent per-key processing)
+	// Concurrency - concurrency policy for this message's compaction key.
+	// Requires a CompactionKey -- Defer without one errors at produce time.
+	// Default: ConcurrencyAllow (same-key deliveries may overlap).
 	Concurrency ConcurrencyPolicy `json:"concurrency,omitempty"`
 
 	// Timeout - how long this message's consumerFunc may run.

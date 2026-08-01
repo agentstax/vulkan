@@ -21,6 +21,7 @@ type consumerGroupGauges struct {
 	inflight           metric.Int64ObservableGauge
 	readyExceptions    metric.Int64ObservableGauge
 	inflightExceptions metric.Int64ObservableGauge
+	deferredExceptions metric.Int64ObservableGauge
 	deadExceptions     metric.Int64ObservableGauge
 	oldestUnackedAge   metric.Int64ObservableGauge
 	openLeases         metric.Int64ObservableGauge
@@ -98,6 +99,15 @@ func (m *Monitor) RegisterConsumerGroup(group string, topicID int64, topicName s
 		return err
 	}
 
+	deferredExceptions, err := m.meter.Int64ObservableGauge(
+		"vulkan.consumer.queue_state.deferred_exceptions",
+		metric.WithDescription("Delivery rows waiting for their compaction key's key_lease to free."),
+		metric.WithUnit("{exception}"),
+	)
+	if err != nil {
+		return err
+	}
+
 	deadExceptions, err := m.meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.dead_exceptions",
 		metric.WithDescription("Dead-lettered delivery rows -- DLQ size."),
@@ -109,7 +119,7 @@ func (m *Monitor) RegisterConsumerGroup(group string, topicID int64, topicName s
 
 	oldestUnackedAge, err := m.meter.Int64ObservableGauge(
 		"vulkan.consumer.queue_state.oldest_unacked_age",
-		metric.WithDescription("Age of the oldest ready/inflight exception; 0 if none outstanding."),
+		metric.WithDescription("Age of the oldest ready/inflight/deferred exception; 0 if none outstanding."),
 		metric.WithUnit("ms"),
 	)
 	if err != nil {
@@ -137,6 +147,7 @@ func (m *Monitor) RegisterConsumerGroup(group string, topicID int64, topicName s
 		inflight:           inflight,
 		readyExceptions:    readyExceptions,
 		inflightExceptions: inflightExceptions,
+		deferredExceptions: deferredExceptions,
 		deadExceptions:     deadExceptions,
 		oldestUnackedAge:   oldestUnackedAge,
 		openLeases:         openLeases,
@@ -156,6 +167,7 @@ func (m *Monitor) RegisterConsumerGroup(group string, topicID int64, topicName s
 		inflight,
 		readyExceptions,
 		inflightExceptions,
+		deferredExceptions,
 		deadExceptions,
 		oldestUnackedAge,
 		openLeases,
@@ -164,8 +176,8 @@ func (m *Monitor) RegisterConsumerGroup(group string, topicID int64, topicName s
 }
 
 // observe is the callback behind every gauge above -- one
-// ConsumerGroupSnapshot call per collection cycle feeds all ten instruments,
-// not one query per instrument.
+// ConsumerGroupSnapshot call per collection cycle feeds all
+// instruments, not one query per instrument.
 func (g *consumerGroupGauges) observe(ctx context.Context, o metric.Observer) error {
 	snapshot, err := g.monitor.Datastore.ConsumerGroupSnapshot(ctx, g.topicID, g.group)
 	if err != nil {
@@ -179,6 +191,7 @@ func (g *consumerGroupGauges) observe(ctx context.Context, o metric.Observer) er
 	o.ObserveInt64(g.inflight, snapshot.Inflight, g.attrs)
 	o.ObserveInt64(g.readyExceptions, snapshot.ReadyExceptions, g.attrs)
 	o.ObserveInt64(g.inflightExceptions, snapshot.InflightExceptions, g.attrs)
+	o.ObserveInt64(g.deferredExceptions, snapshot.DeferredExceptions, g.attrs)
 	o.ObserveInt64(g.deadExceptions, snapshot.DeadExceptions, g.attrs)
 	o.ObserveInt64(g.oldestUnackedAge, snapshot.OldestUnackedAge.Milliseconds(), g.attrs)
 	o.ObserveInt64(g.openLeases, snapshot.OpenLeases, g.attrs)

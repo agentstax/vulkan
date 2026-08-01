@@ -76,8 +76,8 @@ type MessageSuperseded struct {
 }
 
 // one keyed message from a claimed range that never ran because another
-// delivery held its key -- the commit writes its 'deferred' delivery row and
-// log row.
+// delivery held its key -- the range commit writes its 'deferred' delivery
+// row and log row.
 type MessageDeferred struct {
 	MessageId int64
 	Err       string
@@ -940,7 +940,8 @@ func (d *ConsumerDatastore[Message]) killExceptions(ctx context.Context, topicID
 					status = 'dead',
 					lease_token = NULL,
 					lease_until = NULL,
-					updated_at = now()
+					updated_at = now(),
+					last_error = concat(last_error, ' [killed: crash-loop hit max attempts]')
 				WHERE consumer_group_id = $1
 					AND status = 'inflight'
 					AND lease_until < now()
@@ -948,7 +949,7 @@ func (d *ConsumerDatastore[Message]) killExceptions(ctx context.Context, topicID
 				RETURNING consumer_group_id, message_id, attempts, last_error
 			)
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
-			SELECT consumer_group_id, message_id, attempts, 'killed', concat('crash-loop hit max attempts; last error: ', last_error)
+			SELECT consumer_group_id, message_id, attempts, 'killed', last_error
 			FROM killed;
 		`, topic.DeliveryTable(topicID), topic.DeliveryLogTable(topicID))
 	}
@@ -1305,11 +1306,10 @@ type KeyLeaseClaim struct {
 }
 
 // ClaimKeyLease attempts to acquire the exclusive right to run a keyed
-// message.
-// Acquired guarantees the message was still its key's compaction head
-// AFTER the lease was won.
-// An expired lease is never freed, only taken over by the next claim on
-// its key or deleted by janitor sweep.
+// message. Acquired guarantees the message was still its key's compaction
+// head after the lease was won.
+// Expiry does not stop a holder: the next claim on the key takes the lease
+// over, and the two runs can overlap until the old one returns.
 func (d *ConsumerDatastore[Message]) ClaimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration) (*KeyLeaseClaim, error) {
 	// generated once, outside the retry loop -- see the token match in claimSql
 	token, err := uuid.NewV7()
