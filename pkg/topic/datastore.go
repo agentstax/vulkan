@@ -510,6 +510,7 @@ func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64
 	//   - 'failure': the attempt ran and returned an error
 	//   - 'superseded': dropped unrun -- a newer message on its compaction key exists
 	//   - 'deferred': never ran -- another delivery held its compaction key
+	//   - 'expired': a claim's lease ran out with no outcome recorded -- logged by the claim that takes the row over
 	//   - 'killed': dead-lettered by the crash-loop backstop
 	createDeliveryLogSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (

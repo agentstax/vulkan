@@ -121,7 +121,7 @@ func main() {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, tp.DisableDeliveryLog)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))

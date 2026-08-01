@@ -26,7 +26,7 @@ failures partial-commit and move on).
 
 Look into using BRIN index for different tables
 
-consider abstracting out the claim fence transaction xmax logic into its own async ticker and claimers read from shared mem var. It would better abstract away that complex logic and we can have the poll rate much faster because it is a pretty cheap query
+*REALLY WANT* consider abstracting out the claim fence transaction xmax logic into its own async ticker and claimers read from shared mem var. It would better abstract away that complex logic and we can have the poll rate much faster because it is a pretty cheap query
 
 A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
@@ -35,6 +35,8 @@ A Shadow or Mirror functionality - ie watch exactly the same cursor for cursor g
 Consider storing messages a binary data (maybe as an compressed option). Would prevent users from easily searching fields in db but could make for more efficent network requests and faster unmarshalling if we did something similar to protocol buffers (grpc). https://github.com/Apaezmx/pgproto
 
 How could we generalize this system to be a debezium like replication system. ie which a generic table and stream data to ??? (different table etc)
+
+*REALLY WANT* our exception claiming logic really does need a complete revamp. It should better follow our topic / cursor logic instead of being queue based we end up having a lot of custom logic because of that. The problem with converting it is we would really need the async ordered-index claim table such that we could have a materialized ordered view. The thought is with cursor: exception message is tried and fails -> pushed to unordered topic -> unordered topic materialized new retry attempt to top of ordered-index which is picked up soon because materilization is only slightly ahead of claiming (some buffer size like how our claiming buffer works)
 
 ## BEFORE V1
 

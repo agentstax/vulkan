@@ -145,7 +145,7 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease)
+	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, tp.DisableDeliveryLog)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))

@@ -112,7 +112,7 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 		return err
 	}
 
-	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit, p.Config.MessageMax.Retry.MaxRetries, leaseDuration)
+	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit, p.Config.MessageMax.Retry.MaxRetries, leaseDuration, p.Topic.DisableDeliveryLog)
 	if err != nil {
 		return err
 	}
@@ -130,11 +130,18 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 func (p *ExceptionConsumer[Message]) processException(ctx context.Context, exception *ClaimedException, consumerFunc ConsumerFunc[Message]) error {
 	resolvedOptions := p.Config.resolveMessageOptions(exception.Options)
 
-	// sat behind the batch too long to safely start -- skipping beats risking
-	// a lease overrun (another worker re-claiming while this run is in flight)
-	if exception.LeaseUntil.Before(time.Now().Add(resolvedOptions.Timeout + p.Config.TimeoutGrace + p.Config.AckMargin)) {
-		p.Logger.WarnContext(ctx, "lease expiring before the run could finish, skipped for reclaim", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
-		return nil
+	// sat behind the batch too long for the lease to cover a full run
+	// try to renew it rather than start a run the lease can't protect
+	leaseDuration := resolvedOptions.Timeout + p.Config.TimeoutGrace + p.Config.AckMargin
+	if exception.LeaseUntil.Before(time.Now().Add(leaseDuration)) {
+		renewed, err := p.Datastore.RenewExceptionLease(ctx, exception, leaseDuration)
+		if err != nil {
+			return err
+		}
+		if !renewed {
+			p.Logger.DebugContext(ctx, "lease lost before the run started, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+			return nil
+		}
 	}
 
 	var keyClaim *KeyLeaseClaim
@@ -148,7 +155,7 @@ func (p *ExceptionConsumer[Message]) processException(ctx context.Context, excep
 			return p.recordSuperseded(ctx, exception)
 		case verdict == dispatchDeferred:
 			// our lease expired in the batch queue and another worker re-claimed it
-			p.Logger.WarnContext(ctx, "key busy at gate, delivery re-claimed by new owner, ceded", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
+			p.Logger.WarnContext(ctx, "key busy at gate, delivery re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
 			return nil
 		}
 		keyClaim = claim
@@ -181,7 +188,7 @@ func (p *ExceptionConsumer[Message]) recordSuccess(ctx context.Context, exceptio
 	err := p.Datastore.RecordExceptionSuccess(recordCtx, exception, keyClaim)
 	if errors.Is(err, ErrLeaseLost) {
 		// reclaimed by another worker -- not ours to record anymore
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err
@@ -198,7 +205,7 @@ func (p *ExceptionConsumer[Message]) recordFailure(ctx context.Context, exceptio
 
 	err := p.Datastore.RecordExceptionFailure(recordCtx, resolvedOptions.Retry, exception, runErr, p.Topic.DisableDeliveryLog, keyClaim)
 	if errors.Is(err, ErrLeaseLost) {
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err
@@ -215,7 +222,7 @@ func (p *ExceptionConsumer[Message]) recordTerminal(ctx context.Context, excepti
 
 	err := p.Datastore.RecordExceptionTerminal(recordCtx, exception, runErr, p.Topic.DisableDeliveryLog, keyClaim)
 	if errors.Is(err, ErrLeaseLost) {
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err
@@ -224,7 +231,7 @@ func (p *ExceptionConsumer[Message]) recordTerminal(ctx context.Context, excepti
 func (p *ExceptionConsumer[Message]) recordSuperseded(ctx context.Context, exception *ClaimedException) error {
 	err := p.Datastore.RecordExceptionSuperseded(ctx, exception, p.Topic.DisableDeliveryLog)
 	if errors.Is(err, ErrLeaseLost) {
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, ceded to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err

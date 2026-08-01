@@ -5217,16 +5217,32 @@ scheduler; the resource-ownership model landed independently
         'deferred'@0. An unmarshal failure is immediately terminal
         (RecordExceptionTerminal). Busy at the gate provably means
         another worker re-claimed this very row (only a claimant of the
-        row can hold its key while the row is head) → warn + cede,
-        exactly like ErrLeaseLost, never a consumer teardown. Both
+        row can hold its key while the row is head) → warn + return
+        nil, exactly like ErrLeaseLost, never a consumer teardown. Both
         consumer paths pre-check their claim's lease_until covers
-        Timeout+TimeoutGrace+AckMargin before starting — a row that sat
-        too long behind its batch is skipped for reclaim instead of
-        risking an avoidable overlapping run.
+        Timeout+TimeoutGrace+AckMargin before starting; the cursor path
+        surrenders its range (MarkStale), the exception path RENEWS —
+        RenewExceptionLease, a token-fenced lease_until UPDATE (the SQS
+        ChangeMessageVisibility shape): matched → the claim is still
+        ours, run on the attempt already incremented; 0 rows → the
+        token rotated, another claim owns the row, return nil. A skip-that-
+        keeps-the-increment was rejected: it burned attempts by queue
+        position until the kill backstop dead-lettered rows that never
+        ran once.
       - Audit story: delivery_log status ∈
-        'failure'|'superseded'|'deferred'|'killed'; every deferred fate
-        ends recorded (ran, failed, or superseded); the ONLY silent
-        drop is claim-time compaction. Waterline blockers =
+        'failure'|'superseded'|'deferred'|'expired'|'killed'; INVARIANT
+        (user-set): no attempt number ever vanishes — every attempts
+        increment ends in exactly one log row or the row's
+        success-deletion. The lost-claim case is closed by the party
+        that discovers it: ClaimExceptions' expired-'inflight' arm logs
+        'expired' at the row's pre-increment attempts in the claim
+        statement itself (an expired 'inflight' row's current attempt
+        number is provably unlogged — any recorded outcome would have
+        moved the row off 'inflight' — and the token fence keeps the
+        lost claimer from ever logging it later); the ≥max sibling of
+        that population gets 'killed'@attempts from the backstop, same
+        convention. Every deferred fate ends recorded (ran, failed, or
+        superseded); the ONLY silent drop is claim-time compaction. Waterline blockers =
         ('ready','inflight','deferred') — an unredeemed 'deferred' row
         pins committed, which also pins its message against partition
         truncation. Metrics: ConsumerGroupSnapshot gained
@@ -5712,6 +5728,15 @@ Key decisions already made in discussion:
   dedicated delivery-row columns vs the `headers` JSONB that 7b would add
   (its GIN bullet already flags headers as the candidate substrate for
   delays/tiers/shedding if they ever want to be header-driven).
+
+THINGS TO THINK ON WHEN GET HERE:
+- We could potentially redo both our concurrency deferal logic and our 
+exception claiming logic with this ordered index claim table.
+- retries are put into unordered index then materialized into order index
+such that they may not be run immedatiely after but they would be run soon
+after a failed previous retry
+- Additionally concurrent defer just 'waits' to put the deferral into the ordered
+index until once the compaction key is freed, such that it is claimed soon after
 
 **Overload policies (folded from the Uber resilient-DB notes —
 https://www.youtube.com/watch?v=g7FmEc5GLWs&t=387s — worth studying

@@ -371,7 +371,7 @@ func (p *MessageConsumer[Message]) commitRange(ctx context.Context, commit *rang
 	case err == nil:
 		p.buffer.Remove(commit.Lease.Token)
 	case errors.Is(err, ErrLeaseLost):
-		p.Logger.DebugContext(ctx, "lease lost at commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", commit.Lease.Low, "high", commit.Lease.High)
+		p.Logger.DebugContext(ctx, "lease lost at commit, range re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", commit.Lease.Low, "high", commit.Lease.High)
 		p.buffer.Remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
 	default:
 		// stays tracked -- CloseOpenRanges retries it on the way out
@@ -394,7 +394,7 @@ func (p *MessageConsumer[Message]) CursorPartialCommit(ctx context.Context, last
 	// range (including the already-resolved prefix) to sit out a full reclaim.
 	if err := p.Datastore.PartialCommit(commitCtx, p.Topic.Id, p.Group.Id, lease.Token, lastProcessed, exceptions, terminals, superseded, deferred, p.Config.ExceptionInitialBackoff, p.Topic.DisableDeliveryLog); err != nil {
 		if errors.Is(err, ErrLeaseLost) {
-			p.Logger.DebugContext(ctx, "lease lost at partial commit, ceded range to new owner", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", lease.Low, "high", lease.High)
+			p.Logger.DebugContext(ctx, "lease lost at partial commit, range re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 		// commitCtx expiring mid-call and PartialCommit's own DB error are

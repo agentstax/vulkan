@@ -121,7 +121,7 @@ func (d *dutyRunner) tick(ctx context.Context, work func(context.Context) error)
 			d.logger.WarnContext(releaseCtx, "duty release failed on shutdown -- next run waits out the interval", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId, "error", err)
 		}
 	case errors.Is(err, ErrDutyLost) || errors.Is(context.Cause(workCtx), ErrDutyLost):
-		d.logger.InfoContext(ctx, "duty ceded mid-run to another maintainer", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId)
+		d.logger.InfoContext(ctx, "duty claim taken over mid-run by another maintainer", "duty", d.kind, "topic", d.owner.TopicId, "group", d.owner.ConsumerGroupId)
 	default:
 		delay, backoffErr := d.ds.BackoffDuty(ctx, claim)
 		if backoffErr != nil && !errors.Is(backoffErr, ErrDutyLost) {

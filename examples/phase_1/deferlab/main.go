@@ -334,7 +334,7 @@ func main() {
 	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
 		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
 	}
-	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second); err != nil {
+	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, false); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if n := deliveryAttempts(ctx, g8, v7); n != 99 {
@@ -343,7 +343,7 @@ func main() {
 	// the unexpired key_lease alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
 	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
-	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second); err != nil {
+	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, false); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
