@@ -130,6 +130,13 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 func (p *ExceptionConsumer[Message]) processException(ctx context.Context, exception *ClaimedException, consumerFunc ConsumerFunc[Message]) error {
 	resolvedOptions := p.Config.resolveMessageOptions(exception.Options)
 
+	// sat behind the batch too long to safely start -- skipping beats risking
+	// a lease overrun (another worker re-claiming while this run is in flight)
+	if exception.LeaseUntil.Before(time.Now().Add(resolvedOptions.Timeout + p.Config.TimeoutGrace + p.Config.AckMargin)) {
+		p.Logger.WarnContext(ctx, "lease expiring before the run could finish, skipped for reclaim", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		return nil
+	}
+
 	var keyClaim *KeyLeaseClaim
 	if exception.CompactionKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
 		verdict, claim, err := p.claimKeyedRun(ctx, exception.CompactionKey, exception.MessageId, resolvedOptions)
@@ -140,8 +147,9 @@ func (p *ExceptionConsumer[Message]) processException(ctx context.Context, excep
 		case verdict == dispatchSuperseded:
 			return p.recordSuperseded(ctx, exception)
 		case verdict == dispatchDeferred:
-			// this technically should not happen with exception claiming logic
-			return fmt.Errorf("key gate returned busy for claimed message %d (key %q): ClaimExceptions must not claim a delivery whose compaction key has an unexpired key_lease", exception.MessageId, exception.CompactionKey)
+			// our lease expired in the batch queue and another worker re-claimed it
+			p.Logger.WarnContext(ctx, "key busy at gate, delivery re-claimed by new owner, ceded", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
+			return nil
 		}
 		keyClaim = claim
 	}

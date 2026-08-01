@@ -12,6 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -90,6 +91,7 @@ type ClaimedException struct {
 	MessageId       int64                  `db:"message_id"`
 	Attempts        int                    `db:"attempts"`
 	LeaseToken      pgtype.UUID            `db:"lease_token"`
+	LeaseUntil      time.Time              `db:"lease_until"`
 	Payload         json.RawMessage        `db:"payload"`
 	CreatedAt       time.Time              `db:"created_at"`
 	RoutingKey      string                 `db:"routing_key"`
@@ -1005,7 +1007,7 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 				LIMIT $2
 				FOR UPDATE OF d SKIP LOCKED
 			)
-			RETURNING consumer_group_id, message_id, attempts, lease_token
+			RETURNING consumer_group_id, message_id, attempts, lease_token, lease_until
 		)
 		SELECT
 			c.consumer_group_id,
@@ -1013,6 +1015,7 @@ func (d *ConsumerDatastore[Message]) claimExceptions(ctx context.Context, topicI
 			c.message_id,
 			c.attempts,
 			c.lease_token,
+			c.lease_until,
 			m.payload,
 			m.created_at,
 			COALESCE(m.routing_key, '') AS routing_key,
@@ -1308,16 +1311,22 @@ type KeyLeaseClaim struct {
 // An expired lease is never freed, only taken over by the next claim on
 // its key or deleted by janitor sweep.
 func (d *ConsumerDatastore[Message]) ClaimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration) (*KeyLeaseClaim, error) {
+	// generated once, outside the retry loop -- see the token match in claimSql
+	token, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
 	var claim *KeyLeaseClaim
-	err := d.DatastoreRetry.Wrap(ctx, func() error {
+	err = d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claim, err = d.claimKeyLease(ctx, topicID, groupID, key, messageID, duration)
+		claim, err = d.claimKeyLease(ctx, topicID, groupID, key, messageID, duration, pgtype.UUID{Bytes: token, Valid: true})
 		return err
 	})
 	return claim, err
 }
 
-func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration) (*KeyLeaseClaim, error) {
+func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseClaim, error) {
 	// the head check gates the insert -- a superseded message never creates
 	// or locks a lease row.
 	claimSql := `
@@ -1328,13 +1337,15 @@ func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID 
 				AND compaction_key = $2
 		), attempt AS (
 			INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at)
-			SELECT $3, $2, gen_random_uuid(), now() + make_interval(secs => $5)
+			SELECT $3, $2, $6, now() + make_interval(secs => $5)
 			WHERE EXISTS (SELECT 1 FROM head WHERE head_id = $4)
 			ON CONFLICT (consumer_group_id, compaction_key) DO UPDATE
 			SET
-				lease_token = gen_random_uuid(),
+				lease_token = $6,
 				expires_at = now() + make_interval(secs => $5)
-			WHERE key_lease.expires_at < now()
+			-- the token match lets a retry after an ambiguous commit re-take its
+			-- own lease instead of reading it as busy
+			WHERE key_lease.expires_at < now() OR key_lease.lease_token = $6
 			RETURNING lease_token
 		)
 		SELECT
@@ -1342,23 +1353,31 @@ func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID 
 			(SELECT lease_token FROM attempt);
 	`
 
-	// the claimSql head CTE snapshot could be stale on the INSERT
-	// that follows, this verifies head snapshot hasn't changed
+	// the claimSql head CTE snapshot could be stale on the INSERT that
+	// follows -- this rechecks with a fresh snapshot and deletes the
+	// acquisition if the head moved. So a failed batch rolls the insert
+	// back instead of orphaning the lease.
 	recheckSql := `
-		SELECT head_id
-		FROM compaction_head
-		WHERE topic_id = $1
-			AND compaction_key = $2;
+		DELETE FROM key_lease
+		WHERE consumer_group_id = $3
+			AND compaction_key = $2
+			AND lease_token = $5
+			AND NOT EXISTS (
+				SELECT 1
+				FROM compaction_head
+				WHERE topic_id = $1
+					AND compaction_key = $2
+					AND head_id = $4
+			);
 	`
 
 	// one round trip
 	batch := &pgx.Batch{}
-	batch.Queue(claimSql, topicID, key, groupID, messageID, duration.Seconds())
-	batch.Queue(recheckSql, topicID, key)
+	batch.Queue(claimSql, topicID, key, groupID, messageID, duration.Seconds(), token)
+	batch.Queue(recheckSql, topicID, key, groupID, messageID, token)
 
 	claim := KeyLeaseClaim{ConsumerGroupId: groupID, CompactionKey: key}
 	var isHead bool
-	var recheckHead int64
 
 	// claimSql
 	results := d.Datastore.Pool.SendBatch(ctx, batch)
@@ -1368,8 +1387,8 @@ func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID 
 	}
 
 	// recheckSql
-	err := results.QueryRow().Scan(&recheckHead)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) { // no head row -> recheckHead stays 0 -> head moved
+	recheckTag, err := results.Exec()
+	if err != nil {
 		results.Close()
 		return nil, err
 	}
@@ -1382,17 +1401,12 @@ func (d *ConsumerDatastore[Message]) claimKeyLease(ctx context.Context, topicID 
 		claim.Verdict = KeyLeaseSuperseded
 	case !claim.Token.Valid:
 		claim.Verdict = KeyLeaseBusy
-	default:
-		claim.Verdict = KeyLeaseAcquired
-	}
-
-	// the head moved mid-claim -- the newer version must run, not this one
-	if claim.Verdict == KeyLeaseAcquired && recheckHead != messageID {
-		if _, err := d.releaseKeyLease(ctx, d.Datastore.Pool, &claim); err != nil {
-			return nil, err
-		}
+	case recheckTag.RowsAffected() > 0:
+		// the head moved mid-claim -- the newer version must run, not this one
 		claim.Verdict = KeyLeaseSuperseded
 		claim.Token = pgtype.UUID{}
+	default:
+		claim.Verdict = KeyLeaseAcquired
 	}
 	return &claim, nil
 }
