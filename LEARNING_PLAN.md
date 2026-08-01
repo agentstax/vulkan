@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1; generic-systems refactor folded in 2026-07-29 from `refactor-plan.md` (delete that file when done): `retry.Policy` consolidation (count inside the policy, root `MaxAttempts` deleted), MessageOptions + `Message`/`MessageMin`/`MessageMax` config trio + `IgnoreExclusive` veto, resource-ownership model (entity table built then deleted; FK ownership chain + owner-column polymorphic tables + `common.Owner`, done), exclusive consumption (`key_lease`, `Exclusive: Skip|Defer`, supersede-before-lease, 'superseded'/'deferred' kinds), `cron_job` + 1-min scheduler + compacted `job_request` topic |
+| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1; generic-systems refactor folded in 2026-07-29 from `refactor-plan.md` (delete that file when done): `retry.Policy` consolidation (count inside the policy, root `MaxAttempts` deleted), MessageOptions + `Message`/`MessageMin`/`MessageMax` config trio + `ConcurrencyOverride` group-level override, resource-ownership model (entity table built then deleted; FK ownership chain + owner-column polymorphic tables + `common.Owner`, done), exclusive consumption (`key_lease`, `Concurrency: Allow|Defer`, supersede-before-lease, 'superseded'/'deferred' kinds), `cron_job` + 1-min scheduler + compacted `job_request` topic |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -5258,8 +5258,8 @@ scheduler; the resource-ownership model landed independently
         retry claims. Honesty caveat kept in godoc: the per-attempt
         token fences the RELEASE only — overlap protection is as
         strong as consumerFunc's ctx-respect, no stronger.
-      - REJECTED on the way (full failure chains in the chunk plan,
-        don't revive): the one-active-deferred partial unique index +
+      - REJECTED on the way (don't revive): the one-active-deferred
+        partial unique index +
         mark-older-at-write choreography (23505-as-control-flow;
         dispatch-time writes created leftover-row states that broke
         commit's bare-INSERT premise); a dedicated deferred-marker
@@ -5274,7 +5274,25 @@ scheduler; the resource-ownership model landed independently
       keyleaselab; full fresh-DB suite green 2026-07-31.
 
 - [ ] **`cron_job` + job scheduler + `job_request` topic** —
-      k8s-cronjob-shaped scheduled work as a generic system.
+      k8s-cronjob-shaped scheduled work as a generic system. Build plan:
+      `cron-plan.md` (repo root) — 4 chunks (registry + admin verbs →
+      job_request topic + scheduler duty + tick → run-now + derived
+      status + CLI → cronlab + close-out) plus the implementation
+      decisions to confirm before Chunk 1: schedule parsing =
+      robfig/cron's schedule core VENDORED into pkg/cron (no external
+      dep, runner files excluded, one marked time.Local→UTC diff),
+      `'scheduler'` duty kind riding maintain, pkg/cron layout,
+      `__system.job_requests`, `timeout_ns BIGINT` over INTERVAL,
+      compaction key = cron_job.id, and (2026-08-01 review) the
+      platform-wide DeliveryLog mode enum `'off'|'exceptions'|'all'`
+      replacing DisableDeliveryLog (default 'exceptions' = today;
+      'all' logs `'success'@attempts` in the success txns — success is
+      otherwise underivable, deletion leaves no row; job_requests runs
+      'all', hot topics never pay unless opted in) + name/handler slug
+      charset (dots cross-deliver through wildcard bindings).
+      Delete the plan at close-out; this
+      bullet resettles as-built, and closing this task also deletes
+      `refactor-plan.md`.
       - Schema (settled incl. hygiene; owner shape RESETTLED 2026-07-30
         after the entity table died): `id BIGSERIAL PRIMARY KEY`; owner
         = the maintenance/migration_log owner-column shape — nullable
@@ -5283,38 +5301,57 @@ scheduler; the resource-ownership model landed independently
         all NULL = standalone job) — GC metadata ONLY (k8s
         ownerReferences: "whose lifecycle I'm bound to"; the scheduler
         NEVER reads it, Postgres alone acts on it at destroy);
-        `common.Owner` is the Go currency for it; `name TEXT
+        `common.Owner` is the Go currency for it (nil *Owner = the
+        standalone all-NULL row — the constructors each require one
+        target); `name TEXT
         NOT NULL UNIQUE`; `handler TEXT NOT NULL` (which runner is
         valid, like image); `schedule TEXT NOT NULL` ('* * * * *');
         `concurrency TEXT NOT NULL DEFAULT 'allow'`
-        ('allow'|'forbid', 'defer' later) → maps to
-        MessageOptions.Exclusive; `timeout INTERVAL NOT NULL` (job
-        spec, the k8s activeDeadlineSeconds analogue — scheduler stamps
-        it into MessageOptions.WorkTimeout); `suspended BOOLEAN NOT NULL
+        ('allow'|'defer' — the shipped ConcurrencyPolicy values; 'forbid'
+        died with the exclusive-consumption build, see that bullet's
+        rejected list; k8s-Forbid intent maps to 'defer' — guaranteed
+        rerun, never a drop) → maps to MessageOptions.Concurrency ('defer'
+        requires a CompactionKey at produce time — satisfied, job_request's
+        compaction key is the cron_job identity); `timeout INTERVAL NOT
+        NULL` (job spec, the k8s activeDeadlineSeconds analogue — scheduler
+        stamps it into MessageOptions.Timeout); `suspended BOOLEAN NOT NULL
         DEFAULT false`; `data JSONB` (OPAQUE handler payload incl. the
         actual target, decoded only by handlers — never resource refs
         the system must act on; rejected: target refs inside data as
         the GC mechanism, opaque blobs are un-garbage-collectable —
         admin.Destroy can't find dependents it can't decode); `metadata
         JSONB` (labels/annotations); `next_scheduled_time TIMESTAMPTZ
-        NOT NULL`. Partial index `(next_scheduled_time) WHERE NOT
+        NOT NULL`; `last_scheduled_time TIMESTAMPTZ` (slot most recently
+        produced — tick-stamped scheduler truth, no consumer ever writes
+        cron_job). Partial index `(next_scheduled_time) WHERE NOT
         suspended` = the poll predicate. Also rejected: making
         cron_job itself an ownable resource (nothing references
         cron_jobs yet).
       - Registration validation — a SANITY check, not correctness
         (key_lease owns overlap): schedule parses; minimum firing gap >=
         timeout. Self-contained because timeout is the job's own spec —
-        no handler registry needed; consumer Grace/AckMargin are epsilon
-        and ignored; a consumer MessageMax clamping the request down
+        no handler registry needed; consumer TimeoutGrace/AckMargin are
+        epsilon and ignored; a consumer MessageMax clamping the request down
         only makes the check more conservative. Both errors land safe.
       - Scheduler: 1-min poll loop (anything sub-minute stays a
-        long-lived worker); one txn per tick: `SELECT ... WHERE
-        next_scheduled_time <= now() AND NOT suspended FOR UPDATE SKIP
-        LOCKED` → ProduceInTx (produce + advance commit atomically) →
-        `next_scheduled_time` computed FROM now() (missed runs are
-        dropped, fire once). The scheduler produces EVERY due slot
+        long-lived worker); unlocked due-scan then ONE TXN PER ROW
+        (2026-08-01 adversarial review — a shared tick txn lets one bad
+        row stall every job and holds ProduceInTx's whole-topic
+        consumer-progress lock for the tick): per row `SELECT ..., now()
+        WHERE id AND next_scheduled_time <= now() AND NOT suspended FOR
+        UPDATE SKIP LOCKED` (recheck) → ProduceInTx (produce + advance
+        commit atomically) → `next_scheduled_time = Next(db_now)` +
+        `last_scheduled_time = slot` stamped in the same UPDATE (missed
+        runs are dropped, fire once — and the slot fired is the NEWEST
+        due one, `for Next(slot) <= db_now { slot = Next(slot) }`, so
+        staleness after downtime is bounded by one firing gap, no
+        knob); ALL scheduler time arithmetic on
+        the DB clock (claimDuty precedent — Go/DB skew double-fires
+        tight schedules); row failures WARN + skip, only tick-level
+        errors back off the duty. The scheduler produces EVERY due slot
         unconditionally — concurrency policy is enforced at consume time
-        (rejected: scheduler-side forbid via a last_message_id
+        by the SHIPPED key_lease machinery, nothing new to build
+        (rejected: scheduler-side enforcement via a last_message_id
         resolved-check — dual enforcement layers). Unsuspend admin op
         RECOMPUTES next_scheduled_time from now() — resume on schedule,
         no surprise fire from the stale past-due timestamp (k8s
@@ -5326,9 +5363,11 @@ scheduler; the resource-ownership model landed independently
         v7-layout UUID — scheduled_time in the 48 timestamp bits,
         hash(cron_job.id) in the rest (preserves index locality); manual
         "run now" uses a RANDOM key so it doesn't dedupe against the
-        slot; the message is stamped with the slot time it represents.
+        slot, produced with Concurrency 'allow' — the deliberate-Allow-
+        on-a-Defer-key run-now idiom the exclusive-consumption bullet
+        records; the message is stamped with the slot time it represents.
         Handlers consume via the existing retry machinery and must
-        respect ctx cancellation (WorkTimeout).
+        respect ctx cancellation (the resolved MessageOptions.Timeout).
 
 **Done when:** every item above is either fixed or has a written decision,
 NOTES.md, `git tag phase-14a`.
@@ -5348,6 +5387,23 @@ it.*
       DestroyTopic and DestoryTopicVersion can only lead to confusion.
       Might be better consildate to just DestroyTopic with a version
       option for those power users who care.
+      **Decisions settled 2026-08-01** (target surface recorded in
+      repo-root public-surface.md; build pending):
+      (1) `concurrency` pkg hidden entirely — consumers build queue +
+      pool internally from `ConsumerConfig`, constructors drop the two
+      params (also removes the `consumer.Buffered` leak);
+      (2) all three sub-consumer constructors stay public;
+      (3) full `maintain` surface stays public;
+      (4) `migrate` pkg + both `migrations.Registry` vars move to
+      `internal/` — `admin.MigrateTopic(s)`/`MigrateSystem` are the only
+      user migration entry; CLI keeps access via the import-path prefix
+      rule (spans the nested module);
+      (5) `MigrateTopic` + `MigrateTopics` both stay — distinct ops;
+      (6) also demoted: `retry.NewDefaultRetryPolicy`/`IsRetryable`/
+      `RetryableFunc` (config `Retry` fields stay nil, `WithDefaults`
+      fills them) and `consumer.ConsumerType` + `CURSOR`/`LIFECYCLE` +
+      `ConsumerConfig.Type` (`NewConsumer` defaults to cursor;
+      LIFECYCLE reached via `NewDeliveryConsumer` directly).
 - [ ] **`Message` generic vs. a `struct{}`-based shape** for
       producer/consumer — decide and document.
 - [ ] **Named-return-params for public functions** — decide the house style
@@ -5697,8 +5753,8 @@ scheduling. Candidate shapes to evaluate when picked up (all open):
   defers can loop forever) and whether it writes a `delivery_log` row (no
   error happened).
 
-**The mechanism sketch — async ordered-index claim table** (for whenever
-the lifecycle path revives as the non-FIFO substrate; from the
+**The mechanism sketch — async ordered-index claim table (materialized topic)**
+(for whenever the lifecycle path revives as the non-FIFO substrate; from the
 LIFECYCLE-vs-CURSOR review): two-stage dispatch — `deliveries` stays the
 durable unordered backlog, an orderer process async top-ups a SMALL ordered
 ready-buffer per user policy (priority, delay, load shedding), and claims

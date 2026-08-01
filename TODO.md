@@ -26,7 +26,7 @@ failures partial-commit and move on).
 
 Look into using BRIN index for different tables
 
-*REALLY WANT* consider abstracting out the claim fence transaction xmax logic into its own async ticker and claimers read from shared mem var. It would better abstract away that complex logic and we can have the poll rate much faster because it is a pretty cheap query
+***REALLY WANT*** consider abstracting out the claim fence transaction xmax logic into its own async ticker and claimers read from shared mem var. It would better abstract away that complex logic and we can have the poll rate much faster because it is a pretty cheap query
 
 A specific DeadLetterTopic Consumer. You can consume on events to DLQ
 
@@ -36,7 +36,7 @@ Consider storing messages a binary data (maybe as an compressed option). Would p
 
 How could we generalize this system to be a debezium like replication system. ie which a generic table and stream data to ??? (different table etc)
 
-*REALLY WANT* our exception claiming logic really does need a complete revamp. It should better follow our topic / cursor logic instead of being queue based we end up having a lot of custom logic because of that. The problem with converting it is we would really need the async ordered-index claim table such that we could have a materialized ordered view. The thought is with cursor: exception message is tried and fails -> pushed to unordered topic -> unordered topic materialized new retry attempt to top of ordered-index which is picked up soon because materilization is only slightly ahead of claiming (some buffer size like how our claiming buffer works)
+***REALLY WANT*** our exception claiming logic really does need a complete revamp. It should better follow our topic / cursor logic instead of being queue based we end up having a lot of custom logic because of that. The problem with converting it is we would really need the async ordered-index claim table such that we could have a materialized ordered view. The thought is with cursor: exception message is tried and fails -> pushed to unordered topic -> unordered topic materialized new retry attempt to top of ordered-index which is picked up soon because materilization is only slightly ahead of claiming (some buffer size like how our claiming buffer works)
 
 ## BEFORE V1
 
@@ -104,3 +104,5 @@ pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is
 - really just the entire pkg/migrate codebase needs a comb through and update
 
 DONT FORGET - you just spent a lot of time making the cron jobs system a lot better we should make the same time investment for long lived background workers like janitor and waterline
+
+Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
