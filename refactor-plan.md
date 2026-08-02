@@ -231,6 +231,64 @@ Grep labs for hand-copied config/queries while sweeping (labs go silently stale)
 
 ---
 
+# worker system — CHUNK PLAN (2026-08-02)
+
+Generic worker system in a NEW pkg/worker. Do NOT retrofit pkg/maintain — duplicate
+its code into pkg/worker where it fits; maintain stays untouched until cleanup.
+Worker = first-class user resource; janitor/waterline/scheduler are just the built-in
+workers we ship.
+
+Model (settled in discussion):
+- worker row = what should run: name, owner, metadata (optional), target_instances
+  (2026-08-02: replaced min/max_instances — the claim gate reads ONE number, target;
+  0 = suspended. min/max are rails on whoever MUTATES target and return with the
+  alter surface / autoscaler, which don't exist yet)
+- worker_instance row = who's alive: id, worker_id, token, expires_at (heartbeat-renewed)
+- exclusivity moves claim-per-tick -> claim-per-instance: Register claims an instance
+  slot, heartbeat holds it, tick pacing is worker-internal (no per-tick claim race).
+  Slot claim MUST be one atomic statement (live-count + insert in one snapshot —
+  same race class as AdvanceWaterline).
+- factory pattern, codebase-wide invariant:
+  New* = pure factory, never touches the DB; Register = the only build step, callable
+  many times, RETURNS the product (an instance) instead of mutating the factory;
+  callers operate on what Register returned. Register outcomes: instance claimed /
+  declined (slots full — not an error, manager retries next reconcile) / error.
+- WorkerManager holds non-registered worker factories; spawn = Register per discovered
+  worker row + Run the returned instance.
+
+## chunks
+1. tables — worker + worker_instance DDL in the pkg/system baseline (edit in place).
+   Decide here: owner shape (explicit system_id/topic_id/consumer_group_id columns
+   mirroring maintenance vs owner_entity_id per the entity design above); where the
+   observable failure streak lives (today maintenance.attempts feeds DutySnapshots —
+   it must not silently vanish).
+2. NewWorker — pkg/worker: Worker/WorkerMetadata models + constructors, datastore
+   (list workers, get metadata, instance claim/renew/release, expired-instance reap).
+3. seeding — register paths write worker rows (topic register -> janitor, group
+   register -> waterline, RegisterSystem -> cron scheduler), ALONGSIDE the existing
+   maintenance seeds until cleanup.
+4. NewWorkerManager — reconcile loop adapted from fleet.go/dutypool.go; accepts
+   worker factories; spawns/destroys instances; reaps expired worker_instances.
+5. Janitor worker — sweep logic duplicated from maintain. EnsureNextPartition does
+   NOT come along (create-ahead is provisioning, not sweeping) — decide its new home
+   here (producer self-heal already covers misses).
+6. Waterline worker.
+7. CronScheduler worker — tick/produce logic duplicated from maintain/scheduler.go.
+8. consumer: replace maintainer — consumer registers/runs janitor + waterline workers
+   instead of maintain duties.
+9. consumer factory-style register — Consumer becomes the factory, Register returns a
+   consumer instance (enrolls its own worker_instance row + heartbeat), Consume lives
+   on the instance.
+10. producer factory-style register — same reshape as 9.
+11. metrics — DutySnapshots -> worker snapshots read from worker/worker_instance
+    (heartbeat + liveness based; cron-job metrics split out per TODO).
+12. CLI — `vulkan maintain run` daemon becomes the worker-based daemon.
+13. cleanup — delete pkg/maintain, maintenance DDL + seeds, metrics duty.go, CLI
+    maintain commands; rewrite labs (maintenancelab, dutybackofflab, scratchpad
+    schedlab); prune superseded TODO/plan notes.
+
+---
+
 ## open
 - implementation-shaped (deferred until work is picked up): consumer-side compaction-head
   read (inline datastore method per house style, no shared pkg), entity enrollment inserts

@@ -151,3 +151,7 @@ workerManager on start (spawn):
     janitorWorker.Register() <- many calls to register is valid and creates a unique 'instance' per register
     janitorWorker.Run()
   )
+
+should consider abstracting out WorkerManager into two: WorkerScheduler and WorkerSpawner
+- Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
+- WorkerSpawner would read topic and either spawn or destroy new instances depending

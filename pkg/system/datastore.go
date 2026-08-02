@@ -243,6 +243,59 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		return err
 	}
 
+	// workers: one row per background job that should be running
+	createWorkerSql := `
+		CREATE TABLE IF NOT EXISTS worker (
+			id BIGSERIAL PRIMARY KEY,
+			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
+			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
+			name TEXT NOT NULL,                      -- 'janitor' | 'waterline' | 'scheduler' | user-defined
+			metadata JSONB NOT NULL DEFAULT '{}',    -- per-worker tuning, seeded with defaults by whoever creates the row
+			target_instances INT NOT NULL DEFAULT 1, -- 0 = suspended
+			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
+			CHECK (target_instances >= 0)
+		);
+	`
+	if _, err := tx.Exec(ctx, createWorkerSql); err != nil {
+		return err
+	}
+
+	// one worker of each name per owner: system, topic, group
+	for _, indexSql := range []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS worker_topic_name ON worker (name, topic_id) WHERE topic_id IS NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS worker_group_name ON worker (name, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS worker_system_name ON worker (name, system_id) WHERE system_id IS NOT NULL;`,
+	} {
+		if _, err := tx.Exec(ctx, indexSql); err != nil {
+			return err
+		}
+	}
+
+	// worker instances: one row per live copy of a worker
+	createWorkerInstanceSql := `
+		CREATE TABLE IF NOT EXISTS worker_instance (
+			id BIGSERIAL PRIMARY KEY,
+			worker_id BIGINT NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
+			token UUID NOT NULL DEFAULT gen_random_uuid(), -- renew/release match on it, so only the creating instance can touch its row
+			expires_at TIMESTAMPTZ NOT NULL,               -- heartbeat-renewed; past it the instance is dead
+			attempts INT NOT NULL DEFAULT 0                -- consecutive run failures. resets on success
+		);
+	`
+	if _, err := tx.Exec(ctx, createWorkerInstanceSql); err != nil {
+		return err
+	}
+
+	// the two hot lookups: live instances per worker, expired rows
+	for _, indexSql := range []string{
+		`CREATE INDEX IF NOT EXISTS worker_instance_worker ON worker_instance (worker_id);`,
+		`CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at);`,
+	} {
+		if _, err := tx.Exec(ctx, indexSql); err != nil {
+			return err
+		}
+	}
+
 	// bindings: routing rules. A group with no binding matches all events; a
 	// group WITH a binding only receives events whose routing_key matches
 	// `pattern`.
