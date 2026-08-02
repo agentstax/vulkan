@@ -17,7 +17,7 @@ type WorkerData struct {
 	TopicId         *int64
 	ConsumerGroupId *int64
 	Name            string
-	Metadata        json.RawMessage
+	Metadata        any // pgx encodes to and decodes from JSONB
 	TargetInstances int
 }
 
@@ -29,6 +29,24 @@ type ListWorkersData struct {
 	OwnerTopicId  int64 // through the group for group-owned rows
 	TopicName     string
 	ConsumerGroup string
+}
+
+// InsertWorker creates the worker row; an existing (name, owner) row is left
+// untouched.
+func (d *WorkerDatastore) InsertWorker(ctx context.Context, data *WorkerData) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.insertWorker(ctx, data)
+	})
+}
+
+func (d *WorkerDatastore) insertWorker(ctx context.Context, data *WorkerData) error {
+	sql := `
+		INSERT INTO worker (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
+		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
+		ON CONFLICT DO NOTHING;
+	`
+	_, err := d.Datastore.Pool.Exec(ctx, sql, data.SystemId, data.TopicId, data.ConsumerGroupId, data.Name, data.Metadata, data.TargetInstances)
+	return err
 }
 
 // ListWorkers lists every worker seeded in the worker table.

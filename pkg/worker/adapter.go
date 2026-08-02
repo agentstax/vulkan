@@ -26,9 +26,21 @@ func toWorker(data datastore.ListWorkersData) (*Worker, error) {
 		Id:              data.Id,
 		Name:            data.Name,
 		Owner:           *owner,
-		Metadata:        string(data.Metadata),
+		Metadata:        data.Metadata,
 		TargetInstances: data.TargetInstances,
 	}, nil
+}
+
+func toWorkerData(w *Worker) *datastore.WorkerData {
+	return &datastore.WorkerData{
+		Id:              w.Id,
+		SystemId:        w.Owner.SystemIdColumn(),
+		TopicId:         w.Owner.TopicIdColumn(),
+		ConsumerGroupId: w.Owner.ConsumerGroupIdColumn(),
+		Name:            w.Name,
+		Metadata:        w.Metadata,
+		TargetInstances: w.TargetInstances,
+	}
 }
 
 func toWorkerInstance(data *datastore.WorkerInstanceData) *WorkerInstance {

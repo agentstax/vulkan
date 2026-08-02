@@ -1,15 +1,13 @@
 # Vulkan public surface
 
-Every exported symbol a user is expected to touch, organized by audience:
-**shared foundation** (both audiences) → **standard user** (produce & consume) →
-**operator** (administer & maintain). Trimming questions settled 2026-08-01 —
-this is the target surface; demotions below are pending build work. Names are
-package-qualified. Within each layer: **plain funcs → types → errors → structs & methods**.
+Everything a user can touch, by audience. Trimming settled 2026-08-01; demotions
+in the collapsed block are pending build work.
 
 <details>
 <summary>Excluded on purpose (exported today, internal / to demote)</summary>
 
-All `*Datastore` types + methods · `claimBuffer` · `rangeState` · `ConcurrentBoundedRingBuffer` ·
+All `*Datastore` types + methods (incl. `FleetDuty`, `DutyMetadata`) · `claimBuffer` · `rangeState` ·
+`ConcurrentBoundedRingBuffer` ·
 metrics types (`ConsumerMetrics`, `QueueState`, `AbandonedRoutines`, `DutyState`, `Snapshot`) ·
 parked cursor/LIFECYCLE surface (`ClaimedRange`, `LeaseRow`, `MessageException`, `MessageTerminal`,
 `MessageRow`, `DeliveryRow`, `ClaimedException`, `CursorRange`, `MessageConsumer.CursorPartialCommit`,
@@ -29,106 +27,157 @@ defaults to cursor consumption; LIFECYCLE is reached via `NewDeliveryConsumer` d
 
 ---
 
-## Shared foundation — both audiences
+## Shared foundation — 3 types · 2 errors · 3 funcs · 1 struct + configs
 
-The connection, logging, and lifecycle plumbing every Vulkan process starts from.
+Types:
+- `logger.Logger`
+- `topic.SchemaVersion`
+- `topic.Topic`
 
-| Function | Returns | Notes |
-|---|---|---|
-| `datastore.NewPostgresDatastore(ctx, cfg)` | `*PostgresDatastore` | |
-| `logger.NewDefaultLogger(w, level…)` | `*slog.Logger` | |
-| `context.LifecycleContext(log)` | `(ctx, cancel)` | |
-
-**Types**
-- `logger.Logger` (interface) — host injects
-- `topic.SchemaVersion` (named type) — every constructor and admin method takes it
-- `topic.Topic` (plain data struct) — returned by admin lookups; exported field on producer/consumer
-
-**Errors**
+Errors:
+- `topic.ErrTopicNotFound`
 - `errors.ErrLifecycleContextNotCancellable`
-- `topic.ErrTopicNotFound` — producer `Register` and every admin lookup
 
-| Struct | Methods |
-|---|---|
-| `datastore.PostgresDatastore` | `Close` |
-| `datastore.PostgresConnectionConfig` | `WithDefaults` · `Validate` |
-| `retry.Policy` | `WithDefaults` · `Validate` — the `Retry` field on both audiences' configs |
+Funcs:
+- `datastore.NewPostgresDatastore`
+- `logger.NewDefaultLogger`
+- `context.LifecycleContext`
 
----
+Struct methods:
 
-## Standard user — produce & consume
+`datastore.PostgresDatastore`:
+- `Close`
 
-An application developer moving messages through topics an operator already registered.
-
-| Function | Returns | Notes |
-|---|---|---|
-| `producer.NewProducer[M](topic, ver, ds, cfg)` | `*Producer[M]` | |
-| `producer.InTransaction(ctx, ds, fn)` | `error` | |
-| `consumer.NewConsumer[M](group, topic, ver, ds, cfg)` | `*Consumer[M]` | queue/pool params dropped — built internally |
-| `consumer.NewMessageConsumer[M](…same as Consumer…)` | `*MessageConsumer[M]` | |
-| `consumer.NewDeliveryConsumer[M](group, topic, ver, ds, cfg)` | `*DeliveryConsumer[M]` | |
-| `consumer.NewExceptionConsumer[M](…same as Delivery…)` | `*ExceptionConsumer[M]` | |
-| `consumer.MetaFromContext(ctx)` | `(MessageMeta, bool)` | |
-| `retry.NewRetryableError(err)` | `*RetryableError` | handler error classification |
-| `retry.NewPermanentError(err)` | `*PermanentError` | |
-
-**Types**
-- `producer.Tx` (interface) — `Exec` · `Query` · `QueryRow` · `CopyFrom` · `Raw`
-- `producer.ProducerFunc` · `producer.TransactionFunc` · `consumer.ConsumerFunc` (func types)
-- `consumer.MessageMeta` (plain data struct)
-
-**Errors** — the producer/consumer lifecycle discipline
-- `errors.ErrNotRegistered` · `ErrAlreadyRegistered` · `ErrShutdownRequested`
-
-| Struct | Methods |
-|---|---|
-| `producer.Producer[M]` | `Register` · `Produce` · `ProduceFunc` · `ProduceInTx` |
-| `producer.ProducerConfig` | `WithDefaults` · `Validate` |
-| `producer.ProduceOptions` | `Validate` |
-| `common.MessageOptions` | `WithDefaults` · `Fill` · `Clamp` · `Validate` — nil-safe, always held as `*MessageOptions` (+ `common.ConcurrencyPolicy`: `Allow` · `Forbid` · `Defer`) |
-| `consumer.Consumer[M]` | `Register` · `Consume` · builders: `WithBatchLimit` · `WithWorkTimeout` · `WithQueueMargin` · `WithAckMargin` · `WithClaimPollRate` · `WithMessageRetry` |
-| `consumer.MessageConsumer[M]` | `Register` · `Consume` · `Drain` |
-| `consumer.DeliveryConsumer[M]` | `Register` · `Consume` · `DeliveryClaim` |
-| `consumer.ExceptionConsumer[M]` | `Register` · `Consume` · `ExceptionClaim` |
-| `consumer.ConsumerConfig` | `WithDefaults` · `Validate` |
-| `retry.RetryableError` | `Error` · `Unwrap` |
-| `retry.PermanentError` | `Error` · `Unwrap` |
+Configs (`WithDefaults` · `Validate`):
+- `datastore.PostgresConnectionConfig`
+- `retry.Policy`
 
 ---
 
-## Operator — administer & maintain
+## Standard user (produce & consume) — 6 types · 3 errors · 9 funcs · 7 structs + configs
 
-Whoever owns the deployment: registers and migrates topics, runs fleet upkeep,
-watches health. (Consumers embed their own `Janitor`/`WaterlineRoller` — the
-standalone `maintain` constructors are for dedicated maintenance deployments.)
+Types:
+- `producer.Tx`
+- `producer.ProducerFunc`
+- `producer.TransactionFunc`
+- `consumer.ConsumerFunc`
+- `consumer.MessageMeta`
+- `common.ConcurrencyPolicy`
 
-| Function | Returns | Notes |
-|---|---|---|
-| `admin.NewMessageAdmin(ds, cfg)` | `*MessageAdmin` | |
-| `maintain.NewFleetMaintainer(ds, cfg)` | `*FleetMaintainer` | |
-| `maintain.NewMaintainer(...duties)` | `*Maintainer` | |
-| `maintain.NewJanitor(topic, ver, ds, cfg)` | `*Janitor` | |
-| `maintain.NewWaterlineRoller(group, topic, ver, ds, cfg)` | `*WaterlineRoller` | |
+Errors:
+- `errors.ErrNotRegistered`
+- `errors.ErrAlreadyRegistered`
+- `errors.ErrShutdownRequested`
 
-**Types**
-- `maintain.Duty` (interface) — `Register` · `Run`
-- `admin.VersionHealth` · `admin.GroupLag` · `admin.DestroyOptions` (plain data structs)
-- `maintain.FleetDuty` (plain data struct)
+Funcs:
+- `producer.NewProducer[M]`
+- `producer.InTransaction`
+- `consumer.NewConsumer[M]`
+- `consumer.NewMessageConsumer[M]`
+- `consumer.NewDeliveryConsumer[M]`
+- `consumer.NewExceptionConsumer[M]`
+- `consumer.MetaFromContext`
+- `retry.NewRetryableError`
+- `retry.NewPermanentError`
 
-**Errors**
+Struct methods:
+
+`producer.Producer[M]`:
+- `Register`
+- `Produce`
+- `ProduceFunc`
+- `ProduceInTx`
+
+`consumer.Consumer[M]`:
+- `Register`
+- `Consume`
+- `WithBatchLimit`
+- `WithWorkTimeout`
+- `WithQueueMargin`
+- `WithAckMargin`
+- `WithClaimPollRate`
+- `WithMessageRetry`
+
+`consumer.MessageConsumer[M]`:
+- `Register`
+- `Consume`
+- `Drain`
+
+`consumer.DeliveryConsumer[M]`:
+- `Register`
+- `Consume`
+- `DeliveryClaim`
+
+`consumer.ExceptionConsumer[M]`:
+- `Register`
+- `Consume`
+- `ExceptionClaim`
+
+`retry.RetryableError` · `retry.PermanentError`:
+- `Error`
+- `Unwrap`
+
+Configs (`WithDefaults` · `Validate`):
+- `producer.ProducerConfig`
+- `producer.ProduceOptions` (`Validate` only)
+- `consumer.ConsumerConfig`
+- `common.MessageOptions` (+ `Fill` · `Clamp`)
+
+---
+
+## Operator (administer & maintain) — 5 types · 5 errors · 6 funcs · 6 structs + configs
+
+Types:
+- `maintain.Duty`
+- `maintain.DutyConstructor`
+- `admin.VersionHealth`
+- `admin.GroupLag`
+- `admin.DestroyOptions`
+
+Errors:
 - `admin.ErrDestroyDisabled`
-- `topic.ErrTopicNameTaken` · `ErrTopicNotEmpty` · `ErrTopicConfigMismatch`
+- `topic.ErrTopicNameTaken`
+- `topic.ErrTopicNotEmpty`
+- `topic.ErrTopicConfigMismatch`
 - `maintain.ErrDutyLost`
 
-| Struct | Methods |
-|---|---|
-| `admin.MessageAdmin` | `RegisterTopic` · `GetTopic` · `ListTopics` · `AlterTopic` · `RenameTopic` · `DestroyTopic` · `MigrateTopic` · `MigrateTopics` · `FamilyHealth` · `RegisterSystem` · `MigrateSystem` |
-| `admin.MessageAdminConfig` | `WithDefaults` · `Validate` |
-| `topic.Config` | `WithDefaults` · `Validate` |
-| `topic.AlterConfig` | `Validate` |
-| `maintain.FleetMaintainer` | `Register` · `Run` |
-| `maintain.Maintainer` | `Register` · `Run` |
-| `maintain.Janitor` | `Register` · `Run` |
-| `maintain.WaterlineRoller` | `Register` · `Run` |
-| `maintain.FleetMaintainerConfig` | `WithDefaults` · `Validate` |
-| `maintain.MaintainerConfig` | `WithDefaults` · `Validate` |
+Funcs:
+- `admin.NewMessageAdmin`
+- `maintain.NewFleetMaintainer`
+- `maintain.NewMaintainer`
+- `maintain.NewJanitor`
+- `maintain.NewWaterlineRoller`
+- `maintain.NewScheduler`
+
+Struct methods:
+
+`admin.MessageAdmin`:
+- `RegisterTopic`
+- `GetTopic`
+- `ListTopics`
+- `AlterTopic`
+- `RenameTopic`
+- `DestroyTopic`
+- `MigrateTopic`
+- `MigrateTopics`
+- `FamilyHealth`
+- `RegisterSystem`
+- `MigrateSystem`
+
+`maintain.FleetMaintainer`:
+- `Register`
+- `Run`
+
+`maintain.Maintainer`:
+- `Run`
+
+`maintain.Janitor` · `maintain.WaterlineRoller` · `maintain.Scheduler` (the `Duty` impls):
+- `Register`
+- `Run`
+
+Configs (`WithDefaults` · `Validate`):
+- `admin.MessageAdminConfig`
+- `topic.Config`
+- `topic.AlterConfig` (`Validate` only)
+- `maintain.FleetMaintainerConfig`
+- `maintain.MaintainerConfig`
