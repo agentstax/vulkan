@@ -62,15 +62,43 @@ func (d *TopicDatastore) getTopic(ctx context.Context, q datastore.Querier, name
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
-			janitor_poll_rate_ns,
-			janitor_sweep_batch_size,
-			waterline_poll_rate_ns,
 			created_at,
 			updated_at
 		FROM topic
 		WHERE name = $1 AND schema_version = $2;
 	`
 	return d.scanTopic(q.QueryRow(ctx, sql, name, version))
+}
+
+// GetTopicById resolves a topic by its id. Returns (nil, nil) if no topic has it.
+func (d *TopicDatastore) GetTopicById(ctx context.Context, id int64) (*Topic, error) {
+	var topic *Topic
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		topic, err = d.getTopicById(ctx, id)
+		return err
+	})
+	return topic, err
+}
+
+func (d *TopicDatastore) getTopicById(ctx context.Context, id int64) (*Topic, error) {
+	sql := `
+		SELECT
+			id,
+			system_id,
+			name,
+			schema_version,
+			partition_size,
+			retention_ttl_ns,
+			allow_drop_past_committed,
+			idempotency_key_ttl_ns,
+			disable_delivery_log,
+			created_at,
+			updated_at
+		FROM topic
+		WHERE id = $1;
+	`
+	return d.scanTopic(d.Datastore.Pool.QueryRow(ctx, sql, id))
 }
 
 func (d *TopicDatastore) ListTopics(ctx context.Context) ([]*Topic, error) {
@@ -95,9 +123,6 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
-			janitor_poll_rate_ns,
-			janitor_sweep_batch_size,
-			waterline_poll_rate_ns,
 			created_at,
 			updated_at
 		FROM topic
@@ -181,14 +206,14 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, systemID int64, name
 	}
 
 	insertSql := `
-		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log, janitor_poll_rate_ns, janitor_sweep_batch_size, waterline_poll_rate_ns)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at;
 	`
 	var id int64
 	var createdAt time.Time
 	var updatedAt time.Time
-	if err := tx.QueryRow(ctx, insertSql, systemID, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog, int64(cfg.JanitorPollRate), cfg.JanitorSweepBatchSize, int64(cfg.WaterlinePollRate)).Scan(&id, &createdAt, &updatedAt); err != nil {
+	if err := tx.QueryRow(ctx, insertSql, systemID, name, version, cfg.PartitionSize, int64(cfg.RetentionTTL), cfg.AllowDropPastCommitted, int64(cfg.IdempotencyKeyTTL), cfg.DisableDeliveryLog).Scan(&id, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 
@@ -205,10 +230,11 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, systemID int64, name
 		return nil, err
 	}
 
-	// seed the janitor and alert maintenance duty
+	// seed the janitor maintenance duty: 5s poll rate, 1000-row sweep batches
+	// (caps how much of a backlog one sweep transaction holds a lock for)
 	seedDutySql := `
-		INSERT INTO maintenance (duty, topic_id)
-		VALUES ('janitor', $1), ('alert', $1)
+		INSERT INTO maintenance (duty, topic_id, metadata)
+		VALUES ('janitor', $1, '{"poll_rate": 5000000000, "sweep_batch_size": 1000}')
 		ON CONFLICT DO NOTHING;
 	`
 	if _, err := tx.Exec(ctx, seedDutySql, id); err != nil {
@@ -266,9 +292,6 @@ func (d *TopicDatastore) updateTopicByID(ctx context.Context, old *Topic, cfg *A
 			allow_drop_past_committed = COALESCE($3, allow_drop_past_committed),
 			idempotency_key_ttl_ns = COALESCE($4, idempotency_key_ttl_ns),
 			disable_delivery_log = COALESCE($5, disable_delivery_log),
-			janitor_poll_rate_ns = COALESCE($6, janitor_poll_rate_ns),
-			janitor_sweep_batch_size = COALESCE($7, janitor_sweep_batch_size),
-			waterline_poll_rate_ns = COALESCE($8, waterline_poll_rate_ns),
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING
@@ -281,9 +304,6 @@ func (d *TopicDatastore) updateTopicByID(ctx context.Context, old *Topic, cfg *A
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
-			janitor_poll_rate_ns,
-			janitor_sweep_batch_size,
-			waterline_poll_rate_ns,
 			created_at,
 			updated_at;
 	`
@@ -294,9 +314,6 @@ func (d *TopicDatastore) updateTopicByID(ctx context.Context, old *Topic, cfg *A
 		cfg.AllowDropPastCommitted,
 		durationNs(cfg.IdempotencyKeyTTL),
 		cfg.DisableDeliveryLog,
-		durationNs(cfg.JanitorPollRate),
-		cfg.JanitorSweepBatchSize,
-		durationNs(cfg.WaterlinePollRate),
 	)
 	t, err := d.scanTopic(row)
 	if err != nil {
@@ -337,15 +354,6 @@ func alterLogFields(old, updated *Topic) []any {
 	if old.DisableDeliveryLog != updated.DisableDeliveryLog {
 		fields = append(fields, "disable_delivery_log", fmt.Sprintf("%v -> %v", old.DisableDeliveryLog, updated.DisableDeliveryLog))
 	}
-	if old.JanitorPollRate != updated.JanitorPollRate {
-		fields = append(fields, "janitor_poll_rate", fmt.Sprintf("%v -> %v", old.JanitorPollRate, updated.JanitorPollRate))
-	}
-	if old.JanitorSweepBatchSize != updated.JanitorSweepBatchSize {
-		fields = append(fields, "janitor_sweep_batch_size", fmt.Sprintf("%v -> %v", old.JanitorSweepBatchSize, updated.JanitorSweepBatchSize))
-	}
-	if old.WaterlinePollRate != updated.WaterlinePollRate {
-		fields = append(fields, "waterline_poll_rate", fmt.Sprintf("%v -> %v", old.WaterlinePollRate, updated.WaterlinePollRate))
-	}
 	return fields
 }
 
@@ -381,9 +389,6 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
 			disable_delivery_log,
-			janitor_poll_rate_ns,
-			janitor_sweep_batch_size,
-			waterline_poll_rate_ns,
 			created_at,
 			updated_at;
 	`
@@ -622,8 +627,6 @@ func (d *TopicDatastore) scanTopic(row pgx.Row) (*Topic, error) {
 	var t Topic
 	var retentionTTLNs int64
 	var idempotencyKeyTTLNs int64
-	var janitorPollRateNs int64
-	var waterlinePollRateNs int64
 	err := row.Scan(
 		&t.Id,
 		&t.SystemId,
@@ -634,9 +637,6 @@ func (d *TopicDatastore) scanTopic(row pgx.Row) (*Topic, error) {
 		&t.AllowDropPastCommitted,
 		&idempotencyKeyTTLNs,
 		&t.DisableDeliveryLog,
-		&janitorPollRateNs,
-		&t.JanitorSweepBatchSize,
-		&waterlinePollRateNs,
 		&t.CreatedAt,
 		&t.UpdatedAt,
 	)
@@ -648,8 +648,6 @@ func (d *TopicDatastore) scanTopic(row pgx.Row) (*Topic, error) {
 	}
 	t.RetentionTTL = time.Duration(retentionTTLNs)
 	t.IdempotencyKeyTTL = time.Duration(idempotencyKeyTTLNs)
-	t.JanitorPollRate = time.Duration(janitorPollRateNs)
-	t.WaterlinePollRate = time.Duration(waterlinePollRateNs)
 
 	return &t, nil
 }

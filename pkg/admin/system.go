@@ -5,6 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
@@ -33,13 +34,44 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *system.Config) e
 	// Make sure the system's owned topics are registered:
 	// - __system.metrics
 	// - __system.alerts
+	// - __system.job_requests
 	if err := a.ensureSystemTopic(ctx, metrics.TopicName, metrics.TopicConfig()); err != nil {
 		return err
 	}
 	if err := a.ensureSystemTopic(ctx, alert.TopicName, alert.TopicConfig()); err != nil {
 		return err
 	}
+	if err := a.ensureSystemTopic(ctx, cron.TopicName, cron.TopicConfig()); err != nil {
+		return err
+	}
+
+	// Make sure the alert checks' cron jobs are registered.
+	jobs, err := alert.Jobs()
+	if err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if err := a.ensureSystemCronJob(ctx, job); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// ensureSystemCronJob only creates a missing job -- not a bare idempotent
+// register, whose config-mismatch check would error on a job an operator has
+// altered since.
+func (a *MessageAdmin) ensureSystemCronJob(ctx context.Context, job *alert.Job) error {
+	existing, err := a.cronJobDatastore.GetCronJob(ctx, job.Name)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+
+	_, err = a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Data, job.Config)
+	return err
 }
 
 func (a *MessageAdmin) ensureSystemTopic(ctx context.Context, name string, cfg *topic.Config) error {

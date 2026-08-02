@@ -76,7 +76,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	createSystemSql := `
 		CREATE TABLE IF NOT EXISTS system (
 			id BIGSERIAL PRIMARY KEY,
-			alert_poll_rate_ns BIGINT NOT NULL,       -- nanoseconds; how often the alert checks run
 			alert_repeat_interval_ns BIGINT NOT NULL, -- nanoseconds; how long a firing alert stays quiet before re-emitting
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -88,13 +87,13 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 
 	// Seed the config row. WHERE NOT EXISTS first register wins
 	seedSystemSql := `
-		INSERT INTO system (alert_poll_rate_ns, alert_repeat_interval_ns)
-		SELECT $1, $2
+		INSERT INTO system (alert_repeat_interval_ns)
+		SELECT $1
 		WHERE NOT EXISTS (SELECT 1 FROM system)
 		RETURNING id;
 	`
 	var systemId int64
-	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AlertPollRate), int64(cfg.AlertRepeatInterval)).Scan(&systemId)
+	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AlertRepeatInterval)).Scan(&systemId)
 	switch {
 	case seedErr == nil:
 		// won the seed -- the row now holds exactly cfg
@@ -126,9 +125,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 			allow_drop_past_committed BOOLEAN NOT NULL DEFAULT false,           -- opt into Kafka's "lagging consumer falls off the retention window" semantics
 			idempotency_key_ttl_ns BIGINT NOT NULL DEFAULT 86400000000000,      -- nanoseconds; unlike retention_ttl_ns, 0 isn't a supported "keep forever" value -- Config.SetDefaults never lets it reach 0, so the column default is the real 24h value, not 0
 			disable_delivery_log BOOLEAN NOT NULL DEFAULT false,                -- opt out of delivery_log_<id> (per-attempt failure audit trail)
-			janitor_poll_rate_ns BIGINT NOT NULL DEFAULT 5000000000,            -- nanoseconds; how often the janitor loop ticks (create-ahead, drop/sweep expired partitions, sweep idempotency_key)
-			janitor_sweep_batch_size INT NOT NULL DEFAULT 1000,                 -- rows deleted per sweep transaction; caps how much of a backlog one batch holds a lock for
-			waterline_poll_rate_ns BIGINT NOT NULL DEFAULT 1000000000,          -- nanoseconds; how often the waterline duty rolls committed forward -- 1s bounds the crash-recovery redelivery window without churning the cursor row
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			UNIQUE (name, schema_version)
@@ -213,7 +209,8 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
-			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'alert'
+			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'scheduler'
+			metadata JSONB NOT NULL,                          -- per-duty tuning, seeded with defaults by whoever creates the row: {"poll_rate": <ns>, "sweep_batch_size": <rows, janitor only>}
 			token UUID NOT NULL DEFAULT gen_random_uuid(),    -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			attempts INT NOT NULL DEFAULT 0,                  -- incremented on every claim. resets on success
@@ -233,6 +230,17 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err
 		}
+	}
+
+	// seed the scheduler maintenance duty. 1m poll rate -- the schedule
+	// resolution ParseSchedule enforces.
+	seedSchedulerSql := `
+		INSERT INTO maintenance (duty, system_id, metadata)
+		VALUES ('scheduler', $1, '{"poll_rate": 60000000000}')
+		ON CONFLICT DO NOTHING;
+	`
+	if _, err := tx.Exec(ctx, seedSchedulerSql, systemId); err != nil {
+		return err
 	}
 
 	// bindings: routing rules. A group with no binding matches all events; a
@@ -360,13 +368,13 @@ func (d *SystemDatastore) GetConfig(ctx context.Context) (*System, error) {
 // the table itself, 42P01) isn't there yet.
 func (d *SystemDatastore) getConfig(ctx context.Context, q datastore.Querier) (*System, error) {
 	sql := `
-		SELECT id, alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at
+		SELECT id, alert_repeat_interval_ns, created_at, updated_at
 		FROM system;
 	`
 	var id int64
-	var alertPollRateNs, alertRepeatIntervalNs int64
+	var alertRepeatIntervalNs int64
 	var createdAt, updatedAt time.Time
-	err := q.QueryRow(ctx, sql).Scan(&id, &alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
+	err := q.QueryRow(ctx, sql).Scan(&id, &alertRepeatIntervalNs, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -378,7 +386,7 @@ func (d *SystemDatastore) getConfig(ctx context.Context, q datastore.Querier) (*
 		}
 		return nil, err
 	}
-	return NewSystem(id, time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
+	return NewSystem(id, time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
 }
 
 // UpdateConfig applies cfg's non-nil fields to the singleton system row and
@@ -407,17 +415,16 @@ func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*
 	sql := `
 		UPDATE system
 		SET
-			alert_poll_rate_ns = COALESCE($2, alert_poll_rate_ns),
-			alert_repeat_interval_ns = COALESCE($3, alert_repeat_interval_ns),
+			alert_repeat_interval_ns = COALESCE($2, alert_repeat_interval_ns),
 			updated_at = NOW()
 		WHERE id = $1
-		RETURNING id, alert_poll_rate_ns, alert_repeat_interval_ns, created_at, updated_at;
+		RETURNING id, alert_repeat_interval_ns, created_at, updated_at;
 	`
 	var id int64
-	var alertPollRateNs, alertRepeatIntervalNs int64
+	var alertRepeatIntervalNs int64
 	var createdAt, updatedAt time.Time
-	err = d.Datastore.Pool.QueryRow(ctx, sql, old.Id, durationNs(cfg.AlertPollRate), durationNs(cfg.AlertRepeatInterval)).
-		Scan(&id, &alertPollRateNs, &alertRepeatIntervalNs, &createdAt, &updatedAt)
+	err = d.Datastore.Pool.QueryRow(ctx, sql, old.Id, durationNs(cfg.AlertRepeatInterval)).
+		Scan(&id, &alertRepeatIntervalNs, &createdAt, &updatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// destroyed between the read and the update
@@ -426,7 +433,7 @@ func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*
 		return nil, err
 	}
 
-	updated, err := NewSystem(id, time.Duration(alertPollRateNs), time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
+	updated, err := NewSystem(id, time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -447,9 +454,6 @@ func durationNs(d *time.Duration) *int64 {
 // alterLogFields renders old -> new pairs for just the fields that changed.
 func alterLogFields(old, updated *System) []any {
 	fields := []any{}
-	if old.AlertPollRate != updated.AlertPollRate {
-		fields = append(fields, "alert_poll_rate", fmt.Sprintf("%v -> %v", old.AlertPollRate, updated.AlertPollRate))
-	}
 	if old.AlertRepeatInterval != updated.AlertRepeatInterval {
 		fields = append(fields, "alert_repeat_interval", fmt.Sprintf("%v -> %v", old.AlertRepeatInterval, updated.AlertRepeatInterval))
 	}

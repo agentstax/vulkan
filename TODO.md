@@ -106,3 +106,48 @@ pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is
 DONT FORGET - you just spent a lot of time making the cron jobs system a lot better we should make the same time investment for long lived background workers like janitor and waterline
 
 Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
+
+JanitorSweepBatchSize has to move into the janitor duty metadata as well
+AlertRepeatInterval we need to do something with it should not live on system
+dutySnapshot should be using common.Owner instead of individual topicId and consumerGroupId. And it should show a system owned duty as ownerNamed 'system'
+- dutySnapshot needs to be changed a lot it was previously more for cronjob like things but now they are workers and so rate, gate, overdue, attemps don't really make sense on it anymore. Should be more focus on heartbeat and last time since claimed
+- but by replacing this info on dutySnapshot we need to move it a new metric slice for cronjob functionality
+
+EnsureNextPartition should not be in janitor
+
+Seeder - populates data (system, topic, group register)
+
+worker {
+  id:                       123
+  name:                     janitor
+  owner:                    (systemId, topicId, consumerGroupId)
+  metadata                  {} -- optional
+  min_instances:            1 -- optional
+  max_instances:            3 -- optional
+}
+
+worker_instance {
+  id:         'instance_id'
+  worker_id:  123
+  token:      abc123
+  expires_at: 10:01 (renew by heartbeat)
+}
+
+WorkerManager (Fleet/dutpool):
+- can spawn or destroy workers passed to it
+- cleans up expired worker_instances
+
+Worker spawns with new entry into worker_instance
+
+janitorWorker := NewJanitorWorker()
+schedulerWorker := NewSchedulerWorker()
+
+workerManager := NewWorkerManager(janitorWorker, schedulerWorker)
+
+... same reconcicle logic ...
+
+workerManager on start (spawn):
+  p.inflight.Go(
+    janitorWorker.Register() <- many calls to register is valid and creates a unique 'instance' per register
+    janitorWorker.Run()
+  )

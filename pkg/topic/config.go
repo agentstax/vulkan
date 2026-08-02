@@ -57,25 +57,6 @@ type Config struct {
 	// per-attempt write not worth paying for.
 	DisableDeliveryLog bool
 
-	// JanitorPollRate - how often the janitor loop ticks (create-ahead,
-	// drop/sweep expired partitions, sweep idempotency_key).
-	// Default: 5 * time.Second.
-	JanitorPollRate time.Duration
-
-	// JanitorSweepBatchSize - rows deleted per sweep transaction; caps how
-	// much of a backlog one batch holds a lock for.
-	// Default: 1000.
-	JanitorSweepBatchSize int
-
-	// WaterlinePollRate - how often the waterline duty rolls cursors' committed
-	// forward. Deliberately lazy, not synchronous-on-Commit -- a synchronous
-	// roll after every Commit adds lock contention on the shared cursor row.
-	// Default: 1 * time.Second.
-	//
-	// Lower it to shrink committed's staleness (the crash-recovery
-	// redelivery window); raise it for topics where redelivery is cheap.
-	WaterlinePollRate time.Duration
-
 	// Logger - pass your own *slog.Logger (own Handler) or anything satisfying
 	// logger.Logger.
 	// Default: a text logger to os.Stdout at warn level and up.
@@ -96,15 +77,6 @@ func (c *Config) WithDefaults() *Config {
 	if c.IdempotencyKeyTTL == 0 {
 		c.IdempotencyKeyTTL = time.Hour
 	}
-	if c.JanitorPollRate == 0 {
-		c.JanitorPollRate = 5 * time.Second
-	}
-	if c.JanitorSweepBatchSize == 0 {
-		c.JanitorSweepBatchSize = 1000
-	}
-	if c.WaterlinePollRate == 0 {
-		c.WaterlinePollRate = 1 * time.Second
-	}
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -121,15 +93,6 @@ func (c *Config) Validate() error {
 	if c.IdempotencyKeyTTL < 0 {
 		return fmt.Errorf("IdempotencyKeyTTL must be >= 0, got %v", c.IdempotencyKeyTTL)
 	}
-	if c.JanitorPollRate < 0 {
-		return fmt.Errorf("JanitorPollRate must be >= 0, got %v", c.JanitorPollRate)
-	}
-	if c.JanitorSweepBatchSize < 0 {
-		return fmt.Errorf("JanitorSweepBatchSize must be >= 0, got %d", c.JanitorSweepBatchSize)
-	}
-	if c.WaterlinePollRate < 0 {
-		return fmt.Errorf("WaterlinePollRate must be >= 0, got %v", c.WaterlinePollRate)
-	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}
@@ -144,15 +107,11 @@ type AlterConfig struct {
 	AllowDropPastCommitted *bool
 	IdempotencyKeyTTL      *time.Duration
 	DisableDeliveryLog     *bool
-	JanitorPollRate        *time.Duration
-	JanitorSweepBatchSize  *int
-	WaterlinePollRate      *time.Duration
 }
 
 func (c *AlterConfig) Validate() error {
 	if c.RetentionTTL == nil && c.AllowDropPastCommitted == nil && c.IdempotencyKeyTTL == nil &&
-		c.DisableDeliveryLog == nil && c.JanitorPollRate == nil && c.JanitorSweepBatchSize == nil &&
-		c.WaterlinePollRate == nil {
+		c.DisableDeliveryLog == nil {
 		return errors.New("no fields set -- an alter must change at least one field")
 	}
 	if c.RetentionTTL != nil && *c.RetentionTTL < 0 {
@@ -160,15 +119,6 @@ func (c *AlterConfig) Validate() error {
 	}
 	if c.IdempotencyKeyTTL != nil && *c.IdempotencyKeyTTL <= 0 {
 		return fmt.Errorf("IdempotencyKeyTTL must be > 0, got %v", *c.IdempotencyKeyTTL)
-	}
-	if c.JanitorPollRate != nil && *c.JanitorPollRate <= 0 {
-		return fmt.Errorf("JanitorPollRate must be > 0, got %v", *c.JanitorPollRate)
-	}
-	if c.JanitorSweepBatchSize != nil && *c.JanitorSweepBatchSize <= 0 {
-		return fmt.Errorf("JanitorSweepBatchSize must be > 0, got %d", *c.JanitorSweepBatchSize)
-	}
-	if c.WaterlinePollRate != nil && *c.WaterlinePollRate <= 0 {
-		return fmt.Errorf("WaterlinePollRate must be > 0, got %v", *c.WaterlinePollRate)
 	}
 	return nil
 }
@@ -184,9 +134,6 @@ func (c *Config) ToTopic(id int64, systemId int64, name string, version SchemaVe
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
 		DisableDeliveryLog:     c.DisableDeliveryLog,
-		JanitorPollRate:        c.JanitorPollRate,
-		JanitorSweepBatchSize:  c.JanitorSweepBatchSize,
-		WaterlinePollRate:      c.WaterlinePollRate,
 		CreatedAt:              createdAt,
 		UpdatedAt:              updatedAt,
 	}

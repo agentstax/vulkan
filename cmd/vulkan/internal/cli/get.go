@@ -75,9 +75,6 @@ func printTopicDetail(w io.Writer, t *topic.Topic) {
 	fmt.Fprintf(tw, "  AllowDropPastCommitted\t%t\n", t.AllowDropPastCommitted)
 	fmt.Fprintf(tw, "  IdempotencyKeyTTL\t%s\n", t.IdempotencyKeyTTL.String())
 	fmt.Fprintf(tw, "  DisableDeliveryLog\t%t\n", t.DisableDeliveryLog)
-	fmt.Fprintf(tw, "  JanitorPollRate\t%s\n", t.JanitorPollRate.String())
-	fmt.Fprintf(tw, "  JanitorSweepBatchSize\t%d\n", t.JanitorSweepBatchSize)
-	fmt.Fprintf(tw, "  WaterlinePollRate\t%s\n", t.WaterlinePollRate.String())
 	tw.Flush()
 }
 

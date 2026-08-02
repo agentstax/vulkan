@@ -4482,15 +4482,17 @@ sequenced after both of these close.*
       would.
 - [o] **Default alerts** for approaching operational limits (full spec folded
       from TODO.md; this is now the canonical record).
-      **PARKED (2026-07-28):** the in-progress alert code (pkg/alert + the
-      pkg/maintain/alert* files) lives UNCOMMITTED on branch `default-alerts`
-      as a single WIP commit, off main. It was pulled off main to keep the
-      tree clean for a maintenance/duty-system redesign (the duty tier isn't
-      generic/composable enough for per-alert duties + injectable alert
-      logic). Resume after the duty refactor lands on main: `git rebase main`
-      on `default-alerts`, then `git reset --soft HEAD~1` to get the alert
-      changes back as an uncommitted diff on top of the refactor. Chunk plan:
-      `~/.claude/plans/default-alerts.md`. The problem: several
+      **RESTRUCTURED (2026-08-01): each check is its own CRON JOB** (riding
+      14a task 5's registry) — the `alert` duty kind, `alert_poll_rate_ns`,
+      and the per-check sparse config are DELETED (this also removed the
+      duty-tier-not-generic-enough blocker that had the work parked).
+      pkg/alert is now one file per check plus jobs.go, the only wiring:
+      Jobs(), the registration list (a central dispatch switch was built
+      then KILLED same day — the binding table is the dispatch, see the
+      evaluation paragraph). RegisterSystem seeds `alert.partition_count` and
+      `alert.compaction_read_cost` (@hourly, defer, data `{"threshold": 0}`)
+      get-then-create — an operator's altered schedule/threshold survives
+      re-register instead of erroring as a config mismatch. The problem: several
       failure modes in this project are silent until they happen — nothing
       warns a user before they cross an operational cliff, and the only way
       to know one is coming is to independently re-derive the math. The two
@@ -4575,28 +4577,34 @@ sequenced after both of these close.*
       TEXT keys with no id, so a future per-group check (waterline lag)
       needs a schema extension. Fine for v1: both checks are
       topic-scoped.
-      Evaluation: a NEW `alert` duty kind (row per topic in
-      maintenance, claimable like janitor/waterline) — NOT a janitor
-      passenger: janitor ticks ~5s for create-ahead, checks want
-      minutes-to-hours, and the duty registry IS the gating clock;
-      janitor cleans, alert watches. Edge-triggering is restart-proof:
-      the alert reads its own alert key's compaction head, compares
-      status, produces only on transition or past the repeat interval —
-      the topic is its own dedup memory, and duty claiming already
-      guarantees one evaluator per topic. The alert publishes through
-      the real `Producer[alert.Alert]` (maintain→producer imports
-      cleanly; hand-copying the compaction upsert would be the
-      lab-staleness trap in production code). Checks live in
-      pkg/alert as pure functions (measurements in → *Alert or nil
-      out), closed set, classify+switch, no plugin registry; the duty
-      wiring (alert.go/alert_duty.go mirroring janitor's file
-      pattern) lives in pkg/maintain.
+      Evaluation (superseded the `alert` duty kind 2026-08-01): each check
+      is its own cron job in the `alert.` name family — the scheduler duty
+      is the gating clock, per-job schedules replace the shared poll rate,
+      and a check enumerates its own entities at run time (the old
+      per-topic Evaluate signature couldn't fit a system-scoped check).
+      Execution is ONE CONFIGURED CONSUMER PER ALERT, each binding its
+      own job name on the job-request topic — the binding table IS the
+      dispatch (a single `alert.*` consumer switching on job name was
+      built 2026-08-01 and killed 2026-08-02: a central dispatcher
+      re-invents the grouping the binding table owns). Each consumer's
+      handler reads the threshold from the firing's data and produces an
+      alert or not; they land after the scheduler exists. Edge-triggering
+      is restart-proof: the consumer reads
+      each check's alert-key compaction head, compares status, produces
+      only on transition or past the repeat interval — the topic is its
+      own dedup memory, and the job's defer concurrency plus per-group
+      key_lease guarantee one execution per firing. It publishes through
+      the real `Producer[alert.Alert]` (hand-copying the compaction
+      upsert would be the lab-staleness trap in production code). Checks
+      live in pkg/alert as pure decision functions (measurements in →
+      *Alert or nil out), closed set, classify+switch, no plugin registry.
       Thresholds computed LIVE where possible (query
       max_locks_per_transaction, derive the real partition ceiling —
       honest for users who already raised it); warn thresholds sit well
       before the cliff (Temporal's paired warn/fail pattern). Overrides
-      per check via sparse-struct config (disable / threshold override),
-      house style. `__system.` becomes the RESERVED topic-name prefix —
+      per check live on its cron_job row through the existing cron verbs:
+      threshold in the job's data payload, disable = suspend, cadence =
+      the job's schedule. `__system.` becomes the RESERVED topic-name prefix —
       RegisterTopic rejects user names under it (first name validation
       in admin); the alerts topic is created idempotently at system
       registration — NO migration step: pre-v1 the registries are empty
@@ -4604,19 +4612,18 @@ sequenced after both of these close.*
       re-running system registration converges an existing deployment.
       Lifecycle verbs against `__system.*` need guarding: Destroy and
       Rename refused, Alter allowed (tuning alert retention is
-      legitimate). The topic gets janitor/waterline/alert duties like
-      any topic. Who runs it: the
-      defaulted Consumer runs the maintenance tier, so most users get
-      the alert without asking; docs cover the rest, plus the
-      Register-time layer and DutyState's overdue gauge (an unmanned
-      alert duty is itself visible).
+      legitimate). The topic gets the janitor duty like any topic.
+      Who runs it: the defaulted Consumer runs the maintenance tier, so
+      most users get the scheduler duty without asking; docs cover the
+      rest, plus the Register-time layer and DutyState's overdue gauge
+      (an unmanned scheduler duty is itself visible).
       The presence design (13d) remains the substrate that would let an
       alert say "destroy blocked: producer X seen 2s ago" instead of a
       bare threshold.
-      Chunk plan: `~/.claude/plans/default-alerts.md` (5
-      chunks: pkg/alert → reserved prefix + system topic → alert
-      duty → Register-time findings → CLI + lab). Build PARKED — not
-      started yet, deliberately.
+      Build state (2026-08-02): pkg/alert checks + job seeding are ON
+      MAIN (uncommitted with the cron work); remaining — the generic
+      scheduler duty (cron-plan chunk 2), then the per-alert consumers,
+      Register-time findings, CLI read surface + lab.
       Duty HEALTH metrics now exist (`pkg/maintain/metrics` `DutyState`:
       overdue count by duty kind + oldest gate age); still open whether
       duties should also emit WORK metrics (partitions dropped, rows swept,

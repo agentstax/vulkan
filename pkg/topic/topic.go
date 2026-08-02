@@ -30,9 +30,6 @@ type Topic struct {
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTL      time.Duration
 	DisableDeliveryLog     bool
-	JanitorPollRate        time.Duration
-	JanitorSweepBatchSize  int
-	WaterlinePollRate      time.Duration
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 }

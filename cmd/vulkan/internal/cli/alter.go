@@ -22,9 +22,6 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 		allowDropPastCommitted bool
 		idempotencyKeyTTL      time.Duration
 		disableDeliveryLog     bool
-		janitorPollRate        time.Duration
-		janitorSweepBatchSize  int
-		waterlinePollRate      time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -58,15 +55,6 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 			}
 			if f.Changed("disable-delivery-log") {
 				cfg.DisableDeliveryLog = &disableDeliveryLog
-			}
-			if f.Changed("janitor-poll-rate") {
-				cfg.JanitorPollRate = &janitorPollRate
-			}
-			if f.Changed("janitor-sweep-batch-size") {
-				cfg.JanitorSweepBatchSize = &janitorSweepBatchSize
-			}
-			if f.Changed("waterline-poll-rate") {
-				cfg.WaterlinePollRate = &waterlinePollRate
 			}
 
 			// Validate up front for a clean usage error (bad/absent flags, exit 2)
@@ -107,9 +95,6 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 	f.BoolVar(&allowDropPastCommitted, "allow-drop-past-committed", false, "let retention drop data a lagging consumer hasn't committed")
 	f.DurationVar(&idempotencyKeyTTL, "idempotency-key-ttl", 0, "how long a produce-retry claim survives, e.g. 1h")
 	f.BoolVar(&disableDeliveryLog, "disable-delivery-log", false, "stop writing the per-attempt failure audit trail")
-	f.DurationVar(&janitorPollRate, "janitor-poll-rate", 0, "how often the janitor duty runs, e.g. 5s")
-	f.IntVar(&janitorSweepBatchSize, "janitor-sweep-batch-size", 0, "rows deleted per sweep transaction")
-	f.DurationVar(&waterlinePollRate, "waterline-poll-rate", 0, "how often the waterline duty rolls committed forward, e.g. 1s")
 
 	return cmd
 }

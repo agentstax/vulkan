@@ -51,10 +51,14 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("maintenancelab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{
-		JanitorPollRate:   dutyRate,
-		WaterlinePollRate: dutyRate,
-	})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	must(err)
+	// speed the janitor up to the lab's 1s tick (the waterline's seeded
+	// default is already 1s) -- rates live on the maintenance row's metadata,
+	// jsonb_set so the row's other tuning (sweep_batch_size) survives
+	_, err = ds.Pool.Exec(ctx,
+		`UPDATE maintenance SET metadata = jsonb_set(metadata, '{poll_rate}', to_jsonb($1::bigint)) WHERE duty = 'janitor' AND topic_id = $2;`,
+		int64(dutyRate), tp.Id)
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

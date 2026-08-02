@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -44,7 +45,18 @@ func newMaintainRunCmd(g *globalFlags) *cobra.Command {
 				return failOp("%s", err.Error())
 			}
 
-			if err := fleet.Register(ctx); err != nil {
+			err = fleet.Register(ctx,
+				func(ds *datastore.PostgresDatastore, cfg *maintain.MaintainerConfig) (maintain.Duty, error) {
+					return maintain.NewJanitor(ds, cfg)
+				},
+				func(ds *datastore.PostgresDatastore, cfg *maintain.MaintainerConfig) (maintain.Duty, error) {
+					return maintain.NewWaterlineRoller(ds, cfg)
+				},
+				func(ds *datastore.PostgresDatastore, cfg *maintain.MaintainerConfig) (maintain.Duty, error) {
+					return maintain.NewScheduler(ds, cfg)
+				},
+			)
+			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					return errSystemNotRegistered()
 				}

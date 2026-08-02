@@ -22,9 +22,6 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 		allowDropPastCommitted bool
 		idempotencyKeyTTL      time.Duration
 		disableDeliveryLog     bool
-		janitorPollRate        time.Duration
-		janitorSweepBatchSize  int
-		waterlinePollRate      time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -57,15 +54,6 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 			}
 			if f.Changed("disable-delivery-log") {
 				cfg.DisableDeliveryLog = disableDeliveryLog
-			}
-			if f.Changed("janitor-poll-rate") {
-				cfg.JanitorPollRate = janitorPollRate
-			}
-			if f.Changed("janitor-sweep-batch-size") {
-				cfg.JanitorSweepBatchSize = janitorSweepBatchSize
-			}
-			if f.Changed("waterline-poll-rate") {
-				cfg.WaterlinePollRate = waterlinePollRate
 			}
 
 			// Validate up front for a clean `invalid config:` message (a bad flag
@@ -116,14 +104,11 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 	f.BoolVar(&allowDropPastCommitted, "allow-drop-past-committed", false, "let retention drop data a lagging consumer hasn't committed (library default)")
 	f.DurationVar(&idempotencyKeyTTL, "idempotency-key-ttl", 0, "how long a produce-retry claim survives, e.g. 1h (library default)")
 	f.BoolVar(&disableDeliveryLog, "disable-delivery-log", false, "opt out of the per-attempt failure audit trail (library default)")
-	f.DurationVar(&janitorPollRate, "janitor-poll-rate", 0, "how often the janitor duty runs, e.g. 5s (library default)")
-	f.IntVar(&janitorSweepBatchSize, "janitor-sweep-batch-size", 0, "rows deleted per sweep transaction (library default)")
-	f.DurationVar(&waterlinePollRate, "waterline-poll-rate", 0, "how often the waterline duty rolls committed forward, e.g. 1s (library default)")
 
 	// Duration flags default to 0, but 0 here means "unset -> library default",
 	// not "0s". Blank the shown default so --help doesn't advertise 0s as the
 	// value; the int/bool flags already show nothing for their zero defaults.
-	for _, name := range []string{"retention-ttl", "idempotency-key-ttl", "janitor-poll-rate", "waterline-poll-rate"} {
+	for _, name := range []string{"retention-ttl", "idempotency-key-ttl"} {
 		f.Lookup(name).DefValue = ""
 	}
 
@@ -171,8 +156,5 @@ func topicFieldDiffs(a, b *topic.Topic) []fieldDiff {
 	add("AllowDropPastCommitted", fmt.Sprintf("%t", a.AllowDropPastCommitted), fmt.Sprintf("%t", b.AllowDropPastCommitted))
 	add("IdempotencyKeyTTL", a.IdempotencyKeyTTL.String(), b.IdempotencyKeyTTL.String())
 	add("DisableDeliveryLog", fmt.Sprintf("%t", a.DisableDeliveryLog), fmt.Sprintf("%t", b.DisableDeliveryLog))
-	add("JanitorPollRate", a.JanitorPollRate.String(), b.JanitorPollRate.String())
-	add("JanitorSweepBatchSize", fmt.Sprintf("%d", a.JanitorSweepBatchSize), fmt.Sprintf("%d", b.JanitorSweepBatchSize))
-	add("WaterlinePollRate", a.WaterlinePollRate.String(), b.WaterlinePollRate.String())
 	return diffs
 }

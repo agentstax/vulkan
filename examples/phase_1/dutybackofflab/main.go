@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	metricsdatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
@@ -43,19 +44,23 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("dutybackofflab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{
-		JanitorPollRate: dutyRate,
-	})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	j, err := maintain.NewJanitor(topicName, topic.SchemaVersion(1), ds, &maintain.MaintainerConfig{
+	j, err := maintain.NewJanitor(ds, &maintain.MaintainerConfig{
 		DutyRetry: &retry.Policy{BaseDelay: backoffBase, MaxDelay: backoffMax},
 	})
 	must(err)
-	must(j.Register(ctx))
+	owner, err := common.NewTopicOwner(tp.SystemId, tp.Id, tp.Name)
+	must(err)
+	// the lab's own fast tick, passed straight to Register
+	meta, err := maintain.NewDutyMetadata(dutyRate, 1000)
+	must(err)
+	_, err = j.Register(ctx, maintain.DutyJanitor, owner, meta)
+	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)

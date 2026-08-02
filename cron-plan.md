@@ -114,13 +114,14 @@ func firingKey(firing time.Time, cronJobId int64) uuid.UUID  // v7 layout: 48-bi
 
 ## Scheduler = maintenance duty `'scheduler'`, system-owned, first of its kind
 
-- `system.scheduler_poll_rate_ns` column + `SchedulerPollRate` (default 1m, floor 1m) — AlertPollRate pattern
+- `system.scheduler_poll_rate_ns` column + `SchedulerPollRate` (default 1m, floor 1m) — AlertRepeatInterval's sparse-column pattern (AlertPollRate itself deleted 2026-08-01: each alert check is its own cron job now, so per-job schedules replaced the shared poll rate) — **SUPERSEDED 2026-08-02, maintain refactor piece 1**: every duty's poll rate now lives in `maintenance.metadata` `{"poll_rate": <ns>}`; scheduler_poll_rate_ns / SchedulerPollRate / the CLI knob are deleted, the scheduler seed writes poll_rate 1m
 - duty row seeded at RegisterSystem: `INSERT INTO maintenance (duty, system_id) SELECT 'scheduler', $1 WHERE NOT EXISTS (...)`
 - `maintain.DutyScheduler` const + `scheduler_duty.go` on the janitor_duty shape
   (Register: GetConfig → AssertSystemSchemaSupported → NewSystemOwner → `Producer[cron.JobRequest]` + dutyRunner)
 - **listDuties gap**: `JOIN topic ON t.id = COALESCE(m.topic_id, g.topic_id)` is INNER —
   system-owned rows invisible today. LEFT it + `WHEN 'scheduler' THEN s.scheduler_poll_rate_ns`
-  + no-topic FleetDuty + `dutybuilder case DutyScheduler`. Same check on dutySnapshots.
+  + no-topic FleetDuty + `dutybuilder case DutyScheduler`. (The `LEFT JOIN system s`
+  went away with the alert duty on 2026-08-01 — re-add it for the scheduler arm.) Same check on dutySnapshots.
   Hardening while there: topic columns + rate scan NULLABLE, kind list and rate CASE
   in lockstep (a kind in WHERE without a CASE arm NULLs the rate and errors the WHOLE
   list — every duty fleet-wide); the no-topic row needs its schema gate at Register
@@ -286,15 +287,27 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
 
 1. **Registry**: DDL + vendor copy + schedule.go wrappers + CronJob/CronJobDatastore
    + admin verbs (minus RunCronJob). Verify: validation matrix, MinRate vectors,
-   vendored suite green, fresh-DB psql shape.
-2. **Scheduler**: TWO platform pre-req commits first — (a) the DeliveryLog
-   mode refactor (enum + buffer-derived 'success' arm, threads where
-   disableDeliveryLog threads today), (b) ProduceResult (struct + Landed/Id
-   threading + call-site sweep). Then:
-   TopicConfig + JobRequest + firingKey; scheduler_poll_rate_ns;
-   RegisterSystem seeds topic + duty row; DutyScheduler + scheduler_duty.go +
-   listDuties system arm + tick. Verify: dev-DB single pass — due job → 1 message,
-   second pass → 0; a consumed message on an 'all' topic → 1 'success' row.
+   vendored suite green, fresh-DB psql shape. BUILT 2026-08-01.
+2. **Scheduler**: BUILT 2026-08-02, user-ordered ahead of the two platform
+   pre-reqs — DeliveryLog mode + ProduceResult are NOT built (the scheduler
+   doesn't need them to fire; they move to the status/consumer work): the
+   tick has no `!Landed` WARN yet, and job_requests runs today's default
+   delivery-log behavior, not 'all'. Built: jobrequest.go (TopicName 35d TTL
+   / JobRequest / FiringKey with id-verbatim payload bits);
+   scheduler_poll_rate_ns + SchedulerPollRate (floor 1m) + CLI get/alter;
+   RegisterSystem seeds topic + system-owned duty row (+
+   maintenance_system_duty index); DutyScheduler + scheduler_duty.go
+   (janitor shape, Producer[JobRequest] registered in Register) +
+   scheduler.go tick (per-row txns, newest-due firing, DB-clock advance,
+   Next-zero suspends+WARN, NULL-rate rows skipped in listDuties instead of
+   erroring the list). Verified live: seed/discovery, backdated job → 1
+   message w/ correct payload/keys, row advance, same-firing re-backdate
+   deduped by FiringKey. Maintain refactor piece 1 (2026-08-02) then moved
+   the poll rate onto maintenance.metadata and deleted scheduler_poll_rate_ns
+   / SchedulerPollRate / the CLI knob; piece 2 (same day) reshaped Register
+   to `(ctx, duty, owner, meta) (bool, error)` with a shouldRegister kind
+   check (owner/rate now come from the offered maintenance row, NewSystemOwner
+   call gone) — the tick is unchanged.
 3. **CLI + status**: `vulkan cron` tree (register/get/list/suspend/unsuspend/run/destroy,
    destroy double-guarded); RunCronJob; derived status in `get` — one line per
    consumer group whose binding matches the job's name (normally one). Verify:

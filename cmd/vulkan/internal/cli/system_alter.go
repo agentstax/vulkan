@@ -13,10 +13,7 @@ import (
 func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 	// Flags map 1:1 to system.AlterConfig's pointer fields. Only the ones the
 	// operator actually passed become non-nil -- a patch, not a full replace.
-	var (
-		alertPollRate       time.Duration
-		alertRepeatInterval time.Duration
-	)
+	var alertRepeatInterval time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "alter",
@@ -25,7 +22,7 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 			"fields you don't pass are left untouched.\n\n" +
 			"A running consumer snapshots this config at startup, so an alter takes\n" +
 			"effect on its next restart, not live.",
-		Example: "vulkan system alter --alert-poll-rate 2m --alert-repeat-interval 4h",
+		Example: "vulkan system alter --alert-repeat-interval 4h",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -34,9 +31,6 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 			// Build a sparse patch from only the flags that were passed.
 			cfg := &system.AlterConfig{}
 			f := cmd.Flags()
-			if f.Changed("alert-poll-rate") {
-				cfg.AlertPollRate = &alertPollRate
-			}
 			if f.Changed("alert-repeat-interval") {
 				cfg.AlertRepeatInterval = &alertRepeatInterval
 			}
@@ -70,7 +64,6 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.DurationVar(&alertPollRate, "alert-poll-rate", 0, "how often the alert checks run, e.g. 2m")
 	f.DurationVar(&alertRepeatInterval, "alert-repeat-interval", 0, "how long a firing alert stays quiet before re-emitting, e.g. 4h")
 
 	return cmd
@@ -83,9 +76,6 @@ func printSystemAlterResult(w io.Writer, before, updated *system.System) {
 
 	type diff struct{ name, old, new string }
 	var diffs []diff
-	if before.AlertPollRate != updated.AlertPollRate {
-		diffs = append(diffs, diff{"AlertPollRate", before.AlertPollRate.String(), updated.AlertPollRate.String()})
-	}
 	if before.AlertRepeatInterval != updated.AlertRepeatInterval {
 		diffs = append(diffs, diff{"AlertRepeatInterval", before.AlertRepeatInterval.String(), updated.AlertRepeatInterval.String()})
 	}
