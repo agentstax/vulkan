@@ -60,8 +60,8 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, sch
 	if schedule == nil {
 		return nil, errors.New("schedule is required")
 	}
-	if cfg.Timeout > schedule.MinGap() {
-		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min firing gap %v", cfg.Timeout, schedule, schedule.MinGap())
+	if cfg.Timeout > schedule.MinRate() {
+		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min firing rate %v", cfg.Timeout, schedule, schedule.MinRate())
 	}
 
 	// private getCronJob, not GetCronJob -- otherwise would have nested retries.
@@ -241,8 +241,8 @@ func (d *CronJobDatastore) updateCronJob(ctx context.Context, name string, cfg *
 	if cfg.Timeout != nil {
 		timeout = *cfg.Timeout
 	}
-	if timeout > sched.MinGap() {
-		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min firing gap %v", timeout, sched, sched.MinGap())
+	if timeout > sched.MinRate() {
+		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min firing rate %v", timeout, sched, sched.MinRate())
 	}
 
 	var next *time.Time

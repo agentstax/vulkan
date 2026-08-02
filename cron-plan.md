@@ -54,7 +54,7 @@ pkg/cron/
     *_test.go        their vectors, kept green (TZ-default vectors carry their zone explicitly)
   schedule.go        OURS: public Schedule STRUCT (parsed form + source expr;
                      robfig bitmasks can't serialize back to the TEXT column)
-                     + ParseSchedule + MinGap method -- API never names an internal type
+                     + ParseSchedule + MinRate method -- API never names an internal type
   cronjob.go         OURS: CronJob + NewCronJob
   config.go          OURS: Config (sparse; WithDefaults/Validate)
   datastore.go       OURS: CronJobDatastore + admin-verb queries
@@ -67,14 +67,14 @@ the duty is ours. Provenance header + pinned version on every vendored file
 
 ```go
 func ParseSchedule(expr string) (*Schedule, error)       // wraps vendored ParseStandard; rejects
-                                                         // never-fires and sub-1m-gap schedules
-func (s *Schedule) MinGap() time.Duration                // min gap over 1000 firings / 400 days,
+                                                         // never-fires and sub-1m-rate schedules
+func (s *Schedule) MinRate() time.Duration                // min rate over 1000 firings / 400 days,
                                                          // computed at parse
 
 const TopicName = "__system.job_requests"                // compacted, ~1 row per job
 func TopicConfig() *topic.Config                         // DeliveryLog 'all' (status derives from it);
                                                          // RetentionTTL 35d -- status history horizon,
-                                                         // must exceed the widest firing gap (monthly covered;
+                                                         // must exceed the widest firing rate (monthly covered;
                                                          // fired-truth survives on the row regardless)
 
 type JobRequest struct { CronJobId int64; Name string;
@@ -91,14 +91,16 @@ func firingKey(firing time.Time, cronJobId int64) uuid.UUID  // v7 layout: 48-bi
 
 - schedule is a parsed *cron.Schedule -- parse-don't-validate, an invalid
   spec can't reach Register: ParseSchedule itself rejects never-fires and
-  `MinGap < 1m` (scheduler resolution); exactly ONE firing in the MinGap
-  horizon = pass, gap unbounded (Feb-29-style schedules)
+  `MinRate < 1m` (scheduler resolution); exactly ONE firing in the MinRate
+  horizon = pass, rate unbounded (Feb-29-style schedules)
 - no free validate func -- Config.Validate covers concurrency ∈ {allow, defer}
   and timeout > 0; registerCronJob guard clauses cover the rest:
-  name slug, schedule non-nil, `timeout <= MinGap`
-- name matches `^[a-z0-9_-]+$` — name is the produced routing key: a '.'
-  cross-delivers through other jobs' wildcard bindings (anchored '*'-wildcard
-  regexes), '*' is unbindable
+  name slug, schedule non-nil, `timeout <= MinRate`
+- name matches `^[a-z0-9._-]+$` — name is the produced routing key. '*' is
+  banned: it's the binding wildcard and Bind has no escape syntax, so a name
+  holding one could never be bound exactly. Dots are ALLOWED (settled
+  2026-08-01, reversing the earlier ban): binding literals are QuoteMeta'd
+  and '*' is a plain any-characters glob, so '.' adds no collision surface
 - seed `next_scheduled_time = Next(db_now)` — DB clock, like every scheduler
   time (below); Next zero at seed → reject. UNIFORM Next-zero rule:
   Register + unsuspend ERROR, tick suspends + WARN — all three sites
@@ -140,7 +142,7 @@ if row == nil { continue }                          // raced away: run-now/suspe
 firing := row.NextScheduledTime                       // the firing the message represents
 for n := sched.Next(firing); !n.IsZero() && n <= row.DbNow; n = sched.Next(firing) {
     firing = n                                        // fire the NEWEST due firing -- after downtime
-}                                                   // staleness <= one firing gap, uniform with
+}                                                   // staleness <= one firing rate, uniform with
                                                     // missed-runs-dropped, no knob; the !IsZero
                                                     // guard keeps an unsatisfiable schedule from
                                                     // spinning (zero time <= everything)
@@ -189,7 +191,7 @@ Documented semantics (decided, not bugs — each gets a godoc/CLI sentence):
   expected topology is one group per job or per name-convention family,
   replicas share the group).
 - TZ= schedules inherit robfig DST behavior: a spring-forward firing is
-  skipped, a fall-back one fires once; MinGap sees the 23h fall-back gap
+  skipped, a fall-back one fires once; MinRate sees the 23h fall-back rate
   (conservative direction — fine).
 
 ## Admin verbs (MessageAdmin → CronJobDatastore)
@@ -209,7 +211,7 @@ AlterCronJob(ctx, name string, cfg *cron.AlterConfig) (*cron.CronJob, error)
     // AlterTopic shape: sparse patch (Schedule/Timeout/Concurrency/Data/Metadata,
     // unset = unchanged), COALESCE UPDATE, (nil, nil) -> ErrCronJobNotFound at
     // the admin layer. Effective schedule/timeout pair re-checked against
-    // MinGap; a schedule change re-seeds next_scheduled_time = Next(db_now)
+    // MinRate; a schedule change re-seeds next_scheduled_time = Next(db_now)
 GetCronJob / ListCronJobs / DestroyCronJob
 SuspendCronJob(ctx, name)
 UnsuspendCronJob(ctx, name)     // next_scheduled_time = Next(db_now) -- no stale-firing fire;
@@ -283,7 +285,7 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
 ## Chunks
 
 1. **Registry**: DDL + vendor copy + schedule.go wrappers + CronJob/CronJobDatastore
-   + admin verbs (minus RunCronJob). Verify: validation matrix, MinGap vectors,
+   + admin verbs (minus RunCronJob). Verify: validation matrix, MinRate vectors,
    vendored suite green, fresh-DB psql shape.
 2. **Scheduler**: TWO platform pre-req commits first — (a) the DeliveryLog
    mode refactor (enum + buffer-derived 'success' arm, threads where

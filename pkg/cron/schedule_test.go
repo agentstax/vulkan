@@ -21,7 +21,7 @@ func TestParseScheduleDefaultsToUTC(t *testing.T) {
 	}
 }
 
-func TestMinGap(t *testing.T) {
+func TestMinRate(t *testing.T) {
 	unbounded := time.Duration(math.MaxInt64)
 	cases := []struct {
 		expr     string
@@ -30,9 +30,9 @@ func TestMinGap(t *testing.T) {
 		{"* * * * *", time.Minute},
 		{"*/5 * * * *", 5 * time.Minute},
 		{"@hourly", time.Hour},
-		{"0 0 * * *", 24 * time.Hour}, // UTC daily -- no DST, constant gap
+		{"0 0 * * *", 24 * time.Hour}, // UTC daily -- no DST, constant rate
 		{"@every 90s", 90 * time.Second},
-		// 23h fall-back gap is the min across a year of NY daily firings
+		// 23h fall-back day is the min rate across a year of NY daily firings
 		{"TZ=America/New_York 0 0 * * *", 23 * time.Hour},
 		// fires once every 4 years -- one firing inside the 400d horizon at most
 		{"0 0 29 2 *", unbounded},
@@ -43,8 +43,8 @@ func TestMinGap(t *testing.T) {
 			t.Errorf("%q: %v", c.expr, err)
 			continue
 		}
-		if sched.MinGap() != c.expected {
-			t.Errorf("%q: expected min gap %v, got %v", c.expr, c.expected, sched.MinGap())
+		if sched.MinRate() != c.expected {
+			t.Errorf("%q: expected min rate %v, got %v", c.expr, c.expected, sched.MinRate())
 		}
 	}
 }

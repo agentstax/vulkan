@@ -139,6 +139,10 @@ func (d *TopicDatastore) RegisterTopic(ctx context.Context, systemID int64, name
 // registerTopic registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
 func (d *TopicDatastore) registerTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
+	if !slugPattern.MatchString(name) {
+		return nil, fmt.Errorf("name must match %s, got %q", slugPattern, name)
+	}
+
 	// private getTopic, not GetTopic -- otherwise would have nested retries.
 	found, err := d.getTopic(ctx, d.Datastore.Pool, name, version)
 	if err != nil {
@@ -359,6 +363,10 @@ func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newNam
 }
 
 func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) ([]*Topic, error) {
+	if !slugPattern.MatchString(newName) {
+		return nil, fmt.Errorf("new name must match %s, got %q", slugPattern, newName)
+	}
+
 	sql := `
 		UPDATE topic
 		SET name = $2, updated_at = NOW()

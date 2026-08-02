@@ -31,18 +31,15 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
 	return a.topicDatastore.ListTopics(ctx)
 }
 
-// RegisterTopic is idempotent -- an existing (name, version) resolves to its
-// topic instead of erroring.
-//
-// name is dot-namespaced by domain and entity: <domain>.<entity>[.<event>].
-// Safe to rename later -- topics are addressed by id internally, not name.
-// Ex: "orders.created", "billing.invoice.paid"
-//
-// version must be >= 1; registering a version that doesn't exist yet under
-// name is a whole new physical topic, never a migration of an existing one.
-//
-// cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
+// RegisterTopic is idempotent -- an existing (name, version) with an
+// identical cfg resolves to its topic; a differing one errors with
+// ErrTopicConfigMismatch.
+//   - name: must match ^[a-z0-9._-]+$; dot-namespaced by domain and entity
+//     ("orders.created", "billing.invoice.paid"); safe to rename later --
+//     topics are addressed by id internally, not name
+//   - version: must be >= 1; a version that doesn't exist yet under name is
+//     a whole new physical topic, never a migration of an existing one
+//   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
 func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.Config) (*topic.Topic, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
@@ -59,7 +56,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 
 func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.Config) (*topic.Topic, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
-	// otherwise UpsertTopic dies with a raw undefined-table error.
+	// otherwise RegisterTopic dies with a raw undefined-table error.
 	sys, err := a.systemDatastore.GetConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -76,7 +73,7 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 		return nil, err
 	}
 
-	return a.topicDatastore.UpsertTopic(ctx, sys.Id, name, version, *cfg)
+	return a.topicDatastore.RegisterTopic(ctx, sys.Id, name, version, *cfg)
 }
 
 // AlterTopic applies cfg's non-nil fields to topic (name, version) and

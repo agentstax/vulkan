@@ -69,12 +69,11 @@ func TestRegisterCronJobRejects(t *testing.T) {
 		schedule *Schedule
 		cfg      Config
 	}{
-		{name: "dot in name cross-delivers", jobName: "bad.name", schedule: hourly, cfg: cfg},
-		{name: "star in name unbindable", jobName: "j*", schedule: hourly, cfg: cfg},
+		{name: "star in name is the binding wildcard", jobName: "j*", schedule: hourly, cfg: cfg},
 		{name: "uppercase name", jobName: "Job", schedule: hourly, cfg: cfg},
 		{name: "empty name", jobName: "", schedule: hourly, cfg: cfg},
 		{name: "nil schedule", jobName: "j", schedule: nil, cfg: cfg},
-		{name: "timeout exceeds min gap", jobName: "j", schedule: hourly, cfg: *(&Config{Timeout: 2 * time.Hour}).WithDefaults()},
+		{name: "timeout exceeds min rate", jobName: "j", schedule: hourly, cfg: *(&Config{Timeout: 2 * time.Hour}).WithDefaults()},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

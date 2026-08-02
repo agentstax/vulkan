@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	minGapFirings = 1000
-	minGapHorizon = 400 * 24 * time.Hour
+	minRateFirings = 1000
+	minRateHorizon = 400 * 24 * time.Hour
 )
 
 type Schedule struct {
 	// the parsed form can't turn back into text -- this is what cron_job stores
-	expr   string
-	sched  robfig.Schedule
-	minGap time.Duration
+	expr    string
+	sched   robfig.Schedule
+	minRate time.Duration
 }
 
 // ParseSchedule parses a 5-field cron spec or a descriptor, UTC unless the
@@ -31,14 +31,14 @@ func ParseSchedule(expr string) (*Schedule, error) {
 	if err != nil {
 		return nil, err
 	}
-	gap, err := minGap(sched)
+	rate, err := minRate(sched)
 	if err != nil {
 		return nil, fmt.Errorf("schedule %q: %w", expr, err)
 	}
-	if gap < time.Minute {
-		return nil, fmt.Errorf("schedule %q fires every %v -- more often than the 1m scheduler resolution", expr, gap)
+	if rate < time.Minute {
+		return nil, fmt.Errorf("schedule %q fires every %v -- more often than the 1m scheduler resolution", expr, rate)
 	}
-	return &Schedule{expr: expr, sched: sched, minGap: gap}, nil
+	return &Schedule{expr: expr, sched: sched, minRate: rate}, nil
 }
 
 // Next is the next firing strictly after t; zero = never fires again.
@@ -50,28 +50,28 @@ func (s *Schedule) String() string {
 	return s.expr
 }
 
-// MinGap is the smallest firing gap over the next 1000 firings or 400 days.
+// MinRate is the shortest time between consecutive firings over the next 1000 firings or 400 days.
 // Fewer than two firings in that window (Feb-29-style) -> math.MaxInt64.
-func (s *Schedule) MinGap() time.Duration {
-	return s.minGap
+func (s *Schedule) MinRate() time.Duration {
+	return s.minRate
 }
 
-func minGap(sched robfig.Schedule) (time.Duration, error) {
+func minRate(sched robfig.Schedule) (time.Duration, error) {
 	start := time.Now().UTC()
 	prev := sched.Next(start)
 	if prev.IsZero() {
 		return 0, errors.New("never fires")
 	}
 
-	horizon := start.Add(minGapHorizon)
+	horizon := start.Add(minRateHorizon)
 	min := time.Duration(math.MaxInt64)
-	for range minGapFirings - 1 {
+	for range minRateFirings - 1 {
 		n := sched.Next(prev)
 		if n.IsZero() || n.After(horizon) {
 			break
 		}
-		if gap := n.Sub(prev); gap < min {
-			min = gap
+		if rate := n.Sub(prev); rate < min {
+			min = rate
 		}
 		prev = n
 	}

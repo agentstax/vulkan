@@ -11,8 +11,8 @@ import (
 )
 
 // a job's name doubles as the routing key its firings are produced with,
-// so it can't contain any binding syntax special characters ('.', '*')
-var slugPattern = regexp.MustCompile(`^[a-z0-9_-]+$`)
+// so it can't contain '*' -- the binding wildcard, which Bind can't escape
+var slugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // CronJob is one row of cron_job.
 type CronJob struct {

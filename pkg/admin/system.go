@@ -12,14 +12,11 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RegisterSystem stands up the shared control-plane schema every topic uses.
-// Call it once before registering any topic.
-//
-// cfg may be nil or a sparse struct.
-//
-// Idempotent -- a no-op once the schema is present and cfg matches the seeded
-// row, so it's safe on every start. A later call whose cfg DIFFERS fails with
+// RegisterSystem stands up the shared control-plane schema every topic uses;
+// call it once before registering any topic. Idempotent -- a cfg matching the
+// seeded row resolves as a no-op; a differing one errors with
 // system.ErrSystemConfigMismatch.
+//   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
 func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *system.Config) error {
 	if cfg == nil {
 		cfg = &system.Config{}

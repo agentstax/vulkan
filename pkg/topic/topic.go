@@ -1,8 +1,12 @@
 package topic
 
 import (
+	"regexp"
 	"time"
 )
+
+// topic name can't contain '*' as it's the binding wildcard
+var slugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // SchemaVersion is a contract for a topic's message compatibility.
 //
