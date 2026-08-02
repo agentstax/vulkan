@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
@@ -30,6 +31,8 @@ type Consumer[Message any] struct {
 
 	consumerGroup string
 	topicName     string
+	janitor       *maintain.Janitor
+	roller        *maintain.WaterlineRoller // nil when Config.Type is LIFECYCLE
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -54,10 +57,11 @@ func NewConsumer[Message any](consumerGroup string, topicName string, version to
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	}
-	janitor, err := maintain.NewJanitor(topicName, version, ds, maintainerConfig)
+	janitor, err := maintain.NewJanitor(ds, maintainerConfig)
 	if err != nil {
 		return nil, err
 	}
+	consumer.janitor = janitor
 	duties := []maintain.Duty{janitor}
 
 	switch cfg.Type {
@@ -72,10 +76,11 @@ func NewConsumer[Message any](consumerGroup string, topicName string, version to
 		}
 		// only the CURSOR path has a waterline to roll -- LIFECYCLE tracks
 		// state per delivery row
-		roller, err := maintain.NewWaterlineRoller(consumerGroup, topicName, version, ds, maintainerConfig)
+		roller, err := maintain.NewWaterlineRoller(ds, maintainerConfig)
 		if err != nil {
 			return nil, err
 		}
+		consumer.roller = roller
 		duties = append(duties, roller)
 	case LIFECYCLE:
 		consumer.DeliveryConsumer, err = NewDeliveryConsumer[Message](consumerGroup, topicName, version, ds, cfg)
@@ -115,7 +120,41 @@ func (c *Consumer[Message]) Register(ctx context.Context) error {
 			return err
 		}
 	}
-	return c.Maintainer.Register(ctx)
+	return c.registerDuties(ctx)
+}
+
+// registerDuties registers this consumer's duties under the identity the
+// sub-consumers just resolved: the janitor as the topic's owner, the
+// waterline roller as the group's.
+func (c *Consumer[Message]) registerDuties(ctx context.Context) error {
+	t := c.base().Topic
+
+	topicOwner, err := common.NewTopicOwner(t.SystemId, t.Id, t.Name)
+	if err != nil {
+		return err
+	}
+	meta, err := c.janitor.Datastore.GetDutyMetadata(ctx, maintain.DutyJanitor, topicOwner)
+	if err != nil {
+		return err
+	}
+	if _, err := c.janitor.Register(ctx, maintain.DutyJanitor, topicOwner, meta); err != nil {
+		return err
+	}
+
+	if c.roller == nil {
+		return nil
+	}
+	group := c.base().Group
+	groupOwner, err := common.NewConsumerGroupOwner(t.SystemId, t.Id, group.Id, group.Name)
+	if err != nil {
+		return err
+	}
+	meta, err = c.roller.Datastore.GetDutyMetadata(ctx, maintain.DutyWaterline, groupOwner)
+	if err != nil {
+		return err
+	}
+	_, err = c.roller.Register(ctx, maintain.DutyWaterline, groupOwner, meta)
+	return err
 }
 
 // base is the registered part whose base carries this consumer's lifecycle.

@@ -18,26 +18,19 @@ import (
 // - idempotency-key sweep.
 // Scoped to (topic) -- one effective Janitor per topic
 type Janitor struct {
-	Topic     *topic.Topic // resolved by Register from the name/version given to NewJanitor
+	Topic     *topic.Topic // resolved by Register from the owner's topic id
 	Datastore *MaintenanceDatastore
 	Config    *MaintainerConfig
 	Logger    logger.Logger // copied from Config.Logger at construction
 
-	topicName      string
-	version        topic.SchemaVersion
 	topicDatastore *topic.TopicDatastore
-	duty           *dutyRunner // constructed by Register -- topic id and rate come from the registry row
+	duty           *dutyRunner // constructed by Register -- identity and tuning come from the offered maintenance row
+	sweepBatchSize int         // from the offered row's metadata, like the poll rate
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJanitor(topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Janitor, error) {
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
+func NewJanitor(ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Janitor, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -68,42 +61,55 @@ func NewJanitor(topicName string, version topic.SchemaVersion, ds *datastore.Pos
 		Datastore:      maintenanceDatastore,
 		Config:         cfg,
 		Logger:         cfg.Logger,
-		topicName:      topicName,
-		version:        version,
 		topicDatastore: topicDatastore,
 	}, nil
 }
 
-// Register resolves the topic by name against the live topic row.
-func (j *Janitor) Register(ctx context.Context) error {
+// shouldRegister reports whether this duty runs the passed duty kind.
+func (j *Janitor) shouldRegister(duty string) bool {
+	return duty == DutyJanitor
+}
+
+// Register resolves the offered row's topic against the live topic row.
+// (false, nil) declines a row of another kind.
+func (j *Janitor) Register(ctx context.Context, duty string, owner *common.Owner, meta *DutyMetadata) (bool, error) {
+	if !j.shouldRegister(duty) {
+		return false, nil
+	}
 	if j.Topic != nil {
-		return fmt.Errorf("janitor for topic %q already registered", j.topicName)
+		return false, fmt.Errorf("janitor for topic %d already registered", j.Topic.Id)
+	}
+	if owner == nil {
+		return false, errors.New("owner must not be nil")
+	}
+	if meta == nil {
+		return false, errors.New("metadata must not be nil")
+	}
+	if meta.SweepBatchSize <= 0 {
+		return false, fmt.Errorf("SweepBatchSize must be > 0, got %d", meta.SweepBatchSize)
 	}
 
-	current, err := j.topicDatastore.GetTopic(ctx, j.topicName, j.version)
+	current, err := j.topicDatastore.GetTopicById(ctx, owner.TopicId)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if current == nil {
-		return fmt.Errorf("%w: topic %q -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, j.topicName)
+		return false, fmt.Errorf("%w: topic %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, owner.TopicId)
 	}
 
 	if err := migrate.AssertSchemaSupported(ctx, j.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
-		return err
+		return false, err
 	}
 
-	owner, err := common.NewTopicOwner(current.SystemId, current.Id, current.Name)
+	runner, err := newDutyRunner(j.Datastore, j.Logger, j.Config.JitterFraction, DutyJanitor, owner, meta.PollRate)
 	if err != nil {
-		return err
-	}
-	duty, err := newDutyRunner(j.Datastore, j.Logger, j.Config.JitterFraction, DutyJanitor, owner, current.JanitorPollRate)
-	if err != nil {
-		return err
+		return false, err
 	}
 
 	j.Topic = current
-	j.duty = duty
-	return nil
+	j.duty = runner
+	j.sweepBatchSize = meta.SweepBatchSize
+	return true, nil
 }
 
 // Run ticks the janitor duty until ctx cancels; a requested stop returns nil.
@@ -112,11 +118,11 @@ func (j *Janitor) Run(ctx context.Context) error {
 		return errors.New("janitor not registered -- call Register first")
 	}
 
-	j.Logger.InfoContext(ctx, "janitor duty loop starting", "topic", j.Topic.Id, "version", j.version)
+	j.Logger.InfoContext(ctx, "janitor duty loop starting", "topic", j.Topic.Id, "version", j.Topic.SchemaVersion)
 
 	err := j.duty.run(ctx, j.sweep)
 	if errors.Is(err, context.Canceled) {
-		j.Logger.InfoContext(ctx, "janitor stopped", "topic", j.Topic.Id, "version", j.version)
+		j.Logger.InfoContext(ctx, "janitor stopped", "topic", j.Topic.Id, "version", j.Topic.SchemaVersion)
 		return nil
 	}
 	return err
@@ -132,11 +138,11 @@ func (j *Janitor) sweep(ctx context.Context) error {
 	if err := j.Datastore.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DisableDeliveryLog); err != nil {
 		return err
 	}
-	if err := j.Datastore.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.JanitorSweepBatchSize, t.DisableDeliveryLog); err != nil {
+	if err := j.Datastore.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, j.sweepBatchSize, t.DisableDeliveryLog); err != nil {
 		return err
 	}
-	if err := j.Datastore.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, t.JanitorSweepBatchSize); err != nil {
+	if err := j.Datastore.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, j.sweepBatchSize); err != nil {
 		return err
 	}
-	return j.Datastore.SweepExpiredKeyLeases(ctx, t.Id, t.JanitorSweepBatchSize)
+	return j.Datastore.SweepExpiredKeyLeases(ctx, t.Id, j.sweepBatchSize)
 }

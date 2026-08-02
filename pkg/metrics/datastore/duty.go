@@ -3,6 +3,8 @@ package datastore
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // overdueFactor: how many rates past its gate a duty counts as overdue.
@@ -32,24 +34,19 @@ func (d *MetricsDatastore) DutySnapshots(ctx context.Context) ([]DutySnapshot, e
 }
 
 func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, error) {
-	// each duty runs at its own topic's rate, so the rate switches on duty
-	// kind. The WHERE mirrors the CASE: a kind this build doesn't know is
-	// skipped whole, not listed with a NULL rate that breaks the scan.
-	// The owner decides the topic join: topic-owned rows carry topic_id,
-	// group-owned rows (waterline) reach it through the group
+	// every row carries its own poll_rate in metadata, so no per-kind rate
+	// source. The owner decides the topic join: topic-owned rows carry
+	// topic_id, group-owned rows (waterline) reach it through the group,
+	// system-owned rows (scheduler) have no topic at all -- name shows ''.
 	sql := `
 		SELECT
-			m.duty, t.name, COALESCE(g.name, ''),
-			CASE m.duty
-				WHEN 'janitor' THEN t.janitor_poll_rate_ns
-				WHEN 'waterline' THEN t.waterline_poll_rate_ns
-			END,
+			m.duty, COALESCE(t.name, ''), COALESCE(g.name, ''),
+			(m.metadata->>'poll_rate')::BIGINT,
 			EXTRACT(EPOCH FROM (now() - m.can_run_after)),
 			m.attempts
 		FROM maintenance m
 		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
-		JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id)
-		WHERE m.duty IN ('janitor', 'waterline')
+		LEFT JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id)
 		ORDER BY t.name, m.duty, g.name;
 	`
 
@@ -62,12 +59,17 @@ func (d *MetricsDatastore) dutySnapshots(ctx context.Context) ([]DutySnapshot, e
 	var duties []DutySnapshot
 	for rows.Next() {
 		var s DutySnapshot
-		var rateNs int64
+		var rateNs pgtype.Int8
 		var gateAgeSecs float64
 		if err := rows.Scan(&s.Duty, &s.TopicName, &s.ConsumerGroup, &rateNs, &gateAgeSecs, &s.Attempts); err != nil {
 			return nil, err
 		}
-		s.Rate = time.Duration(rateNs)
+		if !rateNs.Valid {
+			// a row with no poll_rate can't have an Overdue verdict -- skip it
+			// rather than fail the whole snapshot
+			continue
+		}
+		s.Rate = time.Duration(rateNs.Int64)
 		s.GateAge = time.Duration(gateAgeSecs * float64(time.Second))
 		s.Overdue = s.GateAge > overdueFactor*s.Rate
 		duties = append(duties, s)

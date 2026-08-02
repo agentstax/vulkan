@@ -2,14 +2,15 @@ package maintain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -18,7 +19,7 @@ import (
 const (
 	DutyJanitor   = "janitor"
 	DutyWaterline = "waterline"
-	DutyAlert     = "alert"
+	DutyScheduler = "scheduler"
 )
 
 // ErrDutyLost fences an overrunning owner: the claim expired mid-work and
@@ -65,30 +66,75 @@ func NewMaintenanceDatastore(ds *datastore.PostgresDatastore, cfg *MaintenanceDa
 	}, nil
 }
 
-// GetGroupId resolves a consumer group's id by its owning topic and name.
-// Returns (0, nil) if the group is not registered on that topic.
-func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, topicID int64, name string) (int64, error) {
-	var id int64
+// DutyMetadata is the per-duty tuning the maintenance row itself carries --
+// one shape for every duty kind, so no tuning lives on the owner's own
+// table. A duty reads only the fields it runs on; its seed writes only those.
+type DutyMetadata struct {
+	PollRate       time.Duration `json:"poll_rate"`
+	SweepBatchSize int           `json:"sweep_batch_size"` // janitor only: rows deleted per sweep transaction
+}
+
+func NewDutyMetadata(pollRate time.Duration, sweepBatchSize int) (*DutyMetadata, error) {
+	if pollRate <= 0 {
+		return nil, fmt.Errorf("pollRate must be > 0, got %v", pollRate)
+	}
+	if sweepBatchSize < 0 {
+		return nil, fmt.Errorf("sweepBatchSize must be >= 0, got %d", sweepBatchSize)
+	}
+	return &DutyMetadata{PollRate: pollRate, SweepBatchSize: sweepBatchSize}, nil
+}
+
+// GetDutyMetadata reads the (duty, owner) row's metadata. Errors if the row
+// was never seeded -- the owner's register creates it.
+func (d *MaintenanceDatastore) GetDutyMetadata(ctx context.Context, duty string, owner *common.Owner) (*DutyMetadata, error) {
+	var meta DutyMetadata
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
-		err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicID, name).Scan(&id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			id = 0
-			return nil
+		sql := `
+			SELECT metadata
+			FROM maintenance
+			WHERE duty = $1
+				AND system_id IS NOT DISTINCT FROM $2
+				AND topic_id IS NOT DISTINCT FROM $3
+				AND consumer_group_id IS NOT DISTINCT FROM $4;
+		`
+		var raw []byte
+		err := d.Datastore.Pool.QueryRow(ctx, sql, duty, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).Scan(&raw)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("duty %q has no maintenance row -- the owner's register seeds it", duty)
+			}
+			return err
 		}
-		return err
+		return json.Unmarshal(raw, &meta)
 	})
-	return id, err
+	if err != nil {
+		return nil, err
+	}
+	return &meta, nil
 }
 
 // FleetDuty is one row of the fleet's discovery view. The whole struct is
 // the fleet's reconcile key.
 type FleetDuty struct {
-	Duty          string
-	TopicID       int64
-	TopicName     string // duties register by topic name not id
-	SchemaVersion topic.SchemaVersion
-	ConsumerGroup string // duties register by group name not id ('' = topic-scoped)
-	Rate          time.Duration
+	Duty            string
+	SystemID        int64
+	TopicID         int64  // 0 for system-owned duties
+	ConsumerGroupID int64  // 0 unless group-owned
+	TopicName       string // '' for system-owned; owner diagnostics + logs
+	ConsumerGroup   string // '' unless group-owned
+	Metadata        DutyMetadata
+}
+
+// owner rebuilds the row's owner, the identity a duty's Register runs under.
+func (f FleetDuty) owner() (*common.Owner, error) {
+	switch {
+	case f.ConsumerGroupID > 0:
+		return common.NewConsumerGroupOwner(f.SystemID, f.TopicID, f.ConsumerGroupID, f.ConsumerGroup)
+	case f.TopicID > 0:
+		return common.NewTopicOwner(f.SystemID, f.TopicID, f.TopicName)
+	default:
+		return common.NewSystemOwner(f.SystemID)
+	}
 }
 
 // ListDuties lists every duty seeded in the maintenance table. Read-only:
@@ -104,25 +150,17 @@ func (d *MaintenanceDatastore) ListDuties(ctx context.Context) ([]FleetDuty, err
 }
 
 func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, error) {
-	// each duty runs at its own topic's rate, so the rate switches on duty kind.
-	// The owner decides the topic join: topic-owned rows carry topic_id, group-
-	// owned rows (waterline) reach it through the group. Group joined for its
-	// NAME -- rollers register by name, resolving the id themselves ('' for
-	// topic-scoped duties)
+	// every row carries its own poll_rate in metadata, so no per-kind rate
+	// source. The owner decides the joins: topic-owned rows carry topic_id,
+	// group-owned rows (waterline) reach the topic through the group,
+	// system-owned rows (scheduler) have no topic at all -- topic columns
+	// COALESCE to the zero values. system_id falls back through the topic so
+	// owner() can rebuild any kind's owner from the one row.
 	sql := `
-		SELECT
-			m.duty, COALESCE(g.name, ''), t.id, t.name, t.schema_version,
-			CASE m.duty
-				WHEN 'janitor' THEN t.janitor_poll_rate_ns
-				WHEN 'waterline' THEN t.waterline_poll_rate_ns
-				WHEN 'alert' THEN s.alert_poll_rate_ns
-			END
+		SELECT m.duty, COALESCE(m.system_id, t.system_id, 0), COALESCE(t.id, 0), COALESCE(m.consumer_group_id, 0), COALESCE(t.name, ''), COALESCE(g.name, ''), m.metadata
 		FROM maintenance m
 		LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
-		JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id)
-		LEFT JOIN system s ON true -- singleton; LEFT so janitor/waterline
-		                           -- discovery never depends on the system row
-		WHERE m.duty IN ('janitor', 'waterline', 'alert');
+		LEFT JOIN topic t ON t.id = COALESCE(m.topic_id, g.topic_id);
 	`
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
@@ -134,11 +172,20 @@ func (d *MaintenanceDatastore) listDuties(ctx context.Context) ([]FleetDuty, err
 	var duties []FleetDuty
 	for rows.Next() {
 		var f FleetDuty
-		var rateNs int64
-		if err := rows.Scan(&f.Duty, &f.ConsumerGroup, &f.TopicID, &f.TopicName, &f.SchemaVersion, &rateNs); err != nil {
+		var raw []byte
+		if err := rows.Scan(&f.Duty, &f.SystemID, &f.TopicID, &f.ConsumerGroupID, &f.TopicName, &f.ConsumerGroup, &raw); err != nil {
 			return nil, err
 		}
-		f.Rate = time.Duration(rateNs)
+		// a bad row skips, it doesn't error the whole list and stall every
+		// duty fleet-wide
+		if err := json.Unmarshal(raw, &f.Metadata); err != nil {
+			d.Logger.WarnContext(ctx, "duty row metadata unreadable -- skipping", "duty", f.Duty, "error", err)
+			continue
+		}
+		if f.Metadata.PollRate <= 0 {
+			d.Logger.WarnContext(ctx, "duty row has no poll rate -- skipping", "duty", f.Duty)
+			continue
+		}
 		duties = append(duties, f)
 	}
 	return duties, rows.Err()

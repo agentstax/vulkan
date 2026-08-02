@@ -244,10 +244,12 @@ func (d *ConsumerDatastore[Message]) registerGroup(ctx context.Context, topicID 
 	}
 
 	// a cursor must never exist without a waterline duty. Group-owned:
-	// the row carries no topic_id, the group implies it.
+	// the row carries no topic_id, the group implies it. 1s poll rate --
+	// bounds the crash-recovery redelivery window without churning the
+	// cursor row.
 	dutySql := `
-		INSERT INTO maintenance (duty, consumer_group_id)
-		VALUES ('waterline', $1);
+		INSERT INTO maintenance (duty, consumer_group_id, metadata)
+		VALUES ('waterline', $1, '{"poll_rate": 1000000000}');
 	`
 	if _, err := tx.Exec(ctx, dutySql, g.Id); err != nil {
 		return nil, err

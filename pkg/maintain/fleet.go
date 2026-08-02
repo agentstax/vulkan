@@ -11,10 +11,16 @@ import (
 	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
-// FleetMaintainer is a spawner: it keeps one running Janitor/WaterlineRoller
-// per duty row in the maintenance table. Each refresh lists the table and
-// reconciles the duty pool against it -- new rows spawn a duty, vanished
-// rows (destroyed topic, dropped cursor, changed rate) stop one.
+// DutyConstructor builds one unregistered duty instance. The fleet calls
+// every constructor it was given once per maintenance row it discovers, and
+// each duty's own Register decides whether the row is its kind.
+type DutyConstructor func(ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (Duty, error)
+
+// FleetMaintainer is a spawner: it keeps one running duty per row in the
+// maintenance table, spawned through the duty constructors it was given.
+// Each refresh lists the table and reconciles the duty pool against it --
+// new rows spawn a duty, vanished rows (destroyed topic, dropped cursor,
+// changed rate) stop one.
 type FleetMaintainer struct {
 	Datastore *MaintenanceDatastore
 	Config    *FleetMaintainerConfig
@@ -48,24 +54,37 @@ func NewFleetMaintainer(ds *datastore.PostgresDatastore, cfg *FleetMaintainerCon
 		return nil, err
 	}
 
+	// jitter/logger/retry feed every spawned duty's own config
+	dutyConfig := &MaintainerConfig{
+		JitterFraction: cfg.JitterFraction,
+		Logger:         cfg.Logger,
+		Retry:          cfg.Retry,
+		DutyRetry:      cfg.DutyRetry,
+	}
+
 	return &FleetMaintainer{
 		Datastore: maintenanceDatastore,
 		Config:    cfg,
 		Logger:    cfg.Logger,
-		duties:    newDutyPool(cfg.Logger, newDutyBuilder(ds, cfg)),
+		duties:    newDutyPool(cfg.Logger, ds, dutyConfig),
 	}, nil
 }
 
-// Register asserts the shared system schema only.
-func (f *FleetMaintainer) Register(ctx context.Context) error {
+// Register asserts the shared system schema and takes the fleet's list of
+// valid duties -- every discovered row is offered to each in order.
+func (f *FleetMaintainer) Register(ctx context.Context, duties ...DutyConstructor) error {
 	if f.registered {
 		return errors.New("fleet maintainer already registered")
+	}
+	if len(duties) == 0 {
+		return errors.New("at least one duty constructor is required")
 	}
 
 	if err := migrate.AssertSystemSchemaSupported(ctx, f.Datastore.Datastore.Pool); err != nil {
 		return err
 	}
 
+	f.duties.duties = duties
 	f.registered = true
 	return nil
 }

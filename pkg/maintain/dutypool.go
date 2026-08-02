@@ -4,13 +4,16 @@ import (
 	"context"
 	"sync"
 
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 // dutyPool supervises the goroutine behind every duty the fleet has spawned:
 type dutyPool struct {
 	logger   logger.Logger
-	builder  *dutyBuilder
+	ds       *datastore.PostgresDatastore
+	config   *MaintainerConfig // fed to every constructed duty
+	duties   []DutyConstructor // set by the fleet's Register
 	running  map[FleetDuty]*spawnedDuty
 	inflight sync.WaitGroup // every spawned Run goroutine, including stopped ones still draining
 }
@@ -35,10 +38,11 @@ type dutyChange struct {
 	key    FleetDuty
 }
 
-func newDutyPool(log logger.Logger, builder *dutyBuilder) *dutyPool {
+func newDutyPool(log logger.Logger, ds *datastore.PostgresDatastore, cfg *MaintainerConfig) *dutyPool {
 	return &dutyPool{
 		logger:  log,
-		builder: builder,
+		ds:      ds,
+		config:  cfg,
 		running: make(map[FleetDuty]*spawnedDuty),
 	}
 }
@@ -97,26 +101,48 @@ func (sd *spawnedDuty) finished() bool {
 	}
 }
 
-// start builds one duty and runs it under its own child ctx.
+// start offers one row to the pool's duty list and runs the duty that
+// accepts under its own child ctx. Errors warn -- the next refresh retries.
 func (p *dutyPool) start(ctx context.Context, key FleetDuty) {
-	duty, err := p.builder.build(ctx, key)
+	owner, err := key.owner()
 	if err != nil {
-		// build err warns -- the next refresh retries.
+		p.logger.WarnContext(ctx, "fleet could not spawn duty -- retrying next refresh", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup, "error", err)
+		return
+	}
+	meta := &key.Metadata // listDuties already read the row's metadata
+
+	for _, construct := range p.duties {
+		duty, err := construct(p.ds, p.config)
+		if err == nil {
+			var registered bool
+			registered, err = duty.Register(ctx, key.Duty, owner, meta)
+			if err == nil && !registered {
+				continue // not this duty's kind -- offer the row to the next
+			}
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				p.logger.WarnContext(ctx, "fleet could not spawn duty -- retrying next refresh", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup, "error", err)
+			}
+			return
+		}
+
+		dutyCtx, stop := context.WithCancel(ctx)
+		sd := &spawnedDuty{stop: stop, done: make(chan struct{})}
+
+		p.inflight.Go(func() {
+			defer close(sd.done)
+			if err := duty.Run(dutyCtx); err != nil {
+				p.logger.ErrorContext(dutyCtx, "fleet duty exited", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup, "error", err)
+			}
+		})
+
+		p.running[key] = sd
+		p.logger.InfoContext(ctx, "fleet spawned duty", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup, "rate", key.Metadata.PollRate)
 		return
 	}
 
-	dutyCtx, stop := context.WithCancel(ctx)
-	sd := &spawnedDuty{stop: stop, done: make(chan struct{})}
-
-	p.inflight.Go(func() {
-		defer close(sd.done)
-		if err := duty.Run(dutyCtx); err != nil {
-			p.logger.ErrorContext(dutyCtx, "fleet duty exited", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup, "error", err)
-		}
-	})
-
-	p.running[key] = sd
-	p.logger.InfoContext(ctx, "fleet spawned duty", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup, "rate", key.Rate)
+	p.logger.WarnContext(ctx, "no duty in the fleet's list runs this kind -- skipping", "duty", key.Duty, "topic", key.TopicName, "group", key.ConsumerGroup)
 }
 
 // stop cancels one duty and forgets it. The goroutine drains on its own

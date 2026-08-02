@@ -29,7 +29,7 @@ type dutyRunner struct {
 	logger logger.Logger
 	jitter float64
 
-	kind  string // DutyJanitor | DutyWaterline | DutyAlert
+	kind  string // DutyJanitor | DutyWaterline | DutyScheduler
 	owner *common.Owner
 	rate  time.Duration
 }
@@ -41,7 +41,7 @@ func newDutyRunner(ds *MaintenanceDatastore, log logger.Logger, jitter float64, 
 	if log == nil {
 		return nil, errors.New("logger must not be nil")
 	}
-	if kind != DutyJanitor && kind != DutyWaterline && kind != DutyAlert {
+	if kind != DutyJanitor && kind != DutyWaterline && kind != DutyScheduler {
 		return nil, fmt.Errorf("unknown duty kind %q", kind)
 	}
 	if rate <= 0 {
