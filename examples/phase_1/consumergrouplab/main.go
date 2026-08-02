@@ -6,7 +6,7 @@ package main
 // topic (or deleting the group row) cascades everything, proven, not assumed.
 //
 // Confirms:
-//  1. UpsertGroup registers the group with its cursor and waterline duty in
+//  1. RegisterGroup registers the group with its cursor and waterline duty in
 //     one txn, and GetGroup resolves it by (topic, name).
 //  2. the same name on a SECOND topic is a DIFFERENT group -- own registry
 //     row. Names are scoped per topic, not global.
@@ -54,9 +54,9 @@ func main() {
 	topicB, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), topic.SchemaVersion(1), nil)
 	must(err)
 
-	step("UpsertGroup registers the group with its children in one txn")
+	step("RegisterGroup registers the group with its children in one txn")
 	group := fmt.Sprintf("consumergrouplab.group.%d", suffix)
-	registered, err := cd.UpsertGroup(ctx, topicA.Id, group)
+	registered, err := cd.RegisterGroup(ctx, topicA.Id, group)
 	must(err)
 	g, err := cd.GetGroup(ctx, topicA.Id, group)
 	must(err)
@@ -67,7 +67,7 @@ func main() {
 	fmt.Printf("  ✓ group %q (id %d) on topic %d, cursor + waterline duty created with it\n", group, registered.Id, topicA.Id)
 
 	step("same name on a second topic is a DIFFERENT group")
-	other, err := cd.UpsertGroup(ctx, topicB.Id, group)
+	other, err := cd.RegisterGroup(ctx, topicB.Id, group)
 	must(err)
 	if other.Id == registered.Id {
 		die(fmt.Sprintf("second topic reused the first topic's group: %+v", other))
@@ -82,7 +82,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := cd.UpsertGroup(ctx, topicA.Id, race)
+			_, err := cd.RegisterGroup(ctx, topicA.Id, race)
 			errs <- err
 		}()
 	}

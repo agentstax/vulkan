@@ -56,7 +56,7 @@ const group = "phase9.shutdowntruncationlab"
 // the same way.
 const lease = 2 * time.Second
 
-// set by main from UpsertGroup -- helpers are id-keyed
+// set by main from RegisterGroup -- helpers are id-keyed
 var groupID int64
 
 func main() {
@@ -88,7 +88,7 @@ func main() {
 	must(err)
 	must(wp.Register(ctx))
 
-	groupID = mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
 	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)

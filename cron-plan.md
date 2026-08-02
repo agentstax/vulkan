@@ -11,16 +11,15 @@ CREATE TABLE IF NOT EXISTS cron_job (
     system_id           BIGINT REFERENCES system (id) ON DELETE CASCADE,
     topic_id            BIGINT REFERENCES topic (id) ON DELETE CASCADE,
     consumer_group_id   BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
-    name                TEXT NOT NULL UNIQUE,
-    handler             TEXT NOT NULL,
+    name                TEXT NOT NULL UNIQUE,            -- also the routing key every firing is produced with
     schedule            TEXT NOT NULL,
     concurrency         TEXT NOT NULL DEFAULT 'allow',   -- 'allow' | 'defer'
     timeout_ns          BIGINT NOT NULL,                 -- -> MessageOptions.Timeout
     suspended           BOOLEAN NOT NULL DEFAULT false,
-    data                JSONB NOT NULL DEFAULT '{}',     -- opaque to everything but handlers
+    data                JSONB NOT NULL DEFAULT '{}',     -- opaque payload
     metadata            JSONB NOT NULL DEFAULT '{}',
     next_scheduled_time TIMESTAMPTZ NOT NULL,
-    last_scheduled_time TIMESTAMPTZ,                     -- slot most recently produced; tick-stamped, scheduler truth only
+    last_scheduled_time TIMESTAMPTZ,                     -- firing most recently produced; tick-stamped, scheduler truth only
     CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) <= 1),  -- all NULL = standalone
     CHECK (concurrency IN ('allow', 'defer')),
     CHECK (timeout_ns > 0)
@@ -28,8 +27,16 @@ CREATE TABLE IF NOT EXISTS cron_job (
 CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;
 ```
 
-Owner = GC metadata only; nil `*common.Owner` = standalone.
+Owner columns = GC metadata only; all NULL = standalone. No Go owner param
+anywhere yet — an Owner must never be nil; add the param when something
+actually creates owned jobs.
 `timeout_ns BIGINT` not INTERVAL — house duration convention.
+NO handler/routing column (2026-08-01): every firing produces with
+RoutingKey = name; consumers bind names — exact, several per group, or their
+own naming-convention wildcards (`reports-*`). Rejected: mandatory handler
+segment (`cronjob.<handler>.<name>`), optional Config.RoutingKey, and
+name-prefix synthesis (`<name>.<suffix>`) — each re-invents grouping the
+binding table already owns, asymmetric with how topics route.
 
 ## pkg/cron
 
@@ -45,9 +52,12 @@ pkg/cron/
     constantdelay.go @every's type
     schedule.go      Schedule interface hoisted from their cron.go
     *_test.go        their vectors, kept green (TZ-default vectors carry their zone explicitly)
-  schedule.go        OURS: public Schedule interface (redeclared -- API never
-                     names an internal type) + ParseSchedule + MinGap
-  cronjob.go         OURS: CronJob + NewCronJob + CronJobDatastore
+  schedule.go        OURS: public Schedule STRUCT (parsed form + source expr;
+                     robfig bitmasks can't serialize back to the TEXT column)
+                     + ParseSchedule + MinGap method -- API never names an internal type
+  cronjob.go         OURS: CronJob + NewCronJob
+  config.go          OURS: Config (sparse; WithDefaults/Validate)
+  datastore.go       OURS: CronJobDatastore + admin-verb queries
   jobrequest.go      OURS: JobRequest + TopicName + TopicConfig + v7 key
 ```
 
@@ -56,8 +66,10 @@ the duty is ours. Provenance header + pinned version on every vendored file
 (package clause renamed cron -> robfig, noted in each header).
 
 ```go
-func ParseSchedule(expr string) (Schedule, error)        // wraps vendored ParseStandard
-func MinGap(s Schedule) (time.Duration, error)           // min gap over 1000 firings / 400 days
+func ParseSchedule(expr string) (*Schedule, error)       // wraps vendored ParseStandard; rejects
+                                                         // never-fires and sub-1m-gap schedules
+func (s *Schedule) MinGap() time.Duration                // min gap over 1000 firings / 400 days,
+                                                         // computed at parse
 
 const TopicName = "__system.job_requests"                // compacted, ~1 row per job
 func TopicConfig() *topic.Config                         // DeliveryLog 'all' (status derives from it);
@@ -65,29 +77,38 @@ func TopicConfig() *topic.Config                         // DeliveryLog 'all' (s
                                                          // must exceed the widest firing gap (monthly covered;
                                                          // fired-truth survives on the row regardless)
 
-type JobRequest struct { CronJobId int64; Name, Handler string;
+type JobRequest struct { CronJobId int64; Name string;
     ScheduledTime time.Time; Data, Metadata json.RawMessage }
 
-func slotKey(slot time.Time, cronJobId int64) uuid.UUID  // v7 layout: 48-bit ms(slot) + id VERBATIM
+func firingKey(firing time.Time, cronJobId int64) uuid.UUID  // v7 layout: 48-bit ms(firing) + id VERBATIM
                                                          // in the 74 payload bits -- NO hash: the
                                                          // idempotency table is shared per-topic, a
                                                          // same-ms hash collision would silently
-                                                         // swallow another job's slot; int64 fits
+                                                         // swallow another job's firing; int64 fits
 ```
 
 ## Register validation (sanity only — key_lease owns overlap)
 
-- schedule parses; `MinGap >= timeout`; `MinGap >= 1m` (scheduler resolution);
-  exactly ONE firing in the MinGap horizon = pass, gap unbounded (Feb-29-style
-  schedules) — only zero firings reject
-- concurrency ∈ {allow, defer}; timeout > 0; name/handler match `^[a-z0-9_-]+$`
-  — a '.' in either cross-delivers to other handlers' `cronjob.<handler>.*`
-  bindings (anchored '*'-wildcard regexes), and '*' in a name is unbindable
+- schedule is a parsed *cron.Schedule -- parse-don't-validate, an invalid
+  spec can't reach Register: ParseSchedule itself rejects never-fires and
+  `MinGap < 1m` (scheduler resolution); exactly ONE firing in the MinGap
+  horizon = pass, gap unbounded (Feb-29-style schedules)
+- no free validate func -- Config.Validate covers concurrency ∈ {allow, defer}
+  and timeout > 0; registerCronJob guard clauses cover the rest:
+  name slug, schedule non-nil, `timeout <= MinGap`
+- name matches `^[a-z0-9_-]+$` — name is the produced routing key: a '.'
+  cross-delivers through other jobs' wildcard bindings (anchored '*'-wildcard
+  regexes), '*' is unbindable
 - seed `next_scheduled_time = Next(db_now)` — DB clock, like every scheduler
   time (below); Next zero at seed → reject. UNIFORM Next-zero rule:
   Register + unsuspend ERROR, tick suspends + WARN — all three sites
-- duplicate name (23505) → wrapped "cron job %q already registered" error,
-  not a raw pg error
+- get-or-create, the registerTopic shape: get → assertConfigMatches →
+  advisory lock `cron_job:<name>` → re-check → INSERT (no 23505 catch — the
+  lock makes it unreachable). Identical schedule/data/cfg resolves to the
+  existing job; a differing one → ErrCronJobConfigMismatch. The match compares
+  the found row in Go like topic's (no extra query); data/metadata via
+  jsonEqual (unmarshal + DeepEqual — stored jsonb comes back normalized, raw
+  bytes don't compare)
 
 ## Scheduler = maintenance duty `'scheduler'`, system-owned, first of its kind
 
@@ -116,35 +137,35 @@ row := SELECT *, now() AS db_now FROM cron_job
        FOR UPDATE SKIP LOCKED                       -- recheck makes the unlocked scan safe
 if row == nil { continue }                          // raced away: run-now/suspend/other claimer
 
-slot := row.NextScheduledTime                       // the slot the message represents
-for n := sched.Next(slot); !n.IsZero() && n <= row.DbNow; n = sched.Next(slot) {
-    slot = n                                        // fire the NEWEST due slot -- after downtime
+firing := row.NextScheduledTime                       // the firing the message represents
+for n := sched.Next(firing); !n.IsZero() && n <= row.DbNow; n = sched.Next(firing) {
+    firing = n                                        // fire the NEWEST due firing -- after downtime
 }                                                   // staleness <= one firing gap, uniform with
                                                     // missed-runs-dropped, no knob; the !IsZero
                                                     // guard keeps an unsatisfiable schedule from
                                                     // spinning (zero time <= everything)
 res, err := p.ProduceInTx(ctx, tx, fn, ProduceOptions{
-    RoutingKey:     "cronjob." + row.Handler + "." + row.Name,   // bindings: cronjob.<handler>.*
+    RoutingKey:     row.Name,                                    // consumers bind job names
     CompactionKey:  strconv.FormatInt(row.Id, 10),               // id not name (k8s-UID rule)
-    IdempotencyKey: slotKey(slot, row.Id),                       // replay-safe, fire once
+    IdempotencyKey: firingKey(firing, row.Id),                       // replay-safe, fire once
     Message:        &common.MessageOptions{Concurrency: row.Concurrency, Timeout: row.Timeout},
 })
-if !res.Landed { /* WARN "slot deduped -- ambiguous-commit replay" */ }   // still advance, not an error
+if !res.Landed { /* WARN "firing deduped -- ambiguous-commit replay" */ }   // still advance, not an error
 
 next := sched.Next(row.DbNow)                       // DB clock ONLY (claimDuty precedent) -- Go/DB
                                                     // skew double-fires tight schedules
 if next.IsZero() {
     // unsatisfiable at tick (tzdata drift): keep the produce + last_scheduled_time,
     // but suspended = true + WARN instead of the advance (column is NOT NULL)
-    UPDATE cron_job SET suspended = true, last_scheduled_time = slot WHERE id = $1
+    UPDATE cron_job SET suspended = true, last_scheduled_time = firing WHERE id = $1
 } else {
-    UPDATE cron_job SET next_scheduled_time = next, last_scheduled_time = slot WHERE id = $1
+    UPDATE cron_job SET next_scheduled_time = next, last_scheduled_time = firing WHERE id = $1
 }
 ```
 
 Row error → WARN + skip, siblings proceed; only scan/conn errors reach
-dutyRunner backoff. Every due slot produced unconditionally — concurrency
-enforced at consume time by key_lease. Once-per-slot rides the committed
+dutyRunner backoff. Every due firing produced unconditionally — concurrency
+enforced at consume time by key_lease. Once-per-firing rides the committed
 advance + SKIP LOCKED; the v7 key covers exactly ONE case, replay after an
 AMBIGUOUS COMMIT — produce + advance + idempotency claim share the txn, so a
 rollback rolls the claim back too and the replay lands fresh (don't ever
@@ -152,46 +173,59 @@ rollback rolls the claim back too and the replay lands fresh (don't ever
 
 Documented semantics (decided, not bugs — each gets a godoc/CLI sentence):
 - compaction key = id means NEWEST WINS for 'allow' jobs too — a backlogged
-  consumer skips to the latest slot (claim-time compaction; the topic holds
-  each job's latest request; per-slot keys rejected — unbounded stale-slot
-  queue). run-now shares the key, so it SUPERSEDES a pending unclaimed slot
-  and the next slot supersedes an unconsumed run-now.
-- destroy/suspend do NOT retract an already-produced unclaimed slot — it
+  consumer skips to the latest firing (claim-time compaction; the topic holds
+  each job's latest request; per-firing keys rejected — unbounded stale-firing
+  queue). run-now shares the key, so it SUPERSEDES a pending unclaimed firing
+  and the next firing supersedes an unconsumed run-now.
+- destroy/suspend do NOT retract an already-produced unclaimed firing — it
   still runs (until retention). Name reuse mints a new id/compaction key, so
-  a destroyed job's orphan slot runs BESIDE the recreated job's slots.
+  a destroyed job's orphan firing runs BESIDE the recreated job's firings.
   `vulkan cron destroy` prints this.
-- suspend racing a due tick can still fire that one slot (the suspend UPDATE
+- suspend racing a due tick can still fire that one firing (the suspend UPDATE
   blocks on the tick's row lock, applies after commit) — suspend is effective
   at the next tick boundary.
-- N consumer groups bound to one handler = N executions per slot; the
+- N consumer groups bound to one job name = N executions per firing; the
   key_lease overlap guarantee is PER-GROUP (k8s users expect one execution —
-  expected topology is one group per handler, replicas share the group).
-- TZ= schedules inherit robfig DST behavior: a spring-forward slot is
-  skipped, a fall-back slot fires once; MinGap sees the 23h fall-back gap
+  expected topology is one group per job or per name-convention family,
+  replicas share the group).
+- TZ= schedules inherit robfig DST behavior: a spring-forward firing is
+  skipped, a fall-back one fires once; MinGap sees the 23h fall-back gap
   (conservative direction — fine).
 
 ## Admin verbs (MessageAdmin → CronJobDatastore)
 
 ```go
-RegisterCronJob(ctx, name, handler, schedule string, timeout time.Duration,
-    concurrency common.ConcurrencyPolicy, data, metadata json.RawMessage,
-    owner *common.Owner) (*cron.CronJob, error)
+RegisterCronJob(ctx, name string, schedule *cron.Schedule, data any, cfg *cron.Config) (*cron.CronJob, error)
+    // identity + data (marshaled payload, nil = {}) in the signature --
+    // args-beside-schedule precedent (River/Celery/BullMQ); generics rejected:
+    // no generic methods in Go, and register-side D can't constrain the
+    // handler anyway. cron.Config sparse (house WithDefaults/Validate):
+    // Timeout 30s, Concurrency allow, Metadata any like data (both driver-
+    // marshaled, nil = {} via COALESCE). NO owner param anywhere --
+    // an Owner must never be nil, and nothing yet creates owned jobs; the
+    // owner columns stay NULL (standalone). GC-owned jobs add the param to
+    // CronJobDatastore.RegisterCronJob when they actually exist
+AlterCronJob(ctx, name string, cfg *cron.AlterConfig) (*cron.CronJob, error)
+    // AlterTopic shape: sparse patch (Schedule/Timeout/Concurrency/Data/Metadata,
+    // unset = unchanged), COALESCE UPDATE, (nil, nil) -> ErrCronJobNotFound at
+    // the admin layer. Effective schedule/timeout pair re-checked against
+    // MinGap; a schedule change re-seeds next_scheduled_time = Next(db_now)
 GetCronJob / ListCronJobs / DestroyCronJob
 SuspendCronJob(ctx, name)
-UnsuspendCronJob(ctx, name)     // next_scheduled_time = Next(db_now) -- no stale-slot fire;
+UnsuspendCronJob(ctx, name)     // next_scheduled_time = Next(db_now) -- no stale-firing fire;
                                 // Next zero (schedule went unsatisfiable) -> error, stays suspended
 RunCronJob(ctx, name)           // uuid.NewV7() key -- random enough to never dedupe, time-ordered
                                 // for the idempotency index (ProduceOptions' own godoc: v4 hurts);
                                 // Concurrency 'allow' (force-run idiom) + Timeout stamped from the
                                 // row like the tick; ScheduledTime = db_now; works while suspended;
-                                // SUPERSEDES a pending unclaimed slot (shared compaction key)
+                                // SUPERSEDES a pending unclaimed firing (shared compaction key)
 ```
 
 Status: fired = `cron_job.last_scheduled_time` (scheduler truth, survives
 retention); succeeded/failed = delivery_log rows per consumer group joined
 through message_log on the job's compaction key — needs the DeliveryLog mode
 refactor below. Window = min(35d RetentionTTL, delivery_log row lifetime) —
-verify at build which the janitor drops first. No AlterCronJob this task.
+verify at build which the janitor drops first.
 
 ## DeliveryLog mode (platform-wide decision, lands first in Chunk 2, own commit)
 
@@ -205,8 +239,8 @@ the buffer's resolved-success message ids as an explicit param (same shape as
 `superseded`) + RecordExceptionSuccess logs its own. REJECTED: deriving
 successes from a message_log range scan + binding predicate — claim-time-
 compacted messages (the sanctioned silent drop) match the binding and would
-log 'success' for slots that NEVER RAN; on job_requests that is every
-superseded slot, poisoning exactly the status this mode exists for. The
+log 'success' for firings that NEVER RAN; on job_requests that is every
+superseded firing, poisoning exactly the status this mode exists for. The
 buffer already holds the true list in memory. Invariant amends cleanly: every attempts
 increment ends in exactly one log row OR the success-deletion — under 'all'
 the success-deletion also logs, in the same txn.
@@ -255,21 +289,21 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
    mode refactor (enum + buffer-derived 'success' arm, threads where
    disableDeliveryLog threads today), (b) ProduceResult (struct + Landed/Id
    threading + call-site sweep). Then:
-   TopicConfig + JobRequest + slotKey; scheduler_poll_rate_ns;
+   TopicConfig + JobRequest + firingKey; scheduler_poll_rate_ns;
    RegisterSystem seeds topic + duty row; DutyScheduler + scheduler_duty.go +
    listDuties system arm + tick. Verify: dev-DB single pass — due job → 1 message,
    second pass → 0; a consumed message on an 'all' topic → 1 'success' row.
 3. **CLI + status**: `vulkan cron` tree (register/get/list/suspend/unsuspend/run/destroy,
-   destroy double-guarded); RunCronJob; derived status in `get` — one line per consumer
-   group on the handler's binding (expected topology = one group per handler, so
-   normally one line). Verify: live CLI pass.
+   destroy double-guarded); RunCronJob; derived status in `get` — one line per
+   consumer group whose binding matches the job's name (normally one). Verify:
+   live CLI pass.
 4. **cronlab + close-out**: sections — validation rejections (incl. charset,
    Feb-29 single-firing pass, Next-zero seed); fire-once + backdated row → 1
-   message stamped with the NEWEST due slot; v7 dedupe proven by RE-BACKDATING
-   next_scheduled_time to the SAME slot (a plain double tick is masked by the
+   message stamped with the NEWEST due firing; v7 dedupe proven by RE-BACKDATING
+   next_scheduled_time to the SAME firing (a plain double tick is masked by the
    committed advance and proves nothing); suspend/unsuspend semantics; defer under held key (spot — deferlab owns
-   depth); run-now beside busy key + run-now supersedes a pending unclaimed slot;
-   owner cascade vs standalone survival; handler end-to-end (binding, ctx, retry);
+   depth); run-now beside busy key + run-now supersedes a pending unclaimed firing;
+   owner cascade vs standalone survival; consumer end-to-end (bind name, ctx, retry);
    one poisoned row (failing produce) — siblings still fire, duty keeps ticking;
    status: 'success' rows land, `get` shows fired/succeeded/failed. Then: lab-mirror
    grep sweep, full fresh-DB suite, resettle bullet, delete refactor-plan.md + this

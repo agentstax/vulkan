@@ -26,6 +26,7 @@ import (
 // - maintenance
 // - binding
 // - compaction_head
+// - cron_job
 // - migration_log
 type SystemDatastore struct {
 	Datastore *datastore.PostgresDatastore
@@ -269,6 +270,37 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		);
 	`
 	if _, err := tx.Exec(ctx, createCompactionHeadSql); err != nil {
+		return err
+	}
+
+	// cron_job: named schedules. Owner FKs are GC metadata only -- all NULL
+	// = standalone.
+	createCronJobSql := `
+		CREATE TABLE IF NOT EXISTS cron_job (
+			id BIGSERIAL PRIMARY KEY,
+			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
+			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
+			name TEXT NOT NULL UNIQUE,                       -- also the routing key every firing is produced with
+			schedule TEXT NOT NULL,                          -- cron spec; UTC unless it carries TZ=
+			concurrency TEXT NOT NULL DEFAULT 'allow',       -- -> MessageOptions.Concurrency
+			timeout_ns BIGINT NOT NULL,                      -- nanoseconds; -> MessageOptions.Timeout
+			suspended BOOLEAN NOT NULL DEFAULT false,
+			data JSONB NOT NULL DEFAULT '{}',                -- opaque payload
+			metadata JSONB NOT NULL DEFAULT '{}',
+			next_scheduled_time TIMESTAMPTZ NOT NULL,
+			last_scheduled_time TIMESTAMPTZ,                 -- the firing most recently produced
+			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) <= 1),
+			CHECK (concurrency IN ('allow', 'defer')),
+			CHECK (timeout_ns > 0)
+		);
+	`
+	if _, err := tx.Exec(ctx, createCronJobSql); err != nil {
+		return err
+	}
+
+	createCronJobDueIndexSql := `CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;`
+	if _, err := tx.Exec(ctx, createCronJobDueIndexSql); err != nil {
 		return err
 	}
 

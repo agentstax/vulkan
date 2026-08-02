@@ -125,20 +125,20 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*Topic, error) {
 	return topics, nil
 }
 
-// UpsertTopic resolves (name, version) to its db identity, creating it if it doesn't exist.
-func (d *TopicDatastore) UpsertTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
+// RegisterTopic resolves (name, version) to its db identity, creating it if it doesn't exist.
+func (d *TopicDatastore) RegisterTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
 	var topic *Topic
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		topic, err = d.upsertTopic(ctx, systemID, name, version, cfg)
+		topic, err = d.registerTopic(ctx, systemID, name, version, cfg)
 		return err
 	})
 	return topic, err
 }
 
-// upsertTopic registers behind a per-name advisory lock, NOT ON CONFLICT.
+// registerTopic registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *TopicDatastore) upsertTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
+func (d *TopicDatastore) registerTopic(ctx context.Context, systemID int64, name string, version SchemaVersion, cfg Config) (*Topic, error) {
 	// private getTopic, not GetTopic -- otherwise would have nested retries.
 	found, err := d.getTopic(ctx, d.Datastore.Pool, name, version)
 	if err != nil {

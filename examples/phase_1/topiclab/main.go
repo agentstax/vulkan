@@ -110,11 +110,11 @@ func main() {
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
-	groupAID := mustGroupID(cd.UpsertGroup(ctx, topicA.Id, groupA))
+	groupAID := mustGroupID(cd.RegisterGroup(ctx, topicA.Id, groupA))
 	setCursor(ctx, ds, groupAID, 5, 5)
 
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
-	mustGroupID(cd.UpsertGroup(ctx, topicB.Id, groupB))
+	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB))
 
 	must(md.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
 	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1, 2}) // 2 is the janitor's empty create-ahead
@@ -126,7 +126,7 @@ func main() {
 	must(err)
 	must(wpC.Register(ctx))
 	groupRoute := "topiclab.route"
-	groupRouteID := mustGroupID(cd.UpsertGroup(ctx, topicC.Id, groupRoute))
+	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute))
 
 	headBefore := head(ctx, ds, topicC.Id) // topicC is fresh, this is 0
 	publish(ctx, wpC, "orders.created")    // id headBefore+1, published BEFORE any binding exists
@@ -154,8 +154,8 @@ func main() {
 	must(wpD.Register(ctx))
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
-	groupXID := mustGroupID(cd.UpsertGroup(ctx, topicD.Id, groupX))
-	groupYID := mustGroupID(cd.UpsertGroup(ctx, topicD.Id, groupY))
+	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX))
+	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY))
 	must(cd.Bind(ctx, groupXID, "sliceX.*"))
 	must(cd.Bind(ctx, groupYID, "sliceY.*"))
 

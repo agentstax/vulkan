@@ -109,7 +109,7 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 		return err
 	}
 
-	group, err := b.Datastore.UpsertGroup(ctx, b.Topic.Id, b.consumerGroup)
+	group, err := b.Datastore.RegisterGroup(ctx, b.Topic.Id, b.consumerGroup)
 	if err != nil {
 		return err
 	}

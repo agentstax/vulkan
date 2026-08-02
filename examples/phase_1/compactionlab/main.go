@@ -55,7 +55,7 @@ type KeyedRecord struct {
 	Deleted bool   `json:"deleted,omitempty"`
 }
 
-// set by main from UpsertGroup -- helpers are id-keyed
+// set by main from RegisterGroup -- helpers are id-keyed
 var cursorGroupID int64
 
 func main() {
@@ -86,7 +86,7 @@ func main() {
 	wp, err := producer.NewProducer[KeyedRecord](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	cursorGroupID = mustGroupID(cd.UpsertGroup(ctx, tp.Id, cursorGroup))
+	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup))
 
 	const lease = 2 * time.Second
 	const maxRangeReclaims = 3 // never exhausted in this lab -- exactly one reclaim happens
@@ -189,8 +189,8 @@ func main() {
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 11)
 
-	publish(ctx, wp, "user:6", 1, true)                                         // id 12, LIFECYCLE path
-	lifecycleGroupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
+	publish(ctx, wp, "user:6", 1, true)                                           // id 12, LIFECYCLE path
+	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
 	must(cd.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
 	delivered, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
 	must(err)

@@ -658,7 +658,7 @@ func publishUnkeyed(ctx context.Context, wp *producer.Producer[Rec], version int
 }
 
 func groupID(ctx context.Context, cd *consumer.ConsumerDatastore[Rec], name string) int64 {
-	g, err := cd.UpsertGroup(ctx, topicID, name)
+	g, err := cd.RegisterGroup(ctx, topicID, name)
 	must(err)
 	return g.Id
 }

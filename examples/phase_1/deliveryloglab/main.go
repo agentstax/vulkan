@@ -235,7 +235,7 @@ func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix s
 
 	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
 	must(err)
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))

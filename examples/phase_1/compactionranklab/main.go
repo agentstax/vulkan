@@ -66,7 +66,7 @@ func main() {
 	wp, err := producer.NewProducer[RankedRecord](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 
 	const lease = 5 * time.Second
 	const maxRangeReclaims = 3 // never exhausted in this lab -- no crashes/reclaims here

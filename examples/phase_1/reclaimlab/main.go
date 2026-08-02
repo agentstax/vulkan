@@ -38,7 +38,7 @@ const (
 	seedRows = 20
 )
 
-// set by main from UpsertGroup -- helpers are id-keyed
+// set by main from RegisterGroup -- helpers are id-keyed
 var groupID int64
 
 func main() {
@@ -70,7 +70,7 @@ func main() {
 	must(err)
 	must(wp.Register(ctx))
 
-	groupID = mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	for range seedRows {
 		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")

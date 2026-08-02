@@ -114,7 +114,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
 	watcherDone := make(chan struct{})
@@ -190,7 +190,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, int(int64(numRanges)*batchSize))
 
 	var stalenesses []float64
@@ -274,7 +274,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, int(n))
 
 	start := time.Now()
@@ -329,7 +329,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, total)
 
 	start := time.Now()

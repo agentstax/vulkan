@@ -2,7 +2,7 @@ package main
 
 // register idempotency lab: re-registering a topic is idempotent, and a
 // conflicting config is rejected -- guarding the struct-equality check in
-// topic.upsertTopic. created_at/updated_at are db-assigned and a Config carries
+// topic.registerTopic. created_at/updated_at are db-assigned and a Config carries
 // neither, so the existing-topic branch threads the stored row's timestamps
 // into ToTopic before the *found != *want compare. Forget that and every
 // re-register would falsely report a config mismatch -- this lab is the tripwire.

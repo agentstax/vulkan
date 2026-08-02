@@ -79,7 +79,7 @@ func main() {
 	wp, err := producer.NewProducer[Rec](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	g, err := cd.UpsertGroup(ctx, tp.Id, group)
+	g, err := cd.RegisterGroup(ctx, tp.Id, group)
 	must(err)
 	groupID = g.Id
 

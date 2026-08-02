@@ -158,7 +158,7 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consume
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
 	gids := map[string]int64{}
 	for _, g := range groups {
-		gID := mustGroupID(cd.UpsertGroup(ctx, topicID, g))
+		gID := mustGroupID(cd.RegisterGroup(ctx, topicID, g))
 		gids[g] = gID
 		_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, gID)
 		must(err)

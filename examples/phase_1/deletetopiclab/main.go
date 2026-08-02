@@ -59,7 +59,7 @@ func main() {
 
 	step("seed a row in every topic-scoped table")
 
-	groupID := mustGroupID(cd.UpsertGroup(ctx, tp.Id, group))
+	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	must(cd.Bind(ctx, groupID, "orders.*"))
 
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {

@@ -1,7 +1,5 @@
 // Vendored from github.com/robfig/cron/v3 v3.0.1 (MIT -- see LICENSE in this directory).
-// This declaration is hoisted out of upstream's cron.go, which is otherwise
-// not vendored -- it is their in-process runner, and the scheduler duty is
-// ours.
+// Hoisted from upstream's cron.go, which is not vendored (their in-process runner).
 
 package robfig
 

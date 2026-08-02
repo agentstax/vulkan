@@ -49,7 +49,7 @@ const (
 	groupInside = "phase8a.drop.inside" // cursor still sits inside it
 )
 
-// set by main from UpsertGroup -- helpers are id-keyed
+// set by main from RegisterGroup -- helpers are id-keyed
 var groupID int64
 
 func main() {
@@ -148,7 +148,7 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 }
 
 func reset(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
-	groupID = mustGroupID(cd.UpsertGroup(ctx, topicID, group))
+	groupID = mustGroupID(cd.RegisterGroup(ctx, topicID, group))
 	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupID)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)

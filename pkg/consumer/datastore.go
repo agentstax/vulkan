@@ -177,21 +177,21 @@ func (d *ConsumerDatastore[Message]) getGroup(ctx context.Context, q datastore.Q
 	return &g, nil
 }
 
-// UpsertGroup registers the group, cursor,
+// RegisterGroup registers the group, cursor,
 // and maintainence duties if it doesn't exist.
-func (d *ConsumerDatastore[Message]) UpsertGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
+func (d *ConsumerDatastore[Message]) RegisterGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
 	var group *Group
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		group, err = d.upsertGroup(ctx, topicID, name)
+		group, err = d.registerGroup(ctx, topicID, name)
 		return err
 	})
 	return group, err
 }
 
-// upsertGroup registers behind a per-(topic,name) advisory lock, NOT ON CONFLICT.
+// registerGroup registers behind a per-(topic,name) advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ConsumerDatastore[Message]) upsertGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
+func (d *ConsumerDatastore[Message]) registerGroup(ctx context.Context, topicID int64, name string) (*Group, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err

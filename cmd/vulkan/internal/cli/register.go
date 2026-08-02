@@ -158,7 +158,7 @@ func printMismatch(w io.Writer, name string, existing *topic.Topic, want *topic.
 type fieldDiff struct{ name, existing, requested string }
 
 // topicFieldDiffs returns one row per field where the two topics differ, over
-// exactly the fields UpsertTopic compares (Topic value equality).
+// exactly the fields RegisterTopic compares (Topic value equality).
 func topicFieldDiffs(a, b *topic.Topic) []fieldDiff {
 	var diffs []fieldDiff
 	add := func(name, av, bv string) {
