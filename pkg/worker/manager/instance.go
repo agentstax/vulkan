@@ -8,6 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
+	"golang.org/x/sync/errgroup"
 )
 
 // ManagerInstance is one claimed live copy of an owner's manager worker: Run
@@ -18,10 +19,11 @@ type ManagerInstance struct {
 	Config *ManagerConfig
 	Logger logger.Logger // copied from Config.Logger at construction
 
-	runner   *controller.InstanceTickRunner
-	workers  *controller.WorkerController
-	pool     *instancePool
-	metadata *managerMetadata
+	runner    *controller.InstanceTickRunner
+	workers   *controller.WorkerController
+	factories map[string]worker.Factory
+	pool      *instancePool // built in Run
+	metadata  *managerMetadata
 }
 
 func newManagerInstance(manager *ManagerFactory, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
@@ -40,28 +42,36 @@ func newManagerInstance(manager *ManagerFactory, owner *common.Owner, claimed *w
 	}
 
 	return &ManagerInstance{
-		Owner:    owner,
-		Config:   manager.Config,
-		Logger:   manager.Logger,
-		runner:   runner,
-		workers:  manager.workers,
-		pool:     newInstancePool(manager.Logger, manager.factories),
-		metadata: metadata,
+		Owner:     owner,
+		Config:    manager.Config,
+		Logger:    manager.Logger,
+		runner:    runner,
+		workers:   manager.workers,
+		factories: manager.factories,
+		metadata:  metadata,
 	}, nil
 }
 
-// Run reconciles until ctx cancels; a requested stop returns nil. The claimed
-// instance releases on the way out however Run exits.
+// Run reconciles until ctx cancels or a spawned instance fails fatally; a
+// requested stop returns nil. The claimed instance releases on the way out
+// however Run exits.
 func (i *ManagerInstance) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate)
 
-	err := i.runner.Run(ctx, i.refresh)
+	// a fatal spawned-instance error cancels runCtx through the group
+	group, runCtx := errgroup.WithContext(ctx)
+	i.pool = newInstancePool(i.factories, group, i.Logger)
+
+	// run is blocking
+	err := i.runner.Run(runCtx, i.refresh)
 
 	// every spawned instance's ctx derives from the pass ctx, so the pool is
-	// already stopping -- wait for the instances to drain. The claim released
-	// first: safe, spawned instances hold their own claims, so their targets
-	// still hold.
-	i.pool.wait()
+	// already stopping -- Wait drains the instances and carries the first
+	// fatal error. The claim released first: safe, spawned instances hold
+	// their own claims, so their targets still hold.
+	if groupErr := group.Wait(); err == nil {
+		err = groupErr
+	}
 
 	if err == nil {
 		i.Logger.InfoContext(ctx, "manager instance stopped")

@@ -22,7 +22,11 @@ type Factory interface {
 	Register(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (Instance, error)
 }
 
-// Instance is what Register returns: one claimed instance, ready to run.
+// Instance is what Register returns: one claimed life. Run blocks until the
+// life ends, and its return value is the instance's exit declaration:
+//   - nil -> work complete
+//   - ErrInstanceLost -> claim lost, a replacement may already be running -- respawnable
+//   - anything else -> fatal for whoever spawned it
 type Instance interface {
 	Run(ctx context.Context) error
 }

@@ -2,10 +2,12 @@ package manager
 
 import (
 	"context"
-	"sync"
+	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
+	"golang.org/x/sync/errgroup"
 )
 
 // instancePool supervises the goroutine behind every instance the manager
@@ -14,7 +16,7 @@ type instancePool struct {
 	logger    logger.Logger
 	factories map[string]worker.Factory  // keyed by Name, copied from the manager at construction
 	running   map[int64]*spawnedInstance // keyed by worker row id
-	inflight  sync.WaitGroup             // every spawned Run goroutine, including stopped ones still draining
+	group     *errgroup.Group            // every spawned Run goroutine; its first fatal error cancels the manager's run
 }
 
 type spawnedInstance struct {
@@ -41,11 +43,12 @@ type workerChange struct {
 	worker *worker.Worker // nil on workerRemoved -- the row is gone
 }
 
-func newInstancePool(log logger.Logger, factories map[string]worker.Factory) *instancePool {
+func newInstancePool(factories map[string]worker.Factory, group *errgroup.Group, log logger.Logger) *instancePool {
 	return &instancePool{
 		logger:    log,
 		factories: factories,
 		running:   make(map[int64]*spawnedInstance),
+		group:     group,
 	}
 }
 
@@ -105,54 +108,56 @@ func (i *spawnedInstance) finished() bool {
 
 // start spawns one worker row through its factory under its own child ctx.
 // Errors warn -- the next reconcile retries.
-func (p *instancePool) start(ctx context.Context, worker *worker.Worker) {
-	factory, ok := p.factories[worker.Name]
+func (p *instancePool) start(ctx context.Context, desiredWorker *worker.Worker) {
+	factory, ok := p.factories[desiredWorker.Name]
 	if !ok {
 		// expected every pass, not a misconfiguration -- a chain carries rows
 		// the manager has no factory for, its own manager row at minimum
-		p.logger.DebugContext(ctx, "no factory in the manager's list runs this worker -- skipping", "worker", worker.Name, "owner", worker.Owner.Name)
+		p.logger.DebugContext(ctx, "no factory in the manager's list runs this worker -- skipping", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name)
 		return
 	}
 
-	instance, err := factory.Register(ctx, worker.Id, &worker.Owner, worker.Metadata)
+	instance, err := factory.Register(ctx, desiredWorker.Id, &desiredWorker.Owner, desiredWorker.Metadata)
 	if err != nil {
 		if ctx.Err() == nil {
-			p.logger.WarnContext(ctx, "manager could not spawn worker -- retrying next reconcile", "worker", worker.Name, "owner", worker.Owner.Name, "error", err)
+			p.logger.WarnContext(ctx, "manager could not spawn worker -- retrying next reconcile", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name, "error", err)
 		}
 		return
 	}
 	if instance == nil {
 		// declined: target_instances is already filled, likely by another
 		// replica -- the next reconcile tries again
-		p.logger.DebugContext(ctx, "worker declined an instance", "worker", worker.Name, "owner", worker.Owner.Name)
+		p.logger.DebugContext(ctx, "worker declined an instance", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name)
 		return
 	}
 
 	instanceCtx, stop := context.WithCancel(ctx)
-	spawned := &spawnedInstance{stop: stop, done: make(chan struct{}), worker: worker.Name, owner: worker.Owner.Name}
+	spawned := &spawnedInstance{stop: stop, done: make(chan struct{}), worker: desiredWorker.Name, owner: desiredWorker.Owner.Name}
 
-	p.inflight.Go(func() {
+	// pure interpreter of the instance's exit declaration, no policy of its own
+	p.group.Go(func() error {
 		defer close(spawned.done)
-		if err := instance.Run(instanceCtx); err != nil {
-			p.logger.ErrorContext(instanceCtx, "worker exited", "worker", spawned.worker, "owner", spawned.owner, "error", err)
+
+		// run is blocking
+		err := instance.Run(instanceCtx)
+
+		switch {
+		case err == nil, errors.Is(err, worker.ErrInstanceLost), instanceCtx.Err() != nil:
+			return nil // reconcile respawns / shutdown unwinding
+		default:
+			return fmt.Errorf("%s worker (%s): %w", spawned.worker, spawned.owner, err) // errgroup cancels -> manager down
 		}
 	})
 
-	p.running[worker.Id] = spawned
-	p.logger.InfoContext(ctx, "manager spawned worker", "worker", worker.Name, "owner", worker.Owner.Name)
+	p.running[desiredWorker.Id] = spawned
+	p.logger.InfoContext(ctx, "manager spawned worker", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name)
 }
 
 // stop cancels one instance and forgets it. The goroutine drains on its own
-// time -- the WaitGroup keeps tracking it, so wait still covers it.
+// time -- the group keeps tracking it, so Wait still covers it.
 func (p *instancePool) stop(ctx context.Context, id int64) {
 	spawned := p.running[id]
 	spawned.stop()
 	delete(p.running, id)
 	p.logger.InfoContext(ctx, "manager stopped worker", "worker", spawned.worker, "owner", spawned.owner)
-}
-
-// wait blocks until every spawned goroutine -- running or stopped -- has
-// returned. Call only after the ctx every instance derives from is cancelled.
-func (p *instancePool) wait() {
-	p.inflight.Wait()
 }
