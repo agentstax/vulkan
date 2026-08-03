@@ -10,7 +10,7 @@ import (
 
 func TestMetaFromContextBareContext(t *testing.T) {
 	if _, ok := MetaFromContext(context.Background()); ok {
-		t.Fatal("expected ok=false on a context with no meta stamped")
+		t.Fatal("expected ok=false on a context with no meta set")
 	}
 }
 

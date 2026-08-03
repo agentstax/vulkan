@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/cmd/vulkan/internal/cli"
 )
 
-// version is stamped at build time via -ldflags "-X main.version=...".
+// version is set at build time via -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {

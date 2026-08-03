@@ -8,7 +8,7 @@ import (
 )
 
 // Execute builds the command tree, runs it through fang, and returns the
-// process exit code. version is the build-stamped string main passes in.
+// process exit code.
 func Execute(ctx context.Context, version string) int {
 	root, _ := newRootCmd()
 	orderFlags(root)

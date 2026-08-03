@@ -25,6 +25,11 @@ each func param has explicit type, never combined
 - Design-round vocabulary (analogies, research jargon like "exclusive arc")
   is for discussion only -- translate back to the codebase's own nouns before
   writing names or comments.
+- Use the plainest verb for the action -- `put`, `set`, `read`, `write`,
+  `send`, `delete`. A more vivid verb (`stamp`, `hydrate`, `wire up`,
+  `bake in`, `ferry`, `hand off`, `thread through`) must carry information
+  the plain one doesn't; otherwise it is decoration the reader has to
+  translate back. Applies to prose in comments, not just identifiers.
 - When a bad name turns out to be an established pattern, fix every
   occurrence, not just the new one.
 - Spell variable and param names out -- `message`, `instance`, `duration`,
