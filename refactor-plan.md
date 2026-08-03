@@ -306,3 +306,133 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
   in topic/consumer_group Register paths, MessageOptions persistence shape on the message row (typed
   columns vs metadata — internals TBD), torture-lab coverage (two consumers fighting one
   key through crash / lease-steal / supersession chains / wedged-key starvation)
+
+---
+
+# pkg/consumer layered refactor — PLANNED (2026-08-03)
+
+Apply the conventions.md three-layer template (vocabulary -> controller -> controller/datastore)
+to pkg/consumer, as already done for topic (2026-08-02) and system (2026-08-03).
+
+EXECUTE AFTER worker chunk 8. consumer.go's duty wiring (maintain.Janitor + maintain.
+WaterlineRoller, registerDuties/GetDutyMetadata) is exactly what chunk 8 rewrites —
+refactoring first means relocating code chunk 8 then deletes.
+
+## why consumer isn't shaped like topic/system
+
+topic and system are CRUD resources: the layered trio covers everything they do. consumer
+is a RUNTIME ENGINE that also owns persistence. The trio applies to the persistence half;
+the engine splits by consumption mode over a shared plumbing package.
+
+## layout
+
+pkg/consumer                            the composed door + vocabulary
+  consumer.go            Consumer[M] + NewConsumer -- composes cursor + lifecycle
+  options.go             With* builders
+  group.go               Group
+  meta.go                MessageMeta + MetaFromContext
+  errors.go              lifecycleContextHelp
+  context.go             SleepWithContext
+  metrics/               unchanged
+
+pkg/consumer/base                       plumbing every consumption mode composes
+  base.go                ConsumerBase[M] + NewConsumerBase
+  dispatch.go            DispatchVerdict + consts, ClaimKeyedRun
+  safecall.go            CallSafely
+  lifecycle.go           Register, RunCtx, LifecycleErr, SetLifecycleCtx
+
+pkg/consumer/cursor                     CURSOR consumption
+  messageconsumer.go     MessageConsumer[M]
+  exceptionconsumer.go   ExceptionConsumer[M]
+  claimbuffer.go         claimBuffer + Buffered
+  rangestate.go          rangeState + rangeSnapshot
+
+pkg/consumer/lifecycle                  LIFECYCLE consumption (parked)
+  deliveryconsumer.go    DeliveryConsumer[M]
+
+pkg/consumer/controller                 the only door to consumer persistence
+  controller.go          ConsumerController + NewConsumerController
+  controller_config.go   ControllerConfig{Logger, Retry}
+  consumer_config.go     ConsumerConfig + ConsumerType
+  group.go               GetGroup / RegisterGroup
+  binding.go             Bind / ClearBindings
+  cursor.go              claim / commit / partial-commit / force-reclaim
+  exception.go           claim / renew / record x4 / kill
+  keylease.go            ClaimKeyLease / ReleaseKeyLease
+  delivery.go            FanOut / claim / record x3          LIFECYCLE
+  adapter.go             *Data -> vocabulary
+
+Import arrows: consumer -> cursor, lifecycle -> base -> controller -> controller/datastore.
+Vocabulary (group.go, meta.go) sits at the top only because nothing below it needs those
+types; if base ever needs Group it moves down with the arrows, not sideways.
+
+ConsumerConfig lives in controller, NOT at the top: base/cursor/lifecycle/consumer all read
+it, so a top-level home cycles (base -> consumer). Controller is also where conventions.md
+puts <x>_config.go, matching topiccontroller.TopicConfig / systemcontroller.SystemConfig.
+REJECTED: a top-level `type ConsumerConfig = controller.ConsumerConfig` alias -- the repo
+has zero type aliases today and this would be the only one.
+
+pkg/consumer/controller/datastore       table-exact SQL, Wrap-only
+  datastore.go           ConsumerDatastore + New
+  config.go              ConsumerDatastoreConfig
+  group.go               GroupData + SQL
+  binding.go             + wildcardToRegex
+  cursor.go              MessageData/LeaseData/CursorData/ClaimedRangeData + SQL
+  exception.go           ExceptionData + SQL
+  keylease.go            KeyLeaseData + SQL
+  delivery.go            DeliveryData + SQL
+
+datastore.go (1687 lines) becomes six focused files across two layers; nothing else grows.
+
+## cleanups the split carries
+
+- ConsumerDatastore[Message any] is a PHANTOM type parameter -- zero uses in any field,
+  signature, or body. Payload is json.RawMessage end to end; unmarshalling happens in the
+  consumers. Drop it: de-genericizes the persistence layer and removes the type argument
+  from ~17 lab call sites (consumer.NewConsumerDatastore).
+- Wrap-only violations: ReclaimWithCursor and FreshClaimMessagesWithCursor are EXPORTED,
+  own their own transactions, have no Wrap, and are called from inside the private
+  claimMessagesWithCursor -- exported names doing private work. They become the private
+  halves. ClaimMessages/quarantine/readMessages/record/recordAndReleaseKey are tx-scoped
+  or helpers: stay unwrapped but private (cronscheduler precedent -- no Wrap inside a txn).
+- Validation moves to the controller: newConsumerBase's version < 1 check, the datastore's
+  inline low >= high sanity check.
+- Config file naming per conventions.md: consumer_config.go / controller_config.go.
+
+## settled decisions
+
+- adapter scope: convert only what the runtime manipulates (ClaimedRange, ClaimedException,
+  MessageRow, LeaseRow, DeliveryRow). The four pure write-payloads (MessageException,
+  MessageTerminal, MessageSuperseded, MessageDeferred) stay controller-level input structs.
+- base/cursor/lifecycle are ORDINARY packages, not internal/. The public-surface cost below
+  is known and accepted -- surface trimming is a later pass, not this one.
+
+## the export cost (accepted)
+
+A package boundary between base and the consumption modes makes consumerBase's private
+surface public. Measured: all three sub-consumers use the same 7-8 base members (only
+claimKeyedRun is cursor-only), so there is no cheaper split.
+
+  fields   ConsumerGroup, Version, LifecycleCtx
+  methods  Register, CallSafely, ClaimKeyedRun, RunCtx, LifecycleErr
+  types    ConsumerBase[M], DispatchVerdict + its three consts
+
+LifecycleCtx is the sharp one: sub-consumers SET it after their own registration steps
+succeed, so it needs SetLifecycleCtx (not a bare exported field) -- the consumer's shutdown
+gate must not be reassignable by callers. Everything here goes on public-surface.md's
+excluded/demote list when that pass happens.
+
+## rejected alternatives
+
+- FLAT runtime in pkg/consumer (base + both modes in one package). Zero new surface, ~2000
+  lines across 13 files. Rejected: does not isolate the parked LIFECYCLE path, and package
+  boundaries between the modes are worth more than the surface cost right now.
+- pkg/consumer/internal/base. Hides the export cost above from users while still letting
+  cursor/lifecycle import it. Rejected: forces base to be a NAMED FIELD rather than embedded
+  (embedding promotes CallSafely/RunCtx/LifecycleErr onto the public MessageConsumer even
+  from an internal package), and un-embedding drops mc.Topic / mc.Config / mc.Logger from
+  the public surface -- which base.go's own comment says is deliberate today.
+- deleting LIFECYCLE outright instead of fencing it (~560 lines: deliveryconsumer.go +
+  datastore_lifecycle.go). Still the sharper question -- config.go already calls it "a
+  strictly more expensive CURSOR" that re-earns its place only with the non-FIFO queue work.
+  Deferred, not rejected on merit; the package boundary makes the deletion trivial later.

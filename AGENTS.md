@@ -2,11 +2,12 @@
 
 How to work in this repo.
 
-**REQUIRED: read `conventions.md` (repo root) before writing or reviewing any
-code.** It holds the codebase-wide rules -- dependencies, naming, structure,
-package layout, datastores, constructors/configs, migrations, SQL, comments.
-Violations of those rules are bugs, not style nits. This file covers only
-session workflow; the two are a set.
+**REQUIRED: `conventions.md` (repo root) governs all code** -- dependencies,
+naming, structure, package layout, datastores, constructors/configs,
+migrations, SQL, comments. Violations there are bugs, not style nits. Read it
+before writing or reviewing code unless it is already in context -- the root
+`CLAUDE.md` imports both files, so Claude Code loads them at launch. This file
+covers session workflow only; the two are a set.
 
 ## Responses
 
