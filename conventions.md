@@ -91,6 +91,11 @@ Three layers per domain (template: worker, topic):
   built only by controller adapters get no constructor.
 - Required params inline in the signature; optional ones in a slim sparse
   Config struct. Never pass a whole data struct for a couple of fields.
+- Param order is primary collaborator first, ambient last: the dep the struct
+  is *about* leads, then its remaining deps, then `cfg`, and a bare
+  `log logger.Logger` always trails (prefer `cfg.Logger` over a bare param).
+  A logger in the first position is the tell that a signature was copied from
+  somewhere else -- readers scan position 1 for what the thing operates on.
 - No functional-options pattern. Every config struct: exported
   `WithDefaults()` (fills zero fields, mutates + returns receiver) then
   `Validate()` (validates the RESOLVED config), both in the package's own
