@@ -144,10 +144,10 @@ func (rc *runningConsumer) stop() {
 
 func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName string, i int) *runningConsumer {
 	c, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
-		BatchLimit:    50,
-		QueueSize:     64,
-		Processors:    4,
-		ClaimPollRate: 100 * time.Millisecond,
+		BatchLimit:         50,
+		QueueSize:          64,
+		MessageConcurrency: 4,
+		ClaimPollRate:      100 * time.Millisecond,
 	})
 	must(err)
 

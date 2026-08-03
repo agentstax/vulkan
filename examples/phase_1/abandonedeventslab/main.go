@@ -64,7 +64,7 @@ func main() {
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		QueueSize:               10,
-		Processors:              3,
+		MessageConcurrency:      3,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace:            50 * time.Millisecond,
 	})

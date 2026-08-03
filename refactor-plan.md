@@ -342,9 +342,8 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
     a system owner) and whether topic manager rows earn their place at all.
   - EnsureNextPartition is still homeless — chunk 5 deferred it and the worker janitor's
     sweep does not do it. Producer self-heal is the only cover today.
-  - CURSOR builds the whole factory set twice (message base + exception base) and runs
-    seedGroupWorkers twice; Consumer reaches through c.base().manager for the one factory
-    it needs. Chunk 9's reshape is the place to fix it, not a separate pass.
+  - (CLOSED by chunk 9: CURSOR no longer builds the factory set twice -- Consumer.Register
+    builds one base and one factory set.)
 
 ---
 
@@ -353,63 +352,76 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
 Apply the conventions.md three-layer template (vocabulary -> controller -> controller/datastore)
 to pkg/consumer, as already done for topic (2026-08-02) and system (2026-08-03).
 
-EXECUTE AFTER worker chunk 8. consumer.go's duty wiring (maintain.Janitor + maintain.
-WaterlineRoller, registerDuties/GetDutyMetadata) is exactly what chunk 8 rewrites —
-refactoring first means relocating code chunk 8 then deletes.
+Gate cleared: chunks 8 and 9 are built. Layout below is REVISED (2026-08-03, after chunk 9)
+— it supersedes the cursor/lifecycle mode packages this plan originally carried.
 
 ## why consumer isn't shaped like topic/system
 
 topic and system are CRUD resources: the layered trio covers everything they do. consumer
 is a RUNTIME ENGINE that also owns persistence. The trio applies to the persistence half;
-the engine splits by consumption mode over a shared plumbing package.
+the engine splits ONE PACKAGE PER WORKER ROW over a shared plumbing package.
 
 ## layout
 
-pkg/consumer                            the composed door + vocabulary
-  consumer.go            Consumer[M] + NewConsumer -- composes cursor + lifecycle
+pkg/consumer                            the composed door
+  consumer.go            Consumer[M] + NewConsumer + Register + registerManager
+                         ConsumerInstance[M].Consume + ConsumerFunc[M]
   options.go             With* builders
-  group.go               Group
-  meta.go                MessageMeta + MetaFromContext
   errors.go              lifecycleContextHelp
   context.go             SleepWithContext
   metrics/               unchanged
 
-pkg/consumer/base                       plumbing every consumption mode composes
+pkg/consumer/base                       plumbing every loop composes
   base.go                ConsumerBase[M] + NewConsumerBase
+  lifecycle.go           Register, RunCtx, LifecycleErr, SetLifecycleCtx
+  seed.go                SeedGroupWorkers, seedConsumptionWorker, GroupOwner
+  worker.go              consumerWorkerFactory + consumerWorkerInstance
+                         + ConsumeClaimed + the three worker-name consts
   dispatch.go            DispatchVerdict + consts, ClaimKeyedRun
   safecall.go            CallSafely
-  lifecycle.go           Register, RunCtx, LifecycleErr, SetLifecycleCtx
 
-pkg/consumer/cursor                     CURSOR consumption
-  messageconsumer.go     MessageConsumer[M]
-  exceptionconsumer.go   ExceptionConsumer[M]
+pkg/consumer/messageconsumer            worker row: message_consumer
+  messageconsumer.go     MessageConsumer[M] + Instance + messageLoop
   claimbuffer.go         claimBuffer + Buffered
   rangestate.go          rangeState + rangeSnapshot
 
-pkg/consumer/lifecycle                  LIFECYCLE consumption (parked)
-  deliveryconsumer.go    DeliveryConsumer[M]
+pkg/consumer/exceptionconsumer          worker row: exception_consumer
+  exceptionconsumer.go   ExceptionConsumer[M] + Instance + exceptionLoop
 
-pkg/consumer/controller                 the only door to consumer persistence
+pkg/consumer/deliveryconsumer           worker row: delivery_consumer (parked)
+  deliveryconsumer.go    DeliveryConsumer[M] + Instance + deliveryLoop
+
+pkg/consumer/controller                 the only door to consumer persistence + vocabulary
   controller.go          ConsumerController + NewConsumerController
   controller_config.go   ControllerConfig{Logger, Retry}
   consumer_config.go     ConsumerConfig + ConsumerType
-  group.go               GetGroup / RegisterGroup
+  group.go               Group + GetGroup / RegisterGroup
+  meta.go                MessageMeta + MetaFromContext + withMeta
+  message.go             MessageRow, LeaseRow, ClaimedRange, CursorRange
   binding.go             Bind / ClearBindings
   cursor.go              claim / commit / partial-commit / force-reclaim
-  exception.go           claim / renew / record x4 / kill
+  exception.go           ClaimedException + claim / renew / record x4 / kill
   keylease.go            ClaimKeyLease / ReleaseKeyLease
-  delivery.go            FanOut / claim / record x3          LIFECYCLE
+  delivery.go            DeliveryRow + FanOut / claim / record x3       LIFECYCLE
   adapter.go             *Data -> vocabulary
 
-Import arrows: consumer -> cursor, lifecycle -> base -> controller -> controller/datastore.
-Vocabulary (group.go, meta.go) sits at the top only because nothing below it needs those
-types; if base ever needs Group it moves down with the arrows, not sideways.
+Import arrows: consumer -> the three worker packages -> base -> controller ->
+controller/datastore.
 
-ConsumerConfig lives in controller, NOT at the top: base/cursor/lifecycle/consumer all read
-it, so a top-level home cycles (base -> consumer). Controller is also where conventions.md
-puts <x>_config.go, matching topiccontroller.TopicConfig / systemcontroller.SystemConfig.
-REJECTED: a top-level `type ConsumerConfig = controller.ConsumerConfig` alias -- the repo
-has zero type aliases today and this would be the only one.
+One package per worker row, NOT per consumption mode. message_consumer and
+exception_consumer became separate worker rows in chunk 9, and they share NO code:
+exceptionconsumer.go has zero references to claimBuffer/rangeState/Buffered — everything it
+touches is its own loop or base. A `cursor` package would group by mode taxonomy, not by
+shared code. This also matches pkg/worker, which is already one package per worker row
+(janitor, waterline, cronscheduler, manager), so row name and package name map 1:1.
+
+ALL vocabulary lives in controller, not at the top. base and all three worker packages read
+Group / MessageRow / LeaseRow / ClaimedRange / ClaimedException / DeliveryRow / MessageMeta /
+ConsumerConfig, so a top-level home cycles (base -> consumer). Controller is also where
+conventions.md puts <x>_config.go, matching topiccontroller.TopicConfig /
+systemcontroller.SystemConfig. Cost: MetaFromContext moves to controller, so callers using
+it change import path. REJECTED: top-level `type X = controller.X` aliases -- the repo has
+zero type aliases today and these would be the only ones.
 
 pkg/consumer/controller/datastore       table-exact SQL, Wrap-only
   datastore.go           ConsumerDatastore + New
@@ -437,20 +449,35 @@ datastore.go (1687 lines) becomes six focused files across two layers; nothing e
 - Validation moves to the controller: newConsumerBase's version < 1 check, the datastore's
   inline low >= high sanity check.
 - Config file naming per conventions.md: consumer_config.go / controller_config.go.
+- CONSOLIDATE the four range outcome types into ONE kinded type. MessageException /
+  MessageTerminal / MessageSuperseded / MessageDeferred are structurally identical
+  ({MessageId int64, Err string}), constructed in exactly one place (rangestate.go's
+  contiguousResolved + resolvedOutcomes), and consumed only by Commit/PartialCommit. One
+  type carrying the kind collapses both four-armed switches into a single walk and drops
+  Commit from 10 params to 7, PartialCommit from 11 to 8. Ripples: cursorPartialCommit and
+  5 lab call sites that build MessageException directly (exceptionlab, deliveryloglab x4).
+- The consolidated outcome type lives in controller, NOT controller/datastore: it carries no
+  `db:` tags, unlike MessageRow/LeaseRow/CursorRange/ClaimedException/DeliveryRow, which all
+  do. It is rangeState's output vocabulary that the write path consumes, and it sits in
+  datastore.go today only by history.
+- EnsureNextPartition needs a home in this pass. Three Register paths build a
+  maintain.MaintenanceDatastore for it (consumer.go, messageconsumer.go, deliveryconsumer.go)
+  and chunk 13 deletes pkg/maintain — either it becomes a controller verb here or the
+  janitor's sweep picks it up. Tracked in `## open` as homeless since chunk 5.
 
 ## settled decisions
 
 - adapter scope: convert only what the runtime manipulates (ClaimedRange, ClaimedException,
-  MessageRow, LeaseRow, DeliveryRow). The four pure write-payloads (MessageException,
-  MessageTerminal, MessageSuperseded, MessageDeferred) stay controller-level input structs.
-- base/cursor/lifecycle are ORDINARY packages, not internal/. The public-surface cost below
-  is known and accepted -- surface trimming is a later pass, not this one.
+  MessageRow, LeaseRow, DeliveryRow).
+- the worker packages and base are ORDINARY packages, not internal/. The public-surface cost
+  below is known and accepted -- surface trimming is a later pass, not this one.
 
-## the export cost (accepted)
+## the export cost (accepted, not re-litigated)
 
-A package boundary between base and the consumption modes makes consumerBase's private
-surface public. Measured: all three sub-consumers use the same 7-8 base members (only
-claimKeyedRun is cursor-only), so there is no cheaper split.
+A package boundary between base and the worker packages makes consumerBase's private surface
+public. Measured before chunk 9 at 7-8 shared members; chunk 9 added workers / GroupOwner /
+SeedGroupWorkers on top. User ruled this is not a concern -- do not re-raise it as an
+argument against the split.
 
   fields   ConsumerGroup, Version, LifecycleCtx
   methods  Register, CallSafely, ClaimKeyedRun, RunCtx, LifecycleErr
@@ -463,11 +490,24 @@ excluded/demote list when that pass happens.
 
 ## rejected alternatives
 
-- FLAT runtime in pkg/consumer (base + both modes in one package). Zero new surface, ~2000
+- EXTRACTING rangeState (and/or claimBuffer) into its own generic package. Rejected on
+  evidence: three things reach into rangeState's internals, not one. claimBuffer mutates raw
+  atomics directly (state.dispatched.Add at claimbuffer.go:97, state.stale.Store at :147) and
+  messageLoop.closeRange reads state.stale / state.lease and calls neverDispatched +
+  contiguousResolved. A boundary anywhere in that triangle exports 7+ members whose only
+  callers are inside the same mechanism, and publishes the very atomics whose correctness
+  rests on unexported write ordering (result.resolve writes kind/err THEN done; TryGetSnapshot
+  gates on a one-shot CAS). The unit is "in-flight range bookkeeping", not "rangeState" --
+  both files stay private in pkg/consumer/messageconsumer. Only the outcome vocabulary moves,
+  and it moves DOWN to controller (arrows forbid controller importing messageconsumer).
+- cursor / lifecycle MODE packages (this plan's original layout). Rejected: see the layout
+  section -- message_consumer and exception_consumer share no code, so the grouping was
+  taxonomy, not cohesion.
+- FLAT runtime in pkg/consumer (base + every loop in one package). Zero new surface, ~2000
   lines across 13 files. Rejected: does not isolate the parked LIFECYCLE path, and package
-  boundaries between the modes are worth more than the surface cost right now.
+  boundaries between the workers are worth more than the surface cost right now.
 - pkg/consumer/internal/base. Hides the export cost above from users while still letting
-  cursor/lifecycle import it. Rejected: forces base to be a NAMED FIELD rather than embedded
+  the worker packages import it. Rejected: forces base to be a NAMED FIELD rather than embedded
   (embedding promotes CallSafely/RunCtx/LifecycleErr onto the public MessageConsumer even
   from an internal package), and un-embedding drops mc.Topic / mc.Config / mc.Logger from
   the public surface -- which base.go's own comment says is deliberate today.

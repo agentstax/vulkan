@@ -78,13 +78,13 @@ func main() {
 	}
 
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
-		BatchLimit:    100,
-		QueueSize:     100 + conc,
-		Processors:    conc,
-		Message:       &vulkancommon.MessageOptions{Timeout: 10 * time.Second, Retry: &retry.Policy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
-		ClaimPollRate: 500 * time.Millisecond,
-		QueueMargin:   3 * time.Second,
-		AckMargin:     2 * time.Second,
+		BatchLimit:         100,
+		QueueSize:          100 + conc,
+		MessageConcurrency: conc,
+		Message:            &vulkancommon.MessageOptions{Timeout: 10 * time.Second, Retry: &retry.Policy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
+		ClaimPollRate:      500 * time.Millisecond,
+		QueueMargin:        3 * time.Second,
+		AckMargin:          2 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

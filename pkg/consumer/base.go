@@ -13,15 +13,15 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
-	"github.com/agentstax/vulkan/pkg/worker/janitor"
-	"github.com/agentstax/vulkan/pkg/worker/manager"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
-// consumerBase is the plumbing every consumer type composes: the resolved
+// consumerBase is the plumbing every consumer instance composes: the resolved
 // topic, datastores, config, the lifecycle gate, and callSafely. Embedded, so
-// its exported fields stay part of each type's public surface.
+// its exported fields stay part of each type's public surface. One base per
+// Register.
 type consumerBase[Message any] struct {
 	Topic           *topic.Topic // resolved by Register from the name/version given to the constructor
 	Group           *Group       // resolved by Register from consumerGroup -- children are keyed by Group.Id
@@ -34,17 +34,13 @@ type consumerBase[Message any] struct {
 	topicName       string
 	version         topic.SchemaVersion
 	topicController *topiccontroller.TopicController
+	workers         *workercontroller.WorkerController
 	waterline       *waterline.WaterlineFactory
-	manager         *manager.ManagerFactory
 	lifecycleCtx    context.Context // nil until Register; cancelled = wind down
 }
 
 // cfg must already be defaulted and validated by the calling constructor.
 func newConsumerBase[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*consumerBase[Message], error) {
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
-
 	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -70,36 +66,18 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		return nil, err
 	}
 
+	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	waterlineFactory, err := waterline.NewWaterlineFactory(ds, &waterline.WaterlineConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	janitorFactory, err := janitor.NewJanitorFactory(ds, &janitor.JanitorConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	cronSchedulerFactory, err := cronscheduler.NewCronSchedulerFactory(ds, &cronscheduler.CronSchedulerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// a consumer claims its group's manager, so its chain reaches the system's
-	// cron scheduler and the topic's janitor as well as its own waterline
-	managerFactory, err := manager.NewManagerFactory(ds, &manager.ManagerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	}, cronSchedulerFactory, janitorFactory, waterlineFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -113,24 +91,14 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		topicName:       topicName,
 		version:         version,
 		topicController: topicController,
+		workers:         workers,
 		waterline:       waterlineFactory,
-		manager:         managerFactory,
 	}, nil
 }
 
-// register is the bootstrap every consumer type shares: the lifecycle gates,
-// topic resolution, schema assert, and cursor upsert. Callers set
-// lifecycleCtx themselves, after their own remaining registration steps
-// succeed.
+// callers set lifecycleCtx themselves, after their own remaining
+// registration steps succeed
 func (b *consumerBase[Message]) register(ctx context.Context) error {
-	// registration is once per instance
-	if b.lifecycleCtx != nil {
-		if b.lifecycleCtx.Err() != nil {
-			return fmt.Errorf("%w: consumer group %q on topic %q is wound down and stays down; construct a new consumer to consume again", vulkanerrors.ErrAlreadyRegistered, b.consumerGroup, b.Topic.Name)
-		}
-		return fmt.Errorf("%w: consumer group %q on topic %q -- the context from the first Register still owns this consumer's shutdown", vulkanerrors.ErrAlreadyRegistered, b.consumerGroup, b.Topic.Name)
-	}
-
 	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase silently wouldn't exist. Reject unless declared on purpose.
 	if ctx.Done() == nil && !b.Config.DisableGracefulShutdown {
@@ -163,23 +131,32 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 	return b.seedGroupWorkers(ctx)
 }
 
-// seedGroupWorkers runs on every register, not just group creation --
-// InsertWorker no-ops when the row exists, so a seed lost to a crash heals here.
+// runs on every register, not just group creation -- InsertWorker no-ops
+// when the row exists, so a seed lost to a crash heals here
 func (b *consumerBase[Message]) seedGroupWorkers(ctx context.Context) error {
 	owner, err := common.NewConsumerGroupOwner(b.Topic.SystemId, b.Topic.Id, b.Group.Id, b.Group.Name)
 	if err != nil {
 		return err
 	}
-	if err := b.manager.Seed(ctx, owner); err != nil {
-		return err
+
+	workerConfig := &workercontroller.WorkerConfig{
+		TargetInstances: worker.NoInstanceTarget,
 	}
 
 	// LIFECYCLE tracks state per delivery row -- a seeded waterline row would
 	// spawn an instance ticking against a group with no cursor
 	if b.Config.Type != CURSOR {
-		return nil
+		return b.workers.InsertWorker(ctx, WorkerDeliveryConsumer, owner, workerConfig)
 	}
-	return b.waterline.Seed(ctx, owner)
+
+	if err := b.waterline.Seed(ctx, owner); err != nil {
+		return err
+	}
+
+	if err := b.workers.InsertWorker(ctx, WorkerMessageConsumer, owner, workerConfig); err != nil {
+		return err
+	}
+	return b.workers.InsertWorker(ctx, WorkerExceptionConsumer, owner, workerConfig)
 }
 
 // dispatchVerdict is claimKeyedRun's decision for one keyed message.

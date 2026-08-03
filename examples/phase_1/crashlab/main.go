@@ -92,13 +92,13 @@ func main() {
 	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
-		BatchLimit:    100,
-		QueueSize:     100 + conc,
-		Processors:    conc,
-		Message:       &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
-		ClaimPollRate: 200 * time.Millisecond,
-		QueueMargin:   1 * time.Second,
-		AckMargin:     1 * time.Second,
+		BatchLimit:         100,
+		QueueSize:          100 + conc,
+		MessageConcurrency: conc,
+		Message:            &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
+		ClaimPollRate:      200 * time.Millisecond,
+		QueueMargin:        1 * time.Second,
+		AckMargin:          1 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

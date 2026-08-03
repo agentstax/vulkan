@@ -75,14 +75,14 @@ func main() {
 	}
 
 	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
-		Type:          consumer.CURSOR,
-		BatchLimit:    10,
-		QueueSize:     concurrencyLimit * 10,
-		Processors:    concurrencyLimit,
-		Message:       &vulkancommon.MessageOptions{Timeout: 5 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
-		ClaimPollRate: 1 * time.Second,
-		QueueMargin:   2 * time.Second,
-		AckMargin:     1 * time.Second,
+		Type:               consumer.CURSOR,
+		BatchLimit:         10,
+		QueueSize:          concurrencyLimit * 10,
+		MessageConcurrency: concurrencyLimit,
+		Message:            &vulkancommon.MessageOptions{Timeout: 5 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
+		ClaimPollRate:      1 * time.Second,
+		QueueMargin:        2 * time.Second,
+		AckMargin:          1 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

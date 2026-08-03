@@ -17,8 +17,7 @@ type InstanceTickRunnerConfig struct {
 	InstanceTTL time.Duration
 
 	// JitterFraction spreads ticks out of phase: each tick's delay is
-	// poll_rate * (1 ± JitterFraction), and the first tick is uniform over
-	// one whole interval.
+	// poll_rate * (1 ± JitterFraction).
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 

@@ -95,7 +95,7 @@ func main() {
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		QueueSize:               10,
-		Processors:              1,
+		MessageConcurrency:      1,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 1 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
 		AckMargin:               500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget

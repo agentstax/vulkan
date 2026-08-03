@@ -17,6 +17,11 @@ var ErrShutdownRequested = errors.New("shutdown requested")
 // registers once, and a wound-down instance stays down -- construct a new one.
 var ErrAlreadyRegistered = errors.New("already registered")
 
+// ErrAlreadyConsuming means Consume ran twice at once on one instance -- an
+// instance runs one Consume at a time. Wait for the first to return, or
+// Register another instance.
+var ErrAlreadyConsuming = errors.New("already consuming")
+
 // ErrLifecycleContextNotCancellable means Register was given a context that
 // can never be cancelled (e.g. context.Background()), so shutdown could never
 // be requested. Pass the application's shutdown context, or opt out with the

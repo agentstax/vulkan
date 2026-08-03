@@ -542,7 +542,7 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 	cfg.ClaimPollRate = 50 * time.Millisecond
 
 	cfg.QueueSize = 50
-	cfg.Processors = pool
+	cfg.MessageConcurrency = pool
 	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
 	must(err)
 	wcInstance, err := wc.Register(ctx)
@@ -576,7 +576,7 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.C
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
 	cfg.QueueSize = 50
-	cfg.Processors = pool
+	cfg.MessageConcurrency = pool
 	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
 	must(err)
 	wcInstance, err := wc.Register(ctx)
