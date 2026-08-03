@@ -1,0 +1,111 @@
+package datastore
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/jackc/pgx/v5"
+)
+
+// DueCronJobs lists the cron jobs due to fire. Unlocked -- each row is
+// rechecked under its own lock before it fires.
+func (d *CronSchedulerDatastore) DueCronJobs(ctx context.Context) ([]int64, error) {
+	var ids []int64
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		ids, err = d.dueCronJobs(ctx)
+		return err
+	})
+	return ids, err
+}
+
+func (d *CronSchedulerDatastore) dueCronJobs(ctx context.Context) ([]int64, error) {
+	sql := `
+		SELECT id FROM cron_job
+		WHERE next_scheduled_time <= now() AND NOT suspended
+		ORDER BY next_scheduled_time;
+	`
+	rows, err := d.Datastore.Pool.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// DueCronJobData is the locked row snapshot one producing transaction works
+// from.
+type DueCronJobData struct {
+	Id                int64
+	Name              string
+	Schedule          string
+	Concurrency       string
+	Timeout           time.Duration
+	Data              json.RawMessage
+	Metadata          json.RawMessage
+	NextScheduledTime time.Time
+	DbNow             time.Time
+}
+
+// ClaimDueCronJob rereads the row under the caller's transaction lock,
+// making the unlocked due scan safe -- nil means it raced away (suspended,
+// destroyed, or another scheduler's transaction holds it).
+func (d *CronSchedulerDatastore) ClaimDueCronJob(ctx context.Context, tx producer.Tx, id int64) (*DueCronJobData, error) {
+	return d.claimDueCronJob(ctx, tx, id)
+}
+
+func (d *CronSchedulerDatastore) claimDueCronJob(ctx context.Context, tx producer.Tx, id int64) (*DueCronJobData, error) {
+	sql := `
+		SELECT id, name, schedule, concurrency, timeout_ns, data, metadata, next_scheduled_time, now()
+		FROM cron_job
+		WHERE id = $1 AND next_scheduled_time <= now() AND NOT suspended
+		FOR UPDATE SKIP LOCKED;
+	`
+	var data DueCronJobData
+	var timeoutNs int64
+	err := tx.QueryRow(ctx, sql, id).Scan(&data.Id, &data.Name, &data.Schedule, &data.Concurrency,
+		&timeoutNs, &data.Data, &data.Metadata, &data.NextScheduledTime, &data.DbNow)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	data.Timeout = time.Duration(timeoutNs)
+	return &data, nil
+}
+
+// AdvanceCronJob moves the fired row to its next firing, in the caller's
+// producing transaction.
+func (d *CronSchedulerDatastore) AdvanceCronJob(ctx context.Context, tx producer.Tx, id int64, next time.Time, fired time.Time) error {
+	return d.advanceCronJob(ctx, tx, id, next, fired)
+}
+
+func (d *CronSchedulerDatastore) advanceCronJob(ctx context.Context, tx producer.Tx, id int64, next time.Time, fired time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE cron_job SET next_scheduled_time = $2, last_scheduled_time = $3 WHERE id = $1;`, id, next, fired)
+	return err
+}
+
+// SuspendCronJob parks the fired row, in the caller's producing transaction
+// -- next_scheduled_time is NOT NULL and an unsatisfiable schedule has no
+// honest value for it.
+func (d *CronSchedulerDatastore) SuspendCronJob(ctx context.Context, tx producer.Tx, id int64, fired time.Time) error {
+	return d.suspendCronJob(ctx, tx, id, fired)
+}
+
+func (d *CronSchedulerDatastore) suspendCronJob(ctx context.Context, tx producer.Tx, id int64, fired time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE cron_job SET suspended = true, last_scheduled_time = $2 WHERE id = $1;`, id, fired)
+	return err
+}

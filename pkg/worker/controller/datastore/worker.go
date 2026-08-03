@@ -31,21 +31,21 @@ type ListWorkersData struct {
 	ConsumerGroup string
 }
 
-// InsertWorker creates the worker row; an existing (name, owner) row is left
+// InsertWorker creates the (name, owner) worker row; an existing row is left
 // untouched.
-func (d *WorkerDatastore) InsertWorker(ctx context.Context, data *WorkerData) error {
+func (d *WorkerDatastore) InsertWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.insertWorker(ctx, data)
+		return d.insertWorker(ctx, name, owner, metadata, targetInstances)
 	})
 }
 
-func (d *WorkerDatastore) insertWorker(ctx context.Context, data *WorkerData) error {
+func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
 	sql := `
 		INSERT INTO worker (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
 		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
 		ON CONFLICT DO NOTHING;
 	`
-	_, err := d.Datastore.Pool.Exec(ctx, sql, data.SystemId, data.TopicId, data.ConsumerGroupId, data.Name, data.Metadata, data.TargetInstances)
+	_, err := d.Datastore.Pool.Exec(ctx, sql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances)
 	return err
 }
 

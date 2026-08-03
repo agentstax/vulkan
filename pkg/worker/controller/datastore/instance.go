@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -71,13 +72,13 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 }
 
 // RenewInstance extends an instance the caller already holds.
-func (d *WorkerDatastore) RenewInstance(ctx context.Context, instance *WorkerInstanceData, ttl time.Duration) error {
+func (d *WorkerDatastore) RenewInstance(ctx context.Context, instanceId int64, token pgtype.UUID, ttl time.Duration) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.renewInstance(ctx, instance, ttl)
+		return d.renewInstance(ctx, instanceId, token, ttl)
 	})
 }
 
-func (d *WorkerDatastore) renewInstance(ctx context.Context, instance *WorkerInstanceData, ttl time.Duration) error {
+func (d *WorkerDatastore) renewInstance(ctx context.Context, instanceId int64, token pgtype.UUID, ttl time.Duration) error {
 	// an expired row may already be replaced -- renewing it past expiry
 	// would put live instances over target_instances
 	sql := `
@@ -87,36 +88,91 @@ func (d *WorkerDatastore) renewInstance(ctx context.Context, instance *WorkerIns
 			AND token = $2
 			AND expires_at > now();
 	`
-	tag, err := d.Datastore.Pool.Exec(ctx, sql, instance.Id, instance.Token, ttl.Seconds())
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, instanceId, token, ttl.Seconds())
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrInstanceLost
+		return worker.ErrInstanceLost
 	}
 	return nil
 }
 
-// ReleaseInstance removes the instance row immediately, so on a graceful
-// shutdown a replacement claims right away instead of waiting out expires_at.
-func (d *WorkerDatastore) ReleaseInstance(ctx context.Context, instance *WorkerInstanceData) error {
+// RecordInstanceSuccess resets the instance's consecutive-failure count.
+func (d *WorkerDatastore) RecordInstanceSuccess(ctx context.Context, instanceId int64, token pgtype.UUID) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.releaseInstance(ctx, instance)
+		return d.recordInstanceSuccess(ctx, instanceId, token)
 	})
 }
 
-func (d *WorkerDatastore) releaseInstance(ctx context.Context, instance *WorkerInstanceData) error {
+func (d *WorkerDatastore) recordInstanceSuccess(ctx context.Context, instanceId int64, token pgtype.UUID) error {
+	sql := `
+		UPDATE worker_instance
+		SET attempts = 0
+		WHERE id = $1
+			AND token = $2;
+	`
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, instanceId, token)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return worker.ErrInstanceLost
+	}
+	return nil
+}
+
+// RecordInstanceFailure adds one to the instance's consecutive-failure count,
+// returning the new count.
+func (d *WorkerDatastore) RecordInstanceFailure(ctx context.Context, instanceId int64, token pgtype.UUID) (int, error) {
+	var attempts int
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		attempts, err = d.recordInstanceFailure(ctx, instanceId, token)
+		return err
+	})
+	return attempts, err
+}
+
+func (d *WorkerDatastore) recordInstanceFailure(ctx context.Context, instanceId int64, token pgtype.UUID) (int, error) {
+	sql := `
+		UPDATE worker_instance
+		SET attempts = attempts + 1
+		WHERE id = $1
+			AND token = $2
+		RETURNING attempts;
+	`
+	var attempts int
+	err := d.Datastore.Pool.QueryRow(ctx, sql, instanceId, token).Scan(&attempts)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, worker.ErrInstanceLost
+	}
+	if err != nil {
+		return 0, err
+	}
+	return attempts, nil
+}
+
+// ReleaseInstance removes the instance row immediately, so on a graceful
+// shutdown a replacement claims right away instead of waiting out expires_at.
+func (d *WorkerDatastore) ReleaseInstance(ctx context.Context, instanceId int64, token pgtype.UUID) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.releaseInstance(ctx, instanceId, token)
+	})
+}
+
+func (d *WorkerDatastore) releaseInstance(ctx context.Context, instanceId int64, token pgtype.UUID) error {
 	sql := `
 		DELETE FROM worker_instance
 		WHERE id = $1
 			AND token = $2;
 	`
-	tag, err := d.Datastore.Pool.Exec(ctx, sql, instance.Id, instance.Token)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, instanceId, token)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrInstanceLost
+		return worker.ErrInstanceLost
 	}
 	return nil
 }

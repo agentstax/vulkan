@@ -1,4 +1,4 @@
-package worker
+package datastore
 
 import (
 	"fmt"
@@ -8,12 +8,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-type WorkerControllerConfig struct {
+type JanitorDatastoreConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for the worker datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	Retry  *retry.Policy // transient-error retry policy for this datastore's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
 }
 
-func (c *WorkerControllerConfig) WithDefaults() *WorkerControllerConfig {
+func (c *JanitorDatastoreConfig) WithDefaults() *JanitorDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -23,7 +23,7 @@ func (c *WorkerControllerConfig) WithDefaults() *WorkerControllerConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *WorkerControllerConfig) Validate() error {
+func (c *JanitorDatastoreConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}
