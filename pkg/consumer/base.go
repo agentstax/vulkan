@@ -11,8 +11,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
 // consumerBase is the plumbing every consumer type composes: the resolved
@@ -26,11 +27,12 @@ type consumerBase[Message any] struct {
 	Config          *ConsumerConfig
 	Logger          logger.Logger // copied from Config.Logger at construction
 
-	consumerGroup  string
-	topicName      string
-	version        topic.SchemaVersion
-	topicDatastore *topic.TopicDatastore
-	lifecycleCtx   context.Context // nil until Register; cancelled = wind down
+	consumerGroup   string
+	topicName       string
+	version         topic.SchemaVersion
+	topicController *topiccontroller.TopicController
+	waterline       *waterline.WaterlineFactory
+	lifecycleCtx    context.Context // nil until Register; cancelled = wind down
 }
 
 // cfg must already be defaulted and validated by the calling constructor.
@@ -47,7 +49,10 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		return nil, err
 	}
 
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
+	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +66,14 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		return nil, err
 	}
 
+	waterlineFactory, err := waterline.NewWaterlineFactory(ds, &waterline.WaterlineConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &consumerBase[Message]{
 		Datastore:       consumerDatastore,
 		AbandonedEvents: abandonedEvents,
@@ -69,7 +82,8 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		consumerGroup:   consumerGroup,
 		topicName:       topicName,
 		version:         version,
-		topicDatastore:  topicDatastore,
+		topicController: topicController,
+		waterline:       waterlineFactory,
 	}, nil
 }
 
@@ -92,7 +106,7 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, b.consumerGroup, b.topicName, lifecycleContextHelp)
 	}
 
-	current, err := b.topicDatastore.GetTopic(ctx, b.topicName, b.version)
+	current, err := b.topicController.GetTopic(ctx, b.topicName, b.version)
 	if err != nil {
 		return err
 	}
@@ -101,7 +115,7 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 	}
 	b.Topic = current
 
-	if err := migrate.AssertSchemaSupported(ctx, b.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
+	if err := b.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return err
 	}
 
@@ -114,7 +128,19 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 		return err
 	}
 	b.Group = group
-	return nil
+
+	return b.seedWaterlineWorker(ctx)
+}
+
+// seedWaterlineWorker runs on every register, not just group creation --
+// InsertWorker is a no-op when the row exists, so a seed lost to a crash
+// heals here.
+func (b *consumerBase[Message]) seedWaterlineWorker(ctx context.Context) error {
+	owner, err := common.NewConsumerGroupOwner(b.Topic.SystemId, b.Topic.Id, b.Group.Id, b.Group.Name)
+	if err != nil {
+		return err
+	}
+	return b.waterline.Seed(ctx, owner)
 }
 
 // dispatchVerdict is claimKeyedRun's decision for one keyed message.
