@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -30,9 +29,13 @@ func (c *WorkerController) InsertWorker(ctx context.Context, name string, owner 
 	return c.datastore.InsertWorker(ctx, name, owner, cfg.Metadata, cfg.TargetInstances)
 }
 
-// ListWorkers lists every worker seeded in the worker table.
-func (c *WorkerController) ListWorkers(ctx context.Context) ([]*worker.Worker, error) {
-	listed, err := c.datastore.ListWorkers(ctx)
+// ListWorkers lists the worker rows owned anywhere on owner's chain -- a
+// sibling group's are not on it.
+func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner) ([]*worker.Worker, error) {
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
+	listed, err := c.datastore.ListWorkers(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -50,14 +53,18 @@ func (c *WorkerController) ListWorkers(ctx context.Context) ([]*worker.Worker, e
 	return workers, nil
 }
 
-// GetWorkerMetadata reads the (name, owner) row's metadata. Errors if the
-// row was never seeded.
-func (c *WorkerController) GetWorkerMetadata(ctx context.Context, name string, owner *common.Owner) (json.RawMessage, error) {
+// GetWorker reads the (name, owner) worker row. Errors if the row was never
+// seeded.
+func (c *WorkerController) GetWorker(ctx context.Context, name string, owner *common.Owner) (*worker.Worker, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
-	return c.datastore.GetWorkerMetadata(ctx, name, owner)
+	data, err := c.datastore.GetWorker(ctx, name, owner)
+	if err != nil {
+		return nil, err
+	}
+	return toOwnedWorker(data, owner), nil
 }

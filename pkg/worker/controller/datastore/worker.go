@@ -2,7 +2,6 @@ package datastore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -49,27 +48,41 @@ func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *
 	return err
 }
 
-// ListWorkers lists every worker seeded in the worker table.
-func (d *WorkerDatastore) ListWorkers(ctx context.Context) ([]ListWorkersData, error) {
+// ListWorkers lists the worker rows owned anywhere on owner's chain.
+func (d *WorkerDatastore) ListWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersData, error) {
 	var workers []ListWorkersData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		workers, err = d.listWorkers(ctx)
+		workers, err = d.listWorkers(ctx, owner)
 		return err
 	})
 	return workers, err
 }
 
-func (d *WorkerDatastore) listWorkers(ctx context.Context) ([]ListWorkersData, error) {
+func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersData, error) {
+	// one clause per level of the owner chain
 	sql := `
-		SELECT w.id, w.system_id, w.topic_id, w.consumer_group_id, w.name, w.metadata, w.target_instances,
-			COALESCE(w.system_id, t.system_id, 0), COALESCE(t.id, 0), COALESCE(t.name, ''), COALESCE(g.name, '')
+		SELECT
+			w.id,
+			w.system_id,
+			w.topic_id,
+			w.consumer_group_id,
+			w.name,
+			w.metadata,
+			w.target_instances,
+			COALESCE(w.system_id, t.system_id, 0),
+			COALESCE(t.id, 0),
+			COALESCE(t.name, ''),
+			COALESCE(g.name, '')
 		FROM worker w
 		LEFT JOIN consumer_group g ON g.id = w.consumer_group_id
-		LEFT JOIN topic t ON t.id = COALESCE(w.topic_id, g.topic_id);
+		LEFT JOIN topic t ON t.id = COALESCE(w.topic_id, g.topic_id)
+		WHERE w.system_id = $1
+			OR w.topic_id = $2
+			OR w.consumer_group_id = $3;
 	`
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql)
+	rows, err := d.Datastore.Pool.Query(ctx, sql, owner.SystemId, owner.TopicId, owner.ConsumerGroupId)
 	if err != nil {
 		return nil, err
 	}
@@ -87,34 +100,42 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context) ([]ListWorkersData, e
 	return workers, rows.Err()
 }
 
-// GetWorkerMetadata reads the (name, owner) row's metadata. Errors if the
-// row was never seeded.
-func (d *WorkerDatastore) GetWorkerMetadata(ctx context.Context, name string, owner *common.Owner) (json.RawMessage, error) {
-	var raw json.RawMessage
+// GetWorker reads the (name, owner) worker row. Errors if the row was never
+// seeded.
+func (d *WorkerDatastore) GetWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerData, error) {
+	var workerData *WorkerData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		raw, err = d.getWorkerMetadata(ctx, name, owner)
+		workerData, err = d.getWorker(ctx, name, owner)
 		return err
 	})
-	return raw, err
+	return workerData, err
 }
 
-func (d *WorkerDatastore) getWorkerMetadata(ctx context.Context, name string, owner *common.Owner) (json.RawMessage, error) {
+func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerData, error) {
 	sql := `
-		SELECT metadata
+		SELECT 
+			id, 
+			system_id, 
+			topic_id, 
+			consumer_group_id, 
+			name, 
+			metadata, 
+			target_instances
 		FROM worker
 		WHERE name = $1
 			AND system_id IS NOT DISTINCT FROM $2
 			AND topic_id IS NOT DISTINCT FROM $3
 			AND consumer_group_id IS NOT DISTINCT FROM $4;
 	`
-	var raw json.RawMessage
-	err := d.Datastore.Pool.QueryRow(ctx, sql, name, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).Scan(&raw)
+	var data WorkerData
+	err := d.Datastore.Pool.QueryRow(ctx, sql, name, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).
+		Scan(&data.Id, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.Name, &data.Metadata, &data.TargetInstances)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("worker %q has no worker row -- the owner's register seeds it", name)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return raw, nil
+	return &data, nil
 }

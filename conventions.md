@@ -111,6 +111,12 @@ Three layers per domain (template: worker, topic):
   longer matches the scan destination count). Explicit column lists are what
   keep adds non-breaking, leaving column removal as the only change that needs
   the two-release expand/contract dance.
+- More than 3 selected columns go one per line. A wrapped column list hides
+  which columns moved in a diff and makes the scan destinations hard to line
+  up against. 3 or fewer stay on the `SELECT` line.
+- Inline `--` comments right-align as a group, to the furthest-out one. A
+  ragged comment column reads as unrelated notes; an aligned one reads as the
+  table it is.
 
 ## Comments
 

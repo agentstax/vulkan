@@ -13,6 +13,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
+	"github.com/agentstax/vulkan/pkg/worker/janitor"
+	"github.com/agentstax/vulkan/pkg/worker/manager"
 	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
@@ -32,6 +35,7 @@ type consumerBase[Message any] struct {
 	version         topic.SchemaVersion
 	topicController *topiccontroller.TopicController
 	waterline       *waterline.WaterlineFactory
+	manager         *manager.ManagerFactory
 	lifecycleCtx    context.Context // nil until Register; cancelled = wind down
 }
 
@@ -74,6 +78,32 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		return nil, err
 	}
 
+	janitorFactory, err := janitor.NewJanitorFactory(ds, &janitor.JanitorConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cronSchedulerFactory, err := cronscheduler.NewCronSchedulerFactory(ds, &cronscheduler.CronSchedulerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// a consumer claims its group's manager, so its chain reaches the system's
+	// cron scheduler and the topic's janitor as well as its own waterline
+	managerFactory, err := manager.NewManagerFactory(ds, &manager.ManagerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	}, cronSchedulerFactory, janitorFactory, waterlineFactory)
+	if err != nil {
+		return nil, err
+	}
+
 	return &consumerBase[Message]{
 		Datastore:       consumerDatastore,
 		AbandonedEvents: abandonedEvents,
@@ -84,6 +114,7 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 		version:         version,
 		topicController: topicController,
 		waterline:       waterlineFactory,
+		manager:         managerFactory,
 	}, nil
 }
 
@@ -129,16 +160,24 @@ func (b *consumerBase[Message]) register(ctx context.Context) error {
 	}
 	b.Group = group
 
-	return b.seedWaterlineWorker(ctx)
+	return b.seedGroupWorkers(ctx)
 }
 
-// seedWaterlineWorker runs on every register, not just group creation --
-// InsertWorker is a no-op when the row exists, so a seed lost to a crash
-// heals here.
-func (b *consumerBase[Message]) seedWaterlineWorker(ctx context.Context) error {
+// seedGroupWorkers runs on every register, not just group creation --
+// InsertWorker no-ops when the row exists, so a seed lost to a crash heals here.
+func (b *consumerBase[Message]) seedGroupWorkers(ctx context.Context) error {
 	owner, err := common.NewConsumerGroupOwner(b.Topic.SystemId, b.Topic.Id, b.Group.Id, b.Group.Name)
 	if err != nil {
 		return err
+	}
+	if err := b.manager.Seed(ctx, owner); err != nil {
+		return err
+	}
+
+	// LIFECYCLE tracks state per delivery row -- a seeded waterline row would
+	// spawn an instance ticking against a group with no cursor
+	if b.Config.Type != CURSOR {
+		return nil
 	}
 	return b.waterline.Seed(ctx, owner)
 }

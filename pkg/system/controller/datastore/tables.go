@@ -154,9 +154,9 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			name TEXT NOT NULL,                      -- 'janitor' | 'waterline' | 'scheduler' | user-defined
 			metadata JSONB NOT NULL DEFAULT '{}',    -- per-worker tuning, seeded with defaults by whoever creates the row
-			target_instances INT NOT NULL DEFAULT 1, -- 0 = suspended
+			target_instances INT NOT NULL DEFAULT 1, -- 0 = suspended, -1 = unbounded
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
-			CHECK (target_instances >= 0)
+			CHECK (target_instances >= -1)
 		);
 	`
 	if _, err := tx.Exec(ctx, createWorkerSql); err != nil {

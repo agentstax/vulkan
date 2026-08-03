@@ -108,7 +108,9 @@ func (i *spawnedInstance) finished() bool {
 func (p *instancePool) start(ctx context.Context, worker *worker.Worker) {
 	factory, ok := p.factories[worker.Name]
 	if !ok {
-		p.logger.WarnContext(ctx, "no factory in the manager's list runs this worker -- skipping", "worker", worker.Name, "owner", worker.Owner.Name)
+		// expected every pass, not a misconfiguration -- a chain carries rows
+		// the manager has no factory for, its own manager row at minimum
+		p.logger.DebugContext(ctx, "no factory in the manager's list runs this worker -- skipping", "worker", worker.Name, "owner", worker.Owner.Name)
 		return
 	}
 

@@ -32,6 +32,18 @@ func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
 	}, nil
 }
 
+// the owner was the lookup key here, so unlike toWorker there are no join
+// columns to resolve it from
+func toOwnedWorker(data *datastore.WorkerData, owner *common.Owner) *worker.Worker {
+	return &worker.Worker{
+		Id:              data.Id,
+		Name:            data.Name,
+		Owner:           *owner,
+		Metadata:        data.Metadata,
+		TargetInstances: data.TargetInstances,
+	}
+}
+
 func toWorkerInstance(data *datastore.WorkerInstanceData) *worker.WorkerInstance {
 	return &worker.WorkerInstance{
 		Id:        data.Id,

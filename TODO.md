@@ -163,3 +163,5 @@ For consumer and system need to abstract out the 'seeding' functionality in same
 Need to refactor rest of packages in same patterns as worker and topic
 
 our controllers have redundant verbage: topicController.GetTopic -- should just be get
+
+base config.go files should be renamed to 'package'_config.go -- its a more extensible pattern.

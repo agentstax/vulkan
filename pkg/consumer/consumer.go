@@ -10,8 +10,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/agentstax/vulkan/pkg/worker/manager"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -25,14 +25,12 @@ type Consumer[Message any] struct {
 	MessageConsumer   *MessageConsumer[Message]   // nil when Config.Type is LIFECYCLE
 	ExceptionConsumer *ExceptionConsumer[Message] // nil when Config.Type is LIFECYCLE
 	DeliveryConsumer  *DeliveryConsumer[Message]  // nil when Config.Type is CURSOR
-	Maintainer        *maintain.Maintainer
 	Config            *ConsumerConfig
 	Logger            logger.Logger // copied from Config.Logger at construction
 
 	consumerGroup string
 	topicName     string
-	janitor       *maintain.Janitor
-	roller        *maintain.WaterlineRoller // nil when Config.Type is LIFECYCLE
+	managerRunner *manager.Runner
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -53,17 +51,7 @@ func NewConsumer[Message any](consumerGroup string, topicName string, version to
 		topicName:     topicName,
 	}
 
-	maintainerConfig := &maintain.MaintainerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	}
-	janitor, err := maintain.NewJanitor(ds, maintainerConfig)
-	if err != nil {
-		return nil, err
-	}
-	consumer.janitor = janitor
-	duties := []maintain.Duty{janitor}
-
+	var err error
 	switch cfg.Type {
 	case CURSOR:
 		consumer.MessageConsumer, err = NewMessageConsumer[Message](consumerGroup, topicName, version, queue, poolLimiter, ds, cfg)
@@ -74,14 +62,6 @@ func NewConsumer[Message any](consumerGroup string, topicName string, version to
 		if err != nil {
 			return nil, err
 		}
-		// only the CURSOR path has a waterline to roll -- LIFECYCLE tracks
-		// state per delivery row
-		roller, err := maintain.NewWaterlineRoller(ds, maintainerConfig)
-		if err != nil {
-			return nil, err
-		}
-		consumer.roller = roller
-		duties = append(duties, roller)
 	case LIFECYCLE:
 		consumer.DeliveryConsumer, err = NewDeliveryConsumer[Message](consumerGroup, topicName, version, ds, cfg)
 		if err != nil {
@@ -89,11 +69,6 @@ func NewConsumer[Message any](consumerGroup string, topicName string, version to
 		}
 	default:
 		return nil, fmt.Errorf("invalid consumer type %q", cfg.Type)
-	}
-
-	consumer.Maintainer, err = maintain.NewMaintainer(duties...)
-	if err != nil {
-		return nil, err
 	}
 
 	return consumer, nil
@@ -120,40 +95,17 @@ func (c *Consumer[Message]) Register(ctx context.Context) error {
 			return err
 		}
 	}
-	return c.registerDuties(ctx)
-}
-
-// registerDuties registers this consumer's duties under the identity the
-// sub-consumers just resolved: the janitor as the topic's owner, the
-// waterline roller as the group's.
-func (c *Consumer[Message]) registerDuties(ctx context.Context) error {
+	// the group's row, not the topic's -- the chain it sits on excludes
+	// sibling groups
 	t := c.base().Topic
-
-	topicOwner, err := common.NewTopicOwner(t.SystemId, t.Id, t.Name)
-	if err != nil {
-		return err
-	}
-	meta, err := c.janitor.Datastore.GetDutyMetadata(ctx, maintain.DutyJanitor, topicOwner)
-	if err != nil {
-		return err
-	}
-	if _, err := c.janitor.Register(ctx, maintain.DutyJanitor, topicOwner, meta); err != nil {
-		return err
-	}
-
-	if c.roller == nil {
-		return nil
-	}
 	group := c.base().Group
 	groupOwner, err := common.NewConsumerGroupOwner(t.SystemId, t.Id, group.Id, group.Name)
 	if err != nil {
 		return err
 	}
-	meta, err = c.roller.Datastore.GetDutyMetadata(ctx, maintain.DutyWaterline, groupOwner)
-	if err != nil {
-		return err
-	}
-	_, err = c.roller.Register(ctx, maintain.DutyWaterline, groupOwner, meta)
+	c.managerRunner, err = manager.NewRunner(c.base().manager, groupOwner, &manager.RunnerConfig{
+		Logger: c.Logger,
+	})
 	return err
 }
 
@@ -196,7 +148,7 @@ func (c *Consumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFu
 	}
 
 	g.Go(func() error {
-		return c.Maintainer.Run(gCtx)
+		return c.managerRunner.Run(gCtx)
 	})
 
 	err := g.Wait()

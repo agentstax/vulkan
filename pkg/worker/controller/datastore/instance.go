@@ -52,7 +52,8 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 	insertSql := `
 		INSERT INTO worker_instance (worker_id, expires_at)
 		SELECT $1, now() + make_interval(secs => $2)
-		WHERE (SELECT count(*) FROM worker_instance WHERE worker_id = $1 AND expires_at > now()) < $3
+		WHERE $3 = -1 -- '-1' means unbound (can always claim)
+			OR (SELECT count(*) FROM worker_instance WHERE worker_id = $1 AND expires_at > now()) < $3
 		RETURNING id, worker_id, token, expires_at, attempts;
 	`
 	var claimed WorkerInstanceData

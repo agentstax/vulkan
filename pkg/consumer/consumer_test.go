@@ -48,7 +48,7 @@ func TestNewConsumerValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConsumer: %v", err)
 	}
-	if c.MessageConsumer == nil || c.ExceptionConsumer == nil || c.Maintainer == nil {
+	if c.MessageConsumer == nil || c.ExceptionConsumer == nil {
 		t.Fatalf("bundle not fully composed: %+v", c)
 	}
 }

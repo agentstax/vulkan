@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// ManagerInstance is one claimed live copy of the system's manager worker:
-// Run reconciles the running set against the worker table at the row's
-// poll_rate while a heartbeat holds the claim.
+// ManagerInstance is one claimed live copy of an owner's manager worker: Run
+// reconciles the running set against the worker rows on the owner's chain at
+// the row's poll_rate while a heartbeat holds the claim.
 type ManagerInstance struct {
+	Owner  *common.Owner // the reconcile scope
 	Config *ManagerConfig
 	Logger logger.Logger // copied from Config.Logger at construction
 
@@ -22,7 +24,7 @@ type ManagerInstance struct {
 	metadata *managerMetadata
 }
 
-func newManagerInstance(manager *ManagerFactory, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
+func newManagerInstance(manager *ManagerFactory, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
 	}
@@ -30,7 +32,7 @@ func newManagerInstance(manager *ManagerFactory, claimed *worker.WorkerInstance,
 	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    manager.Config.InstanceTTL,
 		JitterFraction: manager.Config.JitterFraction,
-		Logger:         logger.With(manager.Logger, "worker", WorkerManager),
+		Logger:         logger.With(manager.Logger, "worker", WorkerManager, "scope", owner.Name),
 		TickRetry:      manager.Config.RefreshRetry,
 	})
 	if err != nil {
@@ -38,6 +40,7 @@ func newManagerInstance(manager *ManagerFactory, claimed *worker.WorkerInstance,
 	}
 
 	return &ManagerInstance{
+		Owner:    owner,
 		Config:   manager.Config,
 		Logger:   manager.Logger,
 		runner:   runner,
@@ -50,7 +53,7 @@ func newManagerInstance(manager *ManagerFactory, claimed *worker.WorkerInstance,
 // Run reconciles until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
 func (i *ManagerInstance) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "manager instance starting", "rate", i.metadata.PollRate)
+	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.refresh)
 
@@ -66,10 +69,9 @@ func (i *ManagerInstance) Run(ctx context.Context) error {
 	return err
 }
 
-// refresh is one discovery pass: reconcile the running set against the worker
-// table, then sweep expired instance rows.
+// refresh is one discovery pass.
 func (i *ManagerInstance) refresh(ctx context.Context) error {
-	workers, err := i.workers.ListWorkers(ctx)
+	workers, err := i.workers.ListWorkers(ctx, i.Owner)
 	if err != nil {
 		return err
 	}

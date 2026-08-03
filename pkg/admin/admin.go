@@ -9,6 +9,7 @@ import (
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
+	"github.com/agentstax/vulkan/pkg/worker/manager"
 )
 
 type MessageAdmin struct {
@@ -37,14 +38,6 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	}, cronSchedulerFactory)
-	if err != nil {
-		return nil, err
-	}
-
 	janitorFactory, err := janitor.NewJanitorFactory(ds, &janitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -53,10 +46,27 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	// a seeder here, never run -- admin creates manager rows, it doesn't claim them
+	managerFactory, err := manager.NewManagerFactory(ds, &manager.ManagerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	}, janitorFactory, cronSchedulerFactory)
+	if err != nil {
+		return nil, err
+	}
+
+	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	}, cronSchedulerFactory, managerFactory)
+	if err != nil {
+		return nil, err
+	}
+
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorFactory)
+	}, janitorFactory, managerFactory)
 	if err != nil {
 		return nil, err
 	}

@@ -15,9 +15,11 @@ import (
 const WorkerManager = "manager"
 
 // ManagerFactory is the manager worker factory: Register claims one live
-// instance of the system's manager worker row and returns it; the instance
-// keeps one running instance per worker row it discovers, spawned through
-// the factories the manager was given.
+// instance of an owner's manager worker row and returns it; the instance
+// keeps one running instance per worker row on the owner's chain, spawned
+// through the factories the manager was given. Manager rows carry no instance
+// target -- the spawned workers' own claims arbitrate who runs what, so any
+// number of processes reconcile the same chain safely.
 type ManagerFactory struct {
 	Config *ManagerConfig
 	Logger logger.Logger // copied from Config.Logger at construction
@@ -75,12 +77,17 @@ func (m *ManagerFactory) Name() string {
 	return WorkerManager
 }
 
-// Register claims one live instance. nil = declined (target_instances
-// already filled) -- not an error, try again later.
+// Register claims one live instance. owner is the row's own owner and the
+// instance's reconcile scope -- the deeper the owner, the shorter the chain.
+// nil = declined, which for a manager row means target_instances was set away
+// from worker.NoInstanceTarget.
 func (m *ManagerFactory) Register(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Instance, error) {
-	claimed, parsed, err := controller.RegisterInstance[managerMetadata](ctx, m.workers, workerId, owner, common.OwnerSystem, WorkerManager, metadata, m.Config.InstanceTTL)
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
+	claimed, parsed, err := controller.RegisterInstance[managerMetadata](ctx, m.workers, workerId, owner, owner.Kind(), WorkerManager, metadata, m.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newManagerInstance(m, claimed, parsed)
+	return newManagerInstance(m, owner, claimed, parsed)
 }
