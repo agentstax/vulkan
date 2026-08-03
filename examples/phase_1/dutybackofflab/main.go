@@ -21,6 +21,7 @@ import (
 	metricsdatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 const (
@@ -44,7 +45,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("dutybackofflab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

@@ -24,6 +24,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 func main() {
@@ -43,23 +44,17 @@ func main() {
 	name := fmt.Sprintf("registeridempotency.lab.%d", time.Now().UnixNano())
 
 	step("first register creates the topic")
-	created, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{RetentionTTL: 720 * time.Hour})
+	created, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 720 * time.Hour})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
-	if created.CreatedAt.IsZero() {
-		die("created_at was not populated on register")
-	}
-	if !created.CreatedAt.Equal(created.UpdatedAt) {
-		die(fmt.Sprintf("fresh topic should have created_at == updated_at, got %s vs %s", created.CreatedAt, created.UpdatedAt))
-	}
-	fmt.Printf("  ✓ created id=%d, created_at == updated_at (%s)\n", created.Id, created.CreatedAt.Format(time.RFC3339))
+	fmt.Printf("  ✓ created id=%d\n", created.Id)
 
 	step("re-register SAME config is idempotent, not a mismatch")
 	// Fresh Config with the identical caller-set field -- RegisterTopic mutates
 	// what it's given via WithDefaults, so don't reuse the first one.
-	again, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{RetentionTTL: 720 * time.Hour})
+	again, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 720 * time.Hour})
 	if err != nil {
 		die(fmt.Sprintf("re-register with identical config must succeed, got: %v", err))
 	}
@@ -69,7 +64,7 @@ func main() {
 	fmt.Printf("  ✓ re-register resolved same id=%d, no mismatch\n", again.Id)
 
 	step("re-register DIFFERENT config is rejected")
-	_, err = mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{RetentionTTL: 168 * time.Hour})
+	_, err = mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour})
 	if !errors.Is(err, topic.ErrTopicConfigMismatch) {
 		die(fmt.Sprintf("re-register with different config must return ErrTopicConfigMismatch, got: %v", err))
 	}

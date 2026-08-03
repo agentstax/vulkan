@@ -155,3 +155,5 @@ workerManager on start (spawn):
 should consider abstracting out WorkerManager into two: WorkerScheduler and WorkerSpawner
 - Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
 - WorkerSpawner would read topic and either spawn or destroy new instances depending
+
+Seeder and Seed need a better new name (register is a good name but already has a lot of context) might be worth refactoring and making seed register and register something else.

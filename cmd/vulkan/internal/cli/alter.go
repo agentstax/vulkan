@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/spf13/cobra"
 )
 
 func newTopicAlterCmd(g *globalFlags) *cobra.Command {
-	// Flags map 1:1 to topic.AlterConfig's pointer fields. Only the ones the
+	// Flags map 1:1 to topiccontroller.AlterTopicConfig's pointer fields. Only the ones the
 	// operator actually passed become non-nil -- a patch, not a full replace.
 	// PartitionSize is absent (immutable -- baked into partition bounds), and
 	// renaming is its own command.
@@ -42,7 +43,7 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 			// Build a sparse patch from only the flags that were passed. A bool
 			// passed as --flag=false still counts as Changed -> the pointer is
 			// set false, which is the whole point of the tri-state.
-			cfg := &topic.AlterConfig{}
+			cfg := &topiccontroller.AlterTopicConfig{}
 			f := cmd.Flags()
 			if f.Changed("retention-ttl") {
 				cfg.RetentionTTL = &retentionTTL

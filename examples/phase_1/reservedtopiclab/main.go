@@ -12,6 +12,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 func main() {
@@ -58,7 +59,7 @@ func main() {
 
 	step("AlterTopic allowed on the system topic")
 	newRetention := 48 * time.Hour
-	altered, err := mAdmin.AlterTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), &topic.AlterConfig{RetentionTTL: &newRetention})
+	altered, err := mAdmin.AlterTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), &topiccontroller.AlterTopicConfig{RetentionTTL: &newRetention})
 	must(err)
 	assertDuration("retention altered", altered.RetentionTTL, newRetention)
 

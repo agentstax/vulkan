@@ -35,6 +35,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -72,7 +73,7 @@ func main() {
 func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("SCENARIO 1: a fresh failure logs one delivery_log row, a success logs none")
 
-	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario1", topic.Config{})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario1", topiccontroller.TopicConfig{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
@@ -101,7 +102,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
-	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario2", topic.Config{})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario2", topiccontroller.TopicConfig{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
@@ -142,7 +143,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	step("SCENARIO 3: DisableDeliveryLog skips every write (the table itself always exists)")
 
-	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario3", topic.Config{DisableDeliveryLog: true})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario3", topiccontroller.TopicConfig{DisableDeliveryLog: true})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
@@ -174,7 +175,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 	step("SCENARIO 4a: dropPartition reaps a dormant message's delivery_log row")
 
 	const partitionSize = int64(4)
-	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4drop", topic.Config{PartitionSize: partitionSize})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4drop", topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -201,7 +202,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 	step("SCENARIO 4b: sweepBatch reaps a dormant message's delivery_log row individually")
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
-	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4sweep", topic.Config{PartitionSize: partitionSize})
+	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4sweep", topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -226,7 +227,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topic.Config) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.Producer[common.Work], int64) {
+func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.Producer[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)

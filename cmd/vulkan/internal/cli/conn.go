@@ -111,7 +111,7 @@ func openDatastore(ctx context.Context, databaseURL string) (*datastore.Postgres
 // openAdmin is openDatastore plus a MessageAdmin. AllowDestroy is set here
 // because this binary IS the privileged admin tool -- the gate exists for
 // library embedders, not the CLI (ADMIN_CLI.md). The datastore is returned
-// too, so destroy can build a topic.TopicDatastore for the one thing
+// too, so destroy can build a topic controller for the one thing
 // MessageAdmin doesn't expose (an emptiness probe).
 func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *datastore.PostgresDatastore, func(), error) {
 	ds, closeDS, err := openDatastore(ctx, databaseURL)

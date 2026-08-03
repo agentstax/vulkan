@@ -26,6 +26,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 type completion struct {
@@ -81,7 +82,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topic.Config{})
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

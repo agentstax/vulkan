@@ -68,8 +68,6 @@ func printTopicDetail(w io.Writer, t *topic.Topic) {
 	fmt.Fprintf(w, "\nv%d (id=%d)\n", t.SchemaVersion, t.Id)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintf(tw, "  CreatedAt\t%s\n", timeCell(t.CreatedAt))
-	fmt.Fprintf(tw, "  UpdatedAt\t%s\n", timeCell(t.UpdatedAt))
 	fmt.Fprintf(tw, "  PartitionSize\t%s\n", commaInt(t.PartitionSize))
 	fmt.Fprintf(tw, "  RetentionTTL\t%s\n", retentionDetail(t.RetentionTTL))
 	fmt.Fprintf(tw, "  AllowDropPastCommitted\t%t\n", t.AllowDropPastCommitted)

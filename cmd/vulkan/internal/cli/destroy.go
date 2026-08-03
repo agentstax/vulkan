@@ -11,6 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/spf13/cobra"
 )
 
@@ -47,12 +48,14 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			}
 
 			// 2. emptiness -- MessageAdmin doesn't expose this, so build a
-			// topic.TopicDatastore over the same pool (public API, no pkg change).
-			tds, err := topic.NewTopicDatastore(ds, nil, logger.NewDefaultLogger(os.Stderr, slog.LevelError))
+			// topic controller over the same pool (public API, no pkg change).
+			topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+				Logger: logger.NewDefaultLogger(os.Stderr, slog.LevelError),
+			})
 			if err != nil {
 				return failOp("could not check whether topic is empty: %v", err)
 			}
-			empty, err := tds.IsEmpty(ctx, found.Id)
+			empty, err := topicController.IsEmpty(ctx, found.Id)
 			if err != nil {
 				return translateAdminError(err)
 			}

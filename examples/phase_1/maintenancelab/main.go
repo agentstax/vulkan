@@ -26,6 +26,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -51,7 +52,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("maintenancelab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	// speed the janitor up to the lab's 1s tick (the waterline's seeded
 	// default is already 1s) -- rates live on the maintenance row's metadata,

@@ -37,6 +37,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -322,7 +323,7 @@ func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, lab
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	return tp, func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

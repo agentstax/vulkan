@@ -35,6 +35,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -72,7 +73,7 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.race.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: 1000})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -109,7 +110,7 @@ func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.scale.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: scalePartitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: scalePartitionSize})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

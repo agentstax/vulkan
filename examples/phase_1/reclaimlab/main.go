@@ -30,6 +30,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -56,7 +57,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase65b.reclaimlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

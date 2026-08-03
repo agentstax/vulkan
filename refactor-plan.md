@@ -235,7 +235,7 @@ Grep labs for hand-copied config/queries while sweeping (labs go silently stale)
 
 Generic worker system in a NEW pkg/worker. Do NOT retrofit pkg/maintain — duplicate
 its code into pkg/worker where it fits; maintain stays untouched until cleanup.
-Worker = first-class user resource; janitor/waterline/scheduler are just the built-in
+Worker = first-class user resource; janitor/waterline/cron_scheduler are just the built-in
 workers we ship.
 
 Model (settled in discussion):
@@ -255,6 +255,17 @@ Model (settled in discussion):
   declined (slots full — not an error, manager retries next reconcile) / error.
 - WorkerManager holds non-registered worker factories; spawn = Register per discovered
   worker row + Run the returned instance.
+
+Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow points down:
+- pkg/worker                       vocabulary only: Worker, WorkerInstance, worker names,
+                                   WorkerFactory + Runner, ErrInstanceLost. No DB, no config.
+- pkg/worker/controller            WorkerController + config + adapters; the only door to
+                                   worker persistence.
+- pkg/worker/controller/datastore  WorkerData + SQL (not internal/ for now).
+- pkg/worker/manager               WorkerManager + runner pool; NewWorkerManager takes the
+                                   core postgres datastore and constructs its own controller
+                                   (same shape as the seeders' datastores).
+- pkg/worker/{janitor,waterline,cronscheduler} (chunks 5-7) import worker + controller.
 
 ## chunks
 1. tables — worker + worker_instance DDL in the pkg/system baseline (edit in place).

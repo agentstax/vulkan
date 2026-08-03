@@ -36,6 +36,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -71,7 +72,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.accum.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: time.Hour})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -118,7 +119,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	must(err)
 
 	topicName := fmt.Sprintf("phase9.idempotencykeysgrowthlab.keepup.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: largePartitionSize, IdempotencyKeyTTL: ttl})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

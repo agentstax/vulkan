@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/spf13/cobra"
 )
 
 func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
-	// Flags map 1:1 to topic.Config and are left unset by default -- only the
+	// Flags map 1:1 to topiccontroller.TopicConfig and are left unset by default -- only the
 	// ones the operator actually passed reach the Config, so WithDefaults stays
 	// the single source of truth for everything else.
 	var (
@@ -38,7 +39,7 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 			name := args[0]
 
 			// Build a sparse Config from only the flags that were passed.
-			cfg := &topic.Config{}
+			cfg := &topiccontroller.TopicConfig{}
 			f := cmd.Flags()
 			if f.Changed("partition-size") {
 				cfg.PartitionSize = partitionSize
@@ -118,7 +119,7 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 // printMismatch writes the diff between the existing topic and what register
 // tried to send (to stderr, w), then returns a printed error (exit 1). want is
 // the fully defaulted config RegisterTopic just compared and rejected.
-func printMismatch(w io.Writer, name string, existing *topic.Topic, want *topic.Config) error {
+func printMismatch(w io.Writer, name string, existing *topic.Topic, want *topiccontroller.TopicConfig) error {
 	if existing == nil {
 		// Lost a registration race between our GetTopic and RegisterTopic; the
 		// row exists now but we didn't capture it. Report plainly rather than
@@ -128,7 +129,7 @@ func printMismatch(w io.Writer, name string, existing *topic.Topic, want *topic.
 
 	fmt.Fprintf(w, "error: topic %q already exists with a different configuration\n\n", name)
 
-	wantTopic := want.ToTopic(existing.Id, existing.SystemId, name, existing.SchemaVersion, existing.CreatedAt, existing.UpdatedAt)
+	wantTopic := want.ToTopic(existing.Id, existing.SystemId, name, existing.SchemaVersion)
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  FIELD\tEXISTING\tREQUESTED")
 	for _, d := range topicFieldDiffs(existing, wantTopic) {

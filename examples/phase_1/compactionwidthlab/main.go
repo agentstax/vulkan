@@ -32,6 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -62,14 +63,14 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
-	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, topic.SchemaVersion(1), &topic.Config{PartitionSize: narrowPartitionSize})
+	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: narrowPartitionSize})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, narrowName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
-	wide, err := mAdmin.RegisterTopic(ctx, wideName, topic.SchemaVersion(1), &topic.Config{PartitionSize: widePartitionSize})
+	wide, err := mAdmin.RegisterTopic(ctx, wideName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: widePartitionSize})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, wideName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

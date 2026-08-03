@@ -37,6 +37,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -227,7 +228,7 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})

@@ -31,6 +31,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -66,7 +67,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8c.compactionheadwritelab.fixed.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -151,7 +152,7 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 	must(err)
 
 	name := fmt.Sprintf("phase8c.compactionheadwritelab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{PartitionSize: largePartitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})

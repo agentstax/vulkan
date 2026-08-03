@@ -48,6 +48,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -88,7 +89,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("phase14a.schemaevolutionlab.%d", time.Now().UnixNano())
-	v1, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{})
+	v1, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 
 	wp1, err := producer.NewProducer[V1Order](name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
@@ -104,7 +105,7 @@ func main() {
 	}
 
 	step("register v2 alongside v1 -- same name, a new physical topic")
-	v2, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(2), &topic.Config{})
+	v2, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(2), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(2), admin.DestroyOptions{Force: true}))

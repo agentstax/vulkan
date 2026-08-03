@@ -58,14 +58,9 @@ func printTopicsTable(w io.Writer, topics []*topic.Topic) {
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tVERSION\tCREATED\tUPDATED")
+	fmt.Fprintln(tw, "NAME\tVERSION")
 	for _, t := range topics {
-		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\n",
-			t.Name,
-			t.SchemaVersion,
-			timeCell(t.CreatedAt),
-			timeCell(t.UpdatedAt),
-		)
+		fmt.Fprintf(tw, "%s\t%d\n", t.Name, t.SchemaVersion)
 	}
 	tw.Flush()
 

@@ -32,6 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -101,7 +102,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.lazy.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -177,7 +178,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 
 	topicName := fmt.Sprintf("phase10.rolluplab.staleness.sync.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -261,7 +262,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 
 	topicName := fmt.Sprintf("phase10.rolluplab.fixedcost.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -316,7 +317,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 
 	topicName := fmt.Sprintf("phase10.rolluplab.contention.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topic.Config{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

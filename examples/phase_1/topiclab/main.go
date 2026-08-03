@@ -37,6 +37,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -63,7 +64,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	register := func(name string) *topic.Topic {
-		t, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topic.Config{PartitionSize: partitionSize})
+		t, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 		must(err)
 		return t
 	}

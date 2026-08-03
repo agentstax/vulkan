@@ -12,6 +12,7 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -58,7 +59,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topic.Config{})
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
