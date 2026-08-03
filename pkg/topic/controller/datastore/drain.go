@@ -1,4 +1,4 @@
-package topic
+package datastore
 
 import (
 	"context"

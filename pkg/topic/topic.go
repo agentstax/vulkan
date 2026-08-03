@@ -6,7 +6,7 @@ import (
 )
 
 // topic name can't contain '*' as it's the binding wildcard
-var slugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
+var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // SchemaVersion is a contract for a topic's message compatibility.
 //
@@ -30,6 +30,4 @@ type Topic struct {
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTL      time.Duration
 	DisableDeliveryLog     bool
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
 }

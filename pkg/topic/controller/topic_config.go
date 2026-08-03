@@ -1,17 +1,16 @@
-package topic
+package controller
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// Config is separate from Topic so Register can grow (retention, etc.) without a signature change.
-type Config struct {
+// TopicConfig is RegisterTopic's spec -- separate from Topic so Register can grow
+// (retention, etc.) without a signature change.
+type TopicConfig struct {
 	// PartitionSize - rows per partition.
 	// Default: 1_000_000.
 	//
@@ -56,60 +55,41 @@ type Config struct {
 	// Set true for a topic whose failure volume would make the extra
 	// per-attempt write not worth paying for.
 	DisableDeliveryLog bool
-
-	// Logger - pass your own *slog.Logger (own Handler) or anything satisfying
-	// logger.Logger.
-	// Default: a text logger to os.Stdout at warn level and up.
-	//
-	// Only takes effect for Register -- Destroy and Exists have no Config
-	// parameter to carry one, so they always use that same default.
-	Logger logger.Logger
-
-	// Retry - transient-error retry policy for this topic's own datastore calls.
-	// Default: retry.NewDefaultRetryPolicy().
-	Retry *retry.Policy
 }
 
-func (c *Config) WithDefaults() *Config {
+func (c *TopicConfig) WithDefaults() *TopicConfig {
 	if c.PartitionSize == 0 {
 		c.PartitionSize = 1_000_000
 	}
 	if c.IdempotencyKeyTTL == 0 {
 		c.IdempotencyKeyTTL = time.Hour
 	}
-	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
-	}
-	c.Retry = c.Retry.WithDefaults()
 	return c
 }
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *Config) Validate() error {
+func (c *TopicConfig) Validate() error {
 	if c.RetentionTTL < 0 {
 		return fmt.Errorf("RetentionTTL must be >= 0, got %v", c.RetentionTTL)
 	}
 	if c.IdempotencyKeyTTL < 0 {
 		return fmt.Errorf("IdempotencyKeyTTL must be >= 0, got %v", c.IdempotencyKeyTTL)
 	}
-	if err := c.Retry.Validate(); err != nil {
-		return fmt.Errorf("Retry: %w", err)
-	}
 	return nil
 }
 
-// AlterConfig is Alter's sparse patch -- a nil field means leave unchanged.
+// AlterTopicConfig is Alter's sparse patch -- a nil field means leave unchanged.
 // PartitionSize is absent -- currently immutable (future work)
 // Name is absent -- renaming is its own verb, not a config change.
-type AlterConfig struct {
+type AlterTopicConfig struct {
 	RetentionTTL           *time.Duration
 	AllowDropPastCommitted *bool
 	IdempotencyKeyTTL      *time.Duration
 	DisableDeliveryLog     *bool
 }
 
-func (c *AlterConfig) Validate() error {
+func (c *AlterTopicConfig) Validate() error {
 	if c.RetentionTTL == nil && c.AllowDropPastCommitted == nil && c.IdempotencyKeyTTL == nil &&
 		c.DisableDeliveryLog == nil {
 		return errors.New("no fields set -- an alter must change at least one field")
@@ -123,8 +103,8 @@ func (c *AlterConfig) Validate() error {
 	return nil
 }
 
-func (c *Config) ToTopic(id int64, systemId int64, name string, version SchemaVersion, createdAt, updatedAt time.Time) *Topic {
-	return &Topic{
+func (c *TopicConfig) ToTopic(id int64, systemId int64, name string, version topic.SchemaVersion) *topic.Topic {
+	return &topic.Topic{
 		Id:                     id,
 		SystemId:               systemId,
 		Name:                   name,
@@ -134,7 +114,5 @@ func (c *Config) ToTopic(id int64, systemId int64, name string, version SchemaVe
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
 		DisableDeliveryLog:     c.DisableDeliveryLog,
-		CreatedAt:              createdAt,
-		UpdatedAt:              updatedAt,
 	}
 }

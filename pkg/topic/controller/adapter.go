@@ -1,0 +1,54 @@
+package controller
+
+import (
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
+)
+
+func toTopic(data *datastore.TopicData) *topic.Topic {
+	return &topic.Topic{
+		Id:                     data.Id,
+		SystemId:               data.SystemId,
+		Name:                   data.Name,
+		SchemaVersion:          topic.SchemaVersion(data.SchemaVersion),
+		PartitionSize:          data.PartitionSize,
+		RetentionTTL:           time.Duration(data.RetentionTTLNs),
+		AllowDropPastCommitted: data.AllowDropPastCommitted,
+		IdempotencyKeyTTL:      time.Duration(data.IdempotencyKeyTTLNs),
+		DisableDeliveryLog:     data.DisableDeliveryLog,
+	}
+}
+
+func toRegisterTopicData(systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) *datastore.TopicData {
+	return &datastore.TopicData{
+		SystemId:               systemId,
+		Name:                   name,
+		SchemaVersion:          int64(version),
+		PartitionSize:          cfg.PartitionSize,
+		RetentionTTLNs:         int64(cfg.RetentionTTL),
+		AllowDropPastCommitted: cfg.AllowDropPastCommitted,
+		IdempotencyKeyTTLNs:    int64(cfg.IdempotencyKeyTTL),
+		DisableDeliveryLog:     cfg.DisableDeliveryLog,
+	}
+}
+
+func toAlterTopicData(cfg *AlterTopicConfig) *datastore.AlterTopicData {
+	return &datastore.AlterTopicData{
+		RetentionTTLNs:         durationNs(cfg.RetentionTTL),
+		AllowDropPastCommitted: cfg.AllowDropPastCommitted,
+		IdempotencyKeyTTLNs:    durationNs(cfg.IdempotencyKeyTTL),
+		DisableDeliveryLog:     cfg.DisableDeliveryLog,
+	}
+}
+
+// durationNs widens *time.Duration to the *int64 the _ns columns store,
+// passing nil through so COALESCE sees NULL.
+func durationNs(d *time.Duration) *int64 {
+	if d == nil {
+		return nil
+	}
+	ns := int64(*d)
+	return &ns
+}
