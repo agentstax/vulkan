@@ -28,7 +28,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/retry"
@@ -64,16 +63,6 @@ func main() {
 	defer stop()
 	time.AfterFunc(180*time.Second, stop) // watchdog
 
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](100 + conc)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	pool, err := concurrency.NewWorkerPoolLimiter(conc)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
 	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password", Host: "localhost", Port: 5432, Database: "example_db", MaxConns: *maxConnsPtr,
 	})
@@ -102,8 +91,10 @@ func main() {
 	// Short lease (= Timeout+QueueMargin+AckMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
-	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		BatchLimit:    100,
+		QueueSize:     100 + conc,
+		Processors:    conc,
 		Message:       &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
 		ClaimPollRate: 200 * time.Millisecond,
 		QueueMargin:   1 * time.Second,
@@ -114,7 +105,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := wc.Register(ctx); err != nil {
+	wcInstance, err := wc.Register(ctx)
+	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
@@ -122,7 +114,7 @@ func main() {
 	var mu sync.Mutex
 	var counter atomic.Int64
 
-	err = wc.Consume(ctx, func(ctx context.Context, work *common.Work) error {
+	err = wcInstance.Consume(ctx, func(ctx context.Context, work *common.Work) error {
 		if work.SleepMs > 0 {
 			time.Sleep(time.Duration(work.SleepMs) * time.Millisecond) // throttle so we can crash mid-run
 		}

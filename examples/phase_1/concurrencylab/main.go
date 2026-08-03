@@ -34,7 +34,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -108,20 +107,18 @@ func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *p
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
 func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](batchLimit + poolSize)
-	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(poolSize)
-	must(err)
-
-	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
+		QueueSize:               batchLimit + poolSize,
+		Processors:              poolSize,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})
 	must(err)
-	must(wc.Register(ctx))
+	wcInstance, err := wc.Register(ctx)
+	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -132,7 +129,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 	var count atomic.Int64
 	start := time.Now()
 
-	must(wc.Consume(runCtx, func(ctx context.Context, work *common.Work) error {
+	must(wcInstance.Consume(runCtx, func(ctx context.Context, work *common.Work) error {
 		if work.SleepMs > 0 {
 			time.Sleep(time.Duration(work.SleepMs) * time.Millisecond)
 		}
@@ -187,20 +184,18 @@ func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wp 
 }
 
 func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, group string, poolSize, target int) time.Duration {
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](target + poolSize)
-	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(poolSize)
-	must(err)
-
-	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
+		QueueSize:               target + poolSize,
+		Processors:              poolSize,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})
 	must(err)
-	must(wc.Register(ctx))
+	wcInstance, err := wc.Register(ctx)
+	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -209,7 +204,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 	var elapsed time.Duration
 	start := time.Now()
 
-	must(wc.Consume(runCtx, func(ctx context.Context, work *common.Work) error {
+	must(wcInstance.Consume(runCtx, func(ctx context.Context, work *common.Work) error {
 		if work.SleepMs > 0 {
 			time.Sleep(time.Duration(work.SleepMs) * time.Millisecond)
 		}

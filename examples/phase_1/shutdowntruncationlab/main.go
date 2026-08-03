@@ -40,7 +40,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
@@ -92,20 +91,18 @@ func main() {
 	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
-	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(1)
-	must(err)
-
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
+		QueueSize:               10,
+		Processors:              1,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 1 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
 		AckMargin:               500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
 	})
 	must(err)
-	must(wc.Register(ctx))
+	wcInstance, err := wc.Register(ctx)
+	must(err)
 
 	step("WORKER claims all 3, shutdown fires after message 2 -- message 3 never attempted")
 	runCtx, cancel := context.WithCancel(ctx)
@@ -125,7 +122,7 @@ func main() {
 	// Process blocks until runCtx cancels (cancel() fires synchronously inside
 	// consumerFunc above) -- N=1 pool means dispatch can't reach message 3
 	// before that cancellation is already visible to it.
-	if err := wc.Consume(runCtx, consumerFunc); err != nil && !errors.Is(err, context.Canceled) {
+	if err := wcInstance.Consume(runCtx, consumerFunc); err != nil && !errors.Is(err, context.Canceled) {
 		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
 	}
 	assert("exactly 2 messages attempted", calls.Load(), 2)

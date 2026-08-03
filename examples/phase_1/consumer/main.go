@@ -13,7 +13,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	vulkanctx "github.com/agentstax/vulkan/pkg/context"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -46,17 +45,6 @@ func main() {
 
 	const concurrencyLimit = 5
 
-	pressureQueue, err := concurrency.NewPressureQueue[consumer.Buffered](concurrencyLimit * 10)
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-
-	workerPoolLimiter, err := concurrency.NewWorkerPoolLimiter(concurrencyLimit)
-	if err != nil {
-		os.Exit(1)
-	}
-
 	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User:     "example_user",
 		Pass:     "example_password",
@@ -86,9 +74,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), pressureQueue, workerPoolLimiter, ds, &consumer.ConsumerConfig{
+	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		Type:          consumer.CURSOR,
 		BatchLimit:    10,
+		QueueSize:     concurrencyLimit * 10,
+		Processors:    concurrencyLimit,
 		Message:       &vulkancommon.MessageOptions{Timeout: 5 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
 		ClaimPollRate: 1 * time.Second,
 		QueueMargin:   2 * time.Second,
@@ -99,14 +89,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := workConsumer.Register(ctx); err != nil {
+	workInstance, err := workConsumer.Register(ctx)
+	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	// WORK
 	var attempts atomic.Int64
-	err = workConsumer.Consume(ctx, func(ctx context.Context, work *common.Work) error {
+	err = workInstance.Consume(ctx, func(ctx context.Context, work *common.Work) error {
 		// TODO - think through how users can log or confirm if a run is a retry or not. Maybe add info into context?
 
 		fmt.Printf("work processes start %s\n", work.Id)

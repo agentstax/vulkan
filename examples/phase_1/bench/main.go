@@ -19,7 +19,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/retry"
@@ -45,20 +44,6 @@ func main() {
 
 	// safety watchdog: never let a stalled run hang the sweep
 	time.AfterFunc(180*time.Second, stop)
-
-	// buffer stays shallow but must be >= batch (validate) and big enough to keep the pool fed
-	bufferSize := batch + conc
-	pressureQueue, err := concurrency.NewPressureQueue[consumer.Buffered](bufferSize)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	pool, err := concurrency.NewWorkerPoolLimiter(conc)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
 
 	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User:     "example_user",
@@ -90,8 +75,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), pressureQueue, pool, ds, &consumer.ConsumerConfig{
-		BatchLimit:    batch,
+	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+		BatchLimit: batch,
+		// buffer stays shallow but must be >= batch (validate) and big enough to keep the pool fed
+		QueueSize:     batch + conc,
+		Processors:    conc,
 		Message:       &vulkancommon.MessageOptions{Timeout: 30 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
 		ClaimPollRate: 500 * time.Millisecond,
 		QueueMargin:   10 * time.Second,
@@ -102,7 +90,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := wc.Register(ctx); err != nil {
+	wcInstance, err := wc.Register(ctx)
+	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
@@ -111,7 +100,7 @@ func main() {
 	var firstNs, lastNs atomic.Int64
 	start := time.Now()
 
-	err = wc.Consume(ctx, func(ctx context.Context, work *common.Work) error {
+	err = wcInstance.Consume(ctx, func(ctx context.Context, work *common.Work) error {
 		n := counter.Add(1)
 		if n == 1 {
 			firstNs.Store(int64(time.Since(start)))

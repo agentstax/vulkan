@@ -28,7 +28,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/monitor"
@@ -81,6 +80,8 @@ func main() {
 
 	cfg := &consumer.ConsumerConfig{
 		BatchLimit:   2,
+		QueueSize:    10,
+		Processors:   2,
 		Message:      &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace: 100 * time.Millisecond,
 		QueueMargin:  200 * time.Millisecond,
@@ -93,17 +94,14 @@ func main() {
 	step("two independent consumer processes claim the same group's cursor")
 	var wg sync.WaitGroup
 	startConsumer := func(label string) {
-		queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
+		wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), ds, cfg)
 		must(err)
-		pool, err := concurrency.NewWorkerPoolLimiter(2)
+		wcInstance, err := wc.Register(runCtx)
 		must(err)
-		wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, ds, cfg)
-		must(err)
-		must(wc.Register(runCtx))
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := wc.Consume(runCtx, consumerFunc); err != nil && runCtx.Err() == nil {
+			if err := wcInstance.Consume(runCtx, consumerFunc); err != nil && runCtx.Err() == nil {
 				die(fmt.Sprintf("%s: Consume returned %v", label, err))
 			}
 		}()

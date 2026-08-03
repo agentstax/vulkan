@@ -12,7 +12,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -61,19 +60,17 @@ func main() {
 	must(wp.Register(ctx))
 	seed(ctx, wp, 3)
 
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](10)
-	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(3)
-	must(err)
-
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
+		QueueSize:               10,
+		Processors:              3,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace:            50 * time.Millisecond,
 	})
 	must(err)
-	must(wc.Register(ctx))
+	wcInstance, err := wc.Register(ctx)
+	must(err)
 
 	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
@@ -82,7 +79,7 @@ func main() {
 		}
 		return nil
 	}
-	runProcessUntil(ctx, wc, consumerFunc, 5*time.Second, func() bool {
+	runProcessUntil(ctx, wcInstance, consumerFunc, 5*time.Second, func() bool {
 		return calls.Load() == 3
 	})
 
@@ -165,7 +162,7 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	}
 }
 
-func runProcessUntil[Message any](ctx context.Context, wc *consumer.MessageConsumer[Message], consumerFunc consumer.ConsumerFunc[Message], timeout time.Duration, done func() bool) {
+func runProcessUntil[Message any](ctx context.Context, wc *consumer.MessageConsumerInstance[Message], consumerFunc consumer.ConsumerFunc[Message], timeout time.Duration, done func() bool) {
 	runCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
 	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()

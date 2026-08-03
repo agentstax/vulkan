@@ -21,7 +21,6 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -144,23 +143,21 @@ func (rc *runningConsumer) stop() {
 }
 
 func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName string, i int) *runningConsumer {
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](64)
-	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(4)
-	must(err)
-
-	c, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+	c, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		BatchLimit:    50,
+		QueueSize:     64,
+		Processors:    4,
 		ClaimPollRate: 100 * time.Millisecond,
 	})
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	must(c.Register(lifecycleCtx))
+	cInstance, err := c.Register(lifecycleCtx)
+	must(err)
 
 	done := make(chan error, 1)
 	go func() {
-		done <- c.Consume(lifecycleCtx, func(ctx context.Context, work *common.Work) error { return nil })
+		done <- cInstance.Consume(lifecycleCtx, func(ctx context.Context, work *common.Work) error { return nil })
 	}()
 	fmt.Printf("  consumer %d started\n", i)
 	return &runningConsumer{cancel: cancel, done: done}

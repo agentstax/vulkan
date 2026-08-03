@@ -70,8 +70,6 @@ lab binaries should be produced into a /bin folder that it .gitignored except fo
 
 Consider creating a DefaultProducer and DefaultConsumer for easier quickstarts which has comments and maybe a log statement recommending not to use in prod
 
-refactor out queue concurrency.Queue[Buffered], poolLimiter concurrency.PoolLimiter from consumer
-
 need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
 
 Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).

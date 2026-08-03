@@ -43,7 +43,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -217,14 +216,11 @@ func bridgeIdempotencyKey(sourceID int64) uuid.UUID {
 // (ascending v1 id), so this lab's stop points are reproducible. Short
 // margins and a short ExceptionInitialBackoff keep the crash/retry path fast
 // instead of waiting out the library's production-sized defaults.
-func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore, name string) *consumer.Consumer[V1Order] {
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](4)
-	must(err)
-	pool, err := concurrency.NewWorkerPoolLimiter(1)
-	must(err)
-
-	c, err := consumer.NewConsumer[V1Order](group, name, topic.SchemaVersion(1), queue, pool, ds, &consumer.ConsumerConfig{
+func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore, name string) *consumer.ConsumerInstance[V1Order] {
+	c, err := consumer.NewConsumer[V1Order](group, name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
 		BatchLimit:              1,
+		QueueSize:               4,
+		Processors:              1,
 		ClaimPollRate:           50 * time.Millisecond,
 		Message:                 &common.MessageOptions{Timeout: 2 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
@@ -233,8 +229,9 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 		DisableGracefulShutdown: true,
 	})
 	must(err)
-	must(c.Register(ctx))
-	return c
+	cInstance, err := c.Register(ctx)
+	must(err)
+	return cInstance
 }
 
 // waitForDistinctCount polls v2's compaction_head until it holds want distinct

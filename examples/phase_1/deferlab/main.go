@@ -44,7 +44,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -542,17 +541,16 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
 
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](50)
+	cfg.QueueSize = 50
+	cfg.Processors = pool
+	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
 	must(err)
-	limiter, err := concurrency.NewWorkerPoolLimiter(pool)
+	wcInstance, err := wc.Register(ctx)
 	must(err)
-	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), queue, limiter, ds, cfg)
-	must(err)
-	must(wc.Register(ctx))
 
 	runCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
-	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- wcInstance.Consume(runCtx, consumerFunc) }()
 
 	start := time.Now()
 	for !done() {
@@ -577,17 +575,16 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.C
 	cfg.DisableGracefulShutdown = true
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
-	queue, err := concurrency.NewPressureQueue[consumer.Buffered](50)
+	cfg.QueueSize = 50
+	cfg.Processors = pool
+	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
 	must(err)
-	limiter, err := concurrency.NewWorkerPoolLimiter(pool)
+	wcInstance, err := wc.Register(ctx)
 	must(err)
-	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), queue, limiter, ds, cfg)
-	must(err)
-	must(wc.Register(ctx))
 
 	runCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
-	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- wcInstance.Consume(runCtx, consumerFunc) }()
 	return func() {
 		cancel()
 		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
@@ -609,11 +606,12 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *c
 	cfg.ExceptionInitialBackoff = 50 * time.Millisecond
 	ec, err := consumer.NewExceptionConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
 	must(err)
-	must(ec.Register(ctx))
+	ecInstance, err := ec.Register(ctx)
+	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
-	go func() { errCh <- ec.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- ecInstance.Consume(runCtx, consumerFunc) }()
 	return func() {
 		cancel()
 		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {

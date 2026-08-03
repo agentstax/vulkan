@@ -287,9 +287,37 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
 7. CronScheduler worker — tick/produce logic duplicated from maintain/scheduler.go.
 8. consumer: replace maintainer — consumer registers/runs janitor + waterline workers
    instead of maintain duties.
-9. consumer factory-style register — Consumer becomes the factory, Register returns a
-   consumer instance (enrolls its own worker_instance row + heartbeat), Consume lives
-   on the instance.
+9. consumer factory-style register — SETTLED DESIGN (2026-08-03), supersedes the one-line
+   plan below. Ownership INVERTED: the manager is lifted out of consumers entirely; the
+   public Consumer is the higher-order construct that runs manager.Runner, and the
+   consumption loops are worker rows the manager spawns like any other.
+   - per-type worker rows per group: message_consumer / exception_consumer /
+     delivery_consumer, seeded at target_instances = -1 (NoInstanceTarget). Per-type rows
+     make a pure retry consumer visible/alertable and give a per-type toggle: 0 suspends
+     new claims. DEFERRED: pool destroying already-running instances on 0 — for now the
+     toggle takes effect on next claim, not next reconcile.
+   - shape C: NewConsumer validates cfg and builds nothing stateful; Register(ctx) is the
+     build step — resolve topic/group, seed rows, construct THIS instance's consumer
+     factories + upkeep factories + manager factory + runner, return the instance;
+     instance.Consume(ctx, fn) sets the fn slot (http.Server pattern — before the runner
+     starts, no race) then blocks in runner.Run. Register-many-times = independent lives;
+     wound-down-stays-down dies (re-Register instead of re-New). fn slots are
+     per-instance because factories are built per-Register.
+   - pool error rule: ErrInstanceLost -> respawn (the healing); any other error from a
+     spawned instance's Run -> propagate, tear down the manager, surface out of Consume.
+     Upkeep workers' Run only exits on loss/cancel, so only consumer-type instances can
+     produce a fatal error in practice.
+   - manager's first reconcile pass runs immediately — a fresh consumer must not idle out
+     a jittered first tick before its loops spawn.
+   - InstanceTickRunner splits: claim-hold half (heartbeat + release, no pacing) reusable
+     by continuous loops like consumers; tick-pacing half composes it.
+   - MessageConsumer/ExceptionConsumer/DeliveryConsumer become pure worker factories with
+     a standalone self-claim door (rows are -1, self-claim never declines). NO manager,
+     NO upkeep in any sub-consumer — a pure ExceptionConsumer is a bare retry loop that
+     runs beside normal consumers.
+   - queue + poolLimiter leave the constructor signature for cfg knobs — each spawned
+     instance must own its queue; a caller-shared one across manager-spawned lives is
+     broken. Closes TODO.md's "refactor out queue/poolLimiter" item. ~23 lab call sites.
 10. producer factory-style register — same reshape as 9.
 11. metrics — DutySnapshots -> worker snapshots read from worker/worker_instance
     (heartbeat + liveness based; cron-job metrics split out per TODO).
@@ -306,6 +334,17 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
   in topic/consumer_group Register paths, MessageOptions persistence shape on the message row (typed
   columns vs metadata — internals TBD), torture-lab coverage (two consumers fighting one
   key through crash / lease-steal / supersession chains / wedged-key starvation)
+
+- left over from chunk 8, none blocking:
+  - topic + system manager rows have NO claimant. Consumers claim their own group's row;
+    nothing claims the other two until chunk 12's daemon. Settle there alongside the
+    daemon's "everything" scope (ancestor-chain ListWorkers returns system rows only for
+    a system owner) and whether topic manager rows earn their place at all.
+  - EnsureNextPartition is still homeless — chunk 5 deferred it and the worker janitor's
+    sweep does not do it. Producer self-heal is the only cover today.
+  - CURSOR builds the whole factory set twice (message base + exception base) and runs
+    seedGroupWorkers twice; Consumer reaches through c.base().manager for the one factory
+    it needs. Chunk 9's reshape is the place to fix it, not a separate pass.
 
 ---
 
