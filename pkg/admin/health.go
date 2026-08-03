@@ -26,7 +26,7 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 		return nil, errors.New("topic name is required")
 	}
 
-	all, err := a.topicDatastore.ListTopics(ctx)
+	all, err := a.topicController.ListTopics(ctx)
 	if err != nil {
 		return nil, err
 	}

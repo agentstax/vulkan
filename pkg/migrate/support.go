@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -18,24 +19,34 @@ const (
 	MaxTopicVersion  int64 = 1
 )
 
-// AssertSchemaSupported gates producer/consumer startup: the shared system
-// schema and this topic's schema must both sit within the range this build
-// understands. Too new -> upgrade the binary; too old -> migrate the database.
-func AssertSchemaSupported(ctx context.Context, q datastore.Querier, systemID int64, topicID int64) error {
-	systemOwner, err := common.NewSystemOwner(systemID)
+// AssertSchemaSupported gates startup: the schemas the owner depends on --
+// the shared system schema, plus the owner topic's schema for topic- and
+// group-owned callers -- must sit within the range this build understands.
+// Too new -> upgrade the binary; too old -> migrate the database.
+func AssertSchemaSupported(ctx context.Context, q datastore.Querier, owner *common.Owner) error {
+	if owner == nil {
+		return errors.New("owner must not be nil")
+	}
+
+	systemOwner, err := common.NewSystemOwner(owner.SystemId)
 	if err != nil {
 		return err
 	}
 	if err := assertOwner(ctx, q, systemOwner, MinSystemVersion, MaxSystemVersion); err != nil {
 		return err
 	}
-	topicOwner, err := common.NewTopicOwner(systemID, topicID, "")
+
+	if owner.Kind() == common.OwnerSystem {
+		return nil
+	}
+	topicOwner, err := common.NewTopicOwner(owner.SystemId, owner.TopicId, "")
 	if err != nil {
 		return err
 	}
 	return assertOwner(ctx, q, topicOwner, MinTopicVersion, MaxTopicVersion)
 }
 
+// TODO - remove after pkg/maintain is deleted
 // AssertSystemSchemaSupported is the topic-less half of AssertSchemaSupported,
 // for callers that hold no topic row to read the system id from.
 func AssertSystemSchemaSupported(ctx context.Context, q datastore.Querier) error {

@@ -8,8 +8,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 // Janitor runs a topic's janitor duty:
@@ -23,9 +23,9 @@ type Janitor struct {
 	Config    *MaintainerConfig
 	Logger    logger.Logger // copied from Config.Logger at construction
 
-	topicDatastore *topic.TopicDatastore
-	duty           *dutyRunner // constructed by Register -- identity and tuning come from the offered maintenance row
-	sweepBatchSize int         // from the offered row's metadata, like the poll rate
+	topicController *topiccontroller.TopicController
+	duty            *dutyRunner // constructed by Register -- identity and tuning come from the offered maintenance row
+	sweepBatchSize  int         // from the offered row's metadata, like the poll rate
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -52,16 +52,19 @@ func NewJanitor(ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Janito
 		return nil, err
 	}
 
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
+	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &Janitor{
-		Datastore:      maintenanceDatastore,
-		Config:         cfg,
-		Logger:         cfg.Logger,
-		topicDatastore: topicDatastore,
+		Datastore:       maintenanceDatastore,
+		Config:          cfg,
+		Logger:          cfg.Logger,
+		topicController: topicController,
 	}, nil
 }
 
@@ -89,7 +92,7 @@ func (j *Janitor) Register(ctx context.Context, duty string, owner *common.Owner
 		return false, fmt.Errorf("SweepBatchSize must be > 0, got %d", meta.SweepBatchSize)
 	}
 
-	current, err := j.topicDatastore.GetTopicById(ctx, owner.TopicId)
+	current, err := j.topicController.GetTopicById(ctx, owner.TopicId)
 	if err != nil {
 		return false, err
 	}
@@ -97,7 +100,7 @@ func (j *Janitor) Register(ctx context.Context, duty string, owner *common.Owner
 		return false, fmt.Errorf("%w: topic %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, owner.TopicId)
 	}
 
-	if err := migrate.AssertSchemaSupported(ctx, j.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
+	if err := j.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return false, err
 	}
 

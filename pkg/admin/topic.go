@@ -9,6 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
 )
 
@@ -19,7 +20,7 @@ func (a *MessageAdmin) GetTopic(ctx context.Context, name string, version topic.
 		return nil, errors.New("topic name is required")
 	}
 
-	foundTopic, err := a.topicDatastore.GetTopic(ctx, name, version)
+	foundTopic, err := a.topicController.GetTopic(ctx, name, version)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +29,7 @@ func (a *MessageAdmin) GetTopic(ctx context.Context, name string, version topic.
 
 // ListTopics returns every registered topic version, ordered by name.
 func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
-	return a.topicDatastore.ListTopics(ctx)
+	return a.topicController.ListTopics(ctx)
 }
 
 // RegisterTopic is idempotent -- an existing (name, version) with an
@@ -40,7 +41,7 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
 //   - version: must be >= 1; a version that doesn't exist yet under name is
 //     a whole new physical topic, never a migration of an existing one
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
-func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.Config) (*topic.Topic, error) {
+func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -54,7 +55,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 	return a.registerTopic(ctx, name, version, cfg)
 }
 
-func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.Config) (*topic.Topic, error) {
+func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
 	// otherwise RegisterTopic dies with a raw undefined-table error.
 	sys, err := a.systemDatastore.GetConfig(ctx)
@@ -65,15 +66,7 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 		return nil, fmt.Errorf("register the system with RegisterSystem before registering topic %q: %w", name, migrate.ErrNotRegistered)
 	}
 
-	if cfg == nil {
-		cfg = &topic.Config{}
-	}
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	return a.topicDatastore.RegisterTopic(ctx, sys.Id, name, version, *cfg)
+	return a.topicController.RegisterTopic(ctx, sys.Id, name, version, cfg)
 }
 
 // AlterTopic applies cfg's non-nil fields to topic (name, version) and
@@ -86,19 +79,12 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 //   - RegisterTopic calls still passing the pre-alter config will fail with
 //     ErrTopicConfigMismatch -- deliberate, so declarative register calls
 //     can't silently drift from what an operator changed.
-func (a *MessageAdmin) AlterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topic.AlterConfig) (*topic.Topic, error) {
+func (a *MessageAdmin) AlterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.AlterTopicConfig) (*topic.Topic, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
 
-	if cfg == nil {
-		cfg = &topic.AlterConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	updated, err := a.topicDatastore.UpdateTopic(ctx, name, version, cfg)
+	updated, err := a.topicController.UpdateTopic(ctx, name, version, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +135,7 @@ func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName str
 		return nil, fmt.Errorf("%w: %s -> %s", ErrReservedTopicName, name, newName)
 	}
 
-	renamed, err := a.topicDatastore.RenameTopic(ctx, name, newName)
+	renamed, err := a.topicController.RenameTopic(ctx, name, newName)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +168,7 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 		return fmt.Errorf("%w: %s", ErrReservedTopicName, name)
 	}
 
-	found, err := a.topicDatastore.GetTopic(ctx, name, version)
+	found, err := a.topicController.GetTopic(ctx, name, version)
 	if err != nil {
 		return err
 	}
@@ -195,7 +181,7 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 
 func (a *MessageAdmin) destroyTopic(ctx context.Context, found *topic.Topic, opts DestroyOptions) error {
 	if !opts.Force {
-		empty, err := a.topicDatastore.IsEmpty(ctx, found.Id)
+		empty, err := a.topicController.IsEmpty(ctx, found.Id)
 		if err != nil {
 			return err
 		}
@@ -204,7 +190,7 @@ func (a *MessageAdmin) destroyTopic(ctx context.Context, found *topic.Topic, opt
 		}
 	}
 
-	return a.topicDatastore.DeleteTopic(ctx, found)
+	return a.topicController.DeleteTopic(ctx, found.Id, found.Name)
 }
 
 func isReservedTopicName(name string) bool {

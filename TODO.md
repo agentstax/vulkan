@@ -157,3 +157,7 @@ should consider abstracting out WorkerManager into two: WorkerScheduler and Work
 - WorkerSpawner would read topic and either spawn or destroy new instances depending
 
 Seeder and Seed need a better new name (register is a good name but already has a lot of context) might be worth refactoring and making seed register and register something else.
+
+For consumer and system need to abstract out the 'seeding' functionality in same way topicController is doing it
+
+Need to refactor rest of packages in same patterns as worker and topic

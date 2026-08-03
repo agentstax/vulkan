@@ -9,8 +9,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
-	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
 
@@ -111,12 +111,12 @@ func NewMessageRow[Message any](id int64, message *Message, createdAt time.Time,
 type Producer[Message any] struct {
 	Topic *topic.Topic // resolved by Register from the (name, version) given to NewProducer
 
-	topicName      string
-	version        topic.SchemaVersion
-	datastore      *producerDatastore[Message]
-	topicDatastore *topic.TopicDatastore
-	batcher        *batcher[Message]
-	lifecycleCtx   context.Context
+	topicName       string
+	version         topic.SchemaVersion
+	datastore       *producerDatastore[Message]
+	topicController *topiccontroller.TopicController
+	batcher         *batcher[Message]
+	lifecycleCtx    context.Context
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -143,16 +143,19 @@ func NewProducer[Message any](topicName string, version topic.SchemaVersion, ds 
 	if err != nil {
 		return nil, err
 	}
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
+	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &Producer[Message]{
-		topicName:      topicName,
-		version:        version,
-		datastore:      producerDatastore,
-		topicDatastore: topicDatastore,
+		topicName:       topicName,
+		version:         version,
+		datastore:       producerDatastore,
+		topicController: topicController,
 	}, nil
 }
 
@@ -176,7 +179,7 @@ func (p *Producer[Message]) Register(ctx context.Context) error {
 		return fmt.Errorf("%w: producer for topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.topicName, lifecycleContextHelp)
 	}
 
-	current, err := p.topicDatastore.GetTopic(ctx, p.topicName, p.version)
+	current, err := p.topicController.GetTopic(ctx, p.topicName, p.version)
 	if err != nil {
 		return err
 	}
@@ -186,7 +189,7 @@ func (p *Producer[Message]) Register(ctx context.Context) error {
 	p.Topic = current
 
 	// fail fast if the db's schema is outside the range this build understands
-	if err := migrate.AssertSchemaSupported(ctx, p.topicDatastore.Datastore.Pool, current.SystemId, current.Id); err != nil {
+	if err := p.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return err
 	}
 

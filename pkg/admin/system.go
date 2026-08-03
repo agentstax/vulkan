@@ -11,6 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/system"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 // RegisterSystem stands up the shared control-plane schema every topic uses;
@@ -74,8 +75,8 @@ func (a *MessageAdmin) ensureSystemCronJob(ctx context.Context, job *alert.Job) 
 	return err
 }
 
-func (a *MessageAdmin) ensureSystemTopic(ctx context.Context, name string, cfg *topic.Config) error {
-	existing, err := a.topicDatastore.GetTopic(ctx, name, topic.SchemaVersion(1))
+func (a *MessageAdmin) ensureSystemTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) error {
+	existing, err := a.topicController.GetTopic(ctx, name, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}

@@ -4,14 +4,14 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 // TopicName is __system.alerts
 const TopicName = common.SystemTopicPrefix + "alerts"
 
-func TopicConfig() *topic.Config {
-	return &topic.Config{
+func TopicConfig() *topiccontroller.TopicConfig {
+	return &topiccontroller.TopicConfig{
 		PartitionSize:      10_000,
 		RetentionTTL:       7 * 24 * time.Hour,
 		DisableDeliveryLog: true,

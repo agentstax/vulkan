@@ -12,7 +12,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
-	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -121,7 +120,6 @@ type ConsumerDatastore[Message any] struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *retry.DatastoreRetry // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
 	Logger         logger.Logger
-	Workers        *worker.WorkerController
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -143,19 +141,10 @@ func NewConsumerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Con
 		return nil, err
 	}
 
-	workers, err := worker.NewWorkerController(ds, &worker.WorkerControllerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	return &ConsumerDatastore[Message]{
 		Datastore:      ds,
 		DatastoreRetry: dsRetry,
 		Logger:         cfg.Logger,
-		Workers:        workers,
 	}, nil
 }
 

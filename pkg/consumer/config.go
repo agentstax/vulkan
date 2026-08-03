@@ -23,7 +23,7 @@ const (
 	LIFECYCLE ConsumerType = "LIFECYCLE"
 )
 
-// TODO - better comments for each field. Should follow structure of producer.Options and topic.Config
+// TODO - better comments for each field. Should follow structure of producer.Options and the topic register Config
 type ConsumerConfig struct {
 	Type             ConsumerType
 	BatchLimit       int

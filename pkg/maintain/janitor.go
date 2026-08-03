@@ -415,7 +415,7 @@ func (d *MaintenanceDatastore) SweepExpiredIdempotencyKeys(ctx context.Context, 
 
 func (d *MaintenanceDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
 	// defensive only, not a keep-forever switch like RetentionTTL:
-	// topic.Config defaults an unset IdempotencyKeyTTL to 1h at registration,
+	// topic registration defaults an unset IdempotencyKeyTTL to 1h,
 	// and there's no supported way to opt idempotency_key rows out of
 	// being swept
 	if ttl <= 0 {

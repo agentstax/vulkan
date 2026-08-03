@@ -74,7 +74,7 @@ func (w *WaterlineRoller) Register(ctx context.Context, duty string, owner *comm
 		return false, errors.New("metadata must not be nil")
 	}
 
-	if err := migrate.AssertSchemaSupported(ctx, w.Datastore.Datastore.Pool, owner.SystemId, owner.TopicId); err != nil {
+	if err := migrate.AssertSchemaSupported(ctx, w.Datastore.Datastore.Pool, owner); err != nil {
 		return false, err
 	}
 

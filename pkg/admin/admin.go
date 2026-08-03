@@ -6,12 +6,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics/monitor"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
-	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker/janitor"
 )
 
 type MessageAdmin struct {
 	systemDatastore  *system.SystemDatastore
-	topicDatastore   *topic.TopicDatastore
+	topicController  *topiccontroller.TopicController
 	cronJobDatastore *cron.CronJobDatastore
 	monitor          *monitor.Monitor
 	migrateRunner    *migrate.Runner
@@ -32,7 +33,18 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	topicDatastore, err := topic.NewTopicDatastore(ds, cfg.Retry, cfg.Logger)
+	janitorFactory, err := janitor.NewJanitorFactory(ds, &janitor.JanitorConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	}, janitorFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +71,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 
 	return &MessageAdmin{
 		systemDatastore:  systemDatastore,
-		topicDatastore:   topicDatastore,
+		topicController:  topicController,
 		cronJobDatastore: cronJobDatastore,
 		monitor:          metricsMonitor,
 		migrateRunner:    migrateRunner,
