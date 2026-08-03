@@ -8,9 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// createTopicLog creates:
+// createTopicTables creates the topic's own tables:
 //
 // - message_log_<id>
+// - idempotency_key_<id>
 // - delivery_<id>
 // - delivery_log_<id>
 //
@@ -33,7 +34,7 @@ import (
 // - Dense ID sequence -- A shared BIGSERIAL would leave each topic's ids scattered
 // across a sparse subset of it, which breaks the head/partitionSize math
 // EnsureNextPartition uses to create partitions when they are needed
-func (d *TopicDatastore) createTopicLog(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
+func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
 	createTableSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent.

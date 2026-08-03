@@ -1,78 +1,20 @@
-package system
+package datastore
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"os"
-	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// SystemDatastore owns the shared control-plane schema.
-// Tables:
-// - system
-// - topic
-// - consumer_group
-// - cursor
-// - lease
-// - key_lease
-// - maintenance
-// - binding
-// - compaction_head
-// - cron_job
-// - migration_log
-type SystemDatastore struct {
-	Datastore *datastore.PostgresDatastore
-	Retry     *retry.DatastoreRetry
-	Logger    logger.Logger
-}
-
-func NewSystemDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log logger.Logger) (*SystemDatastore, error) {
-	if log == nil {
-		log = logger.NewDefaultLogger(os.Stdout)
-	}
-
-	dsRetry, err := retry.NewDatastoreRetry(retryPolicy, log)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SystemDatastore{
-		Datastore: ds,
-		Retry:     dsRetry,
-		Logger:    log,
-	}, nil
-}
-
-func (d *SystemDatastore) RegisterSystem(ctx context.Context, cfg Config) error {
-	return d.Retry.Wrap(ctx, func() error {
-		return d.registerSystem(ctx, cfg)
-	})
-}
-
-// registerSystem creates the shared control-plane schema. Every statement is
-// CREATE IF NOT EXISTS -- a no-op against a database that already has the
-// tables, a full bootstrap against a fresh one. This is the BASELINE; later
-// schema changes go through migration steps, not edits here.
-func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error {
-	tx, err := d.Datastore.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	// txn-scoped -- acquired here, auto-released at commit.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
-		return err
-	}
-
+// createSystemTables creates the shared control-plane schema every topic rides
+// on. This is the BASELINE -- later schema changes go through migration steps,
+// not edits here.
+//
+// Every statement is CREATE IF NOT EXISTS: a no-op against a database that
+// already has the tables, a full bootstrap against a fresh one. Table creation
+// needs no system row -- a FK target only has to exist, so the whole schema
+// lands before registerSystem seeds anything into it.
+func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) error {
 	createSystemSql := `
 		CREATE TABLE IF NOT EXISTS system (
 			id BIGSERIAL PRIMARY KEY,
@@ -83,35 +25,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 	`
 	if _, err := tx.Exec(ctx, createSystemSql); err != nil {
 		return err
-	}
-
-	// Seed the config row. WHERE NOT EXISTS first register wins
-	seedSystemSql := `
-		INSERT INTO system (alert_repeat_interval_ns)
-		SELECT $1
-		WHERE NOT EXISTS (SELECT 1 FROM system)
-		RETURNING id;
-	`
-	var systemId int64
-	seedErr := tx.QueryRow(ctx, seedSystemSql, int64(cfg.AlertRepeatInterval)).Scan(&systemId)
-	switch {
-	case seedErr == nil:
-		// won the seed -- the row now holds exactly cfg
-	case errors.Is(seedErr, pgx.ErrNoRows):
-		existing, err := d.getConfig(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return fmt.Errorf("system config row missing right after seed -- unexpected")
-		}
-		want := cfg.ToSystem(existing.Id, existing.CreatedAt, existing.UpdatedAt)
-		if *existing != *want {
-			return fmt.Errorf("%w: existing=%+v got=%+v", ErrSystemConfigMismatch, *existing, *want)
-		}
-		systemId = existing.Id
-	default:
-		return seedErr
 	}
 
 	createTopicSql := `
@@ -230,17 +143,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err
 		}
-	}
-
-	// seed the scheduler maintenance duty. 1m poll rate -- the schedule
-	// resolution ParseSchedule enforces.
-	seedSchedulerSql := `
-		INSERT INTO maintenance (duty, system_id, metadata)
-		VALUES ('scheduler', $1, '{"poll_rate": 60000000000}')
-		ON CONFLICT DO NOTHING;
-	`
-	if _, err := tx.Exec(ctx, seedSchedulerSql, systemId); err != nil {
-		return err
 	}
 
 	// workers: one row per background job that should be running
@@ -380,135 +282,6 @@ func (d *SystemDatastore) registerSystem(ctx context.Context, cfg Config) error 
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1)
 		);
 	`
-	if _, err := tx.Exec(ctx, createMigrationLogSql); err != nil {
-		return err
-	}
-
-	// Record the baseline in migration_log, but only if there's no success row yet.
-	recordBaselineSql := `
-		INSERT INTO migration_log (system_id, migration_version, status)
-		SELECT $1, 1, 'success'
-		WHERE NOT EXISTS (
-			SELECT 1 FROM migration_log
-			WHERE system_id = $1 AND status = 'success'
-		);
-	`
-	if _, err := tx.Exec(ctx, recordBaselineSql, systemId); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
-
-	d.Logger.InfoContext(ctx, "system schema registered")
-	return nil
-}
-
-// GetConfig returns the singleton system config, or (nil, nil) if the system
-// hasn't been registered.
-func (d *SystemDatastore) GetConfig(ctx context.Context) (*System, error) {
-	var sys *System
-	err := d.Retry.Wrap(ctx, func() error {
-		var err error
-		sys, err = d.getConfig(ctx, d.Datastore.Pool)
-		return err
-	})
-	return sys, err
-}
-
-// getConfig reads the singleton system row. Returns (nil, nil) if the row (or
-// the table itself, 42P01) isn't there yet.
-func (d *SystemDatastore) getConfig(ctx context.Context, q datastore.Querier) (*System, error) {
-	sql := `
-		SELECT id, alert_repeat_interval_ns, created_at, updated_at
-		FROM system;
-	`
-	var id int64
-	var alertRepeatIntervalNs int64
-	var createdAt, updatedAt time.Time
-	err := q.QueryRow(ctx, sql).Scan(&id, &alertRepeatIntervalNs, &createdAt, &updatedAt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		// 42P01 = table does not exist
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return NewSystem(id, time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
-}
-
-// UpdateConfig applies cfg's non-nil fields to the singleton system row and
-// returns the updated config. Returns (nil, nil) if the row isn't there.
-func (d *SystemDatastore) UpdateConfig(ctx context.Context, cfg *AlterConfig) (*System, error) {
-	var sys *System
-	err := d.Retry.Wrap(ctx, func() error {
-		var err error
-		sys, err = d.updateConfig(ctx, cfg)
-		return err
-	})
-	return sys, err
-}
-
-func (d *SystemDatastore) updateConfig(ctx context.Context, cfg *AlterConfig) (*System, error) {
-	// read-before-write is only for the old -> new log line
-	old, err := d.getConfig(ctx, d.Datastore.Pool)
-	if err != nil {
-		return nil, err
-	}
-	if old == nil {
-		return nil, nil
-	}
-
-	// a nil param reaches Postgres as NULL; COALESCE keeps the current value.
-	sql := `
-		UPDATE system
-		SET
-			alert_repeat_interval_ns = COALESCE($2, alert_repeat_interval_ns),
-			updated_at = NOW()
-		WHERE id = $1
-		RETURNING id, alert_repeat_interval_ns, created_at, updated_at;
-	`
-	var id int64
-	var alertRepeatIntervalNs int64
-	var createdAt, updatedAt time.Time
-	err = d.Datastore.Pool.QueryRow(ctx, sql, old.Id, durationNs(cfg.AlertRepeatInterval)).
-		Scan(&id, &alertRepeatIntervalNs, &createdAt, &updatedAt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// destroyed between the read and the update
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	updated, err := NewSystem(id, time.Duration(alertRepeatIntervalNs), createdAt, updatedAt)
-	if err != nil {
-		return nil, err
-	}
-	d.Logger.InfoContext(ctx, "system config altered", alterLogFields(old, updated)...)
-	return updated, nil
-}
-
-// durationNs widens *time.Duration to the *int64 the _ns columns store, passing
-// nil through so COALESCE sees NULL.
-func durationNs(d *time.Duration) *int64 {
-	if d == nil {
-		return nil
-	}
-	ns := int64(*d)
-	return &ns
-}
-
-// alterLogFields renders old -> new pairs for just the fields that changed.
-func alterLogFields(old, updated *System) []any {
-	fields := []any{}
-	if old.AlertRepeatInterval != updated.AlertRepeatInterval {
-		fields = append(fields, "alert_repeat_interval", fmt.Sprintf("%v -> %v", old.AlertRepeatInterval, updated.AlertRepeatInterval))
-	}
-	return fields
+	_, err := tx.Exec(ctx, createMigrationLogSql)
+	return err
 }

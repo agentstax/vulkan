@@ -58,7 +58,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
 	// otherwise RegisterTopic dies with a raw undefined-table error.
-	sys, err := a.systemDatastore.GetConfig(ctx)
+	sys, err := a.systemController.GetSystem(ctx)
 	if err != nil {
 		return nil, err
 	}

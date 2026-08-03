@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/system"
+	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	"github.com/spf13/cobra"
 )
 
 func newSystemAlterCmd(g *globalFlags) *cobra.Command {
-	// Flags map 1:1 to system.AlterConfig's pointer fields. Only the ones the
+	// Flags map 1:1 to AlterSystemConfig's pointer fields. Only the ones the
 	// operator actually passed become non-nil -- a patch, not a full replace.
 	var alertRepeatInterval time.Duration
 
@@ -29,7 +30,7 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			// Build a sparse patch from only the flags that were passed.
-			cfg := &system.AlterConfig{}
+			cfg := &systemcontroller.AlterSystemConfig{}
 			f := cmd.Flags()
 			if f.Changed("alert-repeat-interval") {
 				cfg.AlertRepeatInterval = &alertRepeatInterval

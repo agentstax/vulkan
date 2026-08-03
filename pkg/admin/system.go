@@ -9,6 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
+	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -19,16 +20,8 @@ import (
 // seeded row resolves as a no-op; a differing one errors with
 // system.ErrSystemConfigMismatch.
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
-func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *system.Config) error {
-	if cfg == nil {
-		cfg = &system.Config{}
-	}
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-
-	if err := a.systemDatastore.RegisterSystem(ctx, *cfg); err != nil {
+func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller.SystemConfig) error {
+	if _, err := a.systemController.RegisterSystem(ctx, cfg); err != nil {
 		return err
 	}
 
@@ -92,7 +85,7 @@ func (a *MessageAdmin) ensureSystemTopic(ctx context.Context, name string, cfg *
 // GetSystem returns the singleton system config. Returns
 // migrate.ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
-	sys, err := a.systemDatastore.GetConfig(ctx)
+	sys, err := a.systemController.GetSystem(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,15 +104,8 @@ func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
 //     effect on its NEXT restart, not live.
 //   - A RegisterSystem call still passing the pre-alter cfg fails with
 //     system.ErrSystemConfigMismatch.
-func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *system.AlterConfig) (*system.System, error) {
-	if cfg == nil {
-		cfg = &system.AlterConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	updated, err := a.systemDatastore.UpdateConfig(ctx, cfg)
+func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *systemcontroller.AlterSystemConfig) (*system.System, error) {
+	updated, err := a.systemController.UpdateSystem(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +118,7 @@ func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *system.AlterConfig)
 // MigrateSystem moves the system schema to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {
-	sys, err := a.systemDatastore.GetConfig(ctx)
+	sys, err := a.systemController.GetSystem(ctx)
 	if err != nil {
 		return err
 	}

@@ -5,13 +5,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/monitor"
 	"github.com/agentstax/vulkan/pkg/migrate"
-	"github.com/agentstax/vulkan/pkg/system"
+	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 )
 
 type MessageAdmin struct {
-	systemDatastore  *system.SystemDatastore
+	systemController *systemcontroller.SystemController
 	topicController  *topiccontroller.TopicController
 	cronJobDatastore *cron.CronJobDatastore
 	monitor          *monitor.Monitor
@@ -28,7 +29,18 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	systemDatastore, err := system.NewSystemDatastore(ds, cfg.Retry, cfg.Logger)
+	cronSchedulerFactory, err := cronscheduler.NewCronSchedulerFactory(ds, &cronscheduler.CronSchedulerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	}, cronSchedulerFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +82,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	return &MessageAdmin{
-		systemDatastore:  systemDatastore,
+		systemController: systemController,
 		topicController:  topicController,
 		cronJobDatastore: cronJobDatastore,
 		monitor:          metricsMonitor,

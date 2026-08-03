@@ -15,6 +15,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/system"
+	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -31,9 +32,9 @@ type Scheduler struct {
 	Config    *MaintainerConfig
 	Logger    logger.Logger // copied from Config.Logger at construction
 
-	systemDatastore *system.SystemDatastore
-	producer        *producer.Producer[cron.JobRequest]
-	duty            *dutyRunner // constructed by Register -- identity and rate come from the offered maintenance row
+	systemController *systemcontroller.SystemController
+	producer         *producer.Producer[cron.JobRequest]
+	duty             *dutyRunner // constructed by Register -- identity and rate come from the offered maintenance row
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -60,7 +61,10 @@ func NewScheduler(ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Sche
 		return nil, err
 	}
 
-	systemDatastore, err := system.NewSystemDatastore(ds, cfg.Retry, cfg.Logger)
+	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -74,11 +78,11 @@ func NewScheduler(ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Sche
 	}
 
 	return &Scheduler{
-		Datastore:       maintenanceDatastore,
-		Config:          cfg,
-		Logger:          cfg.Logger,
-		systemDatastore: systemDatastore,
-		producer:        jobProducer,
+		Datastore:        maintenanceDatastore,
+		Config:           cfg,
+		Logger:           cfg.Logger,
+		systemController: systemController,
+		producer:         jobProducer,
 	}, nil
 }
 
@@ -103,7 +107,7 @@ func (s *Scheduler) Register(ctx context.Context, duty string, owner *common.Own
 		return false, errors.New("metadata must not be nil")
 	}
 
-	sys, err := s.systemDatastore.GetConfig(ctx)
+	sys, err := s.systemController.GetSystem(ctx)
 	if err != nil {
 		return false, err
 	}

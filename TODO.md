@@ -161,3 +161,5 @@ Seeder and Seed need a better new name (register is a good name but already has 
 For consumer and system need to abstract out the 'seeding' functionality in same way topicController is doing it
 
 Need to refactor rest of packages in same patterns as worker and topic
+
+our controllers have redundant verbage: topicController.GetTopic -- should just be get

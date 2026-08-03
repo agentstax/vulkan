@@ -212,7 +212,7 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 		return nil, err
 	}
 
-	if err := d.createTopicLog(ctx, tx, created.Id, data.PartitionSize); err != nil {
+	if err := d.createTopicTables(ctx, tx, created.Id, data.PartitionSize); err != nil {
 		return nil, err
 	}
 
@@ -222,17 +222,6 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 		VALUES ($1, 1, 'success');
 	`
 	if _, err := tx.Exec(ctx, migrationSql, created.Id); err != nil {
-		return nil, err
-	}
-
-	// seed the janitor maintenance duty: 5s poll rate, 1000-row sweep batches
-	// (caps how much of a backlog one sweep transaction holds a lock for)
-	seedDutySql := `
-		INSERT INTO maintenance (duty, topic_id, metadata)
-		VALUES ('janitor', $1, '{"poll_rate": 5000000000, "sweep_batch_size": 1000}')
-		ON CONFLICT DO NOTHING;
-	`
-	if _, err := tx.Exec(ctx, seedDutySql, created.Id); err != nil {
 		return nil, err
 	}
 

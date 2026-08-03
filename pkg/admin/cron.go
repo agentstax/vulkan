@@ -23,7 +23,7 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 	}
 
 	// gate -- a cron job can't exist without the control-plane schema it rides on
-	sys, err := a.systemDatastore.GetConfig(ctx)
+	sys, err := a.systemController.GetSystem(ctx)
 	if err != nil {
 		return nil, err
 	}
