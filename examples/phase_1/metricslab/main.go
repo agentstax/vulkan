@@ -118,13 +118,13 @@ func main() {
 
 		row, err := workers.GetWorker(runCtx, definition.Name(), owner)
 		must(err)
-		instance, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+		execution, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
 		must(err)
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := instance.Run(runCtx); err != nil && runCtx.Err() == nil {
+			if err := execution.Run(runCtx); err != nil && runCtx.Err() == nil {
 				die(fmt.Sprintf("%s: Run returned %v", label, err))
 			}
 		}()

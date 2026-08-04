@@ -553,9 +553,9 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
-	instance := claimOne(runCtx, definition, owner)
+	execution := claimOne(runCtx, definition, owner)
 	errCh := make(chan error, 1)
-	go func() { errCh <- instance.Run(runCtx) }()
+	go func() { errCh <- execution.Run(runCtx) }()
 
 	start := time.Now()
 	for !done() {
@@ -589,9 +589,9 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.C
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
-	instance := claimOne(runCtx, definition, owner)
+	execution := claimOne(runCtx, definition, owner)
 	errCh := make(chan error, 1)
-	go func() { errCh <- instance.Run(runCtx) }()
+	go func() { errCh <- execution.Run(runCtx) }()
 	return func() {
 		cancel()
 		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
@@ -618,9 +618,9 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *c
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
-	instance := claimOne(runCtx, definition, owner)
+	execution := claimOne(runCtx, definition, owner)
 	errCh := make(chan error, 1)
-	go func() { errCh <- instance.Run(runCtx) }()
+	go func() { errCh <- execution.Run(runCtx) }()
 	return func() {
 		cancel()
 		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
@@ -652,7 +652,7 @@ func abandonedEventProducer(ctx context.Context) *consumermetrics.MetricEventPro
 	return events
 }
 
-// no manager, so nothing respawns the instance -- the lab decides exactly how
+// no manager, so nothing respawns the execution -- the lab decides exactly how
 // many run
 func claimOne(ctx context.Context, definition worker.Definition, owner *common.Owner) worker.Execution {
 	must(definition.Declare(ctx, owner))
@@ -662,9 +662,9 @@ func claimOne(ctx context.Context, definition worker.Definition, owner *common.O
 	row, err := workers.GetWorker(ctx, definition.Name(), owner)
 	must(err)
 
-	instance, err := definition.Provision(ctx, row.Id, &row.Owner, row.Metadata)
+	execution, err := definition.Provision(ctx, row.Id, &row.Owner, row.Metadata)
 	must(err)
-	return instance
+	return execution
 }
 
 func record(message *Rec) {

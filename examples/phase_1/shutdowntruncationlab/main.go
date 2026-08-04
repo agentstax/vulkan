@@ -126,7 +126,7 @@ func main() {
 		}
 	}
 	// claimed straight off the definition -- no manager, so nothing respawns the
-	// instance and the truncation the lab asserts on is the only one
+	// execution and the truncation the lab asserts on is the only one
 	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
 	must(err)
 	must(definition.Declare(ctx, owner))
@@ -135,13 +135,13 @@ func main() {
 	must(err)
 	row, err := workers.GetWorker(ctx, definition.Name(), owner)
 	must(err)
-	instance, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+	execution, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
 	must(err)
 
 	// Run blocks until runCtx cancels (cancel() fires synchronously inside
 	// consumerFunc above) -- N=1 pool means dispatch can't reach message 3
 	// before that cancellation is already visible to it.
-	if err := instance.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+	if err := execution.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
 		die(fmt.Sprintf("Run returned an unexpected error: %v", err))
 	}
 	assert("exactly 2 messages attempted", calls.Load(), 2)

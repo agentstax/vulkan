@@ -182,20 +182,20 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	}
 }
 
-// no manager, so nothing respawns the instance and the lab sees exactly one
+// no manager, so nothing respawns the execution and the lab sees exactly one
 // consuming life
-func runProcessUntil(ctx context.Context, ds *coredatastore.PostgresDatastore, definition worker.Provisioner, owner *vulkancommon.Owner, timeout time.Duration, done func() bool) {
+func runProcessUntil(ctx context.Context, ds *coredatastore.PostgresDatastore, provisioner worker.Provisioner, owner *vulkancommon.Owner, timeout time.Duration, done func() bool) {
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
-	row, err := workers.GetWorker(ctx, definition.Name(), owner)
+	row, err := workers.GetWorker(ctx, provisioner.Name(), owner)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
-	instance, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+	execution, err := provisioner.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
 	must(err)
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- instance.Run(runCtx) }()
+	go func() { errCh <- execution.Run(runCtx) }()
 
 	start := time.Now()
 	for !done() {
