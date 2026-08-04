@@ -132,6 +132,14 @@ Three layers per domain (template: worker, topic):
   below it, boundary/wiring narration, and design essays all get cut.
 - 1-2 lines, rationale directly above the statement it explains. Parallel
   facts enumerate one per line (`condition -> outcome`).
+- Every comment stands alone -- it is read cold by someone who was not in the
+  discussion that produced it. Name the subject instead of opening mid-thought
+  (`held for the length of a Consume call` -> `consumePermit is held for...`),
+  finish the sentence (`the reclaim needs its own` -- its own what?), and never
+  lean on a noun the surrounding code never introduces (`the drain rides this
+  ctx` where nothing nearby is called a drain). A comment that argues against
+  an alternative someone raised in review is that conversation leaking into the
+  file: cut it, or state only the rule it settled on.
 - Never point outside the code: no plan/phase references, no symbols that
   don't exist yet, no benchmark allusions.
 - "Improve the comments" means delete first, then wordsmith survivors.

@@ -575,7 +575,7 @@ func (d *ConsumerDatastore[Message]) ReclaimWithCursor(ctx context.Context, topi
 // separate retry budget from the range's now-exhausted reclaim count), each
 // logging its own delivery_log_<topic_id> row same as any other park, and the
 // lease frees for good. From here each message lives or dies on its own via the
-// exact same exception-window machinery as an ordinary message-loop failure --
+// exact same exception-window machinery as an ordinary consumed-message failure --
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *ConsumerDatastore[Message]) quarantine(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, lease LeaseRow, disableDeliveryLog bool) error {

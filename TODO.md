@@ -163,8 +163,16 @@ For consumer and system need to abstract out the declaring functionality in same
 
 Need to refactor rest of packages in same patterns as worker and topic
 
+split the consumer worker-name constants (pkg/consumer/worker.go) into per-package
+constants once that refactor is complete -- like how janitor, waterline and scheduler
+each own theirs
+
 our controllers have redundant verbage: topicController.GetTopic -- should just be get
 
 base config.go files should be renamed to 'package'_config.go -- its a more extensible pattern.
 
 tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type
+
+Once or during producer is refactored we need to decide on fate of lifecycle context within consumer and producer. They should be similar and make sense conceptually. But I'd like to get rid of that mergeLifecycle if it makes sense and weird shutdown handler logic
+
+pkg/consumer/(consumer|base).go or whatever the turn into / split into after refactor could use a bit more cleaning up in code, its not bad but it can be improved.

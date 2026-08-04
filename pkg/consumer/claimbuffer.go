@@ -63,7 +63,7 @@ func (b *claimBuffer) Add(ctx context.Context, claimed *ClaimedRange) error {
 	state := newRangeState(claimed)
 
 	// track BEFORE enqueueing: a mid-enqueue error still leaves the range
-	// tracked, so CloseOpenRanges settles it instead of it leaking untracked
+	// tracked, so closeOpenRanges settles it instead of it leaking untracked
 	b.track(state)
 	for i, row := range claimed.Messages {
 		item := newBuffered(row, claimed.Lease, i)
@@ -92,7 +92,7 @@ func (b *claimBuffer) WaitForNext(ctx context.Context) (*Buffered, error) {
 		return nil, err
 	}
 
-	// plain counter for CloseOpenRanges' neverDispatched() check
+	// plain counter for closeOpenRanges' neverDispatched() check
 	if state := b.lookup(item.lease.Token); state != nil {
 		state.dispatched.Add(1)
 	}

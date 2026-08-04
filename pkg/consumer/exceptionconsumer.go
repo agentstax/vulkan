@@ -8,28 +8,33 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
-	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// ExceptionConsumer periodically claims the group's retryable 'ready',
-// expired 'inflight', and key-freed 'deferred' rows and runs each through
-// consumerFunc.
-type ExceptionConsumer[Message any] struct {
-	*consumerBase[Message]
+type ExceptionConsumerDefinition[Message any] struct {
+	Config *ConsumerConfig
+	Logger logger.Logger
+
+	ds              *datastore.PostgresDatastore
+	workers         *workercontroller.WorkerController
+	abandonedEvents *consumermetrics.MetricEventProducer
+	consumerFunc    ConsumerFunc[Message]
 }
 
-// cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
-func NewExceptionConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*ExceptionConsumer[Message], error) {
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
+func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc ConsumerFunc[Message], abandonedEvents *consumermetrics.MetricEventProducer, cfg *ConsumerConfig) (*ExceptionConsumerDefinition[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
-
+	if consumerFunc == nil {
+		return nil, errors.New("consumerFunc must not be nil")
+	}
+	if abandonedEvents == nil {
+		return nil, errors.New("abandonedEvents producer must not be nil")
+	}
 	if cfg == nil {
 		cfg = &ConsumerConfig{}
 	}
@@ -38,58 +43,100 @@ func NewExceptionConsumer[Message any](consumerGroup string, topicName string, v
 		return nil, err
 	}
 
-	base, err := newConsumerBase[Message](consumerGroup, topicName, version, ds, cfg)
+	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &ExceptionConsumer[Message]{consumerBase: base}, nil
+	return &ExceptionConsumerDefinition[Message]{
+		Config:          cfg,
+		Logger:          cfg.Logger,
+		ds:              ds,
+		workers:         workers,
+		abandonedEvents: abandonedEvents,
+		consumerFunc:    consumerFunc,
+	}, nil
 }
 
-// Register resolves this consumer's topic by name against the live topic row,
-// sets up its cursor, and starts the consumer's lifecycle.
-//
-// ctx must be cancellable, unless ConsumerConfig.DisableGracefulShutdown
-// declares otherwise.
-func (p *ExceptionConsumer[Message]) Register(ctx context.Context) error {
-	if err := p.register(ctx); err != nil {
-		return err
-	}
-
-	// tracked for graceful shutdown draining / handling
-	p.lifecycleCtx = ctx
-
-	return nil
+func (f *ExceptionConsumerDefinition[Message]) Name() string {
+	return WorkerExceptionConsumer
 }
 
-// Consume drains the exception window with consumerFunc, blocking until
-// stopped: cancel ctx to stop this call, or cancel the context given to
-// Register to wind the whole consumer down. A requested stop from either side
-// returns nil
-func (p *ExceptionConsumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	if err := p.lifecycleErr(); err != nil {
-		return err
-	}
-	runCtx, cancel := p.runCtx(ctx)
-	defer cancel()
-
-	p.Logger.InfoContext(runCtx, "exception consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
-
-	err := p.drainExceptions(runCtx, consumerFunc)
-	if errors.Is(err, context.Canceled) {
-		// requested shutdown (either side), not a failure -- log which side asked
-		reason := "caller context cancelled"
-		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
-			reason = "lifecycle context cancelled"
-		}
-		p.Logger.InfoContext(ctx, "exception consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
-		err = nil
-	}
-	return err
+func (f *ExceptionConsumerDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
+	return declareConsumerWorker(ctx, f.workers, WorkerExceptionConsumer, owner)
 }
 
-func (p *ExceptionConsumer[Message]) drainExceptions(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	ticker := time.NewTicker(p.Config.ClaimPollRate)
+// a nil Execution is a declined claim, not an error -- try again later.
+func (f *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+	claimed, _, err := workercontroller.RegisterInstance[consumerWorkerMetadata](ctx, f.workers, workerId, owner, common.OwnerConsumerGroup, WorkerExceptionConsumer, metadata, f.Config.InstanceTTL)
+	if err != nil || claimed == nil {
+		return nil, err
+	}
+
+	return newExceptionConsumerExecution(ctx, f, owner, claimed)
+}
+
+type ExceptionConsumerExecution[Message any] struct {
+	*consumerBase[Message]
+
+	instanceRunner  *workercontroller.InstanceRunner
+	exceptionRunner *exceptionRunner[Message]
+}
+
+func newExceptionConsumerExecution[Message any](ctx context.Context, definition *ExceptionConsumerDefinition[Message], owner *common.Owner, claimed *worker.WorkerInstance) (*ExceptionConsumerExecution[Message], error) {
+	if definition == nil {
+		return nil, errors.New("definition must not be nil")
+	}
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
+	if claimed == nil {
+		return nil, errors.New("claimed worker instance must not be nil")
+	}
+
+	base, err := newConsumerBase(ctx, definition.ds, owner, definition.consumerFunc, definition.abandonedEvents, definition.Config)
+	if err != nil {
+		return nil, err
+	}
+	exceptionRunner, err := newExceptionRunner(base)
+	if err != nil {
+		return nil, err
+	}
+	instanceRunner, err := workercontroller.NewInstanceRunner(definition.workers, claimed, &workercontroller.InstanceRunnerConfig{
+		InstanceTTL: definition.Config.InstanceTTL,
+		Logger:      logger.With(definition.Logger, "worker", WorkerExceptionConsumer, "owner", owner.Name),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ExceptionConsumerExecution[Message]{
+		consumerBase:    base,
+		instanceRunner:  instanceRunner,
+		exceptionRunner: exceptionRunner,
+	}, nil
+}
+
+func (i *ExceptionConsumerExecution[Message]) Run(ctx context.Context) error {
+	return i.instanceRunner.Run(ctx, i.exceptionRunner.run)
+}
+
+type exceptionRunner[Message any] struct {
+	*consumerBase[Message]
+}
+
+func newExceptionRunner[Message any](base *consumerBase[Message]) (*exceptionRunner[Message], error) {
+	if base == nil {
+		return nil, errors.New("base must not be nil")
+	}
+	return &exceptionRunner[Message]{consumerBase: base}, nil
+}
+
+func (r *exceptionRunner[Message]) run(ctx context.Context) error {
+	ticker := time.NewTicker(r.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -97,28 +144,28 @@ func (p *ExceptionConsumer[Message]) drainExceptions(ctx context.Context, consum
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.ExceptionClaim(ctx, consumerFunc); err != nil {
+			if err := r.exceptionClaim(ctx); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	leaseDuration := p.Config.MessageMax.Timeout + p.Config.TimeoutGrace + p.Config.QueueMargin + p.Config.AckMargin
+func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
+	leaseDuration := r.Config.MessageMax.Timeout + r.Config.TimeoutGrace + r.Config.QueueMargin + r.Config.AckMargin
 
 	// kill first, so an exhausted expired row is dead-lettered
-	if err := p.Datastore.KillExceptions(ctx, p.Topic.Id, p.Group.Id, p.Config.MessageMax.Retry.MaxRetries, p.Topic.DisableDeliveryLog); err != nil {
+	if err := r.Datastore.KillExceptions(ctx, r.Topic.Id, r.Group.Id, r.Config.MessageMax.Retry.MaxRetries, r.Topic.DisableDeliveryLog); err != nil {
 		return err
 	}
 
-	claimed, err := p.Datastore.ClaimExceptions(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit, p.Config.MessageMax.Retry.MaxRetries, leaseDuration, p.Topic.DisableDeliveryLog)
+	claimed, err := r.Datastore.ClaimExceptions(ctx, r.Topic.Id, r.Group.Id, r.Config.BatchLimit, r.Config.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DisableDeliveryLog)
 	if err != nil {
 		return err
 	}
 
 	for i := range claimed {
-		if err := p.processException(ctx, &claimed[i], consumerFunc); err != nil {
+		if err := r.processException(ctx, &claimed[i]); err != nil {
 			return err
 		}
 	}
@@ -126,36 +173,35 @@ func (p *ExceptionConsumer[Message]) ExceptionClaim(ctx context.Context, consume
 	return nil
 }
 
-// processException runs consumerFunc for one claimed row and records the outcome.
-func (p *ExceptionConsumer[Message]) processException(ctx context.Context, exception *ClaimedException, consumerFunc ConsumerFunc[Message]) error {
-	resolvedOptions := p.Config.resolveMessageOptions(exception.Options)
+func (r *exceptionRunner[Message]) processException(ctx context.Context, exception *ClaimedException) error {
+	resolvedOptions := r.Config.resolveMessageOptions(exception.Options)
 
 	// sat behind the batch too long for the lease to cover a full run
 	// try to renew it rather than start a run the lease can't protect
-	leaseDuration := resolvedOptions.Timeout + p.Config.TimeoutGrace + p.Config.AckMargin
+	leaseDuration := resolvedOptions.Timeout + r.Config.TimeoutGrace + r.Config.AckMargin
 	if exception.LeaseUntil.Before(time.Now().Add(leaseDuration)) {
-		renewed, err := p.Datastore.RenewExceptionLease(ctx, exception, leaseDuration)
+		renewed, err := r.Datastore.RenewExceptionLease(ctx, exception, leaseDuration)
 		if err != nil {
 			return err
 		}
 		if !renewed {
-			p.Logger.DebugContext(ctx, "lease lost before the run started, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+			r.Logger.DebugContext(ctx, "lease lost before the run started, re-claimed by another worker", "group", r.consumerGroup, "topic", r.Topic.Id, "version", r.version, "message_id", exception.MessageId)
 			return nil
 		}
 	}
 
 	var keyClaim *KeyLeaseClaim
 	if exception.CompactionKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
-		verdict, claim, err := p.claimKeyedRun(ctx, exception.CompactionKey, exception.MessageId, resolvedOptions)
+		verdict, claim, err := r.claimKeyedRun(ctx, exception.CompactionKey, exception.MessageId, resolvedOptions)
 		switch {
 		case err != nil:
-			// a gate error is this attempt's failure, matching the cursor path
-			return p.recordFailure(ctx, exception, resolvedOptions, err, nil)
+			// a failed key-lease claim counts as this attempt's own failure
+			return r.recordFailure(ctx, exception, resolvedOptions, err, nil)
 		case verdict == dispatchSuperseded:
-			return p.recordSuperseded(ctx, exception)
+			return r.recordSuperseded(ctx, exception)
 		case verdict == dispatchDeferred:
 			// our lease expired in the batch queue and another worker re-claimed it
-			p.Logger.WarnContext(ctx, "key busy at gate, delivery re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
+			r.Logger.WarnContext(ctx, "key busy at gate, delivery re-claimed by another worker", "group", r.consumerGroup, "topic", r.Topic.Id, "version", r.version, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
 			return nil
 		}
 		keyClaim = claim
@@ -164,74 +210,75 @@ func (p *ExceptionConsumer[Message]) processException(ctx context.Context, excep
 	var message Message
 	if err := json.Unmarshal(exception.Payload, &message); err != nil {
 		// bad payload will never deserialize -- no point retrying it
-		return p.recordTerminal(ctx, exception, err, keyClaim)
+		return r.recordTerminal(ctx, exception, err, keyClaim)
 	}
 
-	if err := p.callSafely(withMeta(ctx, exception.toMessageMeta(resolvedOptions)), consumerFunc, &message, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.Timeout); err != nil {
-		return p.recordFailure(ctx, exception, resolvedOptions, err, keyClaim)
+	if err := r.callSafely(withMeta(ctx, exception.toMessageMeta(resolvedOptions)), r.consumerFunc, &message, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.Timeout); err != nil {
+		return r.recordFailure(ctx, exception, resolvedOptions, err, keyClaim)
 	}
-	return p.recordSuccess(ctx, exception, keyClaim)
+	return r.recordSuccess(ctx, exception, keyClaim)
 }
 
 // recordSuccess, recordFailure, recordTerminal, and recordSuperseded mirror
-// the buffer's Resolve* verbs. A keyed run records UNCANCELLED -- the key
-// release rides the recording transaction and must land even mid-shutdown.
-func (p *ExceptionConsumer[Message]) recordSuccess(ctx context.Context, exception *ClaimedException, keyClaim *KeyLeaseClaim) error {
+// the buffer's Resolve* verbs. A keyed run records on an uncancellable ctx:
+// the key release is part of that same transaction and must land even
+// mid-shutdown.
+func (r *exceptionRunner[Message]) recordSuccess(ctx context.Context, exception *ClaimedException, keyClaim *KeyLeaseClaim) error {
 	recordCtx := ctx
 	if keyClaim != nil {
 		var cancel context.CancelFunc
-		recordCtx, cancel = context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
-			fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
+		recordCtx, cancel = context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.AckMargin,
+			fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", r.Config.AckMargin, r.consumerGroup, r.Topic.Id))
 		defer cancel()
 	}
 
-	err := p.Datastore.RecordExceptionSuccess(recordCtx, exception, keyClaim)
+	err := r.Datastore.RecordExceptionSuccess(recordCtx, exception, keyClaim)
 	if errors.Is(err, ErrLeaseLost) {
 		// reclaimed by another worker -- not ours to record anymore
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		r.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", r.consumerGroup, "topic", r.Topic.Id, "version", r.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err
 }
 
-func (p *ExceptionConsumer[Message]) recordFailure(ctx context.Context, exception *ClaimedException, resolvedOptions *common.MessageOptions, runErr error, keyClaim *KeyLeaseClaim) error {
+func (r *exceptionRunner[Message]) recordFailure(ctx context.Context, exception *ClaimedException, resolvedOptions *common.MessageOptions, runErr error, keyClaim *KeyLeaseClaim) error {
 	recordCtx := ctx
 	if keyClaim != nil {
 		var cancel context.CancelFunc
-		recordCtx, cancel = context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
-			fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
+		recordCtx, cancel = context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.AckMargin,
+			fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", r.Config.AckMargin, r.consumerGroup, r.Topic.Id))
 		defer cancel()
 	}
 
-	err := p.Datastore.RecordExceptionFailure(recordCtx, resolvedOptions.Retry, exception, runErr, p.Topic.DisableDeliveryLog, keyClaim)
+	err := r.Datastore.RecordExceptionFailure(recordCtx, resolvedOptions.Retry, exception, runErr, r.Topic.DisableDeliveryLog, keyClaim)
 	if errors.Is(err, ErrLeaseLost) {
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		r.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", r.consumerGroup, "topic", r.Topic.Id, "version", r.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err
 }
 
-func (p *ExceptionConsumer[Message]) recordTerminal(ctx context.Context, exception *ClaimedException, runErr error, keyClaim *KeyLeaseClaim) error {
+func (r *exceptionRunner[Message]) recordTerminal(ctx context.Context, exception *ClaimedException, runErr error, keyClaim *KeyLeaseClaim) error {
 	recordCtx := ctx
 	if keyClaim != nil {
 		var cancel context.CancelFunc
-		recordCtx, cancel = context.WithTimeoutCause(context.WithoutCancel(ctx), p.Config.AckMargin,
-			fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", p.Config.AckMargin, p.consumerGroup, p.Topic.Id))
+		recordCtx, cancel = context.WithTimeoutCause(context.WithoutCancel(ctx), r.Config.AckMargin,
+			fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", r.Config.AckMargin, r.consumerGroup, r.Topic.Id))
 		defer cancel()
 	}
 
-	err := p.Datastore.RecordExceptionTerminal(recordCtx, exception, runErr, p.Topic.DisableDeliveryLog, keyClaim)
+	err := r.Datastore.RecordExceptionTerminal(recordCtx, exception, runErr, r.Topic.DisableDeliveryLog, keyClaim)
 	if errors.Is(err, ErrLeaseLost) {
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		r.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", r.consumerGroup, "topic", r.Topic.Id, "version", r.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err
 }
 
-func (p *ExceptionConsumer[Message]) recordSuperseded(ctx context.Context, exception *ClaimedException) error {
-	err := p.Datastore.RecordExceptionSuperseded(ctx, exception, p.Topic.DisableDeliveryLog)
+func (r *exceptionRunner[Message]) recordSuperseded(ctx context.Context, exception *ClaimedException) error {
+	err := r.Datastore.RecordExceptionSuperseded(ctx, exception, r.Topic.DisableDeliveryLog)
 	if errors.Is(err, ErrLeaseLost) {
-		p.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version, "message_id", exception.MessageId)
+		r.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", r.consumerGroup, "topic", r.Topic.Id, "version", r.version, "message_id", exception.MessageId)
 		return nil
 	}
 	return err

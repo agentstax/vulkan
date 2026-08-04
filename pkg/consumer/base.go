@@ -2,8 +2,10 @@ package consumer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -15,38 +17,45 @@ import (
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
-// consumerBase is the plumbing every consumer instance composes: the resolved
-// topic, datastores, config, the lifecycle gate, and callSafely. Embedded, so
-// its exported fields stay part of each type's public surface. One base per
-// Register.
+// InsertWorker leaves an existing row untouched, so a declaration lost to a crash
+// heals on the next Consume. NoInstanceTarget: a consumer's claim gate is the
+// caller asking to consume, not a count on the row.
+func declareConsumerWorker(ctx context.Context, workers *workercontroller.WorkerController, name string, owner *common.Owner) error {
+	if err := workercontroller.ValidateOwner(owner, common.OwnerConsumerGroup, name); err != nil {
+		return err
+	}
+	return workers.InsertWorker(ctx, name, owner, &workercontroller.WorkerConfig{
+		TargetInstances: worker.NoInstanceTarget,
+	})
+}
+
+// consumerBase is built fresh per claimed life, so a respawned runner never
+// shares state with a predecessor still draining.
 type consumerBase[Message any] struct {
-	Topic           *topic.Topic // resolved by Register from the name/version given to the constructor
-	Group           *Group       // resolved by Register from consumerGroup -- children are keyed by Group.Id
+	Owner           *common.Owner
+	Topic           *topic.Topic
+	Group           *Group
 	Datastore       *ConsumerDatastore[Message]
 	AbandonedEvents *consumermetrics.MetricEventProducer
 	Config          *ConsumerConfig
-	Logger          logger.Logger // copied from Config.Logger at construction
+	Logger          logger.Logger
 
-	consumerGroup   string
-	topicName       string
-	version         topic.SchemaVersion
-	topicController *topiccontroller.TopicController
-	workers         *workercontroller.WorkerController
-	waterline       *waterline.WaterlineFactory
-	lifecycleCtx    context.Context // nil until Register; cancelled = wind down
+	consumerGroup string
+	version       topic.SchemaVersion
+	consumerFunc  ConsumerFunc[Message]
 }
 
-// cfg must already be defaulted and validated by the calling constructor.
-func newConsumerBase[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*consumerBase[Message], error) {
-	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
+func newConsumerBase[Message any](ctx context.Context, ds *datastore.PostgresDatastore, owner *common.Owner, consumerFunc ConsumerFunc[Message], abandonedEvents *consumermetrics.MetricEventProducer, cfg *ConsumerConfig) (*consumerBase[Message], error) {
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
+	if consumerFunc == nil {
+		return nil, errors.New("consumerFunc must not be nil")
+	}
+	if abandonedEvents == nil {
+		return nil, errors.New("abandonedEvents producer must not be nil")
 	}
 
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
@@ -56,25 +65,15 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 	if err != nil {
 		return nil, err
 	}
-
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(consumerGroup, ds, &consumermetrics.MetricEventConfig{
-		DisableGracefulShutdown: cfg.DisableGracefulShutdown,
-		Logger:                  cfg.Logger,
-		Retry:                   cfg.Retry,
-	})
+	current, err := topicController.GetTopicById(ctx, owner.TopicId)
 	if err != nil {
 		return nil, err
 	}
-
-	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
+	if current == nil {
+		return nil, fmt.Errorf("%w: topic %d", topic.ErrTopicNotFound, owner.TopicId)
 	}
 
-	waterlineFactory, err := waterline.NewWaterlineFactory(ds, &waterline.WaterlineConfig{
+	consumerDatastore, err := NewConsumerDatastore[Message](ds, &ConsumerDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -83,83 +82,64 @@ func newConsumerBase[Message any](consumerGroup string, topicName string, versio
 	}
 
 	return &consumerBase[Message]{
+		Owner:           owner,
+		Topic:           current,
+		Group:           &Group{Id: owner.ConsumerGroupId, TopicId: owner.TopicId, Name: owner.Name},
 		Datastore:       consumerDatastore,
 		AbandonedEvents: abandonedEvents,
 		Config:          cfg,
 		Logger:          cfg.Logger,
-		consumerGroup:   consumerGroup,
-		topicName:       topicName,
-		version:         version,
-		topicController: topicController,
-		workers:         workers,
-		waterline:       waterlineFactory,
+		consumerGroup:   owner.Name,
+		version:         current.SchemaVersion,
+		consumerFunc:    consumerFunc,
 	}, nil
 }
 
-// callers set lifecycleCtx themselves, after their own remaining
-// registration steps succeed
-func (b *consumerBase[Message]) register(ctx context.Context) error {
-	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
-	// shutdown phase silently wouldn't exist. Reject unless declared on purpose.
-	if ctx.Done() == nil && !b.Config.DisableGracefulShutdown {
-		return fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, b.consumerGroup, b.topicName, lifecycleContextHelp)
-	}
-
-	current, err := b.topicController.GetTopic(ctx, b.topicName, b.version)
-	if err != nil {
-		return err
-	}
-	if current == nil {
-		return fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, b.topicName, b.version)
-	}
-	b.Topic = current
-
-	if err := b.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
-		return err
-	}
-
-	if err := b.AbandonedEvents.Register(ctx); err != nil {
-		return err
-	}
-
-	group, err := b.Datastore.RegisterGroup(ctx, b.Topic.Id, b.consumerGroup)
-	if err != nil {
-		return err
-	}
-	b.Group = group
-
-	return b.seedGroupWorkers(ctx)
+// consumePermit is held for the length of a Consume call, so a second Consume
+// on the same group is refused rather than running a rival set of runners.
+type consumePermit struct {
+	owner *common.Owner
+	held  atomic.Bool
 }
 
-// runs on every register, not just group creation -- InsertWorker no-ops
-// when the row exists, so a seed lost to a crash heals here
-func (b *consumerBase[Message]) seedGroupWorkers(ctx context.Context) error {
-	owner, err := common.NewConsumerGroupOwner(b.Topic.SystemId, b.Topic.Id, b.Group.Id, b.Group.Name)
-	if err != nil {
-		return err
+func newConsumePermit(owner *common.Owner) (*consumePermit, error) {
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
 	}
-
-	workerConfig := &workercontroller.WorkerConfig{
-		TargetInstances: worker.NoInstanceTarget,
-	}
-
-	// LIFECYCLE tracks state per delivery row -- a seeded waterline row would
-	// spawn an instance ticking against a group with no cursor
-	if b.Config.Type != CURSOR {
-		return b.workers.InsertWorker(ctx, WorkerDeliveryConsumer, owner, workerConfig)
-	}
-
-	if err := b.waterline.Seed(ctx, owner); err != nil {
-		return err
-	}
-
-	if err := b.workers.InsertWorker(ctx, WorkerMessageConsumer, owner, workerConfig); err != nil {
-		return err
-	}
-	return b.workers.InsertWorker(ctx, WorkerExceptionConsumer, owner, workerConfig)
+	return &consumePermit{owner: owner}, nil
 }
 
-// dispatchVerdict is claimKeyedRun's decision for one keyed message.
+func (p *consumePermit) acquire() (func(), error) {
+	if !p.held.CompareAndSwap(false, true) {
+		return nil, fmt.Errorf("%w: consumer group %q on topic %d", vulkanerrors.ErrAlreadyConsuming, p.owner.Name, p.owner.TopicId)
+	}
+	return func() { p.held.Store(false) }, nil
+}
+
+// the merged context is done when EITHER ctx or lifecycleCtx cancels. Only a
+// lifecycleCtx cancellation carries ErrShutdownRequested as the cause, which is
+// how an exit tells app shutdown from the caller's own cancel.
+func mergeLifecycle(ctx context.Context, lifecycleCtx context.Context) (context.Context, context.CancelFunc) {
+	merged, cancel := context.WithCancelCause(ctx)
+	stopWatch := context.AfterFunc(lifecycleCtx, func() {
+		cancel(vulkanerrors.ErrShutdownRequested)
+	})
+
+	mergedCancel := func() {
+		stopWatch() // unregister the AfterFunc (doesn't trigger it)
+		cancel(nil) // nil cause = routine shutdown, ctx.Err() returns context.Canceled
+	}
+
+	return merged, mergedCancel
+}
+
+func stopReason(runCtx context.Context) string {
+	if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
+		return "lifecycle context cancelled"
+	}
+	return "caller context cancelled"
+}
+
 type dispatchVerdict string
 
 const (
@@ -168,12 +148,11 @@ const (
 	dispatchSuperseded dispatchVerdict = "superseded" // a newer message on the key exists -- never run this one
 )
 
-// claimKeyedRun decides whether a keyed message may run right now.
 // The returned KeyLeaseClaim is set only on dispatchRun; the caller releases
 // it after recording the message's outcome.
 func (b *consumerBase[Message]) claimKeyedRun(ctx context.Context, key string, messageID int64, resolved *common.MessageOptions) (dispatchVerdict, *KeyLeaseClaim, error) {
-	// same window the range lease pads for: the run itself, ctx-cancel
-	// unwinding, and recording the outcome
+	// the key must stay held for everything the range lease also covers: the run
+	// itself, ctx-cancel unwinding, and recording the outcome
 	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.AckMargin
 
 	claim, err := b.Datastore.ClaimKeyLease(ctx, b.Topic.Id, b.Group.Id, key, messageID, duration)
@@ -191,9 +170,8 @@ func (b *consumerBase[Message]) claimKeyedRun(ctx context.Context, key string, m
 	return dispatchDeferred, nil, nil
 }
 
-// callSafely catches an in-process Go panic  and turns it into an ordinary error.
 // Handles: nil map write, index out of range, bad type assertion
-// Does Not Handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
+// Does not handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
 func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc ConsumerFunc[Message], message *Message, messageID int64, attempt int, requested *common.MessageOptions, timeout time.Duration) error {
 	// the timeout cause names which side's budget fired
 	cause := fmt.Errorf("Timeout (%s) exceeded for message %d attempt %d", timeout, messageID, attempt)
@@ -221,54 +199,20 @@ func (b *consumerBase[Message]) callSafely(ctx context.Context, consumerFunc Con
 	select {
 	case err := <-done:
 		return err
-	// hard cutoff for consumerFunc after Timeout + grace (to ideally allow user handling of context timeout instead)
-	// if this hard timeout is called go thread will be left hanging / abandoned
+	// consumerFunc got Timeout to notice ctx and return; past Timeout + grace it
+	// is written off and its goroutine is left running, unreachable
 	case <-time.After(timeout + b.Config.TimeoutGrace):
 		b.AbandonedEvents.Add(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
-		// reaper -- done is buffered(1) and nothing else reads it past this
-		// point, so this receive fires exactly when the abandoned goroutine
-		// finally returns. Spawned after Add, so Remove can never precede it.
+		// done is buffered(1) and nothing else reads it past this point, so this
+		// receive fires exactly when the abandoned goroutine finally returns.
+		// Started after Add, so Remove can never precede it.
 		go func() {
 			<-done
 			b.AbandonedEvents.Remove(ctx, b.Topic.Id, b.consumerGroup, messageID, attempt)
 		}()
 
-		// don't print out the message in case of sensitive values
-		// TODO - documentation should have this known error mesage and how to help prevent it
-		// ie handle context.Done or increase TimeoutGrace, we don't want this error to happen often
-		// it has bad side effects
+		// never log the message itself -- it may hold sensitive values
 		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.consumerGroup, "message_id", messageID, "attempt", attempt, "timeout", timeout+b.Config.TimeoutGrace)
 		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", timeout+b.Config.TimeoutGrace, messageID)
 	}
-}
-
-// runCtx merges a call's ctx with the instance lifecycle: whichever cancels
-// first stops the loops. A lifecycle cancellation carries ErrShutdownRequested
-// as the cause, so exits can tell app shutdown from the caller's own cancel.
-func (b *consumerBase[Message]) runCtx(ctx context.Context) (context.Context, context.CancelFunc) {
-	merged, cancel := context.WithCancelCause(ctx)
-	stopWatch := context.AfterFunc(b.lifecycleCtx, func() {
-		// if lifecycleCtx is cancelled this is called
-		cancel(vulkanerrors.ErrShutdownRequested)
-	})
-
-	mergedCancel := func() {
-		// if ctx is cancelled this is called
-		stopWatch() // unregister AfterFunc (doesn't trigger it)
-		cancel(nil) // nil = routine shutdown, ctx.Err() returns context.Canceled
-	}
-
-	return merged, mergedCancel
-}
-
-// lifecycleErr is the entrypoint gate: loops only start between Register and
-// its ctx's cancellation.
-func (b *consumerBase[Message]) lifecycleErr() error {
-	if b.lifecycleCtx == nil {
-		return fmt.Errorf("%w: consumer group %q on topic %q -- call Register with the application's lifetime context before consuming", vulkanerrors.ErrNotRegistered, b.consumerGroup, b.topicName)
-	}
-	if err := b.lifecycleCtx.Err(); err != nil {
-		return fmt.Errorf("%w: consumer group %q on topic %q -- the lifetime context passed to Register is cancelled (%v)", vulkanerrors.ErrShutdownRequested, b.consumerGroup, b.Topic.Name, err)
-	}
-	return nil
 }

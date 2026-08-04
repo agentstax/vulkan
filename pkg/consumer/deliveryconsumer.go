@@ -5,8 +5,6 @@ package consumer
 // with no shipped capability CURSOR lacks. It re-earns its place only with the
 // non-FIFO queue work (priority/delay/fairness -- see TODO.md's lifecycle
 // entries). Keep its labs green; don't invest new work here.
-//
-// Datastore half lives in datastore_lifecycle.go.
 
 import (
 	"context"
@@ -14,32 +12,35 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
-	"github.com/agentstax/vulkan/pkg/maintain"
-	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"golang.org/x/sync/errgroup"
 )
 
-// DeliveryConsumer is the per-delivery-row work loop: fan each message out
-// into the group's own delivery rows, claim them, and resolve each one
-// independently through consumerFunc.
-type DeliveryConsumer[Message any] struct {
-	*consumerBase[Message]
+type DeliveryConsumerDefinition[Message any] struct {
+	Config *ConsumerConfig
+	Logger logger.Logger
 
-	maintenance *maintain.MaintenanceDatastore // cold-start partition create only, never duty work
+	ds              *datastore.PostgresDatastore
+	workers         *workercontroller.WorkerController
+	abandonedEvents *consumermetrics.MetricEventProducer
+	consumerFunc    ConsumerFunc[Message]
 }
 
-// cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
-func NewDeliveryConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*DeliveryConsumer[Message], error) {
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
+func NewDeliveryConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc ConsumerFunc[Message], abandonedEvents *consumermetrics.MetricEventProducer, cfg *ConsumerConfig) (*DeliveryConsumerDefinition[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
-
+	if consumerFunc == nil {
+		return nil, errors.New("consumerFunc must not be nil")
+	}
+	if abandonedEvents == nil {
+		return nil, errors.New("abandonedEvents producer must not be nil")
+	}
 	if cfg == nil {
 		cfg = &ConsumerConfig{}
 	}
@@ -48,12 +49,7 @@ func NewDeliveryConsumer[Message any](consumerGroup string, topicName string, ve
 		return nil, err
 	}
 
-	base, err := newConsumerBase[Message](consumerGroup, topicName, version, ds, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	maintenanceDatastore, err := maintain.NewMaintenanceDatastore(ds, &maintain.MaintenanceDatastoreConfig{
+	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -61,71 +57,103 @@ func NewDeliveryConsumer[Message any](consumerGroup string, topicName string, ve
 		return nil, err
 	}
 
-	return &DeliveryConsumer[Message]{
-		consumerBase: base,
-		maintenance:  maintenanceDatastore,
+	return &DeliveryConsumerDefinition[Message]{
+		Config:          cfg,
+		Logger:          cfg.Logger,
+		ds:              ds,
+		workers:         workers,
+		abandonedEvents: abandonedEvents,
+		consumerFunc:    consumerFunc,
 	}, nil
 }
 
-// Register resolves this consumer's topic by name against the live topic row,
-// sets up its cursor, and starts the consumer's lifecycle.
-//
-// ctx must be cancellable, unless ConsumerConfig.DisableGracefulShutdown
-// declares otherwise.
-func (p *DeliveryConsumer[Message]) Register(ctx context.Context) error {
-	if err := p.register(ctx); err != nil {
-		return err
-	}
-
-	// cold-start guarantee: the next partition exists before the janitor
-	// duty's first (jittered) tick
-	if err := p.maintenance.EnsureNextPartition(ctx, p.Topic.Id, p.Topic.PartitionSize); err != nil {
-		return err
-	}
-
-	// tracked for graceful shutdown draining / handling
-	p.lifecycleCtx = ctx
-
-	return nil
+func (f *DeliveryConsumerDefinition[Message]) Name() string {
+	return WorkerDeliveryConsumer
 }
 
-// Consume claims and processes deliveries with consumerFunc, blocking until
-// stopped: cancel ctx to stop this call, or cancel the context given to
-// Register to wind the whole consumer down. A requested stop from either side
-// returns nil
-func (p *DeliveryConsumer[Message]) Consume(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	if err := p.lifecycleErr(); err != nil {
-		return err
-	}
-	runCtx, cancel := p.runCtx(ctx)
-	defer cancel()
-
-	p.Logger.InfoContext(runCtx, "delivery consumer starting", "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
-
-	g, gCtx := errgroup.WithContext(runCtx)
-	g.Go(func() error {
-		return p.project(gCtx)
-	})
-	g.Go(func() error {
-		return p.processDeliveries(gCtx, consumerFunc)
-	})
-
-	err := g.Wait()
-	if errors.Is(err, context.Canceled) {
-		// requested shutdown (either side), not a failure -- log which side asked
-		reason := "caller context cancelled"
-		if errors.Is(context.Cause(runCtx), vulkanerrors.ErrShutdownRequested) {
-			reason = "lifecycle context cancelled"
-		}
-		p.Logger.InfoContext(ctx, "delivery consumer stopped", "reason", reason, "group", p.consumerGroup, "topic", p.Topic.Id, "version", p.version)
-		err = nil
-	}
-	return err
+func (f *DeliveryConsumerDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
+	return declareConsumerWorker(ctx, f.workers, WorkerDeliveryConsumer, owner)
 }
 
-// project materializes the group's delivery rows from the shared message log.
-func (p *DeliveryConsumer[Message]) project(ctx context.Context) error {
-	ticker := time.NewTicker(p.Config.ClaimPollRate)
+// a nil Execution is a declined claim, not an error -- try again later.
+func (f *DeliveryConsumerDefinition[Message]) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+	claimed, _, err := workercontroller.RegisterInstance[consumerWorkerMetadata](ctx, f.workers, workerId, owner, common.OwnerConsumerGroup, WorkerDeliveryConsumer, metadata, f.Config.InstanceTTL)
+	if err != nil || claimed == nil {
+		return nil, err
+	}
+
+	return newDeliveryConsumerExecution(ctx, f, owner, claimed)
+}
+
+type DeliveryConsumerExecution[Message any] struct {
+	*consumerBase[Message]
+
+	instanceRunner *workercontroller.InstanceRunner
+	deliveryRunner *deliveryRunner[Message]
+}
+
+func newDeliveryConsumerExecution[Message any](ctx context.Context, definition *DeliveryConsumerDefinition[Message], owner *common.Owner, claimed *worker.WorkerInstance) (*DeliveryConsumerExecution[Message], error) {
+	if definition == nil {
+		return nil, errors.New("definition must not be nil")
+	}
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
+	if claimed == nil {
+		return nil, errors.New("claimed worker instance must not be nil")
+	}
+
+	base, err := newConsumerBase(ctx, definition.ds, owner, definition.consumerFunc, definition.abandonedEvents, definition.Config)
+	if err != nil {
+		return nil, err
+	}
+	deliveryRunner, err := newDeliveryRunner(base)
+	if err != nil {
+		return nil, err
+	}
+	instanceRunner, err := workercontroller.NewInstanceRunner(definition.workers, claimed, &workercontroller.InstanceRunnerConfig{
+		InstanceTTL: definition.Config.InstanceTTL,
+		Logger:      logger.With(definition.Logger, "worker", WorkerDeliveryConsumer, "owner", owner.Name),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &DeliveryConsumerExecution[Message]{
+		consumerBase:   base,
+		instanceRunner: instanceRunner,
+		deliveryRunner: deliveryRunner,
+	}, nil
+}
+
+func (i *DeliveryConsumerExecution[Message]) Run(ctx context.Context) error {
+	return i.instanceRunner.Run(ctx, i.deliveryRunner.run)
+}
+
+type deliveryRunner[Message any] struct {
+	*consumerBase[Message]
+}
+
+func newDeliveryRunner[Message any](base *consumerBase[Message]) (*deliveryRunner[Message], error) {
+	if base == nil {
+		return nil, errors.New("base must not be nil")
+	}
+	return &deliveryRunner[Message]{consumerBase: base}, nil
+}
+
+func (r *deliveryRunner[Message]) run(ctx context.Context) error {
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return r.project(gCtx)
+	})
+	g.Go(func() error {
+		return r.processDeliveries(gCtx)
+	})
+	return g.Wait()
+}
+
+func (r *deliveryRunner[Message]) project(ctx context.Context) error {
+	ticker := time.NewTicker(r.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -133,15 +161,15 @@ func (p *DeliveryConsumer[Message]) project(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.Datastore.FanOut(ctx, p.Topic.Id, p.Group.Id, p.Config.FanOutBatchLimit); err != nil {
+			if err := r.Datastore.FanOut(ctx, r.Topic.Id, r.Group.Id, r.Config.FanOutBatchLimit); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func (p *DeliveryConsumer[Message]) processDeliveries(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	ticker := time.NewTicker(p.Config.ClaimPollRate)
+func (r *deliveryRunner[Message]) processDeliveries(ctx context.Context) error {
+	ticker := time.NewTicker(r.Config.ClaimPollRate)
 	defer ticker.Stop()
 
 	for {
@@ -149,26 +177,20 @@ func (p *DeliveryConsumer[Message]) processDeliveries(ctx context.Context, consu
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := p.DeliveryClaim(ctx, consumerFunc); err != nil {
+			if err := r.deliveryClaim(ctx); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-// DeliveryClaim claims this group's own delivery rows and runs each through
-// the delivery state machine (success -> 'done', retryable failure -> 'ready',
-// exhausted/bad payload -> 'dead').
+// each delivery resolves on its own, so one dead-lettered message never stops
+// the batch behind it -- the isolation the cursor path can't give.
 //
-// Unlike the cursor path, a single message's failure does NOT stop the batch: each
-// delivery resolves independently, so group A can dead-letter message 5 while it
-// keeps draining 6, 7, 8. That per-message isolation is the whole point of the
-// delivery table -- the cursor model can't do it (one bad message blocks the line).
-//
-// No lease handling here: the parked lifecycle path never grew crash recovery,
-// so a delivery left in 'processing' (consumer died mid-process) just sits there.
-func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerFunc ConsumerFunc[Message]) error {
-	deliveries, err := p.Datastore.ClaimMessagesWithLifecycle(ctx, p.Topic.Id, p.Group.Id, p.Config.BatchLimit)
+// No lease handling: this path never grew crash recovery, so a delivery left in
+// 'processing' by a consumer that died mid-run just sits there.
+func (r *deliveryRunner[Message]) deliveryClaim(ctx context.Context) error {
+	deliveries, err := r.Datastore.ClaimMessagesWithLifecycle(ctx, r.Topic.Id, r.Group.Id, r.Config.BatchLimit)
 	if err != nil {
 		return err
 	}
@@ -177,22 +199,22 @@ func (p *DeliveryConsumer[Message]) DeliveryClaim(ctx context.Context, consumerF
 		var message Message
 		if err := json.Unmarshal(delivery.Payload, &message); err != nil {
 			// a bad payload will never deserialize -> straight to the DLQ, no retries
-			if recordErr := p.Datastore.RecordTerminal(ctx, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
+			if recordErr := r.Datastore.RecordTerminal(ctx, &delivery, err, r.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
 			}
 			continue
 		}
 
-		resolvedOptions := p.Config.resolveMessageOptions(delivery.Options)
-		if err := p.callSafely(ctx, consumerFunc, &message, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.Timeout); err != nil {
+		resolvedOptions := r.Config.resolveMessageOptions(delivery.Options)
+		if err := r.callSafely(ctx, r.consumerFunc, &message, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.Timeout); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
-			if recordErr := p.Datastore.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, p.Topic.DisableDeliveryLog); recordErr != nil {
+			if recordErr := r.Datastore.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, r.Topic.DisableDeliveryLog); recordErr != nil {
 				return recordErr
 			}
 			continue
 		}
 
-		if err := p.Datastore.RecordSuccess(ctx, &delivery); err != nil {
+		if err := r.Datastore.RecordSuccess(ctx, &delivery); err != nil {
 			return err
 		}
 	}
