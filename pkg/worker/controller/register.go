@@ -11,7 +11,7 @@ import (
 )
 
 // ValidateOwner rejects an owner of the wrong kind for a worker family:
-// every factory Seed starts here. name is only for error text.
+// every Declare starts here. name is only for error text.
 func ValidateOwner(owner *common.Owner, ownedBy common.OwnerKind, name string) error {
 	if owner == nil {
 		return errors.New("owner must not be nil")
@@ -22,7 +22,7 @@ func ValidateOwner(owner *common.Owner, ownedBy common.OwnerKind, name string) e
 	return nil
 }
 
-// RegisterInstance is the shared body of every factory Register: validate
+// RegisterInstance is the shared body of every Provision: validate
 // the inputs, parse the row's metadata, assert the owner's schema, then
 // claim one live instance. A nil instance means declined -- target_instances
 // already filled -- which is not an error; the manager retries next

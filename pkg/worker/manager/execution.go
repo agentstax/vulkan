@@ -11,22 +11,21 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ManagerInstance is one claimed live copy of an owner's manager worker: Run
 // reconciles the running set against the worker rows on the owner's chain at
-// the row's poll_rate while a heartbeat holds the claim.
-type ManagerInstance struct {
+// the row's poll_rate while a heartbeat holds the claim
+type ManagerExecution struct {
 	Owner  *common.Owner // the reconcile scope
 	Config *ManagerConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
-	runner    *controller.InstanceTickRunner
-	workers   *controller.WorkerController
-	factories map[string]worker.Factory
-	pool      *instancePool // built in Run
-	metadata  *managerMetadata
+	runner       *controller.InstanceTickRunner
+	workers      *controller.WorkerController
+	provisioners map[string]worker.Provisioner
+	pool         *executionPool // built in Run
+	metadata     *managerMetadata
 }
 
-func newManagerInstance(manager *ManagerFactory, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
+func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerExecution, error) {
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
 	}
@@ -41,26 +40,26 @@ func newManagerInstance(manager *ManagerFactory, owner *common.Owner, claimed *w
 		return nil, err
 	}
 
-	return &ManagerInstance{
-		Owner:     owner,
-		Config:    manager.Config,
-		Logger:    manager.Logger,
-		runner:    runner,
-		workers:   manager.workers,
-		factories: manager.factories,
-		metadata:  metadata,
+	return &ManagerExecution{
+		Owner:        owner,
+		Config:       manager.Config,
+		Logger:       manager.Logger,
+		runner:       runner,
+		workers:      manager.workers,
+		provisioners: manager.provisioners,
+		metadata:     metadata,
 	}, nil
 }
 
 // Run reconciles until ctx cancels or a spawned instance fails fatally; a
 // requested stop returns nil. The claimed instance releases on the way out
 // however Run exits.
-func (i *ManagerInstance) Run(ctx context.Context) error {
+func (i *ManagerExecution) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate)
 
 	// a fatal spawned-instance error cancels runCtx through the group
 	group, runCtx := errgroup.WithContext(ctx)
-	i.pool = newInstancePool(i.factories, group, i.Logger)
+	i.pool = newExecutionPool(i.provisioners, group, i.Logger)
 
 	// run is blocking
 	err := i.runner.Run(runCtx, i.refresh)
@@ -80,7 +79,7 @@ func (i *ManagerInstance) Run(ctx context.Context) error {
 }
 
 // refresh is one discovery pass.
-func (i *ManagerInstance) refresh(ctx context.Context) error {
+func (i *ManagerExecution) refresh(ctx context.Context) error {
 	workers, err := i.workers.ListWorkers(ctx, i.Owner)
 	if err != nil {
 		return err

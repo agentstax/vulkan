@@ -11,23 +11,21 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// Runner keeps a claimed manager instance running for an owner across lives --
-// the self-heal a manager gives the workers it spawns, given to the manager
+// Runner keeps a claimed manager execution running for an owner across lives
+// -- the self-heal a manager gives the workers it spawns, given to the manager
 // itself. Safe only for manager rows: a target-gated worker re-claiming itself
-// would take back a slot another instance just won.
+// would take back an instance another claim just won.
 type Runner struct {
 	Owner  *common.Owner
 	Config *RunnerConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
-	factory *ManagerFactory
+	definition *ManagerDefinition
 }
 
-// cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range.
-func NewRunner(factory *ManagerFactory, owner *common.Owner, cfg *RunnerConfig) (*Runner, error) {
-	if factory == nil {
-		return nil, errors.New("factory must not be nil")
+func NewRunner(definition *ManagerDefinition, owner *common.Owner, cfg *RunnerConfig) (*Runner, error) {
+	if definition == nil {
+		return nil, errors.New("definition must not be nil")
 	}
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
@@ -41,21 +39,21 @@ func NewRunner(factory *ManagerFactory, owner *common.Owner, cfg *RunnerConfig) 
 	}
 
 	return &Runner{
-		Owner:   owner,
-		Config:  cfg,
-		Logger:  cfg.Logger,
-		factory: factory,
+		Owner:      owner,
+		Config:     cfg,
+		Logger:     cfg.Logger,
+		definition: definition,
 	}, nil
 }
 
-// Run claims and runs manager instances until ctx cancels; a requested stop
+// Run claims and runs manager executions until ctx cancels; a requested stop
 // returns nil.
 // error before the first claim -> return it, the row is misconfigured
 // error after -> log and retry, degraded upkeep never stops the host process
 func (r *Runner) Run(ctx context.Context) error {
 	claimed := false
 	for {
-		instance, err := r.claim(ctx)
+		execution, err := r.claim(ctx)
 		switch {
 		case err != nil:
 			if ctx.Err() != nil {
@@ -65,11 +63,11 @@ func (r *Runner) Run(ctx context.Context) error {
 				return err
 			}
 			r.Logger.WarnContext(ctx, "manager re-claim failed -- retrying", "owner", r.Owner.Name, "error", err)
-		case instance == nil:
+		case execution == nil:
 			r.Logger.WarnContext(ctx, "manager row suspended -- its chain goes unreconciled until target_instances is restored", "owner", r.Owner.Name)
 		default:
 			claimed = true
-			if err := instance.Run(ctx); !errors.Is(err, worker.ErrInstanceLost) {
+			if err := execution.Run(ctx); !errors.Is(err, worker.ErrInstanceLost) {
 				return err // nil on a requested stop
 			}
 		}
@@ -89,10 +87,10 @@ func (r *Runner) Run(ctx context.Context) error {
 
 // claim re-reads the row every life, so a metadata edit lands on the next
 // one. nil = suspended.
-func (r *Runner) claim(ctx context.Context) (worker.Instance, error) {
-	row, err := r.factory.workers.GetWorker(ctx, WorkerManager, r.Owner)
+func (r *Runner) claim(ctx context.Context) (worker.Execution, error) {
+	row, err := r.definition.workers.GetWorker(ctx, WorkerManager, r.Owner)
 	if err != nil {
 		return nil, err
 	}
-	return r.factory.Register(ctx, row.Id, &row.Owner, row.Metadata)
+	return r.definition.Provision(ctx, row.Id, &row.Owner, row.Metadata)
 }

@@ -16,7 +16,7 @@ import (
 type WaterlineRoller struct {
 	Datastore *MaintenanceDatastore
 	Config    *MaintainerConfig
-	Logger    logger.Logger // copied from Config.Logger at construction
+	Logger    logger.Logger
 
 	owner *common.Owner // set by Register from the offered maintenance row
 	duty  *dutyRunner

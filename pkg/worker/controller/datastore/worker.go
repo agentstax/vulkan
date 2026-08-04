@@ -101,7 +101,7 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 }
 
 // GetWorker reads the (name, owner) worker row. Errors if the row was never
-// seeded.
+// declared.
 func (d *WorkerDatastore) GetWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerData, error) {
 	var workerData *WorkerData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -132,7 +132,7 @@ func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *com
 	err := d.Datastore.Pool.QueryRow(ctx, sql, name, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn()).
 		Scan(&data.Id, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.Name, &data.Metadata, &data.TargetInstances)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("worker %q has no worker row -- the owner's register seeds it", name)
+		return nil, fmt.Errorf("worker %q has no worker row -- the owner's register declares it", name)
 	}
 	if err != nil {
 		return nil, err

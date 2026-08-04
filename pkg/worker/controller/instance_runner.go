@@ -17,7 +17,7 @@ const releaseWindow = 5 * time.Second
 // and the instance releases on the way out. Pacing is the caller's.
 type InstanceRunner struct {
 	Config *InstanceRunnerConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	workers *WorkerController
 	claimed *worker.WorkerInstance

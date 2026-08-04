@@ -16,14 +16,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// CronSchedulerInstance is one claimed live copy of the system's scheduler
-// worker: Run scans cron_job for due rows at the row's poll_rate while a
-// heartbeat holds the claim, producing one JobRequest per due firing and
-// advancing each fired row to its next firing.
-type CronSchedulerInstance struct {
+// scans cron_job for due rows at the row's poll_rate while a heartbeat holds
+// the claim, producing one JobRequest per due firing and advancing each fired
+// row to its next firing
+type CronSchedulerExecution struct {
 	Owner  *common.Owner
 	Config *CronSchedulerConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	runner    *controller.InstanceTickRunner
 	datastore *datastore.CronSchedulerDatastore
@@ -31,7 +30,7 @@ type CronSchedulerInstance struct {
 	metadata  *cronSchedulerMetadata
 }
 
-func newCronSchedulerInstance(cronScheduler *CronSchedulerFactory, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata) (*CronSchedulerInstance, error) {
+func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata) (*CronSchedulerExecution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -59,7 +58,7 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerFactory, owner *common
 		return nil, err
 	}
 
-	return &CronSchedulerInstance{
+	return &CronSchedulerExecution{
 		Owner:     owner,
 		Config:    cronScheduler.Config,
 		Logger:    cronScheduler.Logger,
@@ -72,7 +71,7 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerFactory, owner *common
 
 // Run scans until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (i *CronSchedulerInstance) Run(ctx context.Context) error {
+func (i *CronSchedulerExecution) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "cron scheduler starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
 
 	if err := i.producer.Register(ctx); err != nil {
@@ -90,7 +89,7 @@ func (i *CronSchedulerInstance) Run(ctx context.Context) error {
 // transaction per row -- a shared transaction would let one bad row roll back
 // every job's produce, and would hold ProduceInTx's whole-topic
 // consumer-progress lock from the first produce to the end of the pass.
-func (i *CronSchedulerInstance) scan(ctx context.Context) error {
+func (i *CronSchedulerExecution) scan(ctx context.Context) error {
 	ids, err := i.datastore.DueCronJobs(ctx)
 	if err != nil {
 		return err
@@ -110,7 +109,7 @@ func (i *CronSchedulerInstance) scan(ctx context.Context) error {
 // due firing, advance the row. Produce + advance + idempotency claim share the
 // transaction, so an ambiguous-commit replay rolls all three back together and
 // the FiringKey dedupe covers exactly that replay.
-func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64) error {
+func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64) error {
 	return producer.InTransaction(ctx, i.datastore.Datastore, func(ctx context.Context, tx producer.Tx) error {
 		row, err := i.datastore.ClaimDueCronJob(ctx, tx, id)
 		if err != nil || row == nil {

@@ -9,11 +9,11 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Seed creates owner's manager worker row; an existing row is left untouched,
-// so a seed lost to a crash heals on the next register. Any owner kind seeds
+// Declare creates owner's manager worker row; an existing row is left untouched,
+// so a declaration lost to a crash heals on the next register. Any owner kind declares
 // one, and no instance target -- every process reconciling owner's chain
 // claims its own.
-func (m *ManagerFactory) Seed(ctx context.Context, owner *common.Owner) error {
+func (m *ManagerDefinition) Declare(ctx context.Context, owner *common.Owner) error {
 	if owner == nil {
 		return errors.New("owner must not be nil")
 	}

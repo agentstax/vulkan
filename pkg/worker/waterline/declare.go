@@ -7,10 +7,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Seed creates the owner group's waterline worker row with the default
+// Declare creates the owner group's waterline worker row with the default
 // tuning; an existing row is left untouched, so registers run it every time
-// -- a seed lost to a crash heals on the next one.
-func (w *WaterlineFactory) Seed(ctx context.Context, owner *common.Owner) error {
+// -- a declaration lost to a crash heals on the next one.
+func (w *WaterlineDefinition) Declare(ctx context.Context, owner *common.Owner) error {
 	if err := controller.ValidateOwner(owner, common.OwnerConsumerGroup, WorkerWaterline); err != nil {
 		return err
 	}

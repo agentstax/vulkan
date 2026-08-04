@@ -11,7 +11,7 @@ type janitorMetadata struct {
 	SweepBatchSize int           `json:"sweep_batch_size"` // rows deleted per sweep transaction
 }
 
-// defaultJanitorMetadata is the tuning every topic's seed starts with.
+// defaultJanitorMetadata is the tuning every topic's declaration starts with.
 func defaultJanitorMetadata() *janitorMetadata {
 	return &janitorMetadata{PollRate: 5 * time.Second, SweepBatchSize: 1000}
 }

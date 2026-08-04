@@ -21,7 +21,7 @@ type Janitor struct {
 	Topic     *topic.Topic // resolved by Register from the owner's topic id
 	Datastore *MaintenanceDatastore
 	Config    *MaintainerConfig
-	Logger    logger.Logger // copied from Config.Logger at construction
+	Logger    logger.Logger
 
 	topicController *topiccontroller.TopicController
 	duty            *dutyRunner // constructed by Register -- identity and tuning come from the offered maintenance row

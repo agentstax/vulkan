@@ -24,7 +24,7 @@ type DutyConstructor func(ds *datastore.PostgresDatastore, cfg *MaintainerConfig
 type FleetMaintainer struct {
 	Datastore *MaintenanceDatastore
 	Config    *FleetMaintainerConfig
-	Logger    logger.Logger // copied from Config.Logger at construction
+	Logger    logger.Logger
 
 	registered bool
 	duties     *dutyPool

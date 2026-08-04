@@ -11,14 +11,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// InstanceTickRunner is the loop every tick-paced worker instance composes:
-// Run paces the worker's pass at the row's poll_rate while an InstanceRunner
-// holds the claim, and records the success/failure streak. Pass a
-// logger.With-enriched Logger so the runner's lines carry the worker's
-// identity.
+// paces a worker's pass at the row's poll_rate while an InstanceRunner holds
+// the claim, recording the success/failure streak. Every tick-paced execution
+// composes one. Pass a logger.With-enriched Logger so its lines carry the
+// worker's identity.
 type InstanceTickRunner struct {
 	Config *InstanceTickRunnerConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	runner   *InstanceRunner
 	workers  *WorkerController

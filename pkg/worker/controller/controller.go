@@ -9,7 +9,7 @@ import (
 )
 
 type WorkerController struct {
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	datastore *datastore.WorkerDatastore
 }

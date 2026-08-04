@@ -4,16 +4,16 @@ package main
 //
 // A shutdown signal mid-range must not force the WHOLE range to sit out a
 // full lease-expiry reclaim: everything already resolved (successes + a
-// parked exception) has to survive via CloseOpenRanges' PartialCommit path,
+// parked exception) has to survive via closeOpenRanges' PartialCommit path,
 // and only the untouched suffix should remain leased for a future reclaim.
 //
-// Drives wc.Process directly (not Consume) with pool N=1 so message dispatch
-// is strictly serialized: consumerFunc itself cancels the shared context after
-// message 2 finishes, simulating a shutdown signal arriving mid-range. Message
-// 3 is already sitting in the buffer (prefetch claims the whole range of 3 up
-// front) but N=1 means dispatch can't hand it out until message 2's permit
-// releases -- by then ctx is already cancelled, so dispatch exits without ever
-// calling WaitForNext for it.
+// Claims one life straight off MessageConsumerDefinition (no manager) with pool
+// N=1 so message dispatch is strictly serialized: consumerFunc cancels the
+// shared context after message 2 finishes, simulating a shutdown signal
+// arriving mid-range. Message 3 is already sitting in the buffer (prefetch
+// claims the whole range of 3 up front) but N=1 means dispatch can't hand it
+// out until message 2's permit releases -- by then ctx is already cancelled,
+// so dispatch exits without ever calling WaitForNext for it.
 //
 // Confirms:
 //   - messages before the interruption point resolve normally (one success, one
@@ -41,11 +41,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/google/uuid"
 )
 
@@ -91,7 +93,7 @@ func main() {
 	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	cfg := &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		QueueSize:               10,
@@ -99,10 +101,14 @@ func main() {
 		Message:                 &vulkancommon.MessageOptions{Timeout: 1 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
 		AckMargin:               500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
-	})
+	}
+	cfg.WithDefaults()
+
+	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupID, group)
 	must(err)
-	wcInstance, err := wc.Register(ctx)
+	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
 	must(err)
+	must(abandonedEvents.Register(ctx))
 
 	step("WORKER claims all 3, shutdown fires after message 2 -- message 3 never attempted")
 	runCtx, cancel := context.WithCancel(ctx)
@@ -119,11 +125,24 @@ func main() {
 			return nil
 		}
 	}
-	// Process blocks until runCtx cancels (cancel() fires synchronously inside
+	// claimed straight off the definition -- no manager, so nothing respawns the
+	// instance and the truncation the lab asserts on is the only one
+	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+	must(err)
+	must(definition.Declare(ctx, owner))
+
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+	row, err := workers.GetWorker(ctx, definition.Name(), owner)
+	must(err)
+	instance, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+	must(err)
+
+	// Run blocks until runCtx cancels (cancel() fires synchronously inside
 	// consumerFunc above) -- N=1 pool means dispatch can't reach message 3
 	// before that cancellation is already visible to it.
-	if err := wcInstance.Consume(runCtx, consumerFunc); err != nil && !errors.Is(err, context.Canceled) {
-		die(fmt.Sprintf("Process returned an unexpected error: %v", err))
+	if err := instance.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
+		die(fmt.Sprintf("Run returned an unexpected error: %v", err))
 	}
 	assert("exactly 2 messages attempted", calls.Load(), 2)
 

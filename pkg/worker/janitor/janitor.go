@@ -16,12 +16,9 @@ import (
 
 const WorkerJanitor = "janitor"
 
-// JanitorFactory is the janitor worker factory: Register claims one live instance
-// for a topic's janitor worker row and returns it. Register is callable once
-// per row to run -- each call claims its own instance.
-type JanitorFactory struct {
+type JanitorDefinition struct {
 	Config *JanitorConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	workers   *controller.WorkerController
 	topics    *topiccontroller.TopicController
@@ -30,7 +27,7 @@ type JanitorFactory struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJanitorFactory(ds *coredatastore.PostgresDatastore, cfg *JanitorConfig) (*JanitorFactory, error) {
+func NewJanitorDefinition(ds *coredatastore.PostgresDatastore, cfg *JanitorConfig) (*JanitorDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -66,7 +63,7 @@ func NewJanitorFactory(ds *coredatastore.PostgresDatastore, cfg *JanitorConfig) 
 		return nil, err
 	}
 
-	return &JanitorFactory{
+	return &JanitorDefinition{
 		Config:    cfg,
 		Logger:    cfg.Logger,
 		workers:   workers,
@@ -75,15 +72,14 @@ func NewJanitorFactory(ds *coredatastore.PostgresDatastore, cfg *JanitorConfig) 
 	}, nil
 }
 
-// Name is the worker rows this factory runs.
-func (j *JanitorFactory) Name() string {
+func (j *JanitorDefinition) Name() string {
 	return WorkerJanitor
 }
 
 // Register claims one live instance, then resolves the topic it sweeps.
 // nil = declined (target_instances already filled) -- not an error, try
 // again later.
-func (j *JanitorFactory) Register(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Instance, error) {
+func (j *JanitorDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
 	claimed, parsed, err := controller.RegisterInstance[janitorMetadata](ctx, j.workers, workerId, owner, common.OwnerTopic, WorkerJanitor, metadata, j.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
@@ -97,5 +93,5 @@ func (j *JanitorFactory) Register(ctx context.Context, workerId int64, owner *co
 		return nil, fmt.Errorf("topic %d not found -- register it with MessageAdmin.RegisterTopic first", owner.TopicId)
 	}
 
-	return newJanitorInstance(j, current, claimed, parsed)
+	return newJanitorExecution(j, current, claimed, parsed)
 }

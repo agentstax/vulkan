@@ -45,10 +45,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/google/uuid"
 )
 
@@ -543,26 +546,28 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 
 	cfg.QueueSize = 50
 	cfg.MessageConcurrency = pool
-	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
-	must(err)
-	wcInstance, err := wc.Register(ctx)
+	cfg.WithDefaults()
+
+	owner := groupOwner(ctx, topicName, group)
+	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
+	instance := claimOne(runCtx, definition, owner)
 	errCh := make(chan error, 1)
-	go func() { errCh <- wcInstance.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- instance.Run(runCtx) }()
 
 	start := time.Now()
 	for !done() {
 		if time.Since(start) > 10*time.Second {
 			cancel()
-			die(fmt.Sprintf("timed out waiting for %s to finish, Consume returned: %v", group, <-errCh))
+			die(fmt.Sprintf("timed out waiting for %s to finish, Run returned: %v", group, <-errCh))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
-		die(fmt.Sprintf("Consume returned an unexpected error: %v", err))
+		die(fmt.Sprintf("Run returned an unexpected error: %v", err))
 	}
 }
 
@@ -577,18 +582,20 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.C
 	cfg.ClaimPollRate = 50 * time.Millisecond
 	cfg.QueueSize = 50
 	cfg.MessageConcurrency = pool
-	wc, err := consumer.NewMessageConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
-	must(err)
-	wcInstance, err := wc.Register(ctx)
+	cfg.WithDefaults()
+
+	owner := groupOwner(ctx, topicName, group)
+	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
+	instance := claimOne(runCtx, definition, owner)
 	errCh := make(chan error, 1)
-	go func() { errCh <- wcInstance.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- instance.Run(runCtx) }()
 	return func() {
 		cancel()
 		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
-			die(fmt.Sprintf("Consume returned an unexpected error: %v", err))
+			die(fmt.Sprintf("Run returned an unexpected error: %v", err))
 		}
 	}
 }
@@ -604,20 +611,60 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *c
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
 	cfg.ExceptionInitialBackoff = 50 * time.Millisecond
-	ec, err := consumer.NewExceptionConsumer[Rec](group, topicName, topic.SchemaVersion(1), ds, cfg)
-	must(err)
-	ecInstance, err := ec.Register(ctx)
+	cfg.WithDefaults()
+
+	owner := groupOwner(ctx, topicName, group)
+	definition, err := consumer.NewExceptionConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
+	instance := claimOne(runCtx, definition, owner)
 	errCh := make(chan error, 1)
-	go func() { errCh <- ecInstance.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- instance.Run(runCtx) }()
 	return func() {
 		cancel()
 		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
-			die(fmt.Sprintf("exception Consume returned an unexpected error: %v", err))
+			die(fmt.Sprintf("exception Run returned an unexpected error: %v", err))
 		}
 	}
+}
+
+func groupOwner(ctx context.Context, topicName string, group string) *common.Owner {
+	topicController, err := topiccontroller.NewTopicController(ds, nil)
+	must(err)
+	tp, err := topicController.GetTopic(ctx, topicName, topic.SchemaVersion(1))
+	must(err)
+
+	consumerDatastore, err := consumer.NewConsumerDatastore[Rec](ds, nil)
+	must(err)
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
+	must(err)
+
+	owner, err := common.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
+	must(err)
+	return owner
+}
+
+func abandonedEventProducer(ctx context.Context) *consumermetrics.MetricEventProducer {
+	events, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
+	must(err)
+	must(events.Register(ctx))
+	return events
+}
+
+// no manager, so nothing respawns the instance -- the lab decides exactly how
+// many run
+func claimOne(ctx context.Context, definition worker.Definition, owner *common.Owner) worker.Execution {
+	must(definition.Declare(ctx, owner))
+
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+	row, err := workers.GetWorker(ctx, definition.Name(), owner)
+	must(err)
+
+	instance, err := definition.Provision(ctx, row.Id, &row.Owner, row.Metadata)
+	must(err)
+	return instance
 }
 
 func record(message *Rec) {

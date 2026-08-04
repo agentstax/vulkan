@@ -10,7 +10,7 @@ type cronSchedulerMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultCronSchedulerMetadata is the tuning the system's seed starts with --
+// defaultCronSchedulerMetadata is the tuning the system's declaration starts with --
 // anything needing sub-minute frequency stays a long-lived worker, so the
 // scan paces at a minute.
 func defaultCronSchedulerMetadata() *cronSchedulerMetadata {

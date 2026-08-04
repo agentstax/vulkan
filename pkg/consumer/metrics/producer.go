@@ -20,7 +20,11 @@ type MetricEventProducer struct {
 	logger   logger.Logger
 }
 
-func NewMetricEventProducer(group string, ds *datastore.PostgresDatastore, cfg *MetricEventConfig) (*MetricEventProducer, error) {
+func NewMetricEventProducer(ds *datastore.PostgresDatastore, cfg *MetricEventConfig) (*MetricEventProducer, error) {
+	if cfg == nil {
+		cfg = &MetricEventConfig{}
+	}
+
 	// topic name == __system.metrics
 	p, err := producer.NewProducer[GoRoutineEvent](metrics.TopicName, topic.SchemaVersion(1), ds, &producer.ProducerConfig{
 		Logger:                  cfg.Logger,

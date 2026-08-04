@@ -30,7 +30,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	cronSchedulerFactory, err := cronscheduler.NewCronSchedulerFactory(ds, &cronscheduler.CronSchedulerConfig{
+	cronSchedulerDefinition, err := cronscheduler.NewCronSchedulerDefinition(ds, &cronscheduler.CronSchedulerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -38,7 +38,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	janitorFactory, err := janitor.NewJanitorFactory(ds, &janitor.JanitorConfig{
+	janitorDefinition, err := janitor.NewJanitorDefinition(ds, &janitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -46,11 +46,11 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	// a seeder here, never run -- admin creates manager rows, it doesn't claim them
-	managerFactory, err := manager.NewManagerFactory(ds, &manager.ManagerConfig{
+	// a declarer here, never run -- admin creates manager rows, it doesn't claim them
+	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorFactory, cronSchedulerFactory)
+	}, janitorDefinition, cronSchedulerDefinition)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, cronSchedulerFactory, managerFactory)
+	}, cronSchedulerDefinition, managerDefinition)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorFactory, managerFactory)
+	}, janitorDefinition, managerDefinition)
 	if err != nil {
 		return nil, err
 	}

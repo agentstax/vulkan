@@ -11,23 +11,23 @@ import (
 )
 
 type SystemController struct {
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
-	seeders   []worker.Seeder
+	declarers []worker.Declarer
 	datastore *datastore.SystemDatastore
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
-// unset, Validate rejects what's out of range. seeders run on every
+// unset, Validate rejects what's out of range. declarers run on every
 // RegisterSystem to create the system's worker rows -- pass them only from a
 // registrar; a controller built for reads needs none.
-func NewSystemController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig, seeders ...worker.Seeder) (*SystemController, error) {
+func NewSystemController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*SystemController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
-	for i, seeder := range seeders {
-		if seeder == nil {
-			return nil, fmt.Errorf("seeder %d must not be nil", i)
+	for i, declarer := range declarers {
+		if declarer == nil {
+			return nil, fmt.Errorf("declarer %d must not be nil", i)
 		}
 	}
 	if cfg == nil {
@@ -48,7 +48,7 @@ func NewSystemController(ds *coredatastore.PostgresDatastore, cfg *ControllerCon
 
 	return &SystemController{
 		Logger:    cfg.Logger,
-		seeders:   seeders,
+		declarers: declarers,
 		datastore: systemDatastore,
 	}, nil
 }

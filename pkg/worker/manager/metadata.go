@@ -14,7 +14,7 @@ type managerMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultManagerMetadata is the tuning the seed starts with.
+// defaultManagerMetadata is the tuning the declaration starts with.
 func defaultManagerMetadata() *managerMetadata {
 	return &managerMetadata{PollRate: time.Second}
 }

@@ -253,12 +253,13 @@ Model (settled in discussion):
   many times, RETURNS the product (an instance) instead of mutating the factory;
   callers operate on what Register returned. Register outcomes: instance claimed /
   declined (slots full — not an error, manager retries next reconcile) / error.
-- WorkerManager holds non-registered worker factories; spawn = Register per discovered
-  worker row + Run the returned instance.
+- WorkerManager holds worker Provisioners; spawn = Provision per discovered worker
+  row + Run the returned Execution.
 
 Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow points down:
 - pkg/worker                       vocabulary only: Worker, WorkerInstance, worker names,
-                                   WorkerFactory + Runner, ErrInstanceLost. No DB, no config.
+                                   Definition/Declarer/Provisioner/Execution,
+                                   ErrInstanceLost. No DB, no config.
 - pkg/worker/controller            WorkerController + config + adapters; the only door to
                                    worker persistence.
 - pkg/worker/controller/datastore  WorkerData + SQL (not internal/ for now).
@@ -318,7 +319,41 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
    - queue + poolLimiter leave the constructor signature for cfg knobs — each spawned
      instance must own its queue; a caller-shared one across manager-spawned lives is
      broken. Closes TODO.md's "refactor out queue/poolLimiter" item. ~23 lab call sites.
-10. producer factory-style register — same reshape as 9.
+10. producer factory-style register — same reshape as 9, plus the two lifecycle-ctx
+    questions it inherits:
+   - consumermetrics.MetricEventProducer converts too, and its Run(ctx) IS the drain
+     loop. Today Register(ctx) both resolves the metrics topic AND spawns `go drain(ctx)`,
+     so a consumer's Register ctx silently owns a goroutine — Register from a factory
+     method is the wrong door for that. After: consumer Register builds the instance
+     (call-scoped I/O), Consume runs it on Consume's ctx, and Run is re-callable across
+     repeat Consumes (producer.Register today is once-per-instance and refuses a second
+     call, which is what made a per-Consume rebuild the only alternative).
+   - Producer's own lifecycleCtx is a DECISION, not a default drop. It binds no
+     background work — the batcher's goroutine runs on context.Background by design
+     (batcher.go:86) — so it is a pure admission gate, and unlike Consume there is no
+     long-running call whose ctx could replace it. A request ctx is still alive while the
+     app drains, so dropping the stored lifetime costs producers the ability to refuse
+     new work during shutdown. Either ProducerInstance keeps the field (asymmetric with
+     the consumer on purpose) or that property goes.
+   - MUST FIX HERE, live defect as of the consumer Definition/Execution refactor:
+     every consumer's MetricEventProducer is now built in its constructor and started
+     by Register (`c.abandonedEvents.Register(ctx)`), so a SECOND Register on the same
+     Consumer value fails with
+     ErrAlreadyRegistered out of producer.Register (producer.go:169, and once its ctx
+     cancels the producer is wound-down-stays-down). Consumer.Register's doc promised
+     "Callable many times -- each call returns an independent instance"; that line was
+     REMOVED rather than left lying, so restore it when this lands. No caller hits it
+     today -- every lab constructs a fresh consumer per registration -- so it is latent,
+     not broken. Converting MetricEventProducer (bullet 1 above) makes Run re-callable and
+     resolves it; if that lands differently, amend the Register docs to once-per-value
+     instead, matching Producer.Register's own contract.
+   - consumerBase.lifecycleCtx + runCtx + stopReason die WITH this chunk, not before:
+     AbandonedEvents.Register is the last thing binding to the consumer's Register ctx,
+     so until it converts the Register ctx is a lifetime whether or not the field admits
+     it. Then Consume's ctx is the sole lifetime, the Done()==nil rejection moves from
+     register to Consume, and the stopped logs lose their "reason" field (only one side
+     can ask). The ErrNotRegistered branch was already unreachable under the
+     Definition/Execution surface and is deleted.
 11. metrics — DutySnapshots -> worker snapshots read from worker/worker_instance
     (heartbeat + liveness based; cron-job metrics split out per TODO).
 12. CLI — `vulkan maintain run` daemon becomes the worker-based daemon.

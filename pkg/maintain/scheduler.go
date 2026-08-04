@@ -30,7 +30,7 @@ type Scheduler struct {
 	System    *system.System // resolved by Register from the singleton system row
 	Datastore *MaintenanceDatastore
 	Config    *MaintainerConfig
-	Logger    logger.Logger // copied from Config.Logger at construction
+	Logger    logger.Logger
 
 	systemController *systemcontroller.SystemController
 	producer         *producer.Producer[cron.JobRequest]

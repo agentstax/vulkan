@@ -54,7 +54,7 @@ func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner)
 }
 
 // GetWorker reads the (name, owner) worker row. Errors if the row was never
-// seeded.
+// declared.
 func (c *WorkerController) GetWorker(ctx context.Context, name string, owner *common.Owner) (*worker.Worker, error) {
 	if name == "" {
 		return nil, errors.New("name is required")

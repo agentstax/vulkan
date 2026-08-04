@@ -10,7 +10,7 @@ type waterlineMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultWaterlineMetadata is the tuning every group's seed starts with.
+// defaultWaterlineMetadata is the tuning every group's declaration starts with.
 func defaultWaterlineMetadata() *waterlineMetadata {
 	return &waterlineMetadata{PollRate: time.Second}
 }

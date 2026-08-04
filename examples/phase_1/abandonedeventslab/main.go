@@ -19,6 +19,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/google/uuid"
 )
 
@@ -60,17 +62,30 @@ func main() {
 	must(wp.Register(ctx))
 	seed(ctx, wp, 3)
 
-	wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	cfg := &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              3,
 		QueueSize:               10,
 		MessageConcurrency:      3,
 		Message:                 &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace:            50 * time.Millisecond,
+	}
+	cfg.WithDefaults()
+
+	consumerDatastore, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
+	must(err)
+	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
+	must(err)
+
+	// the abandoned-event producer outlives any one claim -- the events it
+	// carries are generated as the consumer shuts down
+	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{
+		DisableGracefulShutdown: true,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx)
-	must(err)
+	must(abandonedEvents.Register(ctx))
 
 	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
@@ -79,7 +94,12 @@ func main() {
 		}
 		return nil
 	}
-	runProcessUntil(ctx, wcInstance, consumerFunc, 5*time.Second, func() bool {
+
+	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+	must(err)
+	must(definition.Declare(ctx, owner))
+
+	runProcessUntil(ctx, ds, definition, owner, 5*time.Second, func() bool {
 		return calls.Load() == 3
 	})
 
@@ -162,10 +182,20 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 	}
 }
 
-func runProcessUntil[Message any](ctx context.Context, wc *consumer.MessageConsumerInstance[Message], consumerFunc consumer.ConsumerFunc[Message], timeout time.Duration, done func() bool) {
+// no manager, so nothing respawns the instance and the lab sees exactly one
+// consuming life
+func runProcessUntil(ctx context.Context, ds *coredatastore.PostgresDatastore, definition worker.Provisioner, owner *vulkancommon.Owner, timeout time.Duration, done func() bool) {
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+	row, err := workers.GetWorker(ctx, definition.Name(), owner)
+	must(err)
+
 	runCtx, cancel := context.WithCancel(ctx)
+	instance, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+	must(err)
+
 	errCh := make(chan error, 1)
-	go func() { errCh <- wc.Consume(runCtx, consumerFunc) }()
+	go func() { errCh <- instance.Run(runCtx) }()
 
 	start := time.Now()
 	for !done() {

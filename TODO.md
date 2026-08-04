@@ -74,6 +74,11 @@ need to rename consumer waterline stuff to something like cursor.committed. Wate
 
 Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
 
+document the "consumerFunc hard timeout, goroutine abandoned" error (callSafely in
+pkg/consumer/base.go): what it means and how to prevent it -- handle ctx.Done() inside
+consumerFunc, or raise TimeoutGrace. it should be rare; the abandoned goroutine is a
+real side effect, not just a warning.
+
 Review code / comments in:
 - pkg/metrics
 - pkg/admin (health / metrics specifically) 
@@ -113,7 +118,7 @@ dutySnapshot should be using common.Owner instead of individual topicId and cons
 
 EnsureNextPartition should not be in janitor
 
-Seeder - populates data (system, topic, group register)
+Declarer - populates data (system, topic, group register)
 
 worker {
   id:                       123
@@ -154,12 +159,12 @@ should consider abstracting out WorkerManager into two: WorkerScheduler and Work
 - Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
 - WorkerSpawner would read topic and either spawn or destroy new instances depending
 
-Seeder and Seed need a better new name (register is a good name but already has a lot of context) might be worth refactoring and making seed register and register something else.
-
-For consumer and system need to abstract out the 'seeding' functionality in same way topicController is doing it
+For consumer and system need to abstract out the declaring functionality in same way topicController is doing it
 
 Need to refactor rest of packages in same patterns as worker and topic
 
 our controllers have redundant verbage: topicController.GetTopic -- should just be get
 
 base config.go files should be renamed to 'package'_config.go -- its a more extensible pattern.
+
+tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type

@@ -83,8 +83,8 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 	if err != nil {
 		return nil, err
 	}
-	for _, seeder := range c.seeders {
-		if err := seeder.Seed(ctx, owner); err != nil {
+	for _, declarer := range c.declarers {
+		if err := declarer.Declare(ctx, owner); err != nil {
 			return nil, err
 		}
 	}

@@ -11,19 +11,18 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 )
 
-// JanitorInstance is one claimed live copy of a topic's janitor worker: Run
-// sweeps the topic at the row's poll_rate while a heartbeat holds the claim.
-type JanitorInstance struct {
+// sweeps the topic at the row's poll_rate while a heartbeat holds the claim
+type JanitorExecution struct {
 	Topic  *topic.Topic
 	Config *JanitorConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	runner    *controller.InstanceTickRunner
 	datastore *datastore.JanitorDatastore
 	metadata  *janitorMetadata
 }
 
-func newJanitorInstance(janitor *JanitorFactory, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorInstance, error) {
+func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorExecution, error) {
 	if current == nil {
 		return nil, errors.New("topic must not be nil")
 	}
@@ -41,7 +40,7 @@ func newJanitorInstance(janitor *JanitorFactory, current *topic.Topic, claimed *
 		return nil, err
 	}
 
-	return &JanitorInstance{
+	return &JanitorExecution{
 		Topic:     current,
 		Config:    janitor.Config,
 		Logger:    janitor.Logger,
@@ -53,7 +52,7 @@ func newJanitorInstance(janitor *JanitorFactory, current *topic.Topic, claimed *
 
 // Run sweeps until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (i *JanitorInstance) Run(ctx context.Context) error {
+func (i *JanitorExecution) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "janitor starting", "topic", i.Topic.Id, "version", i.Topic.SchemaVersion, "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.sweep)
@@ -64,7 +63,7 @@ func (i *JanitorInstance) Run(ctx context.Context) error {
 }
 
 // sweep is one janitor pass.
-func (i *JanitorInstance) sweep(ctx context.Context) error {
+func (i *JanitorExecution) sweep(ctx context.Context) error {
 	t := i.Topic
 	if err := i.datastore.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DisableDeliveryLog); err != nil {
 		return err

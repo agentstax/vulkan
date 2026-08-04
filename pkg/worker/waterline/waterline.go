@@ -14,13 +14,9 @@ import (
 
 const WorkerWaterline = "waterline"
 
-// WaterlineFactory is the waterline worker factory: Register claims one live
-// instance for a consumer group's waterline worker row and returns it.
-// Register is callable once per row to run -- each call claims its own
-// instance.
-type WaterlineFactory struct {
+type WaterlineDefinition struct {
 	Config *WaterlineConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	workers   *controller.WorkerController
 	datastore *datastore.WaterlineDatastore
@@ -28,7 +24,7 @@ type WaterlineFactory struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWaterlineFactory(ds *coredatastore.PostgresDatastore, cfg *WaterlineConfig) (*WaterlineFactory, error) {
+func NewWaterlineDefinition(ds *coredatastore.PostgresDatastore, cfg *WaterlineConfig) (*WaterlineDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -56,7 +52,7 @@ func NewWaterlineFactory(ds *coredatastore.PostgresDatastore, cfg *WaterlineConf
 		return nil, err
 	}
 
-	return &WaterlineFactory{
+	return &WaterlineDefinition{
 		Config:    cfg,
 		Logger:    cfg.Logger,
 		workers:   workers,
@@ -64,17 +60,16 @@ func NewWaterlineFactory(ds *coredatastore.PostgresDatastore, cfg *WaterlineConf
 	}, nil
 }
 
-// Name is the worker rows this factory runs.
-func (w *WaterlineFactory) Name() string {
+func (w *WaterlineDefinition) Name() string {
 	return WorkerWaterline
 }
 
 // Register claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (w *WaterlineFactory) Register(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Instance, error) {
+func (w *WaterlineDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
 	claimed, parsed, err := controller.RegisterInstance[waterlineMetadata](ctx, w.workers, workerId, owner, common.OwnerConsumerGroup, WorkerWaterline, metadata, w.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newWaterlineInstance(w, owner, claimed, parsed)
+	return newWaterlineExecution(w, owner, claimed, parsed)
 }

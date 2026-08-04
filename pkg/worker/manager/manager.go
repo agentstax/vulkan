@@ -14,28 +14,26 @@ import (
 
 const WorkerManager = "manager"
 
-// ManagerFactory is the manager worker factory: Register claims one live
-// instance of an owner's manager worker row and returns it; the instance
-// keeps one running instance per worker row on the owner's chain, spawned
-// through the factories the manager was given. Manager rows carry no instance
-// target -- the spawned workers' own claims arbitrate who runs what, so any
-// number of processes reconcile the same chain safely.
-type ManagerFactory struct {
+// A manager execution keeps one running execution per worker row on the
+// owner's chain, spawned through the provisioners it was given. Manager rows
+// carry no instance target -- the spawned workers' own claims arbitrate who
+// runs what, so any number of processes reconcile the same chain safely.
+type ManagerDefinition struct {
 	Config *ManagerConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
-	workers   *controller.WorkerController
-	factories map[string]worker.Factory // keyed by Name; every discovered worker row spawns through the factory whose Name matches
+	workers      *controller.WorkerController
+	provisioners map[string]worker.Provisioner // keyed by Name; every discovered worker row spawns through the provisioner whose Name matches
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewManagerFactory(ds *coredatastore.PostgresDatastore, cfg *ManagerConfig, factories ...worker.Factory) (*ManagerFactory, error) {
+func NewManagerDefinition(ds *coredatastore.PostgresDatastore, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
-	if len(factories) == 0 {
-		return nil, errors.New("at least one worker factory is required")
+	if len(provisioners) == 0 {
+		return nil, errors.New("at least one worker provisioner is required")
 	}
 	if cfg == nil {
 		cfg = &ManagerConfig{}
@@ -45,15 +43,15 @@ func NewManagerFactory(ds *coredatastore.PostgresDatastore, cfg *ManagerConfig, 
 		return nil, err
 	}
 
-	byName := make(map[string]worker.Factory, len(factories))
-	for i, factory := range factories {
-		if factory == nil {
-			return nil, fmt.Errorf("factory %d must not be nil", i)
+	byName := make(map[string]worker.Provisioner, len(provisioners))
+	for i, provisioner := range provisioners {
+		if provisioner == nil {
+			return nil, fmt.Errorf("provisioner %d must not be nil", i)
 		}
-		if _, taken := byName[factory.Name()]; taken {
-			return nil, fmt.Errorf("two factories run worker %q", factory.Name())
+		if _, taken := byName[provisioner.Name()]; taken {
+			return nil, fmt.Errorf("two provisioners run worker %q", provisioner.Name())
 		}
-		byName[factory.Name()] = factory
+		byName[provisioner.Name()] = provisioner
 	}
 
 	workers, err := controller.NewWorkerController(ds, &controller.ControllerConfig{
@@ -64,16 +62,15 @@ func NewManagerFactory(ds *coredatastore.PostgresDatastore, cfg *ManagerConfig, 
 		return nil, err
 	}
 
-	return &ManagerFactory{
-		Config:    cfg,
-		Logger:    cfg.Logger,
-		workers:   workers,
-		factories: byName,
+	return &ManagerDefinition{
+		Config:       cfg,
+		Logger:       cfg.Logger,
+		workers:      workers,
+		provisioners: byName,
 	}, nil
 }
 
-// Name is the worker rows this factory runs.
-func (m *ManagerFactory) Name() string {
+func (m *ManagerDefinition) Name() string {
 	return WorkerManager
 }
 
@@ -81,7 +78,7 @@ func (m *ManagerFactory) Name() string {
 // instance's reconcile scope -- the deeper the owner, the shorter the chain.
 // nil = declined, which for a manager row means target_instances was set away
 // from worker.NoInstanceTarget.
-func (m *ManagerFactory) Register(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Instance, error) {
+func (m *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -89,5 +86,5 @@ func (m *ManagerFactory) Register(ctx context.Context, workerId int64, owner *co
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newManagerInstance(m, owner, claimed, parsed)
+	return newManagerExecution(m, owner, claimed, parsed)
 }

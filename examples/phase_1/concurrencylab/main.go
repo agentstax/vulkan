@@ -143,7 +143,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 		mu.Unlock()
 		if count.Add(1) == int64(batchLimit) {
 			// let this message's own commitRange land before shutdown races it --
-			// harmless either way (CloseOpenRanges settles it too) but noisy in the log.
+			// harmless either way (closeOpenRanges settles it too) but noisy in the log.
 			go func() { time.Sleep(50 * time.Millisecond); cancel() }()
 		}
 		return nil
@@ -211,7 +211,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 		if count.Add(1) == int64(target) {
 			elapsed = time.Since(start)
 			// let this message's own commitRange land before shutdown races it --
-			// harmless either way (CloseOpenRanges settles it too) but noisy in the log.
+			// harmless either way (closeOpenRanges settles it too) but noisy in the log.
 			go func() { time.Sleep(50 * time.Millisecond); cancel() }()
 		}
 		return nil

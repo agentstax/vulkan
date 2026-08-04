@@ -11,20 +11,19 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 )
 
-// WaterlineInstance is one claimed live copy of a consumer group's waterline
-// worker: Run rolls cursor.committed up behind the group's resolved work at
-// the row's poll_rate while a heartbeat holds the claim.
-type WaterlineInstance struct {
+// rolls cursor.committed up behind the group's resolved work at the row's
+// poll_rate while a heartbeat holds the claim
+type WaterlineExecution struct {
 	Owner  *common.Owner
 	Config *WaterlineConfig
-	Logger logger.Logger // copied from Config.Logger at construction
+	Logger logger.Logger
 
 	runner    *controller.InstanceTickRunner
 	datastore *datastore.WaterlineDatastore
 	metadata  *waterlineMetadata
 }
 
-func newWaterlineInstance(waterline *WaterlineFactory, owner *common.Owner, claimed *worker.WorkerInstance, metadata *waterlineMetadata) (*WaterlineInstance, error) {
+func newWaterlineExecution(waterline *WaterlineDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *waterlineMetadata) (*WaterlineExecution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -42,7 +41,7 @@ func newWaterlineInstance(waterline *WaterlineFactory, owner *common.Owner, clai
 		return nil, err
 	}
 
-	return &WaterlineInstance{
+	return &WaterlineExecution{
 		Owner:     owner,
 		Config:    waterline.Config,
 		Logger:    waterline.Logger,
@@ -54,7 +53,7 @@ func newWaterlineInstance(waterline *WaterlineFactory, owner *common.Owner, clai
 
 // Run rolls until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (i *WaterlineInstance) Run(ctx context.Context) error {
+func (i *WaterlineExecution) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "waterline starting", "topic", i.Owner.TopicId, "group", i.Owner.Name, "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.roll)
@@ -65,7 +64,7 @@ func (i *WaterlineInstance) Run(ctx context.Context) error {
 }
 
 // roll is one waterline pass.
-func (i *WaterlineInstance) roll(ctx context.Context) error {
+func (i *WaterlineExecution) roll(ctx context.Context) error {
 	_, err := i.datastore.AdvanceWaterline(ctx, i.Owner.TopicId, i.Owner.ConsumerGroupId)
 	return err
 }

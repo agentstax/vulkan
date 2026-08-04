@@ -29,11 +29,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/monitor"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/google/uuid"
 )
 
@@ -91,18 +93,39 @@ func main() {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	cfg.WithDefaults()
+	consumerDatastore, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	must(err)
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
+	must(err)
+	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
+	must(err)
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+
 	step("two independent consumer processes claim the same group's cursor")
 	var wg sync.WaitGroup
+	// consumer rows carry no instance target, so both "processes" claim a life
+	// of the same row
 	startConsumer := func(label string) {
-		wc, err := consumer.NewMessageConsumer[common.Work](group, tp.Name, topic.SchemaVersion(1), ds, cfg)
+		abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{})
 		must(err)
-		wcInstance, err := wc.Register(runCtx)
+		must(abandonedEvents.Register(runCtx))
+
+		definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
 		must(err)
+		must(definition.Declare(runCtx, owner))
+
+		row, err := workers.GetWorker(runCtx, definition.Name(), owner)
+		must(err)
+		instance, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+		must(err)
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := wcInstance.Consume(runCtx, consumerFunc); err != nil && runCtx.Err() == nil {
-				die(fmt.Sprintf("%s: Consume returned %v", label, err))
+			if err := instance.Run(runCtx); err != nil && runCtx.Err() == nil {
+				die(fmt.Sprintf("%s: Run returned %v", label, err))
 			}
 		}()
 	}
