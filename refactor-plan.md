@@ -382,171 +382,271 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
 
 ---
 
-# pkg/consumer layered refactor — PLANNED (2026-08-03)
+# pkg/consumer layered refactor — BUILT (2026-08-04)
 
-Apply the conventions.md three-layer template (vocabulary -> controller -> controller/datastore)
-to pkg/consumer, as already done for topic (2026-08-02) and system (2026-08-03).
+Split pkg/consumer into a door, one package per worker row, and the two persistence
+layers, as already done for topic (2026-08-02) and system (2026-08-03).
 
-Gate cleared: chunks 8 and 9 are built. Layout below is REVISED (2026-08-03, after chunk 9)
-— it supersedes the cursor/lifecycle mode packages this plan originally carried.
+Gate cleared: chunks 8 and 9 are built. This supersedes the 2026-08-03 layout, which
+was written before the Definition/Execution surface landed and still named symbols
+chunk 9 deleted (Seed*, consumerWorkerFactory, ConsumeClaimed, RunCtx, LifecycleErr,
+SetLifecycleCtx).
 
-## why consumer isn't shaped like topic/system
+pkg/consumer was 4362 lines / 17 files, excluding metrics/ and _test. Built
+2026-08-04: module builds, go vet clean, go test -race green, 35 of 38 labs pass
+(the 3 failures predate this work -- see `## stale labs`).
 
-topic and system are CRUD resources: the layered trio covers everything they do. consumer
-is a RUNTIME ENGINE that also owns persistence. The trio applies to the persistence half;
-the engine splits ONE PACKAGE PER WORKER ROW over a shared plumbing package.
+## the constraint that fixed the shape
+
+`consumer.NewConsumer` is NON-NEGOTIABLE -- the library's most common user entry
+point keeps its name and package. So pkg/consumer is a DOOR (like pkg/admin is
+topic's), not a vocabulary layer, and the row packages sit under it.
+
+That means nothing a user types may live below pkg/consumer, because the door imports
+the rows and the rows may not import back. Every user-facing symbol clears that bar
+except one:
+
+  MessageMeta / MetaFromContext -- the rows stamp it into ctx under an unexported
+  key and the user reads it back inside their consumerFunc. It cannot be duplicated
+  per row (the keys would not match and MetaFromContext would return false), so it
+  needs exactly one home BELOW the rows and still reachable by the user.
+
+Everything else stays on `consumer.` because the rows take narrow configs of their
+own instead of ConsumerConfig -- see below.
 
 ## layout
 
-pkg/consumer                            the composed door
-  consumer.go            Consumer[M] + NewConsumer + Register + registerManager
-                         ConsumerInstance[M].Consume + ConsumerFunc[M]
-  options.go             With* builders
-  errors.go              lifecycleContextHelp
-  context.go             SleepWithContext
-  metrics/               unchanged
+pkg/consumer                          THE DOOR -- every symbol a user types
+  consumer.go        Consumer[M] + NewConsumer + Register
+                     + ConsumerInstance[M] + Consume
+  config.go          ConsumerConfig + ConsumerType (CURSOR / LIFECYCLE) + ConsumerFunc
+  definitions.go     newGroupDefinitions / newTopicDefinitions -- resolves
+                     ConsumerConfig once, then builds each row's narrow config
+  options.go         With* builders
+  errors.go          lifecycleContextHelp
+  context.go         SleepWithContext
+  metrics/           unchanged
 
-pkg/consumer/base                       plumbing every loop composes
-  base.go                ConsumerBase[M] + NewConsumerBase
-  lifecycle.go           Register, RunCtx, LifecycleErr, SetLifecycleCtx
-  seed.go                SeedGroupWorkers, seedConsumptionWorker, GroupOwner
-  worker.go              consumerWorkerFactory + consumerWorkerInstance
-                         + ConsumeClaimed + the three worker-name consts
-  dispatch.go            DispatchVerdict + consts, ClaimKeyedRun
-  safecall.go            CallSafely
+pkg/consumer/message                  leaf -- imports only context, time, pkg/common
+  meta.go            MessageMeta + MetaFromContext + WithMeta
 
-pkg/consumer/messageconsumer            worker row: message_consumer
-  messageconsumer.go     MessageConsumer[M] + Instance + messageLoop
-  claimbuffer.go         claimBuffer + Buffered
-  rangestate.go          rangeState + rangeSnapshot
+pkg/consumer/messageconsumer          worker row: message_consumer
+  messageconsumer.go MessageConsumerDefinition + MessageConsumerExecution
+                     + messageRunner + Declare + Provision
+  config.go          MessageConsumerConfig
+  claimbuffer.go     claimBuffer + Buffered
+  rangestate.go      rangeState + rangeSnapshot + outcome kinds
+  worker.go          const WorkerMessageConsumer + consumerWorkerMetadata
 
-pkg/consumer/exceptionconsumer          worker row: exception_consumer
-  exceptionconsumer.go   ExceptionConsumer[M] + Instance + exceptionLoop
+pkg/consumer/exceptionconsumer        worker row: exception_consumer
+pkg/consumer/deliveryconsumer         worker row: delivery_consumer      PARKED
 
-pkg/consumer/deliveryconsumer           worker row: delivery_consumer (parked)
-  deliveryconsumer.go    DeliveryConsumer[M] + Instance + deliveryLoop
-
-pkg/consumer/controller                 the only door to consumer persistence + vocabulary
+pkg/consumer/controller               the only door to consumer persistence
   controller.go          ConsumerController + NewConsumerController
   controller_config.go   ControllerConfig{Logger, Retry}
-  consumer_config.go     ConsumerConfig + ConsumerType
   group.go               Group + GetGroup / RegisterGroup
-  meta.go                MessageMeta + MetaFromContext + withMeta
-  message.go             MessageRow, LeaseRow, ClaimedRange, CursorRange
   binding.go             Bind / ClearBindings
-  cursor.go              claim / commit / partial-commit / force-reclaim
-  exception.go           ClaimedException + claim / renew / record x4 / kill
-  keylease.go            ClaimKeyLease / ReleaseKeyLease
-  delivery.go            DeliveryRow + FanOut / claim / record x3       LIFECYCLE
+  cursor.go              MessageRow, LeaseRow, CursorRange, ClaimedRange, MessageOutcome
+                         + ClaimMessagesWithCursor / Commit / PartialCommit
+                         / ForceReclaimRange
+  exception.go           ClaimedException + Kill / Claim / Renew / RecordException x4
+  keylease.go            KeyLeaseClaim + KeyLeaseVerdict + Claim / Release
+  delivery.go            DeliveryRow + FanOut / Claim / Record x3        LIFECYCLE
+  errors.go              ErrLeaseLost
   adapter.go             *Data -> vocabulary
 
-Import arrows: consumer -> the three worker packages -> base -> controller ->
-controller/datastore.
-
-One package per worker row, NOT per consumption mode. message_consumer and
-exception_consumer became separate worker rows in chunk 9, and they share NO code:
-exceptionconsumer.go has zero references to claimBuffer/rangeState/Buffered — everything it
-touches is its own loop or base. A `cursor` package would group by mode taxonomy, not by
-shared code. This also matches pkg/worker, which is already one package per worker row
-(janitor, waterline, cronscheduler, manager), so row name and package name map 1:1.
-
-ALL vocabulary lives in controller, not at the top. base and all three worker packages read
-Group / MessageRow / LeaseRow / ClaimedRange / ClaimedException / DeliveryRow / MessageMeta /
-ConsumerConfig, so a top-level home cycles (base -> consumer). Controller is also where
-conventions.md puts <x>_config.go, matching topiccontroller.TopicConfig /
-systemcontroller.SystemConfig. Cost: MetaFromContext moves to controller, so callers using
-it change import path. REJECTED: top-level `type X = controller.X` aliases -- the repo has
-zero type aliases today and these would be the only ones.
-
-pkg/consumer/controller/datastore       table-exact SQL, Wrap-only
+pkg/consumer/controller/datastore      table-exact SQL, Wrap-only
   datastore.go           ConsumerDatastore + New
   config.go              ConsumerDatastoreConfig
   group.go               GroupData + SQL
   binding.go             + wildcardToRegex
-  cursor.go              MessageData/LeaseData/CursorData/ClaimedRangeData + SQL
+  cursor.go              MessageData / LeaseData / CursorData / ClaimedRangeData + SQL
   exception.go           ExceptionData + SQL
   keylease.go            KeyLeaseData + SQL
   delivery.go            DeliveryData + SQL
 
-datastore.go (1687 lines) becomes six focused files across two layers; nothing else grows.
+Arrows: consumer -> rows -> message / controller -> controller/datastore. Nothing
+points up. 20 public verbs move across; datastore.go (1687 lines) becomes six focused
+files over two layers.
 
-## cleanups the split carries
+## why the rows get their own configs
 
-- ConsumerDatastore[Message any] is a PHANTOM type parameter -- zero uses in any field,
-  signature, or body. Payload is json.RawMessage end to end; unmarshalling happens in the
-  consumers. Drop it: de-genericizes the persistence layer and removes the type argument
-  from ~17 lab call sites (consumer.NewConsumerDatastore).
-- Wrap-only violations: ReclaimWithCursor and FreshClaimMessagesWithCursor are EXPORTED,
-  own their own transactions, have no Wrap, and are called from inside the private
-  claimMessagesWithCursor -- exported names doing private work. They become the private
-  halves. ClaimMessages/quarantine/readMessages/record/recordAndReleaseKey are tx-scoped
-  or helpers: stay unwrapped but private (cronscheduler precedent -- no Wrap inside a txn).
-- Validation moves to the controller: newConsumerBase's version < 1 check, the datastore's
-  inline low >= high sanity check.
-- Config file naming per conventions.md: consumer_config.go / controller_config.go.
+Measured ConsumerConfig (21 fields) usage: messageconsumer 12, exceptionconsumer 7,
+deliveryconsumer 4, the shared plumbing 2. The rows are not each using the whole
+config, so each declares its own -- exactly janitor.JanitorConfig /
+waterline.WaterlineConfig / cronscheduler.CronSchedulerConfig.
+
+WithDefaults stays at the door because its derivations are interdependent:
+QueueSize <- BatchLimit, MessageMax <- Message, ShutdownTimeout <- MessageMax.Timeout
++ TimeoutGrace + AckMargin. The door resolves once, then hands each row its slice.
+This also fixes a live smell: all three New*Definition constructors currently re-run
+cfg.WithDefaults() + cfg.Validate() on the same *ConsumerConfig the door already
+resolved.
+
+ConsumerFunc stays at the door too: a row constructor taking the unnamed
+`func(ctx context.Context, message *Message) error` accepts consumer.ConsumerFunc[M]
+with no conversion.
+
+## no base package
+
+The shared plumbing duplicates into each row rather than becoming
+pkg/consumer/base: callSafely (44 lines), claimKeyedRun + dispatchVerdict (29), the
+topic/group resolution newConsumerBase does (61), declareConsumerWorker (11), and
+resolveMessageOptions (4). About 150 lines, three times, net +250.
+
+That is the conventions.md call -- duplication beats abstraction, no new shared
+packages -- and it leaves each row structurally identical to pkg/worker/janitor: its
+own Provision doing its own GetTopicById, its own config, its own worker-name const.
+deliveryconsumer takes the smaller copy: it uses callSafely but never claimKeyedRun.
+
+## why MessageMeta lands in pkg/consumer/message
+
+Three homes were possible and only one reads right at a user's call site.
+
+- pkg/common, beside MessageOptions. REJECTED: min/max/override bounds and
+  MessageMeta are consumer-only. Checked -- the producer's only options field is
+  ProducerConfig.Message, merged with Fill; it never Clamps or resolves concurrency.
+  pkg/common is for what BOTH sides need (Owner, MessageOptions), so this would be a
+  junk-drawer move.
+- pkg/consumer/controller, beside MessageRow / ClaimedException, which
+  toMessageMeta converts from. On-pattern for the type, but it puts
+  consumercontroller.MetaFromContext inside a user's callback -- the persistence door
+  addressed from application code.
+- pkg/consumer/message. CHOSEN. Consumer-scoped by its path, leaf-clean (context,
+  time, pkg/common only), and reads as message.MetaFromContext(ctx). The
+  toMessageMeta adapters stay in each row, so nothing in the consumer tree points
+  into it except the two rows that stamp meta -- deliveryconsumer never does.
+
+Known wart: WithMeta must be exported for the rows to call it, so a user can stamp a
+fake meta into their own ctx. Harms only that caller; not worth contorting around.
+
+MessageBounds (a named Default/Min/Max/ConcurrencyOverride type) was considered to
+stop the four options fields repeating across three row configs. DROPPED:
+resolveMessageOptions is 4 lines wrapping common.MessageOptions's own Fill / Clamp /
+ResolveConcurrency, so the same duplication call that killed base kills this too.
+
+## cleanups this carries
+
+- ConsumerDatastore[Message any] is a PHANTOM type parameter -- zero uses in any
+  field, signature, or body. Payload is json.RawMessage end to end; unmarshalling
+  happens in the rows. Drop it: de-genericizes both persistence layers and removes
+  the type argument from 16 lab call sites.
+- Wrap-only violations: ReclaimWithCursor and FreshClaimMessagesWithCursor are
+  EXPORTED, own their own transactions, have no Wrap, and are called from inside the
+  private claimMessagesWithCursor -- exported names doing private work. They become
+  the private halves. ClaimMessages / quarantine / readMessages / record /
+  recordAndReleaseKey are tx-scoped or helpers: stay unwrapped but private
+  (cronscheduler precedent -- no Wrap inside a txn).
+- Validation moves to the controller: newConsumerBase's version < 1 check, the
+  datastore's inline low >= high sanity check.
 - CONSOLIDATE the four range outcome types into ONE kinded type. MessageException /
   MessageTerminal / MessageSuperseded / MessageDeferred are structurally identical
   ({MessageId int64, Err string}), constructed in exactly one place (rangestate.go's
-  contiguousResolved + resolvedOutcomes), and consumed only by Commit/PartialCommit. One
-  type carrying the kind collapses both four-armed switches into a single walk and drops
-  Commit from 10 params to 7, PartialCommit from 11 to 8. Ripples: cursorPartialCommit and
-  5 lab call sites that build MessageException directly (exceptionlab, deliveryloglab x4).
-- The consolidated outcome type lives in controller, NOT controller/datastore: it carries no
-  `db:` tags, unlike MessageRow/LeaseRow/CursorRange/ClaimedException/DeliveryRow, which all
-  do. It is rangeState's output vocabulary that the write path consumes, and it sits in
-  datastore.go today only by history.
-- EnsureNextPartition needs a home in this pass. Three Register paths build a
-  maintain.MaintenanceDatastore for it (consumer.go, messageconsumer.go, deliveryconsumer.go)
-  and chunk 13 deletes pkg/maintain — either it becomes a controller verb here or the
-  janitor's sweep picks it up. Tracked in `## open` as homeless since chunk 5.
+  contiguousResolved + resolvedOutcomes), and consumed only by Commit / PartialCommit.
+  One type carrying the kind collapses both four-armed switches into a single walk and
+  drops Commit from 10 params to 7, PartialCommit from 11 to 8. Ripples:
+  cursorPartialCommit and 5 lab call sites that build MessageException directly
+  (exceptionlab, deliveryloglab x4).
+- MessageOutcome lives in controller, NOT controller/datastore: it carries no db:
+  tags, unlike MessageRow / LeaseRow / CursorRange / ClaimedException / DeliveryRow,
+  which all do. It is rangeState's output vocabulary that the write path consumes, and
+  it sits in datastore.go today only by history.
+- The three worker-name consts split out of worker.go onto the row that owns each,
+  matching janitor's `const WorkerJanitor = "janitor"` sitting in the package that
+  implements it. consumerWorkerMetadata copies with them.
+- EnsureNextPartition needs a home in this pass. consumer.go builds a
+  maintain.MaintenanceDatastore purely for it, and chunk 13 deletes pkg/maintain --
+  either it becomes a controller verb here or the janitor's sweep picks it up.
+  Tracked in `## open` as homeless since chunk 5.
 
 ## settled decisions
 
-- adapter scope: convert only what the runtime manipulates (ClaimedRange, ClaimedException,
-  MessageRow, LeaseRow, DeliveryRow).
-- the worker packages and base are ORDINARY packages, not internal/. The public-surface cost
-  below is known and accepted -- surface trimming is a later pass, not this one.
+- Row type names keep the house stutter: messageconsumer.MessageConsumerDefinition /
+  MessageConsumerExecution, matching janitor.JanitorDefinition. Dropping it to
+  messageconsumer.Definition reads better but breaks the pattern the four worker
+  packages just standardized on -- revisit repo-wide in the v1 API review, not here.
+- Read-models live in controller, not a vocabulary package. With pkg/consumer settled
+  as a door, there is no vocabulary layer for them to sit in, and controller +
+  controller/datastore is a complete two-layer stack on its own.
+- adapter scope: convert only what the runtime manipulates (ClaimedRange,
+  ClaimedException, MessageRow, LeaseRow, DeliveryRow).
+- controller, controller/datastore, message, and the three rows are ORDINARY
+  packages, not internal/ -- surface trimming is a later pass.
 
-## the export cost (accepted, not re-litigated)
+## sequencing
 
-A package boundary between base and the worker packages makes consumerBase's private surface
-public. Measured before chunk 9 at 7-8 shared members; chunk 9 added workers / GroupOwner /
-SeedGroupWorkers on top. User ruled this is not a concern -- do not re-raise it as an
-argument against the split.
+Decide LIFECYCLE before starting. Deleting deliveryconsumer rather than parking it
+drops ~560 lines plus DeliveryRow, delivery.go in both persistence layers, and
+FanOutBatchLimit -- one of the three rows disappears and its narrow config with it.
+config.go already calls it "a strictly more expensive CURSOR" that re-earns its place
+only with the non-FIFO queue work. Deferred, not rejected on merit; the layout makes
+the deletion a whole-directory drop later.
 
-  fields   ConsumerGroup, Version, LifecycleCtx
-  methods  Register, CallSafely, ClaimKeyedRun, RunCtx, LifecycleErr
-  types    ConsumerBase[M], DispatchVerdict + its three consts
+## what shipped differently from the plan above
 
-LifecycleCtx is the sharp one: sub-consumers SET it after their own registration steps
-succeed, so it needs SetLifecycleCtx (not a bare exported field) -- the consumer's shutdown
-gate must not be reassignable by callers. Everything here goes on public-surface.md's
-excluded/demote list when that pass happens.
+- Read-model names dropped `*Row` in the controller layer: MessageRow -> Message,
+  LeaseRow -> RangeLease, DeliveryRow -> Delivery. The plan carried the old names
+  forward, but `*Row` in a layer whose whole job is to abstract the database is the
+  naming the user already rejected, and conventions.md says fix every occurrence.
+  `*Data` in controller/datastore keeps the row-shaped names.
+- Lease tokens are uuid.UUID in the controller vocabulary and pgtype.UUID only in
+  controller/datastore, converted by toTokenData -- the worker adapter's precedent.
+  pgx no longer leaks above the datastore.
+- ErrLeaseLost is declared in controller/datastore (the layer that detects it) and
+  bound in controller/errors.go as `var ErrLeaseLost = datastore.ErrLeaseLost`, so
+  errors.Is matches on either side without callers importing the datastore.
+- The per-row config builders are PUBLIC: cfg.MessageConsumerConfig(),
+  cfg.ExceptionConsumerConfig(), cfg.DeliveryConsumerConfig(). Four labs
+  (abandonedevents, defer, metrics, shutdowntruncation) drive a single worker row
+  directly and need to derive its config slice from the group's.
+- The rows never build a Group read-model. newConsumerBase used to construct one
+  from Owner fields; the rows read Owner.ConsumerGroupId / Owner.Name instead.
+- The `low >= high` guard stayed in controller/datastore. The plan listed it as
+  validation to move up, but low and high come from the cursor statement, not from
+  a caller -- it catches a cursor row that went backwards, not bad input.
+- ReclaimWithCursor, FreshClaimMessagesWithCursor and ClaimMessages went private as
+  planned, and each dropped a `limit` parameter no body ever read.
+- Bind and ClearBindings gained the DatastoreRetry.Wrap they were missing.
+- ~140 lines of commented-out dead code at the tail of the old datastore.go were
+  deleted rather than carried across.
+
+## stale labs (all predate this refactor)
+
+Three labs assert against pkg/maintain's duty table, which chunks 8 and 9 replaced
+with worker rows. They are chunk 13's rewrite list:
+
+- maintenancelab -- "janitor executions ~ one per interval: got 0"
+- dutybackofflab
+- consumergrouplab -- "0 waterline duties at registration". Verified against
+  HEAD: registerGroup has only ever inserted consumer_group + cursor, so the
+  duty assertion was already dead before this work touched it.
 
 ## rejected alternatives
 
 - EXTRACTING rangeState (and/or claimBuffer) into its own generic package. Rejected on
-  evidence: three things reach into rangeState's internals, not one. claimBuffer mutates raw
-  atomics directly (state.dispatched.Add at claimbuffer.go:97, state.stale.Store at :147) and
-  messageLoop.closeRange reads state.stale / state.lease and calls neverDispatched +
-  contiguousResolved. A boundary anywhere in that triangle exports 7+ members whose only
-  callers are inside the same mechanism, and publishes the very atomics whose correctness
-  rests on unexported write ordering (result.resolve writes kind/err THEN done; TryGetSnapshot
-  gates on a one-shot CAS). The unit is "in-flight range bookkeeping", not "rangeState" --
-  both files stay private in pkg/consumer/messageconsumer. Only the outcome vocabulary moves,
-  and it moves DOWN to controller (arrows forbid controller importing messageconsumer).
-- cursor / lifecycle MODE packages (this plan's original layout). Rejected: see the layout
-  section -- message_consumer and exception_consumer share no code, so the grouping was
-  taxonomy, not cohesion.
-- FLAT runtime in pkg/consumer (base + every loop in one package). Zero new surface, ~2000
-  lines across 13 files. Rejected: does not isolate the parked LIFECYCLE path, and package
-  boundaries between the workers are worth more than the surface cost right now.
-- pkg/consumer/internal/base. Hides the export cost above from users while still letting
-  the worker packages import it. Rejected: forces base to be a NAMED FIELD rather than embedded
-  (embedding promotes CallSafely/RunCtx/LifecycleErr onto the public MessageConsumer even
-  from an internal package), and un-embedding drops mc.Topic / mc.Config / mc.Logger from
-  the public surface -- which base.go's own comment says is deliberate today.
-- deleting LIFECYCLE outright instead of fencing it (~560 lines: deliveryconsumer.go +
-  datastore_lifecycle.go). Still the sharper question -- config.go already calls it "a
-  strictly more expensive CURSOR" that re-earns its place only with the non-FIFO queue work.
-  Deferred, not rejected on merit; the package boundary makes the deletion trivial later.
+  evidence: three things reach into rangeState's internals, not one. claimBuffer
+  mutates raw atomics directly (state.dispatched.Add at claimbuffer.go:97,
+  state.stale.Store at :147) and messageRunner.closeRange reads state.stale /
+  state.lease and calls neverDispatched + contiguousResolved. A boundary anywhere in
+  that triangle exports 7+ members whose only callers are inside the same mechanism,
+  and publishes the very atomics whose correctness rests on unexported write ordering
+  (result.resolve writes kind/err THEN done; TryGetSnapshot gates on a one-shot CAS).
+  The unit is "in-flight range bookkeeping", not "rangeState" -- both files stay
+  private in pkg/consumer/messageconsumer. Only the outcome vocabulary moves, and it
+  moves DOWN to controller.
+- cursor / lifecycle MODE packages (the original 2026-08-03 layout). Rejected:
+  message_consumer and exception_consumer share no code, so the grouping was taxonomy,
+  not cohesion. exceptionconsumer.go has zero references to claimBuffer / rangeState /
+  Buffered.
+- FLAT runtime -- rows stay as files in pkg/consumer, only persistence splits out.
+  Zero new packages and no MessageMeta problem at all. Rejected: the rows are genuinely
+  independent worker rows and pkg/worker already proves one package per row; keeping
+  them flat also leaves the parked LIFECYCLE path tangled with the two live ones.
+- pkg/consumer/base holding consumerBase + ConsumerConfig + ConsumerFunc + MessageMeta.
+  Rejected: it puts &base.ConsumerConfig{} and base.MetaFromContext(ctx) -- symbols
+  users type at 23 and 2 call sites -- behind a package named for plumbing.
+- MOVING the door out so pkg/consumer could be the vocabulary layer per template
+  (pkg/consumergroup.NewConsumer). Matches topic/worker exactly and would put the
+  read-models back in pkg/consumer. Rejected outright by the user:
+  consumer.NewConsumer is the most common entry point and stays.
+- deleting LIFECYCLE outright instead of parking it. See `## sequencing`.

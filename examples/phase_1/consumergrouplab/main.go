@@ -24,9 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -45,7 +44,7 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
 
 	suffix := time.Now().UnixNano()

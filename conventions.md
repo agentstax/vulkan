@@ -83,6 +83,13 @@ Three layers per domain (template: worker, topic):
   (`NULLIF`, `COALESCE`).
 - A `*common.Owner` is never nil -- no nil-safe receivers. A param nothing
   can populate yet gets deleted, not nil-tolerated.
+- Controllers own verbs, not tables. A datastore transaction contains every
+  statement its operation needs, inline, even on tables another domain
+  primarily manages.
+- A transaction never crosses a package boundary -- no exported tx-taking
+  methods, no `Querier`/`pgx.Tx` in any public signature. If an operation
+  seems to need two controllers, it is one operation with a wrong home: pick
+  the owner whose invariant the transaction protects.
 
 ## Constructors & configs
 

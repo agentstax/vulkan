@@ -31,7 +31,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumer/base/controller"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -73,7 +74,9 @@ func main() {
 	must(err)
 	topicID = tp.Id
 
-	cd, err := consumer.NewConsumerDatastore[Rec](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	keyLeases, err := keyleasecontroller.NewKeyLeaseController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -95,8 +98,8 @@ func main() {
 	fmt.Printf("  stale=%d head=%d\n", staleID, headID)
 
 	step("stale message resolves superseded and never touches the lease row")
-	c := claim(ctx, cd, "user:1", staleID, 30*time.Second)
-	if c.Verdict != consumer.KeyLeaseSuperseded {
+	c := claim(ctx, keyLeases, "user:1", staleID, 30*time.Second)
+	if c.Verdict != keyleasecontroller.KeyLeaseSuperseded {
 		die(fmt.Sprintf("want superseded, got %s", c.Verdict))
 	}
 	if n := leaseCount(ctx); n != 0 {
@@ -105,11 +108,11 @@ func main() {
 	fmt.Println("  ✓ superseded, zero lease rows")
 
 	step("head message acquires when free; second attempt is busy")
-	held := claim(ctx, cd, "user:1", headID, 30*time.Second)
-	if held.Verdict != consumer.KeyLeaseAcquired || !held.Token.Valid {
-		die(fmt.Sprintf("want acquired with a token, got %s valid=%v", held.Verdict, held.Token.Valid))
+	held := claim(ctx, keyLeases, "user:1", headID, 30*time.Second)
+	if held.Verdict != keyleasecontroller.KeyLeaseAcquired || held.Token == uuid.Nil {
+		die(fmt.Sprintf("want acquired with a token, got %s valid=%v", held.Verdict, held.Token != uuid.Nil))
 	}
-	if c := claim(ctx, cd, "user:1", headID, 30*time.Second); c.Verdict != consumer.KeyLeaseBusy {
+	if c := claim(ctx, keyLeases, "user:1", headID, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy while held, got %s", c.Verdict))
 	}
 	if n := leaseCount(ctx); n != 1 {
@@ -118,7 +121,7 @@ func main() {
 	fmt.Println("  ✓ acquired, then busy")
 
 	step("stale message still resolves superseded while the key is held (gate beats busy)")
-	if c := claim(ctx, cd, "user:1", staleID, 30*time.Second); c.Verdict != consumer.KeyLeaseSuperseded {
+	if c := claim(ctx, keyLeases, "user:1", staleID, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseSuperseded {
 		die(fmt.Sprintf("want superseded (not busy) for a stale message on a held key, got %s", c.Verdict))
 	}
 	fmt.Println("  ✓ superseded takes precedence over busy")
@@ -138,36 +141,36 @@ func main() {
 		die("the in-txn release should have matched the held row")
 	}
 	must(tx.Rollback(ctx))
-	if c := claim(ctx, cd, "user:1", headID, 30*time.Second); c.Verdict != consumer.KeyLeaseBusy {
+	if c := claim(ctx, keyLeases, "user:1", headID, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy after rolled-back release, got %s", c.Verdict))
 	}
 	fmt.Println("  ✓ rollback kept the lease")
 
 	step("release frees the key for immediate reacquire")
-	released, err := cd.ReleaseKeyLease(ctx, held)
+	released, err := keyLeases.ReleaseKeyLease(ctx, held)
 	must(err)
 	if !released {
 		die("release of the live holder should match its row")
 	}
-	short := claim(ctx, cd, "user:1", headID, 300*time.Millisecond)
-	if short.Verdict != consumer.KeyLeaseAcquired {
+	short := claim(ctx, keyLeases, "user:1", headID, 300*time.Millisecond)
+	if short.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want reacquire after release, got %s", short.Verdict))
 	}
 	fmt.Println("  ✓ released and reacquired")
 
 	step("takeover only after expiry; the expired holder's release matches 0 rows")
-	if c := claim(ctx, cd, "user:1", headID, 30*time.Second); c.Verdict != consumer.KeyLeaseBusy {
+	if c := claim(ctx, keyLeases, "user:1", headID, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy before expiry, got %s", c.Verdict))
 	}
 	time.Sleep(400 * time.Millisecond)
-	taker := claim(ctx, cd, "user:1", headID, 30*time.Second)
-	if taker.Verdict != consumer.KeyLeaseAcquired {
+	taker := claim(ctx, keyLeases, "user:1", headID, 30*time.Second)
+	if taker.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want takeover after expiry, got %s", taker.Verdict))
 	}
-	if taker.Token.Bytes == short.Token.Bytes {
+	if taker.Token == short.Token {
 		die("takeover must mint a fresh token")
 	}
-	staleReleased, err := cd.ReleaseKeyLease(ctx, short)
+	staleReleased, err := keyLeases.ReleaseKeyLease(ctx, short)
 	must(err)
 	if staleReleased {
 		die("the expired holder's release matched a row -- it must not delete the new holder's row")
@@ -175,7 +178,7 @@ func main() {
 	if n := leaseCount(ctx); n != 1 {
 		die(fmt.Sprintf("the expired holder's release must not remove the new holder's row, count=%d", n))
 	}
-	takerReleased, err := cd.ReleaseKeyLease(ctx, taker)
+	takerReleased, err := keyLeases.ReleaseKeyLease(ctx, taker)
 	must(err)
 	if !takerReleased {
 		die("the new holder's release should match its row")
@@ -185,23 +188,23 @@ func main() {
 	step("N concurrent acquires on one free key admit exactly one")
 	const workers = 10
 	var wg sync.WaitGroup
-	results := make([]*consumer.KeyLeaseClaim, workers)
+	results := make([]*keyleasecontroller.KeyLeaseClaim, workers)
 	for i := range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = claim(ctx, cd, "user:1", headID, 30*time.Second)
+			results[i] = claim(ctx, keyLeases, "user:1", headID, 30*time.Second)
 		}()
 	}
 	wg.Wait()
-	var winner *consumer.KeyLeaseClaim
+	var winner *keyleasecontroller.KeyLeaseClaim
 	acquired, busy := 0, 0
 	for _, r := range results {
 		switch r.Verdict {
-		case consumer.KeyLeaseAcquired:
+		case keyleasecontroller.KeyLeaseAcquired:
 			acquired++
 			winner = r
-		case consumer.KeyLeaseBusy:
+		case keyleasecontroller.KeyLeaseBusy:
 			busy++
 		default:
 			die(fmt.Sprintf("unexpected verdict %s in the race", r.Verdict))
@@ -210,7 +213,7 @@ func main() {
 	if acquired != 1 || busy != workers-1 {
 		die(fmt.Sprintf("want exactly 1 winner, got acquired=%d busy=%d", acquired, busy))
 	}
-	released, err = cd.ReleaseKeyLease(ctx, winner)
+	released, err = keyLeases.ReleaseKeyLease(ctx, winner)
 	must(err)
 	if !released {
 		die("race winner's release should match its row")
@@ -220,28 +223,28 @@ func main() {
 	step("old-then-new order: a newer head produced mid-hold waits for the release")
 	publish(ctx, wp, "user:3", 1)
 	old3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicID)
-	holding := claim(ctx, cd, "user:3", old3, 30*time.Second)
-	if holding.Verdict != consumer.KeyLeaseAcquired {
+	holding := claim(ctx, keyLeases, "user:3", old3, 30*time.Second)
+	if holding.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want acquired on user:3, got %s", holding.Verdict))
 	}
 	publish(ctx, wp, "user:3", 2)
 	new3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicID)
-	if c := claim(ctx, cd, "user:3", new3, 30*time.Second); c.Verdict != consumer.KeyLeaseBusy {
+	if c := claim(ctx, keyLeases, "user:3", new3, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy for the new head while the old holds the key, got %s", c.Verdict))
 	}
-	if c := claim(ctx, cd, "user:3", old3, 30*time.Second); c.Verdict != consumer.KeyLeaseSuperseded {
+	if c := claim(ctx, keyLeases, "user:3", old3, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseSuperseded {
 		die(fmt.Sprintf("want superseded for the held message now that the head moved, got %s", c.Verdict))
 	}
-	released, err = cd.ReleaseKeyLease(ctx, holding)
+	released, err = keyLeases.ReleaseKeyLease(ctx, holding)
 	must(err)
 	if !released {
 		die("the old holder's release should match its row")
 	}
-	after := claim(ctx, cd, "user:3", new3, 30*time.Second)
-	if after.Verdict != consumer.KeyLeaseAcquired {
+	after := claim(ctx, keyLeases, "user:3", new3, 30*time.Second)
+	if after.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want the new head to acquire after the release, got %s", after.Verdict))
 	}
-	released, err = cd.ReleaseKeyLease(ctx, after)
+	released, err = keyLeases.ReleaseKeyLease(ctx, after)
 	must(err)
 	if !released {
 		die("the new head's release should match its row")
@@ -251,12 +254,12 @@ func main() {
 	step("janitor sweep removes expired rows, leaves live ones")
 	publish(ctx, wp, "user:2", 1)
 	head2 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:2'`, topicID)
-	expired := claim(ctx, cd, "user:1", headID, 50*time.Millisecond)
-	if expired.Verdict != consumer.KeyLeaseAcquired {
+	expired := claim(ctx, keyLeases, "user:1", headID, 50*time.Millisecond)
+	if expired.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("sweep setup: want acquired, got %s", expired.Verdict))
 	}
-	live := claim(ctx, cd, "user:2", head2, 30*time.Second)
-	if live.Verdict != consumer.KeyLeaseAcquired {
+	live := claim(ctx, keyLeases, "user:2", head2, 30*time.Second)
+	if live.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("sweep setup: want acquired, got %s", live.Verdict))
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -280,7 +283,7 @@ func main() {
 	fmt.Println("\n✅ KEY LEASE LAB PASSED")
 }
 
-func claim(ctx context.Context, cd *consumer.ConsumerDatastore[Rec], key string, msgID int64, d time.Duration) *consumer.KeyLeaseClaim {
+func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key string, msgID int64, d time.Duration) *keyleasecontroller.KeyLeaseClaim {
 	c, err := cd.ClaimKeyLease(ctx, topicID, groupID, key, msgID, d)
 	must(err)
 	return c

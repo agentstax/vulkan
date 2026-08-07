@@ -3,20 +3,11 @@ package datastore
 import (
 	"context"
 	"errors"
-	"time"
-
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
-
-type WorkerInstanceData struct {
-	Id        int64
-	WorkerId  int64
-	Token     pgtype.UUID
-	ExpiresAt time.Time
-	Attempts  int
-}
 
 // ClaimInstance inserts a worker_instance row iff live instances are under
 // target_instances. nil = declined (already at target, target 0, or the

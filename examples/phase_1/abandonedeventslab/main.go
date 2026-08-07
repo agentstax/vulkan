@@ -12,7 +12,8 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
@@ -62,17 +63,14 @@ func main() {
 	must(wp.Register(ctx))
 	seed(ctx, wp, 3)
 
-	cfg := &consumer.ConsumerConfig{
-		DisableGracefulShutdown: true,
-		BatchLimit:              3,
-		QueueSize:               10,
-		MessageConcurrency:      3,
-		Message:                 &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
-		TimeoutGrace:            50 * time.Millisecond,
+	cfg := &messageconsumer.MessageConsumerConfig{
+		BatchLimit:         3,
+		QueueSize:          10,
+		MessageConcurrency: 3,
+		Message:            &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
+		TimeoutGrace:       50 * time.Millisecond,
 	}
-	cfg.WithDefaults()
-
-	consumerDatastore, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	consumerDatastore, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
 	must(err)
@@ -95,7 +93,7 @@ func main() {
 		return nil
 	}
 
-	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
 	must(err)
 	must(definition.Declare(ctx, owner))
 

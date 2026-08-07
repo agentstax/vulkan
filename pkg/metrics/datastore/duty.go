@@ -2,24 +2,12 @@ package datastore
 
 import (
 	"context"
-	"time"
-
 	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
 // overdueFactor: how many rates past its gate a duty counts as overdue.
 const overdueFactor = 10
-
-// DutySnapshot is one maintenance row's health.
-type DutySnapshot struct {
-	Duty          string
-	TopicName     string
-	ConsumerGroup string
-	Rate          time.Duration
-	GateAge       time.Duration // now() - can_run_after: negative while claimed into the future, positive once eligible and unclaimed
-	Overdue       bool          // GateAge > overdueFactor * Rate -- nobody is maintaining this duty (or its owner is stuck)
-	Attempts      int
-}
 
 // DutySnapshots is every duty's current health, queried live from Postgres --
 // works cold, nothing needs to be running.

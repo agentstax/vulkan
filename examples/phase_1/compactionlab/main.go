@@ -33,7 +33,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -80,7 +82,11 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[KeyedRecord](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	must(err)
+	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -101,7 +107,7 @@ func main() {
 	publish(ctx, wp, "user:2", 1, false) // id 5
 	publish(ctx, wp, "user:2", 2, false) // id 6 <- latest for user:2
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 10, maxRangeReclaims, lease, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 10, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -110,25 +116,25 @@ func main() {
 	assertIDs("only the latest version of each key, plus the unkeyed row, come back", ids(claim.Messages), []int64{3, 4, 6})
 	assertInt("all 6 rows still physically exist -- compaction filters, never deletes", rowCount(ctx, ds, tp.Id), 6)
 
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
 	committed := advance(ctx, md, tp.Id)
 	assertInt("committed advances over the whole range regardless of compaction", committed, 6)
 
 	// ===== a delivered version isn't retroactively unsent once superseded (ids 7-8) =====
 	step("user:3 v1 delivered, THEN v2 is published and delivered on its own later read")
 	publish(ctx, wp, "user:3", 1, false) // id 7
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 7)
 
 	publish(ctx, wp, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed only ever moves forward", committed, 8)
 	assertTrue("v1 (id 7) is still physically present -- compaction never rewrites history", rowExists(ctx, ds, tp.Id, 7))
@@ -136,7 +142,7 @@ func main() {
 	// ===== the crash/reclaim race (ids 9-10) =====
 	step("WORKER 1 claims user:4 v1, then crashes before Commit")
 	publish(ctx, wp, "user:4", 1, false) // id 9
-	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil")
@@ -152,7 +158,7 @@ func main() {
 	time.Sleep(lease + 500*time.Millisecond)
 
 	step("WORKER 2 polls: reclaims the exact expired range -- v1 is now superseded")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -167,33 +173,33 @@ func main() {
 	fmt.Println("     value eventually arrives), not a per-message one -- v1 owed nothing further")
 	fmt.Println("     once v2 superseded it, exactly like Kafka's own compacted-topic contract")
 
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim2.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim2.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed moves past the (empty) reclaimed range", committed, 9)
 
 	step("v2 still gets its own, independent delivery -- the obligation carried forward")
-	claim3, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
+	claim3, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:4 v2 delivered", ids(claim3.Messages), []int64{10})
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim3.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim3.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 10)
 
 	// ===== tombstones are a pure app convention (ids 11-12) =====
 	step("a message marked deleted in its OWN payload is delivered normally on both paths")
 	publish(ctx, wp, "user:5", 1, true) // id 11, CURSOR path
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
 	assertTrue("payload's own Deleted field survives -- the query never special-cases it", decode(claim.Messages[0].Payload).Deleted)
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 11)
 
 	publish(ctx, wp, "user:6", 1, true)                                           // id 12, LIFECYCLE path
 	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
-	must(cd.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
-	delivered, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
+	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
+	delivered, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
 	must(err)
 	assertIDs("FanOut applies the identical compaction predicate across its whole scan, not a range",
 		deliveryIDs(delivered), []int64{3, 4, 6, 8, 10, 11, 12})
@@ -295,7 +301,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 	return v
 }
 
-func ids(msgs []consumer.MessageRow) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -303,7 +309,7 @@ func ids(msgs []consumer.MessageRow) []int64 {
 	return out
 }
 
-func deliveryIDs(rows []consumer.DeliveryRow) []int64 {
+func deliveryIDs(rows []deliveryconsumercontroller.Delivery) []int64 {
 	out := make([]int64, len(rows))
 	for i, r := range rows {
 		out[i] = r.MessageId
@@ -353,4 +359,4 @@ func assertTrue(label string, cond bool) {
 	fmt.Printf("  ✓ %s\n", label)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

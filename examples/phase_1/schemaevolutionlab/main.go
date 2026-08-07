@@ -44,6 +44,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	consumermessage "github.com/agentstax/vulkan/pkg/consumer/message"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -132,7 +133,7 @@ func main() {
 			}
 		}
 
-		meta, ok := consumer.MetaFromContext(ctx)
+		meta, ok := consumermessage.MetaFromContext(ctx)
 		if !ok {
 			return fmt.Errorf("no MessageMeta in context for key %q", work.Key)
 		}
@@ -244,8 +245,10 @@ func waitForDistinctCount(ctx context.Context, ds *coredatastore.PostgresDatasto
 			stop()
 			return nil
 		}
-		if err := consumer.SleepWithContext(ctx, 20*time.Millisecond); err != nil {
+		select {
+		case <-ctx.Done():
 			return nil // ctx already stopped some other way
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 	die(fmt.Sprintf("timed out waiting for %d distinct keys in v2's compaction_head", want))

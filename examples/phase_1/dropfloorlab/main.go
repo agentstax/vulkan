@@ -32,7 +32,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -74,7 +75,9 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -105,7 +108,7 @@ func main() {
 	assertPartitions("partition 0 dropped", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2})
 
 	step("groupPast claims on -- unaffected by the drop, reads real messages from partition 1")
-	claim := freshClaim(ctx, cd, tp.Id, groupPast, 5)
+	claim := freshClaim(ctx, messageConsumers, tp.Id, groupPast, 5)
 	assertInt("claimed advances 4 -> 9", claim.Lease.High, 9)
 	assertInt("5 real messages came back", int64(len(claim.Messages)), 5)
 
@@ -113,7 +116,7 @@ func main() {
 	reset(ctx, cd, ds, tp.Id, groupInside)
 
 	step("groupInside claims (0,4] -- exactly the dropped range")
-	claim = freshClaim(ctx, cd, tp.Id, groupInside, 4)
+	claim = freshClaim(ctx, messageConsumers, tp.Id, groupInside, 4)
 	assertInt("claimed still advances 0 -> 4 (id arithmetic, not row existence)", claim.Lease.High, 4)
 	assertInt("but the batch is empty -- those rows are gone", int64(len(claim.Messages)), 0)
 	fmt.Println("  -> a dropped partition is a hole a lagging cursor walks straight over, not a stall")
@@ -148,7 +151,7 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
 	must(err)
 }
 
-func reset(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], ds *coredatastore.PostgresDatastore, topicID int64, group string) {
+func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *coredatastore.PostgresDatastore, topicID int64, group string) {
 	groupID = mustGroupID(cd.RegisterGroup(ctx, topicID, group))
 	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupID)
 	must(err)
@@ -164,7 +167,7 @@ func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, group s
 	must(err)
 }
 
-func freshClaim(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], topicID int64, group string, limit int) *consumer.ClaimedRange {
+func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, topicID int64, group string, limit int) *messageconsumercontroller.ClaimedRange {
 	claim, err := cd.ClaimMessagesWithCursor(ctx, topicID, groupID, limit, 3, 30*time.Second, false)
 	must(err)
 	if claim == nil {
@@ -224,4 +227,4 @@ func assertPartitions(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

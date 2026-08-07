@@ -2,12 +2,10 @@ package datastore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"time"
-
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/jackc/pgx/v5"
+	"time"
 )
 
 // DueCronJobs lists the cron jobs due to fire. Unlocked -- each row is
@@ -43,20 +41,6 @@ func (d *CronSchedulerDatastore) dueCronJobs(ctx context.Context) ([]int64, erro
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
-}
-
-// DueCronJobData is the locked row snapshot one producing transaction works
-// from.
-type DueCronJobData struct {
-	Id                int64
-	Name              string
-	Schedule          string
-	Concurrency       string
-	Timeout           time.Duration
-	Data              json.RawMessage
-	Metadata          json.RawMessage
-	NextScheduledTime time.Time
-	DbNow             time.Time
 }
 
 // ClaimDueCronJob rereads the row under the caller's transaction lock,

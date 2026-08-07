@@ -25,7 +25,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -63,7 +65,9 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -87,7 +91,7 @@ func main() {
 
 	// ===== WORKER 1: claim a range, tick the roller, then CRASH (never commit) =====
 	step("WORKER 1 claims a range, then crashes mid-range (never Commit)")
-	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -111,7 +115,7 @@ func main() {
 
 	// ===== WORKER 2: Reclaim-before-Claim grabs the EXACT expired range =====
 	step("WORKER 2 polls: Reclaim-before-Claim picks up the expired lease")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -132,7 +136,7 @@ func main() {
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
 	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
-	if err := cd.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, nil, nil, nil, 5*time.Second, false); !errors.Is(err, consumer.ErrLeaseLost) {
+	if err := messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, 5*time.Second, false); !errors.Is(err, consumerbase.ErrLeaseLost) {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)
@@ -140,7 +144,7 @@ func main() {
 	fmt.Println("  dead worker's stale Commit was rejected with ErrLeaseLost")
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
-	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
@@ -152,12 +156,12 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 		must(err)
 		if c == nil {
 			break // caught up
 		}
-		must(cd.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, false))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, md, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
@@ -201,7 +205,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 	return v
 }
 
-func ids(msgs []consumer.MessageRow) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -234,4 +238,4 @@ func assert(label string, got, want int64) {
 	fmt.Printf("  ✓ %s (%d)\n", label, got)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

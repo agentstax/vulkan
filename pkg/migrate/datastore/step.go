@@ -3,25 +3,10 @@ package datastore
 import (
 	"context"
 	"fmt"
-
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-type StepType string
-
-const (
-	StepUp   StepType = "UP"
-	StepDown StepType = "DOWN"
-)
-
-type Step struct {
-	Version  int64
-	Validate func(context.Context, datastore.Querier, int64) error
-	Apply    func(context.Context, datastore.Querier, int64) error
-	NoTxn    bool
-}
 
 // NewStep checks a step's shape.
 // version is where the DB lands after step is complete.

@@ -27,7 +27,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -108,7 +109,9 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -153,13 +156,13 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var events []rangeEvent
 	for i := range numRanges {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 		events = append(events, rangeEvent{commitTime: time.Now(), high: claim.Lease.High})
 	}
 
@@ -184,7 +187,9 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -196,13 +201,13 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var stalenesses []float64
 	for i := range numRanges {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 
 		start := time.Now()
 		_, err = md.AdvanceWaterline(ctx, tp.Id, groupID)
@@ -268,7 +273,9 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -280,12 +287,12 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	start := time.Now()
 	for range int(n) {
-		claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
 		must(err)
 		if claim == nil {
 			break
 		}
-		must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 		if syncAdvance {
 			_, err := md.AdvanceWaterline(ctx, tp.Id, groupID)
 			must(err)
@@ -323,7 +330,9 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -338,12 +347,12 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	for range goroutines {
 		wg.Go(func() {
 			for range perGoroutine {
-				claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
+				claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
 				must(err)
 				if claim == nil {
 					return
 				}
-				must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+				must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 				if syncAdvance {
 					_, err := md.AdvanceWaterline(ctx, tp.Id, groupID)
 					must(err)
@@ -408,4 +417,4 @@ func die(msg string) {
 	os.Exit(1)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

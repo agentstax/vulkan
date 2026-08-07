@@ -45,6 +45,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -88,7 +92,9 @@ func main() {
 	must(err)
 	topicID = tp.Id
 
-	cd, err := consumer.NewConsumerDatastore[Rec](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[Rec](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -136,7 +142,7 @@ func main() {
 	publishUnkeyed(ctx, wp, 1)
 	g3 := groupID(ctx, cd, "deferlab.g3")
 	unkeyedHeld := -1
-	consume(ctx, tp.Name, "deferlab.g3", &consumer.ConsumerConfig{ConcurrencyOverride: common.ConcurrencyDefer}, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "deferlab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyDefer}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "" {
 			unkeyedHeld = leaseCount(ctx, g3)
 		}
@@ -152,7 +158,7 @@ func main() {
 	publish(ctx, wp, "u:3", 1, common.ConcurrencyDefer)
 	g4 := groupID(ctx, cd, "deferlab.g4")
 	overrideHeld := -1
-	consume(ctx, tp.Name, "deferlab.g4", &consumer.ConsumerConfig{ConcurrencyOverride: common.ConcurrencyAllow}, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "deferlab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyAllow}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:3" {
 			overrideHeld = leaseCount(ctx, g4)
 		}
@@ -333,11 +339,11 @@ func main() {
 	// backstop's 'inflight' predicate. Driven directly so no consumer touches
 	// the row mid-check.
 	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
-	must(cd.KillExceptions(ctx, tp.Id, g8, 3, false))
+	must(exceptionConsumers.KillExceptions(ctx, tp.Id, g8, 3, false))
 	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
 		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
 	}
-	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, false); err != nil {
+	if _, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, false); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if n := deliveryAttempts(ctx, g8, v7); n != 99 {
@@ -346,7 +352,7 @@ func main() {
 	// the unexpired key_lease alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
 	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
-	if _, err := cd.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, false); err != nil {
+	if _, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, false); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
@@ -450,8 +456,11 @@ func main() {
 	g11 := groupID(ctx, cd, "deferlab.g11")
 	// a short per-message Timeout so v1's sleeping run is abandoned mid-hold --
 	// its failure recording frees the key while the goroutine sleeps on
-	tortureCfg := func() *consumer.ConsumerConfig {
-		return &consumer.ConsumerConfig{Message: &common.MessageOptions{Timeout: 500 * time.Millisecond}}
+	tortureMessageCfg := func() *messageconsumer.MessageConsumerConfig {
+		return &messageconsumer.MessageConsumerConfig{Message: &common.MessageOptions{Timeout: 500 * time.Millisecond}}
+	}
+	tortureExceptionCfg := func() *exceptionconsumer.ExceptionConsumerConfig {
+		return &exceptionconsumer.ExceptionConsumerConfig{Message: &common.MessageOptions{Timeout: 500 * time.Millisecond}}
 	}
 	started11 := make(chan struct{})
 	var once11 sync.Once
@@ -463,10 +472,10 @@ func main() {
 		}
 		return nil
 	}
-	stopCursor11a := startConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), 3, tortureFunc)
-	stopCursor11b := startConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), 3, tortureFunc)
-	stopRedeem11a := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), tortureFunc)
-	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureCfg(), tortureFunc)
+	stopCursor11a := startConsumer(ctx, tp.Name, "deferlab.g11", tortureMessageCfg(), 3, tortureFunc)
+	stopCursor11b := startConsumer(ctx, tp.Name, "deferlab.g11", tortureMessageCfg(), 3, tortureFunc)
+	stopRedeem11a := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
+	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
 
 	publish(ctx, wp, "u:11", 1, common.ConcurrencyDefer)
 	tv1 := messageID(ctx, "u:11", 1)
@@ -536,20 +545,18 @@ func main() {
 
 // consume runs a MessageConsumer for group until done() (10s cap), with pool
 // concurrent processors.
-func consume(ctx context.Context, topicName, group string, cfg *consumer.ConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec], done func() bool) {
+func consume(ctx context.Context, topicName, group string, cfg *messageconsumer.MessageConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec], done func() bool) {
 	if cfg == nil {
-		cfg = &consumer.ConsumerConfig{}
+		cfg = &messageconsumer.MessageConsumerConfig{}
 	}
-	cfg.DisableGracefulShutdown = true
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
 
 	cfg.QueueSize = 50
 	cfg.MessageConcurrency = pool
-	cfg.WithDefaults()
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -573,19 +580,17 @@ func consume(ctx context.Context, topicName, group string, cfg *consumer.Consume
 
 // startConsumer runs a MessageConsumer for group until the returned stop is
 // called. cfg may be nil.
-func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.ConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec]) func() {
+func startConsumer(ctx context.Context, topicName, group string, cfg *messageconsumer.MessageConsumerConfig, pool int, consumerFunc consumer.ConsumerFunc[Rec]) func() {
 	if cfg == nil {
-		cfg = &consumer.ConsumerConfig{}
+		cfg = &messageconsumer.MessageConsumerConfig{}
 	}
-	cfg.DisableGracefulShutdown = true
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
 	cfg.QueueSize = 50
 	cfg.MessageConcurrency = pool
-	cfg.WithDefaults()
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -603,18 +608,15 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *consumer.C
 // startExceptionConsumer runs an ExceptionConsumer (exception retries +
 // deferred redemption, one claim) for group until the returned stop is
 // called. cfg may be nil.
-func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *consumer.ConsumerConfig, consumerFunc consumer.ConsumerFunc[Rec]) func() {
+func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *exceptionconsumer.ExceptionConsumerConfig, consumerFunc consumer.ConsumerFunc[Rec]) func() {
 	if cfg == nil {
-		cfg = &consumer.ConsumerConfig{}
+		cfg = &exceptionconsumer.ExceptionConsumerConfig{}
 	}
-	cfg.DisableGracefulShutdown = true
 	cfg.BatchLimit = 50
 	cfg.ClaimPollRate = 50 * time.Millisecond
-	cfg.ExceptionInitialBackoff = 50 * time.Millisecond
-	cfg.WithDefaults()
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := consumer.NewExceptionConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := exceptionconsumer.NewExceptionConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -635,7 +637,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 	tp, err := topicController.GetTopic(ctx, topicName, topic.SchemaVersion(1))
 	must(err)
 
-	consumerDatastore, err := consumer.NewConsumerDatastore[Rec](ds, nil)
+	consumerDatastore, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
 	must(err)
@@ -703,7 +705,7 @@ func publishUnkeyed(ctx context.Context, wp *producer.Producer[Rec], version int
 	must(err)
 }
 
-func groupID(ctx context.Context, cd *consumer.ConsumerDatastore[Rec], name string) int64 {
+func groupID(ctx context.Context, cd *consumercontroller.ConsumerController, name string) int64 {
 	g, err := cd.RegisterGroup(ctx, topicID, name)
 	must(err)
 	return g.Id

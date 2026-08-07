@@ -2,21 +2,11 @@ package datastore
 
 import (
 	"context"
-	"sync/atomic"
-	"time"
-
 	"github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"sync/atomic"
+	"time"
 )
-
-// EventSnapshot is derived from the __system.metrics event stream for one
-// (topic, group) -- no in-process counter is kept anywhere, every number
-// here comes from pairing abandoned/cleared events already on the topic.
-type EventSnapshot struct {
-	Outstanding         int64         // abandoned events with no matching cleared
-	Total               int64         // distinct abandoned keys currently in the window
-	SelfClearLatencyAvg time.Duration // mean(cleared.At - abandoned.At) over matched pairs; 0 if no pair has cleared yet
-}
 
 // EventSnapshot reads and pairs the abandoned/cleared events for (topicID,
 // group) directly off __system.metrics's own message log -- no

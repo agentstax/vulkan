@@ -24,7 +24,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -52,7 +54,11 @@ func main() {
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
 	must(err)
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	must(err)
+	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
@@ -71,24 +77,24 @@ func main() {
 	_, err = wp.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, false)
 	must(err)
 	if claim == nil {
 		die("expected a claim, got nil")
 	}
 	// deliberately never Commit -- leaves the lease open
 
-	must(cd.FanOut(ctx, tp.Id, groupID, 100)) // materializes a 'ready' delivery row, left unclaimed
+	must(deliveryConsumers.FanOut(ctx, tp.Id, groupID, 100)) // materializes a 'ready' delivery row, left unclaimed
 
 	// claim it via the lifecycle path and fail it once -- status flips
 	// ready->inflight->ready in place (still 1 delivery row) while parking one
 	// delivery_log row, without touching cursor/lease (lifecycle path skips both).
-	claimedLifecycle, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, groupID, 10)
+	claimedLifecycle, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, groupID, 10)
 	must(err)
 	if len(claimedLifecycle) != 1 {
 		die(fmt.Sprintf("expected 1 lifecycle claim, got %d", len(claimedLifecycle)))
 	}
-	must(cd.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DisableDeliveryLog))
+	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DisableDeliveryLog))
 
 	for _, table := range []string{"cursor", "lease", "binding"} {
 		assertGroupRowCount(ctx, ds, table, groupID, 1, "before Destroy")
@@ -207,4 +213,4 @@ func die(msg string) {
 	os.Exit(1)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

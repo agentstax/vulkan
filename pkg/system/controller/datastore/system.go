@@ -4,28 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"time"
 )
-
-// SystemData models the system table row exactly.
-type SystemData struct {
-	Id                    int64
-	AlertRepeatIntervalNs int64
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-}
-
-// AlterSystemData is UpdateSystem's sparse patch -- a nil field means leave
-// the column unchanged.
-type AlterSystemData struct {
-	AlertRepeatIntervalNs *int64
-}
 
 // RegisterSystem creates the shared control-plane schema and resolves the
 // singleton system row, returning it. A row that already exists must match

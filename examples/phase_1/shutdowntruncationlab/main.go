@@ -40,7 +40,10 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
@@ -82,7 +85,11 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	must(err)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -93,17 +100,14 @@ func main() {
 	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wp, 3)
 
-	cfg := &consumer.ConsumerConfig{
-		DisableGracefulShutdown: true,
-		BatchLimit:              3,
-		QueueSize:               10,
-		MessageConcurrency:      1,
-		Message:                 &vulkancommon.MessageOptions{Timeout: 1 * time.Second},
-		QueueMargin:             500 * time.Millisecond,
-		AckMargin:               500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
+	cfg := &messageconsumer.MessageConsumerConfig{
+		BatchLimit:         3,
+		QueueSize:          10,
+		MessageConcurrency: 1,
+		Message:            &vulkancommon.MessageOptions{Timeout: 1 * time.Second},
+		QueueMargin:        500 * time.Millisecond,
+		AckMargin:          500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
 	}
-	cfg.WithDefaults()
-
 	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupID, group)
 	must(err)
 	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
@@ -127,7 +131,7 @@ func main() {
 	}
 	// claimed straight off the definition -- no manager, so nothing respawns the
 	// execution and the truncation the lab asserts on is the only one
-	definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
 	must(err)
 	must(definition.Declare(ctx, owner))
 
@@ -162,12 +166,12 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, tp.DisableDeliveryLog)
+	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, tp.DisableDeliveryLog)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
 	}
-	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
+	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
 	committed = advance(ctx, md, tp.Id)
 	assert("committed advances to the narrowed low", committed, 2)
 	assert("deliveries drained (exception pop-deleted)", deliveries(ctx, ds, tp.Id), 0)
@@ -175,7 +179,7 @@ func main() {
 	// the narrowed lease's 2s duration already elapsed during the 5.5s backoff
 	// sleep above -- no separate wait needed before reclaiming it.
 	step("reclaim: only the untouched suffix comes back, not the resolved prefix")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 3, 3, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 3, 3, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -185,7 +189,7 @@ func main() {
 	assert("reclaimed exactly the untouched suffix (1 message)", int64(len(claim2.Messages)), 1)
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
-	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
@@ -261,4 +265,4 @@ func assert(label string, got, want int64) {
 	fmt.Printf("  ✓ %s (%d)\n", label, got)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

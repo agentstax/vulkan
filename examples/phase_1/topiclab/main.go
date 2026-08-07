@@ -32,7 +32,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -78,7 +79,9 @@ func main() {
 		}
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -137,14 +140,14 @@ func main() {
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
 		headBefore+1, headBefore+2, headBefore+3, headBefore+1, headBefore+1, headBefore+2)
 
-	claim, err := cd.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 10, 3, 30*time.Second, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 10, 3, 30*time.Second, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
 	}
 	assertInt64s("retroactive binding applies to the pre-existing message, CURSOR path filters out the non-match",
 		ids(claim.Messages), []int64{headBefore + 1, headBefore + 2})
-	must(cd.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, 5*time.Second, false))
 	committed := advance(ctx, md, topicC.Id, groupRouteID)
 	assertInt("committed still advances over the WHOLE range, not just the matches", committed, claim.Lease.High)
 
@@ -166,12 +169,12 @@ func main() {
 	must(md.EnsureNextPartition(ctx, topicD.Id, partitionSize))
 	time.Sleep(ttl + ttlMargin)
 
-	claimX, err := cd.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, false)
+	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, false)
 	must(err)
 	if claimX == nil {
 		die("expected groupX to claim a fresh range")
 	}
-	must(cd.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, 5*time.Second, false))
 	advance(ctx, md, topicD.Id, groupXID)
 	fmt.Println("  groupX (sliceX reader) is now fully caught up on the only traffic that exists")
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,
@@ -265,7 +268,7 @@ func assertPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 	assertInt64s(label, got, want)
 }
 
-func ids(msgs []consumer.MessageRow) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -301,4 +304,4 @@ func assertInt64s(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

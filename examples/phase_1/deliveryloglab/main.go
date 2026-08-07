@@ -29,7 +29,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -89,8 +91,8 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 	}
 	failingId, successId := claim.Messages[0].Id, claim.Messages[1].Id
 
-	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "simulated processing failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "simulated processing failure"}}
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DisableDeliveryLog))
 
 	assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, 0, "simulated processing failure", true)
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, successId, 0)
@@ -103,6 +105,8 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
 	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario2", topiccontroller.TopicConfig{})
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
+	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
@@ -117,20 +121,20 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 	}
 	failingId := claim.Messages[0].Id
 
-	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "attempt 0 failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "attempt 0 failure"}}
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DisableDeliveryLog))
 	assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, 0, "attempt 0 failure", true)
 
 	const maxAttempts = 5 // stays well below dead-letter for both retries below
 	for _, attempt := range []int{1, 2} {
 		time.Sleep(1500 * time.Millisecond) // outlives both the 300ms initial and CalculateDelay(0)=1s can_run_after
-		claimed, err := cd.ClaimExceptions(ctx, tp.Id, groupID, 10, maxAttempts, 5*time.Second, tp.DisableDeliveryLog)
+		claimed, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, 10, maxAttempts, 5*time.Second, tp.DisableDeliveryLog)
 		must(err)
 		if len(claimed) != 1 || claimed[0].MessageId != failingId {
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
-		must(cd.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog, nil))
+		must(exceptionConsumers.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DisableDeliveryLog, nil))
 		assertDeliveryLogRow(ctx, ds, tp.Id, groupID, failingId, attempt, errText, true)
 	}
 
@@ -161,8 +165,8 @@ func scenarioDisableDeliveryLog(ctx context.Context, ds *coredatastore.PostgresD
 		die("expected a fresh claim")
 	}
 	failingId := claim.Messages[0].Id
-	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "should never be logged"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "should never be logged"}}
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DisableDeliveryLog))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, failingId, 0) // the failure was never logged
 	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                     // the real park still happened
@@ -227,20 +231,22 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *consumer.ConsumerDatastore[common.Work], *producer.Producer[common.Work], int64) {
+func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumercontroller.MessageConsumerController, *producer.Producer[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &cfg)
 	must(err)
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
 	must(wp.Register(ctx))
-	return tp, cd, wp, groupID
+	return tp, messageConsumers, wp, groupID
 }
 
 func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
@@ -255,7 +261,7 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], wp *producer.Producer[common.Work], tp *topic.Topic, groupID int64, n int) int64 {
+func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, wp *producer.Producer[common.Work], tp *topic.Topic, groupID int64, n int) int64 {
 	seed(ctx, wp, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, n, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)
@@ -263,8 +269,8 @@ func failOne(ctx context.Context, cd *consumer.ConsumerDatastore[common.Work], w
 		die("expected a fresh claim")
 	}
 	failingId := claim.Messages[0].Id
-	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "retention scenario failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, nil, nil, nil, 300*time.Millisecond, tp.DisableDeliveryLog))
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "retention scenario failure"}}
+	must(cd.Commit(ctx, tp.Id, groupID, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DisableDeliveryLog))
 	return failingId
 }
 
@@ -327,4 +333,4 @@ func die(msg string) {
 	os.Exit(1)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

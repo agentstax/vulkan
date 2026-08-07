@@ -3,43 +3,9 @@ package datastore
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"github.com/agentstax/vulkan/internal/topic"
+	"time"
 )
-
-// ConsumerGroupSnapshot is the live, DB-truth picture of one (group, topic)'s
-// queue -- answers "what's true right now" for state that multiple consumer
-// processes share (cursor/delivery/lease), which no in-process counter can.
-type ConsumerGroupSnapshot struct {
-	ConsumerGroup string // whose picture this is
-
-	Head      int64 // highest message id ever appended -- the log frontier
-	Claimed   int64 // cursor.claimed -- the read frontier
-	Committed int64 // cursor.committed -- everything <= this is done/dead
-
-	Backlog  int64 // Head - Committed -- the waterline gap
-	Inflight int64 // Claimed - Committed -- claimed but not yet resolved
-
-	ReadyExceptions    int64 // retryable, will be reclaimed
-	InflightExceptions int64 // currently leased out to a retry attempt
-	DeferredExceptions int64 // waiting for their compaction key's key_lease to free
-	DeadExceptions     int64 // DLQ size
-
-	OldestUnackedAge time.Duration // age of the oldest ready/inflight/deferred exception; 0 if none outstanding
-
-	OpenLeases int64
-}
-
-// GroupLag is a group's drain progress -- the retire-relevant distillation
-// of its snapshot.
-type GroupLag struct {
-	ConsumerGroup    string
-	Committed        int64
-	Head             int64
-	Lag              int64 // Head - Committed, floored at 0
-	ParkedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
-}
 
 func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
 	return GroupLag{

@@ -38,6 +38,8 @@ How could we generalize this system to be a debezium like replication system. ie
 
 ***REALLY WANT*** our exception claiming logic really does need a complete revamp. It should better follow our topic / cursor logic instead of being queue based we end up having a lot of custom logic because of that. The problem with converting it is we would really need the async ordered-index claim table such that we could have a materialized ordered view. The thought is with cursor: exception message is tried and fails -> pushed to unordered topic -> unordered topic materialized new retry attempt to top of ordered-index which is picked up soon because materilization is only slightly ahead of claiming (some buffer size like how our claiming buffer works)
 
+Could do something intresting with APIs and make a standardized API design for producing and consuming. Producing would really just be a POST request with batching as first class imo. Consuming is a bit more interesting, SSE and websockets are intresting and would need some kind of ACK mechanicsm to advance the cursor. Also adding just a basic GET or QUERY http method could be the simpler alternative.
+
 ## BEFORE V1
 
 review / refine the comments in fanOut (pkg/consumer/datastore.go) -- both the Go
@@ -163,10 +165,6 @@ For consumer and system need to abstract out the declaring functionality in same
 
 Need to refactor rest of packages in same patterns as worker and topic
 
-split the consumer worker-name constants (pkg/consumer/worker.go) into per-package
-constants once that refactor is complete -- like how janitor, waterline and scheduler
-each own theirs
-
 our controllers have redundant verbage: topicController.GetTopic -- should just be get
 
 base config.go files should be renamed to 'package'_config.go -- its a more extensible pattern.
@@ -176,3 +174,18 @@ tick rate of consumers should be set in worker metadata - in fact we need to ret
 Once or during producer is refactored we need to decide on fate of lifecycle context within consumer and producer. They should be similar and make sense conceptually. But I'd like to get rid of that mergeLifecycle if it makes sense and weird shutdown handler logic
 
 pkg/consumer/(consumer|base).go or whatever the turn into / split into after refactor could use a bit more cleaning up in code, its not bad but it can be improved.
+
+should probably move pkg/context and pkg/logger into pkg/common to unify for now until finalized public surface api is achieved
+
+Need to look at the new functionality it go 1.27 before deciding on the final public API shape. Their new features with generics could actually make generics work well and completely infer they type via method and type inference.
+
+consider rename split again to:
+*Definition
+- Name() string
+*Declarer
+- Declare(*Definition) error
+*Provisioner
+- Provision(*Definition) *Instance, error
+*Instance
+- Run() error
+-- Right now we have Definition and Provisioner mixed which doesn't make sense logically

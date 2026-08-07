@@ -28,7 +28,9 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	consumermessage "github.com/agentstax/vulkan/pkg/consumer/message"
+	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/monitor"
@@ -75,12 +77,12 @@ func main() {
 
 	gates := newReleaseGates()
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
-		meta, _ := consumer.MetaFromContext(ctx)
+		meta, _ := consumermessage.MetaFromContext(ctx)
 		<-gates.wait(meta.Id) // never returns until released -- simulates a stuck goroutine
 		return nil
 	}
 
-	cfg := &consumer.ConsumerConfig{
+	cfg := &messageconsumer.MessageConsumerConfig{
 		BatchLimit:         2,
 		QueueSize:          10,
 		MessageConcurrency: 2,
@@ -93,8 +95,7 @@ func main() {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	cfg.WithDefaults()
-	consumerDatastore, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	consumerDatastore, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
 	must(err)
@@ -112,7 +113,7 @@ func main() {
 		must(err)
 		must(abandonedEvents.Register(runCtx))
 
-		definition, err := consumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+		definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
 		must(err)
 		must(definition.Declare(runCtx, owner))
 

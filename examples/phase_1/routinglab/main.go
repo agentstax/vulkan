@@ -28,7 +28,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -64,7 +66,11 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	must(err)
+	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -98,7 +104,7 @@ func main() {
 
 	// ===== CURSOR path: cursorGroup only sees the 2 matching messages =====
 	step("cursorGroup claims (head, head+5] -- expect only msg1 and msg2 back")
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, limit, maxRangeReclaims, lease, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, limit, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -109,13 +115,13 @@ func main() {
 	assertIDs("only msg1 (published before the binding existed) and msg2 (deeper hierarchy) match",
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
-	must(cd.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
 	committed := advance(ctx, md, tp.Id, cursorGroupID)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
 	step("controlGroup claims the identical range -- expect all 5 back, unaffected by cursorGroup's binding")
-	claim, err = cd.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, limit, maxRangeReclaims, lease, false)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, limit, maxRangeReclaims, lease, false)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -124,13 +130,13 @@ func main() {
 	assertIDs("an unbound group receives every message, including the NULL routing_key one",
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
-	must(cd.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, 5*time.Second, false))
 	advance(ctx, md, tp.Id, controlGroupID)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
-	must(cd.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
-	deliveries, err := cd.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, limit)
+	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
+	deliveries, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, limit)
 	must(err)
 	fmt.Printf("  claimed deliveries: %v\n", deliveryIDs(deliveries))
 	assertIDs("payments.charge is the only message materialized as a delivery",
@@ -155,7 +161,7 @@ func publish(ctx context.Context, wp *producer.Producer[common.Work], routingKey
 // resets all three groups to a clean slate and fast-forwards their cursors to
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
-func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumer.ConsumerDatastore[common.Work], topicID int64, groups ...string) (int64, map[string]int64) {
+func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumercontroller.ConsumerController, topicID int64, groups ...string) (int64, map[string]int64) {
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
 	gids := map[string]int64{}
 	for _, g := range groups {
@@ -187,7 +193,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 	return v
 }
 
-func ids(msgs []consumer.MessageRow) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -195,7 +201,7 @@ func ids(msgs []consumer.MessageRow) []int64 {
 	return out
 }
 
-func deliveryIDs(rows []consumer.DeliveryRow) []int64 {
+func deliveryIDs(rows []deliveryconsumercontroller.Delivery) []int64 {
 	out := make([]int64, len(rows))
 	for i, r := range rows {
 		out[i] = r.MessageId
@@ -231,4 +237,4 @@ func assertIDs(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }

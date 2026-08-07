@@ -23,7 +23,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/consumer"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
+	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -61,7 +63,11 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumer.NewConsumerDatastore[common.Work](ds, nil)
+	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	must(err)
+	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -85,7 +91,7 @@ func main() {
 
 	// ===== range 1: message 3 fails, the rest succeed =====
 	step("claim range 1 (ids 1-5), message 3 fails processing")
-	claim1, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -93,8 +99,8 @@ func main() {
 	fmt.Printf("  claimed (%d,%d]  ids=%v\n", claim1.Lease.Low, claim1.Lease.High, ids(claim1.Messages))
 
 	const failingId = int64(3)
-	exceptions := []consumer.MessageException{{MessageId: failingId, Err: "simulated processing failure"}}
-	must(cd.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, exceptions, nil, nil, nil, 5*time.Second, false))
+	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "simulated processing failure"}}
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, exceptions, 5*time.Second, false))
 	assert("one parked exception", deliveries(ctx, ds, tp.Id), 1)
 
 	committed := advance(ctx, md, tp.Id)
@@ -103,12 +109,12 @@ func main() {
 
 	// ===== range 2: fully succeeds, but committed stays pinned on message 3 =====
 	step("claim + commit range 2 (ids 6-10), all succeed")
-	claim2, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 	must(err)
 	if claim2 == nil {
 		die("expected a fresh claim, got nil")
 	}
-	must(cd.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
 	committed = advance(ctx, md, tp.Id)
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
@@ -122,13 +128,13 @@ func main() {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := cd.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, tp.DisableDeliveryLog)
+	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, tp.DisableDeliveryLog)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))
 	}
 	fmt.Printf("  claimed exception message_id=%d attempts=%d\n", claimedExceptions[0].MessageId, claimedExceptions[0].Attempts)
-	must(cd.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
+	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
 	assert("exception pop-deleted on success", deliveries(ctx, ds, tp.Id), 0)
 
 	// ===== committed jumps straight past the resolved exception =====
@@ -140,12 +146,12 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
 		must(err)
 		if c == nil {
 			break // caught up
 		}
-		must(cd.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, nil, nil, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, false))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, md, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
@@ -180,7 +186,7 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 	return v
 }
 
-func ids(msgs []consumer.MessageRow) []int64 {
+func ids(msgs []messageconsumercontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -205,4 +211,4 @@ func assert(label string, got, want int64) {
 	fmt.Printf("  ✓ %s (%d)\n", label, got)
 }
 
-func mustGroupID(g *consumer.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }
