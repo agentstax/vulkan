@@ -47,13 +47,6 @@ review / refine the comments in fanOut
 comments and the ones inside snapshotSql/scanSql. remember SQL comments ship to
 Postgres, so every comment edit needs a live lab re-run (routing-lab is the cheapest).
 
-replace the two `SELECT * FROM cursor` queries
-(pkg/consumer/messageconsumer/controller/datastore/freshclaim.go:57,
-pkg/consumer/deliveryconsumer/controller/datastore/fanout.go:51) with explicit column lists --
-conventions.md now bans SELECT * outright: any column ADD breaks old binaries
-via pgx scan-count mismatch, turning even additive migrations into breaking
-ones for exactly the rolling-deploy window that should be safe
-
 group / order config options and placement of fields in tables via likeness. ie similiar fields should be logically next to each other for easier understanding.
 
 Need to confirm that us manually creating UUIDv7 via go code is compatible with how PG18 better optimizes storage / pages with their built in UUIDv7(). ie their isn't some metadata field that somehow gets set which tells tuples to be writen sequentially in pages it is just the values themselves

@@ -109,9 +109,9 @@ Three layers per domain (template: worker, topic):
   somewhere else -- readers scan position 1 for what the thing operates on.
 - No functional-options pattern. Every config struct: exported
   `WithDefaults()` (fills zero fields, mutates + returns receiver) then
-  `Validate()` (validates the RESOLVED config), both in the package's own
-  `config.go`. Constructors nil-check required deps, then default+validate
-  their own config, returning errors all the way through.
+  `Validate()` (validates the RESOLVED config), both in the config's own file
+  (see Package layout). Constructors nil-check required deps, then
+  default+validate their own config, returning errors all the way through.
 
 ## Migrations
 
@@ -127,6 +127,11 @@ Three layers per domain (template: worker, topic):
   longer matches the scan destination count). Explicit column lists are what
   keep adds non-breaking, leaving column removal as the only change that needs
   the two-release expand/contract dance.
+- That ban covers CTEs and subqueries, which have no scan destination to break:
+  a `SELECT *` there silently widens with the table, so a later column lands in
+  a `FOR UPDATE` row image or a join nobody re-read. Name the columns the CTE's
+  own body reads and nothing more -- the list is then the CTE's contract, and a
+  new column reaches it only when someone adds it deliberately.
 - More than 3 selected columns go one per line. A wrapped column list hides
   which columns moved in a diff and makes the scan destinations hard to line
   up against. 3 or fewer stay on the `SELECT` line.
