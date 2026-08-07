@@ -54,7 +54,12 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 	// TODO - projector could likely tracked head in a RWMutex such that it doesn't need to be calculated here
 	cursorSql := `
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
-			SELECT * FROM cursor
+			SELECT
+				claimed,
+				settled_head,
+				pending_head,
+				pending_xmax
+			FROM cursor
 			WHERE consumer_group_id = $1
 			-- must FOR UPDATE, get race if using a basic snapshot read
 			-- two same-group workers racing on one cursor row (claimed=0, head=200, limit=100):

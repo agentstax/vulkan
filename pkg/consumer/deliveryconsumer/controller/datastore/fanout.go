@@ -48,7 +48,8 @@ func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicID int64, g
 
 	scanSql := fmt.Sprintf(`
 		WITH old_values AS (
-			SELECT * FROM cursor
+			SELECT committed, pending_head, pending_xmax
+			FROM cursor
 			WHERE consumer_group_id = $1
 			-- FOR UPDATE so a racing same-group peer's committed advance is
 			-- visible to our scan start (same race as the cursor claim path)
