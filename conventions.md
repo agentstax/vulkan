@@ -68,9 +68,13 @@ Three layers per domain (template: worker, topic):
 - `pkg/<x>/controller` -- the only door to persistence: all public verbs, ALL
   input validation, `to*` adapters, schema asserts. Files: `<x>_config.go`,
   `controller_config.go`.
-- `pkg/<x>/controller/datastore` -- table-exact `*Data` structs + all SQL;
-  trusts inputs, no re-validation.
+- `pkg/<x>/controller/datastore` -- all SQL; trusts inputs, no re-validation.
+  Table-exact `*Data` structs live in `model.go`, never beside the query that
+  returns them. An enum type travels with its const block.
 - Import arrows point strictly downward.
+- A config file is named for the struct it declares, never bare `config.go` --
+  `<x>_config.go`, `controller_config.go`, `datastore_config.go`. A package
+  that grows a second config gets a second file rather than a shared one.
 
 ## Datastores
 

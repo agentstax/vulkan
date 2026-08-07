@@ -42,12 +42,14 @@ Could do something intresting with APIs and make a standardized API design for p
 
 ## BEFORE V1
 
-review / refine the comments in fanOut (pkg/consumer/datastore.go) -- both the Go
+review / refine the comments in fanOut
+(pkg/consumer/deliveryconsumer/controller/datastore/fanout.go) -- both the Go
 comments and the ones inside snapshotSql/scanSql. remember SQL comments ship to
 Postgres, so every comment edit needs a live lab re-run (routing-lab is the cheapest).
 
-replace the two `SELECT * FROM cursor` queries (pkg/consumer/datastore.go:1035,
-pkg/consumer/datastore_lifecycle.go:54) with explicit column lists --
+replace the two `SELECT * FROM cursor` queries
+(pkg/consumer/messageconsumer/controller/datastore/freshclaim.go:57,
+pkg/consumer/deliveryconsumer/controller/datastore/fanout.go:51) with explicit column lists --
 conventions.md now bans SELECT * outright: any column ADD breaks old binaries
 via pgx scan-count mismatch, turning even additive migrations into breaking
 ones for exactly the rolling-deploy window that should be safe
@@ -76,8 +78,8 @@ need to rename consumer waterline stuff to something like cursor.committed. Wate
 
 Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
 
-document the "consumerFunc hard timeout, goroutine abandoned" error (callSafely in
-pkg/consumer/base.go): what it means and how to prevent it -- handle ctx.Done() inside
+document the "consumerFunc hard timeout, goroutine abandoned" error (CallSafely in
+pkg/consumer/base/consumer.go): what it means and how to prevent it -- handle ctx.Done() inside
 consumerFunc, or raise TimeoutGrace. it should be rare; the abandoned goroutine is a
 real side effect, not just a warning.
 
@@ -173,7 +175,7 @@ tick rate of consumers should be set in worker metadata - in fact we need to ret
 
 Once or during producer is refactored we need to decide on fate of lifecycle context within consumer and producer. They should be similar and make sense conceptually. But I'd like to get rid of that mergeLifecycle if it makes sense and weird shutdown handler logic
 
-pkg/consumer/(consumer|base).go or whatever the turn into / split into after refactor could use a bit more cleaning up in code, its not bad but it can be improved.
+pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,execution}.go could use a bit more cleaning up in code, its not bad but it can be improved.
 
 should probably move pkg/context and pkg/logger into pkg/common to unify for now until finalized public surface api is achieved
 
@@ -189,3 +191,5 @@ consider rename split again to:
 *Instance
 - Run() error
 -- Right now we have Definition and Provisioner mixed which doesn't make sense logically
+
+Should think through making all tables append only by nature this would make us apache cassandra compliant have audit / debuggability for all operations and improve some levels of efficancy (partion based drops on everything) the main trade off is in complexity and in hot-path throughput explicitly for reads
