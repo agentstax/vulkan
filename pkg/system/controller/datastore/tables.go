@@ -181,7 +181,8 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			worker_id BIGINT NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
 			token UUID NOT NULL DEFAULT gen_random_uuid(), -- renew/release match on it, so only the creating instance can touch its row
 			expires_at TIMESTAMPTZ NOT NULL,               -- heartbeat-renewed; past it the instance is dead
-			attempts INT NOT NULL DEFAULT 0                -- consecutive run failures. resets on success
+			attempts INT NOT NULL DEFAULT 0,               -- consecutive run failures. resets on success
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
 	`
 	if _, err := tx.Exec(ctx, createWorkerInstanceSql); err != nil {

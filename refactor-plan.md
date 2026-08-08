@@ -379,8 +379,29 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
      register to Consume, and the stopped logs lose their "reason" field (only one side
      can ask). The ErrNotRegistered branch was already unreachable under the
      Definition/Execution surface and is deleted.
-11. metrics — DutySnapshots -> worker snapshots read from worker/worker_instance
-    (heartbeat + liveness based; cron-job metrics split out per TODO).
+11. metrics — split in two (2026-08-08):
+    11a. worker snapshots — BUILT (2026-08-08). WorkerSnapshot in
+    pkg/metrics/datastore (model.go + worker.go): carries *common.Owner
+    (system-owned rows show owner name "system"), worker name, and a
+    WorkerStatus verdict — suspended (target 0) / claimed (>=1 live instance) /
+    unclaimed — via classifyWorker; the counts are TargetInstances,
+    LiveInstances, Attempts (max streak across live), OldestInstanceAge
+    (now() - min created_at, the time-since-claimed ask), UnclaimedFor
+    (now() - max expires_at while nothing live; 0 once dead rows are reaped —
+    best-effort on purpose, rows linger exactly when nothing is healthy enough
+    to clean them). worker_instance gained created_at TIMESTAMPTZ DEFAULT
+    now() (baseline DDL edit; all write paths use explicit column lists).
+    monitor/worker.go: RegisterWorkerGauges mirrors the duty trio —
+    vulkan.worker.state.{unclaimed_workers,oldest_unclaimed_age,failing_workers};
+    no caller yet, same standing as RegisterDutyGauges (wiring lands with the
+    chunk 12 daemon / CLI). Old DutySnapshots/duty.go untouched — dies chunk 13.
+    Verified on a fresh DB: a live consumer shows its exact claim chain as
+    claimed with correct owners; topic/system manager rows read unclaimed (the
+    chunk 12 gap, now visible in metrics).
+    11b. cron-job snapshots — split out of DutySnapshot per TODO: CronJobSnapshot
+    from cron_job (schedule, next/last scheduled, suspended), overdue = flat
+    threshold on now() - next_scheduled_time (user chose flat over
+    interval-scaled 2026-08-08). Not started.
 12. CLI — `vulkan maintain run` daemon becomes the worker-based daemon.
 13. cleanup — delete pkg/maintain, maintenance DDL + seeds, metrics duty.go, CLI
     maintain commands; rewrite labs (maintenancelab, dutybackofflab, scratchpad
@@ -675,3 +696,5 @@ with worker rows. They are chunk 13's rewrite list:
   read-models back in pkg/consumer. Rejected outright by the user:
   consumer.NewConsumer is the most common entry point and stays.
 - deleting LIFECYCLE outright instead of parking it. See `## sequencing`.
+
+TODO - need to integrate this as a phase into learning plan after completion

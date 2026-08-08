@@ -1,6 +1,10 @@
 package datastore
 
-import "time"
+import (
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/common"
+)
 
 // ConsumerGroupSnapshot is the live, DB-truth picture of one (group, topic)'s
 // queue -- answers "what's true right now" for state that multiple consumer
@@ -33,6 +37,29 @@ type GroupLag struct {
 	Head             int64
 	Lag              int64 // Head - Committed, floored at 0
 	ParkedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
+}
+
+type WorkerStatus string
+
+const (
+	WorkerSuspended WorkerStatus = "suspended" // target_instances = 0
+	WorkerClaimed   WorkerStatus = "claimed"   // at least one live instance row
+	WorkerUnclaimed WorkerStatus = "unclaimed" // no live instance row and not suspended
+)
+
+// WorkerSnapshot is one worker row's claim state: how many instances should
+// be running it, how many are, and for how long.
+type WorkerSnapshot struct {
+	Owner  *common.Owner
+	Name   string
+	Status WorkerStatus
+
+	TargetInstances int
+	LiveInstances   int
+
+	Attempts          int           // largest consecutive-failure streak across live instances
+	OldestInstanceAge time.Duration // now() - the oldest live instance's created_at; 0 with none live
+	UnclaimedFor      time.Duration // now() - the newest expires_at, while nothing is live; 0 while claimed, and 0 if expired rows were already deleted
 }
 
 // DutySnapshot is one maintenance row's health.
