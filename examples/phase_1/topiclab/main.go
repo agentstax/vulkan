@@ -88,13 +88,13 @@ func main() {
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
-	wpA, err := producer.NewProducer[common.Work](topicA.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpA, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpAInstance, err := wpA.Register(ctx)
+	wpAInstance, err := wpA.Register(ctx, topicA.Name, topic.SchemaVersion(1))
 	must(err)
-	wpB, err := producer.NewProducer[common.Work](topicB.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpB, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpBInstance, err := wpB.Register(ctx)
+	wpBInstance, err := wpB.Register(ctx, topicB.Name, topic.SchemaVersion(1))
 	must(err)
 	for range 3 {
 		publish(ctx, wpAInstance, "")
@@ -128,9 +128,9 @@ func main() {
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
-	wpC, err := producer.NewProducer[common.Work](topicC.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpC, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpCInstance, err := wpC.Register(ctx)
+	wpCInstance, err := wpC.Register(ctx, topicC.Name, topic.SchemaVersion(1))
 	must(err)
 	groupRoute := "topiclab.route"
 	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute))
@@ -156,9 +156,9 @@ func main() {
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
-	wpD, err := producer.NewProducer[common.Work](topicD.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpD, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpDInstance, err := wpD.Register(ctx)
+	wpDInstance, err := wpD.Register(ctx, topicD.Name, topic.SchemaVersion(1))
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging

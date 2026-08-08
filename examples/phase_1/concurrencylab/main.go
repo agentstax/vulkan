@@ -65,9 +65,9 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	runOrdering(ctx, ds, wpInstance, tp.Name)
@@ -108,7 +108,7 @@ func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wpIns
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
 func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
-	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		QueueSize:               batchLimit + poolSize,
@@ -118,7 +118,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 		AckMargin:               2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx)
+	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1))
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -185,7 +185,7 @@ func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wpI
 }
 
 func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, group string, poolSize, target int) time.Duration {
-	wc, err := consumer.NewConsumer[common.Work](group, topicName, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		QueueSize:               target + poolSize,
@@ -195,7 +195,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 		AckMargin:               2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx)
+	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1))
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)

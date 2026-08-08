@@ -60,9 +60,9 @@ func main() {
 	must(err)
 	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	step("seed a row in every topic-scoped table")

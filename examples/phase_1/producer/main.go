@@ -65,12 +65,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	wp, err := producer.NewProducer[common.Work](t.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, t.Name, topic.SchemaVersion(1))
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

@@ -74,9 +74,9 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
@@ -117,9 +117,9 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)

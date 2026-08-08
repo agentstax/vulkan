@@ -92,9 +92,9 @@ func main() {
 	v1, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 
-	wp1, err := producer.NewProducer[V1Order](name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp1, err := producer.NewProducer[V1Order](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wp1Instance, err := wp1.Register(ctx)
+	wp1Instance, err := wp1.Register(ctx, name, topic.SchemaVersion(1))
 	must(err)
 
 	step("v1 holds live keyed traffic for 5 users")
@@ -112,9 +112,9 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(2), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp2, err := producer.NewProducer[V2Order](name, topic.SchemaVersion(2), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp2, err := producer.NewProducer[V2Order](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wp2Instance, err := wp2.Register(ctx)
+	wp2Instance, err := wp2.Register(ctx, name, topic.SchemaVersion(2))
 	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
@@ -220,7 +220,7 @@ func bridgeIdempotencyKey(sourceID int64) uuid.UUID {
 // margins and a short ExceptionInitialBackoff keep the crash/retry path fast
 // instead of waiting out the library's production-sized defaults.
 func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore, name string) *consumer.ConsumerInstance[V1Order] {
-	c, err := consumer.NewConsumer[V1Order](group, name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	c, err := consumer.NewConsumer[V1Order](ds, &consumer.ConsumerConfig{
 		BatchLimit:              1,
 		QueueSize:               4,
 		MessageConcurrency:      1,
@@ -232,7 +232,7 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 		DisableGracefulShutdown: true,
 	})
 	must(err)
-	cInstance, err := c.Register(ctx)
+	cInstance, err := c.Register(ctx, group, name, topic.SchemaVersion(1))
 	must(err)
 	return cInstance
 }

@@ -74,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	workConsumer, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	workConsumer, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		Type:               consumer.CURSOR,
 		BatchLimit:         10,
 		QueueSize:          concurrencyLimit * 10,
@@ -89,7 +89,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	workInstance, err := workConsumer.Register(ctx)
+	workInstance, err := workConsumer.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1))
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

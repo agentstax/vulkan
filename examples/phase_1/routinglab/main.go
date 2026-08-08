@@ -74,9 +74,9 @@ func main() {
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	head, gids := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)

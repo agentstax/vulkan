@@ -75,7 +75,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc, err := consumer.NewConsumer[common.Work](*groupPtr, t.Name, topic.SchemaVersion(1), ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		BatchLimit: batch,
 		// buffer stays shallow but must be >= batch (validate) and big enough to keep the pool fed
 		QueueSize:          batch + conc,
@@ -90,7 +90,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wcInstance, err := wc.Register(ctx)
+	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1))
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

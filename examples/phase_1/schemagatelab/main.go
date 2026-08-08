@@ -57,13 +57,13 @@ func main() {
 
 	// 1. supported schema -> Register succeeds -----------------------------------
 	section("producer Register succeeds at the supported schema (v1)")
-	_, err = newProducer(name, ds).Register(ctx)
+	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	check(err == nil, "Register accepted at v1")
 
 	// 2. system schema ahead of the binary --------------------------------------
 	section("system schema ahead of the binary -> Register refused")
 	bump(ctx, pool, sysOwner, 2)
-	_, err = newProducer(name, ds).Register(ctx)
+	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	show(err)
 	check(err != nil && strings.Contains(err.Error(), "system schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version and the fix")
@@ -72,7 +72,7 @@ func main() {
 	// 3. topic schema ahead of the binary ---------------------------------------
 	section("topic schema ahead of the binary -> Register refused")
 	bump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
-	_, err = newProducer(name, ds).Register(ctx)
+	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	show(err)
 	check(err != nil && strings.Contains(err.Error(), "topic schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the topic version and the fix")
@@ -82,8 +82,8 @@ func main() {
 	fmt.Println("   Register fails fast and legibly when the schema is outside the supported range.")
 }
 
-func newProducer(name string, ds *coredatastore.PostgresDatastore) *producer.Producer[event] {
-	p, err := producer.NewProducer[event](name, topic.SchemaVersion(1), ds, nil)
+func newProducer(ds *coredatastore.PostgresDatastore) *producer.Producer[event] {
+	p, err := producer.NewProducer[event](ds, nil)
 	must(err)
 	return p
 }

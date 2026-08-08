@@ -77,9 +77,9 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -130,9 +130,9 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[json.RawMessage](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[json.RawMessage](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	errs := make([]error, total)
@@ -180,9 +180,9 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -221,9 +221,9 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	for range 15 {
@@ -290,9 +290,9 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost

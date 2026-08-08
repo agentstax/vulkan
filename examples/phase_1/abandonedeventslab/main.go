@@ -58,9 +58,9 @@ func main() {
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
 
 	step("driving a hard timeout so one message gets abandoned then self-clears")
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 	seed(ctx, wpInstance, 3)
 

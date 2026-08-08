@@ -53,19 +53,19 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	p, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, nil)
+	p, err := producer.NewProducer[Message](ds, nil)
 	must(err)
 
 	// ===== non-cancellable lifecycle context =====
 	step("Register(context.Background()) without opting out -- expect the teaching error")
-	_, err = p.Register(context.Background())
+	_, err = p.Register(context.Background(), tp.Name, topic.SchemaVersion(1))
 	requireIs(err, vulkanerrors.ErrLifecycleContextNotCancellable)
 
 	// ===== the graceful path =====
 	step("Register with the real lifecycle context, then produce")
 	lifecycle, stop := vulkanctx.LifecycleContext(nil)
 	defer stop()
-	instance, err := p.Register(lifecycle)
+	instance, err := p.Register(lifecycle, tp.Name, topic.SchemaVersion(1))
 	must(err)
 	work, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
 	must(err)
@@ -81,7 +81,7 @@ func main() {
 	step("Register again -- a fresh instance produces, the wound-down one stays down")
 	lifecycle2, stop2 := vulkanctx.LifecycleContext(nil)
 	defer stop2()
-	replacement, err := p.Register(lifecycle2)
+	replacement, err := p.Register(lifecycle2, tp.Name, topic.SchemaVersion(1))
 	must(err)
 	_, err = replacement.Produce(ctx, &Message{Data: "second life"}, producer.ProduceOptions{})
 	must(err)
@@ -91,9 +91,9 @@ func main() {
 
 	// ===== fire-and-forget escape hatch =====
 	step("producer with DisableGracefulShutdown -- Background is accepted")
-	ff, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	ff, err := producer.NewProducer[Message](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	ffInstance, err := ff.Register(context.Background())
+	ffInstance, err := ff.Register(context.Background(), tp.Name, topic.SchemaVersion(1))
 	must(err)
 	_, err = ffInstance.Produce(ctx, &Message{Data: "fire and forget"}, producer.ProduceOptions{})
 	must(err)

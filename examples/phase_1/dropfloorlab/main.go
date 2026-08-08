@@ -81,9 +81,9 @@ func main() {
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	wpInstance, err := wp.Register(ctx)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
