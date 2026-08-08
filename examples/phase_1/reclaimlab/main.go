@@ -73,11 +73,12 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	for range seedRows {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

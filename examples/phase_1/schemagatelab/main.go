@@ -57,12 +57,13 @@ func main() {
 
 	// 1. supported schema -> Register succeeds -----------------------------------
 	section("producer Register succeeds at the supported schema (v1)")
-	check(newProducer(name, ds).Register(ctx) == nil, "Register accepted at v1")
+	_, err = newProducer(name, ds).Register(ctx)
+	check(err == nil, "Register accepted at v1")
 
 	// 2. system schema ahead of the binary --------------------------------------
 	section("system schema ahead of the binary -> Register refused")
 	bump(ctx, pool, sysOwner, 2)
-	err = newProducer(name, ds).Register(ctx)
+	_, err = newProducer(name, ds).Register(ctx)
 	show(err)
 	check(err != nil && strings.Contains(err.Error(), "system schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version and the fix")
@@ -71,7 +72,7 @@ func main() {
 	// 3. topic schema ahead of the binary ---------------------------------------
 	section("topic schema ahead of the binary -> Register refused")
 	bump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
-	err = newProducer(name, ds).Register(ctx)
+	_, err = newProducer(name, ds).Register(ctx)
 	show(err)
 	check(err != nil && strings.Contains(err.Error(), "topic schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the topic version and the fix")

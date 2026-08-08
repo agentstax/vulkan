@@ -42,10 +42,10 @@ func main() {
 	step("two producers (simulating two processes) interleave abandoned/cleared for the same group")
 	producerA, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(producerA.Register(ctx))
+	go func() { must(producerA.Run(ctx)) }()
 	producerB, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(producerB.Register(ctx))
+	go func() { must(producerB.Run(ctx)) }()
 
 	producerA.Add(ctx, topicID, group, 1, 1) // matched pair, cleared by A
 	producerB.Add(ctx, topicID, group, 2, 1) // matched pair, cleared by B

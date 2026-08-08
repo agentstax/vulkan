@@ -92,7 +92,8 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[KeyedRecord](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup))
 
 	const lease = 2 * time.Second
@@ -100,12 +101,12 @@ func main() {
 
 	// ===== latest-per-key survives, older rows stay physically present (ids 1-6) =====
 	step("publish 3 versions of user:1, 1 unkeyed row, 2 versions of user:2")
-	publish(ctx, wp, "user:1", 1, false) // id 1
-	publish(ctx, wp, "user:1", 2, false) // id 2
-	publish(ctx, wp, "user:1", 3, false) // id 3 <- latest for user:1
-	publish(ctx, wp, "", 0, false)       // id 4, unkeyed -- never compacted
-	publish(ctx, wp, "user:2", 1, false) // id 5
-	publish(ctx, wp, "user:2", 2, false) // id 6 <- latest for user:2
+	publish(ctx, wpInstance, "user:1", 1, false) // id 1
+	publish(ctx, wpInstance, "user:1", 2, false) // id 2
+	publish(ctx, wpInstance, "user:1", 3, false) // id 3 <- latest for user:1
+	publish(ctx, wpInstance, "", 0, false)       // id 4, unkeyed -- never compacted
+	publish(ctx, wpInstance, "user:2", 1, false) // id 5
+	publish(ctx, wpInstance, "user:2", 2, false) // id 6 <- latest for user:2
 
 	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 10, maxRangeReclaims, lease, false)
 	must(err)
@@ -122,7 +123,7 @@ func main() {
 
 	// ===== a delivered version isn't retroactively unsent once superseded (ids 7-8) =====
 	step("user:3 v1 delivered, THEN v2 is published and delivered on its own later read")
-	publish(ctx, wp, "user:3", 1, false) // id 7
+	publish(ctx, wpInstance, "user:3", 1, false) // id 7
 	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
@@ -130,7 +131,7 @@ func main() {
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 7)
 
-	publish(ctx, wp, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
+	publish(ctx, wpInstance, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
 	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
@@ -141,7 +142,7 @@ func main() {
 
 	// ===== the crash/reclaim race (ids 9-10) =====
 	step("WORKER 1 claims user:4 v1, then crashes before Commit")
-	publish(ctx, wp, "user:4", 1, false) // id 9
+	publish(ctx, wpInstance, "user:4", 1, false) // id 9
 	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	if claim1 == nil {
@@ -152,7 +153,7 @@ func main() {
 		claim1.Lease.Low, claim1.Lease.High, shortTok(claim1.Lease.Token))
 
 	step("a newer version of user:4 lands while v1 is still (unknowingly) in flight")
-	publish(ctx, wp, "user:4", 2, false) // id 10
+	publish(ctx, wpInstance, "user:4", 2, false) // id 10
 
 	step(fmt.Sprintf("sleep %s -- let the crashed lease expire", lease+500*time.Millisecond))
 	time.Sleep(lease + 500*time.Millisecond)
@@ -187,7 +188,7 @@ func main() {
 
 	// ===== tombstones are a pure app convention (ids 11-12) =====
 	step("a message marked deleted in its OWN payload is delivered normally on both paths")
-	publish(ctx, wp, "user:5", 1, true) // id 11, CURSOR path
+	publish(ctx, wpInstance, "user:5", 1, true) // id 11, CURSOR path
 	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, false)
 	must(err)
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
@@ -196,7 +197,7 @@ func main() {
 	committed = advance(ctx, md, tp.Id)
 	assertInt("committed", committed, 11)
 
-	publish(ctx, wp, "user:6", 1, true)                                           // id 12, LIFECYCLE path
+	publish(ctx, wpInstance, "user:6", 1, true)                                   // id 12, LIFECYCLE path
 	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
 	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
 	delivered, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
@@ -214,7 +215,7 @@ func main() {
 	// ===== EXPLAIN: unkeyed-only traffic never pays the compaction subplan =====
 	step("EXPLAIN ANALYZE: an unkeyed-only read never executes the compaction subplan")
 	for range 5 {
-		publish(ctx, wp, "", 0, false) // ids 13-17
+		publish(ctx, wpInstance, "", 0, false) // ids 13-17
 	}
 	explainNoCompactionSubplan(ctx, ds, tp.Id, 12, 17)
 
@@ -227,8 +228,8 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[KeyedRecord], key string, version int, deleted bool) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[KeyedRecord], key string, version int, deleted bool) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
 		return &KeyedRecord{Key: key, Version: version, Deleted: deleted}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)

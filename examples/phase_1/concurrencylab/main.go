@@ -67,10 +67,11 @@ func main() {
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
-	runOrdering(ctx, ds, wp, tp.Name)
-	runThroughput(ctx, ds, wp, tp.Name)
+	runOrdering(ctx, ds, wpInstance, tp.Name)
+	runThroughput(ctx, ds, wpInstance, tp.Name)
 
 	fmt.Println("\n✅ CONCURRENCY LAB PASSED")
 	fmt.Println("   a slow message only blocks the rest of its batch when the pool can't run")
@@ -80,9 +81,9 @@ func main() {
 
 // ---- scenario 1: ordering ----
 
-func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *producer.Producer[common.Work], topicName string) {
+func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
 	step("ORDERING -- one slow message, three fast ones, same batch")
-	seedSleep(ctx, wp, []int{slowMs, 0, 0, 0})
+	seedSleep(ctx, wpInstance, []int{slowMs, 0, 0, 0})
 
 	step("pool=1 -- dispatch is serial, fast messages can't start until the slow one releases its only permit")
 	slowAt, fastAt := drain(ctx, ds, topicName, "phase14a.concurrencylab.n1", 1, 4)
@@ -159,14 +160,14 @@ const (
 	minSpeedup      = 3.0 // conservative vs pool=8's 8x theoretical ceiling -- avoids flaking on a loaded machine
 )
 
-func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wp *producer.Producer[common.Work], topicName string) {
+func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
 	step("THROUGHPUT -- 40 fixed-cost messages, pool=1 (serial) vs pool=8 (parallel)")
 
 	sleeps := make([]int, throughputCount)
 	for i := range sleeps {
 		sleeps[i] = int(throughputCost.Milliseconds())
 	}
-	seedSleep(ctx, wp, sleeps)
+	seedSleep(ctx, wpInstance, sleeps)
 
 	elapsed1 := drainTimed(ctx, ds, topicName, "phase14a.concurrencylab.tput1", 1, throughputCount)
 	tput1 := float64(throughputCount) / elapsed1.Seconds()
@@ -221,9 +222,9 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 
 // ---- helpers ----
 
-func seedSleep(ctx context.Context, wp *producer.Producer[common.Work], sleepMsList []int) {
+func seedSleep(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], sleepMsList []int) {
 	for _, ms := range sleepMsList {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			work, err := common.NewWork(30, "admin@example.com")
 			if err != nil {
 				return nil, err

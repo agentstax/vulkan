@@ -62,7 +62,8 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	step("seed a row in every topic-scoped table")
 
@@ -74,7 +75,7 @@ func main() {
 	}
 	// CompactionKey seeds compaction_head; the default (protected) idempotency
 	// claim seeds idempotency_key -- one Produce call, two tables.
-	_, err = wp.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
+	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
 	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, false)

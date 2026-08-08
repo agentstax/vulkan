@@ -60,11 +60,12 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
 	for range 14 {
-		publish(ctx, wp)
+		publish(ctx, wpInstance)
 		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	partitionCount := countPartitions(ctx, ds, tp.Id)
@@ -87,8 +88,8 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work]) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})
 	must(err)

@@ -70,14 +70,15 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	if err := wp.Register(ctx); err != nil {
+	wpInstance, err := wp.Register(ctx)
+	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
 
 	// WORK
 	for range *countPtr {
-		work, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		work, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err

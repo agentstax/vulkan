@@ -166,8 +166,6 @@ base config.go files should be renamed to 'package'_config.go -- its a more exte
 
 tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type
 
-Once or during producer is refactored we need to decide on fate of lifecycle context within consumer and producer. They should be similar and make sense conceptually. But I'd like to get rid of that mergeLifecycle if it makes sense and weird shutdown handler logic
-
 pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,execution}.go could use a bit more cleaning up in code, its not bad but it can be improved.
 
 should probably move pkg/context and pkg/logger into pkg/common to unify for now until finalized public surface api is achieved
@@ -186,3 +184,5 @@ consider rename split again to:
 -- Right now we have Definition and Provisioner mixed which doesn't make sense logically
 
 Should think through making all tables append only by nature this would make us apache cassandra compliant have audit / debuggability for all operations and improve some levels of efficancy (partion based drops on everything) the main trade off is in complexity and in hot-path throughput explicitly for reads
+
+Once or during producer is refactored we need to decide on fate of lifecycle context within consumer and producer. They should be similar and make sense conceptually. But I'd like to get rid of that mergeLifecycle if it makes sense and weird shutdown handler logic

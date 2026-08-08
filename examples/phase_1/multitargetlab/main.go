@@ -222,7 +222,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.Producer[common.Work], func()) {
+func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.ProducerInstance[common.Work], func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
@@ -233,8 +233,9 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
-	return tp, wp, func() {
+	wpInstance, err := wp.Register(ctx)
+	must(err)
+	return tp, wpInstance, func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}
 }

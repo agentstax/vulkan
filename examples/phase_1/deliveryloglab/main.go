@@ -231,7 +231,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumercontroller.MessageConsumerController, *producer.Producer[common.Work], int64) {
+func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumercontroller.MessageConsumerController, *producer.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -245,13 +245,14 @@ func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix s
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
-	return tp, messageConsumers, wp, groupID
+	wpInstance, err := wp.Register(ctx)
+	must(err)
+	return tp, messageConsumers, wpInstance, groupID
 }
 
-func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
+func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)
@@ -261,8 +262,8 @@ func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
 // failOne claims a fresh range of n messages and fails the first one -- returns
 // its id. Used by the retention scenarios, which only care about one failure
 // per range, not the retry-distinctness scenario 2 already covers.
-func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, wp *producer.Producer[common.Work], tp *topic.Topic, groupID int64, n int) int64 {
-	seed(ctx, wp, n)
+func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, wpInstance *producer.ProducerInstance[common.Work], tp *topic.Topic, groupID int64, n int) int64 {
+	seed(ctx, wpInstance, n)
 	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupID, n, 3, 5*time.Second, tp.DisableDeliveryLog)
 	must(err)
 	if claim == nil {

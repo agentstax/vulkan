@@ -319,8 +319,19 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
    - queue + poolLimiter leave the constructor signature for cfg knobs — each spawned
      instance must own its queue; a caller-shared one across manager-spawned lives is
      broken. Closes TODO.md's "refactor out queue/poolLimiter" item. ~23 lab call sites.
-10. producer factory-style register — same reshape as 9, plus the two lifecycle-ctx
-    questions it inherits:
+10. producer factory-style register — BUILT (2026-08-07). Producer is a factory;
+    Register(ctx) returns a *ProducerInstance bound to ctx, callable many times.
+    Decisions as recorded below: ProducerInstance KEEPS lifecycleCtx (the produce
+    admission gate — asymmetric with the consumer on purpose, since no long-running
+    call exists to carry a lifetime); MetricEventProducer.Register deleted outright —
+    Run(ctx) registers its own producer instance then drains, so it is re-callable
+    and NewMetricEventProducer does no I/O at all; consumer Register builds a fresh
+    MetricEventProducer per instance and ConsumerInstance.Consume runs it beside the
+    manager in an errgroup; mergeLifecycle/stopReason/instance lifecycleCtx deleted,
+    Done()==nil rejection moved to Consume, "Callable many times" doc restored on
+    consumer Register; ErrNotRegistered + ErrAlreadyRegistered sentinels deleted
+    (no remaining callers); producerregister lab rewritten to the new contract.
+    Original plan text, for the record:
    - consumermetrics.MetricEventProducer converts too, and its Run(ctx) IS the drain
      loop. Today Register(ctx) both resolves the metrics topic AND spawns `go drain(ctx)`,
      so a consumer's Register ctx silently owns a goroutine — Register from a factory

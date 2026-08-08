@@ -76,7 +76,8 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	head, gids := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
 	cursorGroupID, controlGroupID, lifecycleGroupID := gids[cursorGroup], gids[controlGroup], gids[lifecycleGroup]
@@ -84,7 +85,7 @@ func main() {
 
 	// ===== publish msg1 BEFORE any binding exists =====
 	step("publish msg1, no binding exists for any group yet")
-	msg1 := publish(ctx, wp, "orders.us.created")
+	msg1 := publish(ctx, wpInstance, "orders.us.created")
 	fmt.Printf("  published %s\n", msg1)
 
 	// ===== bind cursorGroup and lifecycleGroup, THEN publish the rest =====
@@ -92,10 +93,10 @@ func main() {
 	must(cd.Bind(ctx, cursorGroupID, "orders.*.created"))
 	must(cd.Bind(ctx, lifecycleGroupID, "payments.*"))
 
-	msg2 := publish(ctx, wp, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
-	msg3 := publish(ctx, wp, "orders.eu.updated")          // wrong tail, does not match
-	msg4 := publish(ctx, wp, "payments.charge")            // matches lifecycleGroup only
-	msg5 := publish(ctx, wp, "")                           // NULL routing_key, matches nothing bound
+	msg2 := publish(ctx, wpInstance, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
+	msg3 := publish(ctx, wpInstance, "orders.eu.updated")          // wrong tail, does not match
+	msg4 := publish(ctx, wpInstance, "payments.charge")            // matches lifecycleGroup only
+	msg5 := publish(ctx, wpInstance, "")                           // NULL routing_key, matches nothing bound
 	fmt.Printf("  published %s\n  published %s\n  published %s\n  published %s\n", msg2, msg3, msg4, msg5)
 
 	const lease = 5 * time.Second
@@ -150,8 +151,8 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[common.Work], routingKey string) string {
-	work, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], routingKey string) string {
+	work, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})
 	must(err)

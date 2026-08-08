@@ -82,14 +82,15 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[Rec](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	g, err := cd.RegisterGroup(ctx, tp.Id, group)
 	must(err)
 	groupID = g.Id
 
 	step("seed: two versions of user:1 -- the newer is the compaction head")
-	publish(ctx, wp, "user:1", 1)
-	publish(ctx, wp, "user:1", 2)
+	publish(ctx, wpInstance, "user:1", 1)
+	publish(ctx, wpInstance, "user:1", 2)
 	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM message_log_%d WHERE compaction_key = 'user:1'`, topicID))
 	headID := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:1'`, topicID)
 	if staleID == headID {
@@ -221,13 +222,13 @@ func main() {
 	fmt.Printf("  ✓ %d racers, 1 winner\n", workers)
 
 	step("old-then-new order: a newer head produced mid-hold waits for the release")
-	publish(ctx, wp, "user:3", 1)
+	publish(ctx, wpInstance, "user:3", 1)
 	old3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicID)
 	holding := claim(ctx, keyLeases, "user:3", old3, 30*time.Second)
 	if holding.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want acquired on user:3, got %s", holding.Verdict))
 	}
-	publish(ctx, wp, "user:3", 2)
+	publish(ctx, wpInstance, "user:3", 2)
 	new3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicID)
 	if c := claim(ctx, keyLeases, "user:3", new3, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy for the new head while the old holds the key, got %s", c.Verdict))
@@ -252,7 +253,7 @@ func main() {
 	fmt.Println("  ✓ new head waited out the old holder, then acquired")
 
 	step("janitor sweep removes expired rows, leaves live ones")
-	publish(ctx, wp, "user:2", 1)
+	publish(ctx, wpInstance, "user:2", 1)
 	head2 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:2'`, topicID)
 	expired := claim(ctx, keyLeases, "user:1", headID, 50*time.Millisecond)
 	if expired.Verdict != keyleasecontroller.KeyLeaseAcquired {
@@ -289,8 +290,8 @@ func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key s
 	return c
 }
 
-func publish(ctx context.Context, wp *producer.Producer[Rec], key string, version int) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)

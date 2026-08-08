@@ -79,12 +79,14 @@ func main() {
 	step("seed both topics with the identical 40-message workload")
 	narrowProducer, err := producer.NewProducer[Record](narrow.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(narrowProducer.Register(ctx))
+	narrowProducerInstance, err := narrowProducer.Register(ctx)
+	must(err)
 	wideProducer, err := producer.NewProducer[Record](wide.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wideProducer.Register(ctx))
-	seed(ctx, md, narrowProducer, narrow.Id, narrowPartitionSize)
-	seed(ctx, md, wideProducer, wide.Id, widePartitionSize)
+	wideProducerInstance, err := wideProducer.Register(ctx)
+	must(err)
+	seed(ctx, md, narrowProducerInstance, narrow.Id, narrowPartitionSize)
+	seed(ctx, md, wideProducerInstance, wide.Id, widePartitionSize)
 
 	narrowPartitions := countPartitions(ctx, ds, narrow.Id)
 	widePartitions := countPartitions(ctx, ds, wide.Id)
@@ -124,7 +126,7 @@ func main() {
 // key that's never superseded, ids 2-38 are unique filler (each its own key,
 // so none of them ever match another row's compaction subplan), and ids
 // 39/40 are two versions of one key published back to back.
-func seed(ctx context.Context, md *maintain.MaintenanceDatastore, wp *producer.Producer[Record], topicID, partitionSize int64) {
+func seed(ctx context.Context, md *maintain.MaintenanceDatastore, wp *producer.ProducerInstance[Record], topicID, partitionSize int64) {
 	publish(ctx, wp, "stale") // id 1 -- never superseded
 	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
 	for i := range 37 {
@@ -137,7 +139,7 @@ func seed(ctx context.Context, md *maintain.MaintenanceDatastore, wp *producer.P
 	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
 }
 
-func publish(ctx context.Context, wp *producer.Producer[Record], key string) {
+func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key string) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{CompactionKey: key})

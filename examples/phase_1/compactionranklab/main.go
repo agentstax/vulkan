@@ -69,7 +69,8 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[RankedRecord](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 
 	const lease = 5 * time.Second
@@ -77,10 +78,10 @@ func main() {
 
 	// ===== pinning: a high rank ignores every normal-rank update after it (ids 1-4) =====
 	step("user:1 gets a normal write, then a rank-100 pin, then two MORE normal writes")
-	publish(ctx, wp, "user:1", "v1-normal", 0) // id 1
-	publish(ctx, wp, "user:1", "v2-PIN", 100)  // id 2 <- pinned winner
-	publish(ctx, wp, "user:1", "v3-normal", 0) // id 3, higher id, still loses to the pin
-	publish(ctx, wp, "user:1", "v4-normal", 0) // id 4, higher id still, also loses
+	publish(ctx, wpInstance, "user:1", "v1-normal", 0) // id 1
+	publish(ctx, wpInstance, "user:1", "v2-PIN", 100)  // id 2 <- pinned winner
+	publish(ctx, wpInstance, "user:1", "v3-normal", 0) // id 3, higher id, still loses to the pin
+	publish(ctx, wpInstance, "user:1", "v4-normal", 0) // id 4, higher id still, also loses
 
 	assertInt("compaction_head still points at the pin despite two higher-id normal writes after it", headID(ctx, ds, tp.Id, "user:1"), 2)
 
@@ -95,13 +96,13 @@ func main() {
 
 	// ===== the bridge interleaving: -1 never beats 0, either arrival order (ids 5-8) =====
 	step("live (rank 0) THEN backfill (rank -1) for user:2 -- backfill's higher id still loses")
-	publish(ctx, wp, "user:2", "live", 0)      // id 5 <- stays the winner
-	publish(ctx, wp, "user:2", "backfill", -1) // id 6, higher id, rank -1 loses to rank 0
+	publish(ctx, wpInstance, "user:2", "live", 0)      // id 5 <- stays the winner
+	publish(ctx, wpInstance, "user:2", "backfill", -1) // id 6, higher id, rank -1 loses to rank 0
 	assertInt("compaction_head still points at the live write, not the higher-id backfill", headID(ctx, ds, tp.Id, "user:2"), 5)
 
 	step("backfill (rank -1) THEN live (rank 0) for user:3 -- live wins as always")
-	publish(ctx, wp, "user:3", "backfill", -1) // id 7
-	publish(ctx, wp, "user:3", "live", 0)      // id 8 <- wins, same as any normal update would
+	publish(ctx, wpInstance, "user:3", "backfill", -1) // id 7
+	publish(ctx, wpInstance, "user:3", "live", 0)      // id 8 <- wins, same as any normal update would
 	assertInt("compaction_head points at the live write", headID(ctx, ds, tp.Id, "user:3"), 8)
 
 	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, maxRangeReclaims, lease, false)
@@ -125,8 +126,8 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[RankedRecord], key, label string, rank int64) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*RankedRecord, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[RankedRecord], key, label string, rank int64) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*RankedRecord, error) {
 		return &RankedRecord{Key: key, Label: label}, nil
 	}, producer.ProduceOptions{CompactionKey: key, CompactionRank: rank})
 	must(err)

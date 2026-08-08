@@ -90,15 +90,17 @@ func main() {
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
 	wpA, err := producer.NewProducer[common.Work](topicA.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wpA.Register(ctx))
+	wpAInstance, err := wpA.Register(ctx)
+	must(err)
 	wpB, err := producer.NewProducer[common.Work](topicB.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wpB.Register(ctx))
+	wpBInstance, err := wpB.Register(ctx)
+	must(err)
 	for range 3 {
-		publish(ctx, wpA, "")
+		publish(ctx, wpAInstance, "")
 	}
 	for range 4 {
-		publish(ctx, wpB, "")
+		publish(ctx, wpBInstance, "")
 	}
 	idsA := allIds(ctx, ds, topicA.Id)
 	idsB := allIds(ctx, ds, topicB.Id)
@@ -108,7 +110,7 @@ func main() {
 	// ===== PROOF 2: a badly-lagging group on topic B does not block a drop on topic A =====
 	step("PROOF 2: a badly-lagging group on topic B does not block a drop on topic A")
 	for range 2 { // topicA now has 5 rows -- exactly fills partition 0 at width 5
-		publish(ctx, wpA, "")
+		publish(ctx, wpAInstance, "")
 	}
 	must(md.EnsureNextPartition(ctx, topicA.Id, partitionSize)) // create-ahead partition 1
 	time.Sleep(ttl + ttlMargin)
@@ -128,15 +130,16 @@ func main() {
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
 	wpC, err := producer.NewProducer[common.Work](topicC.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wpC.Register(ctx))
+	wpCInstance, err := wpC.Register(ctx)
+	must(err)
 	groupRoute := "topiclab.route"
 	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute))
 
-	headBefore := head(ctx, ds, topicC.Id) // topicC is fresh, this is 0
-	publish(ctx, wpC, "orders.created")    // id headBefore+1, published BEFORE any binding exists
+	headBefore := head(ctx, ds, topicC.Id)      // topicC is fresh, this is 0
+	publish(ctx, wpCInstance, "orders.created") // id headBefore+1, published BEFORE any binding exists
 	must(cd.Bind(ctx, groupRouteID, "orders.*"))
-	publish(ctx, wpC, "orders.updated")  // id headBefore+2, matches, published AFTER the binding
-	publish(ctx, wpC, "payments.charge") // id headBefore+3, does not match
+	publish(ctx, wpCInstance, "orders.updated")  // id headBefore+2, matches, published AFTER the binding
+	publish(ctx, wpCInstance, "payments.charge") // id headBefore+3, does not match
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
 		headBefore+1, headBefore+2, headBefore+3, headBefore+1, headBefore+1, headBefore+2)
 
@@ -155,7 +158,8 @@ func main() {
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
 	wpD, err := producer.NewProducer[common.Work](topicD.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wpD.Register(ctx))
+	wpDInstance, err := wpD.Register(ctx)
+	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
 	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX))
@@ -164,7 +168,7 @@ func main() {
 	must(cd.Bind(ctx, groupYID, "sliceY.*"))
 
 	for range 5 { // fills topicD's partition 0 at width 5, all in sliceX
-		publish(ctx, wpD, "sliceX.event")
+		publish(ctx, wpDInstance, "sliceX.event")
 	}
 	must(md.EnsureNextPartition(ctx, topicD.Id, partitionSize))
 	time.Sleep(ttl + ttlMargin)
@@ -206,7 +210,7 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[common.Work], routingKey string) {
+func publish(ctx context.Context, wp *producer.ProducerInstance[common.Work], routingKey string) {
 	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})

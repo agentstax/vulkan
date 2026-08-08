@@ -95,10 +95,11 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	seed(ctx, wp, 3)
+	seed(ctx, wpInstance, 3)
 
 	cfg := &messageconsumer.MessageConsumerConfig{
 		BatchLimit:         3,
@@ -112,7 +113,7 @@ func main() {
 	must(err)
 	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(abandonedEvents.Register(ctx))
+	go func() { must(abandonedEvents.Run(ctx)) }()
 
 	step("WORKER claims all 3, shutdown fires after message 2 -- message 3 never attempted")
 	runCtx, cancel := context.WithCancel(ctx)
@@ -203,9 +204,9 @@ func main() {
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
+func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

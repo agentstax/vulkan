@@ -60,8 +60,9 @@ func main() {
 	step("driving a hard timeout so one message gets abandoned then self-clears")
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
-	seed(ctx, wp, 3)
+	wpInstance, err := wp.Register(ctx)
+	must(err)
+	seed(ctx, wpInstance, 3)
 
 	cfg := &messageconsumer.MessageConsumerConfig{
 		BatchLimit:         3,
@@ -83,7 +84,7 @@ func main() {
 		DisableGracefulShutdown: true,
 	})
 	must(err)
-	must(abandonedEvents.Register(ctx))
+	go func() { must(abandonedEvents.Run(ctx)) }()
 
 	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
@@ -171,9 +172,9 @@ func metricsRowsSince(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 	return out
 }
 
-func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
+func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

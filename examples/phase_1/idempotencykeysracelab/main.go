@@ -72,14 +72,15 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDa
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	key := uuid.Must(uuid.NewV7())
 
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
-			_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{IdempotencyKey: key})
 			must(err)
@@ -117,13 +118,14 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *coredatastore.Postg
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
 			key := uuid.Must(uuid.NewV7())
-			_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{IdempotencyKey: key})
 			must(err)

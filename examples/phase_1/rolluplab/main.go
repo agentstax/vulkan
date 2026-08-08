@@ -117,9 +117,10 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	seed(ctx, wp, int(int64(numRanges)*batchSize))
+	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
 
 	watcherDone := make(chan struct{})
 	samplesCh := make(chan []sample, 1)
@@ -195,9 +196,10 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	seed(ctx, wp, int(int64(numRanges)*batchSize))
+	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
 
 	var stalenesses []float64
 	for i := range numRanges {
@@ -281,9 +283,10 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	seed(ctx, wp, int(n))
+	seed(ctx, wpInstance, int(n))
 
 	start := time.Now()
 	for range int(n) {
@@ -338,9 +341,10 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	seed(ctx, wp, total)
+	seed(ctx, wpInstance, total)
 
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -366,9 +370,9 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 // ---- helpers ----
 
-func seed(ctx context.Context, wp *producer.Producer[common.Work], n int) {
+func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int) {
 	for range n {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{})
 		must(err)

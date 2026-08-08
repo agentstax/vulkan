@@ -75,11 +75,12 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
-	unkeyedMs := timeSequential(ctx, wp, n, func(i int) string { return "" })
-	freshKeyMs := timeSequential(ctx, wp, n, func(i int) string { return fmt.Sprintf("fresh-%d", i) })
-	sameKeyMs := timeSequential(ctx, wp, n, func(i int) string { return "same-key" })
+	unkeyedMs := timeSequential(ctx, wpInstance, n, func(i int) string { return "" })
+	freshKeyMs := timeSequential(ctx, wpInstance, n, func(i int) string { return fmt.Sprintf("fresh-%d", i) })
+	sameKeyMs := timeSequential(ctx, wpInstance, n, func(i int) string { return "same-key" })
 
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op\n", "unkeyed (baseline)", unkeyedMs, unkeyedMs/n)
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "fresh key (compaction_head INSERT)", freshKeyMs, freshKeyMs/n, pctOver(freshKeyMs, unkeyedMs))
@@ -133,10 +134,10 @@ func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDat
 
 // timeSequential runs n single-threaded publishes, keyFn(i) chosen per call,
 // returning total elapsed time in milliseconds.
-func timeSequential(ctx context.Context, wp *producer.Producer[common.Work], n int, keyFn func(i int) string) float64 {
+func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
-		_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{CompactionKey: keyFn(i)})
 		must(err)
@@ -157,14 +158,15 @@ func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, la
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	start := time.Now()
 	var wg sync.WaitGroup
 	for g := range goroutines {
 		wg.Go(func() {
 			for i := range perGoroutine {
-				_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{CompactionKey: keyFn(g, i)})
 				must(err)

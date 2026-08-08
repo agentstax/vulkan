@@ -94,12 +94,13 @@ func main() {
 
 	wp1, err := producer.NewProducer[V1Order](name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp1.Register(ctx))
+	wp1Instance, err := wp1.Register(ctx)
+	must(err)
 
 	step("v1 holds live keyed traffic for 5 users")
 	for i, key := range keys {
 		cents := int64(i+1) * 100
-		_, err := wp1.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{CompactionKey: key})
+		_, err := wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{CompactionKey: key})
 		must(err)
 		fmt.Printf("  wrote %s cents=%d to v1\n", key, cents)
 	}
@@ -113,10 +114,11 @@ func main() {
 
 	wp2, err := producer.NewProducer[V2Order](name, topic.SchemaVersion(2), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp2.Register(ctx))
+	wp2Instance, err := wp2.Register(ctx)
+	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
-	must(liveWrite(ctx, wp2, "user:1", 999, "EUR"))
+	must(liveWrite(ctx, wp2Instance, "user:1", 999, "EUR"))
 
 	// processed counts successful bridge writes; crashGate blocks the 3rd
 	// message (user:3) until we've confirmed exactly 2 landed, then run1's
@@ -137,7 +139,7 @@ func main() {
 		if !ok {
 			return fmt.Errorf("no MessageMeta in context for key %q", work.Key)
 		}
-		_, err := wp2.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, producer.ProduceOptions{
+		_, err := wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, producer.ProduceOptions{
 			CompactionKey:  work.Key,
 			CompactionRank: -1,
 			IdempotencyKey: bridgeIdempotencyKey(meta.Id),
@@ -161,7 +163,7 @@ func main() {
 	assertInt("exactly 2 messages landed before the crash", processed.Load(), 2)
 
 	step("user:2 cuts over to v2 AFTER the bridge already copied it (backfill-then-live)")
-	must(liveWrite(ctx, wp2, "user:2", 888, "EUR"))
+	must(liveWrite(ctx, wp2Instance, "user:2", 888, "EUR"))
 	close(crashGate) // release user:3, wherever it's stuck (fresh claim or a retried exception)
 
 	step("bridge run 2: a fresh instance, same group, resumes from the persisted cursor")
@@ -202,7 +204,7 @@ func main() {
 
 // ---- helpers ----
 
-func liveWrite(ctx context.Context, wp *producer.Producer[V2Order], key string, cents int64, currency string) error {
+func liveWrite(ctx context.Context, wp *producer.ProducerInstance[V2Order], key string, cents int64, currency string) error {
 	_, err := wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, producer.ProduceOptions{CompactionKey: key})
 	return err
 }

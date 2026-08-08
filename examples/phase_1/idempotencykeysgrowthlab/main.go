@@ -80,14 +80,15 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
 
 	checkpoints := []int{500, 2000, 5000}
 	published := 0
 	for _, target := range checkpoints {
-		publishConcurrent(ctx, wp, target-published, 20)
+		publishConcurrent(ctx, wpInstance, target-published, 20)
 		published = target
 
 		idkSize := tableByteSize(ctx, ds, idkTable)
@@ -127,7 +128,8 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
@@ -145,7 +147,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 				case <-stop:
 					return
 				default:
-					_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+					_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 						return common.NewWork(30, "admin@example.com")
 					}, producer.ProduceOptions{})
 					must(err)
@@ -217,7 +219,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 
 // ---- helpers ----
 
-func publishConcurrent(ctx context.Context, wp *producer.Producer[common.Work], n, goroutines int) {
+func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n, goroutines int) {
 	perGoroutine := n / goroutines
 	remainder := n % goroutines
 
@@ -229,7 +231,7 @@ func publishConcurrent(ctx context.Context, wp *producer.Producer[common.Work], 
 		}
 		wg.Go(func() {
 			for range count {
-				_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
 				}, producer.ProduceOptions{})
 				must(err)

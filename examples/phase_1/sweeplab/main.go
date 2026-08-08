@@ -64,14 +64,15 @@ func main() {
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	step("publish 4 'old' messages, then let them age past ttl")
 	head0 := head(ctx, ds, tp.Id)
 	for range 4 {
-		publish(ctx, wp)
+		publish(ctx, wpInstance)
 	}
 	oldLow, oldHigh := head0, head0+4
 	time.Sleep(ttl + ttlMargin)
@@ -79,7 +80,7 @@ func main() {
 	step("publish 3 'fresh' messages -- well inside ttl")
 	freshLow, freshHigh := head(ctx, ds, tp.Id), head(ctx, ds, tp.Id)+3
 	for range 3 {
-		publish(ctx, wp)
+		publish(ctx, wpInstance)
 	}
 	fmt.Printf("  old ids (%d,%d], fresh ids (%d,%d]\n", oldLow, oldHigh, freshLow, freshHigh)
 
@@ -102,8 +103,8 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work]) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})
 	must(err)

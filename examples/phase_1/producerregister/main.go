@@ -3,11 +3,11 @@ package main
 // producer register lab: the producer lifecycle end to end.
 //
 // Confirms: Register rejects a context that can never be cancelled unless
-// DisableGracefulShutdown declares fire-and-forget on purpose; the produce
-// gate refuses work before Register (ErrNotRegistered) and after the
-// lifecycle context is cancelled (ErrShutdownRequested), while the call's
-// own context stays irrelevant to both; and registration is once per
-// instance -- a second Register errors, wound down or not.
+// DisableGracefulShutdown declares fire-and-forget on purpose; Register's ctx
+// is the instance's lifetime -- once it cancels, the produce gate refuses new
+// work (ErrShutdownRequested) while the call's own context stays irrelevant;
+// and Register is callable many times, so a wound-down instance is replaced
+// by registering again, never by constructing a new Producer.
 
 import (
 	"context"
@@ -56,49 +56,53 @@ func main() {
 	p, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, nil)
 	must(err)
 
-	// ===== produce before Register =====
-	step("produce before Register -- expect ErrNotRegistered")
-	_, err = p.Produce(ctx, &Message{Data: "too early"}, producer.ProduceOptions{})
-	requireIs(err, vulkanerrors.ErrNotRegistered)
-
 	// ===== non-cancellable lifecycle context =====
 	step("Register(context.Background()) without opting out -- expect the teaching error")
-	err = p.Register(context.Background())
+	_, err = p.Register(context.Background())
 	requireIs(err, vulkanerrors.ErrLifecycleContextNotCancellable)
 
 	// ===== the graceful path =====
 	step("Register with the real lifecycle context, then produce")
 	lifecycle, stop := vulkanctx.LifecycleContext(nil)
 	defer stop()
-	must(p.Register(lifecycle))
-	work, err := p.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
+	instance, err := p.Register(lifecycle)
+	must(err)
+	work, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
 	must(err)
 	fmt.Printf("  ✓ produced %+v\n", *work)
 
 	// ===== wind-down =====
 	step("cancel the lifecycle context -- expect ErrShutdownRequested, call ctx untouched")
 	stop() // stands in for SIGINT/SIGTERM: cancels the lifecycle context
-	_, err = p.Produce(ctx, &Message{Data: "too late"}, producer.ProduceOptions{})
+	_, err = instance.Produce(ctx, &Message{Data: "too late"}, producer.ProduceOptions{})
 	requireIs(err, vulkanerrors.ErrShutdownRequested)
 
-	// ===== registration is once per instance =====
-	step("Register again after wind-down -- expect ErrAlreadyRegistered")
-	err = p.Register(ctx)
-	requireIs(err, vulkanerrors.ErrAlreadyRegistered)
+	// ===== Register again after wind-down =====
+	step("Register again -- a fresh instance produces, the wound-down one stays down")
+	lifecycle2, stop2 := vulkanctx.LifecycleContext(nil)
+	defer stop2()
+	replacement, err := p.Register(lifecycle2)
+	must(err)
+	_, err = replacement.Produce(ctx, &Message{Data: "second life"}, producer.ProduceOptions{})
+	must(err)
+	fmt.Println("  ✓ replacement instance produces")
+	_, err = instance.Produce(ctx, &Message{Data: "still too late"}, producer.ProduceOptions{})
+	requireIs(err, vulkanerrors.ErrShutdownRequested)
 
 	// ===== fire-and-forget escape hatch =====
-	step("fresh producer with DisableGracefulShutdown -- Background is accepted")
+	step("producer with DisableGracefulShutdown -- Background is accepted")
 	ff, err := producer.NewProducer[Message](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(ff.Register(context.Background()))
-	_, err = ff.Produce(ctx, &Message{Data: "fire and forget"}, producer.ProduceOptions{})
+	ffInstance, err := ff.Register(context.Background())
+	must(err)
+	_, err = ffInstance.Produce(ctx, &Message{Data: "fire and forget"}, producer.ProduceOptions{})
 	must(err)
 	fmt.Println("  ✓ registered and produced on context.Background()")
 
 	fmt.Println("\n✅ PRODUCER REGISTER LAB PASSED")
-	fmt.Println("   Register owns the lifecycle: no produce before it, none after its context")
-	fmt.Println("   cancels, one registration per instance -- and fire-and-forget is a declared")
-	fmt.Println("   choice, never a silent default.")
+	fmt.Println("   Register's context owns each instance's lifecycle: no produce after it")
+	fmt.Println("   cancels, a new Register replaces a wound-down instance, and fire-and-forget")
+	fmt.Println("   is a declared choice, never a silent default.")
 }
 
 // ---- helpers ----

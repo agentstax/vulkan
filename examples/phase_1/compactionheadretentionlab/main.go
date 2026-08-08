@@ -76,22 +76,23 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
 	// fill partition 0 with a dormant key + filler, then age past ttl
-	publish(ctx, wp, "dormant-key")
-	publish(ctx, wp, "")
-	publish(ctx, wp, "")
-	publish(ctx, wp, "")
+	publish(ctx, wpInstance, "dormant-key")
+	publish(ctx, wpInstance, "")
+	publish(ctx, wpInstance, "")
+	publish(ctx, wpInstance, "")
 	time.Sleep(ttl + ttlMargin)
 
 	// roll into partition 1 so partition 0 is no longer active
-	publish(ctx, wp, "alive-key")
-	publish(ctx, wp, "")
-	publish(ctx, wp, "")
-	publish(ctx, wp, "")
+	publish(ctx, wpInstance, "alive-key")
+	publish(ctx, wpInstance, "")
+	publish(ctx, wpInstance, "")
+	publish(ctx, wpInstance, "")
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -118,13 +119,14 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
 
-	publish(ctx, wp, "dormant-key")
+	publish(ctx, wpInstance, "dormant-key")
 	time.Sleep(ttl + ttlMargin)
-	publish(ctx, wp, "alive-key") // well inside ttl
+	publish(ctx, wpInstance, "alive-key") // well inside ttl
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -136,7 +138,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 	// sweep repeatedly -- a key kept alive inside ttl survives every pass, not just the first
 	for range 3 {
-		publish(ctx, wp, "alive-key")
+		publish(ctx, wpInstance, "alive-key")
 		time.Sleep(ttl / 4)
 		must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 	}
@@ -145,8 +147,8 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[common.Work], key string) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], key string) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)

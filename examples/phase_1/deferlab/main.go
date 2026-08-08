@@ -98,10 +98,11 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[Rec](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	step("defer on a free key: runs holding the key lease, releases on success")
-	publish(ctx, wp, "u:1", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:1", 1, common.ConcurrencyDefer)
 	g1 := groupID(ctx, cd, "deferlab.g1")
 	var heldDuringRun int
 	consume(ctx, tp.Name, "deferlab.g1", nil, 3, func(ctx context.Context, message *Rec) error {
@@ -123,7 +124,7 @@ func main() {
 	fmt.Println("  ✓ held during, released after, no rows")
 
 	step("allow (unset policy) keyed message never touches the key lease")
-	publish(ctx, wp, "u:2", 1, "")
+	publish(ctx, wpInstance, "u:2", 1, "")
 	g2 := groupID(ctx, cd, "deferlab.g2")
 	allowHeld := -1
 	consume(ctx, tp.Name, "deferlab.g2", nil, 3, func(ctx context.Context, message *Rec) error {
@@ -139,7 +140,7 @@ func main() {
 	fmt.Println("  ✓ no lease rows")
 
 	step("unkeyed under ConcurrencyOverride Defer runs as Allow")
-	publishUnkeyed(ctx, wp, 1)
+	publishUnkeyed(ctx, wpInstance, 1)
 	g3 := groupID(ctx, cd, "deferlab.g3")
 	unkeyedHeld := -1
 	consume(ctx, tp.Name, "deferlab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyDefer}, 3, func(ctx context.Context, message *Rec) error {
@@ -155,7 +156,7 @@ func main() {
 	fmt.Println("  ✓ no lease rows")
 
 	step("ConcurrencyOverride Allow beats a message's own Defer")
-	publish(ctx, wp, "u:3", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:3", 1, common.ConcurrencyDefer)
 	g4 := groupID(ctx, cd, "deferlab.g4")
 	overrideHeld := -1
 	consume(ctx, tp.Name, "deferlab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyAllow}, 3, func(ctx context.Context, message *Rec) error {
@@ -175,7 +176,7 @@ func main() {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startOnce sync.Once
-	publish(ctx, wp, "u:4", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:4", 1, common.ConcurrencyDefer)
 	v1 := messageID(ctx, "u:4", 1)
 
 	done := make(chan struct{})
@@ -192,11 +193,11 @@ func main() {
 	}()
 
 	<-started // v1 is running and holds the key
-	publish(ctx, wp, "u:4", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:4", 2, common.ConcurrencyDefer)
 	v2 := messageID(ctx, "u:4", 2)
 	waitFor(func() bool { return deliveryStatus(ctx, g5, v2) == "deferred" }, "v2's 'deferred' row")
 
-	publish(ctx, wp, "u:4", 3, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:4", 3, common.ConcurrencyDefer)
 	v3 := messageID(ctx, "u:4", 3)
 	waitFor(func() bool { return deliveryStatus(ctx, g5, v3) == "deferred" }, "v3's 'deferred' row")
 	if s := deliveryStatus(ctx, g5, v2); s != "deferred" {
@@ -232,8 +233,8 @@ func main() {
 	blockStarted := make(chan struct{})
 	blockRelease := make(chan struct{})
 	var blockOnce sync.Once
-	publishUnkeyed(ctx, wp, 2) // the blocker -- pins the single processor
-	publish(ctx, wp, "u:5", 1, common.ConcurrencyDefer)
+	publishUnkeyed(ctx, wpInstance, 2) // the blocker -- pins the single processor
+	publish(ctx, wpInstance, "u:5", 1, common.ConcurrencyDefer)
 	v5old := messageID(ctx, "u:5", 1)
 
 	done6 := make(chan struct{})
@@ -250,7 +251,7 @@ func main() {
 	}()
 
 	<-blockStarted // u:5 v1 is claimed and queued behind the blocker
-	publish(ctx, wp, "u:5", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:5", 2, common.ConcurrencyDefer)
 	close(blockRelease)
 	<-done6 // v2 ran -- so v1 resolved before it
 	if ran("u:5", 1) {
@@ -267,7 +268,7 @@ func main() {
 
 	step("a failing Defer message frees the key")
 	g7 := groupID(ctx, cd, "deferlab.g7")
-	publish(ctx, wp, "u:6", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:6", 1, common.ConcurrencyDefer)
 	v6 := messageID(ctx, "u:6", 1)
 	consume(ctx, tp.Name, "deferlab.g7", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
@@ -329,9 +330,9 @@ func main() {
 		record(message)
 		return nil
 	})
-	publish(ctx, wp, "u:7", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:7", 1, common.ConcurrencyDefer)
 	<-started8 // v1 is running and holds the key
-	publish(ctx, wp, "u:7", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:7", 2, common.ConcurrencyDefer)
 	v7 := messageID(ctx, "u:7", 2)
 	waitFor(func() bool { return deliveryStatus(ctx, g8, v7) == "deferred" }, "v2's 'deferred' row")
 
@@ -394,10 +395,10 @@ func main() {
 	}
 	stopCursor9 := startConsumer(ctx, tp.Name, "deferlab.g9", nil, 3, failV1)
 	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "deferlab.g9", nil, failV1)
-	publish(ctx, wp, "u:8", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:8", 1, common.ConcurrencyDefer)
 	v8old := messageID(ctx, "u:8", 1)
 	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "ready" }, "v1 to fail and go 'ready'")
-	publish(ctx, wp, "u:8", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:8", 2, common.ConcurrencyDefer)
 	waitFor(func() bool { return ran("u:8", 2) }, "v2 to run on the freed key")
 	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "superseded" }, "v1's retry to resolve superseded")
 	stopCursor9()
@@ -426,7 +427,7 @@ func main() {
 	g10 := groupID(ctx, cd, "deferlab.g10")
 	// a crashed holder's key_lease row: unexpired, never released
 	execSql(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, g10)
-	publish(ctx, wp, "u:10", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyDefer)
 	v10 := messageID(ctx, "u:10", 1)
 	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
@@ -447,7 +448,7 @@ func main() {
 	fmt.Println("  ✓ deferred behind the crashed holder, ran after expiry via takeover")
 
 	step("Defer without a CompactionKey is refused at produce time")
-	if _, err := wp.Produce(ctx, &Rec{Version: 1}, producer.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyDefer}}); err == nil {
+	if _, err := wpInstance.Produce(ctx, &Rec{Version: 1}, producer.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyDefer}}); err == nil {
 		die("produce must refuse Defer without a CompactionKey")
 	}
 	fmt.Println("  ✓ refused")
@@ -477,12 +478,12 @@ func main() {
 	stopRedeem11a := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
 	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
 
-	publish(ctx, wp, "u:11", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:11", 1, common.ConcurrencyDefer)
 	tv1 := messageID(ctx, "u:11", 1)
 	<-started11 // v1 runs holding the key
-	publish(ctx, wp, "u:11", 2, common.ConcurrencyDefer)
-	publish(ctx, wp, "u:11", 3, common.ConcurrencyDefer)
-	publish(ctx, wp, "u:11", 4, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:11", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:11", 3, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:11", 4, common.ConcurrencyDefer)
 	tv2 := messageID(ctx, "u:11", 2)
 	tv3 := messageID(ctx, "u:11", 3)
 	tv4 := messageID(ctx, "u:11", 4)
@@ -650,7 +651,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 func abandonedEventProducer(ctx context.Context) *consumermetrics.MetricEventProducer {
 	events, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(events.Register(ctx))
+	go func() { must(events.Run(ctx)) }()
 	return events
 }
 
@@ -687,19 +688,19 @@ func ran(key string, version int) bool {
 	return runs[fmt.Sprintf("%s:%d", key, version)] > 0
 }
 
-func publish(ctx context.Context, wp *producer.Producer[Rec], key string, version int, policy common.ConcurrencyPolicy) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int, policy common.ConcurrencyPolicy) {
 	opts := producer.ProduceOptions{CompactionKey: key}
 	if policy != "" {
 		opts.Message = &common.MessageOptions{Concurrency: policy}
 	}
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, opts)
 	must(err)
 }
 
-func publishUnkeyed(ctx context.Context, wp *producer.Producer[Rec], version int) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+func publishUnkeyed(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], version int) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Version: version}, nil
 	}, producer.ProduceOptions{})
 	must(err)

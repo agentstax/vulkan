@@ -79,14 +79,15 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
 		work, err := common.NewWork(30, "admin@example.com")
 		if err != nil {
 			return err
 		}
-		_, err = wp.Produce(ctx, work, producer.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
 		return err
 	})
 
@@ -111,7 +112,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	for range 2 {
 		work, err := common.NewWork(31, "keyed@example.com")
 		must(err)
-		_, err = wp.Produce(ctx, work, producer.ProduceOptions{IdempotencyKey: key})
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{IdempotencyKey: key})
 		must(err)
 	}
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total+1, "a caller-keyed Produce routed per-call and deduped its retry")
@@ -131,7 +132,8 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 	wp, err := producer.NewProducer[json.RawMessage](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	errs := make([]error, total)
 	var wg sync.WaitGroup
@@ -144,7 +146,7 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 			case brokenSeq:
 				payload = json.RawMessage(`{"broken`)
 			}
-			_, errs[s] = wp.Produce(ctx, &payload, producer.ProduceOptions{})
+			_, errs[s] = wpInstance.Produce(ctx, &payload, producer.ProduceOptions{})
 		})
 	}
 	wg.Wait()
@@ -180,14 +182,15 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
 		work, err := common.NewWork(30, "admin@example.com")
 		if err != nil {
 			return err
 		}
-		_, err = wp.Produce(ctx, work, producer.ProduceOptions{CompactionKey: fmt.Sprintf("hot:%d", (p+s)%keys)})
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{CompactionKey: fmt.Sprintf("hot:%d", (p+s)%keys)})
 		return err
 	})
 
@@ -220,12 +223,13 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	// cap <= PartitionSize so one heal covers a whole batch
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	for range 15 {
 		work, err := common.NewWork(30, "admin@example.com")
 		must(err)
-		_, err = wp.Produce(ctx, work, producer.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
 		must(err)
 	}
 	produceConcurrently(8, 5, func(p, s int) error {
@@ -233,7 +237,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 		if err != nil {
 			return err
 		}
-		_, err = wp.Produce(ctx, work, producer.ProduceOptions{})
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
 		return err
 	})
 
@@ -249,12 +253,12 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	const producers, msgs = 50, 400 // ~2s per arm -- sub-second runs are all warmup noise
 	total := producers * msgs
 
-	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wp *producer.Producer[common.Work], work *common.Work) error {
-		_, err := wp.Produce(ctx, work, producer.ProduceOptions{})
+	batched := timeArm(ctx, ds, "batched", producers, msgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
+		_, err := wpInstance.Produce(ctx, work, producer.ProduceOptions{})
 		return err
 	})
-	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wp *producer.Producer[common.Work], work *common.Work) error {
-		_, err := wp.ProduceFunc(ctx, func(context.Context, producer.Tx, uuid.UUID) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
+	perCall := timeArm(ctx, ds, "percall", producers, msgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
+		_, err := wpInstance.ProduceFunc(ctx, func(context.Context, producer.Tx, uuid.UUID) (*common.Work, error) { return work, nil }, producer.ProduceOptions{})
 		return err
 	})
 
@@ -264,8 +268,8 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	// batches ride at BatchMaxSize, which only the batched path can absorb
 	// (a per-call arm would need a pool connection per caller).
 	const satProducers, satMsgs = 800, 50
-	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wp *producer.Producer[common.Work], work *common.Work) error {
-		_, err := wp.Produce(ctx, work, producer.ProduceOptions{})
+	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {
+		_, err := wpInstance.Produce(ctx, work, producer.ProduceOptions{})
 		return err
 	})
 	satRate := float64(satProducers*satMsgs) / saturated.Seconds()
@@ -282,13 +286,14 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 // timeArm registers its own topic, warms the pool untimed, then times the
 // full concurrent run -- asserting afterward that every publish landed
 // exactly once (throughput that loses messages doesn't count).
-func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, producers, msgs int, produce func(wp *producer.Producer[common.Work], work *common.Work) error) time.Duration {
+func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, producers, msgs int, produce func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error) time.Duration {
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost
 	warm := producers
@@ -297,7 +302,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 		if err != nil {
 			return err
 		}
-		return produce(wp, work)
+		return produce(wpInstance, work)
 	})
 
 	start := time.Now()
@@ -306,7 +311,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 		if err != nil {
 			return err
 		}
-		return produce(wp, work)
+		return produce(wpInstance, work)
 	})
 	elapsed := time.Since(start)
 

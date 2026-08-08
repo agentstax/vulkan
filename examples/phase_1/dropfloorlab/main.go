@@ -83,18 +83,19 @@ func main() {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](tp.Name, topic.SchemaVersion(1), ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
 	must(err)
-	must(wp.Register(ctx))
+	wpInstance, err := wp.Register(ctx)
+	must(err)
 
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
 	for range 4 {
-		publish(ctx, wp)
+		publish(ctx, wpInstance)
 		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	time.Sleep(ttl + ttlMargin)
 
 	step("publish ids 5-9 into message_log_<id>_1 -- fresh, rolls the active partition forward")
 	for range 5 {
-		publish(ctx, wp)
+		publish(ctx, wpInstance)
 		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	assertPartitions("partitions 0/1/2 exist (2 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{0, 1, 2})
@@ -124,7 +125,7 @@ func main() {
 	step("publish ids 10-14 into partition 2, then let partition 1's rows (5-9) age past ttl")
 	time.Sleep(ttl + ttlMargin)
 	for range 5 {
-		publish(ctx, wp)
+		publish(ctx, wpInstance)
 		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	assertPartitions("partitions 1/2/3 exist (3 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
@@ -144,8 +145,8 @@ func main() {
 
 // ---- helpers ----
 
-func publish(ctx context.Context, wp *producer.Producer[common.Work]) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work]) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})
 	must(err)
