@@ -62,6 +62,19 @@ type WorkerSnapshot struct {
 	UnclaimedFor      time.Duration // now() - the newest expires_at, while nothing is live; 0 while claimed, and 0 if expired rows were already deleted
 }
 
+// CronJobSnapshot is one cron_job row's firing health.
+type CronJobSnapshot struct {
+	Owner     *common.Owner
+	Name      string
+	Schedule  string
+	Suspended bool
+
+	NextScheduledTime time.Time
+	LastScheduledTime time.Time     // zero if the job has never fired
+	DueFor            time.Duration // now() - next_scheduled_time: negative until the slot arrives, positive while due and unfired
+	Overdue           bool          // due for longer than overdueThreshold and not suspended -- nothing is firing it
+}
+
 // DutySnapshot is one maintenance row's health.
 type DutySnapshot struct {
 	Duty          string

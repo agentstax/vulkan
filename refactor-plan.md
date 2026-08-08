@@ -398,10 +398,26 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
     Verified on a fresh DB: a live consumer shows its exact claim chain as
     claimed with correct owners; topic/system manager rows read unclaimed (the
     chunk 12 gap, now visible in metrics).
-    11b. cron-job snapshots — split out of DutySnapshot per TODO: CronJobSnapshot
-    from cron_job (schedule, next/last scheduled, suspended), overdue = flat
-    threshold on now() - next_scheduled_time (user chose flat over
-    interval-scaled 2026-08-08). Not started.
+    11b. cron-job snapshots — BUILT (2026-08-08). REVISED same day: cron jobs
+    now REQUIRE an owner like every other polymorphic row — cron_job CHECK
+    tightened num_nonnulls <= 1 → = 1 (baseline DDL edit), datastore
+    RegisterCronJob(ctx, owner, name, ...) inserts the owner columns and
+    assertConfigMatches rejects an owner mismatch, NewCronJob requires exactly
+    one owner id, admin.RegisterCronJob keeps its public signature and stamps
+    the SYSTEM owner (admin-registered jobs ride the system's lifecycle;
+    owner-targeted public registration is a cron chunk 3/4 question).
+    CronJobSnapshot carries *common.Owner via the shared toOwner adapter
+    (renamed from toWorkerOwner); fields are Schedule, Suspended, NextScheduledTime,
+    LastScheduledTime (zero = never fired), DueFor (now() -
+    next_scheduled_time), Overdue = !Suspended && DueFor > overdueThreshold
+    (flat 10m const — user chose flat over interval-scaled; a suspended row's
+    stale next_scheduled_time is never overdue because unsuspend recomputes
+    it). monitor/cronjob.go: RegisterCronJobGauges =
+    vulkan.cron.state.{overdue_jobs,oldest_due_age,suspended_jobs}; unwired
+    like the worker/duty trios. Verified cold on the dev DB: past-due row
+    reads overdue, suspended 3h-stale row does not, and with a consumer
+    running the scheduler fired the due row and the snapshot showed
+    last_scheduled_time advance.
 12. CLI — `vulkan maintain run` daemon becomes the worker-based daemon.
 13. cleanup — delete pkg/maintain, maintenance DDL + seeds, metrics duty.go, CLI
     maintain commands; rewrite labs (maintenancelab, dutybackofflab, scratchpad

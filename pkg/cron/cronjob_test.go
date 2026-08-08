@@ -16,7 +16,7 @@ func TestNewCronJobRejects(t *testing.T) {
 		timeout                                time.Duration
 		next                                   time.Time
 	}
-	valid := args{id: 1, name: "j", schedule: "@hourly", concurrency: common.ConcurrencyAllow, timeout: time.Minute, next: time.Now()}
+	valid := args{id: 1, systemId: 1, name: "j", schedule: "@hourly", concurrency: common.ConcurrencyAllow, timeout: time.Minute, next: time.Now()}
 	build := func(a args) error {
 		_, err := NewCronJob(a.id, a.systemId, a.topicId, a.consumerGroupId, a.name, a.schedule,
 			a.concurrency, a.timeout, false, nil, nil, a.next, nil)
@@ -32,6 +32,7 @@ func TestNewCronJobRejects(t *testing.T) {
 	}{
 		{name: "zero id", mut: func(a *args) { a.id = 0 }},
 		{name: "negative owner id", mut: func(a *args) { a.systemId = -1 }},
+		{name: "no owner set", mut: func(a *args) { a.systemId = 0 }},
 		{name: "two owners set", mut: func(a *args) { a.systemId, a.topicId = 1, 1 }},
 		{name: "empty name", mut: func(a *args) { a.name = "" }},
 		{name: "empty schedule", mut: func(a *args) { a.schedule = "" }},
@@ -62,22 +63,28 @@ func TestRegisterCronJobRejects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	owner, err := common.NewSystemOwner(1)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		name     string
+		owner    *common.Owner
 		jobName  string
 		schedule *Schedule
 		cfg      Config
 	}{
-		{name: "star in name is the binding wildcard", jobName: "j*", schedule: hourly, cfg: cfg},
-		{name: "uppercase name", jobName: "Job", schedule: hourly, cfg: cfg},
-		{name: "empty name", jobName: "", schedule: hourly, cfg: cfg},
-		{name: "nil schedule", jobName: "j", schedule: nil, cfg: cfg},
-		{name: "timeout exceeds min rate", jobName: "j", schedule: hourly, cfg: *(&Config{Timeout: 2 * time.Hour}).WithDefaults()},
+		{name: "nil owner", owner: nil, jobName: "j", schedule: hourly, cfg: cfg},
+		{name: "star in name is the binding wildcard", owner: owner, jobName: "j*", schedule: hourly, cfg: cfg},
+		{name: "uppercase name", owner: owner, jobName: "Job", schedule: hourly, cfg: cfg},
+		{name: "empty name", owner: owner, jobName: "", schedule: hourly, cfg: cfg},
+		{name: "nil schedule", owner: owner, jobName: "j", schedule: nil, cfg: cfg},
+		{name: "timeout exceeds min rate", owner: owner, jobName: "j", schedule: hourly, cfg: *(&Config{Timeout: 2 * time.Hour}).WithDefaults()},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := d.registerCronJob(context.Background(), c.jobName, c.schedule, nil, c.cfg); err == nil {
+			if _, err := d.registerCronJob(context.Background(), c.owner, c.jobName, c.schedule, nil, c.cfg); err == nil {
 				t.Error("expected an error")
 			}
 		})

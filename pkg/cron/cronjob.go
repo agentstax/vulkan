@@ -58,8 +58,8 @@ func NewCronJob(
 			owners++
 		}
 	}
-	if owners > 1 {
-		return nil, fmt.Errorf("at most one of systemId/topicId/consumerGroupId may be set, got %d/%d/%d", systemId, topicId, consumerGroupId)
+	if owners != 1 {
+		return nil, fmt.Errorf("exactly one of systemId/topicId/consumerGroupId must be set, got %d/%d/%d", systemId, topicId, consumerGroupId)
 	}
 	if name == "" || schedule == "" {
 		return nil, fmt.Errorf("name and schedule are required, got %q %q", name, schedule)

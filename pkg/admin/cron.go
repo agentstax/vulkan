@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/migrate"
 )
@@ -39,7 +40,14 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 		return nil, err
 	}
 
-	return a.cronJobDatastore.RegisterCronJob(ctx, name, schedule, data, *cfg)
+	// every cron_job row has exactly one owner; admin-registered jobs are the
+	// system's -- they ride its lifecycle, not any one topic's
+	owner, err := common.NewSystemOwner(sys.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.cronJobDatastore.RegisterCronJob(ctx, owner, name, schedule, data, *cfg)
 }
 
 // AlterCronJob applies cfg's set fields to the named job and returns the

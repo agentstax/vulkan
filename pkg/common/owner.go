@@ -60,6 +60,20 @@ func (o Owner) Kind() OwnerKind {
 	}
 }
 
+// IdColumns is the owner as a polymorphic table's owner columns: the owning
+// id in its kind's column, 0 everywhere else. The Go-side twin of the
+// *IdColumn methods, for comparing against scanned rows where NULL reads as 0.
+func (o Owner) IdColumns() (systemId int64, topicId int64, consumerGroupId int64) {
+	switch o.Kind() {
+	case OwnerConsumerGroup:
+		return 0, 0, o.ConsumerGroupId
+	case OwnerTopic:
+		return 0, o.TopicId, 0
+	default:
+		return o.SystemId, 0, 0
+	}
+}
+
 // the value stored in the table's system_id column: id or NULL
 func (o Owner) SystemIdColumn() *int64 {
 	if o.Kind() == OwnerSystem {

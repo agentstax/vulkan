@@ -40,12 +40,13 @@ func NewCronJobDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Pol
 	}, nil
 }
 
-// RegisterCronJob resolves name to its job, creating it if it doesn't exist.
-func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, name string, schedule *Schedule, data any, cfg Config) (*CronJob, error) {
+// RegisterCronJob resolves name to its job, creating it owned by owner if it
+// doesn't exist.
+func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Owner, name string, schedule *Schedule, data any, cfg Config) (*CronJob, error) {
 	var job *CronJob
 	err := d.Retry.Wrap(ctx, func() error {
 		var err error
-		job, err = d.registerCronJob(ctx, name, schedule, data, cfg)
+		job, err = d.registerCronJob(ctx, owner, name, schedule, data, cfg)
 		return err
 	})
 	return job, err
@@ -53,7 +54,10 @@ func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, name string, sch
 
 // registerCronJob registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, schedule *Schedule, data any, cfg Config) (*CronJob, error) {
+func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Owner, name string, schedule *Schedule, data any, cfg Config) (*CronJob, error) {
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
 	if !slugPattern.MatchString(name) {
 		return nil, fmt.Errorf("name must match %s, got %q", slugPattern, name)
 	}
@@ -70,7 +74,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, sch
 		return nil, err
 	}
 	if found != nil {
-		if err := d.assertConfigMatches(found, schedule, data, cfg); err != nil {
+		if err := d.assertConfigMatches(found, owner, schedule, data, cfg); err != nil {
 			return nil, err
 		}
 		d.Logger.InfoContext(ctx, "cron job registered (already existed)", "cron_job", found.Name, "cron_job_id", found.Id)
@@ -94,7 +98,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, sch
 		return nil, err
 	}
 	if found != nil {
-		if err := d.assertConfigMatches(found, schedule, data, cfg); err != nil {
+		if err := d.assertConfigMatches(found, owner, schedule, data, cfg); err != nil {
 			return nil, err
 		}
 		d.Logger.InfoContext(ctx, "cron job registered (already existed)", "cron_job", found.Name, "cron_job_id", found.Id)
@@ -111,15 +115,34 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, sch
 	}
 
 	insertSql := `
-		INSERT INTO cron_job (name, schedule, concurrency, timeout_ns, data, metadata, next_scheduled_time)
-		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), COALESCE($6, '{}'::jsonb), $7)
-		RETURNING id, data, metadata, next_scheduled_time;
+		INSERT INTO cron_job (
+			system_id,
+			topic_id,
+			consumer_group_id,
+			name,
+			schedule,
+			concurrency,
+			timeout_ns,
+			data,
+			metadata,
+			next_scheduled_time
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '{}'::jsonb), COALESCE($9, '{}'::jsonb), $10)
+		RETURNING
+			id,
+			COALESCE(system_id, 0),
+			COALESCE(topic_id, 0),
+			COALESCE(consumer_group_id, 0),
+			data,
+			metadata,
+			next_scheduled_time;
 	`
-	var id int64
+	var id, systemId, topicId, consumerGroupId int64
 	var dataJson, metadataJson json.RawMessage
 	err = tx.QueryRow(ctx, insertSql,
+		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(),
 		name, schedule.String(), string(cfg.Concurrency), int64(cfg.Timeout), data, cfg.Metadata, next,
-	).Scan(&id, &dataJson, &metadataJson, &next)
+	).Scan(&id, &systemId, &topicId, &consumerGroupId, &dataJson, &metadataJson, &next)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +151,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, sch
 		return nil, err
 	}
 
-	job, err := NewCronJob(id, 0, 0, 0, name, schedule.String(), cfg.Concurrency, cfg.Timeout, false, dataJson, metadataJson, next, nil)
+	job, err := NewCronJob(id, systemId, topicId, consumerGroupId, name, schedule.String(), cfg.Concurrency, cfg.Timeout, false, dataJson, metadataJson, next, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +159,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, name string, sch
 	return job, nil
 }
 
-func (d *CronJobDatastore) assertConfigMatches(found *CronJob, schedule *Schedule, data any, cfg Config) error {
+func (d *CronJobDatastore) assertConfigMatches(found *CronJob, owner *common.Owner, schedule *Schedule, data any, cfg Config) error {
 	dataJson, err := marshalJson(data)
 	if err != nil {
 		return fmt.Errorf("data: %w", err)
@@ -146,14 +169,18 @@ func (d *CronJobDatastore) assertConfigMatches(found *CronJob, schedule *Schedul
 		return fmt.Errorf("Metadata: %w", err)
 	}
 
-	matches := found.Schedule == schedule.String() &&
+	systemId, topicId, consumerGroupId := owner.IdColumns()
+	matches := found.SystemId == systemId &&
+		found.TopicId == topicId &&
+		found.ConsumerGroupId == consumerGroupId &&
+		found.Schedule == schedule.String() &&
 		found.Concurrency == cfg.Concurrency &&
 		found.Timeout == cfg.Timeout &&
 		jsonEqual(found.Data, dataJson) &&
 		jsonEqual(found.Metadata, metadataJson)
 	if !matches {
-		return fmt.Errorf("%w: %s: existing=%+v got={Schedule:%s Concurrency:%s Timeout:%v Data:%s Metadata:%s}",
-			ErrCronJobConfigMismatch, found.Name, *found, schedule, cfg.Concurrency, cfg.Timeout, dataJson, metadataJson)
+		return fmt.Errorf("%w: %s: existing=%+v got={SystemId:%d TopicId:%d ConsumerGroupId:%d Schedule:%s Concurrency:%s Timeout:%v Data:%s Metadata:%s}",
+			ErrCronJobConfigMismatch, found.Name, *found, systemId, topicId, consumerGroupId, schedule, cfg.Concurrency, cfg.Timeout, dataJson, metadataJson)
 	}
 	return nil
 }

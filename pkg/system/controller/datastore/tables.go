@@ -254,7 +254,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			metadata JSONB NOT NULL DEFAULT '{}',
 			next_scheduled_time TIMESTAMPTZ NOT NULL,
 			last_scheduled_time TIMESTAMPTZ,                 -- the firing most recently produced
-			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) <= 1),
+			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
 			CHECK (concurrency IN ('allow', 'defer')),
 			CHECK (timeout_ns > 0)
 		);

@@ -109,9 +109,6 @@ Consider making a specific Compact(Producer|Consumer) - they are somewhat unique
 
 JanitorSweepBatchSize has to move into the janitor duty metadata as well
 AlertRepeatInterval we need to do something with it should not live on system
-dutySnapshot should be using common.Owner instead of individual topicId and consumerGroupId. And it should show a system owned duty as ownerNamed 'system'
-- dutySnapshot needs to be changed a lot it was previously more for cronjob like things but now they are workers and so rate, gate, overdue, attemps don't really make sense on it anymore. Should be more focus on heartbeat and last time since claimed
-- but by replacing this info on dutySnapshot we need to move it a new metric slice for cronjob functionality
 
 EnsureNextPartition should not be in janitor
 

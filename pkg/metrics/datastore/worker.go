@@ -59,7 +59,7 @@ func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapsho
 			return nil, err
 		}
 
-		s.Owner, err = toWorkerOwner(systemId, topicId, consumerGroupId, topicName, groupName)
+		s.Owner, err = toOwner(systemId, topicId, consumerGroupId, topicName, groupName)
 		if err != nil {
 			return nil, err
 		}
@@ -88,7 +88,7 @@ func classifyWorker(targetInstances int, liveInstances int) WorkerStatus {
 	}
 }
 
-func toWorkerOwner(systemId int64, topicId int64, consumerGroupId int64, topicName string, groupName string) (*common.Owner, error) {
+func toOwner(systemId int64, topicId int64, consumerGroupId int64, topicName string, groupName string) (*common.Owner, error) {
 	switch {
 	case consumerGroupId > 0:
 		return common.NewConsumerGroupOwner(systemId, topicId, consumerGroupId, groupName)

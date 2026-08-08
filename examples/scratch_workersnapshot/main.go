@@ -35,6 +35,15 @@ func main() {
 	_, err = mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 
+	metricsDsCold, err := metricsdatastore.NewMetricsDatastore(ds, nil)
+	must(err)
+	coldJobs, err := metricsDsCold.CronJobSnapshots(ctx)
+	must(err)
+	fmt.Println("cold (no scheduler running):")
+	for _, j := range coldJobs {
+		fmt.Printf("%-32s suspended=%-5v overdue=%-5v due_for=%s\n", j.Name, j.Suspended, j.Overdue, j.DueFor.Round(time.Millisecond))
+	}
+
 	c, err := consumer.NewConsumer[Message](ds, nil)
 	must(err)
 	instance, err := c.Register(ctx, "snapshot.group", topicName, topic.SchemaVersion(1))
@@ -60,6 +69,18 @@ func main() {
 		fmt.Printf("%-18s %-14s %-24s %-10s %6d %5d %8d %12s %12s\n",
 			s.Name, s.Owner.Kind(), s.Owner.Name, s.Status, s.TargetInstances, s.LiveInstances,
 			s.Attempts, s.OldestInstanceAge.Round(time.Millisecond), s.UnclaimedFor.Round(time.Millisecond))
+	}
+
+	cronJobs, err := metricsDs.CronJobSnapshots(ctx)
+	must(err)
+	fmt.Printf("\n%-32s %-14s %-14s %-14s %-9s %-8s %12s %-20s\n", "CRON JOB", "OWNER KIND", "OWNER NAME", "SCHEDULE", "SUSPENDED", "OVERDUE", "DUE FOR", "LAST SCHEDULED")
+	for _, j := range cronJobs {
+		last := "never"
+		if !j.LastScheduledTime.IsZero() {
+			last = j.LastScheduledTime.Format("15:04:05")
+		}
+		fmt.Printf("%-32s %-14s %-14s %-14s %-9v %-8v %12s %-20s\n",
+			j.Name, j.Owner.Kind(), j.Owner.Name, j.Schedule, j.Suspended, j.Overdue, j.DueFor.Round(time.Millisecond), last)
 	}
 
 	stop()
