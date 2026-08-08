@@ -96,7 +96,7 @@ func main() {
 	must(err)
 	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[Rec](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[Rec](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -649,7 +649,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 }
 
 func abandonedEventProducer(ctx context.Context) *consumermetrics.MetricEventProducer {
-	events, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
+	events, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
 	go func() { must(events.Run(ctx)) }()
 	return events

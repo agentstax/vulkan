@@ -25,11 +25,9 @@ func NewMetricEventProducer(ds *datastore.PostgresDatastore, cfg *MetricEventCon
 		cfg = &MetricEventConfig{}
 	}
 
-	// topic name == __system.metrics
-	p, err := producer.NewProducer[GoRoutineEvent](metrics.TopicName, topic.SchemaVersion(1), ds, &producer.ProducerConfig{
-		Logger:                  cfg.Logger,
-		Retry:                   cfg.Retry,
-		DisableGracefulShutdown: cfg.DisableGracefulShutdown,
+	p, err := producer.NewProducer[GoRoutineEvent](ds, &producer.ProducerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
@@ -42,14 +40,24 @@ func NewMetricEventProducer(ds *datastore.PostgresDatastore, cfg *MetricEventCon
 	}, nil
 }
 
-func (e *MetricEventProducer) Register(ctx context.Context) error {
-	if err := e.producer.Register(ctx); err != nil {
+// Run produces queued events until ctx cancels, then returns nil. Each call
+// registers its own producer instance, so Run is callable again after it
+// returns.
+func (e *MetricEventProducer) Run(ctx context.Context) error {
+	instance, err := e.producer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	if err != nil {
 		return err
 	}
 
-	go e.drain(ctx)
-
-	return nil
+	for {
+		select {
+		case <-ctx.Done():
+			// queued events are dropped -- metrics never hold up a shutdown
+			return nil
+		case event := <-e.events:
+			e.produce(ctx, instance, event)
+		}
+	}
 }
 
 func (e *MetricEventProducer) Add(ctx context.Context, topicId int64, group string, messageId int64, attempt int) {
@@ -71,22 +79,10 @@ func (e *MetricEventProducer) enqueue(event *GoRoutineEvent) {
 	}
 }
 
-func (e *MetricEventProducer) drain(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			// don't care about graceful shutdown for metrics at this point
-			return
-		case event := <-e.events:
-			e.produce(ctx, event)
-		}
-	}
-}
-
-func (e *MetricEventProducer) produce(ctx context.Context, event *GoRoutineEvent) {
+func (e *MetricEventProducer) produce(ctx context.Context, instance *producer.ProducerInstance[GoRoutineEvent], event *GoRoutineEvent) {
 	routingKey := metrics.AbandonedRoutineKey(event.TopicId, event.Group)
 
-	if _, err := e.producer.Produce(ctx, event, producer.ProduceOptions{RoutingKey: routingKey}); err != nil {
+	if _, err := instance.Produce(ctx, event, producer.ProduceOptions{RoutingKey: routingKey}); err != nil {
 		e.logger.WarnContext(ctx, "abandoned event produce failed", "group", event.Group, "topic_id", event.TopicId, "type", event.EventType, "err", err)
 	}
 }

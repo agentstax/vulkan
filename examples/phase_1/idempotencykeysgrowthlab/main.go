@@ -78,7 +78,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -126,7 +126,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)

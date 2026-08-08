@@ -77,7 +77,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 	tp, cleanup := registerTopic(ctx, ds, "exactlyonce", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -130,7 +130,7 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[json.RawMessage](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[json.RawMessage](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -180,7 +180,7 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5})
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -221,7 +221,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5, DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5})
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -290,7 +290,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)

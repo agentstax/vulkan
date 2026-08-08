@@ -28,6 +28,9 @@ type CronSchedulerExecution struct {
 	datastore *datastore.CronSchedulerDatastore
 	producer  *producer.Producer[cron.JobRequest]
 	metadata  *cronSchedulerMetadata
+
+	// registered by Run before the first scan -- scan never sees it nil
+	producerInstance *producer.ProducerInstance[cron.JobRequest]
 }
 
 func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata) (*CronSchedulerExecution, error) {
@@ -48,23 +51,13 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 		return nil, err
 	}
 
-	// a producer's lifecycle ends with its Register ctx and stays down, so
-	// every instance owns a fresh one
-	jobProducer, err := producer.NewProducer[cron.JobRequest](cron.TopicName, topic.SchemaVersion(1), cronScheduler.ds, &producer.ProducerConfig{
-		Logger: cronScheduler.Logger,
-		Retry:  cronScheduler.Config.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	return &CronSchedulerExecution{
 		Owner:     owner,
 		Config:    cronScheduler.Config,
 		Logger:    cronScheduler.Logger,
 		runner:    runner,
 		datastore: cronScheduler.datastore,
-		producer:  jobProducer,
+		producer:  cronScheduler.producer,
 		metadata:  metadata,
 	}, nil
 }
@@ -74,11 +67,13 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 func (i *CronSchedulerExecution) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "cron scheduler starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
 
-	if err := i.producer.Register(ctx); err != nil {
+	producerInstance, err := i.producer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
+	if err != nil {
 		return err
 	}
+	i.producerInstance = producerInstance
 
-	err := i.runner.Run(ctx, i.scan)
+	err = i.runner.Run(ctx, i.scan)
 	if err == nil {
 		i.Logger.InfoContext(ctx, "cron scheduler stopped", "system", i.Owner.SystemId)
 	}
@@ -136,7 +131,7 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*cron.JobRequest, error) {
 			return request, nil
 		}
-		_, err = i.producer.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
+		_, err = i.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
 			RoutingKey:     row.Name,
 			CompactionKey:  strconv.FormatInt(row.Id, 10), // id not name -- a destroyed name's reuse must not share a key
 			IdempotencyKey: cron.FiringKey(firing, row.Id),

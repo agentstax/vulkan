@@ -58,7 +58,7 @@ func main() {
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
 
 	step("driving a hard timeout so one message gets abandoned then self-clears")
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -80,9 +80,7 @@ func main() {
 
 	// the abandoned-event producer outlives any one claim -- the events it
 	// carries are generated as the consumer shuts down
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{
-		DisableGracefulShutdown: true,
-	})
+	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
 	go func() { must(abandonedEvents.Run(ctx)) }()
 

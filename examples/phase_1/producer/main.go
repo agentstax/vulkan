@@ -65,7 +65,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

@@ -8,7 +8,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
@@ -109,25 +108,13 @@ func NewMessageRow[Message any](id int64, message *Message, createdAt time.Time,
 }
 
 type Producer[Message any] struct {
-	Topic *topic.Topic // resolved by Register from the (name, version) given to NewProducer
-
-	topicName       string
-	version         topic.SchemaVersion
 	datastore       *producerDatastore[Message]
 	topicController *topiccontroller.TopicController
-	batcher         *batcher[Message]
-	lifecycleCtx    context.Context
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducer[Message any](topicName string, version topic.SchemaVersion, ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
+func NewProducer[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -152,179 +139,34 @@ func NewProducer[Message any](topicName string, version topic.SchemaVersion, ds 
 	}
 
 	return &Producer[Message]{
-		topicName:       topicName,
-		version:         version,
 		datastore:       producerDatastore,
 		topicController: topicController,
 	}, nil
 }
 
-// Register resolves this producer's topic by name against the live topic row
-// and starts the producer's lifecycle.
-//
-// ctx must be cancellable, unless ProducerConfig.DisableGracefulShutdown
-// declares otherwise.
-func (p *Producer[Message]) Register(ctx context.Context) error {
-	// registration is once per instance
-	if p.lifecycleCtx != nil {
-		if p.lifecycleCtx.Err() != nil {
-			return fmt.Errorf("%w: producer for topic %q is wound down and stays down; construct a new Producer to produce again", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
-		}
-		return fmt.Errorf("%w: producer for topic %q -- the context from the first Register still owns this producer's shutdown", vulkanerrors.ErrAlreadyRegistered, p.Topic.Name)
+// Register resolves the named topic against the live topic row and returns an
+// instance that produces to it. Callable many times -- each call returns an
+// independent instance. ctx bounds only this call's I/O.
+func (p *Producer[Message]) Register(ctx context.Context, topicName string, version topic.SchemaVersion) (*ProducerInstance[Message], error) {
+	if topicName == "" {
+		return nil, errors.New("topic name is required")
+	}
+	if version < 1 {
+		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 
-	// Done() == nil -> context = Background/TODO -> no cancel can ever arrive, so the
-	// shutdown phase silently wouldn't block / drain. Reject unless declared on purpose.
-	if ctx.Done() == nil && !p.datastore.cfg.DisableGracefulShutdown {
-		return fmt.Errorf("%w: producer for topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, p.topicName, lifecycleContextHelp)
-	}
-
-	current, err := p.topicController.GetTopic(ctx, p.topicName, p.version)
+	current, err := p.topicController.GetTopic(ctx, topicName, version)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if current == nil {
-		return fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, p.topicName, p.version)
+		return nil, fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, topicName, version)
 	}
-	p.Topic = current
 
 	// fail fast if the db's schema is outside the range this build understands
 	if err := p.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
-		return err
-	}
-
-	p.batcher = newBatcher(p.datastore, current.Id, current.PartitionSize, p.datastore.cfg)
-
-	// tracked for graceful shutdown draining / handling
-	p.lifecycleCtx = ctx
-
-	return nil
-}
-
-// Produce appends message to the topic, returning once it is durably
-// committed. Concurrent calls share transactions: batched under load,
-// committed alone (no added latency) at idle.
-//
-// Cancelling ctx stops the wait, not the message -- it still commits with
-// its batch, so the outcome is ambiguous. To retry across that ambiguity
-// (or your own crash) without double-publishing, supply an IdempotencyKey:
-// the rerun dedups against whatever actually landed.
-func (p *Producer[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
-	if err := p.lifecycleErr(); err != nil {
-		return nil, err
-	}
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
-	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 
-	// caller keys can collide -- a collision inside a shared txn stalls the
-	// whole batch, so keyed calls take a per-call transaction
-	if opts.IdempotencyKey != uuid.Nil {
-		passthrough := func(context.Context, Tx, uuid.UUID) (*Message, error) { return message, nil }
-		return p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, opts)
-	}
-	return p.batcher.produce(ctx, message, opts)
-}
-
-// ProduceFunc appends the message returned by producerFunc, which runs inside
-// the message's transaction -- your writes commit or roll back with it.
-func (p *Producer[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
-	if err := p.lifecycleErr(); err != nil {
-		return nil, err
-	}
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
-	if err := opts.Validate(); err != nil {
-		return nil, err
-	}
-
-	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return message, nil
-}
-
-// ProduceInTx appends producerFunc's message inside a transaction the caller
-// owns -- it commits or rolls back with everything else in tx.
-//
-// The message's IdempotencyKey stays locked until tx resolves -- any other
-// call reusing that key blocks the whole time. Keep transactions that reuse
-// keys short.
-//
-// For optimal performance call this LAST in your transaction. Producing
-// effectively takes a lock on consumer progress for the whole topic: claims
-// cannot advance past this message until tx commits, and every statement
-// after this call extends how long that lock is held.
-func (p *Producer[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
-	if err := p.lifecycleErr(); err != nil {
-		return nil, err
-	}
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
-	if err := opts.Validate(); err != nil {
-		return nil, err
-	}
-
-	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
-}
-
-// GetCompactionHead returns the current compaction head under compactionKey, or nil if
-// nothing has been published under it.
-func (p *Producer[Message]) GetCompactionHead(ctx context.Context, compactionKey string) (*MessageRow[Message], error) {
-	if err := p.lifecycleErr(); err != nil {
-		return nil, err
-	}
-	if compactionKey == "" {
-		return nil, errors.New("compaction key is required")
-	}
-	return p.datastore.GetCompactionHead(ctx, p.Topic.Id, compactionKey)
-}
-
-// GetCompactionHeadInTx returns the current compaction head under compactionKey,
-// or nil if nothing has been published under it.
-// It does so within the transaction and locks the found row in a FOR UPDATE
-// allowing for race-free compare and set.
-func (p *Producer[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, compactionKey string) (*MessageRow[Message], error) {
-	if err := p.lifecycleErr(); err != nil {
-		return nil, err
-	}
-	if compactionKey == "" {
-		return nil, errors.New("compaction key is required")
-	}
-	return p.datastore.GetCompactionHeadInTx(ctx, tx.Raw(), p.Topic.Id, compactionKey)
-}
-
-// InTransaction opens one transaction, runs transactionFunc against it, and
-// commits -- the way to publish to multiple targets atomically via ProduceInTx.
-//
-// It does not retry -- a transient blip or an ambiguous commit failure
-// surfaces to you as-is. Wrap your own retry loop around it if you want one;
-// only you know what's safe to rerun in your closure. Rerunning the whole
-// closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
-// keys mint fresh per call, so a rerun double-publishes.
-func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
-	tx, err := ds.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	if err := transactionFunc(ctx, newVulkanTx(tx)); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
-}
-
-// lifecycleErr is the produce gate: work is only accepted between Register
-// and its ctx's cancellation.
-func (p *Producer[Message]) lifecycleErr() error {
-	if p.lifecycleCtx == nil {
-		return fmt.Errorf("%w: producer for topic %q -- call Register with the application's lifetime context before producing", vulkanerrors.ErrNotRegistered, p.topicName)
-	}
-	if err := p.lifecycleCtx.Err(); err != nil {
-		return fmt.Errorf("%w: producer for topic %q -- the lifetime context passed to Register is cancelled (%v); queued messages still commit, new ones are refused", vulkanerrors.ErrShutdownRequested, p.Topic.Name, err)
-	}
-	return nil
+	return NewProducerInstance(current, p.datastore)
 }

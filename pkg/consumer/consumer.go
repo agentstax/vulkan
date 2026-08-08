@@ -9,7 +9,6 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -26,24 +25,14 @@ type Consumer[Message any] struct {
 	Config *ConsumerConfig
 	Logger logger.Logger
 
-	consumerGroup string
-	topicName     string
-	version       topic.SchemaVersion
-	ds            *datastore.PostgresDatastore
+	ds *datastore.PostgresDatastore
 
 	topicController *topiccontroller.TopicController
 	maintenance     *maintain.MaintenanceDatastore
 	consumers       *consumercontroller.ConsumerController
-	abandonedEvents *consumermetrics.MetricEventProducer
 }
 
-func NewConsumer[Message any](consumerGroup string, topicName string, version topic.SchemaVersion, ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
-	if topicName == "" {
-		return nil, errors.New("topic name is required")
-	}
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
+func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -77,45 +66,37 @@ func NewConsumer[Message any](consumerGroup string, topicName string, version to
 	if err != nil {
 		return nil, err
 	}
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{
-		DisableGracefulShutdown: cfg.DisableGracefulShutdown,
-		Logger:                  cfg.Logger,
-		Retry:                   cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	return &Consumer[Message]{
 		Config:          cfg,
 		Logger:          cfg.Logger,
-		consumerGroup:   consumerGroup,
-		topicName:       topicName,
-		version:         version,
 		ds:              ds,
 		topicController: topicController,
 		maintenance:     maintenance,
 		consumers:       consumers,
-		abandonedEvents: abandonedEvents,
 	}, nil
 }
 
-// ctx is the instance's lifetime: cancel it to wind the instance down. It
-// must be cancellable, unless ConsumerConfig.DisableGracefulShutdown declares
-// otherwise.
-func (c *Consumer[Message]) Register(ctx context.Context) (*ConsumerInstance[Message], error) {
-	// Done() == nil -> Background/TODO -> no cancel can ever arrive, so the
-	// shutdown phase would silently not exist
-	if ctx.Done() == nil && !c.Config.DisableGracefulShutdown {
-		return nil, fmt.Errorf("%w: consumer group %q on topic %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, c.consumerGroup, c.topicName, lifecycleContextHelp)
+// Register resolves the named topic and registers the consumer group on it,
+// returning an instance ready to Consume. Callable many times -- each call
+// returns an independent instance. ctx bounds only this call's I/O; the
+// instance's lifetime is Consume's ctx.
+func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, topicName string, version topic.SchemaVersion) (*ConsumerInstance[Message], error) {
+	if consumerGroup == "" {
+		return nil, errors.New("consumer group is required")
+	}
+	if topicName == "" {
+		return nil, errors.New("topic name is required")
+	}
+	if version < 1 {
+		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 
-	current, err := c.topicController.GetTopic(ctx, c.topicName, c.version)
+	current, err := c.topicController.GetTopic(ctx, topicName, version)
 	if err != nil {
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, c.topicName, c.version)
+		return nil, fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, topicName, version)
 	}
 	if err := c.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return nil, err
@@ -127,7 +108,7 @@ func (c *Consumer[Message]) Register(ctx context.Context) (*ConsumerInstance[Mes
 		return nil, err
 	}
 
-	group, err := c.consumers.RegisterGroup(ctx, current.Id, c.consumerGroup)
+	group, err := c.consumers.RegisterGroup(ctx, current.Id, consumerGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -139,12 +120,14 @@ func (c *Consumer[Message]) Register(ctx context.Context) (*ConsumerInstance[Mes
 		return nil, err
 	}
 
-	// Register starts a goroutine draining the abandoned-event queue, and this
-	// ctx bounds it. A worker claim would be the wrong lifetime: the events are
-	// produced as a consumer shuts down, after its claim is already gone
-	if err := c.abandonedEvents.Register(ctx); err != nil {
+	// built per instance -- two instances must never share one event queue
+	abandonedEvents, err := consumermetrics.NewMetricEventProducer(c.ds, &consumermetrics.MetricEventConfig{
+		Logger: c.Config.Logger,
+		Retry:  c.Config.Retry,
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return NewConsumerInstance[Message](owner, c.ds, c.abandonedEvents, ctx, c.Config)
+	return NewConsumerInstance[Message](owner, c.ds, abandonedEvents, c.Config)
 }

@@ -88,11 +88,11 @@ func main() {
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
-	wpA, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpA, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpAInstance, err := wpA.Register(ctx, topicA.Name, topic.SchemaVersion(1))
 	must(err)
-	wpB, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpB, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpBInstance, err := wpB.Register(ctx, topicB.Name, topic.SchemaVersion(1))
 	must(err)
@@ -128,7 +128,7 @@ func main() {
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
-	wpC, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpC, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpCInstance, err := wpC.Register(ctx, topicC.Name, topic.SchemaVersion(1))
 	must(err)
@@ -156,7 +156,7 @@ func main() {
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
-	wpD, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wpD, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpDInstance, err := wpD.Register(ctx, topicD.Name, topic.SchemaVersion(1))
 	must(err)

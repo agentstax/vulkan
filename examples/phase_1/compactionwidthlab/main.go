@@ -77,11 +77,11 @@ func main() {
 	}()
 
 	step("seed both topics with the identical 40-message workload")
-	narrowProducer, err := producer.NewProducer[Record](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	narrowProducer, err := producer.NewProducer[Record](ds, nil)
 	must(err)
 	narrowProducerInstance, err := narrowProducer.Register(ctx, narrow.Name, topic.SchemaVersion(1))
 	must(err)
-	wideProducer, err := producer.NewProducer[Record](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wideProducer, err := producer.NewProducer[Record](ds, nil)
 	must(err)
 	wideProducerInstance, err := wideProducer.Register(ctx, wide.Name, topic.SchemaVersion(1))
 	must(err)

@@ -70,7 +70,7 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDa
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -116,7 +116,7 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *coredatastore.Postg
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)

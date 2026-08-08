@@ -34,7 +34,8 @@ type Scheduler struct {
 
 	systemController *systemcontroller.SystemController
 	producer         *producer.Producer[cron.JobRequest]
-	duty             *dutyRunner // constructed by Register -- identity and rate come from the offered maintenance row
+	producerInstance *producer.ProducerInstance[cron.JobRequest] // registered by Register alongside duty
+	duty             *dutyRunner                                 // constructed by Register -- identity and rate come from the offered maintenance row
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -69,7 +70,7 @@ func NewScheduler(ds *datastore.PostgresDatastore, cfg *MaintainerConfig) (*Sche
 		return nil, err
 	}
 
-	jobProducer, err := producer.NewProducer[cron.JobRequest](cron.TopicName, topic.SchemaVersion(1), ds, &producer.ProducerConfig{
+	jobProducer, err := producer.NewProducer[cron.JobRequest](ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -119,9 +120,11 @@ func (s *Scheduler) Register(ctx context.Context, duty string, owner *common.Own
 		return false, err
 	}
 
-	if err := s.producer.Register(ctx); err != nil {
+	producerInstance, err := s.producer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
+	if err != nil {
 		return false, err
 	}
+	s.producerInstance = producerInstance
 
 	runner, err := newDutyRunner(s.Datastore, s.Logger, s.Config.JitterFraction, DutyScheduler, owner, meta.PollRate)
 	if err != nil {
@@ -233,7 +236,7 @@ func (s *Scheduler) produceJobRequest(ctx context.Context, id int64) error {
 		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*cron.JobRequest, error) {
 			return request, nil
 		}
-		_, err = s.producer.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
+		_, err = s.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
 			RoutingKey:     row.name,
 			CompactionKey:  strconv.FormatInt(row.id, 10), // id not name -- a destroyed name's reuse must not share a key
 			IdempotencyKey: cron.FiringKey(firing, row.id),

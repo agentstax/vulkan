@@ -70,10 +70,9 @@ type ConsumerConfig struct {
 	// Default: "" (honor each message's own policy).
 	ConcurrencyOverride common.ConcurrencyPolicy
 
-	// DisableGracefulShutdown - lets Register accept a lifecycle context that
-	// can never be cancelled (e.g. context.Background()), this leaves Consume's
-	// ctx as the only shutdown signal.
-	// Prefer passing the application's shutdown context to Register.
+	// DisableGracefulShutdown - lets Consume accept a context that can never
+	// be cancelled (e.g. context.Background()), leaving process exit as the
+	// only stop. Prefer passing the application's shutdown context to Consume.
 	// Default: false.
 	DisableGracefulShutdown bool
 }

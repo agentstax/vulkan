@@ -243,7 +243,7 @@ func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix s
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)

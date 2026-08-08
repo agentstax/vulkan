@@ -92,7 +92,7 @@ func main() {
 	v1, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 
-	wp1, err := producer.NewProducer[V1Order](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp1, err := producer.NewProducer[V1Order](ds, nil)
 	must(err)
 	wp1Instance, err := wp1.Register(ctx, name, topic.SchemaVersion(1))
 	must(err)
@@ -112,7 +112,7 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(2), admin.DestroyOptions{Force: true}))
 	}()
 
-	wp2, err := producer.NewProducer[V2Order](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp2, err := producer.NewProducer[V2Order](ds, nil)
 	must(err)
 	wp2Instance, err := wp2.Register(ctx, name, topic.SchemaVersion(2))
 	must(err)

@@ -184,5 +184,3 @@ consider rename split again to:
 -- Right now we have Definition and Provisioner mixed which doesn't make sense logically
 
 Should think through making all tables append only by nature this would make us apache cassandra compliant have audit / debuggability for all operations and improve some levels of efficancy (partion based drops on everything) the main trade off is in complexity and in hot-path throughput explicitly for reads
-
-Once or during producer is refactored we need to decide on fate of lifecycle context within consumer and producer. They should be similar and make sense conceptually. But I'd like to get rid of that mergeLifecycle if it makes sense and weird shutdown handler logic

@@ -6,8 +6,7 @@ import (
 )
 
 type MetricEventConfig struct {
-	Noop                    bool
-	DisableGracefulShutdown bool
-	Logger                  logger.Logger
-	Retry                   *retry.Policy
+	Noop   bool
+	Logger logger.Logger
+	Retry  *retry.Policy
 }

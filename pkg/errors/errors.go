@@ -4,26 +4,13 @@ package errors
 
 import "errors"
 
-// ErrNotRegistered means work arrived before Register -- the instance has no
-// lifecycle to run under yet. Call Register once, with the application's
-// lifetime context, first.
-var ErrNotRegistered = errors.New("not registered")
-
-// ErrShutdownRequested means Register's lifecycle context is cancelled -- the
-// instance refuses new work while anything already accepted drains.
-var ErrShutdownRequested = errors.New("shutdown requested")
-
-// ErrAlreadyRegistered means Register ran twice on one instance. An instance
-// registers once, and a wound-down instance stays down -- construct a new one.
-var ErrAlreadyRegistered = errors.New("already registered")
-
 // ErrAlreadyConsuming means Consume ran twice at once on one instance -- an
 // instance runs one Consume at a time. Wait for the first to return, or
 // Register another instance.
 var ErrAlreadyConsuming = errors.New("already consuming")
 
-// ErrLifecycleContextNotCancellable means Register was given a context that
-// can never be cancelled (e.g. context.Background()), so shutdown could never
-// be requested. Pass the application's shutdown context, or opt out with the
+// ErrLifecycleContextNotCancellable means Consume's ctx can never be
+// cancelled (e.g. context.Background()), so shutdown could never be
+// requested. Pass the application's shutdown context, or opt out with the
 // config's DisableGracefulShutdown.
 var ErrLifecycleContextNotCancellable = errors.New("lifecycle context can never be cancelled")

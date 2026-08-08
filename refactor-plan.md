@@ -320,10 +320,24 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
      instance must own its queue; a caller-shared one across manager-spawned lives is
      broken. Closes TODO.md's "refactor out queue/poolLimiter" item. ~23 lab call sites.
 10. producer factory-style register — BUILT (2026-08-07). Producer is a factory;
-    Register(ctx) returns a *ProducerInstance bound to ctx, callable many times.
-    Decisions as recorded below: ProducerInstance KEEPS lifecycleCtx (the produce
-    admission gate — asymmetric with the consumer on purpose, since no long-running
-    call exists to carry a lifetime); MetricEventProducer.Register deleted outright —
+    Register returns a *ProducerInstance, callable many times.
+    REVISED 2026-08-08 (user-directed, two follow-ups):
+    (a) identity params moved constructor→Register: NewProducer(ds, cfg) +
+    Register(ctx, topicName, version); NewConsumer(ds, cfg) + Register(ctx,
+    consumerGroup, topicName, version) — one factory registers instances on any
+    number of topics/groups, validation of those params lives in Register.
+    (b) ProducerInstance lifecycleCtx DROPPED (reverses the keep decision below):
+    Register is a stateless build step whose ctx bounds only that call's I/O;
+    shutdown is per produce call via the ctx passed to it — the batcher already
+    refuses a cancelled ctx before enqueue and runs BatchShutdownGrace off it.
+    Accepted trade-off: a caller producing on context.Background() is no longer
+    refused at app shutdown (same contract as any database call). Deleted with it:
+    lifecycleErr, producer Done()==nil check, ProducerConfig.DisableGracefulShutdown
+    + MetricEventConfig.DisableGracefulShutdown, pkg/producer/errors.go, and the
+    ErrShutdownRequested sentinel (zero callers remained). Consumer side unchanged —
+    Consume's ctx was already the sole lifetime, its Done()==nil check and
+    ConsumerConfig.DisableGracefulShutdown stay.
+    Original chunk 10 decisions: MetricEventProducer.Register deleted outright —
     Run(ctx) registers its own producer instance then drains, so it is re-callable
     and NewMetricEventProducer does no I/O at all; consumer Register builds a fresh
     MetricEventProducer per instance and ConsumerInstance.Consume runs it beside the

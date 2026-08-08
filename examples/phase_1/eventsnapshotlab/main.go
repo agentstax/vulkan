@@ -40,10 +40,10 @@ func main() {
 	assertDuration("SelfClearLatencyAvg", snapshot.SelfClearLatencyAvg, 0)
 
 	step("two producers (simulating two processes) interleave abandoned/cleared for the same group")
-	producerA, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
+	producerA, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
 	go func() { must(producerA.Run(ctx)) }()
-	producerB, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
+	producerB, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
 	go func() { must(producerB.Run(ctx)) }()
 

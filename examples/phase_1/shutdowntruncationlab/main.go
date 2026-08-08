@@ -93,7 +93,7 @@ func main() {
 	must(err)
 	md, err := maintain.NewMaintenanceDatastore(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{DisableGracefulShutdown: true})
+	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -111,7 +111,7 @@ func main() {
 	}
 	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupID, group)
 	must(err)
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{DisableGracefulShutdown: true})
+	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
 	go func() { must(abandonedEvents.Run(ctx)) }()
 
