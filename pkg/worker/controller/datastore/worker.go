@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/jackc/pgx/v5"
 )
@@ -26,7 +27,8 @@ func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *
 	return err
 }
 
-// ListWorkers lists the worker rows owned anywhere on owner's chain.
+// ListWorkers lists the worker rows owned anywhere on owner's chain; a
+// system owner also reaches every row below it.
 func (d *WorkerDatastore) ListWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersData, error) {
 	var workers []ListWorkersData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -39,6 +41,7 @@ func (d *WorkerDatastore) ListWorkers(ctx context.Context, owner *common.Owner) 
 
 func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) ([]ListWorkersData, error) {
 	// one clause per level of the owner chain
+	// or all workers if owner is system.
 	sql := `
 		SELECT
 			w.id,
@@ -57,7 +60,9 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 		LEFT JOIN topic t ON t.id = COALESCE(w.topic_id, g.topic_id)
 		WHERE w.system_id = $1
 			OR w.topic_id = $2
-			OR w.consumer_group_id = $3;
+			OR w.consumer_group_id = $3
+			-- if owner is system we want every worker
+			OR ($2 = 0 AND $3 = 0 AND t.system_id = $1);
 	`
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, owner.SystemId, owner.TopicId, owner.ConsumerGroupId)

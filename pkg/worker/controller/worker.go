@@ -30,7 +30,7 @@ func (c *WorkerController) InsertWorker(ctx context.Context, name string, owner 
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain -- a
-// sibling group's are not on it.
+// sibling group's are not on it. A system owner's chain is everything.
 func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner) ([]*worker.Worker, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")

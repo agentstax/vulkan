@@ -66,7 +66,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorDefinition, managerDefinition)
+	}, janitorDefinition)
 	if err != nil {
 		return nil, err
 	}
