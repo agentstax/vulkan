@@ -1,25 +1,27 @@
-package monitor
+package metrics
 
 import (
 	"context"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/metrics/controller"
 	"go.opentelemetry.io/otel/metric"
 )
 
-// cronJobGauges owns the otel ObservableGauge instruments for fleet-wide
-// cron-job health -- registered once, RegisterCronJobGauges' caller's concern.
-type cronJobGauges struct {
-	monitor       *Monitor
+// cronJobMetric owns the otel ObservableGauge instruments for fleet-wide
+// cron-job health -- registered once, RegisterCronJobMetric's caller's
+// concern.
+type cronJobMetric struct {
+	controller    *controller.MetricsController
 	overdueJobs   metric.Int64ObservableGauge
 	oldestDueAge  metric.Int64ObservableGauge
 	suspendedJobs metric.Int64ObservableGauge
 }
 
-// RegisterCronJobGauges registers the fleet-wide cron-job-health gauges
-// against the monitor's meter. Call once per process -- calling it again
-// registers duplicate instruments.
-func (m *Monitor) RegisterCronJobGauges() error {
+// RegisterCronJobMetric registers the fleet-wide cron-job-health gauges
+// against the meter. Call once per process -- calling it again registers
+// duplicate instruments.
+func (m *Metrics) RegisterCronJobMetric() error {
 	overdueJobs, err := m.meter.Int64ObservableGauge(
 		"vulkan.cron.state.overdue_jobs",
 		metric.WithDescription("Unsuspended jobs due for longer than the overdue threshold -- nothing is firing them."),
@@ -47,22 +49,22 @@ func (m *Monitor) RegisterCronJobGauges() error {
 		return err
 	}
 
-	g := &cronJobGauges{
-		monitor:       m,
+	c := &cronJobMetric{
+		controller:    m.controller,
 		overdueJobs:   overdueJobs,
 		oldestDueAge:  oldestDueAge,
 		suspendedJobs: suspendedJobs,
 	}
 
-	_, err = m.meter.RegisterCallback(g.observe, overdueJobs, oldestDueAge, suspendedJobs)
+	_, err = m.meter.RegisterCallback(c.observe, overdueJobs, oldestDueAge, suspendedJobs)
 	return err
 }
 
 // observe is the callback behind all three cron-job gauges -- one
 // CronJobSnapshots call per collection cycle feeds them, not one query per
 // instrument.
-func (g *cronJobGauges) observe(ctx context.Context, o metric.Observer) error {
-	jobs, err := g.monitor.Datastore.CronJobSnapshots(ctx)
+func (c *cronJobMetric) observe(ctx context.Context, o metric.Observer) error {
+	jobs, err := c.controller.CronJobSnapshots(ctx)
 	if err != nil {
 		return err
 	}
@@ -82,9 +84,9 @@ func (g *cronJobGauges) observe(ctx context.Context, o metric.Observer) error {
 		}
 	}
 
-	o.ObserveInt64(g.overdueJobs, overdue)
-	o.ObserveInt64(g.oldestDueAge, oldest.Milliseconds())
-	o.ObserveInt64(g.suspendedJobs, suspended)
+	o.ObserveInt64(c.overdueJobs, overdue)
+	o.ObserveInt64(c.oldestDueAge, oldest.Milliseconds())
+	o.ObserveInt64(c.suspendedJobs, suspended)
 
 	return nil
 }

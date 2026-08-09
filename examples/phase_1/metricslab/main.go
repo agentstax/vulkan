@@ -14,7 +14,7 @@ package main
 // forcing a partition boundary in a short-lived lab isn't practical without
 // either a huge event volume or a second, parallel metrics topic -- neither
 // of which this design supports. The read path applies no separate time
-// filter of its own (see pkg/metrics/datastore/event.go) -- once a
+// filter of its own (see pkg/metrics/controller/datastore/event.go) -- once a
 // partition is physically dropped its rows are just gone from every query,
 // so there's no additional logic path here that could get that wrong.
 
@@ -33,7 +33,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/metrics/monitor"
+	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -140,30 +140,30 @@ func main() {
 		if err != nil || snap == nil || len(snap.Groups) == 0 {
 			return false, err
 		}
-		return snap.Groups[0].Events.Total == 4, nil
+		return snap.Groups[0].AbandonedRoutines.Total == 4, nil
 	}))
 	snap := mustTopicMetrics(ctx, mAdmin, topicName)
-	assertInt64("Total abandoned across both processes", snap.Groups[0].Events.Total, 4)
-	assertInt64("Outstanding (nothing cleared yet)", snap.Groups[0].Events.Outstanding, 4)
+	assertInt64("Total abandoned across both processes", snap.Groups[0].AbandonedRoutines.Total, 4)
+	assertInt64("Outstanding (nothing cleared yet)", snap.Groups[0].AbandonedRoutines.Outstanding, 4)
 
 	step("release 2 of the 4 -- outstanding falls, self-clear latency becomes measurable")
 	gates.release(1)
 	gates.release(2)
 	must(waitFor(10*time.Second, func() (bool, error) {
 		snap := mustTopicMetrics(ctx, mAdmin, topicName)
-		return snap.Groups[0].Events.Outstanding == 2, nil
+		return snap.Groups[0].AbandonedRoutines.Outstanding == 2, nil
 	}))
 	snap = mustTopicMetrics(ctx, mAdmin, topicName)
-	assertInt64("Total unchanged", snap.Groups[0].Events.Total, 4)
-	assertInt64("Outstanding falls to 2", snap.Groups[0].Events.Outstanding, 2)
-	if snap.Groups[0].Events.SelfClearLatencyAvg <= 0 {
+	assertInt64("Total unchanged", snap.Groups[0].AbandonedRoutines.Total, 4)
+	assertInt64("Outstanding falls to 2", snap.Groups[0].AbandonedRoutines.Outstanding, 2)
+	if snap.Groups[0].AbandonedRoutines.SelfClearLatencyAvg <= 0 {
 		die("expected SelfClearLatencyAvg > 0 once some events cleared")
 	}
-	fmt.Printf("  ✓ SelfClearLatencyAvg (%v)\n", snap.Groups[0].Events.SelfClearLatencyAvg)
+	fmt.Printf("  ✓ SelfClearLatencyAvg (%v)\n", snap.Groups[0].AbandonedRoutines.SelfClearLatencyAvg)
 
-	step("mAdmin.TopicMetrics is the same read `vulkan topic get` renders -- queue state came back too")
-	fmt.Printf("  ✓ queue backlog=%d, parked exceptions=%d\n",
-		snap.Groups[0].Queue.Backlog, snap.Groups[0].Queue.ReadyExceptions)
+	step("mAdmin.TopicMetrics is the same read `vulkan topic get` renders -- cursor/exception state came back too")
+	fmt.Printf("  ✓ cursor backlog=%d, ready exceptions=%d\n",
+		snap.Groups[0].Cursor.Backlog, snap.Groups[0].Exceptions.Ready)
 
 	cancel()
 	wg.Wait()
@@ -198,11 +198,11 @@ func (g *releaseGates) release(id int64)              { close(g.gate(id)) }
 
 // ---- helpers ----
 
-func topicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) (*monitor.TopicSnapshot, error) {
+func topicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) (*vulkanmetrics.TopicSnapshot, error) {
 	return mAdmin.TopicMetrics(ctx, name, topic.SchemaVersion(1))
 }
 
-func mustTopicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) *monitor.TopicSnapshot {
+func mustTopicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) *vulkanmetrics.TopicSnapshot {
 	snap, err := topicMetrics(ctx, mAdmin, name)
 	must(err)
 	if len(snap.Groups) == 0 {

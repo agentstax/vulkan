@@ -418,10 +418,50 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
     reads overdue, suspended 3h-stale row does not, and with a consumer
     running the scheduler fired the due row and the snapshot showed
     last_scheduled_time advance.
+    11c. metrics package layered (2026-08-08) — BUILT. pkg/metrics reshaped to
+    the house vocabulary/controller/datastore pattern: snapshot read-models
+    (ConsumerGroupSnapshot+GroupLag, WorkerSnapshot+WorkerStatus,
+    CronJobSnapshot, DutySnapshot, AbandonedRoutineSnapshot, TopicSnapshot)
+    moved up to pkg/metrics. REVISED same day (the GroupSnapshot.Queue naming
+    question): GroupSnapshot DELETED — it split one subject by data source and
+    duplicated ConsumerGroupSnapshot's role. ConsumerGroupSnapshot is now THE
+    per-group composite, sectioned by the store each number reads: Cursor
+    CursorSnapshot (head/claimed/committed/backlog/inflight), Exceptions
+    ExceptionSnapshot (ready/inflight/deferred/dead + OldestUnresolvedAge —
+    renamed from OldestUnackedAge, ack is banned vocab, column alias
+    oldest_unresolved_at), OpenLeases, AbandonedRoutines
+    AbandonedRoutineSnapshot (renamed from EventSnapshot, matches
+    AbandonedRoutineKey). The controller's ConsumerGroupSnapshot verb fills
+    every section (event pairing included — accepted cost per gauge cycle);
+    AbandonedRoutineSnapshot stays a standalone verb for reads with no real
+    topic/group rows (eventsnapshotlab). Gauge family renamed
+    vulkan.consumer.queue_state.* → vulkan.consumer.cursor.{head,claimed,
+    committed,backlog,inflight}, vulkan.consumer.exceptions.{ready,inflight,
+    deferred,dead,oldest_unresolved_age}, vulkan.consumer.open_leases.
+    TopicSnapshot.Groups []ConsumerGroupSnapshot; pkg/metrics/monitor DELETED — MetricsController
+    took its snapshot verbs + TopicSnapshot composite, and the otel gauges
+    moved to their own pkg/metrics/metrics package (user: gauges don't belong
+    beside controller logic): Metrics type = NewMetrics(controller, cfg) with
+    Meter on MetricsConfig (noop default), structs renamed <type>Gauges →
+    <type>Metric with Register<Type>Metric methods; the controller carries no
+    meter. SQL moved down to pkg/metrics/controller/datastore returning
+    query-exact *Data structs in model.go. Verdict/derivation logic (toOwner, classifyWorker,
+    overdueThreshold/overdueFactor, backlog/inflight math, abandoned/cleared
+    event pairing) lives in controller adapters; input validation
+    (topicId/group) controller-side. Callers moved: admin (field monitor →
+    metricsController, TopicMetrics returns *metrics.TopicSnapshot), CLI
+    maintain status, eventsnapshotlab/dutybackofflab/metricslab. Verified:
+    both modules build, eventsnapshotlab + metricslab + `vulkan maintain
+    status` pass live (dutybackofflab fails identically on clean main —
+    pre-existing, it's a chunk 13 rewrite).
 12. CLI — `vulkan maintain run` daemon becomes the worker-based daemon.
-13. cleanup — delete pkg/maintain, maintenance DDL + seeds, metrics duty.go, CLI
-    maintain commands; rewrite labs (maintenancelab, dutybackofflab, scratchpad
-    schedlab); prune superseded TODO/plan notes.
+13. cleanup — delete pkg/maintain, maintenance DDL + seeds, ALL duty metrics
+    (pkg/metrics/duty.go DutySnapshot; controller duty.go + toDutySnapshot +
+    overdueFactor in adapter.go; datastore duty.go + DutySnapshotData in
+    model.go; metrics/metrics duty.go dutyMetric + the
+    vulkan.maintain.duty_state.* gauges), CLI maintain commands
+    (maintain_status.go incl. printDutiesTable); rewrite labs (maintenancelab,
+    dutybackofflab, scratchpad schedlab); prune superseded TODO/plan notes.
 
 ---
 

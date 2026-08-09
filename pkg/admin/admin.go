@@ -3,7 +3,7 @@ package admin
 import (
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/metrics/monitor"
+	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -13,12 +13,12 @@ import (
 )
 
 type MessageAdmin struct {
-	systemController *systemcontroller.SystemController
-	topicController  *topiccontroller.TopicController
-	cronJobDatastore *cron.CronJobDatastore
-	monitor          *monitor.Monitor
-	migrateRunner    *migrate.Runner
-	allowDestroy     bool
+	systemController  *systemcontroller.SystemController
+	topicController   *topiccontroller.TopicController
+	cronJobDatastore  *cron.CronJobDatastore
+	metricsController *metricscontroller.MetricsController
+	migrateRunner     *migrate.Runner
+	allowDestroy      bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -76,9 +76,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	// no Meter set -- Monitor defaults to noop, exactly what a cold one-shot
-	// read (health verdicts, the metrics endpoint) wants: no exporter wiring.
-	metricsMonitor, err := monitor.NewMonitor(ds, &monitor.MonitorConfig{
+	metricsController, err := metricscontroller.NewMetricsController(ds, &metricscontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -92,11 +90,11 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	return &MessageAdmin{
-		systemController: systemController,
-		topicController:  topicController,
-		cronJobDatastore: cronJobDatastore,
-		monitor:          metricsMonitor,
-		migrateRunner:    migrateRunner,
-		allowDestroy:     cfg.AllowDestroy,
+		systemController:  systemController,
+		topicController:   topicController,
+		cronJobDatastore:  cronJobDatastore,
+		metricsController: metricsController,
+		migrateRunner:     migrateRunner,
+		allowDestroy:      cfg.AllowDestroy,
 	}, nil
 }

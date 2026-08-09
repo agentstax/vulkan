@@ -9,7 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
+	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 )
 
 func main() {
@@ -29,11 +29,11 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	metricsDS, err := metricsDatastore.NewMetricsDatastore(ds, nil)
+	metricsController, err := metricscontroller.NewMetricsController(ds, nil)
 	must(err)
 
 	step("never-produced (topic, group) -> zeroes, not an error")
-	snapshot, err := metricsDS.EventSnapshot(ctx, topicID, group)
+	snapshot, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, group)
 	must(err)
 	assertInt64("Total", snapshot.Total, 0)
 	assertInt64("Outstanding", snapshot.Outstanding, 0)
@@ -57,14 +57,14 @@ func main() {
 	// events are produced off the hot path via a buffered channel drained by
 	// a background goroutine -- give it a moment to actually land
 	must(waitFor(10*time.Second, func() (bool, error) {
-		s, err := metricsDS.EventSnapshot(ctx, topicID, group)
+		s, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, group)
 		if err != nil {
 			return false, err
 		}
 		return s.Total == 3, nil
 	}))
 
-	snapshot, err = metricsDS.EventSnapshot(ctx, topicID, group)
+	snapshot, err = metricsController.AbandonedRoutineSnapshot(ctx, topicID, group)
 	must(err)
 	assertInt64("Total", snapshot.Total, 3)
 	assertInt64("Outstanding", snapshot.Outstanding, 1)
@@ -75,7 +75,7 @@ func main() {
 
 	step("a different group on the same topic id sees none of the above")
 	otherGroup := fmt.Sprintf("eventsnapshotlab.other.%d", run)
-	isolated, err := metricsDS.EventSnapshot(ctx, topicID, otherGroup)
+	isolated, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, otherGroup)
 	must(err)
 	assertInt64("Total", isolated.Total, 0)
 	assertInt64("Outstanding", isolated.Outstanding, 0)

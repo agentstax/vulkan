@@ -18,7 +18,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/maintain"
-	metricsdatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
+	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -110,9 +110,9 @@ func main() {
 	}
 
 	step("confirming DutySnapshots surfaces the failing streak")
-	md, err := metricsdatastore.NewMetricsDatastore(ds, nil)
+	metricsController, err := metricscontroller.NewMetricsController(ds, nil)
 	must(err)
-	duties, err := md.DutySnapshots(ctx)
+	duties, err := metricsController.DutySnapshots(ctx)
 	must(err)
 	found := false
 	for _, d := range duties {

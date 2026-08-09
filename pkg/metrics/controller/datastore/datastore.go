@@ -8,19 +8,15 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-// MetricsDatastore is the read-only view of the DB-snapshot metrics --
-// per (topic, group) queue state, topic-level compaction/group membership,
-// and fleet-wide duty health. All DERIVED LIVE from rows that already exist
-// (cursor / delivery / lease / maintenance / compaction_head); the DB
-// already IS their state store, so every read here works cold, nothing
-// needs to be running.
+// MetricsDatastore derives every snapshot live from rows other domains
+// already maintain.
 type MetricsDatastore struct {
 	Datastore *datastore.PostgresDatastore
 	Retry     *retry.DatastoreRetry
 	Logger    logger.Logger
 
-	// metricsTopicID caches __system.metrics's own topic id
-	metricsTopicID int64
+	// metricsTopicId caches __system.metrics's own topic id
+	metricsTopicId int64
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -46,6 +42,6 @@ func NewMetricsDatastore(ds *datastore.PostgresDatastore, cfg *MetricsDatastoreC
 		Datastore:      ds,
 		Retry:          dsRetry,
 		Logger:         cfg.Logger,
-		metricsTopicID: -1, // invalidates cache
+		metricsTopicId: -1, // invalidates cache
 	}, nil
 }

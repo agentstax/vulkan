@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/logger"
-	metricsDatastore "github.com/agentstax/vulkan/pkg/metrics/datastore"
-	"github.com/agentstax/vulkan/pkg/metrics/monitor"
+	"github.com/agentstax/vulkan/pkg/metrics"
+	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/spf13/cobra"
 )
 
@@ -29,16 +29,14 @@ func newMaintainStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeDS()
 
-			// MonitorConfig defaults its Meter to noop -- keeps this one-shot
-			// read exporter-free; the query runs live either way
-			monitor, err := monitor.NewMonitor(ds, &monitor.MonitorConfig{
+			metricsController, err := metricscontroller.NewMetricsController(ds, &metricscontroller.ControllerConfig{
 				Logger: logger.NewDefaultLogger(os.Stderr, slog.LevelError),
 			})
 			if err != nil {
 				return failOp("%s", err.Error())
 			}
 
-			duties, err := monitor.Datastore.DutySnapshots(ctx)
+			duties, err := metricsController.DutySnapshots(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -49,7 +47,7 @@ func newMaintainStatusCmd(g *globalFlags) *cobra.Command {
 	}
 }
 
-func printDutiesTable(w io.Writer, duties []metricsDatastore.DutySnapshot) {
+func printDutiesTable(w io.Writer, duties []metrics.DutySnapshot) {
 	if len(duties) == 0 {
 		fmt.Fprintln(w, "no maintenance duties -- duties appear as topics and consumer groups register")
 		return

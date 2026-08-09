@@ -17,3 +17,9 @@ func TopicConfig() *topiccontroller.TopicConfig {
 		DisableDeliveryLog: true,
 	}
 }
+
+type TopicSnapshot struct {
+	TopicId   int64
+	Compacted bool
+	Groups    []ConsumerGroupSnapshot
+}

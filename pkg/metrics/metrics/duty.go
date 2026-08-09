@@ -1,25 +1,26 @@
-package monitor
+package metrics
 
 import (
 	"context"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/metrics/controller"
 	"go.opentelemetry.io/otel/metric"
 )
 
-// dutyGauges owns the otel ObservableGauge instruments for fleet-wide duty
-// health -- registered once, RegisterDutyGauges' caller's concern.
-type dutyGauges struct {
-	monitor       *Monitor
+// dutyMetric owns the otel ObservableGauge instruments for fleet-wide duty
+// health -- registered once, RegisterDutyMetric's caller's concern.
+type dutyMetric struct {
+	controller    *controller.MetricsController
 	overdueDuties metric.Int64ObservableGauge
 	oldestGateAge metric.Int64ObservableGauge
 	failingDuties metric.Int64ObservableGauge
 }
 
-// RegisterDutyGauges registers the fleet-wide duty-health gauges against the
-// monitor's meter. Call once per process (FleetMaintainer.Register) --
-// calling it again registers duplicate instruments.
-func (m *Monitor) RegisterDutyGauges() error {
+// RegisterDutyMetric registers the fleet-wide duty-health gauges against the
+// meter. Call once per process (FleetMaintainer.Register) -- calling it
+// again registers duplicate instruments.
+func (m *Metrics) RegisterDutyMetric() error {
 	overdueDuties, err := m.meter.Int64ObservableGauge(
 		"vulkan.maintain.duty_state.overdue_duties",
 		metric.WithDescription("Duties whose gate trails now() by more than 10x their own rate -- nobody is maintaining them."),
@@ -47,21 +48,21 @@ func (m *Monitor) RegisterDutyGauges() error {
 		return err
 	}
 
-	g := &dutyGauges{
-		monitor:       m,
+	d := &dutyMetric{
+		controller:    m.controller,
 		overdueDuties: overdueDuties,
 		oldestGateAge: oldestGateAge,
 		failingDuties: failingDuties,
 	}
 
-	_, err = m.meter.RegisterCallback(g.observe, overdueDuties, oldestGateAge, failingDuties)
+	_, err = m.meter.RegisterCallback(d.observe, overdueDuties, oldestGateAge, failingDuties)
 	return err
 }
 
 // observe is the callback behind all three duty gauges -- one DutySnapshots call
 // per collection cycle feeds them, not one query per instrument.
-func (g *dutyGauges) observe(ctx context.Context, o metric.Observer) error {
-	duties, err := g.monitor.Datastore.DutySnapshots(ctx)
+func (d *dutyMetric) observe(ctx context.Context, o metric.Observer) error {
+	duties, err := d.controller.DutySnapshots(ctx)
 	if err != nil {
 		return err
 	}
@@ -80,9 +81,9 @@ func (g *dutyGauges) observe(ctx context.Context, o metric.Observer) error {
 		}
 	}
 
-	o.ObserveInt64(g.overdueDuties, overdue)
-	o.ObserveInt64(g.oldestGateAge, oldest.Milliseconds())
-	o.ObserveInt64(g.failingDuties, failing)
+	o.ObserveInt64(d.overdueDuties, overdue)
+	o.ObserveInt64(d.oldestGateAge, oldest.Milliseconds())
+	o.ObserveInt64(d.failingDuties, failing)
 
 	return nil
 }

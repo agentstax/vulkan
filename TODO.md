@@ -40,6 +40,10 @@ How could we generalize this system to be a debezium like replication system. ie
 
 Could do something intresting with APIs and make a standardized API design for producing and consuming. Producing would really just be a POST request with batching as first class imo. Consuming is a bit more interesting, SSE and websockets are intresting and would need some kind of ACK mechanicsm to advance the cursor. Also adding just a basic GET or QUERY http method could be the simpler alternative.
 
+should consider abstracting out WorkerManager into two: WorkerScheduler and WorkerSpawner
+- Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
+- WorkerSpawner would read topic and either spawn or destroy new instances depending
+
 ## BEFORE V1
 
 review / refine the comments in fanOut
@@ -84,7 +88,7 @@ Review code / comments in:
 Still open: `pkg/admin/health.go` carries a `// TODO - probably makes more
 sense to use TopicSnapshot and derive Safe / Reason from that` comment that
 contradicts LEARNING_PLAN 14a's recorded decision (verdict logic deliberately
-kept in admin, separate from `pkg/metrics/monitor`). Whoever picks this up:
+kept in admin, separate from `pkg/metrics/controller`). Whoever picks this up:
 confirm which is current before changing anything — either delete the stray
 comment (settled design wins) or do the refactor and update the LEARNING_PLAN
 record to match.
@@ -103,8 +107,6 @@ pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is
 - having to have random SystemOwner in pkg/migrate/datastore/system.go not good
 - really just the entire pkg/migrate codebase needs a comb through and update
 
-DONT FORGET - you just spent a lot of time making the cron jobs system a lot better we should make the same time investment for long lived background workers like janitor and waterline
-
 Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
 
 JanitorSweepBatchSize has to move into the janitor duty metadata as well
@@ -112,54 +114,9 @@ AlertRepeatInterval we need to do something with it should not live on system
 
 EnsureNextPartition should not be in janitor
 
-Declarer - populates data (system, topic, group register)
-
-worker {
-  id:                       123
-  name:                     janitor
-  owner:                    (systemId, topicId, consumerGroupId)
-  metadata                  {} -- optional
-  min_instances:            1 -- optional
-  max_instances:            3 -- optional
-}
-
-worker_instance {
-  id:         'instance_id'
-  worker_id:  123
-  token:      abc123
-  expires_at: 10:01 (renew by heartbeat)
-}
-
-WorkerManager (Fleet/dutpool):
-- can spawn or destroy workers passed to it
-- cleans up expired worker_instances
-
-Worker spawns with new entry into worker_instance
-
-janitorWorker := NewJanitorWorker()
-schedulerWorker := NewSchedulerWorker()
-
-workerManager := NewWorkerManager(janitorWorker, schedulerWorker)
-
-... same reconcicle logic ...
-
-workerManager on start (spawn):
-  p.inflight.Go(
-    janitorWorker.Register() <- many calls to register is valid and creates a unique 'instance' per register
-    janitorWorker.Run()
-  )
-
-should consider abstracting out WorkerManager into two: WorkerScheduler and WorkerSpawner
-- Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
-- WorkerSpawner would read topic and either spawn or destroy new instances depending
-
-For consumer and system need to abstract out the declaring functionality in same way topicController is doing it
-
 Need to refactor rest of packages in same patterns as worker and topic
 
 our controllers have redundant verbage: topicController.GetTopic -- should just be get
-
-base config.go files should be renamed to 'package'_config.go -- its a more extensible pattern.
 
 tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type
 

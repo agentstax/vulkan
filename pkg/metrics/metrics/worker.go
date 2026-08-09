@@ -1,26 +1,27 @@
-package monitor
+package metrics
 
 import (
 	"context"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/metrics/datastore"
+	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/metrics/controller"
 	"go.opentelemetry.io/otel/metric"
 )
 
-// workerGauges owns the otel ObservableGauge instruments for fleet-wide
-// worker health -- registered once, RegisterWorkerGauges' caller's concern.
-type workerGauges struct {
-	monitor            *Monitor
+// workerMetric owns the otel ObservableGauge instruments for fleet-wide
+// worker health -- registered once, RegisterWorkerMetric's caller's concern.
+type workerMetric struct {
+	controller         *controller.MetricsController
 	unclaimedWorkers   metric.Int64ObservableGauge
 	oldestUnclaimedAge metric.Int64ObservableGauge
 	failingWorkers     metric.Int64ObservableGauge
 }
 
-// RegisterWorkerGauges registers the fleet-wide worker-health gauges
-// against the monitor's meter. Call once per process -- calling it again
-// registers duplicate instruments.
-func (m *Monitor) RegisterWorkerGauges() error {
+// RegisterWorkerMetric registers the fleet-wide worker-health gauges
+// against the meter. Call once per process -- calling it again registers
+// duplicate instruments.
+func (m *Metrics) RegisterWorkerMetric() error {
 	unclaimedWorkers, err := m.meter.Int64ObservableGauge(
 		"vulkan.worker.state.unclaimed_workers",
 		metric.WithDescription("Workers with no live instance and a nonzero target -- nobody is running them."),
@@ -48,22 +49,22 @@ func (m *Monitor) RegisterWorkerGauges() error {
 		return err
 	}
 
-	g := &workerGauges{
-		monitor:            m,
+	w := &workerMetric{
+		controller:         m.controller,
 		unclaimedWorkers:   unclaimedWorkers,
 		oldestUnclaimedAge: oldestUnclaimedAge,
 		failingWorkers:     failingWorkers,
 	}
 
-	_, err = m.meter.RegisterCallback(g.observe, unclaimedWorkers, oldestUnclaimedAge, failingWorkers)
+	_, err = m.meter.RegisterCallback(w.observe, unclaimedWorkers, oldestUnclaimedAge, failingWorkers)
 	return err
 }
 
 // observe is the callback behind all three worker gauges -- one
 // WorkerSnapshots call per collection cycle feeds them, not one query per
 // instrument.
-func (g *workerGauges) observe(ctx context.Context, o metric.Observer) error {
-	workers, err := g.monitor.Datastore.WorkerSnapshots(ctx)
+func (w *workerMetric) observe(ctx context.Context, o metric.Observer) error {
+	workers, err := w.controller.WorkerSnapshots(ctx)
 	if err != nil {
 		return err
 	}
@@ -71,7 +72,7 @@ func (g *workerGauges) observe(ctx context.Context, o metric.Observer) error {
 	var unclaimed, failing int64
 	var oldest time.Duration
 	for _, worker := range workers {
-		if worker.Status == datastore.WorkerUnclaimed {
+		if worker.Status == vulkanmetrics.WorkerUnclaimed {
 			unclaimed++
 			if worker.UnclaimedFor > oldest {
 				oldest = worker.UnclaimedFor
@@ -82,9 +83,9 @@ func (g *workerGauges) observe(ctx context.Context, o metric.Observer) error {
 		}
 	}
 
-	o.ObserveInt64(g.unclaimedWorkers, unclaimed)
-	o.ObserveInt64(g.oldestUnclaimedAge, oldest.Milliseconds())
-	o.ObserveInt64(g.failingWorkers, failing)
+	o.ObserveInt64(w.unclaimedWorkers, unclaimed)
+	o.ObserveInt64(w.oldestUnclaimedAge, oldest.Milliseconds())
+	o.ObserveInt64(w.failingWorkers, failing)
 
 	return nil
 }

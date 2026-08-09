@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agentstax/vulkan/pkg/metrics/monitor"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -14,7 +14,7 @@ import (
 type VersionHealth struct {
 	Topic     *topic.Topic
 	Compacted bool
-	Groups    []monitor.GroupSnapshot
+	Groups    []metrics.ConsumerGroupSnapshot
 	Safe      bool
 	Reason    string
 }
@@ -48,7 +48,7 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 }
 
 func (a *MessageAdmin) versionHealth(ctx context.Context, t *topic.Topic) (*VersionHealth, error) {
-	snapshot, err := a.monitor.TopicSnapshot(ctx, t.Id)
+	snapshot, err := a.metricsController.TopicSnapshot(ctx, t.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (h *VersionHealth) evaluate() {
 
 	var lagging []string
 	for _, g := range h.Groups {
-		lag := g.Queue.GroupLag()
+		lag := g.GroupLag()
 		if lag.Lag > 0 || lag.ParkedExceptions > 0 {
 			lagging = append(lagging, g.ConsumerGroup)
 		}

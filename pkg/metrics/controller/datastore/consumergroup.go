@@ -1,0 +1,123 @@
+package datastore
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/agentstax/vulkan/internal/topic"
+)
+
+// ConsumerGroupSnapshot is the current cursor/delivery/lease picture for
+// (topicId, consumerGroup).
+func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
+	var snapshot *ConsumerGroupSnapshotData
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		snapshot, err = d.consumerGroupSnapshot(ctx, topicId, consumerGroup)
+		return err
+	})
+	return snapshot, err
+}
+
+func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
+	var consumerGroupId int64
+	if err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
+		return nil, err
+	}
+
+	sql := fmt.Sprintf(`
+		SELECT
+			c.claimed,
+			c.committed,
+			COALESCE((
+				SELECT MAX(id)
+				FROM %[1]s
+			), 0) AS head,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM %[2]s
+				WHERE consumer_group_id = $1 AND status = 'ready'
+			), 0) AS ready_exceptions,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM %[2]s
+				WHERE consumer_group_id = $1 AND status = 'inflight'
+			), 0) AS inflight_exceptions,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM %[2]s
+				WHERE consumer_group_id = $1 AND status = 'deferred'
+			), 0) AS deferred_exceptions,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM %[2]s
+				WHERE consumer_group_id = $1 AND status = 'dead'
+			), 0) AS dead_exceptions,
+			(
+				SELECT MIN(created_at)
+				FROM %[2]s
+				WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')
+			) AS oldest_unresolved_at,
+			COALESCE((
+				SELECT COUNT(*)
+				FROM lease
+				WHERE consumer_group_id = $1
+			), 0) AS open_leases
+		FROM cursor c
+		WHERE c.consumer_group_id = $1;
+	`, topic.MessageLogTable(topicId), topic.DeliveryTable(topicId))
+
+	var data ConsumerGroupSnapshotData
+	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupId).Scan(
+		&data.Claimed,
+		&data.Committed,
+		&data.Head,
+		&data.ReadyExceptions,
+		&data.InflightExceptions,
+		&data.DeferredExceptions,
+		&data.DeadExceptions,
+		&data.OldestUnresolvedAt,
+		&data.OpenLeases,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &data, nil
+}
+
+// ListConsumerGroups is every group registered on topicId -- the groups a
+// health view must account for before the topic can be considered drained.
+func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
+	var groups []string
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		groups, err = d.listConsumerGroups(ctx, topicId)
+		return err
+	})
+	return groups, err
+}
+
+func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
+	sql := `
+		SELECT name
+		FROM consumer_group
+		WHERE topic_id = $1 ORDER BY name;
+	`
+
+	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []string
+	for rows.Next() {
+		var g string
+		if err := rows.Scan(&g); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	return groups, rows.Err()
+}
