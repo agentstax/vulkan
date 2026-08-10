@@ -8,8 +8,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/retry"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/metric/noop"
 )
 
 type ConsumerType string
@@ -48,7 +46,6 @@ type ConsumerConfig struct {
 	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: retry.NewDefaultRetryPolicy().
 	ShutdownTimeout         time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Meter                   metric.Meter
 
 	// Message - default MessageOptions: fills any option the produced message left unset.
 	// Default: Timeout 30s; Retry MaxRetries 3 with the default curve.
@@ -144,13 +141,6 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
-	}
-
-	if c.Meter == nil {
-		// metric/noop, not the global otel.GetMeterProvider() -- reading the
-		// global registry requires the top-level otel package, which is
-		// bring the trace/baggage/go-logr dependencies ie bloat.
-		c.Meter = noop.NewMeterProvider().Meter("github.com/agentstax/vulkan/pkg/consumer")
 	}
 
 	return c

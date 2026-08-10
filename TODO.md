@@ -80,6 +80,18 @@ pkg/consumer/base/consumer.go): what it means and how to prevent it -- handle ct
 consumerFunc, or raise TimeoutGrace. it should be rare; the abandoned goroutine is a
 real side effect, not just a warning.
 
+decide the otel metrics exposure story -- nothing constructs pkg/metrics/metrics.Metrics
+yet, so every Register*Metric gauge is dormant. the research (2026-08-09): libraries
+take a Meter in config and the host app owns the exporter (River otelriver, otelgrpc;
+our MetricsConfig.Meter noop-default already matches); server processes host their own
+scrape endpoint (Temporal listenAddress, k8s /metrics, RabbitMQ :15692). mapping:
+SystemManagerConfig grows a Meter for embedders; `vulkan maintain run` grows an
+opt-in --metrics-address flag that builds the sdk/metric MeterProvider + prometheus
+exporter (sanctioned deps, currently imported by nothing) and serves /metrics
+CLI-side, keeping sdk/metric out of the library. also settle where per-group
+RegisterConsumerGroupMetric gets called -- likely consumer Register, where topic
+identity resolves.
+
 Review code / comments in:
 - pkg/metrics
 - pkg/admin (health / metrics specifically) 
@@ -138,3 +150,7 @@ consider rename split again to:
 -- Right now we have Definition and Provisioner mixed which doesn't make sense logically
 
 Should think through making all tables append only by nature this would make us apache cassandra compliant have audit / debuggability for all operations and improve some levels of efficancy (partion based drops on everything) the main trade off is in complexity and in hot-path throughput explicitly for reads
+
+Need to do a pass through of config, options, vars , params etc and cleanup any dead fields
+
+should use LOCK TIMEOUT for any ALTER sql migration commands (likely just need to document this)
