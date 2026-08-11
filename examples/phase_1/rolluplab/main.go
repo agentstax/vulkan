@@ -1,7 +1,7 @@
 package main
 
 // Rollup lab: measures the numbers behind the lazy-vs-synchronous
-// AdvanceWaterline decision (LEARNING_PLAN.md's "Resolve the lazy-vs-
+// AdvanceWaterline decision (LEARNING_PLAN.waterlineDatastore's "Resolve the lazy-vs-
 // synchronous rollup"). Three scenarios:
 //
 //   - Staleness: how long after a range's Commit does `committed` actually
@@ -30,10 +30,10 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 	"github.com/google/uuid"
 )
 
@@ -58,7 +58,7 @@ func main() {
 	fixedCostScenario(ctx, ds)
 	contentionScenario(ctx, ds)
 
-	fmt.Println("\n✅ ROLLUP LAB — numbers gathered, see LEARNING_PLAN.md's Phase 10")
+	fmt.Println("\n✅ ROLLUP LAB — numbers gathered, see LEARNING_PLAN.waterlineDatastore's Phase 10")
 	fmt.Println("   \"Resolve the lazy-vs-synchronous rollup\" bullet for the decision these drove.")
 }
 
@@ -113,7 +113,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -148,7 +148,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 			case <-rollerDone:
 				return
 			case <-ticker.C:
-				if _, err := md.AdvanceWaterline(ctx, tp.Id, groupID); err != nil {
+				if _, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID); err != nil {
 					fmt.Printf("  (roller tick error, ignored: %v)\n", err)
 				}
 			}
@@ -192,7 +192,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -212,7 +212,7 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 
 		start := time.Now()
-		_, err = md.AdvanceWaterline(ctx, tp.Id, groupID)
+		_, err = waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
 		must(err)
 		stalenesses = append(stalenesses, msSince(start))
 	}
@@ -279,7 +279,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -297,7 +297,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 		}
 		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 		if syncAdvance {
-			_, err := md.AdvanceWaterline(ctx, tp.Id, groupID)
+			_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
 			must(err)
 		}
 	}
@@ -337,7 +337,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -358,7 +358,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 				}
 				must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
 				if syncAdvance {
-					_, err := md.AdvanceWaterline(ctx, tp.Id, groupID)
+					_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
 					must(err)
 				}
 			}

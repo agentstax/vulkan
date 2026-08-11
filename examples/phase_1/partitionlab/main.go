@@ -26,7 +26,6 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -56,20 +55,19 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
-	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	step("publish 14 messages, EnsureNextPartition after each (mirrors the real janitor tick)")
+	step("publish 14 messages -- every partition boundary self-heals on the produce path")
 	for range 14 {
 		publish(ctx, wpInstance)
-		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
+	// each boundary costs one rolled-back insert, which burns an id -- 14 rows
+	// land as ids 1-17 with 5/10/15 skipped, healing partitions 1-3 into place
 	partitionCount := countPartitions(ctx, ds, tp.Id)
-	fmt.Printf("  %d partitions exist (0-2 hold ids 1-14, 3 is create-ahead headroom)\n", partitionCount)
+	fmt.Printf("  %d partitions exist (0-3, each created by the insert that first crossed into it)\n", partitionCount)
 	assertInt("4 partitions exist at width 5", partitionCount, 4)
 
 	step("EXPLAIN (0,3] -- entirely inside message_log_<id>_0")

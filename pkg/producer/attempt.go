@@ -94,10 +94,9 @@ func (b *batcher[Message]) runBatch(ctx context.Context, batch *batch[Message]) 
 	return -1, nil
 }
 
-// healMissingPartition creates the one partition past head -- a redundancy
-// backstop for a burst of messages that outran the janitor's create-ahead.
+// healMissingPartition creates the one partition past head.
 func (b *batcher[Message]) healMissingPartition(ctx context.Context) error {
-	b.datastore.Logger.WarnContext(ctx, "publish outran janitor create-ahead, self-healing missing partition", "topic_id", b.topicID)
+	b.datastore.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", b.topicID)
 	return b.datastore.Retry.Wrap(ctx, func() error {
 		return b.datastore.ensureCoveringPartition(ctx, b.topicID, b.partitionSize)
 	})

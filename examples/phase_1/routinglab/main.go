@@ -32,10 +32,10 @@ import (
 	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 	"github.com/google/uuid"
 )
 
@@ -72,7 +72,7 @@ func main() {
 	must(err)
 	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -117,7 +117,7 @@ func main() {
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
-	committed := advance(ctx, md, tp.Id, cursorGroupID)
+	committed := advance(ctx, waterlineDatastore, tp.Id, cursorGroupID)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
@@ -132,7 +132,7 @@ func main() {
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
 	must(messageConsumers.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, 5*time.Second, false))
-	advance(ctx, md, tp.Id, controlGroupID)
+	advance(ctx, waterlineDatastore, tp.Id, controlGroupID)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
@@ -182,8 +182,8 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consume
 	return head, gids
 }
 
-func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, groupID int64) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64, groupID int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }

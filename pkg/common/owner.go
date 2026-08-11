@@ -10,8 +10,8 @@ const (
 	OwnerConsumerGroup OwnerKind = "consumer_group"
 )
 
-// Owner is which resource owns a row in a polymorphic table (maintenance,
-// migration_log).
+// Owner is which resource owns a row in a polymorphic table (worker,
+// cron_job, migration_log).
 type Owner struct {
 	SystemId        int64
 	TopicId         int64

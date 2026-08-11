@@ -111,40 +111,6 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		return err
 	}
 
-	// maintenance duties: one row per claimable background job. N processes
-	// race a conditional UPDATE on can_run_after each tick; the winner runs
-	// the duty, losers match zero rows -- one effective worker per interval
-	// with no leader election. Also the fleet daemon's discovery index:
-	// "what duties exist" and "whose turn" are the same query.
-	createMaintenanceSql := `
-		CREATE TABLE IF NOT EXISTS maintenance (
-			id BIGSERIAL PRIMARY KEY,
-			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
-			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
-			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
-			duty TEXT NOT NULL,                               -- 'janitor' | 'waterline' | 'scheduler'
-			metadata JSONB NOT NULL,                          -- per-duty tuning, seeded with defaults by whoever creates the row: {"poll_rate": <ns>, "sweep_batch_size": <rows, janitor only>}
-			token UUID NOT NULL DEFAULT gen_random_uuid(),    -- rotates on every claim; renew/release fence on it so only the current owner can touch the claim
-			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			attempts INT NOT NULL DEFAULT 0,                  -- incremented on every claim. resets on success
-			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1)
-		);
-	`
-	if _, err := tx.Exec(ctx, createMaintenanceSql); err != nil {
-		return err
-	}
-
-	// one duty of each kind per owner: system, topic, group
-	for _, indexSql := range []string{
-		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_topic_duty ON maintenance (duty, topic_id) WHERE topic_id IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_group_duty ON maintenance (duty, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS maintenance_system_duty ON maintenance (duty, system_id) WHERE system_id IS NOT NULL;`,
-	} {
-		if _, err := tx.Exec(ctx, indexSql); err != nil {
-			return err
-		}
-	}
-
 	// workers: one row per background job that should be running
 	createWorkerSql := `
 		CREATE TABLE IF NOT EXISTS worker (

@@ -1,11 +1,11 @@
-// Command dutybackofflab proves a consistently-erroring duty backs off
-// instead of retrying at full poll rate forever.
+// Command dutybackofflab proves a consistently-failing worker backs off
+// instead of ticking at full poll rate forever.
 //
 // Renames a topic's message_log_<id> table out from under a running janitor
-// duty, so every sweep fails 42P01. Watches the maintenance row's `attempts`
-// climb and the gap between claims grow -- small at first, capped at
-// DutyRetry's MaxDelay -- then renames the table back and confirms the next
-// successful run resets attempts to 0.
+// worker, so every sweep fails 42P01. Watches the claimed worker_instance's
+// `attempts` streak climb and the gap between failures grow -- small at
+// first, capped at SweepRetry's MaxDelay -- then renames the table back and
+// confirms the next successful sweep resets attempts to 0.
 package main
 
 import (
@@ -17,15 +17,16 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+	"github.com/agentstax/vulkan/pkg/worker/janitor"
 )
 
 const (
-	dutyRate    = 50 * time.Millisecond
+	pollRate    = 50 * time.Millisecond
 	backoffBase = 300 * time.Millisecond
 	backoffMax  = 1500 * time.Millisecond
 )
@@ -45,27 +46,39 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("dutybackofflab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	// retention on: the sweep's drop pass reads message_log's head every tick,
+	// which is the read the rename below breaks
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: time.Hour})
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	j, err := maintain.NewJanitor(ds, &maintain.MaintainerConfig{
-		DutyRetry: &retry.Policy{BaseDelay: backoffBase, MaxDelay: backoffMax},
+	janitorDefinition, err := janitor.NewJanitorDefinition(ds, &janitor.JanitorConfig{
+		SweepRetry: &retry.Policy{BaseDelay: backoffBase, MaxDelay: backoffMax},
 	})
 	must(err)
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+
+	// RegisterTopic already declared the janitor row -- claim it directly with
+	// the lab's own fast tick
 	owner, err := common.NewTopicOwner(tp.SystemId, tp.Id, tp.Name)
 	must(err)
-	// the lab's own fast tick, passed straight to Register
-	meta, err := maintain.NewDutyMetadata(dutyRate, 1000)
+	row, err := workers.GetWorker(ctx, janitor.WorkerJanitor, owner)
 	must(err)
-	_, err = j.Register(ctx, maintain.DutyJanitor, owner, meta)
+	execution, err := janitorDefinition.Provision(ctx, row.Id, owner, map[string]any{
+		"poll_rate":        int64(pollRate),
+		"sweep_batch_size": 1000,
+	})
 	must(err)
+	if execution == nil {
+		die("janitor declined the instance -- is another claimant running?")
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	go func() { done <- j.Run(runCtx) }()
+	go func() { done <- execution.Run(runCtx) }()
 
 	table := fmt.Sprintf("message_log_%d", tp.Id)
 	hidden := table + "_hidden"
@@ -73,7 +86,7 @@ func main() {
 	step("breaking the janitor: renaming its message_log table away")
 	exec(ctx, ds, fmt.Sprintf(`ALTER TABLE %s RENAME TO %s`, table, hidden))
 
-	step("watching attempts climb, the gap between claims growing but capped at DutyRetry's MaxDelay")
+	step("watching attempts climb, the gap between failures growing but capped at SweepRetry's MaxDelay")
 	type sample struct {
 		attempts int
 		at       time.Duration
@@ -82,7 +95,7 @@ func main() {
 	var samples []sample
 	deadline := start.Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		attempts := scalarInt(ctx, ds, `SELECT attempts FROM maintenance WHERE duty='janitor' AND topic_id=$1`, tp.Id)
+		attempts := scalarInt(ctx, ds, `SELECT attempts FROM worker_instance WHERE worker_id=$1`, row.Id)
 		if len(samples) == 0 || attempts != samples[len(samples)-1].attempts {
 			samples = append(samples, sample{attempts, time.Since(start)})
 			fmt.Printf("  attempts=%d at %v\n", attempts, time.Since(start).Round(time.Millisecond))
@@ -100,32 +113,32 @@ func main() {
 	lastGap := samples[len(samples)-1].at - samples[len(samples)-2].at
 	fmt.Printf("  ✓ first gap %v, last gap %v (cap %v)\n", firstGap, lastGap, backoffMax)
 	if firstGap >= backoffBase*3 {
-		die(fmt.Sprintf("first backoff gap %v looked capped already, want close to DutyRetry's BaseDelay (%v)", firstGap, backoffBase))
+		die(fmt.Sprintf("first backoff gap %v looked capped already, want close to SweepRetry's BaseDelay (%v)", firstGap, backoffBase))
 	}
 	if lastGap <= firstGap {
 		die(fmt.Sprintf("backoff gap didn't grow: first=%v last=%v", firstGap, lastGap))
 	}
-	if lastGap > backoffMax+dutyRate*4 {
-		die(fmt.Sprintf("backoff gap %v exceeded DutyRetry's MaxDelay (%v) by more than jitter/poll slack", lastGap, backoffMax))
+	if lastGap > backoffMax+pollRate*4 {
+		die(fmt.Sprintf("backoff gap %v exceeded SweepRetry's MaxDelay (%v) by more than jitter/poll slack", lastGap, backoffMax))
 	}
 
-	step("confirming DutySnapshots surfaces the failing streak")
+	step("confirming WorkerSnapshots surfaces the failing streak")
 	metricsController, err := metricscontroller.NewMetricsController(ds, nil)
 	must(err)
-	duties, err := metricsController.DutySnapshots(ctx)
+	snapshots, err := metricsController.WorkerSnapshots(ctx)
 	must(err)
 	found := false
-	for _, d := range duties {
-		if d.TopicName == topicName && d.Duty == "janitor" {
+	for _, s := range snapshots {
+		if s.Owner.Name == topicName && s.Name == janitor.WorkerJanitor {
 			found = true
-			if d.Attempts == 0 {
-				die("expected DutySnapshot.Attempts > 0 for the failing janitor")
+			if s.Attempts == 0 {
+				die("expected WorkerSnapshot.Attempts > 0 for the failing janitor")
 			}
-			fmt.Printf("  ✓ DutySnapshot: attempts=%d overdue=%v\n", d.Attempts, d.Overdue)
+			fmt.Printf("  ✓ WorkerSnapshot: status=%s attempts=%d\n", s.Status, s.Attempts)
 		}
 	}
 	if !found {
-		die("janitor duty not found in DutySnapshots")
+		die("janitor worker not found in WorkerSnapshots")
 	}
 
 	step("healing: renaming the table back and waiting for attempts to reset")
@@ -134,7 +147,7 @@ func main() {
 	deadline = time.Now().Add(10 * time.Second)
 	var final int
 	for time.Now().Before(deadline) {
-		final = scalarInt(ctx, ds, `SELECT attempts FROM maintenance WHERE duty='janitor' AND topic_id=$1`, tp.Id)
+		final = scalarInt(ctx, ds, `SELECT attempts FROM worker_instance WHERE worker_id=$1`, row.Id)
 		if final == 0 {
 			break
 		}
@@ -143,7 +156,7 @@ func main() {
 	if final != 0 {
 		die(fmt.Sprintf("expected attempts to reset to 0 after recovery, got %d", final))
 	}
-	fmt.Println("  ✓ attempts reset to 0 after a successful run")
+	fmt.Println("  ✓ attempts reset to 0 after a successful sweep")
 
 	cancel()
 	must(<-done)

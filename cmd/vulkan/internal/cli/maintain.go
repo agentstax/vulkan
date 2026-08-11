@@ -7,11 +7,10 @@ import (
 func newMaintainCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "maintain",
-		Short: "Run and inspect the deployment's maintenance duties",
+		Short: "Run the deployment's maintenance workers",
 	}
 
 	cmd.AddCommand(newMaintainRunCmd(g))
-	cmd.AddCommand(newMaintainStatusCmd(g))
 
 	return cmd
 }

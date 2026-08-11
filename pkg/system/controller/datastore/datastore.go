@@ -16,7 +16,6 @@ import (
 // - cursor
 // - lease
 // - key_lease
-// - maintenance
 // - worker
 // - worker_instance
 // - binding

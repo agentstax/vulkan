@@ -16,7 +16,7 @@ package main
 // A key touched again inside the ttl window proves the opposite case in
 // each scenario too: retention doing nothing to a key that's still alive --
 // this is intentional expiration, not compaction-awareness bolted onto
-// retention (see LEARNING_PLAN.md's 8c "Decided" note).
+// retention (see LEARNING_PLAN.janitorDatastore's 8c "Decided" note).
 
 import (
 	"context"
@@ -27,10 +27,10 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 	"github.com/google/uuid"
 )
 
@@ -78,7 +78,7 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 
 	// fill partition 0 with a dormant key + filler, then age past ttl
@@ -97,7 +97,7 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -121,7 +121,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 
 	publish(ctx, wpInstance, "dormant-key")
@@ -131,7 +131,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+	must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -140,7 +140,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	for range 3 {
 		publish(ctx, wpInstance, "alive-key")
 		time.Sleep(ttl / 4)
-		must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+		must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
 	}
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 }

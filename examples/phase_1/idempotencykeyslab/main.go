@@ -33,10 +33,10 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 	"github.com/google/uuid"
 )
 
@@ -194,7 +194,7 @@ func sweepScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -217,7 +217,7 @@ func sweepScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
 	must(err)
 	assertIdempotencyKeysCount(ctx, ds, tp.Id, 6)
 
-	must(md.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, batchSize))
+	must(janitorDatastore.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, batchSize))
 
 	assertIdempotencyKeysCount(ctx, ds, tp.Id, 1)
 	fmt.Println("  ✓ 5 dormant claims swept across multiple batches, the 1 live claim survives")

@@ -35,10 +35,11 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -83,7 +84,9 @@ func main() {
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
+	must(err)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
@@ -109,10 +112,9 @@ func main() {
 
 	// ===== PROOF 2: a badly-lagging group on topic B does not block a drop on topic A =====
 	step("PROOF 2: a badly-lagging group on topic B does not block a drop on topic A")
-	for range 2 { // topicA now has 5 rows -- exactly fills partition 0 at width 5
+	for range 2 { // topicA now has 5 rows -- the 5th crossed into partition 1 via the produce self-heal
 		publish(ctx, wpAInstance, "")
 	}
-	must(md.EnsureNextPartition(ctx, topicA.Id, partitionSize)) // create-ahead partition 1
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
@@ -122,8 +124,8 @@ func main() {
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
 	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB))
 
-	must(md.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
-	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1, 2}) // 2 is the janitor's empty create-ahead
+	must(janitorDatastore.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
+	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1})
 	fmt.Println("  -> this is the exact cross-topic contamination 8a's floor bug caused; each topic's floor is now its own")
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
@@ -151,7 +153,7 @@ func main() {
 	assertInt64s("retroactive binding applies to the pre-existing message, CURSOR path filters out the non-match",
 		ids(claim.Messages), []int64{headBefore + 1, headBefore + 2})
 	must(messageConsumers.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, 5*time.Second, false))
-	committed := advance(ctx, md, topicC.Id, groupRouteID)
+	committed := advance(ctx, waterlineDatastore, topicC.Id, groupRouteID)
 	assertInt("committed still advances over the WHOLE range, not just the matches", committed, claim.Lease.High)
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
@@ -167,10 +169,9 @@ func main() {
 	must(cd.Bind(ctx, groupXID, "sliceX.*"))
 	must(cd.Bind(ctx, groupYID, "sliceY.*"))
 
-	for range 5 { // fills topicD's partition 0 at width 5, all in sliceX
+	for range 5 { // 5 rows, all in sliceX -- the 5th self-heals partition 1 into place
 		publish(ctx, wpDInstance, "sliceX.event")
 	}
-	must(md.EnsureNextPartition(ctx, topicD.Id, partitionSize))
 	time.Sleep(ttl + ttlMargin)
 
 	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, false)
@@ -179,19 +180,19 @@ func main() {
 		die("expected groupX to claim a fresh range")
 	}
 	must(messageConsumers.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, 5*time.Second, false))
-	advance(ctx, md, topicD.Id, groupXID)
+	advance(ctx, waterlineDatastore, topicD.Id, groupXID)
 	fmt.Println("  groupX (sliceX reader) is now fully caught up on the only traffic that exists")
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,
 	// simulating a slice consumer that's stuck or never started.
 
-	must(md.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false, topicD.DisableDeliveryLog))
-	assertPartitions(ctx, ds, topicD.Id, "partition 0 SURVIVES -- groupY's slice, though it has zero actual traffic, still pins this topic's one shared floor", []int64{0, 1, 2}) // 2 is the janitor's empty create-ahead
+	must(janitorDatastore.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false, topicD.DisableDeliveryLog))
+	assertPartitions(ctx, ds, topicD.Id, "partition 0 SURVIVES -- groupY's slice, though it has zero actual traffic, still pins this topic's one shared floor", []int64{0, 1})
 	fmt.Println("  -> this is the case 8b deliberately leaves unfixed: split into separate topics if slices need independent floors")
 
 	// ===== PROOF 5: operating against an unregistered topic id fails clearly =====
 	step("PROOF 5: publishing/claiming against an unregistered topic id fails clearly, never silently auto-creates one")
 	bogusTopicID := topicD.Id + 999_999_999 // guaranteed to never have been registered
-	err = md.EnsureNextPartition(ctx, bogusTopicID, partitionSize)
+	err = janitorDatastore.DropExpiredPartitions(ctx, bogusTopicID, partitionSize, ttl, false, false)
 	if err == nil {
 		die("expected an error operating against an unregistered topic id, got nil")
 	}
@@ -217,8 +218,8 @@ func publish(ctx context.Context, wp *producer.ProducerInstance[common.Work], ro
 	must(err)
 }
 
-func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64, groupID int64) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64, groupID int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }

@@ -34,10 +34,10 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumer/base/controller"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 	"github.com/google/uuid"
 )
 
@@ -78,7 +78,7 @@ func main() {
 	must(err)
 	keyLeases, err := keyleasecontroller.NewKeyLeaseController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[Rec](ds, nil)
 	must(err)
@@ -264,7 +264,7 @@ func main() {
 		die(fmt.Sprintf("sweep setup: want acquired, got %s", live.Verdict))
 	}
 	time.Sleep(100 * time.Millisecond)
-	must(md.SweepExpiredKeyLeases(ctx, topicID, 1)) // batchSize 1 forces the batch loop
+	must(janitorDatastore.SweepExpiredKeyLeases(ctx, topicID, 1)) // batchSize 1 forces the batch loop
 	if n := leaseCount(ctx); n != 1 {
 		die(fmt.Sprintf("want only the live row to survive the sweep, count=%d", n))
 	}

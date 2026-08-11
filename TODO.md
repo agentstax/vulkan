@@ -38,7 +38,7 @@ How could we generalize this system to be a debezium like replication system. ie
 
 ***REALLY WANT*** our exception claiming logic really does need a complete revamp. It should better follow our topic / cursor logic instead of being queue based we end up having a lot of custom logic because of that. The problem with converting it is we would really need the async ordered-index claim table such that we could have a materialized ordered view. The thought is with cursor: exception message is tried and fails -> pushed to unordered topic -> unordered topic materialized new retry attempt to top of ordered-index which is picked up soon because materilization is only slightly ahead of claiming (some buffer size like how our claiming buffer works)
 
-Could do something intresting with APIs and make a standardized API design for producing and consuming. Producing would really just be a POST request with batching as first class imo. Consuming is a bit more interesting, SSE and websockets are intresting and would need some kind of ACK mechanicsm to advance the cursor. Also adding just a basic GET or QUERY http method could be the simpler alternative.
+Could do something intresting with APIs and make a standardized API design for producing and consuming. Producing would really just be a POST request with batching as first class imo. Consuming is a bit more interesting, SSE and websockets are intresting and would need some kind of ACK mechanicsm to advance the cursor. Also adding just a basic GET or QUERY http method could be the simpler alternative. Should check out https://github.com/durable-streams/durable-streams for inspiration and a potential protocol to implement
 
 should consider abstracting out WorkerManager into two: WorkerScheduler and WorkerSpawner
 - Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
@@ -65,7 +65,21 @@ reconsider if latest_key should be a per topic latest_key_(topic_id) table. High
 
 see if our new Querier interface could be used to make stronger contracts with internal or public code
 
-Need to consider how in the case where janitor is not fast enough to create a new partition and there are many concurrent partitions. The instance one producers hits the retry create new partitions point it is likely many producers will hit the exact same and potentially spam the database with the same request. The question is, is that okay can postgres handle that or do we need a way to have a blocking single request and other instances or producer waits for it to complete
+producer proactive partition create-ahead (settled design 2026-08-11; replaces the old
+janitor create-ahead deleted with pkg/maintain -- creation is the write path's job,
+Kafka-style segment roll; janitor is cleanup only): fire ensureCoveringPartition when
+an append's returned id range contains the partition's sentinel id (~80% mark) -- ids
+are unique fleet-wide, so exactly one producer process fires per partition with zero
+coordination. gate intra-process with an atomic per-topic attempted flag (or x/sync
+singleflight) so batch pipelining can't double-fire while the DDL round trip is in
+flight. best-effort BY DESIGN: DatastoreRetry absorbs blips, then warn and drop --
+the reactive heal at the boundary is the only layer allowed to matter for
+correctness, so every failure above it is drop-and-log. the heal path keeps the
+residual thundering herd (every in-flight produce at a missed boundary fires
+ensureCoveringPartition concurrently): cap it with
+pg_try_advisory_xact_lock(topic_id, partition) before the CREATE -- one winner does
+DDL, losers return instantly and just retry their insert. optional second sentinel
+(~95%) only if the drop warn ever shows up in practice.
 
 lab binaries should be produced into a /bin folder that it .gitignored except for a .gitkeep
 
@@ -107,12 +121,7 @@ record to match.
 
 Need a destroy system
 
-don't like how listDuties has a case statement joining many tables. Makes it feel like duties needs to be a higher level abstraction
-that is set with a poll rate instead of these values being set on topic, system etc.
-
 rethink making GetCompactionHead live on producer. It could want to be used and called in many different places
-
-having to have func (d *MaintenanceDatastore) GetGroupId(ctx context.Context, name string) (int64, error) in maintenance datastore because of circular dependencies with consumer is a code smell and means we have coupled things incorrectly
 
 pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is not in line with our dependency injection patterns
 - common.Owner.name not being a required field because of above is a code smell
@@ -121,10 +130,7 @@ pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is
 
 Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
 
-JanitorSweepBatchSize has to move into the janitor duty metadata as well
 AlertRepeatInterval we need to do something with it should not live on system
-
-EnsureNextPartition should not be in janitor
 
 Need to refactor rest of packages in same patterns as worker and topic
 

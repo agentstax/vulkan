@@ -27,10 +27,10 @@ import (
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 	"github.com/google/uuid"
 )
 
@@ -69,7 +69,7 @@ func main() {
 	must(err)
 	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -104,7 +104,7 @@ func main() {
 	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, exceptions, 5*time.Second, false))
 	assert("one parked exception", deliveries(ctx, ds, tp.Id), 1)
 
-	committed := advance(ctx, md, tp.Id)
+	committed := advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  roller tick -> committed = %d\n", committed)
 	assert("committed pins below the failing message", committedCol(ctx, ds, tp.Id), failingId-1)
 
@@ -116,7 +116,7 @@ func main() {
 		die("expected a fresh claim, got nil")
 	}
 	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
-	committed = advance(ctx, md, tp.Id)
+	committed = advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
 	assert("committed still pinned on the unresolved exception", committedCol(ctx, ds, tp.Id), failingId-1)
@@ -140,7 +140,7 @@ func main() {
 
 	// ===== committed jumps straight past the resolved exception =====
 	step("roller tick — committed jumps past the resolved exception")
-	committed = advance(ctx, md, tp.Id)
+	committed = advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  committed = %d\n", committed)
 	assert("committed jumped to claimed", committedCol(ctx, ds, tp.Id), claimedCol(ctx, ds, tp.Id))
 
@@ -153,7 +153,7 @@ func main() {
 			break // caught up
 		}
 		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, false))
-		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, md, tp.Id))
+		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, waterlineDatastore, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
 	assert("no deliveries left behind", deliveries(ctx, ds, tp.Id), 0)
@@ -165,8 +165,8 @@ func main() {
 
 // ---- helpers ----
 
-func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }

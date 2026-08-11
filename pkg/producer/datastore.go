@@ -83,7 +83,7 @@ func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx p
 		return message, err
 	}
 
-	d.Logger.WarnContext(ctx, "publish outran janitor create-ahead, self-healing missing partition", "topic_id", topicID)
+	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicID)
 	if err := d.ensureCoveringPartition(ctx, topicID, partitionSize); err != nil {
 		return nil, err
 	}
@@ -92,15 +92,14 @@ func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx p
 }
 
 // appendMessageWithPartitionRetry self-heals a missing-partition insert: the
-// janitor's create-ahead is the primary defense, this retry is the backstop
-// for a burst that outran it.
+// first insert past a partition boundary fails -> creates the partition -> and retries.
 func (d *producerDatastore[Message]) appendMessageWithPartitionRetry(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*Message, error) {
 	message, err := d.appendMessage(ctx, topicID, producerFunc, opts, idempotencyKey)
 	if err == nil || !isMissingPartition(err) {
 		return message, err
 	}
 
-	d.Logger.WarnContext(ctx, "publish outran janitor create-ahead, self-healing missing partition", "topic_id", topicID)
+	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicID)
 	if err := d.ensureCoveringPartition(ctx, topicID, partitionSize); err != nil {
 		return nil, err
 	}
@@ -118,7 +117,7 @@ func isMissingPartition(err error) bool {
 }
 
 // ensureCoveringPartition creates the partition after head's, so the retry's
-// fresh id has somewhere to land. Headroom beyond that is the janitor's job.
+// fresh id has somewhere to land.
 func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context, topicID int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;

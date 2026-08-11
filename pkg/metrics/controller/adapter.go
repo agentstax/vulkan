@@ -12,9 +12,6 @@ import (
 // counts as overdue.
 const overdueThreshold = 10 * time.Minute
 
-// overdueFactor: how many rates past its gate a duty counts as overdue.
-const overdueFactor = 10
-
 func toOwner(systemId int64, topicId int64, consumerGroupId int64, topicName string, groupName string) (*common.Owner, error) {
 	switch {
 	case consumerGroupId > 0:
@@ -80,19 +77,6 @@ func toCronJobSnapshot(data datastore.CronJobSnapshotData) (metrics.CronJobSnaps
 	// unsuspending recomputes it, so staleness is never overdue
 	snapshot.Overdue = !snapshot.Suspended && snapshot.DueFor > overdueThreshold
 	return snapshot, nil
-}
-
-func toDutySnapshot(data datastore.DutySnapshotData) metrics.DutySnapshot {
-	snapshot := metrics.DutySnapshot{
-		Duty:          data.Duty,
-		TopicName:     data.TopicName,
-		ConsumerGroup: data.ConsumerGroup,
-		Rate:          time.Duration(data.RateNs.Int64),
-		GateAge:       time.Duration(data.GateAgeSecs * float64(time.Second)),
-		Attempts:      data.Attempts,
-	}
-	snapshot.Overdue = snapshot.GateAge > overdueFactor*snapshot.Rate
-	return snapshot
 }
 
 func toConsumerGroupSnapshot(consumerGroup string, data *datastore.ConsumerGroupSnapshotData) *metrics.ConsumerGroupSnapshot {

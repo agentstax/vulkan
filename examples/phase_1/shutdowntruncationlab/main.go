@@ -46,11 +46,11 @@ import (
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 	"github.com/google/uuid"
 )
 
@@ -91,7 +91,7 @@ func main() {
 	must(err)
 	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -160,7 +160,7 @@ func main() {
 	assertStatus(ctx, ds, tp.Id, 2, "ready")
 
 	step("waterline stays pinned behind the unresolved exception, even though the lease is already narrowed past it")
-	committed := advance(ctx, md, tp.Id)
+	committed := advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed blocked at message 1 (exception at 2 still unresolved)", committed, 1)
 
 	step("sleep 5.5s — let the parked exception's initial backoff pass")
@@ -173,7 +173,7 @@ func main() {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
 	}
 	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
-	committed = advance(ctx, md, tp.Id)
+	committed = advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed advances to the narrowed low", committed, 2)
 	assert("deliveries drained (exception pop-deleted)", deliveries(ctx, ds, tp.Id), 0)
 
@@ -191,7 +191,7 @@ func main() {
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
 	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
-	committed = advance(ctx, md, tp.Id)
+	committed = advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
 
@@ -213,8 +213,8 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 	}
 }
 
-func advance(ctx context.Context, md *maintain.MaintenanceDatastore, topicID int64) int64 {
-	c, err := md.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
 	must(err)
 	return c
 }

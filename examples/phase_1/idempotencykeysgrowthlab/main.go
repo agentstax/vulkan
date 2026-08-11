@@ -33,10 +33,10 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 	"github.com/google/uuid"
 )
 
@@ -130,7 +130,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 
 	idkTable := fmt.Sprintf("idempotency_key_%d", tp.Id)
@@ -168,7 +168,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 			case <-stop:
 				return
 			case <-ticker.C:
-				must(md.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
+				must(janitorDatastore.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
 				if rows := tableRowCount(ctx, ds, idkTable); rows > peakRows.Load() {
 					peakRows.Store(rows)
 				}
@@ -184,7 +184,7 @@ func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastor
 	// one final sweep pass past ttl, so a fully-drained table proves the
 	// sweep -- not just the test ending -- is what kept it bounded
 	time.Sleep(ttl + 100*time.Millisecond)
-	must(md.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
+	must(janitorDatastore.SweepExpiredIdempotencyKeys(ctx, tp.Id, ttl, sweepBatchSize))
 	finalRows := tableRowCount(ctx, ds, idkTable)
 
 	total := published.Load()

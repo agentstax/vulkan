@@ -35,10 +35,10 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 	"github.com/google/uuid"
 )
 
@@ -79,7 +79,7 @@ func main() {
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -89,23 +89,23 @@ func main() {
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
 	for range 4 {
 		publish(ctx, wpInstance)
-		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
 	time.Sleep(ttl + ttlMargin)
 
 	step("publish ids 5-9 into message_log_<id>_1 -- fresh, rolls the active partition forward")
+	createPartition(ctx, ds, tp.Id, 1)
 	for range 5 {
 		publish(ctx, wpInstance)
-		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
-	assertPartitions("partitions 0/1/2 exist (2 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{0, 1, 2})
+	createPartition(ctx, ds, tp.Id, 2)
+	assertPartitions("partitions 0/1/2 exist (2 is pre-created headroom)", partitionNumbers(ctx, ds, tp.Id), []int64{0, 1, 2})
 
 	step("groupPast fast-forwards past partition 0's range (claimed=committed=4) before the drop")
 	reset(ctx, cd, ds, tp.Id, groupPast)
 	setCursor(ctx, ds, groupPast, 4, 4)
 
 	step("drop -- floor sits at groupPast's committed=4, exactly partition 0's last id, so it's not blocked")
-	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
 	assertPartitions("partition 0 dropped", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2})
 
 	step("groupPast claims on -- unaffected by the drop, reads real messages from partition 1")
@@ -126,16 +126,16 @@ func main() {
 	time.Sleep(ttl + ttlMargin)
 	for range 5 {
 		publish(ctx, wpInstance)
-		must(md.EnsureNextPartition(ctx, tp.Id, partitionSize))
 	}
-	assertPartitions("partitions 1/2/3 exist (3 is create-ahead)", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
+	createPartition(ctx, ds, tp.Id, 3)
+	assertPartitions("partitions 1/2/3 exist (3 is pre-created headroom)", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 
 	step("drop attempt -- groupInside's committed is still 0, floor blocks partition 1 (last id 9 > floor 0)")
-	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, false, tp.DisableDeliveryLog))
 	assertPartitions("partition 1 survives -- refused by the floor", partitionNumbers(ctx, ds, tp.Id), []int64{1, 2, 3})
 
 	step("same drop, AllowDropPastCommitted=true -- the floor check is waived outright")
-	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 	assertPartitions("partition 1 dropped once the floor is overridden", partitionNumbers(ctx, ds, tp.Id), []int64{2, 3})
 
 	fmt.Println("\n✅ DROP FLOOR LAB PASSED")
@@ -149,6 +149,18 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})
+	must(err)
+}
+
+// createPartition pre-creates message_log_<topicID>_<n> so the lab's ids stay
+// dense -- production creates partitions on the produce path's self-heal,
+// which burns an id per boundary and would shift every id asserted below.
+func createPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, n int64) {
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS message_log_%d_%d
+			PARTITION OF message_log_%d
+			FOR VALUES FROM (%d) TO (%d);
+	`, topicID, n, topicID, n*partitionSize, (n+1)*partitionSize))
 	must(err)
 }
 

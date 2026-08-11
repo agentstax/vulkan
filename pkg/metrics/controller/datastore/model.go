@@ -40,16 +40,6 @@ type CronJobSnapshotData struct {
 	DueForSecs        float64
 }
 
-// DutySnapshotData is one row of DutySnapshots' query.
-type DutySnapshotData struct {
-	Duty          string
-	TopicName     string
-	ConsumerGroup string
-	RateNs        pgtype.Int8 // NULL when the row's metadata carries no poll_rate
-	GateAgeSecs   float64
-	Attempts      int
-}
-
 // ConsumerGroupSnapshotData is one (group, topic)'s cursor row plus the
 // counted delivery/lease state around it.
 type ConsumerGroupSnapshotData struct {

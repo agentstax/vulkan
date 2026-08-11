@@ -487,13 +487,49 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
     manager row and spawned all 5 topics' janitors + cron_scheduler in one
     reconcile pass, drained clean on SIGINT; metricslab passes, so group
     chains are unaffected.
-13. cleanup — delete pkg/maintain, maintenance DDL + seeds, ALL duty metrics
-    (pkg/metrics/duty.go DutySnapshot; controller duty.go + toDutySnapshot +
-    overdueFactor in adapter.go; datastore duty.go + DutySnapshotData in
-    model.go; metrics/metrics duty.go dutyMetric + the
-    vulkan.maintain.duty_state.* gauges), CLI maintain commands
-    (maintain_status.go incl. printDutiesTable); rewrite labs (maintenancelab,
-    dutybackofflab, scratchpad schedlab); prune superseded TODO/plan notes.
+13. cleanup — BUILT (2026-08-11). pkg/maintain DELETED (11 files) along with
+    the maintenance table DDL + its unique indexes (baseline edit in system
+    tables.go), migrate.AssertSystemSchemaSupported (both callers died with
+    the fleet), and ALL duty metrics: pkg/metrics/duty.go, controller
+    duty.go + toDutySnapshot + overdueFactor, datastore duty.go +
+    DutySnapshotData, metrics/metrics duty.go with the
+    vulkan.maintain.duty_state.* gauges. CLI: maintain_status.go deleted,
+    `maintain` keeps only `run`. EnsureNextPartition deleted WITHOUT a
+    rehome — settled with the user: creation is the write path's job
+    (Kafka's writer rolls segments; the janitor is cleanup only).
+    Correctness never depended on it: partition 0 exists from RegisterTopic
+    and the produce path's reactive ensureCoveringPartition heals every
+    later boundary — and had been the only live creator since chunk 5
+    anyway, since the worker janitor never carried create-ahead.
+    consumer.Register's cold-start call and its maintain field deleted; the
+    producer's "outran janitor create-ahead" warn reworded to "no partition
+    covers the next message id -- creating it". Proactive create-ahead is
+    now a producer TODO (TODO.md): sentinel-id trigger at ~80% of the
+    partition (ids are unique fleet-wide, so exactly one producer fires per
+    partition with zero coordination), intra-process atomic gate,
+    best-effort by design — the boundary heal is the only layer allowed to
+    matter for correctness — and pg_try_advisory_xact_lock caps the heal
+    path's thundering herd. Labs: 12 swapped maintain.NewMaintenanceDatastore
+    for the janitor/waterline datastores' same-named verbs; partitionlab +
+    topiclab reshaped onto heal-driven partition creation (each boundary
+    burns one id on the rolled-back insert); compactionwidthlab reads the
+    seeded rows' real ids back instead of hard-coding them (wide case
+    reframed: 40 rows fit one partition, both EXPLAINs collapse to a single
+    scan); dropfloorlab pre-creates fixture partitions with lab-local DDL to
+    keep its dense-id choreography; dutybackofflab REWRITTEN onto the worker
+    tick runner (rename message_log away → worker_instance.attempts climbs
+    with SweepRetry-capped gaps, WorkerSnapshots surfaces the streak, reset
+    on heal; needs RetentionTTL > 0 so the sweep reads message_log at all —
+    this also retires the lab's pre-existing failure); maintenancelab
+    REWRITTEN onto worker claims (janitor/waterline target-1 rows hold
+    exactly one live instance across 3 consumers, with the NoInstanceTarget
+    message_consumer as the one-loop-per-process contrast; failover and
+    full-release phases; waterline reaches head). TODO.md pruned: the
+    listDuties, GetGroupId, JanitorSweepBatchSize, and
+    EnsureNextPartition-in-janitor notes. Verified on a drop+recreate fresh
+    DB: both modules build, vet clean, go test -race green, all 18 touched
+    labs pass, and `vulkan maintain run` claims the system manager and
+    reconciles leftover topics' janitors plus an orphaned group's waterline.
 
 ---
 

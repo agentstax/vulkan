@@ -46,17 +46,6 @@ func AssertSchemaSupported(ctx context.Context, q datastore.Querier, owner *comm
 	return assertOwner(ctx, q, topicOwner, MinTopicVersion, MaxTopicVersion)
 }
 
-// TODO - remove after pkg/maintain is deleted
-// AssertSystemSchemaSupported is the topic-less half of AssertSchemaSupported,
-// for callers that hold no topic row to read the system id from.
-func AssertSystemSchemaSupported(ctx context.Context, q datastore.Querier) error {
-	owner, err := mDatastore.SystemOwner(ctx, q)
-	if err != nil {
-		return err
-	}
-	return assertOwner(ctx, q, owner, MinSystemVersion, MaxSystemVersion)
-}
-
 func assertOwner(ctx context.Context, q datastore.Querier, owner *common.Owner, minV, maxV int64) error {
 	v, err := mDatastore.Version(ctx, q, owner)
 	if err != nil {

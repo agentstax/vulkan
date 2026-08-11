@@ -1,16 +1,19 @@
-// Command maintenancelab proves the maintenance tier's claim coordination
-// across a fleet of consumers.
+// Command maintenancelab proves worker-claim coordination across a fleet of
+// consumers.
 //
-// Registers its own topic (destroyed on exit) with 1s janitor/waterline rates,
-// then runs three Consumers in one group and counts duty EXECUTIONS by watching
-// the maintenance rows' fencing tokens: every claim that wins rotates the
-// token, losers don't touch it, and renewal heartbeats keep the token stable --
-// so token changes count effective workers, not claim attempts.
+// Registers its own topic (destroyed on exit), then runs three Consumers in
+// one group and watches live worker_instance rows. The maintenance workers
+// on the group's chain (janitor, waterline) are target-1 rows: EXACTLY one
+// live instance each no matter how many processes reconcile them -- the
+// claim gate arbitrates, not leader election. The message_consumer row is
+// the deliberate contrast: its target is unbounded, so every process runs
+// its own consume loop.
 //
-// Confirms: three consumers produce ~one execution per duty per interval (not
-// three); killing two, the survivor keeps both duties running within an
-// interval (failover); killing the last, executions stop entirely -- and the
-// duties actually worked (waterline reached head, janitor created ahead).
+// Confirms: three consumers -> one live janitor/waterline instance (never
+// three) beside three consume loops; killing two, the survivor's manager
+// re-claims whatever they held within a reconcile tick; killing the last,
+// every claim releases and nothing stays live -- and the workers actually
+// did their jobs (waterline reached head).
 package main
 
 import (
@@ -30,11 +33,16 @@ import (
 )
 
 const (
-	group     = "maintenancelab"
-	dutyRate  = time.Second
-	consumers = 3
-	seedRows  = 200
+	group       = "maintenancelab"
+	consumers   = 3
+	seedRows    = 200
+	instanceTTL = 2 * time.Second
 )
+
+// the target-1 rows on the group's chain; the manager rows are unbounded by
+// design, and the system's cron_scheduler is shared state outside this
+// lab's topic
+var exclusive = []string{"janitor", "waterline"}
 
 func main() {
 	ctx := context.Background()
@@ -53,13 +61,6 @@ func main() {
 	topicName := fmt.Sprintf("maintenancelab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
-	// speed the janitor up to the lab's 1s tick (the waterline's seeded
-	// default is already 1s) -- rates live on the maintenance row's metadata,
-	// jsonb_set so the row's other tuning (sweep_batch_size) survives
-	_, err = ds.Pool.Exec(ctx,
-		`UPDATE maintenance SET metadata = jsonb_set(metadata, '{poll_rate}', to_jsonb($1::bigint)) WHERE duty = 'janitor' AND topic_id = $2;`,
-		int64(dutyRate), tp.Id)
-	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
@@ -75,60 +76,55 @@ func main() {
 		must(err)
 	}
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, tp.Id))
-	fmt.Printf("topic=%q id=%d seeded head=%d, duty rate=%s, %d consumers\n", topicName, tp.Id, head, dutyRate, consumers)
+	fmt.Printf("topic=%q id=%d seeded head=%d, instance ttl=%s, %d consumers\n", topicName, tp.Id, head, instanceTTL, consumers)
 
 	running := make([]*runningConsumer, 0, consumers)
 	for i := range consumers {
 		running = append(running, start(ctx, ds, tp.Name, i))
 	}
+	groupID := scalar(ctx, ds, `SELECT id FROM consumer_group WHERE topic_id=$1 AND name=$2`, tp.Id, group)
 
-	// ===== phase 1: N consumers, one effective worker per duty interval =====
-	step("PHASE 1: 3 consumers for 10s -- expect ~1 execution per duty per interval, not 3")
-	counts := sampleRotations(ctx, ds, tp.Id, 10*time.Second)
-	for _, duty := range []string{"janitor", "waterline"} {
-		fmt.Printf("  %-9s executions=%d (independent workers would be ~%d)\n", duty, counts[duty], 3*10)
-		assertBetween(duty+" executions ~ one per interval", counts[duty], 6, 14)
+	// ===== phase 1: N consumers, one live instance per target-1 row =====
+	step("PHASE 1: 3 consumers for 8s -- janitor/waterline hold exactly 1 live instance, never 3")
+	maxLive, live := sampleLive(ctx, ds, tp.Id, groupID, 8*time.Second)
+	for _, name := range exclusive {
+		fmt.Printf("  %-18s live=%d max seen=%d\n", name, live[name], maxLive[name])
+		assertInt(name+" never exceeded its target", int64(maxLive[name]), 1)
+		assertInt(name+" is claimed", int64(live[name]), 1)
 	}
+	fmt.Printf("  %-18s live=%d\n", "message_consumer", live["message_consumer"])
+	assertInt("message_consumer runs unbounded -- one loop per process", int64(live["message_consumer"]), consumers)
 
-	// ===== phase 2: kill two consumers, the survivor carries both duties =====
-	step("PHASE 2: kill 2 of 3 -- survivor keeps both duties running")
+	// ===== phase 2: kill two consumers, the survivor re-claims =====
+	step("PHASE 2: kill 2 of 3 -- the survivor's manager re-claims whatever they held")
 	for _, rc := range running[:2] {
 		rc.stop()
 	}
-	counts = sampleRotations(ctx, ds, tp.Id, 6*time.Second)
-	for _, duty := range []string{"janitor", "waterline"} {
-		fmt.Printf("  %-9s executions=%d\n", duty, counts[duty])
-		assertBetween(duty+" kept running after failover", counts[duty], 3, 9)
+	maxLive, live = sampleLive(ctx, ds, tp.Id, groupID, 6*time.Second)
+	for _, name := range exclusive {
+		fmt.Printf("  %-18s live=%d max seen=%d\n", name, live[name], maxLive[name])
+		assertInt(name+" still never exceeded its target", int64(maxLive[name]), 1)
+		assertInt(name+" re-claimed after failover", int64(live[name]), 1)
 	}
+	assertInt("one consume loop left", int64(live["message_consumer"]), 1)
 
-	// ===== phase 3: kill the last -- executions stop =====
-	step("PHASE 3: kill the survivor -- duty executions stop")
+	// ===== phase 3: kill the last -- every claim releases =====
+	step("PHASE 3: kill the survivor -- claims release, nothing stays live")
 	running[2].stop()
-	// the final claim keeps the gate up to one rate in the future; let it pass
-	// before asserting silence
-	time.Sleep(2 * dutyRate)
-	counts = sampleRotations(ctx, ds, tp.Id, 3*time.Second)
-	for _, duty := range []string{"janitor", "waterline"} {
-		fmt.Printf("  %-9s executions=%d\n", duty, counts[duty])
-		assertBetween(duty+" silent with no consumers", counts[duty], 0, 0)
+	time.Sleep(instanceTTL) // a released row is gone at once; the TTL wait covers a claim mid-renewal
+	_, live = sampleLive(ctx, ds, tp.Id, groupID, 2*time.Second)
+	for _, name := range append(exclusive, "message_consumer") {
+		fmt.Printf("  %-18s live=%d\n", name, live[name])
+		assertInt(name+" has no live instance", int64(live[name]), 0)
 	}
 
-	// ===== the duties actually did their jobs =====
-	step("END STATE: the coordinated duties did real work")
+	// ===== the workers actually did their jobs =====
+	step("END STATE: the coordinated workers did real work")
 	assertInt("waterline reached head", scalar(ctx, ds, `SELECT c.committed FROM cursor c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1 AND g.topic_id=$2`, group, tp.Id), head)
-	partitions := scalar(ctx, ds, fmt.Sprintf(`
-		SELECT count(*) FROM pg_inherits i
-		JOIN pg_class c ON c.oid = i.inhrelid
-		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, tp.Id))
-	fmt.Printf("  partitions=%d\n", partitions)
-	if partitions < 2 {
-		die("expected the janitor's create-ahead partition (>= 2 partitions)")
-	}
 
 	fmt.Println("\n✅ MAINTENANCE LAB PASSED")
-	fmt.Println("   3 consumers -> one effective janitor/waterline worker per interval,")
-	fmt.Println("   failover to the survivor within an interval, full stop when the last one exits.")
+	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")
+	fmt.Println("   survivor within a reconcile tick, full release when the last one exits.")
 }
 
 // runningConsumer is one Consumer's lifecycle handle: cancel stops it, done
@@ -149,6 +145,7 @@ func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName s
 		QueueSize:          64,
 		MessageConcurrency: 4,
 		ClaimPollRate:      100 * time.Millisecond,
+		InstanceTTL:        instanceTTL,
 	})
 	must(err)
 
@@ -158,41 +155,46 @@ func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName s
 
 	done := make(chan error, 1)
 	go func() {
-		done <- cInstance.Consume(lifecycleCtx, func(ctx context.Context, work *common.Work) error { return nil })
+		err := cInstance.Consume(lifecycleCtx, func(ctx context.Context, work *common.Work) error { return nil })
+		if err != nil && lifecycleCtx.Err() == nil {
+			fmt.Printf("  consumer %d died early: %v\n", i, err)
+		}
+		done <- err
 	}()
 	fmt.Printf("  consumer %d started\n", i)
 	return &runningConsumer{cancel: cancel, done: done}
 }
 
-// sampleRotations polls the topic's maintenance rows for dur and counts token
-// changes per duty. A change = one granted claim = one duty execution (renew
-// heartbeats fence on the token without rotating it).
-func sampleRotations(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, dur time.Duration) map[string]int {
-	counts := map[string]int{}
-	last := map[string]string{}
+// sampleLive polls the chain's worker rows for dur and tracks live instance
+// counts per row: the last count seen and the highest ever seen -- the max
+// is what proves the claim gate held while processes fought over it.
+func sampleLive(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, groupID int64, dur time.Duration) (map[string]int, map[string]int) {
+	maxLive := map[string]int{}
+	live := map[string]int{}
 	deadline := time.Now().Add(dur)
-	first := true
 	for time.Now().Before(deadline) {
 		rows, err := ds.Pool.Query(ctx, `
-			SELECT m.duty, COALESCE(m.token::text, '')
-			FROM maintenance m
-			LEFT JOIN consumer_group g ON g.id = m.consumer_group_id
-			WHERE COALESCE(m.topic_id, g.topic_id) = $1`, topicID)
+			SELECT w.name, COUNT(i.id) FILTER (WHERE i.expires_at > now())
+			FROM worker w
+			LEFT JOIN worker_instance i ON i.worker_id = w.id
+			WHERE w.topic_id = $1
+				OR w.consumer_group_id = $2
+			GROUP BY w.name`, topicID, groupID)
 		must(err)
 		for rows.Next() {
-			var duty, token string
-			must(rows.Scan(&duty, &token))
-			if !first && token != last[duty] {
-				counts[duty]++
+			var name string
+			var n int
+			must(rows.Scan(&name, &n))
+			live[name] = n
+			if n > maxLive[name] {
+				maxLive[name] = n
 			}
-			last[duty] = token
 		}
 		must(rows.Err())
 		rows.Close()
-		first = false
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
-	return counts
+	return maxLive, live
 }
 
 // ---- helpers ----
@@ -221,11 +223,4 @@ func assertInt(label string, got, want int64) {
 		die(fmt.Sprintf("%s: got %d, want %d", label, got, want))
 	}
 	fmt.Printf("  ✓ %s (%d)\n", label, got)
-}
-
-func assertBetween(label string, got, low, high int) {
-	if got < low || got > high {
-		die(fmt.Sprintf("%s: got %d, want [%d, %d]", label, got, low, high))
-	}
-	fmt.Printf("  ✓ %s (%d in [%d, %d])\n", label, got, low, high)
 }

@@ -14,9 +14,10 @@ package main
 // Registers two topics seeded with the IDENTICAL 40-message workload,
 // differing only in PartitionSize (narrow vs wide, an order of magnitude
 // apart), so the same two EXPLAIN checks can be compared side by side:
-//   - id 1 ("stale") is never superseded -- the "prove a negative" case.
-//   - id 39/40 ("fresh" v1/v2) are two versions published back to back --
-//     the "find a match" case, with the match one partition away at most.
+//   - the first message ("stale") is never superseded -- the "prove a
+//     negative" case.
+//   - the last two ("fresh" v1/v2) are two versions published back to back
+//     -- the "find a match" case, with the match one partition away at most.
 
 import (
 	"context"
@@ -29,7 +30,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -54,9 +54,6 @@ func main() {
 	})
 	must(err)
 	defer ds.Close()
-
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
-	must(err)
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -85,36 +82,43 @@ func main() {
 	must(err)
 	wideProducerInstance, err := wideProducer.Register(ctx, wide.Name, topic.SchemaVersion(1))
 	must(err)
-	seed(ctx, md, narrowProducerInstance, narrow.Id, narrowPartitionSize)
-	seed(ctx, md, wideProducerInstance, wide.Id, widePartitionSize)
+	seed(ctx, narrowProducerInstance)
+	seed(ctx, wideProducerInstance)
 
 	narrowPartitions := countPartitions(ctx, ds, narrow.Id)
 	widePartitions := countPartitions(ctx, ds, wide.Id)
 	fmt.Printf("  narrow: PartitionSize=%d -> %d partitions\n", narrowPartitionSize, narrowPartitions)
 	fmt.Printf("  wide:   PartitionSize=%d -> %d partition(s)\n", widePartitionSize, widePartitions)
 
+	// each boundary heal burns an id on a rolled-back insert, so the narrow
+	// topic's ids drift -- read the seeded rows' real ids back instead of
+	// hard-coding them
+	narrowStale := keyId(ctx, ds, narrow.Id, "stale", "MIN")
+	narrowFreshV1 := keyId(ctx, ds, narrow.Id, "fresh", "MIN")
+	wideStale := keyId(ctx, ds, wide.Id, "stale", "MIN")
+	wideFreshV1 := keyId(ctx, ds, wide.Id, "fresh", "MIN")
+
 	step("narrow topic: EXPLAIN the compaction check for the negative and match cases")
-	negNarrow, negNarrowPlan := explainCompactionTouches(ctx, ds, narrow.Id, 1, "prove a negative (\"stale\", id=1)")
-	posNarrow, posNarrowPlan := explainCompactionTouches(ctx, ds, narrow.Id, 39, "find a match (\"fresh\" v1, id=39)")
+	negNarrow, negNarrowPlan := explainCompactionTouches(ctx, ds, narrow.Id, narrowStale, "prove a negative (\"stale\")")
+	posNarrow, posNarrowPlan := explainCompactionTouches(ctx, ds, narrow.Id, narrowFreshV1, "find a match (\"fresh\" v1)")
 	fmt.Println("\n  --- narrow / negative case plan ---")
 	fmt.Print(negNarrowPlan)
 	fmt.Println("  --- narrow / match case plan ---")
 	fmt.Print(posNarrowPlan)
 
 	step("wide topic: same two checks")
-	negWide, _ := explainCompactionTouches(ctx, ds, wide.Id, 1, "prove a negative (\"stale\", id=1)")
-	posWide, _ := explainCompactionTouches(ctx, ds, wide.Id, 39, "find a match (\"fresh\" v1, id=39)")
+	negWide, _ := explainCompactionTouches(ctx, ds, wide.Id, wideStale, "prove a negative (\"stale\")")
+	posWide, _ := explainCompactionTouches(ctx, ds, wide.Id, wideFreshV1, "find a match (\"fresh\" v1)")
 
 	step("what the numbers say")
 	assertTrue("narrow: proving a negative touches more partitions than finding a match",
 		negNarrow > posNarrow)
 	assertTrue("narrow: proving a negative touches nearly every partition -- no early termination",
 		int64(negNarrow) >= narrowPartitions-1)
-	// the always-existing empty create-ahead partition is the tell: proving a
-	// negative has no early termination so it scans even that, a match stops
-	// at the data partition and never reaches it
-	assertTrue("wide: a negative scans the data partition plus the empty create-ahead; a match stops at the data partition",
-		negWide == 2 && posWide == 1)
+	// 40 messages fit one wide partition, so both cases collapse to a single
+	// scan -- the width tradeoff only exists once data spans partitions
+	assertTrue("wide: both cases stay inside the one partition all 40 rows share",
+		negWide == 1 && posWide == 1)
 
 	fmt.Println("\n✅ COMPACTION WIDTH LAB — numbers gathered, see LEARNING_PLAN.md's 8c")
 	fmt.Println("   \"Open question\" bullet for what they mean and whether they change anything.")
@@ -122,21 +126,18 @@ func main() {
 
 // ---- helpers ----
 
-// seed publishes the SAME 40-message shape regardless of topic: id 1 is a
-// key that's never superseded, ids 2-38 are unique filler (each its own key,
-// so none of them ever match another row's compaction subplan), and ids
-// 39/40 are two versions of one key published back to back.
-func seed(ctx context.Context, md *maintain.MaintenanceDatastore, wp *producer.ProducerInstance[Record], topicID, partitionSize int64) {
-	publish(ctx, wp, "stale") // id 1 -- never superseded
-	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
+// seed publishes the SAME 40-message shape regardless of topic: first a key
+// that's never superseded, then 37 unique fillers (each its own key, so none
+// of them ever match another row's compaction subplan), then two versions of
+// one key published back to back. Partition boundaries self-heal on the
+// produce path.
+func seed(ctx context.Context, wp *producer.ProducerInstance[Record]) {
+	publish(ctx, wp, "stale") // never superseded
 	for i := range 37 {
-		publish(ctx, wp, fmt.Sprintf("filler:%d", i)) // ids 2-38, each a distinct key
-		must(md.EnsureNextPartition(ctx, topicID, partitionSize))
+		publish(ctx, wp, fmt.Sprintf("filler:%d", i)) // each a distinct key
 	}
-	publish(ctx, wp, "fresh") // id 39, v1
-	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
-	publish(ctx, wp, "fresh") // id 40, v2 -- immediately supersedes id 39
-	must(md.EnsureNextPartition(ctx, topicID, partitionSize))
+	publish(ctx, wp, "fresh") // v1
+	publish(ctx, wp, "fresh") // v2 -- immediately supersedes v1
 }
 
 func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key string) {
@@ -144,6 +145,14 @@ func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key str
 		return &Record{Key: key}, nil
 	}, producer.ProduceOptions{CompactionKey: key})
 	must(err)
+}
+
+// keyId reads back one seeded row's real id -- aggregate is MIN or MAX,
+// picking between the two versions of a twice-published key.
+func keyId(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, compactionKey string, aggregate string) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`
+		SELECT %s(id) FROM message_log_%d WHERE compaction_key = $1;
+	`, aggregate, topicID), compactionKey)
 }
 
 func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {

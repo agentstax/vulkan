@@ -33,11 +33,11 @@ import (
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 	"github.com/google/uuid"
 )
 
@@ -180,7 +180,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 
 	const partitionSize = int64(4)
 	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4drop", topiccontroller.TopicConfig{PartitionSize: partitionSize})
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -195,7 +195,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 1)
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
 
-	must(md.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 0)
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
@@ -207,7 +207,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
 	tp, cd, wp, groupID := newTopic(ctx, ds, "scenario4sweep", topiccontroller.TopicConfig{PartitionSize: partitionSize})
-	md, err := maintain.NewMaintenanceDatastore(ds, nil)
+	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -222,7 +222,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 1)
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)
 
-	must(md.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, 1000, tp.DisableDeliveryLog))
+	must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, 1000, tp.DisableDeliveryLog))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, dormantId, 0)
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupID, aliveId, 1)

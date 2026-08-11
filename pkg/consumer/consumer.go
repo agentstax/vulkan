@@ -10,7 +10,6 @@ import (
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/maintain"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
@@ -28,7 +27,6 @@ type Consumer[Message any] struct {
 	ds *datastore.PostgresDatastore
 
 	topicController *topiccontroller.TopicController
-	maintenance     *maintain.MaintenanceDatastore
 	consumers       *consumercontroller.ConsumerController
 }
 
@@ -52,13 +50,6 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 	if err != nil {
 		return nil, err
 	}
-	maintenance, err := maintain.NewMaintenanceDatastore(ds, &maintain.MaintenanceDatastoreConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
 	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -71,7 +62,6 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 		Logger:          cfg.Logger,
 		ds:              ds,
 		topicController: topicController,
-		maintenance:     maintenance,
 		consumers:       consumers,
 	}, nil
 }
@@ -99,12 +89,6 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, topicName, version)
 	}
 	if err := c.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
-		return nil, err
-	}
-
-	// cold-start guarantee: the next partition exists before the janitor's
-	// first tick
-	if err := c.maintenance.EnsureNextPartition(ctx, current.Id, current.PartitionSize); err != nil {
 		return nil, err
 	}
 
