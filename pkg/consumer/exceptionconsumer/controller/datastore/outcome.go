@@ -11,7 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RecordExceptionSuccess deletes the row
+// RecordExceptionSuccess deletes the row.
 // DeliveryLogModeAll also writes the 'success' log row in the same statement.
 // A non-nil keyClaim frees the key in the same transaction.
 func (d *ExceptionConsumerDatastore) RecordExceptionSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
