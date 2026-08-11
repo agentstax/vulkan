@@ -35,12 +35,25 @@ func newBatchRequest[Message any](idempotencyKey uuid.UUID, message *Message, op
 type batchResponse struct {
 	done chan struct{} // closed by record
 	err  error         // written before close(done), read only after <-done
+
+	// id and duplicate are written by the batch worker's scan loop before
+	// close(done) and read only after <-done -- the last attempt's values win
+	id        int64 // 0 when duplicate
+	duplicate bool  // the idempotency claim already existed
 }
 
 func newBatchResponse() *batchResponse {
 	return &batchResponse{
 		done: make(chan struct{}),
 	}
+}
+
+func (r *batchResponse) recordInsert(id int64) {
+	r.id = id
+}
+
+func (r *batchResponse) recordDuplicate() {
+	r.duplicate = true
 }
 
 func (r *batchResponse) record(err error) {

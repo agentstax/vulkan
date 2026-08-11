@@ -56,13 +56,13 @@ func NewJobRequest(cronJobId int64, name string, scheduledTime time.Time, data, 
 	}, nil
 }
 
-// FiringKey is the deterministic idempotency key for one (firing, job): the
-// same firing replayed after an ambiguous commit dedupes, everything else
+// IdempotencyKey is the deterministic idempotency key for one (firing, job):
+// the same firing replayed after an ambiguous commit dedupes, everything else
 // lands. UUIDv7 layout -- the firing's unix ms in the 48 time bits (the
 // idempotency index wants time-ordered keys), the job id VERBATIM across the
 // payload bits. NO hash: the idempotency table is shared per-topic, and a
 // same-ms hash collision would silently swallow another job's firing.
-func FiringKey(firing time.Time, cronJobId int64) uuid.UUID {
+func IdempotencyKey(firing time.Time, cronJobId int64) uuid.UUID {
 	var k uuid.UUID
 	ms := uint64(firing.UnixMilli())
 	k[0] = byte(ms >> 40)

@@ -52,19 +52,19 @@ func newProducerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Pro
 // AppendMessage resolves the idempotency key once and never regenerates it on
 // retry -- that's what makes a retried attempt safe after an ambiguous commit
 // instead of a double-publish.
-func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
 	idempotencyKey, err := resolveIdempotencyKey(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	var message *Message
+	var result *ProduceResult[Message]
 	err = d.Retry.Wrap(ctx, func() error {
 		var err error
-		message, err = d.appendMessageWithPartitionRetry(ctx, topicID, partitionSize, producerFunc, opts, idempotencyKey)
+		result, err = d.appendMessageWithPartitionRetry(ctx, topicID, partitionSize, producerFunc, opts, idempotencyKey)
 		return err
 	})
-	return message, err
+	return result, err
 }
 
 // AppendMessageInTx runs producerFunc + the message insert against a
@@ -72,31 +72,31 @@ func (d *producerDatastore[Message]) AppendMessage(ctx context.Context, topicID 
 // opened tx (producer.InTransaction). Self-heals a missing partition inside
 // its own SAVEPOINT (runInsertSavepoint), so retrying here can't undo an
 // earlier target's insert or rerun a caller side effect between calls.
-func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+func (d *producerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
 	idempotencyKey, err := resolveIdempotencyKey(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	message, err := d.runInsertSavepoint(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
+	result, err := d.runInsertSavepoint(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
 	if err == nil || !isMissingPartition(err) {
-		return message, err
+		return result, err
 	}
 
 	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicID)
 	if err := d.ensureCoveringPartition(ctx, topicID, partitionSize); err != nil {
 		return nil, err
 	}
-	message, err = d.runInsertSavepoint(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
-	return message, err
+	result, err = d.runInsertSavepoint(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
+	return result, err
 }
 
 // appendMessageWithPartitionRetry self-heals a missing-partition insert: the
 // first insert past a partition boundary fails -> creates the partition -> and retries.
-func (d *producerDatastore[Message]) appendMessageWithPartitionRetry(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*Message, error) {
-	message, err := d.appendMessage(ctx, topicID, producerFunc, opts, idempotencyKey)
+func (d *producerDatastore[Message]) appendMessageWithPartitionRetry(ctx context.Context, topicID int64, partitionSize int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*ProduceResult[Message], error) {
+	result, err := d.appendMessage(ctx, topicID, producerFunc, opts, idempotencyKey)
 	if err == nil || !isMissingPartition(err) {
-		return message, err
+		return result, err
 	}
 
 	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicID)
@@ -161,7 +161,7 @@ func (d *producerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 	return closeErr
 }
 
-func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*Message, error) {
+func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*ProduceResult[Message], error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -170,19 +170,19 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 	// If Commit() is called successfully, Rollback() becomes a no-op and returns pgx.ErrTxClosed.
 	defer tx.Rollback(ctx)
 
-	message, landed, err := d.runInsert(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
+	result, err := d.runInsert(ctx, tx, topicID, producerFunc, opts, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
 
-	if !landed {
+	if result.Duplicate {
 		// claim already existed -- a retried call under the same key that's
 		// already durable. Nothing new to commit, but the transaction we
 		// opened above still needs closing.
 		if err := tx.Commit(ctx); err != nil {
 			return nil, err // nothing new was written -- safe for Retry to auto-classify
 		}
-		return message, nil
+		return result, nil
 	}
 
 	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
@@ -192,23 +192,23 @@ func (d *producerDatastore[Message]) appendMessage(ctx context.Context, topicID 
 		return nil, err
 	}
 
-	return message, nil
+	return result, nil
 }
 
 // runInsert runs producerFunc + the claim-protected message insert against an
 // already-open tx
-func (d *producerDatastore[Message]) runInsert(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (message *Message, landed bool, err error) {
+func (d *producerDatastore[Message]) runInsert(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*ProduceResult[Message], error) {
 	// let user do transactional enqueue and return work/message
-	message, err = producerFunc(ctx, newVulkanTx(tx), idempotencyKey)
+	message, err := producerFunc(ctx, newVulkanTx(tx), idempotencyKey)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	_, landed, err = d.insertProtected(ctx, tx, topicID, idempotencyKey, message, opts)
+	id, duplicate, err := d.insertProtected(ctx, tx, topicID, idempotencyKey, message, opts)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	return message, landed, nil
+	return NewProduceResult(message, id, duplicate)
 }
 
 // produceInTxSavepoint is a fixed name, not per-call unique -- safe because
@@ -219,22 +219,23 @@ const produceInTxSavepoint = "sp_produce_in_tx"
 // runInsertSavepoint wraps producerFunc + the message insert in a SAVEPOINT
 // scoped to just this call, so a missing-partition retry can't touch
 // anything else already done in tx.
-func (d *producerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (message *Message, err error) {
+func (d *producerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, producerFunc ProducerFunc[Message], opts ProduceOptions, idempotencyKey uuid.UUID) (*ProduceResult[Message], error) {
 	if err := commitToSavepoint(ctx, tx, produceInTxSavepoint); err != nil {
 		return nil, err
 	}
 
-	message, err = producerFunc(ctx, newVulkanTx(tx), idempotencyKey)
+	message, err := producerFunc(ctx, newVulkanTx(tx), idempotencyKey)
 	if err != nil {
 		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
 		return nil, err
 	}
 
-	if err = d.insertProtectedSavepoint(ctx, tx, topicID, idempotencyKey, message, opts); err != nil {
+	id, duplicate, err := d.insertProtectedSavepoint(ctx, tx, topicID, idempotencyKey, message, opts)
+	if err != nil {
 		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
 		return nil, err
 	}
-	return message, nil
+	return NewProduceResult(message, id, duplicate)
 }
 
 func commitToSavepoint(ctx context.Context, tx pgx.Tx, savepointName string) error {
@@ -248,8 +249,9 @@ func attemptRollbackToSavepoint(ctx context.Context, tx pgx.Tx, savepointName st
 
 // insertProtectedSavepoint pipelines the claim+insert CTE with RELEASE
 // SAVEPOINT as one round trip -- always a single statement regardless of
-// CompactionKey, so it always fully batches.
-func (d *producerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) error {
+// CompactionKey, so it always fully batches. duplicate=true means the claim
+// already existed.
+func (d *producerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicID, idempotencyKey, message, opts)
 
 	batch := &pgx.Batch{}
@@ -257,39 +259,39 @@ func (d *producerDatastore[Message]) insertProtectedSavepoint(ctx context.Contex
 	batch.Queue("RELEASE SAVEPOINT " + produceInTxSavepoint + ";")
 
 	br := tx.SendBatch(ctx, batch)
-	var id int64
-	err := br.QueryRow().Scan(&id)
+	err = br.QueryRow().Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// claim already existed -- inserted CTE never ran. Not a failure:
 		// RELEASE SAVEPOINT is still queued next and still needs reading.
 		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicID, "idempotency_key", idempotencyKey)
+		duplicate = true
 	} else if err != nil {
 		br.Close()
-		return err
+		return 0, false, err
 	}
 
 	if _, err := br.Exec(); err != nil { // RELEASE SAVEPOINT
 		br.Close()
-		return err
+		return 0, false, err
 	}
-	return br.Close()
+	return id, duplicate, br.Close()
 }
 
 // insertProtected runs the idempotency claim + message insert (+ compaction_head
-// upsert when keyed) in one round trip. landed=false means the claim already
+// upsert when keyed) in one round trip. duplicate=true means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
-func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) (id int64, landed bool, err error) {
+func (d *producerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicID int64, idempotencyKey uuid.UUID, message *Message, opts ProduceOptions) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicID, idempotencyKey, message, opts)
 
 	err = tx.QueryRow(ctx, sql, args...).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicID, "idempotency_key", idempotencyKey)
-		return 0, false, nil // claim already existed -- already committed
+		return 0, true, nil // claim already existed -- already committed
 	}
 	if err != nil {
 		return 0, false, err
 	}
-	return id, true, nil
+	return id, false, nil
 }
 
 // protectedInsertSQL builds the claim+insert(+compaction_head upsert when keyed)

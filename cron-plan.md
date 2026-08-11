@@ -80,7 +80,7 @@ func TopicConfig() *topic.Config                         // DeliveryLog 'all' (s
 type JobRequest struct { CronJobId int64; Name string;
     ScheduledTime time.Time; Data, Metadata json.RawMessage }
 
-func firingKey(firing time.Time, cronJobId int64) uuid.UUID  // v7 layout: 48-bit ms(firing) + id VERBATIM
+func IdempotencyKey(firing time.Time, cronJobId int64) uuid.UUID  // v7 layout: 48-bit ms(firing) + id VERBATIM
                                                          // in the 74 payload bits -- NO hash: the
                                                          // idempotency table is shared per-topic, a
                                                          // same-ms hash collision would silently
@@ -150,10 +150,10 @@ for n := sched.Next(firing); !n.IsZero() && n <= row.DbNow; n = sched.Next(firin
 res, err := p.ProduceInTx(ctx, tx, fn, ProduceOptions{
     RoutingKey:     row.Name,                                    // consumers bind job names
     CompactionKey:  strconv.FormatInt(row.Id, 10),               // id not name (k8s-UID rule)
-    IdempotencyKey: firingKey(firing, row.Id),                       // replay-safe, fire once
+    IdempotencyKey: IdempotencyKey(firing, row.Id),                       // replay-safe, fire once
     Message:        &common.MessageOptions{Concurrency: row.Concurrency, Timeout: row.Timeout},
 })
-if !res.Landed { /* WARN "firing deduped -- ambiguous-commit replay" */ }   // still advance, not an error
+if res.Duplicate { /* WARN "firing deduped -- ambiguous-commit replay" */ } // still advance, not an error
 
 next := sched.Next(row.DbNow)                       // DB clock ONLY (claimDuty precedent) -- Go/DB
                                                     // skew double-fires tight schedules
@@ -278,14 +278,35 @@ on a drop+recreate fresh DB, go test -race green.
 
 ## ProduceResult (platform-wide decision, lands in Chunk 2, own commit)
 
+BUILT 2026-08-11. As designed below except the flag is `Duplicate bool`
+(renamed from the sketch's `Landed`, polarity inverted -- NATS PubAck's
+field name; "landed" was codebase-internal vocabulary nobody else uses, and
+the interesting branch read as a negation. The producer package internals
+renamed to match: `insertProtected`/`insertProtectedSavepoint` return
+`(id, duplicate, err)`). Plus: `NewProduceResult` constructor; the batcher
+threads id/duplicate per operation via `batchResponse.recordInsert` (written
+by the scan loop, read after the done channel closes -- last attempt's
+values win); the savepoint path no longer swallows the scan; the cron tick
+WARNs on `produced.Duplicate` ("an earlier ambiguous commit published this
+firing"). Batcher-path nuance: keys are minted fresh per call, so
+`Duplicate` there can only mean this same call's earlier ambiguous-commit
+attempt stored it. Call sites swept -- three labs bound the old `*Message`
+return (`work.Id` would have silently resolved to `ProduceResult.Id`);
+idempotencykeyslab asserts first-call Duplicate=false+Id>0 / retries
+Duplicate=true+Id=0, idempotencykeysracelab asserts exactly 1 of 50
+concurrent same-key calls stored the message (49 report Duplicate).
+Verified: both modules build, vet clean, go test -race green,
+idempotencykeyslab / idempotencykeysracelab / producerregister / routinglab
+/ producerbatchlab / multitargetlab pass.
+
 Every produce path returns a result struct instead of the bare payload:
 
 ```go
 type ProduceResult[M any] struct {
     Message *M     // the built payload (NOT the original on dup -- unrecoverable
                    // by design: the idempotency table is not message-correlated)
-    Id      int64  // stored message id; 0 when !Landed
-    Landed  bool   // false = idempotency claim already existed
+    Id        int64 // stored message id; 0 when Duplicate
+    Duplicate bool  // true = idempotency claim already existed
 }
 
 func (p *Producer[M]) Produce(ctx, msg *M, opts) (*ProduceResult[M], error)
@@ -295,16 +316,15 @@ func (p *Producer[M]) Produce(ctx, msg *M, opts) (*ProduceResult[M], error)
 Why: today a dedupe returns `(msg, nil)` — indistinguishable from landed, and
 no stored identity either, weaker than every precedent (SQS returns the
 original MessageId, Stripe flags the replay, River returns
-`UniqueSkippedAsDuplicate`). `Landed` is already the datastore's own internal
-name (`insertProtected` returns it; the savepoint path swallows it in its
-ErrNoRows branch — thread it out); `Id` is already RETURNINGed by the insert
-CTE and thrown away. One struct keeps all three produce signatures uniform
-and future fields non-breaking. Rejected: comma-ok bool (every call site pays
-a blank, next field breaks again); sentinel error (the retry path — the one
-idempotency exists to protect — would read as failure); opts callback
+`UniqueSkippedAsDuplicate`, NATS JetStream PubAck carries `Duplicate bool` —
+the name and polarity this build adopted); `Id` is already RETURNINGed by the
+insert CTE and thrown away. One struct keeps all three produce signatures
+uniform and future fields non-breaking. Rejected: comma-ok bool (every call
+site pays a blank, next field breaks again); sentinel error (the retry path —
+the one idempotency exists to protect — would read as failure); opts callback
 (policy-as-code, same reason the consumer resolver hook died).
-Retry users ignore the fields; business-dedupe users branch on `Landed`;
-the tick WARNs on `!Landed` (an ambiguous-commit tell).
+Retry users ignore the fields; business-dedupe users branch on `Duplicate`;
+the tick WARNs on `Duplicate` (an ambiguous-commit tell).
 
 Call-site sweep: labs/examples/bench + the metrics producer; grep labs for
 hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
@@ -319,7 +339,7 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
    doesn't need them to fire; they move to the status/consumer work): the
    tick has no `!Landed` WARN yet, and job_requests runs today's default
    delivery-log behavior, not 'all'. Built: jobrequest.go (TopicName 35d TTL
-   / JobRequest / FiringKey with id-verbatim payload bits);
+   / JobRequest / IdempotencyKey with id-verbatim payload bits);
    scheduler_poll_rate_ns + SchedulerPollRate (floor 1m) + CLI get/alter;
    RegisterSystem seeds topic + system-owned duty row (+
    maintenance_system_duty index); DutyScheduler + scheduler_duty.go
@@ -328,7 +348,7 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
    Next-zero suspends+WARN, NULL-rate rows skipped in listDuties instead of
    erroring the list). Verified live: seed/discovery, backdated job → 1
    message w/ correct payload/keys, row advance, same-firing re-backdate
-   deduped by FiringKey. Maintain refactor piece 1 (2026-08-02) then moved
+   deduped by IdempotencyKey. Maintain refactor piece 1 (2026-08-02) then moved
    the poll rate onto maintenance.metadata and deleted scheduler_poll_rate_ns
    / SchedulerPollRate / the CLI knob; piece 2 (same day) reshaped Register
    to `(ctx, duty, owner, meta) (bool, error)` with a shouldRegister kind

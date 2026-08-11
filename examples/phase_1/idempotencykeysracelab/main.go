@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
@@ -78,16 +79,24 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	key := uuid.Must(uuid.NewV7())
 
 	var wg sync.WaitGroup
+	var duplicateCount atomic.Int64
 	for range n {
 		wg.Go(func() {
-			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+			produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
 			}, producer.ProduceOptions{IdempotencyKey: key})
 			must(err)
+			if produced.Duplicate {
+				duplicateCount.Add(1)
+			}
 		})
 	}
 	wg.Wait()
 
+	if duplicateCount.Load() != n-1 {
+		die(fmt.Sprintf("%d of %d calls reported Duplicate, want %d -- exactly 1 winner", duplicateCount.Load(), n, n-1))
+	}
+	fmt.Printf("  ✓ exactly 1 of %d concurrent calls stored the message, %d reported Duplicate\n", n, n-1)
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), 1, fmt.Sprintf("%d concurrent publishes under one shared key landed exactly 1 message", n))
 	assertCount(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), 1, fmt.Sprintf("%d concurrent publishes under one shared key left exactly 1 claim row", n))
 

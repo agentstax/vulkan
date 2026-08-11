@@ -29,7 +29,7 @@ func newBatcher[Message any](datastore *producerDatastore[Message], topicID, par
 }
 
 // produce enqueues one message and blocks until its batch commits (durable) or fails.
-func (b *batcher[Message]) produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
+func (b *batcher[Message]) produce(ctx context.Context, message *Message, opts ProduceOptions) (*ProduceResult[Message], error) {
 	// already cancelled -> fail BEFORE enqueue. This is the graceful shutdown path:
 	// a cancelled producer refuses new work while enqueued work resolves.
 	if err := ctx.Err(); err != nil {
@@ -78,7 +78,7 @@ func (b *batcher[Message]) produce(ctx context.Context, message *Message, opts P
 	if err := operation.response.Err(); err != nil {
 		return nil, err
 	}
-	return message, nil
+	return NewProduceResult(message, operation.response.id, operation.response.duplicate)
 }
 
 // work fires batches one after the other until the queue empties.

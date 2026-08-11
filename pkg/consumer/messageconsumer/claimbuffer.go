@@ -30,7 +30,7 @@ func newBuffered(row controller.Message, lease controller.RangeLease, index int)
 // end up half-updated relative to each other.
 type claimBuffer struct {
 	queue            concurrency.Queue[buffered]
-	includeSuccesses bool // stamped onto every rangeState it tracks
+	includeSuccesses bool // set on every rangeState this buffer tracks
 
 	// guards `ranges` ONLY. RWMutex because lookup (read) fires once per
 	// message while track/Remove (write) fire once per range -- reads

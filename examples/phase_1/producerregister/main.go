@@ -57,9 +57,9 @@ func main() {
 	step("Register(context.Background()) -- a build step, no lifetime to enforce")
 	instance, err := p.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	work, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
+	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
 	must(err)
-	fmt.Printf("  ✓ produced %+v\n", *work)
+	fmt.Printf("  ✓ produced %+v id=%d duplicate=%t\n", *produced.Message, produced.Id, produced.Duplicate)
 
 	// ===== per-call shutdown =====
 	step("Produce with a cancelled ctx -- refused, nothing published")

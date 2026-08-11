@@ -78,7 +78,7 @@ func main() {
 
 	// WORK
 	for range *countPtr {
-		work, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+		produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			work, err := common.NewWork(rand.IntN(100), "admin@example.com")
 			if err != nil {
 				return nil, err
@@ -91,6 +91,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		fmt.Printf("successfully produced message: %s\n", work.Id)
+		fmt.Printf("successfully produced message: work=%s id=%d\n", produced.Message.Id, produced.Id)
 	}
 }

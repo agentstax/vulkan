@@ -152,11 +152,11 @@ func main() {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], routingKey string) string {
-	work, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	produced, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{RoutingKey: routingKey})
 	must(err)
-	return fmt.Sprintf("work=%s routing_key=%q", work.Id, routingKey)
+	return fmt.Sprintf("work=%s routing_key=%q", produced.Message.Id, routingKey)
 }
 
 // resets all three groups to a clean slate and fast-forwards their cursors to

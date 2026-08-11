@@ -1,0 +1,31 @@
+package producer
+
+import "errors"
+
+// ProduceResult is one produce call's outcome.
+type ProduceResult[Message any] struct {
+	// Message - the payload this call built.
+	//
+	// On a duplicate it is NOT the originally-stored payload: the idempotency
+	// table records only the key, so the original is unrecoverable by design.
+	Message *Message
+
+	// Id - the stored message id; 0 when Duplicate.
+	Id int64
+
+	// Duplicate - the idempotency claim already existed: an earlier call, or
+	// an earlier attempt of this one after an ambiguous commit, already
+	// published under the same IdempotencyKey.
+	Duplicate bool
+}
+
+func NewProduceResult[Message any](message *Message, id int64, duplicate bool) (*ProduceResult[Message], error) {
+	if message == nil {
+		return nil, errors.New("message must not be nil")
+	}
+	return &ProduceResult[Message]{
+		Message:   message,
+		Id:        id,
+		Duplicate: duplicate,
+	}, nil
+}

@@ -97,16 +97,23 @@ func duplicateKeyScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 
 	// three "retries" under the exact same key -- what DBRetry.Wrap would do
 	// after an ambiguous commit
-	for range 3 {
-		_, err := wpInstance.ProduceFunc(ctx, fn, opts)
+	for attempt := range 3 {
+		produced, err := wpInstance.ProduceFunc(ctx, fn, opts)
 		must(err)
+		if attempt == 0 && (produced.Duplicate || produced.Id == 0) {
+			die(fmt.Sprintf("first call must not report Duplicate and must carry a stored id, got Duplicate=%t Id=%d", produced.Duplicate, produced.Id))
+		}
+		if attempt > 0 && (!produced.Duplicate || produced.Id != 0) {
+			die(fmt.Sprintf("retried call under the same key must report Duplicate=true Id=0, got Duplicate=%t Id=%d", produced.Duplicate, produced.Id))
+		}
 	}
 
 	assertMessageLogCount(ctx, ds, tp.Id, 1)
 	if calls != 3 {
 		die(fmt.Sprintf("producerFunc ran %d times, want 3 -- re-running it is the documented contract", calls))
 	}
-	fmt.Printf("  ✓ producerFunc ran 3 times (documented contract) but message_log has exactly 1 row\n")
+	fmt.Printf("  ✓ producerFunc ran 3 times (documented contract), message_log has exactly 1 row,\n")
+	fmt.Printf("    first call stored the row, both retries reported Duplicate\n")
 }
 
 func distinctKeysScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {

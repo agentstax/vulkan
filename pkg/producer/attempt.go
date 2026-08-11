@@ -60,20 +60,21 @@ func (b *batcher[Message]) runBatch(ctx context.Context, batch *batch[Message]) 
 	defer tx.Rollback(ctx)
 
 	statements := &pgx.Batch{}
-	for _, op := range batch.all() {
-		r := op.request
+	for _, operation := range batch.all() {
+		r := operation.request
 		sql, args := protectedInsertSQL(b.topicID, r.idempotencyKey, r.message, r.opts)
 		statements.Queue(sql, args...)
 	}
 
 	br := tx.SendBatch(ctx, statements)
-	for i, op := range batch.all() {
+	for i, operation := range batch.all() {
 		var id int64
 		err := br.QueryRow().Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			// claim already existed -- this message is already durable from an
 			// earlier ambiguous commit of the same batch. Zero-row no-op.
-			b.datastore.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", b.topicID, "idempotency_key", op.request.idempotencyKey)
+			b.datastore.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", b.topicID, "idempotency_key", operation.request.idempotencyKey)
+			operation.response.recordDuplicate()
 			continue
 		}
 		if err != nil {
@@ -81,6 +82,7 @@ func (b *batcher[Message]) runBatch(ctx context.Context, batch *batch[Message]) 
 			// results past the first failure carry no information
 			return i, err
 		}
+		operation.response.recordInsert(id)
 	}
 	if err := br.Close(); err != nil {
 		return -1, err

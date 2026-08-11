@@ -40,8 +40,9 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, datastore *pro
 // Cancelling ctx stops the wait, not the message -- it still commits with
 // its batch, so the outcome is ambiguous. To retry across that ambiguity
 // (or your own crash) without double-publishing, supply an IdempotencyKey:
-// the rerun dedups against whatever actually landed.
-func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*Message, error) {
+// the rerun dedups against whatever actually landed, reported as
+// ProduceResult.Duplicate == true.
+func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*ProduceResult[Message], error) {
 	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
@@ -58,18 +59,13 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
-func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
 	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 
-	message, err := p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return message, nil
+	return p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
 }
 
 // ProduceInTx appends producerFunc's message inside a transaction the caller
@@ -83,7 +79,7 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // effectively takes a lock on consumer progress for the whole topic: claims
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
-func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*Message, error) {
+func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
 	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err

@@ -78,8 +78,8 @@ type rangeState struct {
 	ids   []int64 // message id per result index -- set once, read-only after
 	total int
 
-	// includeSuccesses collects success outcomes too -- only wanted under
-	// DeliveryLogModeAll, so the common case skips the per-range allocation.
+	// includeSuccesses adds success outcomes to the collected walks -- only
+	// DeliveryLogModeAll wants them, so the common case skips the allocation
 	includeSuccesses bool
 
 	dispatched atomic.Int64 // count handed out by WaitForNext

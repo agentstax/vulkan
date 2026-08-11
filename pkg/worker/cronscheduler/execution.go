@@ -103,7 +103,7 @@ func (i *CronSchedulerExecution) scan(ctx context.Context) error {
 // produceJobRequest fires one due row: recheck under lock, produce the NEWEST
 // due firing, advance the row. Produce + advance + idempotency claim share the
 // transaction, so an ambiguous-commit replay rolls all three back together and
-// the FiringKey dedupe covers exactly that replay.
+// the cron.IdempotencyKey dedupe covers exactly that replay.
 func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64) error {
 	return producer.InTransaction(ctx, i.datastore.Datastore, func(ctx context.Context, tx producer.Tx) error {
 		row, err := i.datastore.ClaimDueCronJob(ctx, tx, id)
@@ -131,10 +131,10 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*cron.JobRequest, error) {
 			return request, nil
 		}
-		_, err = i.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
+		produced, err := i.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
 			RoutingKey:     row.Name,
 			CompactionKey:  strconv.FormatInt(row.Id, 10), // id not name -- a destroyed name's reuse must not share a key
-			IdempotencyKey: cron.FiringKey(firing, row.Id),
+			IdempotencyKey: cron.IdempotencyKey(firing, row.Id),
 			Message: &common.MessageOptions{
 				Concurrency: common.ConcurrencyPolicy(row.Concurrency),
 				Timeout:     row.Timeout,
@@ -142,6 +142,11 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 		})
 		if err != nil {
 			return err
+		}
+		if produced.Duplicate {
+			// an earlier tick's ambiguous commit published this firing, then
+			// failed to advance the row
+			i.Logger.WarnContext(ctx, "cron job firing was already published by an earlier ambiguous commit", "cron_job", row.Id, "name", row.Name, "firing", firing)
 		}
 
 		// next firing from the DB clock ONLY -- Go/DB skew double-fires tight schedules
