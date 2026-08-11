@@ -454,7 +454,39 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
     both modules build, eventsnapshotlab + metricslab + `vulkan maintain
     status` pass live (dutybackofflab fails identically on clean main —
     pre-existing, it's a chunk 13 rewrite).
-12. CLI — `vulkan maintain run` daemon becomes the worker-based daemon.
+12. CLI daemon — BUILT (2026-08-09). `vulkan maintain run` rebased onto the
+    worker machinery through a new top-level door, pkg/systemmanager. Name
+    researched against the field (K8s kube-controller-manager, Postgres
+    autovacuum launcher, River QueueMaintainer, OTP supervisor): the umbrella
+    process is conventionally named for what it does to its children, and
+    this codebase's noun for that is already `manager` -- SystemManager over
+    Maintainer, because the daemon IS the manager run at system scope.
+    NewSystemManager(ds, cfg{Logger, Retry}) assembles janitor +
+    cronscheduler + waterline definitions into a manager.ManagerDefinition;
+    Run resolves the system owner via migrate.SystemOwner
+    (migrate.ErrNotRegistered on a fresh DB keeps the CLI's teaching error)
+    and hands off to manager.NewRunner -- the daemon claims THE SYSTEM
+    MANAGER ROW; claims, heartbeats, N-way arbitration all come from
+    existing machinery. Waterline is in the provisioner set for parity with
+    the old fleet's WaterlineRoller: retention keeps moving while a group's
+    consumers are offline. The "everything" scope settled as one clause in
+    listWorkers -- `OR ($2 = 0 AND $3 = 0 AND t.system_id = $1)` -- only a
+    system owner has both topic and group ids unset, and every worker row
+    resolves to its system through the topic join, so system scope reaches
+    down to the whole deployment while topic/group scoping stays
+    byte-identical. Topic manager rows deleted: admin's topic declarers drop
+    managerDefinition (nothing would ever claim one; the per-topic kill
+    switch is suspending the janitor row itself); the system manager row
+    earns its place as the daemon's claim anchor and deployment-wide
+    suspend switch. Ridden along: dead ConsumerConfig.Meter and
+    FleetMaintainerConfig.Meter deleted (defaulted to noop, read by
+    nothing). Gauge wiring deliberately NOT done -- Register*Metric still
+    has zero callers; the exposure story (Meter-in-config for embedders,
+    CLI-hosted prometheus /metrics for the daemon) is researched and
+    deferred to TODO.md. Verified live: the daemon claimed the system
+    manager row and spawned all 5 topics' janitors + cron_scheduler in one
+    reconcile pass, drained clean on SIGINT; metricslab passes, so group
+    chains are unaffected.
 13. cleanup — delete pkg/maintain, maintenance DDL + seeds, ALL duty metrics
     (pkg/metrics/duty.go DutySnapshot; controller duty.go + toDutySnapshot +
     overdueFactor in adapter.go; datastore duty.go + DutySnapshotData in
@@ -473,10 +505,8 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
   key through crash / lease-steal / supersession chains / wedged-key starvation)
 
 - left over from chunk 8, none blocking:
-  - topic + system manager rows have NO claimant. Consumers claim their own group's row;
-    nothing claims the other two until chunk 12's daemon. Settle there alongside the
-    daemon's "everything" scope (ancestor-chain ListWorkers returns system rows only for
-    a system owner) and whether topic manager rows earn their place at all.
+  - (CLOSED by chunk 12: the daemon claims the system manager row and a system-scoped
+    ListWorkers reaches the whole deployment; topic manager rows are deleted.)
   - EnsureNextPartition is still homeless — chunk 5 deferred it and the worker janitor's
     sweep does not do it. Producer self-heal is the only cover today.
   - (CLOSED by chunk 9: CURSOR no longer builds the factory set twice -- Consumer.Register
