@@ -16,7 +16,7 @@ func main() {
 	ctx := context.Background()
 	run := time.Now().UnixNano()
 	topicID := run // no real topic needs to exist -- the events just carry this id as data
-	group := fmt.Sprintf("eventsnapshotlab.%d", run)
+	group := fmt.Sprintf("abandonedroutinesnapshotlab.%d", run)
 
 	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
@@ -74,13 +74,13 @@ func main() {
 	fmt.Printf("  ✓ SelfClearLatencyAvg (%v)\n", snapshot.SelfClearLatencyAvg)
 
 	step("a different group on the same topic id sees none of the above")
-	otherGroup := fmt.Sprintf("eventsnapshotlab.other.%d", run)
+	otherGroup := fmt.Sprintf("abandonedroutinesnapshotlab.other.%d", run)
 	isolated, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, otherGroup)
 	must(err)
 	assertInt64("Total", isolated.Total, 0)
 	assertInt64("Outstanding", isolated.Outstanding, 0)
 
-	fmt.Println("\n✅ EVENT SNAPSHOT LAB PASSED")
+	fmt.Println("\n✅ ABANDONED ROUTINE SNAPSHOT LAB PASSED")
 }
 
 func waitFor(timeout time.Duration, cond func() (bool, error)) error {

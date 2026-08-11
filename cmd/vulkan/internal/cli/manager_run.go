@@ -13,15 +13,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newMaintainRunCmd(g *globalFlags) *cobra.Command {
+func newManagerRunCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "run",
-		Short: "Run the maintenance daemon until stopped",
-		Long: "run keeps every maintenance worker in the deployment running --\n" +
-			"partition upkeep, retention, waterlines, cron scheduling -- with no\n" +
-			"consumer required. Safe to run N-way: replicas coordinate through\n" +
-			"worker claims, so each worker's instance target holds. Stop with\n" +
-			"SIGINT or SIGTERM.",
+		Short: "Run the system manager until stopped",
+		Long: "run claims the system manager row and keeps every worker in the\n" +
+			"deployment running -- partition upkeep, retention, waterlines, cron\n" +
+			"scheduling -- with no consumer required. Safe to run N-way: replicas\n" +
+			"coordinate through worker claims, so each worker's instance target\n" +
+			"holds. Stop with SIGINT or SIGTERM.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)

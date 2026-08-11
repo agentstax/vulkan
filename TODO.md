@@ -99,7 +99,7 @@ yet, so every Register*Metric gauge is dormant. the research (2026-08-09): libra
 take a Meter in config and the host app owns the exporter (River otelriver, otelgrpc;
 our MetricsConfig.Meter noop-default already matches); server processes host their own
 scrape endpoint (Temporal listenAddress, k8s /metrics, RabbitMQ :15692). mapping:
-SystemManagerConfig grows a Meter for embedders; `vulkan maintain run` grows an
+SystemManagerConfig grows a Meter for embedders; `vulkan manager run` grows an
 opt-in --metrics-address flag that builds the sdk/metric MeterProvider + prometheus
 exporter (sanctioned deps, currently imported by nothing) and serves /metrics
 CLI-side, keeping sdk/metric out of the library. also settle where per-group

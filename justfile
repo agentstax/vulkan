@@ -73,8 +73,8 @@ topic-lab:
 reserved-topic-lab:
   go run examples/phase_1/reservedtopiclab/main.go
 
-event-snapshot-lab:
-  go run examples/phase_1/eventsnapshotlab/main.go
+abandoned-routine-snapshot-lab:
+  go run examples/phase_1/abandonedroutinesnapshotlab/main.go
 
 metrics-lab:
   go run examples/phase_1/metricslab/main.go
@@ -252,12 +252,12 @@ schema-gate-lab:
 producer-batch-lab:
   go run examples/phase_1/producerbatchlab/main.go
 
-# maintenance lab: N consumers on one topic coordinate through duty claims --
-# counts duty executions via fencing-token rotations to prove one effective
-# janitor/waterline worker per interval (not N), failover to a survivor
-# within an interval when consumers die, and full stop when the last exits.
-maintenance-lab:
-  go run examples/phase_1/maintenancelab/main.go
+# worker claim lab: N consumers on one topic coordinate through worker claims --
+# target-1 rows (janitor, waterline) hold exactly one live instance (not N),
+# failover to a survivor within a reconcile tick when consumers die, and full
+# release when the last exits.
+worker-claim-lab:
+  go run examples/phase_1/workerclaimlab/main.go
 
 # Phase 14a chunk 7 lab: the end-to-end bridge pattern proof -- a user-space
 # consumer group transforms+re-produces v1's compacted winners into a newly

@@ -1,4 +1,4 @@
-// Command maintenancelab proves worker-claim coordination across a fleet of
+// Command workerclaimlab proves worker-claim coordination across a fleet of
 // consumers.
 //
 // Registers its own topic (destroyed on exit), then runs three Consumers in
@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	group       = "maintenancelab"
+	group       = "workerclaimlab"
 	consumers   = 3
 	seedRows    = 200
 	instanceTTL = 2 * time.Second
@@ -58,7 +58,7 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	topicName := fmt.Sprintf("maintenancelab.%d", time.Now().UnixNano())
+	topicName := fmt.Sprintf("workerclaimlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
@@ -122,7 +122,7 @@ func main() {
 	step("END STATE: the coordinated workers did real work")
 	assertInt("waterline reached head", scalar(ctx, ds, `SELECT c.committed FROM cursor c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1 AND g.topic_id=$2`, group, tp.Id), head)
 
-	fmt.Println("\n✅ MAINTENANCE LAB PASSED")
+	fmt.Println("\n✅ WORKER CLAIM LAB PASSED")
 	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")
 	fmt.Println("   survivor within a reconcile tick, full release when the last one exits.")
 }

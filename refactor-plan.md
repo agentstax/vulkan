@@ -530,6 +530,11 @@ Package layout (settled 2026-08-02) — vocabulary at the bottom, every arrow po
     DB: both modules build, vet clean, go test -race green, all 18 touched
     labs pass, and `vulkan maintain run` claims the system manager and
     reconciles leftover topics' janitors plus an orphaned group's waterline.
+    Post-close renames (2026-08-11): eventsnapshotlab →
+    abandonedroutinesnapshotlab, maintenancelab → workerclaimlab (just
+    recipes renamed to match), and `vulkan maintain run` → `vulkan manager
+    run` (role-noun subcommand, airflow-scheduler/vault-server pattern;
+    maintain*.go → manager*.go).
 
 ---
 
