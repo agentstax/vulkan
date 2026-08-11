@@ -19,6 +19,15 @@ var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 // topic under the same name.
 type SchemaVersion int64
 
+// DeliveryLogMode selects which delivery outcomes write delivery_log_<id> rows.
+type DeliveryLogMode string
+
+const (
+	DeliveryLogModeOff      DeliveryLogMode = "off"      // no rows at all
+	DeliveryLogModeFailures DeliveryLogMode = "failures" // every outcome except success
+	DeliveryLogModeAll      DeliveryLogMode = "all"      // every outcome, including a 'success' row per success
+)
+
 // Id addresses this topic's own message_log_<id>.
 type Topic struct {
 	Id                     int64
@@ -29,5 +38,5 @@ type Topic struct {
 	RetentionTTL           time.Duration
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTL      time.Duration
-	DisableDeliveryLog     bool
+	DeliveryLogMode        DeliveryLogMode
 }

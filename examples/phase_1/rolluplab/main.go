@@ -157,13 +157,13 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var events []rangeEvent
 	for i := range numRanges {
-		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		events = append(events, rangeEvent{commitTime: time.Now(), high: claim.Lease.High})
 	}
 
@@ -203,13 +203,13 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var stalenesses []float64
 	for i := range numRanges {
-		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, false)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 
 		start := time.Now()
 		_, err = waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
@@ -290,12 +290,12 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 	start := time.Now()
 	for range int(n) {
-		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if claim == nil {
 			break
 		}
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		if syncAdvance {
 			_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
 			must(err)
@@ -351,12 +351,12 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	for range goroutines {
 		wg.Go(func() {
 			for range perGoroutine {
-				claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, false)
+				claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 				must(err)
 				if claim == nil {
 					return
 				}
-				must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
+				must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 				if syncAdvance {
 					_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
 					must(err)

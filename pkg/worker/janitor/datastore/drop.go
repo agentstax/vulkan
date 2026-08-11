@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -17,22 +18,22 @@ const ddlLockTimeout = 2 * time.Second
 // DropExpiredPartitions drops each surviving partition whose newest row is
 // past ttl, skipping the active partition and (unless overridden) anything a
 // lagging group hasn't committed past yet -- both CURSOR and LIFECYCLE groups
-// track that through cursor.committed. disableDeliveryLog skips the
+// track that through cursor.committed. deliveryLogMode off skips the
 // delivery_log_<topic_id> half of each drop's orphan cleanup.
-func (d *JanitorDatastore) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
+func (d *JanitorDatastore) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, disableDeliveryLog)
+		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, deliveryLogMode)
 	})
 }
 
-func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, disableDeliveryLog bool) error {
+func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) error {
 	if ttl <= 0 {
 		return nil // retention disabled - partitions kept forever
 	}
 
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, topic.MessageLogTable(topicID))
+	`, iTopic.MessageLogTable(topicID))
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
@@ -67,7 +68,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID in
 			continue // a lagging group hasn't resolved this range yet
 		}
 
-		if err := d.dropPartition(ctx, topicID, n, partitionSize, disableDeliveryLog); err != nil {
+		if err := d.dropPartition(ctx, topicID, n, partitionSize, deliveryLogMode); err != nil {
 			return err
 		}
 		d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicID, "partition", n)
@@ -78,7 +79,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID in
 
 // dropPartition removes the partition and its delivery/delivery_log rows in
 // one transaction.
-func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64, disableDeliveryLog bool) error {
+func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64, deliveryLogMode topic.DeliveryLogMode) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -99,17 +100,17 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n i
 		DELETE FROM %s
 		WHERE message_id >= $1
 			AND message_id < $2;
-	`, topic.DeliveryTable(topicID))
+	`, iTopic.DeliveryTable(topicID))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
 		return err
 	}
 
-	if !disableDeliveryLog {
+	if deliveryLogMode != topic.DeliveryLogModeOff {
 		orphanLogSql := fmt.Sprintf(`
 			DELETE FROM %s
 			WHERE message_id >= $1
 				AND message_id < $2;
-		`, topic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryLogTable(topicID))
 		if _, err := tx.Exec(ctx, orphanLogSql, low, high); err != nil {
 			return err
 		}
@@ -129,7 +130,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n i
 
 	dropSql := fmt.Sprintf(`
 		DROP TABLE IF EXISTS %s;
-	`, topic.MessageLogPartitionTable(topicID, n))
+	`, iTopic.MessageLogPartitionTable(topicID, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
 		return err

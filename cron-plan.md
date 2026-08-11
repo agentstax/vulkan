@@ -227,15 +227,17 @@ RunCronJob(ctx, name)           // uuid.NewV7() key -- random enough to never de
 Status: fired = `cron_job.last_scheduled_time` (scheduler truth, survives
 retention); succeeded/failed = delivery_log rows per consumer group joined
 through message_log on the job's compaction key — needs the DeliveryLog mode
-refactor below. Window = min(35d RetentionTTL, delivery_log row lifetime) —
-verify at build which the janitor drops first.
+refactor below. Window: verified at build (2026-08-11) — the janitor's drop
+and sweep reap delivery_log rows in the same pass and at the same retention
+cutoff as their message rows, so the window is exactly the 35d RetentionTTL;
+there is no separate delivery_log lifetime.
 
-## DeliveryLog mode (platform-wide decision, lands first in Chunk 2, own commit)
+## DeliveryLog mode — BUILT 2026-08-11 (was: lands first in Chunk 2)
 
 Success today = delivery-row deletion + NO log row (cursor-path successes are
 O(1) per range — the throughput story; don't break it platform-wide). Fold the
-existing bool into one enum: topic config `DeliveryLog: 'off' | 'exceptions' |
-'all'`, default `'exceptions'` (today's behavior; `DisableDeliveryLog=true`
+existing bool into one enum: topic config `DeliveryLog: 'off' | 'failures' |
+'all'`, default `'failures'` (value renamed from 'exceptions' 2026-08-11; today's behavior; `DisableDeliveryLog=true`
 maps to 'off' — pre-v1, edit in place). `'all'` adds `'success'@attempts` rows
 inside the SAME success txns (no extra WAL flush): Commit/PartialCommit take
 the buffer's resolved-success message ids as an explicit param (same shape as
@@ -249,6 +251,30 @@ increment ends in exactly one log row OR the success-deletion — under 'all'
 the success-deletion also logs, in the same txn.
 `cron.TopicConfig()` sets 'all' (per-job-per-firing volume, floor 1/min
 — noise); hot user topics never pay unless they opt in.
+
+Built as specced, with these shape notes: `topic.DeliveryLogMode` enum
+('off'/'failures'/'all'; type renamed from DeliveryLog and the middle value from 'exceptions' on review -- bare
+`delivery_log` read as the table, not a setting) replaces the bool
+everywhere it was threaded
+(claim/commit/exception/kill/quarantine/janitor-reap paths take the enum;
+gates read `!= off`); success is an `OutcomeSuccess` outcome kind
+(log row only, never a delivery row -- same as superseded; user-picked over
+the earlier `successes []int64` param, which widened Commit/PartialCommit for
+one mode), and the runner's buffer walks include success outcomes only under
+'all' (messageRunner.logSuccesses), so the common case keeps its zero-alloc
+happy path; RecordExceptionSuccess and the parked lifecycle path's RecordSuccess
+write their 'success' row via a CTE in the same statement as the
+deletion/'done' mark; `delivery_log_mode` column TEXT NOT NULL DEFAULT
+'failures', baseline DDL edited in place (the CHECK was later dropped in favor of the read-side guard); metrics + alerts topics
+pin 'off', job_requests pins 'all'; CLI flag `--delivery-log-mode`.
+`toTopic` returns `(*topic.Topic, error)` and maps the stored string through
+an exhaustive switch (`deliveryLogModeEnum`) rather than casting it, so a row
+that ever holds an unknown mode fails the read instead of silently behaving
+as the failures mode — same shape as NewCronJob validating its stored
+concurrency. Verified:
+deliveryloglab reshaped (new mode-'all' scenario covering both success write
+paths) + a real-Consumer end-to-end success-row check + affected-lab batch
+on a drop+recreate fresh DB, go test -race green.
 
 ## ProduceResult (platform-wide decision, lands in Chunk 2, own commit)
 

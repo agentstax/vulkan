@@ -4,27 +4,51 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RecordSuccess marks a claimed delivery 'done'. Terminal success for this
-// (group, message); the log row is untouched and other groups are unaffected.
-func (d *DeliveryConsumerDatastore) RecordSuccess(ctx context.Context, delivery *DeliveryData) error {
+// RecordSuccess marks a claimed delivery 'done'; DeliveryLogModeAll also writes
+// the 'success' log row in the same statement. Terminal success for this
+// (group, message); the message row is untouched and other groups are
+// unaffected.
+func (d *DeliveryConsumerDatastore) RecordSuccess(ctx context.Context, delivery *DeliveryData, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordSuccess(ctx, delivery)
+		return d.recordSuccess(ctx, delivery, deliveryLogMode)
 	})
 }
 
-func (d *DeliveryConsumerDatastore) recordSuccess(ctx context.Context, delivery *DeliveryData) error {
-	sql := fmt.Sprintf(`
-		UPDATE %s
-		SET
-			status = 'done',
-			last_error = NULL,
-			updated_at = now()
-		WHERE consumer_group_id = $1
-			AND message_id = $2;
-	`, topic.DeliveryTable(delivery.TopicID))
+func (d *DeliveryConsumerDatastore) recordSuccess(ctx context.Context, delivery *DeliveryData, deliveryLogMode topic.DeliveryLogMode) error {
+	var sql string
+	if deliveryLogMode == topic.DeliveryLogModeAll {
+		// updated CTE + INSERT keeps the 'done' mark and its
+		// delivery_log_<topic_id> row atomic
+		sql = fmt.Sprintf(`
+			WITH updated AS (
+				UPDATE %[1]s
+				SET
+					status = 'done',
+					last_error = NULL,
+					updated_at = now()
+				WHERE consumer_group_id = $1
+					AND message_id = $2
+				RETURNING attempts
+			)
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			SELECT $1, $2, attempts, 'success', ''
+			FROM updated;
+		`, iTopic.DeliveryTable(delivery.TopicID), iTopic.DeliveryLogTable(delivery.TopicID))
+	} else {
+		sql = fmt.Sprintf(`
+			UPDATE %s
+			SET
+				status = 'done',
+				last_error = NULL,
+				updated_at = now()
+			WHERE consumer_group_id = $1
+				AND message_id = $2;
+		`, iTopic.DeliveryTable(delivery.TopicID))
+	}
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroupId, delivery.MessageId)
 	return err
@@ -35,23 +59,23 @@ func (d *DeliveryConsumerDatastore) recordSuccess(ctx context.Context, delivery 
 // incremented at claim time, so >= maxAttempts means this was the last try.
 // No retry backoff (the delivery table carries no can_run_after) -- a
 // 'ready' row is simply re-claimed on the next poll.
-func (d *DeliveryConsumerDatastore) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, disableDeliveryLog bool) error {
+func (d *DeliveryConsumerDatastore) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordFailure(ctx, maxAttempts, delivery, failureErr, disableDeliveryLog)
+		return d.recordFailure(ctx, maxAttempts, delivery, failureErr, deliveryLogMode)
 	})
 }
 
-func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, disableDeliveryLog bool) error {
+func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	if delivery.Attempts >= maxAttempts {
 		// private call, not the exported RecordTerminal -- this already runs
 		// inside RecordFailure's own Retry.Wrap, calling the exported one
 		// would nest a second retry loop around the same round-trip.
-		return d.recordTerminal(ctx, delivery, failureErr, disableDeliveryLog)
+		return d.recordTerminal(ctx, delivery, failureErr, deliveryLogMode)
 	}
 
 	var sql string
 	args := []any{delivery.ConsumerGroupId, delivery.MessageId, failureErr.Error()}
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			UPDATE %s
 			SET
@@ -60,7 +84,7 @@ func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttemp
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, topic.DeliveryTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicID))
 	} else {
 		sql = fmt.Sprintf(`
 			WITH updated AS (
@@ -76,7 +100,7 @@ func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttemp
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.DeliveryTable(delivery.TopicID), topic.DeliveryLogTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicID), iTopic.DeliveryLogTable(delivery.TopicID))
 		args = append(args, delivery.Attempts)
 	}
 
@@ -87,16 +111,16 @@ func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttemp
 // RecordTerminal dead-letters a delivery: no more retries. The DLQ for a group is
 // just `WHERE consumer_group_id = $1 AND status = 'dead'`; one group can dead-letter a
 // message while another processes the same offset fine.
-func (d *DeliveryConsumerDatastore) RecordTerminal(ctx context.Context, delivery *DeliveryData, terminalErr error, disableDeliveryLog bool) error {
+func (d *DeliveryConsumerDatastore) RecordTerminal(ctx context.Context, delivery *DeliveryData, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordTerminal(ctx, delivery, terminalErr, disableDeliveryLog)
+		return d.recordTerminal(ctx, delivery, terminalErr, deliveryLogMode)
 	})
 }
 
-func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery *DeliveryData, terminalErr error, disableDeliveryLog bool) error {
+func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery *DeliveryData, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	var sql string
 	args := []any{delivery.ConsumerGroupId, delivery.MessageId, terminalErr.Error()}
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			UPDATE %s
 			SET
@@ -105,7 +129,7 @@ func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, topic.DeliveryTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicID))
 	} else {
 		sql = fmt.Sprintf(`
 			WITH updated AS (
@@ -121,7 +145,7 @@ func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.DeliveryTable(delivery.TopicID), topic.DeliveryLogTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicID), iTopic.DeliveryLogTable(delivery.TopicID))
 		args = append(args, delivery.Attempts)
 	}
 

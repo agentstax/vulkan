@@ -105,7 +105,7 @@ func main() {
 
 	// ===== CURSOR path: cursorGroup only sees the 2 matching messages =====
 	step("cursorGroup claims (head, head+5] -- expect only msg1 and msg2 back")
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, limit, maxRangeReclaims, lease, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, limit, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -116,13 +116,13 @@ func main() {
 	assertIDs("only msg1 (published before the binding existed) and msg2 (deeper hierarchy) match",
 		ids(claim.Messages), []int64{head + 1, head + 2})
 
-	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed := advance(ctx, waterlineDatastore, tp.Id, cursorGroupID)
 	assertInt("committed advances over the WHOLE range regardless of match", committed, head+5)
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
 	step("controlGroup claims the identical range -- expect all 5 back, unaffected by cursorGroup's binding")
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, limit, maxRangeReclaims, lease, false)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, limit, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -131,7 +131,7 @@ func main() {
 	assertIDs("an unbound group receives every message, including the NULL routing_key one",
 		ids(claim.Messages), []int64{head + 1, head + 2, head + 3, head + 4, head + 5})
 
-	must(messageConsumers.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, controlGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	advance(ctx, waterlineDatastore, tp.Id, controlGroupID)
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====

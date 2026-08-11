@@ -1,13 +1,19 @@
 package controller
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
 )
 
-func toTopic(data *datastore.TopicData) *topic.Topic {
+func toTopic(data *datastore.TopicData) (*topic.Topic, error) {
+	deliveryLogMode, err := deliveryLogModeEnum(data.DeliveryLogMode)
+	if err != nil {
+		return nil, err
+	}
+
 	return &topic.Topic{
 		Id:                     data.Id,
 		SystemId:               data.SystemId,
@@ -17,8 +23,8 @@ func toTopic(data *datastore.TopicData) *topic.Topic {
 		RetentionTTL:           time.Duration(data.RetentionTTLNs),
 		AllowDropPastCommitted: data.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      time.Duration(data.IdempotencyKeyTTLNs),
-		DisableDeliveryLog:     data.DisableDeliveryLog,
-	}
+		DeliveryLogMode:        deliveryLogMode,
+	}, nil
 }
 
 func toRegisterTopicData(systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) *datastore.TopicData {
@@ -30,7 +36,7 @@ func toRegisterTopicData(systemId int64, name string, version topic.SchemaVersio
 		RetentionTTLNs:         int64(cfg.RetentionTTL),
 		AllowDropPastCommitted: cfg.AllowDropPastCommitted,
 		IdempotencyKeyTTLNs:    int64(cfg.IdempotencyKeyTTL),
-		DisableDeliveryLog:     cfg.DisableDeliveryLog,
+		DeliveryLogMode:        string(cfg.DeliveryLogMode),
 	}
 }
 
@@ -39,8 +45,25 @@ func toAlterTopicData(cfg *AlterTopicConfig) *datastore.AlterTopicData {
 		RetentionTTLNs:         durationNs(cfg.RetentionTTL),
 		AllowDropPastCommitted: cfg.AllowDropPastCommitted,
 		IdempotencyKeyTTLNs:    durationNs(cfg.IdempotencyKeyTTL),
-		DisableDeliveryLog:     cfg.DisableDeliveryLog,
+		DeliveryLogMode:        deliveryLogModeString(cfg.DeliveryLogMode),
 	}
+}
+
+func deliveryLogModeEnum(deliveryLogMode string) (topic.DeliveryLogMode, error) {
+	switch topic.DeliveryLogMode(deliveryLogMode) {
+	case topic.DeliveryLogModeOff, topic.DeliveryLogModeFailures, topic.DeliveryLogModeAll:
+		return topic.DeliveryLogMode(deliveryLogMode), nil
+	default:
+		return "", fmt.Errorf("stored delivery_log_mode %q is not %q, %q, or %q", deliveryLogMode, topic.DeliveryLogModeOff, topic.DeliveryLogModeFailures, topic.DeliveryLogModeAll)
+	}
+}
+
+func deliveryLogModeString(deliveryLogMode *topic.DeliveryLogMode) *string {
+	if deliveryLogMode == nil {
+		return nil
+	}
+	s := string(*deliveryLogMode)
+	return &s
 }
 
 // durationNs widens *time.Duration to the *int64 the _ns columns store,

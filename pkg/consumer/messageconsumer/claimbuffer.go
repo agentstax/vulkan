@@ -29,7 +29,8 @@ func newBuffered(row controller.Message, lease controller.RangeLease, index int)
 // claimBuffer is the only thing that touches both, so they can't
 // end up half-updated relative to each other.
 type claimBuffer struct {
-	queue concurrency.Queue[buffered]
+	queue            concurrency.Queue[buffered]
+	includeSuccesses bool // stamped onto every rangeState it tracks
 
 	// guards `ranges` ONLY. RWMutex because lookup (read) fires once per
 	// message while track/Remove (write) fire once per range -- reads
@@ -38,13 +39,14 @@ type claimBuffer struct {
 	ranges   map[uuid.UUID]*rangeState
 }
 
-func newClaimBuffer(queue concurrency.Queue[buffered]) (*claimBuffer, error) {
+func newClaimBuffer(queue concurrency.Queue[buffered], includeSuccesses bool) (*claimBuffer, error) {
 	if queue == nil {
 		return nil, errors.New("queue must not be nil")
 	}
 	return &claimBuffer{
-		queue:  queue,
-		ranges: make(map[uuid.UUID]*rangeState),
+		queue:            queue,
+		includeSuccesses: includeSuccesses,
+		ranges:           make(map[uuid.UUID]*rangeState),
 	}, nil
 }
 
@@ -61,7 +63,7 @@ func (b *claimBuffer) Add(ctx context.Context, claimed *controller.ClaimedRange)
 		return errors.New("claimed must have at least one message")
 	}
 
-	state := newRangeState(claimed)
+	state := newRangeState(claimed, b.includeSuccesses)
 
 	// track BEFORE enqueueing: a mid-enqueue error still leaves the range
 	// tracked, so closeOpenRanges settles it instead of it leaking untracked

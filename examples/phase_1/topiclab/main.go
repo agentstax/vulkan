@@ -124,7 +124,7 @@ func main() {
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
 	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB))
 
-	must(janitorDatastore.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DeliveryLogMode))
 	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1})
 	fmt.Println("  -> this is the exact cross-topic contamination 8a's floor bug caused; each topic's floor is now its own")
 
@@ -145,14 +145,14 @@ func main() {
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
 		headBefore+1, headBefore+2, headBefore+3, headBefore+1, headBefore+1, headBefore+2)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 10, 3, 30*time.Second, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
 	}
 	assertInt64s("retroactive binding applies to the pre-existing message, CURSOR path filters out the non-match",
 		ids(claim.Messages), []int64{headBefore + 1, headBefore + 2})
-	must(messageConsumers.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed := advance(ctx, waterlineDatastore, topicC.Id, groupRouteID)
 	assertInt("committed still advances over the WHOLE range, not just the matches", committed, claim.Lease.High)
 
@@ -174,25 +174,25 @@ func main() {
 	}
 	time.Sleep(ttl + ttlMargin)
 
-	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, false)
+	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claimX == nil {
 		die("expected groupX to claim a fresh range")
 	}
-	must(messageConsumers.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	advance(ctx, waterlineDatastore, topicD.Id, groupXID)
 	fmt.Println("  groupX (sliceX reader) is now fully caught up on the only traffic that exists")
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,
 	// simulating a slice consumer that's stuck or never started.
 
-	must(janitorDatastore.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false, topicD.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, topicD.Id, partitionSize, ttl, false, topicD.DeliveryLogMode))
 	assertPartitions(ctx, ds, topicD.Id, "partition 0 SURVIVES -- groupY's slice, though it has zero actual traffic, still pins this topic's one shared floor", []int64{0, 1})
 	fmt.Println("  -> this is the case 8b deliberately leaves unfixed: split into separate topics if slices need independent floors")
 
 	// ===== PROOF 5: operating against an unregistered topic id fails clearly =====
 	step("PROOF 5: publishing/claiming against an unregistered topic id fails clearly, never silently auto-creates one")
 	bogusTopicID := topicD.Id + 999_999_999 // guaranteed to never have been registered
-	err = janitorDatastore.DropExpiredPartitions(ctx, bogusTopicID, partitionSize, ttl, false, false)
+	err = janitorDatastore.DropExpiredPartitions(ctx, bogusTopicID, partitionSize, ttl, false, topic.DeliveryLogModeFailures)
 	if err == nil {
 		die("expected an error operating against an unregistered topic id, got nil")
 	}

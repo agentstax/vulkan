@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -16,7 +17,7 @@ import (
 // mid-range doesn't strand those offsets. past maxRangeReclaims the range is
 // POISON -- quarantine it into the sparse exception window instead of handing it
 // out again, so one bad message can't crash-loop the whole range forever.
-func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicID int64, groupID int64, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRangeData, error) {
+func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicID int64, groupID int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -60,7 +61,7 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 	d.Logger.InfoContext(ctx, "lease reclaimed from expired worker", "group_id", groupID, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	if lease.Reclaims >= maxRangeReclaims {
-		if err := d.quarantine(ctx, tx, topicID, groupID, lease, disableDeliveryLog); err != nil {
+		if err := d.quarantine(ctx, tx, topicID, groupID, lease, deliveryLogMode); err != nil {
 			return nil, err
 		}
 		return nil, tx.Commit(ctx)
@@ -86,18 +87,18 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 // exact same exception-window machinery as an ordinary consumed-message failure --
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
-func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, lease LeaseData, disableDeliveryLog bool) error {
+func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
 	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group_id", groupID, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var parkSql string
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		parkSql = fmt.Sprintf(`
 			INSERT INTO %s (consumer_group_id, message_id, status, attempts, last_error)
 			SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
-		`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
+		`, iTopic.DeliveryTable(topicID), iTopic.MessageLogTable(topicID))
 	} else {
 		// parked CTE + INSERT keeps the range-wide park and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message parked, same first-recorded-attempt
@@ -113,7 +114,7 @@ func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, to
 			)
 			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM parked;
-		`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID), topic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryTable(topicID), iTopic.MessageLogTable(topicID), iTopic.DeliveryLogTable(topicID))
 	}
 	if _, err := tx.Exec(ctx, parkSql, groupID, lease.Low, lease.High); err != nil {
 		return err

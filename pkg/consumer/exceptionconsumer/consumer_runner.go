@@ -54,11 +54,11 @@ func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
 	leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.AckMargin
 
 	// kill first, so an exhausted expired row is dead-lettered
-	if err := r.consumers.KillExceptions(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.MessageMax.Retry.MaxRetries, r.Topic.DisableDeliveryLog); err != nil {
+	if err := r.consumers.KillExceptions(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.MessageMax.Retry.MaxRetries, r.Topic.DeliveryLogMode); err != nil {
 		return err
 	}
 
-	claimed, err := r.consumers.ClaimExceptions(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.BatchLimit, r.cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DisableDeliveryLog)
+	claimed, err := r.consumers.ClaimExceptions(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.BatchLimit, r.cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DeliveryLogMode)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (r *exceptionRunner[Message]) recordSuccess(ctx context.Context, exception 
 	recordCtx, cancel := r.recordContext(ctx, keyClaim)
 	defer cancel()
 
-	err := r.consumers.RecordExceptionSuccess(recordCtx, exception, keyClaim)
+	err := r.consumers.RecordExceptionSuccess(recordCtx, exception, r.Topic.DeliveryLogMode, keyClaim)
 	return r.absorbLostLease(ctx, exception, err)
 }
 
@@ -135,7 +135,7 @@ func (r *exceptionRunner[Message]) recordFailure(ctx context.Context, exception 
 	recordCtx, cancel := r.recordContext(ctx, keyClaim)
 	defer cancel()
 
-	err := r.consumers.RecordExceptionFailure(recordCtx, resolvedOptions.Retry, exception, runErr, r.Topic.DisableDeliveryLog, keyClaim)
+	err := r.consumers.RecordExceptionFailure(recordCtx, resolvedOptions.Retry, exception, runErr, r.Topic.DeliveryLogMode, keyClaim)
 	return r.absorbLostLease(ctx, exception, err)
 }
 
@@ -143,12 +143,12 @@ func (r *exceptionRunner[Message]) recordTerminal(ctx context.Context, exception
 	recordCtx, cancel := r.recordContext(ctx, keyClaim)
 	defer cancel()
 
-	err := r.consumers.RecordExceptionTerminal(recordCtx, exception, runErr, r.Topic.DisableDeliveryLog, keyClaim)
+	err := r.consumers.RecordExceptionTerminal(recordCtx, exception, runErr, r.Topic.DeliveryLogMode, keyClaim)
 	return r.absorbLostLease(ctx, exception, err)
 }
 
 func (r *exceptionRunner[Message]) recordSuperseded(ctx context.Context, exception *controller.ClaimedException) error {
-	err := r.consumers.RecordExceptionSuperseded(ctx, exception, r.Topic.DisableDeliveryLog)
+	err := r.consumers.RecordExceptionSuperseded(ctx, exception, r.Topic.DeliveryLogMode)
 	return r.absorbLostLease(ctx, exception, err)
 }
 

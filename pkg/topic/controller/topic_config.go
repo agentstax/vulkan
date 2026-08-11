@@ -48,13 +48,15 @@ type TopicConfig struct {
 	// Ex: 10 * time.Minute.
 	IdempotencyKeyTTL time.Duration
 
-	// DisableDeliveryLog - don't record to delivery_log_<id>, the per-attempt
-	// failure audit trail written alongside every delivery_<id> failure.
-	// Default: false (enabled).
+	// DeliveryLogMode - which delivery outcomes write to delivery_log_<id>, the
+	// per-attempt audit trail.
+	// Default: DeliveryLogModeFailures (every outcome except success).
 	//
-	// Set true for a topic whose failure volume would make the extra
+	// DeliveryLogModeOff for a topic whose failure volume would make the extra
 	// per-attempt write not worth paying for.
-	DisableDeliveryLog bool
+	// DeliveryLogModeAll when successes must be auditable per message
+	// each success txn then also writes its 'success' row.
+	DeliveryLogMode topic.DeliveryLogMode
 }
 
 func (c *TopicConfig) WithDefaults() *TopicConfig {
@@ -63,6 +65,9 @@ func (c *TopicConfig) WithDefaults() *TopicConfig {
 	}
 	if c.IdempotencyKeyTTL == 0 {
 		c.IdempotencyKeyTTL = time.Hour
+	}
+	if c.DeliveryLogMode == "" {
+		c.DeliveryLogMode = topic.DeliveryLogModeFailures
 	}
 	return c
 }
@@ -76,6 +81,9 @@ func (c *TopicConfig) Validate() error {
 	if c.IdempotencyKeyTTL < 0 {
 		return fmt.Errorf("IdempotencyKeyTTL must be >= 0, got %v", c.IdempotencyKeyTTL)
 	}
+	if err := validateDeliveryLogMode(c.DeliveryLogMode); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -86,12 +94,12 @@ type AlterTopicConfig struct {
 	RetentionTTL           *time.Duration
 	AllowDropPastCommitted *bool
 	IdempotencyKeyTTL      *time.Duration
-	DisableDeliveryLog     *bool
+	DeliveryLogMode        *topic.DeliveryLogMode
 }
 
 func (c *AlterTopicConfig) Validate() error {
 	if c.RetentionTTL == nil && c.AllowDropPastCommitted == nil && c.IdempotencyKeyTTL == nil &&
-		c.DisableDeliveryLog == nil {
+		c.DeliveryLogMode == nil {
 		return errors.New("no fields set -- an alter must change at least one field")
 	}
 	if c.RetentionTTL != nil && *c.RetentionTTL < 0 {
@@ -99,6 +107,11 @@ func (c *AlterTopicConfig) Validate() error {
 	}
 	if c.IdempotencyKeyTTL != nil && *c.IdempotencyKeyTTL <= 0 {
 		return fmt.Errorf("IdempotencyKeyTTL must be > 0, got %v", *c.IdempotencyKeyTTL)
+	}
+	if c.DeliveryLogMode != nil {
+		if err := validateDeliveryLogMode(*c.DeliveryLogMode); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -113,6 +126,14 @@ func (c *TopicConfig) ToTopic(id int64, systemId int64, name string, version top
 		RetentionTTL:           c.RetentionTTL,
 		AllowDropPastCommitted: c.AllowDropPastCommitted,
 		IdempotencyKeyTTL:      c.IdempotencyKeyTTL,
-		DisableDeliveryLog:     c.DisableDeliveryLog,
+		DeliveryLogMode:        c.DeliveryLogMode,
 	}
+}
+
+func validateDeliveryLogMode(deliveryLogMode topic.DeliveryLogMode) error {
+	switch deliveryLogMode {
+	case topic.DeliveryLogModeOff, topic.DeliveryLogModeFailures, topic.DeliveryLogModeAll:
+		return nil
+	}
+	return fmt.Errorf("DeliveryLogMode must be %q, %q, or %q, got %q", topic.DeliveryLogModeOff, topic.DeliveryLogModeFailures, topic.DeliveryLogModeAll, deliveryLogMode)
 }

@@ -19,8 +19,8 @@ func DeliveryTable(topicID int64) string {
 	return fmt.Sprintf("delivery_%d", topicID)
 }
 
-// DeliveryLogTable is topicID's own physical delivery audit log -- absent
-// when the topic was registered with DisableDeliveryLog.
+// DeliveryLogTable is topicID's own physical delivery audit log -- it exists
+// for every topic; the topic's delivery_log_mode only gates the writes.
 func DeliveryLogTable(topicID int64) string {
 	return fmt.Sprintf("delivery_log_%d", topicID)
 }

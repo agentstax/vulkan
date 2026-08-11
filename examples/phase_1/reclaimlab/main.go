@@ -92,7 +92,7 @@ func main() {
 
 	// ===== WORKER 1: claim a range, tick the roller, then CRASH (never commit) =====
 	step("WORKER 1 claims a range, then crashes mid-range (never Commit)")
-	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -116,7 +116,7 @@ func main() {
 
 	// ===== WORKER 2: Reclaim-before-Claim grabs the EXACT expired range =====
 	step("WORKER 2 polls: Reclaim-before-Claim picks up the expired lease")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -137,7 +137,7 @@ func main() {
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
 	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
-	if err := messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, 5*time.Second, false); !errors.Is(err, consumerbase.ErrLeaseLost) {
+	if err := messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, consumerbase.ErrLeaseLost) {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)
@@ -145,7 +145,7 @@ func main() {
 	fmt.Println("  dead worker's stale Commit was rejected with ErrLeaseLost")
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed = advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
@@ -157,12 +157,12 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if c == nil {
 			break // caught up
 		}
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, waterlineDatastore, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)

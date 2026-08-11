@@ -14,6 +14,7 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumer/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/message"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -46,7 +47,8 @@ func newMessageRunner[Message any](base *consumerbase.BaseConsumer[Message], con
 	if err != nil {
 		return nil, err
 	}
-	buffer, err := newClaimBuffer(queue)
+	// only DeliveryLogModeAll wants success outcomes collected at commit
+	buffer, err := newClaimBuffer(queue, base.Topic.DeliveryLogMode == topic.DeliveryLogModeAll)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +150,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 		leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.AckMargin
 		limit := min(room, r.cfg.BatchLimit)
 
-		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, limit, r.cfg.MaxRangeReclaims, leaseDuration, r.Topic.DisableDeliveryLog)
+		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, limit, r.cfg.MaxRangeReclaims, leaseDuration, r.Topic.DeliveryLogMode)
 		if err != nil {
 			// ctx cancellation is a real shutdown -> propagate and stop
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -285,7 +287,7 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
 	// range always frees -- the lazy waterline roller advances committed
 	// past it; failures ride along as parked exceptions, not a blocked range.
-	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DisableDeliveryLog)
+	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode)
 	switch {
 	case err == nil:
 		r.buffer.Remove(commit.Lease.Token)
@@ -311,7 +313,7 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
-	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DisableDeliveryLog); err != nil {
+	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode); err != nil {
 		if errors.Is(err, consumerbase.ErrLeaseLost) {
 			r.Logger.DebugContext(ctx, "lease lost at partial commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here

@@ -78,7 +78,7 @@ func main() {
 	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a claim, got nil")
@@ -95,7 +95,7 @@ func main() {
 	if len(claimedLifecycle) != 1 {
 		die(fmt.Sprintf("expected 1 lifecycle claim, got %d", len(claimedLifecycle)))
 	}
-	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DisableDeliveryLog))
+	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DeliveryLogMode))
 
 	for _, table := range []string{"cursor", "lease", "binding"} {
 		assertGroupRowCount(ctx, ds, table, groupID, 1, "before Destroy")

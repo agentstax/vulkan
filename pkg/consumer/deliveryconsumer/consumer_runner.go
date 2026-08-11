@@ -89,7 +89,7 @@ func (r *deliveryRunner[Message]) deliveryClaim(ctx context.Context) error {
 		var payload Message
 		if err := json.Unmarshal(delivery.Payload, &payload); err != nil {
 			// a bad payload will never deserialize -> straight to the DLQ, no retries
-			if recordErr := r.consumers.RecordTerminal(ctx, &delivery, err, r.Topic.DisableDeliveryLog); recordErr != nil {
+			if recordErr := r.consumers.RecordTerminal(ctx, &delivery, err, r.Topic.DeliveryLogMode); recordErr != nil {
 				return recordErr
 			}
 			continue
@@ -98,13 +98,13 @@ func (r *deliveryRunner[Message]) deliveryClaim(ctx context.Context) error {
 		resolvedOptions := r.cfg.resolveMessageOptions(delivery.Options)
 		if err := r.CallSafely(ctx, &payload, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.Timeout); err != nil {
 			// processing error -> retry until attempts exhaust, then dead-letter
-			if recordErr := r.consumers.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, r.Topic.DisableDeliveryLog); recordErr != nil {
+			if recordErr := r.consumers.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, r.Topic.DeliveryLogMode); recordErr != nil {
 				return recordErr
 			}
 			continue
 		}
 
-		if err := r.consumers.RecordSuccess(ctx, &delivery); err != nil {
+		if err := r.consumers.RecordSuccess(ctx, &delivery, r.Topic.DeliveryLogMode); err != nil {
 			return err
 		}
 	}

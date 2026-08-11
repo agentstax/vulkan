@@ -92,7 +92,7 @@ func main() {
 
 	// ===== range 1: message 3 fails, the rest succeed =====
 	step("claim range 1 (ids 1-5), message 3 fails processing")
-	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -101,7 +101,7 @@ func main() {
 
 	const failingId = int64(3)
 	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "simulated processing failure"}}
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, exceptions, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, exceptions, 5*time.Second, topic.DeliveryLogModeFailures))
 	assert("one parked exception", deliveries(ctx, ds, tp.Id), 1)
 
 	committed := advance(ctx, waterlineDatastore, tp.Id)
@@ -110,12 +110,12 @@ func main() {
 
 	// ===== range 2: fully succeeds, but committed stays pinned on message 3 =====
 	step("claim + commit range 2 (ids 6-10), all succeed")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a fresh claim, got nil")
 	}
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed = advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
@@ -129,13 +129,13 @@ func main() {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, tp.DisableDeliveryLog)
+	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, batch, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))
 	}
 	fmt.Printf("  claimed exception message_id=%d attempts=%d\n", claimedExceptions[0].MessageId, claimedExceptions[0].Attempts)
-	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
+	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], tp.DeliveryLogMode, nil))
 	assert("exception pop-deleted on success", deliveries(ctx, ds, tp.Id), 0)
 
 	// ===== committed jumps straight past the resolved exception =====
@@ -147,12 +147,12 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, false)
+		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if c == nil {
 			break // caught up
 		}
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, false))
+		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, waterlineDatastore, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)

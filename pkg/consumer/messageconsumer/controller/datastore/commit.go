@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -16,16 +17,16 @@ import (
 // as sparse delivery rows -- initialBackoff sets how long a freshly parked row
 // waits before it's first eligible for ClaimExceptions
 // (RecordExceptionFailure's own retry policy takes over on later retries).
-// disableDeliveryLog skips the parallel delivery_log_<topic_id> audit write.
+// deliveryLogMode gates the parallel delivery_log_<topic_id> audit writes.
 // The lease is freed FIRST, token-guarded -- so a reclaimed worker's stale
 // commit bails before parking any phantom exception rows.
-func (d *MessageConsumerDatastore) Commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *MessageConsumerDatastore) Commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.commit(ctx, topicID, groupID, token, outcomes, initialBackoff, disableDeliveryLog)
+		return d.commit(ctx, topicID, groupID, token, outcomes, initialBackoff, deliveryLogMode)
 	})
 }
 
-func (d *MessageConsumerDatastore) commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *MessageConsumerDatastore) commit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -50,7 +51,7 @@ func (d *MessageConsumerDatastore) commit(ctx context.Context, topicID int64, gr
 	// reaches this INSERT -- a stale worker's DELETE above matches 0 rows and
 	// returns before ever running parkSql.
 	batch := &pgx.Batch{}
-	terminals := queueOutcomes(batch, parkStatement(topicID), logStatement(topicID), groupID, outcomes, initialBackoff, disableDeliveryLog)
+	terminals := queueOutcomes(batch, parkStatement(topicID), logStatement(topicID), groupID, outcomes, initialBackoff, deliveryLogMode)
 	if err := execBatch(ctx, tx, batch); err != nil {
 		return err
 	}
@@ -68,13 +69,13 @@ func (d *MessageConsumerDatastore) commit(ctx context.Context, topicID int64, gr
 // PartialCommit narrows a still-open lease to lastProcessed and parks whatever
 // resolved before an interruption. The lease token isn't freed, it
 // naturally expires and gets reclaimed.
-func (d *MessageConsumerDatastore) PartialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *MessageConsumerDatastore) PartialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.partialCommit(ctx, topicID, groupID, token, lastProcessed, outcomes, initialBackoff, disableDeliveryLog)
+		return d.partialCommit(ctx, topicID, groupID, token, lastProcessed, outcomes, initialBackoff, deliveryLogMode)
 	})
 }
 
-func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicID int64, groupID int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -103,7 +104,7 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicID in
 
 	// same parking shape as commit -- only the lease-side effect differs.
 	batch := &pgx.Batch{}
-	terminals := queueOutcomes(batch, parkStatement(topicID), logStatement(topicID), groupID, outcomes, initialBackoff, disableDeliveryLog)
+	terminals := queueOutcomes(batch, parkStatement(topicID), logStatement(topicID), groupID, outcomes, initialBackoff, deliveryLogMode)
 	if err := execBatch(ctx, tx, batch); err != nil {
 		return err
 	}
@@ -137,7 +138,7 @@ func parkStatement(topicID int64) string {
 			now() + make_interval(secs => $5),
 			$4
 		);
-	`, topic.DeliveryTable(topicID))
+	`, iTopic.DeliveryTable(topicID))
 }
 
 // freshly parked rows are always the first recorded attempt (0)
@@ -145,13 +146,13 @@ func logStatement(topicID int64) string {
 	return fmt.Sprintf(`
 		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
 		VALUES ($1, $2, 0, $3, $4);
-	`, topic.DeliveryLogTable(topicID))
+	`, iTopic.DeliveryLogTable(topicID))
 }
 
 // queueOutcomes queues one park + one log statement per resolved message, sent
 // as a single pipelined round trip. Returns how many parked 'dead'.
-// OutcomeSuperseded parks nothing -- it records a log row only.
-func queueOutcomes(batch *pgx.Batch, parkSql string, logSql string, groupID int64, outcomes []OutcomeData, initialBackoff time.Duration, disableDeliveryLog bool) int {
+// OutcomeSuperseded and OutcomeSuccess park nothing -- they record a log row only.
+func queueOutcomes(batch *pgx.Batch, parkSql string, logSql string, groupID int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) int {
 	terminals := 0
 	for _, outcome := range outcomes {
 		switch outcome.Kind {
@@ -163,7 +164,7 @@ func queueOutcomes(batch *pgx.Batch, parkSql string, logSql string, groupID int6
 		case OutcomeDeferred:
 			batch.Queue(parkSql, groupID, outcome.MessageId, "deferred", nil, 0.0)
 		}
-		if !disableDeliveryLog {
+		if deliveryLogMode != topic.DeliveryLogModeOff {
 			batch.Queue(logSql, groupID, outcome.MessageId, outcomeLogStatus(outcome.Kind), outcome.Err)
 		}
 	}

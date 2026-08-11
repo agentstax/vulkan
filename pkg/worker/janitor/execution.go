@@ -65,10 +65,10 @@ func (i *JanitorExecution) Run(ctx context.Context) error {
 // sweep is one janitor pass.
 func (i *JanitorExecution) sweep(ctx context.Context) error {
 	t := i.Topic
-	if err := i.datastore.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DisableDeliveryLog); err != nil {
+	if err := i.datastore.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DeliveryLogMode); err != nil {
 		return err
 	}
-	if err := i.datastore.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, i.metadata.SweepBatchSize, t.DisableDeliveryLog); err != nil {
+	if err := i.datastore.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, i.metadata.SweepBatchSize, t.DeliveryLogMode); err != nil {
 		return err
 	}
 	if err := i.datastore.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, i.metadata.SweepBatchSize); err != nil {

@@ -97,7 +97,7 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DisableDeliveryLog))
+	must(janitorDatastore.DropExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, tp.DeliveryLogMode))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -131,7 +131,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", true)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 
-	must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+	must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DeliveryLogMode))
 
 	assertLatestExists(ctx, ds, tp.Id, "dormant-key", false)
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
@@ -140,7 +140,7 @@ func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	for range 3 {
 		publish(ctx, wpInstance, "alive-key")
 		time.Sleep(ttl / 4)
-		must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DisableDeliveryLog))
+		must(janitorDatastore.SweepExpiredPartitions(ctx, tp.Id, partitionSize, ttl, true, batchSize, tp.DeliveryLogMode))
 	}
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 }

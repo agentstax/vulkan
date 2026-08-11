@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -58,11 +59,12 @@ const (
 	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- parks straight to 'dead'
 	OutcomeSuperseded OutcomeKind = "superseded" // a newer message on its compaction key exists -- log row only, never a delivery row
 	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- parks 'deferred' for the exception window
+	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
 )
 
 func (k OutcomeKind) Validate() error {
 	switch k {
-	case OutcomeException, OutcomeTerminal, OutcomeSuperseded, OutcomeDeferred:
+	case OutcomeException, OutcomeTerminal, OutcomeSuperseded, OutcomeDeferred, OutcomeSuccess:
 		return nil
 	}
 	return fmt.Errorf("invalid outcome kind %q", k)
@@ -71,7 +73,7 @@ func (k OutcomeKind) Validate() error {
 // ClaimMessagesWithCursor picks up a crashed range (an expired lease) first and
 // only claims fresh work from the frontier when there is nothing to reclaim, so
 // crashed ranges drain ahead of new work. Returns (nil, nil) when caught up.
-func (c *MessageConsumerController) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRange, error) {
+func (c *MessageConsumerController) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRange, error) {
 	if topicId <= 0 {
 		return nil, errors.New("topicId must be > 0")
 	}
@@ -88,7 +90,7 @@ func (c *MessageConsumerController) ClaimMessagesWithCursor(ctx context.Context,
 		return nil, fmt.Errorf("leaseDuration must be > 0, got %v", leaseDuration)
 	}
 
-	data, err := c.datastore.ClaimMessagesWithCursor(ctx, topicId, groupId, limit, maxRangeReclaims, leaseDuration, disableDeliveryLog)
+	data, err := c.datastore.ClaimMessagesWithCursor(ctx, topicId, groupId, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
 	if err != nil || data == nil {
 		return nil, err
 	}
@@ -99,18 +101,18 @@ func (c *MessageConsumerController) ClaimMessagesWithCursor(ctx context.Context,
 // delivery row. initialBackoff is how long a freshly parked row waits before
 // ClaimExceptions can pick it up; RecordExceptionFailure's own retry policy
 // takes over from there. Returns ErrLeaseLost if the range was reclaimed.
-func (c *MessageConsumerController) Commit(ctx context.Context, topicId int64, groupId int64, token uuid.UUID, outcomes []MessageOutcome, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (c *MessageConsumerController) Commit(ctx context.Context, topicId int64, groupId int64, token uuid.UUID, outcomes []MessageOutcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	if err := validateCommit(topicId, groupId, outcomes, initialBackoff); err != nil {
 		return err
 	}
 
-	return c.datastore.Commit(ctx, topicId, groupId, toTokenData(token), toOutcomeData(outcomes), initialBackoff, disableDeliveryLog)
+	return c.datastore.Commit(ctx, topicId, groupId, toTokenData(token), toOutcomeData(outcomes), initialBackoff, deliveryLogMode)
 }
 
 // PartialCommit narrows a still-open lease to lastProcessed and parks whatever
 // resolved before an interruption. The lease is not freed -- it expires and is
 // reclaimed, handing the untouched suffix to whoever picks it up next.
-func (c *MessageConsumerController) PartialCommit(ctx context.Context, topicId int64, groupId int64, token uuid.UUID, lastProcessed int64, outcomes []MessageOutcome, initialBackoff time.Duration, disableDeliveryLog bool) error {
+func (c *MessageConsumerController) PartialCommit(ctx context.Context, topicId int64, groupId int64, token uuid.UUID, lastProcessed int64, outcomes []MessageOutcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	if err := validateCommit(topicId, groupId, outcomes, initialBackoff); err != nil {
 		return err
 	}
@@ -118,7 +120,7 @@ func (c *MessageConsumerController) PartialCommit(ctx context.Context, topicId i
 		return fmt.Errorf("lastProcessed must be >= 0, got %d", lastProcessed)
 	}
 
-	return c.datastore.PartialCommit(ctx, topicId, groupId, toTokenData(token), lastProcessed, toOutcomeData(outcomes), initialBackoff, disableDeliveryLog)
+	return c.datastore.PartialCommit(ctx, topicId, groupId, toTokenData(token), lastProcessed, toOutcomeData(outcomes), initialBackoff, deliveryLogMode)
 }
 
 // ForceReclaimRange surrenders a range nobody ever started -- unlike

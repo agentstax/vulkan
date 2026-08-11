@@ -5,25 +5,26 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
 // ClaimExceptions claims 'ready', expired 'inflight', and 'deferred' rows up
 // to maxRetries attempts. A leased compaction key excludes its rows.
-func (d *ExceptionConsumerDatastore) ClaimExceptions(ctx context.Context, topicID int64, groupID int64, limit int, maxRetries int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ExceptionData, error) {
+func (d *ExceptionConsumerDatastore) ClaimExceptions(ctx context.Context, topicID int64, groupID int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimed []ExceptionData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimExceptions(ctx, topicID, groupID, limit, maxRetries, leaseDuration, disableDeliveryLog)
+		claimed, err = d.claimExceptions(ctx, topicID, groupID, limit, maxRetries, leaseDuration, deliveryLogMode)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *ExceptionConsumerDatastore) claimExceptions(ctx context.Context, topicID int64, groupID int64, limit int, maxRetries int, leaseDuration time.Duration, disableDeliveryLog bool) ([]ExceptionData, error) {
+func (d *ExceptionConsumerDatastore) claimExceptions(ctx context.Context, topicID int64, groupID int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimSql string
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		claimSql = fmt.Sprintf(`
 			WITH claimed AS (
 				UPDATE %[1]s
@@ -74,7 +75,7 @@ func (d *ExceptionConsumerDatastore) claimExceptions(ctx context.Context, topicI
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
+		`, iTopic.DeliveryTable(topicID), iTopic.MessageLogTable(topicID))
 	} else {
 		// eligible is split out so it can remember each row's pre-claim status
 		// and attempts -- the expired_logged CTE needs both, atomically with
@@ -139,7 +140,7 @@ func (d *ExceptionConsumerDatastore) claimExceptions(ctx context.Context, topicI
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID), topic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryTable(topicID), iTopic.MessageLogTable(topicID), iTopic.DeliveryLogTable(topicID))
 	}
 
 	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupID, limit, leaseDuration.Seconds(), topicID, maxRetries)
@@ -171,7 +172,7 @@ func (d *ExceptionConsumerDatastore) renewExceptionLease(ctx context.Context, ex
 		WHERE consumer_group_id = $1
 			AND message_id = $2
 			AND lease_token = $3;
-	`, topic.DeliveryTable(exception.TopicID))
+	`, iTopic.DeliveryTable(exception.TopicID))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, duration.Seconds())
 	if err != nil {

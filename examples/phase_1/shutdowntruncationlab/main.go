@@ -167,12 +167,12 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, tp.DisableDeliveryLog)
+	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
 	}
-	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], nil))
+	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], tp.DeliveryLogMode, nil))
 	committed = advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed advances to the narrowed low", committed, 2)
 	assert("deliveries drained (exception pop-deleted)", deliveries(ctx, ds, tp.Id), 0)
@@ -180,7 +180,7 @@ func main() {
 	// the narrowed lease's 2s duration already elapsed during the 5.5s backoff
 	// sleep above -- no separate wait needed before reclaiming it.
 	step("reclaim: only the untouched suffix comes back, not the resolved prefix")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 3, 3, lease, false)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 3, 3, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -190,7 +190,7 @@ func main() {
 	assert("reclaimed exactly the untouched suffix (1 message)", int64(len(claim2.Messages)), 1)
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed = advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)

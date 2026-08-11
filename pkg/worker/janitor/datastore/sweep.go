@@ -6,20 +6,21 @@ import (
 	"slices"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
 // SweepExpiredPartitions drains the ttl-expired prefix of every surviving
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
-func (d *JanitorDatastore) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
+func (d *JanitorDatastore) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize, disableDeliveryLog)
+		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize, deliveryLogMode)
 	})
 }
 
-func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, disableDeliveryLog bool) error {
+func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) error {
 	if ttl <= 0 {
 		return nil // retention disabled
 	}
@@ -44,7 +45,7 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID i
 
 	for _, n := range partitions { // every partition, independently -- one backlog can't block the rest
 		for range maxBatches {
-			swept, err := d.sweepBatch(ctx, topicID, n, cutoff, floor, batchSize, disableDeliveryLog)
+			swept, err := d.sweepBatch(ctx, topicID, n, cutoff, floor, batchSize, deliveryLogMode)
 			if err != nil {
 				return err
 			}
@@ -59,7 +60,7 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID i
 
 // sweepBatch deletes up to batchSize expired rows from the front of partition n,
 // plus their orphaned delivery/delivery_log rows, in one transaction.
-func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int, disableDeliveryLog bool) (int, error) {
+func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int, deliveryLogMode topic.DeliveryLogMode) (int, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
@@ -83,7 +84,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 			LIMIT $2
 		)
 		RETURNING id, compaction_key;
-	`, topic.MessageLogPartitionTable(topicID, n), topic.MessageLogPartitionTable(topicID, n))
+	`, iTopic.MessageLogPartitionTable(topicID, n), iTopic.MessageLogPartitionTable(topicID, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
@@ -104,16 +105,16 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 		orphanSql := fmt.Sprintf(`
 			DELETE FROM %s
 			WHERE message_id = ANY($1);
-		`, topic.DeliveryTable(topicID))
+		`, iTopic.DeliveryTable(topicID))
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
 			return 0, err
 		}
 
-		if !disableDeliveryLog {
+		if deliveryLogMode != topic.DeliveryLogModeOff {
 			orphanLogSql := fmt.Sprintf(`
 				DELETE FROM %s
 				WHERE message_id = ANY($1);
-			`, topic.DeliveryLogTable(topicID))
+			`, iTopic.DeliveryLogTable(topicID))
 			if _, err := tx.Exec(ctx, orphanLogSql, ids); err != nil {
 				return 0, err
 			}

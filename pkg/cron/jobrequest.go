@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
@@ -17,10 +18,12 @@ const TopicName = common.SystemTopicPrefix + "job_requests"
 // TopicConfig - RetentionTTL is the firing-history horizon; it must exceed the
 // widest firing rate (monthly covered) so a job's next firing lands before its
 // last one ages out.
+// DeliveryLogModeAll keeps a 'success' row per firing - job status uses this.
 func TopicConfig() *topiccontroller.TopicConfig {
 	return &topiccontroller.TopicConfig{
-		PartitionSize: 10_000,
-		RetentionTTL:  35 * 24 * time.Hour,
+		PartitionSize:   10_000,
+		RetentionTTL:    35 * 24 * time.Hour,
+		DeliveryLogMode: topic.DeliveryLogModeAll,
 	}
 }
 

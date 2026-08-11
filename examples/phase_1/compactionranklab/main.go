@@ -85,13 +85,13 @@ func main() {
 
 	assertInt("compaction_head still points at the pin despite two higher-id normal writes after it", headID(ctx, ds, tp.Id, "user:1"), 2)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, maxRangeReclaims, lease, false)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
 	}
 	assertIDs("only the pinned row comes back for user:1", ids(claim.Messages), []int64{2})
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	assertInt("v1/v3/v4 still physically exist -- compaction filters, never deletes", rowCount(ctx, ds, tp.Id), 4)
 
 	// ===== the bridge interleaving: -1 never beats 0, either arrival order (ids 5-8) =====
@@ -105,13 +105,13 @@ func main() {
 	publish(ctx, wpInstance, "user:3", "live", 0)      // id 8 <- wins, same as any normal update would
 	assertInt("compaction_head points at the live write", headID(ctx, ds, tp.Id, "user:3"), 8)
 
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, maxRangeReclaims, lease, false)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
 	}
 	assertIDs("only the two live-rank winners come back, neither backfill", ids(claim.Messages), []int64{5, 8})
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, false))
+	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 
 	step("both backfill rows still physically exist, just never claimed")
 	assertTrue("user:2's backfill row (id 6) still exists", rowExists(ctx, ds, tp.Id, 6))

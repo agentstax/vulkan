@@ -22,9 +22,10 @@ const (
 	kindDeferred   // key busy at dispatch -- the commit writes its 'deferred' row
 )
 
-// a success records nothing at commit -- ok is false for it and only for it.
 func (k outcomeKind) toOutcomeKind() (controller.OutcomeKind, bool) {
 	switch k {
+	case kindSuccess:
+		return controller.OutcomeSuccess, true
 	case kindException:
 		return controller.OutcomeException, true
 	case kindTerminal:
@@ -77,6 +78,10 @@ type rangeState struct {
 	ids   []int64 // message id per result index -- set once, read-only after
 	total int
 
+	// includeSuccesses collects success outcomes too -- only wanted under
+	// DeliveryLogModeAll, so the common case skips the per-range allocation.
+	includeSuccesses bool
+
 	dispatched atomic.Int64 // count handed out by WaitForNext
 	resolved   atomic.Int64 // resolved==total means every result is done
 	committed  atomic.Bool  // TryGetSnapshot's one-shot CAS
@@ -84,7 +89,7 @@ type rangeState struct {
 	results    []result
 }
 
-func newRangeState(claimed *controller.ClaimedRange) *rangeState {
+func newRangeState(claimed *controller.ClaimedRange, includeSuccesses bool) *rangeState {
 	ids := make([]int64, len(claimed.Messages))
 	results := make([]result, len(claimed.Messages))
 	for i, claimedMessage := range claimed.Messages {
@@ -92,10 +97,11 @@ func newRangeState(claimed *controller.ClaimedRange) *rangeState {
 		results[i] = newResult()
 	}
 	return &rangeState{
-		lease:   claimed.Lease,
-		ids:     ids,
-		total:   len(claimed.Messages),
-		results: results,
+		lease:            claimed.Lease,
+		ids:              ids,
+		total:            len(claimed.Messages),
+		includeSuccesses: includeSuccesses,
+		results:          results,
 	}
 }
 
@@ -146,7 +152,7 @@ func (r *rangeState) contiguousResolved() (lastProcessed int64, outcomes []contr
 			break
 		}
 		lastProcessed = r.ids[i]
-		if kind, ok := current.kind.toOutcomeKind(); ok {
+		if kind, ok := current.kind.toOutcomeKind(); ok && (r.includeSuccesses || kind != controller.OutcomeSuccess) {
 			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: current.err})
 		}
 	}
@@ -155,10 +161,9 @@ func (r *rangeState) contiguousResolved() (lastProcessed int64, outcomes []contr
 
 // same walk as contiguousResolved with no gap check -- only called once
 // resolved==total, so every result is already guaranteed done.
-func (r *rangeState) resolvedOutcomes() []controller.MessageOutcome {
-	var outcomes []controller.MessageOutcome
+func (r *rangeState) resolvedOutcomes() (outcomes []controller.MessageOutcome) {
 	for i := range r.results {
-		if kind, ok := r.results[i].kind.toOutcomeKind(); ok {
+		if kind, ok := r.results[i].kind.toOutcomeKind(); ok && (r.includeSuccesses || kind != controller.OutcomeSuccess) {
 			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: r.results[i].err})
 		}
 	}

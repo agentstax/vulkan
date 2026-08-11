@@ -34,7 +34,7 @@ func (d *TopicDatastore) getTopic(ctx context.Context, q datastore.Querier, name
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
-			disable_delivery_log,
+			delivery_log_mode,
 			created_at,
 			updated_at
 		FROM topic
@@ -65,7 +65,7 @@ func (d *TopicDatastore) getTopicById(ctx context.Context, id int64) (*TopicData
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
-			disable_delivery_log,
+			delivery_log_mode,
 			created_at,
 			updated_at
 		FROM topic
@@ -95,7 +95,7 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*TopicData, error) {
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
-			disable_delivery_log,
+			delivery_log_mode,
 			created_at,
 			updated_at
 		FROM topic
@@ -177,12 +177,12 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 	}
 
 	insertSql := `
-		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, disable_delivery_log)
+		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at;
 	`
 	created := *data
-	if err := tx.QueryRow(ctx, insertSql, data.SystemId, data.Name, data.SchemaVersion, data.PartitionSize, data.RetentionTTLNs, data.AllowDropPastCommitted, data.IdempotencyKeyTTLNs, data.DisableDeliveryLog).
+	if err := tx.QueryRow(ctx, insertSql, data.SystemId, data.Name, data.SchemaVersion, data.PartitionSize, data.RetentionTTLNs, data.AllowDropPastCommitted, data.IdempotencyKeyTTLNs, data.DeliveryLogMode).
 		Scan(&created.Id, &created.CreatedAt, &created.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func (d *TopicDatastore) assertConfigMatches(found *TopicData, data *TopicData) 
 		found.RetentionTTLNs == data.RetentionTTLNs &&
 		found.AllowDropPastCommitted == data.AllowDropPastCommitted &&
 		found.IdempotencyKeyTTLNs == data.IdempotencyKeyTTLNs &&
-		found.DisableDeliveryLog == data.DisableDeliveryLog
+		found.DeliveryLogMode == data.DeliveryLogMode
 	if !matches {
 		return fmt.Errorf("%w: topic %s version %d: existing=%+v got=%+v", topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, *found, *data)
 	}
@@ -252,7 +252,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, schemaVer
 			retention_ttl_ns = COALESCE($2, retention_ttl_ns),
 			allow_drop_past_committed = COALESCE($3, allow_drop_past_committed),
 			idempotency_key_ttl_ns = COALESCE($4, idempotency_key_ttl_ns),
-			disable_delivery_log = COALESCE($5, disable_delivery_log),
+			delivery_log_mode = COALESCE($5, delivery_log_mode),
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING
@@ -264,7 +264,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, schemaVer
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
-			disable_delivery_log,
+			delivery_log_mode,
 			created_at,
 			updated_at;
 	`
@@ -274,7 +274,7 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, schemaVer
 		alter.RetentionTTLNs,
 		alter.AllowDropPastCommitted,
 		alter.IdempotencyKeyTTLNs,
-		alter.DisableDeliveryLog,
+		alter.DeliveryLogMode,
 	)
 	updated, err := d.scanTopicData(row)
 	if err != nil {
@@ -302,8 +302,8 @@ func alterLogFields(old, updated *TopicData) []any {
 	if old.IdempotencyKeyTTLNs != updated.IdempotencyKeyTTLNs {
 		fields = append(fields, "idempotency_key_ttl", fmt.Sprintf("%v -> %v", time.Duration(old.IdempotencyKeyTTLNs), time.Duration(updated.IdempotencyKeyTTLNs)))
 	}
-	if old.DisableDeliveryLog != updated.DisableDeliveryLog {
-		fields = append(fields, "disable_delivery_log", fmt.Sprintf("%v -> %v", old.DisableDeliveryLog, updated.DisableDeliveryLog))
+	if old.DeliveryLogMode != updated.DeliveryLogMode {
+		fields = append(fields, "delivery_log_mode", fmt.Sprintf("%v -> %v", old.DeliveryLogMode, updated.DeliveryLogMode))
 	}
 	return fields
 }
@@ -335,7 +335,7 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 			retention_ttl_ns,
 			allow_drop_past_committed,
 			idempotency_key_ttl_ns,
-			disable_delivery_log,
+			delivery_log_mode,
 			created_at,
 			updated_at;
 	`
@@ -383,7 +383,7 @@ func (d *TopicDatastore) scanTopicData(row pgx.Row) (*TopicData, error) {
 		&data.RetentionTTLNs,
 		&data.AllowDropPastCommitted,
 		&data.IdempotencyKeyTTLNs,
-		&data.DisableDeliveryLog,
+		&data.DeliveryLogMode,
 		&data.CreatedAt,
 		&data.UpdatedAt,
 	)

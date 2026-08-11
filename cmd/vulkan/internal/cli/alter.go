@@ -22,7 +22,7 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 		retentionTTL           time.Duration
 		allowDropPastCommitted bool
 		idempotencyKeyTTL      time.Duration
-		disableDeliveryLog     bool
+		deliveryLogMode        string
 	)
 
 	cmd := &cobra.Command{
@@ -54,8 +54,9 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 			if f.Changed("idempotency-key-ttl") {
 				cfg.IdempotencyKeyTTL = &idempotencyKeyTTL
 			}
-			if f.Changed("disable-delivery-log") {
-				cfg.DisableDeliveryLog = &disableDeliveryLog
+			if f.Changed("delivery-log-mode") {
+				mode := topic.DeliveryLogMode(deliveryLogMode)
+				cfg.DeliveryLogMode = &mode
 			}
 
 			// Validate up front for a clean usage error (bad/absent flags, exit 2)
@@ -95,7 +96,7 @@ func newTopicAlterCmd(g *globalFlags) *cobra.Command {
 	f.DurationVar(&retentionTTL, "retention-ttl", 0, "how long a message survives before retention drops it, e.g. 720h")
 	f.BoolVar(&allowDropPastCommitted, "allow-drop-past-committed", false, "let retention drop data a lagging consumer hasn't committed")
 	f.DurationVar(&idempotencyKeyTTL, "idempotency-key-ttl", 0, "how long a produce-retry claim survives, e.g. 1h")
-	f.BoolVar(&disableDeliveryLog, "disable-delivery-log", false, "stop writing the per-attempt failure audit trail")
+	f.StringVar(&deliveryLogMode, "delivery-log-mode", "", "which delivery outcomes write the per-attempt audit trail: off, failures, or all")
 
 	return cmd
 }

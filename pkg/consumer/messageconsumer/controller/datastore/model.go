@@ -43,6 +43,7 @@ const (
 	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- parks straight to 'dead'
 	OutcomeSuperseded OutcomeKind = "superseded" // a newer message on its compaction key exists -- log row only, never a delivery row
 	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- parks 'deferred' for the exception window
+	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
 )
 
 // OutcomeData is one resolved message of a claimed range.

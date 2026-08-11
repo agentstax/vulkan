@@ -23,7 +23,7 @@ func (c *TopicController) GetTopic(ctx context.Context, name string, version top
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toTopic(found), nil
+	return toTopic(found)
 }
 
 // GetTopicById resolves a topic by its id. Returns (nil, nil) if no topic has it.
@@ -36,7 +36,7 @@ func (c *TopicController) GetTopicById(ctx context.Context, id int64) (*topic.To
 	if err != nil || found == nil {
 		return nil, err
 	}
-	return toTopic(found), nil
+	return toTopic(found)
 }
 
 func (c *TopicController) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
@@ -47,7 +47,11 @@ func (c *TopicController) ListTopics(ctx context.Context) ([]*topic.Topic, error
 
 	var topics []*topic.Topic
 	for _, data := range listed {
-		topics = append(topics, toTopic(data))
+		listedTopic, err := toTopic(data)
+		if err != nil {
+			return nil, err
+		}
+		topics = append(topics, listedTopic)
 	}
 	return topics, nil
 }
@@ -88,7 +92,7 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 			return nil, err
 		}
 	}
-	return toTopic(registered), nil
+	return toTopic(registered)
 }
 
 // UpdateTopic applies cfg's non-nil fields to topic's (name, version).
@@ -111,7 +115,7 @@ func (c *TopicController) UpdateTopic(ctx context.Context, name string, version 
 	if err != nil || updated == nil {
 		return nil, err
 	}
-	return toTopic(updated), nil
+	return toTopic(updated)
 }
 
 // RenameTopic moves every version under oldName to newName in one statement.
@@ -132,7 +136,11 @@ func (c *TopicController) RenameTopic(ctx context.Context, oldName string, newNa
 
 	var topics []*topic.Topic
 	for _, data := range renamed {
-		topics = append(topics, toTopic(data))
+		renamedTopic, err := toTopic(data)
+		if err != nil {
+			return nil, err
+		}
+		topics = append(topics, renamedTopic)
 	}
 	return topics, nil
 }

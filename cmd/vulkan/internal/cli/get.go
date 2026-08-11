@@ -72,7 +72,7 @@ func printTopicDetail(w io.Writer, t *topic.Topic) {
 	fmt.Fprintf(tw, "  RetentionTTL\t%s\n", retentionDetail(t.RetentionTTL))
 	fmt.Fprintf(tw, "  AllowDropPastCommitted\t%t\n", t.AllowDropPastCommitted)
 	fmt.Fprintf(tw, "  IdempotencyKeyTTL\t%s\n", t.IdempotencyKeyTTL.String())
-	fmt.Fprintf(tw, "  DisableDeliveryLog\t%t\n", t.DisableDeliveryLog)
+	fmt.Fprintf(tw, "  DeliveryLogMode\t%s\n", t.DeliveryLogMode)
 	tw.Flush()
 }
 

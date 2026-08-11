@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // Delivery is one (consumer_group_id, message_id) row of the per-topic
@@ -68,20 +69,22 @@ func (c *DeliveryConsumerController) ClaimMessagesWithLifecycle(ctx context.Cont
 	return deliveries, nil
 }
 
-// RecordSuccess marks a claimed delivery 'done'. Terminal success for this
-// (group, message); the log row is untouched and other groups are unaffected.
-func (c *DeliveryConsumerController) RecordSuccess(ctx context.Context, delivery *Delivery) error {
+// RecordSuccess marks a claimed delivery 'done'.
+// DeliveryLogModeAll also writes the 'success' log row in the same statement.
+// Terminal success for this (group, message); the message row is untouched
+// and other groups are unaffected.
+func (c *DeliveryConsumerController) RecordSuccess(ctx context.Context, delivery *Delivery, deliveryLogMode topic.DeliveryLogMode) error {
 	if delivery == nil {
 		return errors.New("delivery must not be nil")
 	}
 
-	return c.datastore.RecordSuccess(ctx, toDeliveryData(delivery))
+	return c.datastore.RecordSuccess(ctx, toDeliveryData(delivery), deliveryLogMode)
 }
 
 // RecordFailure retries until attempts are exhausted, then dead-letters. No
 // retry backoff -- the delivery table carries no can_run_after, so a 'ready'
 // row is simply re-claimed on the next poll.
-func (c *DeliveryConsumerController) RecordFailure(ctx context.Context, maxAttempts int, delivery *Delivery, failureErr error, disableDeliveryLog bool) error {
+func (c *DeliveryConsumerController) RecordFailure(ctx context.Context, maxAttempts int, delivery *Delivery, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	if delivery == nil {
 		return errors.New("delivery must not be nil")
 	}
@@ -92,12 +95,12 @@ func (c *DeliveryConsumerController) RecordFailure(ctx context.Context, maxAttem
 		return fmt.Errorf("maxAttempts must be >= 0, got %d", maxAttempts)
 	}
 
-	return c.datastore.RecordFailure(ctx, maxAttempts, toDeliveryData(delivery), failureErr, disableDeliveryLog)
+	return c.datastore.RecordFailure(ctx, maxAttempts, toDeliveryData(delivery), failureErr, deliveryLogMode)
 }
 
 // RecordTerminal dead-letters a delivery: no more retries. One group can
 // dead-letter a message while another processes the same offset fine.
-func (c *DeliveryConsumerController) RecordTerminal(ctx context.Context, delivery *Delivery, terminalErr error, disableDeliveryLog bool) error {
+func (c *DeliveryConsumerController) RecordTerminal(ctx context.Context, delivery *Delivery, terminalErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	if delivery == nil {
 		return errors.New("delivery must not be nil")
 	}
@@ -105,5 +108,5 @@ func (c *DeliveryConsumerController) RecordTerminal(ctx context.Context, deliver
 		return errors.New("terminalErr must not be nil")
 	}
 
-	return c.datastore.RecordTerminal(ctx, toDeliveryData(delivery), terminalErr, disableDeliveryLog)
+	return c.datastore.RecordTerminal(ctx, toDeliveryData(delivery), terminalErr, deliveryLogMode)
 }

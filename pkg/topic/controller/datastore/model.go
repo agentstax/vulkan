@@ -14,7 +14,7 @@ type TopicData struct {
 	RetentionTTLNs         int64
 	AllowDropPastCommitted bool
 	IdempotencyKeyTTLNs    int64
-	DisableDeliveryLog     bool
+	DeliveryLogMode        string
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 }
@@ -25,5 +25,5 @@ type AlterTopicData struct {
 	RetentionTTLNs         *int64
 	AllowDropPastCommitted *bool
 	IdempotencyKeyTTLNs    *int64
-	DisableDeliveryLog     *bool
+	DeliveryLogMode        *string
 }

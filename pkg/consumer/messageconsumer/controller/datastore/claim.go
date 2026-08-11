@@ -5,25 +5,26 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 )
 
 // ClaimMessagesWithCursor tries to pick up a crashed range (an expired lease)
 // and only claims fresh work from the frontier if there's nothing to reclaim --
 // so crashed ranges drain first.
-func (d *MessageConsumerDatastore) ClaimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRangeData, error) {
+func (d *MessageConsumerDatastore) ClaimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
 	var claimed *ClaimedRangeData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimMessagesWithCursor(ctx, topicID, groupID, limit, maxRangeReclaims, leaseDuration, disableDeliveryLog)
+		claimed, err = d.claimMessagesWithCursor(ctx, topicID, groupID, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *MessageConsumerDatastore) claimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, disableDeliveryLog bool) (*ClaimedRangeData, error) {
-	reclaimed, err := d.reclaimWithCursor(ctx, topicID, groupID, maxRangeReclaims, leaseDuration, disableDeliveryLog)
+func (d *MessageConsumerDatastore) claimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+	reclaimed, err := d.reclaimWithCursor(ctx, topicID, groupID, maxRangeReclaims, leaseDuration, deliveryLogMode)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (d *MessageConsumerDatastore) readMessages(ctx context.Context, tx pgx.Tx, 
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, topic.MessageLogTable(topicID))
+	`, iTopic.MessageLogTable(topicID))
 
 	rows, err := tx.Query(ctx, sql, low, high, groupID, topicID)
 	if err != nil {

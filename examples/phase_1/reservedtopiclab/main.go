@@ -36,8 +36,8 @@ func main() {
 	if metricsTopic == nil {
 		die("expected __system.metrics to exist after RegisterSystem")
 	}
-	fmt.Printf("  ✓ __system.metrics exists, id=%d, retention=%v, partition_size=%d, disable_delivery_log=%v\n",
-		metricsTopic.Id, metricsTopic.RetentionTTL, metricsTopic.PartitionSize, metricsTopic.DisableDeliveryLog)
+	fmt.Printf("  ✓ __system.metrics exists, id=%d, retention=%v, partition_size=%d, delivery_log=%s\n",
+		metricsTopic.Id, metricsTopic.RetentionTTL, metricsTopic.PartitionSize, metricsTopic.DeliveryLogMode)
 
 	step("RegisterTopic rejects a user name under the reserved prefix")
 	_, err = mAdmin.RegisterTopic(ctx, common.SystemTopicPrefix+"evil", topic.SchemaVersion(1), nil)

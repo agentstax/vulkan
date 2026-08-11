@@ -5,26 +5,46 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
 	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RecordExceptionSuccess deletes the row.
+// RecordExceptionSuccess deletes the row
+// DeliveryLogModeAll also writes the 'success' log row in the same statement.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionSuccess(ctx context.Context, exception *ExceptionData, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordExceptionSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionSuccess(ctx, exception, keyClaim)
+		return d.recordExceptionSuccess(ctx, exception, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionSuccess(ctx context.Context, exception *ExceptionData, keyClaim *KeyLeaseData) error {
-	sql := fmt.Sprintf(`
-		DELETE FROM %s
-		WHERE consumer_group_id = $1
-			AND message_id = $2
-			AND lease_token = $3;
-	`, topic.DeliveryTable(exception.TopicID))
+func (d *ExceptionConsumerDatastore) recordExceptionSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+	var sql string
+	if deliveryLogMode == topic.DeliveryLogModeAll {
+		// deleted CTE + INSERT keeps the success-deletion and its
+		// delivery_log_<topic_id> row atomic
+		sql = fmt.Sprintf(`
+			WITH deleted AS (
+				DELETE FROM %[1]s
+				WHERE consumer_group_id = $1
+					AND message_id = $2
+					AND lease_token = $3
+				RETURNING attempts
+			)
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			SELECT $1, $2, attempts, 'success', ''
+			FROM deleted;
+		`, iTopic.DeliveryTable(exception.TopicID), iTopic.DeliveryLogTable(exception.TopicID))
+	} else {
+		sql = fmt.Sprintf(`
+			DELETE FROM %s
+			WHERE consumer_group_id = $1
+				AND message_id = $2
+				AND lease_token = $3;
+		`, iTopic.DeliveryTable(exception.TopicID))
+	}
 
 	if keyClaim == nil {
 		return d.record(ctx, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken)
@@ -34,20 +54,20 @@ func (d *ExceptionConsumerDatastore) recordExceptionSuccess(ctx context.Context,
 
 // RecordExceptionFailure resets delivery so it can be retried or marked 'dead'.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ExceptionData, failureErr error, disableDeliveryLog bool, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionFailure(ctx, retryPolicy, exception, failureErr, disableDeliveryLog, keyClaim)
+		return d.recordExceptionFailure(ctx, retryPolicy, exception, failureErr, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ExceptionData, failureErr error, disableDeliveryLog bool, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	if exception.Attempts >= retryPolicy.MaxRetries {
-		return d.recordExceptionTerminal(ctx, exception, failureErr, disableDeliveryLog, keyClaim)
+		return d.recordExceptionTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
 	}
 
 	// clears the lease so it's claimable as a fresh 'ready' retry once can_run_after passes.
 	var sql string
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			UPDATE %s
 			SET
@@ -60,7 +80,7 @@ func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context,
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $5;
-		`, topic.DeliveryTable(exception.TopicID))
+		`, iTopic.DeliveryTable(exception.TopicID))
 	} else {
 		sql = fmt.Sprintf(`
 			WITH updated AS (
@@ -80,11 +100,11 @@ func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context,
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $6, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.DeliveryTable(exception.TopicID), topic.DeliveryLogTable(exception.TopicID))
+		`, iTopic.DeliveryTable(exception.TopicID), iTopic.DeliveryLogTable(exception.TopicID))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - 1).Seconds(), exception.LeaseToken}
-	if !disableDeliveryLog {
+	if deliveryLogMode != topic.DeliveryLogModeOff {
 		args = append(args, exception.Attempts)
 	}
 
@@ -96,15 +116,15 @@ func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context,
 
 // RecordExceptionTerminal marks the row 'dead' -- no retry could succeed.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionTerminal(ctx context.Context, exception *ExceptionData, failureErr error, disableDeliveryLog bool, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordExceptionTerminal(ctx context.Context, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionTerminal(ctx, exception, failureErr, disableDeliveryLog, keyClaim)
+		return d.recordExceptionTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context, exception *ExceptionData, failureErr error, disableDeliveryLog bool, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	var sql string
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			UPDATE %s
 			SET
@@ -116,7 +136,7 @@ func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $4;
-		`, topic.DeliveryTable(exception.TopicID))
+		`, iTopic.DeliveryTable(exception.TopicID))
 	} else {
 		// updated CTE + INSERT ... WHERE EXISTS keeps the UPDATE and its
 		// delivery_log_<topic_id> row atomic
@@ -137,11 +157,11 @@ func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $5, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, topic.DeliveryTable(exception.TopicID), topic.DeliveryLogTable(exception.TopicID))
+		`, iTopic.DeliveryTable(exception.TopicID), iTopic.DeliveryLogTable(exception.TopicID))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), exception.LeaseToken}
-	if !disableDeliveryLog {
+	if deliveryLogMode != topic.DeliveryLogModeOff {
 		args = append(args, exception.Attempts)
 	}
 
@@ -161,15 +181,15 @@ func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context
 
 // RecordExceptionSuperseded never runs the row again: the claim's attempts
 // increment is decremented back and the log row lands at that attempt.
-func (d *ExceptionConsumerDatastore) RecordExceptionSuperseded(ctx context.Context, exception *ExceptionData, disableDeliveryLog bool) error {
+func (d *ExceptionConsumerDatastore) RecordExceptionSuperseded(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionSuperseded(ctx, exception, disableDeliveryLog)
+		return d.recordExceptionSuperseded(ctx, exception, deliveryLogMode)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionSuperseded(ctx context.Context, exception *ExceptionData, disableDeliveryLog bool) error {
+func (d *ExceptionConsumerDatastore) recordExceptionSuperseded(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
 	var sql string
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
 			UPDATE %s
 			SET
@@ -181,7 +201,7 @@ func (d *ExceptionConsumerDatastore) recordExceptionSuperseded(ctx context.Conte
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, topic.DeliveryTable(exception.TopicID))
+		`, iTopic.DeliveryTable(exception.TopicID))
 	} else {
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
@@ -202,11 +222,11 @@ func (d *ExceptionConsumerDatastore) recordExceptionSuperseded(ctx context.Conte
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts + 1, 'superseded', $4
 			FROM updated;
-		`, topic.DeliveryTable(exception.TopicID), topic.DeliveryLogTable(exception.TopicID))
+		`, iTopic.DeliveryTable(exception.TopicID), iTopic.DeliveryLogTable(exception.TopicID))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}
-	if !disableDeliveryLog {
+	if deliveryLogMode != topic.DeliveryLogModeOff {
 		args = append(args, "a newer message on the same compaction key superseded this delivery")
 	}
 	return d.record(ctx, sql, args...)

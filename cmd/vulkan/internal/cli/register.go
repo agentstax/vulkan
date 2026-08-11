@@ -22,7 +22,7 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 		retentionTTL           time.Duration
 		allowDropPastCommitted bool
 		idempotencyKeyTTL      time.Duration
-		disableDeliveryLog     bool
+		deliveryLogMode        string
 	)
 
 	cmd := &cobra.Command{
@@ -53,8 +53,8 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 			if f.Changed("idempotency-key-ttl") {
 				cfg.IdempotencyKeyTTL = idempotencyKeyTTL
 			}
-			if f.Changed("disable-delivery-log") {
-				cfg.DisableDeliveryLog = disableDeliveryLog
+			if f.Changed("delivery-log-mode") {
+				cfg.DeliveryLogMode = topic.DeliveryLogMode(deliveryLogMode)
 			}
 
 			// Validate up front for a clean `invalid config:` message (a bad flag
@@ -104,7 +104,7 @@ func newTopicRegisterCmd(g *globalFlags) *cobra.Command {
 	f.DurationVar(&retentionTTL, "retention-ttl", 0, "how long a message survives before retention drops it, e.g. 720h (library default)")
 	f.BoolVar(&allowDropPastCommitted, "allow-drop-past-committed", false, "let retention drop data a lagging consumer hasn't committed (library default)")
 	f.DurationVar(&idempotencyKeyTTL, "idempotency-key-ttl", 0, "how long a produce-retry claim survives, e.g. 1h (library default)")
-	f.BoolVar(&disableDeliveryLog, "disable-delivery-log", false, "opt out of the per-attempt failure audit trail (library default)")
+	f.StringVar(&deliveryLogMode, "delivery-log-mode", "", "which delivery outcomes write the per-attempt audit trail: off, failures, or all (library default)")
 
 	// Duration flags default to 0, but 0 here means "unset -> library default",
 	// not "0s". Blank the shown default so --help doesn't advertise 0s as the
@@ -156,6 +156,6 @@ func topicFieldDiffs(a, b *topic.Topic) []fieldDiff {
 	add("RetentionTTL", a.RetentionTTL.String(), b.RetentionTTL.String())
 	add("AllowDropPastCommitted", fmt.Sprintf("%t", a.AllowDropPastCommitted), fmt.Sprintf("%t", b.AllowDropPastCommitted))
 	add("IdempotencyKeyTTL", a.IdempotencyKeyTTL.String(), b.IdempotencyKeyTTL.String())
-	add("DisableDeliveryLog", fmt.Sprintf("%t", a.DisableDeliveryLog), fmt.Sprintf("%t", b.DisableDeliveryLog))
+	add("DeliveryLogMode", string(a.DeliveryLogMode), string(b.DeliveryLogMode))
 	return diffs
 }

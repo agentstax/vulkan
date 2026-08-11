@@ -4,20 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // KillExceptions marks expired 'inflight' rows that are out of
 // attempts 'dead' so nothing else resolves them.
-func (d *ExceptionConsumerDatastore) KillExceptions(ctx context.Context, topicID int64, groupID int64, maxRetries int, disableDeliveryLog bool) error {
+func (d *ExceptionConsumerDatastore) KillExceptions(ctx context.Context, topicID int64, groupID int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.killExceptions(ctx, topicID, groupID, maxRetries, disableDeliveryLog)
+		return d.killExceptions(ctx, topicID, groupID, maxRetries, deliveryLogMode)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID int64, groupID int64, maxRetries int, disableDeliveryLog bool) error {
+func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID int64, groupID int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
 	var killSql string
-	if disableDeliveryLog {
+	if deliveryLogMode == topic.DeliveryLogModeOff {
 		killSql = fmt.Sprintf(`
 			UPDATE %s
 			SET
@@ -30,7 +31,7 @@ func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID
 				AND status = 'inflight'
 				AND lease_until < now()
 				AND attempts >= $2;
-		`, topic.DeliveryTable(topicID))
+		`, iTopic.DeliveryTable(topicID))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
 		// atomic in one statement.
@@ -52,7 +53,7 @@ func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT consumer_group_id, message_id, attempts, 'killed', last_error
 			FROM killed;
-		`, topic.DeliveryTable(topicID), topic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryTable(topicID), iTopic.DeliveryLogTable(topicID))
 	}
 	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupID, maxRetries)
 	if err != nil {
