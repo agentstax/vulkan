@@ -15,8 +15,8 @@ type CronJobConfig struct {
 	// Default: 30s.
 	Timeout time.Duration
 
-	// Concurrency - same-key policy when a job request lands while a previous
-	// one still runs.
+	// Concurrency - whether a job request runs while a previous one is still
+	// running (allow) or waits for it (defer).
 	// Default: allow.
 	Concurrency common.ConcurrencyPolicy
 

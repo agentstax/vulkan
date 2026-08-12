@@ -116,7 +116,7 @@ func newCronRegisterCmd(g *globalFlags) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&scheduleExpr, "schedule", "", "cron spec or descriptor, UTC unless TZ= prefixed: \"30 4 * * 1\", \"@hourly\", \"TZ=America/New_York 0 9 * * *\" (required)")
 	f.DurationVar(&timeout, "timeout", 0, "how long one job request's delivery may run, e.g. 30s (library default)")
-	f.StringVar(&concurrency, "concurrency", "", "same-key policy when a job request lands while a previous one still runs: allow or defer (library default)")
+	f.StringVar(&concurrency, "concurrency", "", "whether a job request runs while a previous one is still running: allow or defer (library default)")
 	f.StringVar(&data, "data", "", "opaque JSON payload carried on every job request (default {})")
 	f.StringVar(&metadata, "metadata", "", "opaque JSON metadata carried on every job request (default {})")
 

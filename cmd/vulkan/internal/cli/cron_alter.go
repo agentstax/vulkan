@@ -107,7 +107,7 @@ func newCronAlterCmd(g *globalFlags) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&scheduleExpr, "schedule", "", "cron spec or descriptor, UTC unless TZ= prefixed: \"30 4 * * 1\", \"@hourly\"")
 	f.DurationVar(&timeout, "timeout", 0, "how long one job request's delivery may run, e.g. 30s")
-	f.StringVar(&concurrency, "concurrency", "", "same-key policy when a job request lands while a previous one still runs: allow or defer")
+	f.StringVar(&concurrency, "concurrency", "", "whether a job request runs while a previous one is still running: allow or defer")
 	f.StringVar(&data, "data", "", "opaque JSON payload carried on every job request")
 	f.StringVar(&metadata, "metadata", "", "opaque JSON metadata carried on every job request")
 

@@ -103,16 +103,25 @@ func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error 
 
 // RunCronJob produces one JobRequest for the named job immediately, outside
 // its schedule -- the schedule and next scheduled time are untouched, and a
-// suspended job still runs. Returns ErrCronJobNotFound if name isn't
-// registered.
+// suspended job still runs.
+// cfg may be nil or a sparse struct.
+// Returns ErrCronJobNotFound if name isn't registered.
 //
 // Two deliberate consequences:
-//   - Concurrency is 'allow' regardless of the job's own policy -- the
-//     request runs even while a previous one still holds the job's key.
+//   - The request's concurrency is cfg.Concurrency, NOT the job's own policy
+//     -- by default 'allow', so it runs even while a previous request is still
+//     running.
 //   - It supersedes a pending JobRequest no consumer has claimed yet.
-func (a *MessageAdmin) RunCronJob(ctx context.Context, name string) (*producer.ProduceResult[cron.JobRequest], error) {
+func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCronJobConfig) (*producer.ProduceResult[cron.JobRequest], error) {
 	if name == "" {
 		return nil, errors.New("cron job name is required")
+	}
+	if cfg == nil {
+		cfg = &RunCronJobConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
 	job, err := a.cronJobController.GetCronJob(ctx, name)
@@ -139,7 +148,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string) (*producer.P
 		RoutingKey:    job.Name,
 		CompactionKey: strconv.FormatInt(job.Id, 10),
 		Message: &common.MessageOptions{
-			Concurrency: common.ConcurrencyAllow,
+			Concurrency: cfg.Concurrency,
 			Timeout:     job.Timeout,
 		},
 	})

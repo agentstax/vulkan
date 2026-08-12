@@ -14,10 +14,10 @@
 //     that came due while suspended is dropped, not produced late
 //  6. poisoned row -- one job's produce fails every tick, siblings still
 //     produce and the worker keeps ticking
-//  7. defer under held key (spot -- deferlab owns depth) -- a scheduler
-//     message lands while its key is held, defers, then runs
-//  8. run-now beside a busy key -- RunCronJob's 'allow' override runs while
-//     a defer job's key is held
+//  7. defer (spot -- deferlab owns depth) -- a scheduler request lands while
+//     a previous one is still running, waits, then runs
+//  8. run-now beside a running request -- the default 'allow' runs alongside
+//     it; cfg.Concurrency defer waits for it instead
 //  9. run-now supersedes a pending unclaimed request
 //  10. consumer end-to-end + status -- bind the job's name, fail-once retry,
 //     'success' rows land, CronJobStatus shows RAN/SUCCEEDED/FAILED
@@ -87,7 +87,7 @@ func main() {
 	suspendSection(ctx)
 	poisonSection(ctx)
 	deferSection(ctx)
-	busyKeySection(ctx)
+	runNowOverrideSection(ctx)
 	supersedeSection(ctx)
 	statusSection(ctx)
 
@@ -301,7 +301,7 @@ func poisonSection(ctx context.Context) {
 }
 
 func deferSection(ctx context.Context) {
-	step("defer under a held key (spot): a scheduler message defers behind a running one, then runs")
+	step("defer (spot): a scheduler request waits behind a running one, then runs")
 
 	job, err := mAdmin.RegisterCronJob(ctx, prefix+".defer", parse("@every 1m"), nil,
 		&croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
@@ -326,8 +326,8 @@ func deferSection(ctx context.Context) {
 	defer stop()
 
 	// both requests are scheduler-produced, so both carry the job's own
-	// 'defer' -- the first holds the key lease while the handler blocks
-	// (an 'allow' run never touches the lease, so run-now can't be the holder)
+	// 'defer' -- the first is still running when the second lands (an 'allow'
+	// run never makes later requests wait, so run-now can't be the blocker)
 	backdate(ctx, job.Id, time.Now().UTC().Add(-10*time.Second))
 	waitAdvanced(ctx, job.Id)
 	<-started
@@ -338,7 +338,7 @@ func deferSection(ctx context.Context) {
 		`SELECT MAX(id) FROM message_log_%d WHERE compaction_key = $1;`, jobRequests.Id),
 		strconv.FormatInt(job.Id, 10))
 
-	// the 'deferred' row lands while the key is still held
+	// the 'deferred' row lands while the first request is still running
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
 		jobRequests.Id, group, deferred), 1)
@@ -346,19 +346,19 @@ func deferSection(ctx context.Context) {
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
 		jobRequests.Id, group, deferred), 1)
-	fmt.Println("  ✓ scheduler request deferred behind the held key, then ran to success")
+	fmt.Println("  ✓ scheduler request deferred behind the running one, then ran to success")
 }
 
-func busyKeySection(ctx context.Context) {
-	step("run-now beside a busy key: the 'allow' override runs while a defer job's key is held")
+func runNowOverrideSection(ctx context.Context) {
+	step("run-now beside a running request: default 'allow' runs alongside it, cfg defer waits for it")
 
-	job, err := mAdmin.RegisterCronJob(ctx, prefix+".busykey", parse("@hourly"), nil,
+	job, err := mAdmin.RegisterCronJob(ctx, prefix+".runnow", parse("@hourly"), nil,
 		&croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
 	must(err)
-	defer func() { must(mAdmin.DestroyCronJob(ctx, prefix+".busykey")) }()
+	defer func() { must(mAdmin.DestroyCronJob(ctx, prefix+".runnow")) }()
 
-	groupName := prefix + ".busykey.group"
-	group := registerGroup(ctx, groupName, prefix+".busykey")
+	groupName := prefix + ".runnow.group"
+	group := registerGroup(ctx, groupName, prefix+".runnow")
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -374,32 +374,46 @@ func busyKeySection(ctx context.Context) {
 	})
 	defer stop()
 
-	// the holder must be scheduler-produced: it carries the job's 'defer' and
-	// holds the key lease while the handler blocks
+	// the blocker must be scheduler-produced: it carries the job's 'defer',
+	// so later defer requests wait for it while the handler blocks
 	backdate(ctx, job.Id, time.Now().UTC().Add(-2*time.Hour))
 	waitAdvanced(ctx, job.Id)
 	<-started
-	holder := scalarInt64(ctx, fmt.Sprintf(
+	blocker := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT MAX(id) FROM message_log_%d WHERE compaction_key = $1;`, jobRequests.Id),
 		strconv.FormatInt(job.Id, 10))
 
-	// were the second request stamped with the job's 'defer', it would sit
-	// behind the held key until the holder commits -- 'allow' runs it now
-	override, err := mAdmin.RunCronJob(ctx, prefix+".busykey")
+	// were the second request stamped with the job's 'defer', it would wait
+	// until the first finishes -- the default 'allow' runs it now
+	override, err := mAdmin.RunCronJob(ctx, prefix+".runnow", nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
 		jobRequests.Id, group, override.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, group, holder)); got != 0 {
-		die("the holder finished before the override ran -- the busy-key window was missed")
+		jobRequests.Id, group, blocker)); got != 0 {
+		die("the first request finished before the override ran -- the mid-run window was missed")
+	}
+	fmt.Println("  ✓ default run-now succeeded while the first was still running")
+
+	// cfg.Concurrency defer opts back into the job's no-overlap safety: this
+	// request waits for the running one instead of running beside it
+	deferred, err := mAdmin.RunCronJob(ctx, prefix+".runnow", &admin.RunCronJobConfig{Concurrency: common.ConcurrencyDefer})
+	must(err)
+	waitForCount(ctx, fmt.Sprintf(
+		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
+		jobRequests.Id, group, deferred.Id), 1)
+	if got := scalarInt64(ctx, fmt.Sprintf(
+		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
+		jobRequests.Id, group, deferred.Id)); got != 0 {
+		die("a defer run-now must not run while a previous request is still running")
 	}
 	close(release)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND status = 'success';`,
-		jobRequests.Id, group), 2)
-	fmt.Println("  ✓ run-now request succeeded while the first still held the key")
+		jobRequests.Id, group), 3)
+	fmt.Println("  ✓ defer run-now waited for the running request, then ran")
 }
 
 func supersedeSection(ctx context.Context) {
@@ -417,9 +431,9 @@ func supersedeSection(ctx context.Context) {
 	// keyed row while it IS the head, so the first is dropped unrun with no
 	// delivery_log trace (the 'superseded' log row is the dispatched-then-
 	// outraced defer path -- deferlab owns it)
-	pending, err := mAdmin.RunCronJob(ctx, prefix+".supersede")
+	pending, err := mAdmin.RunCronJob(ctx, prefix+".supersede", nil)
 	must(err)
-	head, err := mAdmin.RunCronJob(ctx, prefix+".supersede")
+	head, err := mAdmin.RunCronJob(ctx, prefix+".supersede", nil)
 	must(err)
 
 	if got := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = $2;`,
@@ -497,7 +511,7 @@ func statusSection(ctx context.Context) {
 
 	// wait out request 1's success before producing request 2, so the second
 	// run-now can't supersede the first while it sits unclaimed
-	first, err := mAdmin.RunCronJob(ctx, jobName)
+	first, err := mAdmin.RunCronJob(ctx, jobName, nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
@@ -508,7 +522,7 @@ func statusSection(ctx context.Context) {
 		die("the first request must record its failed attempt before succeeding")
 	}
 
-	second, err := mAdmin.RunCronJob(ctx, jobName)
+	second, err := mAdmin.RunCronJob(ctx, jobName, nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`,
