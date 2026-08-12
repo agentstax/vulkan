@@ -354,10 +354,25 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
    to `(ctx, duty, owner, meta) (bool, error)` with a shouldRegister kind
    check (owner/rate now come from the offered maintenance row, NewSystemOwner
    call gone) — the tick is unchanged.
-3. **CLI + status**: `vulkan cron` tree (register/get/list/suspend/unsuspend/run/destroy,
-   destroy double-guarded); RunCronJob; derived status in `get` — one line per
-   consumer group whose binding matches the job's name (normally one). Verify:
-   live CLI pass.
+3. **CLI + status**, split into three user-ordered pieces 2026-08-11:
+   (a) CLI tree BUILT 2026-08-11 — `vulkan cron
+   register/get/list/alter/suspend/unsuspend/destroy` in cmd/vulkan
+   internal/cli/cron*.go on the topic-command shapes: register parses
+   --schedule client-side + sparse cron.Config from changed flags + probe
+   validate + mismatch diff table; get prints the job detail (suspended jobs
+   show "suspended" for the stale next firing; owner cell renders the
+   exactly-one owner column); list = table + -q names; alter = sparse patch +
+   OLD->NEW diff (schedule change shows the re-seeded next firing); destroy =
+   type-name confirmation + --yes, notes an unconsumed firing is not
+   retracted. `cron run` waits for (b). Verified: live CLI pass — register/
+   idempotent re-register/mismatch diff/alter/no-fields alter/suspend/
+   unsuspend/destroy + slug, schedule, JSON, concurrency, timeout>MinRate,
+   not-found, non-TTY-destroy error paths.
+   (b) RunCronJob admin verb + `cron run` (run-now JobRequest via
+   Producer[cron.JobRequest], random v7 key + Concurrency Allow + stamps the
+   job's Timeout).
+   (c) derived status in `get` — one line per consumer group whose binding
+   matches the job's name (normally one).
 4. **cronlab + close-out**: sections — validation rejections (incl. charset,
    Feb-29 single-firing pass, Next-zero seed); fire-once + backdated row → 1
    message stamped with the NEWEST due firing; v7 dedupe proven by RE-BACKDATING
