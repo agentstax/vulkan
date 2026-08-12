@@ -51,5 +51,6 @@ type GroupStatusData struct {
 	ConsumerGroup string
 	Ran           int64
 	Succeeded     int64
+	Superseded    int64
 	Failed        int64
 }

@@ -470,9 +470,12 @@ func supersedeSection(ctx context.Context) {
 	must(err)
 	status := statusFor(statuses, groupName)
 	if status.Ran != 1 || status.Succeeded != 1 || status.Failed != 0 {
-		die(fmt.Sprintf("superseded requests must not count: want 1/1/0, got %d/%d/%d", status.Ran, status.Succeeded, status.Failed))
+		die(fmt.Sprintf("superseded requests must not count as ran: want 1/1/0, got %d/%d/%d", status.Ran, status.Succeeded, status.Failed))
 	}
-	fmt.Println("  ✓ first request superseded unrun, only the second ran; status counts 1/1/0")
+	if status.Superseded != 1 {
+		die(fmt.Sprintf("the dropped request must count as superseded: want 1, got %d", status.Superseded))
+	}
+	fmt.Println("  ✓ first request superseded unrun, only the second ran; status counts 1/1/0 with superseded=1")
 }
 
 func statusSection(ctx context.Context) {
@@ -531,7 +534,7 @@ func statusSection(ctx context.Context) {
 	statuses, err := mAdmin.CronJobStatus(ctx, jobName)
 	must(err)
 	for _, status := range statuses {
-		fmt.Printf("  group=%s ran=%d succeeded=%d failed=%d\n", status.ConsumerGroup, status.Ran, status.Succeeded, status.Failed)
+		fmt.Printf("  group=%s ran=%d succeeded=%d failed=%d superseded=%d\n", status.ConsumerGroup, status.Ran, status.Succeeded, status.Failed, status.Superseded)
 	}
 	if len(statuses) != 2 {
 		die(fmt.Sprintf("want 2 matching groups (bound + bindingless), got %d", len(statuses)))
@@ -543,11 +546,20 @@ func statusSection(ctx context.Context) {
 	if boundStatus == nil || boundStatus.Ran != 2 || boundStatus.Succeeded != 1 || boundStatus.Failed != 1 {
 		die(fmt.Sprintf("bound group: want ran=2 succeeded=1 failed=1, got %+v", boundStatus))
 	}
+	// the bound group RAN the first request before the second replaced it, so
+	// nothing is superseded for it -- the bindingless group never ran it and
+	// can never receive it now, so for that group it was dropped unrun
+	if boundStatus.Superseded != 0 {
+		die(fmt.Sprintf("bound group ran every request: want superseded=0, got %d", boundStatus.Superseded))
+	}
 	bindingless := statusFor(statuses, bindinglessName)
 	if bindingless == nil || bindingless.Ran != 0 || bindingless.Succeeded != 0 || bindingless.Failed != 0 {
 		die(fmt.Sprintf("bindingless group: want a 0/0/0 row, got %+v", bindingless))
 	}
-	fmt.Println("  ✓ retried-then-succeeded counts once; bound 2/1/1, bindingless 0/0/0, non-matching absent")
+	if bindingless.Superseded != 1 {
+		die(fmt.Sprintf("bindingless group: the replaced first request was dropped unrun for it, want superseded=1, got %d", bindingless.Superseded))
+	}
+	fmt.Println("  ✓ retried-then-succeeded counts once; bound 2/1/1 superseded=0, bindingless 0/0/0 superseded=1, non-matching absent")
 }
 
 // --- harness ---

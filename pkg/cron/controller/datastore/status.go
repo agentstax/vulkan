@@ -36,6 +36,10 @@ func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId
 				-- otherwise a binding must match the job's name ($2)
 				OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern)
 			  )
+		), job_message AS (
+			SELECT m.id
+			FROM %s m
+			WHERE m.compaction_key = $3
 		), job_request AS (
 			SELECT
 				d.consumer_group_id,
@@ -51,12 +55,23 @@ func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId
 			g.name,
 			COUNT(r.message_id) FILTER (WHERE r.succeeded OR r.raised)      AS ran,
 			COUNT(r.message_id) FILTER (WHERE r.succeeded)                  AS succeeded,
-			COUNT(r.message_id) FILTER (WHERE r.raised AND NOT r.succeeded) AS failed
+			COUNT(r.message_id) FILTER (WHERE r.raised AND NOT r.succeeded) AS failed,
+			-- dropped unrun: no longer the key's head and this group never ran it
+			COUNT(jm.id) FILTER (
+				WHERE jm.id <> (
+					SELECT head_id
+					FROM compaction_head
+					WHERE topic_id = $1
+					  AND compaction_key = $3
+				)
+				  AND NOT COALESCE(r.succeeded OR r.raised, false)
+			) AS superseded
 		FROM matching_group g
-		LEFT JOIN job_request r ON r.consumer_group_id = g.id
+		LEFT JOIN job_message jm ON true
+		LEFT JOIN job_request r ON r.consumer_group_id = g.id AND r.message_id = jm.id
 		GROUP BY g.id, g.name
 		ORDER BY g.name;
-	`, iTopic.DeliveryLogTable(jobRequestsTopicId), iTopic.MessageLogTable(jobRequestsTopicId))
+	`, iTopic.MessageLogTable(jobRequestsTopicId), iTopic.DeliveryLogTable(jobRequestsTopicId), iTopic.MessageLogTable(jobRequestsTopicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, jobRequestsTopicId, name, strconv.FormatInt(cronJobId, 10))
 	if err != nil {
@@ -67,7 +82,7 @@ func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId
 	var statuses []*GroupStatusData
 	for rows.Next() {
 		var status GroupStatusData
-		if err := rows.Scan(&status.ConsumerGroup, &status.Ran, &status.Succeeded, &status.Failed); err != nil {
+		if err := rows.Scan(&status.ConsumerGroup, &status.Ran, &status.Succeeded, &status.Failed, &status.Superseded); err != nil {
 			return nil, err
 		}
 		statuses = append(statuses, &status)

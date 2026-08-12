@@ -37,6 +37,7 @@ func toGroupStatus(data *datastore.GroupStatusData) *cron.GroupStatus {
 		ConsumerGroup: data.ConsumerGroup,
 		Ran:           data.Ran,
 		Succeeded:     data.Succeeded,
+		Superseded:    data.Superseded,
 		Failed:        data.Failed,
 	}
 }

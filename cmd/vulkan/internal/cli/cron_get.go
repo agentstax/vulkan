@@ -87,9 +87,9 @@ func printCronJobStatuses(w io.Writer, statuses []*cron.GroupStatus) {
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "  GROUP\tRAN\tSUCCEEDED\tFAILED")
+	fmt.Fprintln(tw, "  GROUP\tRAN\tSUCCEEDED\tFAILED\tSUPERSEDED")
 	for _, status := range statuses {
-		fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\n", status.ConsumerGroup, status.Ran, status.Succeeded, status.Failed)
+		fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\t%d\n", status.ConsumerGroup, status.Ran, status.Succeeded, status.Failed, status.Superseded)
 	}
 	tw.Flush()
 }

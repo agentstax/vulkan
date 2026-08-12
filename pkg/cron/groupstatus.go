@@ -12,6 +12,10 @@ type GroupStatus struct {
 	// Succeeded - job requests with a 'success' delivery log row.
 	Succeeded int64
 
+	// Superseded - job requests dropped unrun: a newer request replaced them
+	// before this group ran them.
+	Superseded int64
+
 	// Failed - job requests that raised without ever succeeding.
 	Failed int64
 }
