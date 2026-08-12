@@ -19,7 +19,7 @@ import (
 // ErrCronJobConfigMismatch, so two callers disagreeing about the schedule
 // can't silently share a job.
 //   - name: must not contain '*'.
-//   - schedule: from cron.ParseSchedule; min firing rate 1m and >= cfg.Timeout
+//   - schedule: from cron.ParseSchedule; min rate 1m and >= cfg.Timeout
 //   - data: marshaled to the job's JSON payload
 //   - cfg: may be nil or sparse
 func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedule *cron.Schedule, data any, cfg *cron.Config) (*cron.CronJob, error) {
@@ -58,8 +58,8 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 // updated job. Returns ErrCronJobNotFound if name isn't registered.
 //
 // Two consequences to plan around:
-//   - A schedule change re-seeds next_scheduled_time from the new schedule's
-//     next firing -- one already due under the old schedule is dropped.
+//   - A schedule change re-seeds next_scheduled_time from the new schedule --
+//     a scheduled time already due under the old one is dropped.
 //   - RegisterCronJob calls still passing the pre-alter config will fail with
 //     ErrCronJobConfigMismatch -- deliberate, so declarative register calls
 //     can't silently drift from what an operator changed.
@@ -98,7 +98,7 @@ func (a *MessageAdmin) ListCronJobs(ctx context.Context) ([]*cron.CronJob, error
 	return a.cronJobDatastore.ListCronJobs(ctx)
 }
 
-// SuspendCronJob stops the job from firing until unsuspended.
+// SuspendCronJob stops the scheduler producing the job until unsuspended.
 func (a *MessageAdmin) SuspendCronJob(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("cron job name is required")
@@ -106,8 +106,8 @@ func (a *MessageAdmin) SuspendCronJob(ctx context.Context, name string) error {
 	return a.cronJobDatastore.SuspendCronJob(ctx, name)
 }
 
-// UnsuspendCronJob resumes at the schedule's next firing -- one that came due
-// while suspended is dropped, not fired late.
+// UnsuspendCronJob resumes at the schedule's next scheduled time -- one that
+// came due while suspended is dropped, not produced late.
 func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("cron job name is required")
@@ -115,13 +115,15 @@ func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error 
 	return a.cronJobDatastore.UnsuspendCronJob(ctx, name)
 }
 
-// RunCronJob produces one firing of the named job immediately, outside its
-// schedule -- the schedule and next firing are untouched, and a suspended job
-// still runs. Returns ErrCronJobNotFound if name isn't registered.
+// RunCronJob produces one JobRequest for the named job immediately, outside
+// its schedule -- the schedule and next scheduled time are untouched, and a
+// suspended job still runs. Returns ErrCronJobNotFound if name isn't
+// registered.
 //
-// The firing carries Concurrency 'allow' regardless of the job's own policy,
-// so it runs even while a previous firing still holds the job's key. It
-// supersedes a pending scheduled firing no consumer has claimed yet.
+// Two deliberate consequences:
+//   - Concurrency is 'allow' regardless of the job's own policy -- the
+//     request runs even while a previous one still holds the job's key.
+//   - It supersedes a pending JobRequest no consumer has claimed yet.
 func (a *MessageAdmin) RunCronJob(ctx context.Context, name string) (*producer.ProduceResult[cron.JobRequest], error) {
 	if name == "" {
 		return nil, errors.New("cron job name is required")
@@ -155,6 +157,33 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string) (*producer.P
 			Timeout:     job.Timeout,
 		},
 	})
+}
+
+// CronJobStatus is one GroupStatus per consumer group that receives the
+// job's requests. Counts cover the topic's retention window.
+// Returns ErrCronJobNotFound if name isn't registered.
+func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.GroupStatus, error) {
+	if name == "" {
+		return nil, errors.New("cron job name is required")
+	}
+
+	job, err := a.cronJobDatastore.GetCronJob(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if job == nil {
+		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+	}
+
+	jobRequests, err := a.topicController.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	if err != nil {
+		return nil, err
+	}
+	if jobRequests == nil {
+		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
+	}
+
+	return a.cronJobDatastore.CronJobStatus(ctx, jobRequests.Id, job.Id, job.Name)
 }
 
 // DestroyCronJob permanently deletes the job. Returns ErrDestroyDisabled

@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"time"
 
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
@@ -65,7 +67,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 		return nil, errors.New("schedule is required")
 	}
 	if cfg.Timeout > schedule.MinRate() {
-		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min firing rate %v", cfg.Timeout, schedule, schedule.MinRate())
+		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min rate %v", cfg.Timeout, schedule, schedule.MinRate())
 	}
 
 	// private getCronJob, not GetCronJob -- otherwise would have nested retries.
@@ -111,7 +113,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 	}
 	next := schedule.Next(dbNow)
 	if next.IsZero() {
-		return nil, fmt.Errorf("schedule %q never fires after %v", schedule, dbNow)
+		return nil, fmt.Errorf("schedule %q has no scheduled time after %v", schedule, dbNow)
 	}
 
 	insertSql := `
@@ -269,7 +271,7 @@ func (d *CronJobDatastore) updateCronJob(ctx context.Context, name string, cfg *
 		timeout = *cfg.Timeout
 	}
 	if timeout > sched.MinRate() {
-		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min firing rate %v", timeout, sched, sched.MinRate())
+		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min rate %v", timeout, sched, sched.MinRate())
 	}
 
 	var next *time.Time
@@ -280,7 +282,7 @@ func (d *CronJobDatastore) updateCronJob(ctx context.Context, name string, cfg *
 		}
 		n := cfg.Schedule.Next(dbNow)
 		if n.IsZero() {
-			return nil, fmt.Errorf("schedule %q never fires after %v", cfg.Schedule, dbNow)
+			return nil, fmt.Errorf("schedule %q has no scheduled time after %v", cfg.Schedule, dbNow)
 		}
 		next = &n
 	}
@@ -436,8 +438,8 @@ func (d *CronJobDatastore) SuspendCronJob(ctx context.Context, name string) erro
 	})
 }
 
-// UnsuspendCronJob resumes at Next(now()) -- a firing that came due while
-// suspended is dropped, not fired late.
+// UnsuspendCronJob resumes at Next(now()) -- a scheduled time that came due while
+// suspended is dropped, not produced late.
 func (d *CronJobDatastore) UnsuspendCronJob(ctx context.Context, name string) error {
 	return d.Retry.Wrap(ctx, func() error {
 		return d.unsuspendCronJob(ctx, name)
@@ -463,7 +465,7 @@ func (d *CronJobDatastore) unsuspendCronJob(ctx context.Context, name string) er
 	}
 	next := sched.Next(dbNow)
 	if next.IsZero() {
-		return fmt.Errorf("schedule %q never fires after %v -- cron job %q stays suspended", job.Schedule, dbNow, name)
+		return fmt.Errorf("schedule %q has no scheduled time after %v -- cron job %q stays suspended", job.Schedule, dbNow, name)
 	}
 
 	tag, err := d.Datastore.Pool.Exec(ctx, `UPDATE cron_job SET suspended = false, next_scheduled_time = $2 WHERE name = $1;`, name, next)
@@ -489,6 +491,81 @@ func (d *CronJobDatastore) DestroyCronJob(ctx context.Context, name string) erro
 		d.Logger.WarnContext(ctx, "cron job destroyed", "cron_job", name)
 		return nil
 	})
+}
+
+// CronJobStatus is one GroupStatus per consumer group that receives the
+// job's requests. Counts cover the topic's retention window.
+func (d *CronJobDatastore) CronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*GroupStatus, error) {
+	var statuses []*GroupStatus
+	err := d.Retry.Wrap(ctx, func() error {
+		var err error
+		statuses, err = d.cronJobStatus(ctx, jobRequestsTopicId, cronJobId, name)
+		return err
+	})
+	return statuses, err
+}
+
+func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*GroupStatus, error) {
+	// 'superseded' and still-pending 'deferred' rows never
+	// ran, so ran = succeeded + failed always holds
+	sql := fmt.Sprintf(`
+		WITH matching_group AS (
+			SELECT
+				cg.id,
+				cg.name
+			FROM consumer_group cg
+			WHERE cg.topic_id = $1
+			  AND (
+				-- a group with no bindings receives every routing key
+				NOT EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = cg.id)
+				-- otherwise a binding must match the job's name ($2)
+				OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern)
+			  )
+		), job_request AS (
+			SELECT
+				d.consumer_group_id,
+				d.message_id,
+				bool_or(d.status = 'success')                          AS succeeded,
+				bool_or(d.status IN ('failure', 'expired', 'killed'))  AS raised
+			FROM %s d
+			JOIN %s m ON m.id = d.message_id
+			WHERE m.compaction_key = $3
+			GROUP BY d.consumer_group_id, d.message_id
+		)
+		SELECT
+			g.name,
+			COUNT(r.message_id) FILTER (WHERE r.succeeded OR r.raised)      AS ran,
+			COUNT(r.message_id) FILTER (WHERE r.succeeded)                  AS succeeded,
+			COUNT(r.message_id) FILTER (WHERE r.raised AND NOT r.succeeded) AS failed
+		FROM matching_group g
+		LEFT JOIN job_request r ON r.consumer_group_id = g.id
+		GROUP BY g.id, g.name
+		ORDER BY g.name;
+	`, iTopic.DeliveryLogTable(jobRequestsTopicId), iTopic.MessageLogTable(jobRequestsTopicId))
+
+	rows, err := d.Datastore.Pool.Query(ctx, sql, jobRequestsTopicId, name, strconv.FormatInt(cronJobId, 10))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var statuses []*GroupStatus
+	for rows.Next() {
+		var consumerGroup string
+		var ran, succeeded, failed int64
+		if err := rows.Scan(&consumerGroup, &ran, &succeeded, &failed); err != nil {
+			return nil, err
+		}
+		status, err := NewGroupStatus(consumerGroup, ran, succeeded, failed)
+		if err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, status)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return statuses, nil
 }
 
 // with N replicas running in different timezones they all have different
