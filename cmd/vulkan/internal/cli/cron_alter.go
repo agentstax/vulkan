@@ -10,12 +10,14 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/spf13/cobra"
 )
 
 func newCronAlterCmd(g *globalFlags) *cobra.Command {
-	// Flags map 1:1 to cron.AlterConfig's sparse fields. Only the ones the
-	// operator actually passed become set -- a patch, not a full replace.
+	// Flags map 1:1 to croncontroller.AlterCronJobConfig's sparse fields. Only
+	// the ones the operator actually passed become set -- a patch, not a full
+	// replace.
 	// Name is absent: it is the routing key consumers bind, so a different
 	// name is a different job, not a config change.
 	var (
@@ -43,7 +45,7 @@ func newCronAlterCmd(g *globalFlags) *cobra.Command {
 			f := cmd.Flags()
 
 			// Build a sparse patch from only the flags that were passed.
-			cfg := &cron.AlterConfig{}
+			cfg := &croncontroller.AlterCronJobConfig{}
 			if f.Changed("schedule") {
 				schedule, err := cron.ParseSchedule(scheduleExpr)
 				if err != nil {

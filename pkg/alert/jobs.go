@@ -6,6 +6,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 )
 
 // Job is one check's cron job -- what RegisterSystem seeds and Run executes.
@@ -13,10 +14,10 @@ type Job struct {
 	Name     string
 	Schedule *cron.Schedule
 	Data     any
-	Config   *cron.Config
+	Config   *croncontroller.CronJobConfig
 }
 
-func NewJob(name string, schedule string, data any, cfg *cron.Config) (*Job, error) {
+func NewJob(name string, schedule string, data any, cfg *croncontroller.CronJobConfig) (*Job, error) {
 	if name == "" {
 		return nil, fmt.Errorf("job name is required")
 	}
@@ -51,7 +52,7 @@ func newCheckJob(name, schedule string) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewJob(name, schedule, data, &cron.Config{Concurrency: common.ConcurrencyDefer})
+	return NewJob(name, schedule, data, &croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
 }
 
 // jobData is a check job's data payload.

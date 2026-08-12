@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -22,7 +23,7 @@ import (
 //   - schedule: from cron.ParseSchedule; min rate 1m and >= cfg.Timeout
 //   - data: marshaled to the job's JSON payload
 //   - cfg: may be nil or sparse
-func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedule *cron.Schedule, data any, cfg *cron.Config) (*cron.CronJob, error) {
+func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedule *cron.Schedule, data any, cfg *croncontroller.CronJobConfig) (*cron.CronJob, error) {
 	if name == "" {
 		return nil, errors.New("cron job name is required")
 	}
@@ -36,14 +37,6 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 		return nil, fmt.Errorf("register the system with RegisterSystem before registering cron job %q: %w", name, migrate.ErrNotRegistered)
 	}
 
-	if cfg == nil {
-		cfg = &cron.Config{}
-	}
-	cfg.WithDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
 	// every cron_job row has exactly one owner; admin-registered jobs are the
 	// system's -- they ride its lifecycle, not any one topic's
 	owner, err := common.NewSystemOwner(sys.Id)
@@ -51,7 +44,7 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 		return nil, err
 	}
 
-	return a.cronJobDatastore.RegisterCronJob(ctx, owner, name, schedule, data, *cfg)
+	return a.cronJobController.RegisterCronJob(ctx, owner, name, schedule, data, cfg)
 }
 
 // AlterCronJob applies cfg's set fields to the named job and returns the
@@ -63,19 +56,12 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 //   - RegisterCronJob calls still passing the pre-alter config will fail with
 //     ErrCronJobConfigMismatch -- deliberate, so declarative register calls
 //     can't silently drift from what an operator changed.
-func (a *MessageAdmin) AlterCronJob(ctx context.Context, name string, cfg *cron.AlterConfig) (*cron.CronJob, error) {
+func (a *MessageAdmin) AlterCronJob(ctx context.Context, name string, cfg *croncontroller.AlterCronJobConfig) (*cron.CronJob, error) {
 	if name == "" {
 		return nil, errors.New("cron job name is required")
 	}
 
-	if cfg == nil {
-		cfg = &cron.AlterConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	updated, err := a.cronJobDatastore.UpdateCronJob(ctx, name, cfg)
+	updated, err := a.cronJobController.UpdateCronJob(ctx, name, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +76,12 @@ func (a *MessageAdmin) GetCronJob(ctx context.Context, name string) (*cron.CronJ
 	if name == "" {
 		return nil, errors.New("cron job name is required")
 	}
-	return a.cronJobDatastore.GetCronJob(ctx, name)
+	return a.cronJobController.GetCronJob(ctx, name)
 }
 
 // ListCronJobs returns every cron job, ordered by name.
 func (a *MessageAdmin) ListCronJobs(ctx context.Context) ([]*cron.CronJob, error) {
-	return a.cronJobDatastore.ListCronJobs(ctx)
+	return a.cronJobController.ListCronJobs(ctx)
 }
 
 // SuspendCronJob stops the scheduler producing the job until unsuspended.
@@ -103,7 +89,7 @@ func (a *MessageAdmin) SuspendCronJob(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("cron job name is required")
 	}
-	return a.cronJobDatastore.SuspendCronJob(ctx, name)
+	return a.cronJobController.SuspendCronJob(ctx, name)
 }
 
 // UnsuspendCronJob resumes at the schedule's next scheduled time -- one that
@@ -112,7 +98,7 @@ func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error 
 	if name == "" {
 		return errors.New("cron job name is required")
 	}
-	return a.cronJobDatastore.UnsuspendCronJob(ctx, name)
+	return a.cronJobController.UnsuspendCronJob(ctx, name)
 }
 
 // RunCronJob produces one JobRequest for the named job immediately, outside
@@ -129,7 +115,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string) (*producer.P
 		return nil, errors.New("cron job name is required")
 	}
 
-	job, err := a.cronJobDatastore.GetCronJob(ctx, name)
+	job, err := a.cronJobController.GetCronJob(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +153,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, errors.New("cron job name is required")
 	}
 
-	job, err := a.cronJobDatastore.GetCronJob(ctx, name)
+	job, err := a.cronJobController.GetCronJob(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +169,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
 	}
 
-	return a.cronJobDatastore.CronJobStatus(ctx, jobRequests.Id, job.Id, job.Name)
+	return a.cronJobController.CronJobStatus(ctx, jobRequests.Id, job.Id, job.Name)
 }
 
 // DestroyCronJob permanently deletes the job. Returns ErrDestroyDisabled
@@ -195,5 +181,5 @@ func (a *MessageAdmin) DestroyCronJob(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("cron job name is required")
 	}
-	return a.cronJobDatastore.DestroyCronJob(ctx, name)
+	return a.cronJobController.DeleteCronJob(ctx, name)
 }

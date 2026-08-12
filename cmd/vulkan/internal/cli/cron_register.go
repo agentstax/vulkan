@@ -11,13 +11,14 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/spf13/cobra"
 )
 
 func newCronRegisterCmd(g *globalFlags) *cobra.Command {
-	// Flags map 1:1 to cron.Config and are left unset by default -- only the
-	// ones the operator actually passed reach the Config, so WithDefaults stays
-	// the single source of truth for everything else.
+	// Flags map 1:1 to croncontroller.CronJobConfig and are left unset by
+	// default -- only the ones the operator actually passed reach the config,
+	// so WithDefaults stays the single source of truth for everything else.
 	var (
 		scheduleExpr string
 		timeout      time.Duration
@@ -55,8 +56,8 @@ func newCronRegisterCmd(g *globalFlags) *cobra.Command {
 				return failUsage("--metadata must be valid JSON")
 			}
 
-			// Build a sparse Config from only the flags that were passed.
-			cfg := &cron.Config{}
+			// Build a sparse config from only the flags that were passed.
+			cfg := &croncontroller.CronJobConfig{}
 			if f.Changed("timeout") {
 				cfg.Timeout = timeout
 			}
@@ -129,7 +130,7 @@ func newCronRegisterCmd(g *globalFlags) *cobra.Command {
 // printCronMismatch writes the diff between the existing job and what register
 // tried to send (to stderr, w), then returns a printed error (exit 1). cfg is
 // the fully defaulted config RegisterCronJob just compared and rejected.
-func printCronMismatch(w io.Writer, name string, existing *cron.CronJob, schedule *cron.Schedule, data any, cfg *cron.Config) error {
+func printCronMismatch(w io.Writer, name string, existing *cron.CronJob, schedule *cron.Schedule, data any, cfg *croncontroller.CronJobConfig) error {
 	if existing == nil {
 		// Lost a registration race between our GetCronJob and RegisterCronJob;
 		// the row exists now but we didn't capture it. Report plainly rather
@@ -153,7 +154,7 @@ func printCronMismatch(w io.Writer, name string, existing *cron.CronJob, schedul
 // cronRegisterDiffs returns one row per field where the existing job and the
 // rejected register request differ, over exactly the fields the register
 // compares.
-func cronRegisterDiffs(existing *cron.CronJob, schedule *cron.Schedule, data any, cfg *cron.Config) []fieldDiff {
+func cronRegisterDiffs(existing *cron.CronJob, schedule *cron.Schedule, data any, cfg *croncontroller.CronJobConfig) []fieldDiff {
 	var diffs []fieldDiff
 	add := func(name, existingValue, requestedValue string) {
 		if existingValue != requestedValue {

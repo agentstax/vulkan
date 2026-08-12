@@ -1,4 +1,4 @@
-package cron
+package controller
 
 import (
 	"errors"
@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/cron"
 )
 
-// Config is RegisterCronJob's optional knobs.
-type Config struct {
+// CronJobConfig is RegisterCronJob's optional knobs.
+type CronJobConfig struct {
 	// Timeout - how long one job request's delivery may run.
 	// Default: 30s.
 	Timeout time.Duration
@@ -24,7 +25,7 @@ type Config struct {
 	Metadata any
 }
 
-func (c *Config) WithDefaults() *Config {
+func (c *CronJobConfig) WithDefaults() *CronJobConfig {
 	if c.Timeout == 0 {
 		c.Timeout = 30 * time.Second
 	}
@@ -36,7 +37,7 @@ func (c *Config) WithDefaults() *Config {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *Config) Validate() error {
+func (c *CronJobConfig) Validate() error {
 	if c.Timeout <= 0 {
 		return fmt.Errorf("Timeout must be > 0, got %v", c.Timeout)
 	}
@@ -46,19 +47,19 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// AlterConfig is Alter's sparse patch -- an unset field means leave unchanged
-// (for Data/Metadata that means nil, where Register's nil = {}).
+// AlterCronJobConfig is Alter's sparse patch -- an unset field means leave
+// unchanged (for Data/Metadata that means nil, where Register's nil = {}).
 // Name is absent -- it is the routing key consumers bind; a different name is
 // a different job, not a config change.
-type AlterConfig struct {
-	Schedule    *Schedule
+type AlterCronJobConfig struct {
+	Schedule    *cron.Schedule
 	Timeout     *time.Duration
 	Concurrency common.ConcurrencyPolicy // "" = unchanged
 	Data        any
 	Metadata    any
 }
 
-func (c *AlterConfig) Validate() error {
+func (c *AlterCronJobConfig) Validate() error {
 	if c.Schedule == nil && c.Timeout == nil && c.Concurrency == "" && c.Data == nil && c.Metadata == nil {
 		return errors.New("no fields set -- an alter must change at least one field")
 	}

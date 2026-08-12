@@ -2,6 +2,7 @@ package admin
 
 import (
 	"github.com/agentstax/vulkan/pkg/cron"
+	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -16,7 +17,7 @@ import (
 type MessageAdmin struct {
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
-	cronJobDatastore   *cron.CronJobDatastore
+	cronJobController  *croncontroller.CronJobController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	metricsController  *metricscontroller.MetricsController
 	migrateRunner      *migrate.Runner
@@ -73,7 +74,10 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	cronJobDatastore, err := cron.NewCronJobDatastore(ds, cfg.Retry, cfg.Logger)
+	cronJobController, err := croncontroller.NewCronJobController(ds, &croncontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +106,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	return &MessageAdmin{
 		systemController:   systemController,
 		topicController:    topicController,
-		cronJobDatastore:   cronJobDatastore,
+		cronJobController:  cronJobController,
 		jobRequestProducer: jobRequestProducer,
 		metricsController:  metricsController,
 		migrateRunner:      migrateRunner,

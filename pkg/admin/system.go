@@ -56,7 +56,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller
 // register, whose config-mismatch check would error on a job an operator has
 // altered since.
 func (a *MessageAdmin) ensureSystemCronJob(ctx context.Context, job *alert.Job) error {
-	existing, err := a.cronJobDatastore.GetCronJob(ctx, job.Name)
+	existing, err := a.cronJobController.GetCronJob(ctx, job.Name)
 	if err != nil {
 		return err
 	}

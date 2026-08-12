@@ -1,7 +1,5 @@
 package cron
 
-import "errors"
-
 // GroupStatus is one consumer group's JobRequest outcomes for one cron job,
 // derived from the job_requests delivery log.
 type GroupStatus struct {
@@ -16,16 +14,4 @@ type GroupStatus struct {
 
 	// Failed - job requests that raised without ever succeeding.
 	Failed int64
-}
-
-func NewGroupStatus(consumerGroup string, ran int64, succeeded int64, failed int64) (*GroupStatus, error) {
-	if consumerGroup == "" {
-		return nil, errors.New("consumer group is required")
-	}
-	return &GroupStatus{
-		ConsumerGroup: consumerGroup,
-		Ran:           ran,
-		Succeeded:     succeeded,
-		Failed:        failed,
-	}, nil
 }
