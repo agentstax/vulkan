@@ -54,3 +54,38 @@ type GroupStatusData struct {
 	Superseded    int64
 	Failed        int64
 }
+
+// JobRequestStatusData is one (consumer group, job request) CronJobRequests row.
+type JobRequestStatusData struct {
+	ConsumerGroup string
+	MessageId     int64
+	Payload       json.RawMessage
+	ProducedAt    time.Time
+	Head          bool
+	Succeeded     bool
+	Raised        bool
+	Deferred      bool
+	SupersededBy  *int64
+	SupersededAt  *time.Time
+}
+
+// matchingGroupData is one consumer group that receives a job's requests.
+type matchingGroupData struct {
+	Id   int64
+	Name string
+}
+
+// jobMessageData is one of a job's message-log rows.
+type jobMessageData struct {
+	Id        int64
+	Payload   json.RawMessage
+	CreatedAt time.Time
+}
+
+// requestOutcomeData is one message's delivery history for one consumer
+// group, rolled up to booleans. The zero value reads as "never delivered".
+type requestOutcomeData struct {
+	Succeeded bool
+	Raised    bool
+	Deferred  bool
+}

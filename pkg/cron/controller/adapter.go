@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -39,6 +40,45 @@ func toGroupStatus(data *datastore.GroupStatusData) *cron.GroupStatus {
 		Succeeded:     data.Succeeded,
 		Superseded:    data.Superseded,
 		Failed:        data.Failed,
+	}
+}
+
+func toJobRequestStatus(data *datastore.JobRequestStatusData) (*cron.JobRequestStatus, error) {
+	// ScheduledTime lives in the message payload, not a column
+	var request cron.JobRequest
+	if err := json.Unmarshal(data.Payload, &request); err != nil {
+		return nil, fmt.Errorf("job request payload: %w", err)
+	}
+
+	status := &cron.JobRequestStatus{
+		ConsumerGroup: data.ConsumerGroup,
+		MessageId:     data.MessageId,
+		ScheduledTime: request.ScheduledTime,
+		ProducedAt:    data.ProducedAt,
+		Outcome:       toJobRequestOutcome(data),
+	}
+	if status.Outcome == cron.JobRequestSuperseded {
+		status.SupersededBy = data.SupersededBy
+		status.SupersededAt = data.SupersededAt
+	}
+	return status, nil
+}
+
+func toJobRequestOutcome(data *datastore.JobRequestStatusData) cron.JobRequestOutcome {
+	switch {
+	case data.Succeeded:
+		return cron.JobRequestSucceeded
+	case data.Raised:
+		return cron.JobRequestFailed
+	// order specific - must be after Succeeded and Raised.
+	// if it gets here the request never ran and a non-head
+	// message can never run ie it was Superseded.
+	case !data.Head:
+		return cron.JobRequestSuperseded
+	case data.Deferred:
+		return cron.JobRequestDeferred
+	default:
+		return cron.JobRequestPending
 	}
 }
 

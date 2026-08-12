@@ -121,6 +121,39 @@ func (c *CronJobController) DeleteCronJob(ctx context.Context, name string) erro
 	return c.datastore.DeleteCronJob(ctx, name)
 }
 
+// CronJobRequests is the job's requests, one JobRequestStatus
+// per (request, consumer group that receives it), newest request first.
+// Requests older than the topic's retention window are gone.
+func (c *CronJobController) CronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]*cron.JobRequestStatus, error) {
+	if jobRequestsTopicId <= 0 {
+		return nil, fmt.Errorf("jobRequestsTopicId must be > 0, got %d", jobRequestsTopicId)
+	}
+	if cronJobId <= 0 {
+		return nil, fmt.Errorf("cronJobId must be > 0, got %d", cronJobId)
+	}
+	if name == "" {
+		return nil, errors.New("name is required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be > 0, got %d", limit)
+	}
+
+	listed, err := c.datastore.CronJobRequests(ctx, jobRequestsTopicId, cronJobId, name, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	var requests []*cron.JobRequestStatus
+	for _, data := range listed {
+		request, err := toJobRequestStatus(data)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, nil
+}
+
 // CronJobStatus is one GroupStatus per consumer group that receives the
 // job's requests. Counts cover the topic's retention window.
 func (c *CronJobController) CronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*cron.GroupStatus, error) {

@@ -181,6 +181,34 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 	return a.cronJobController.CronJobStatus(ctx, jobRequests.Id, job.Id, job.Name)
 }
 
+// CronJobRequests is the job's newest requests, one JobRequestStatus
+// per (request, consumer group that receives it), newest request first.
+// Requests older than the topic's retention window are gone.
+// Returns ErrCronJobNotFound if name isn't registered.
+func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit int) ([]*cron.JobRequestStatus, error) {
+	if name == "" {
+		return nil, errors.New("cron job name is required")
+	}
+
+	job, err := a.cronJobController.GetCronJob(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if job == nil {
+		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+	}
+
+	jobRequests, err := a.topicController.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	if err != nil {
+		return nil, err
+	}
+	if jobRequests == nil {
+		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
+	}
+
+	return a.cronJobController.CronJobRequests(ctx, jobRequests.Id, job.Id, job.Name, limit)
+}
+
 // DestroyCronJob permanently deletes the job. Returns ErrDestroyDisabled
 // unless MessageAdminConfig.AllowDestroy is set.
 func (a *MessageAdmin) DestroyCronJob(ctx context.Context, name string) error {

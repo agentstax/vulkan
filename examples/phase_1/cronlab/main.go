@@ -475,7 +475,27 @@ func supersedeSection(ctx context.Context) {
 	if status.Superseded != 1 {
 		die(fmt.Sprintf("the dropped request must count as superseded: want 1, got %d", status.Superseded))
 	}
+
+	// the request listing names the replacement: newest first, the dropped
+	// request points at the one that replaced it
+	requests, err := mAdmin.CronJobRequests(ctx, prefix+".supersede", 20)
+	must(err)
+	if len(requests) != 2 {
+		die(fmt.Sprintf("want 2 listed requests, got %d", len(requests)))
+	}
+	newest, oldest := requests[0], requests[1]
+	if newest.MessageId != head.Id || newest.Outcome != cron.JobRequestSucceeded {
+		die(fmt.Sprintf("newest request: want %d succeeded, got %d %s", head.Id, newest.MessageId, newest.Outcome))
+	}
+	if oldest.MessageId != pending.Id || oldest.Outcome != cron.JobRequestSuperseded {
+		die(fmt.Sprintf("oldest request: want %d superseded, got %d %s", pending.Id, oldest.MessageId, oldest.Outcome))
+	}
+	if oldest.SupersededBy == nil || *oldest.SupersededBy != head.Id || oldest.SupersededAt == nil {
+		die(fmt.Sprintf("the dropped request must name its replacement %d, got %+v", head.Id, oldest.SupersededBy))
+	}
 	fmt.Println("  ✓ first request superseded unrun, only the second ran; status counts 1/1/0 with superseded=1")
+	fmt.Printf("  ✓ request listing: %d succeeded; %d superseded by %d at %s\n",
+		newest.MessageId, oldest.MessageId, *oldest.SupersededBy, oldest.SupersededAt.Format("15:04:05"))
 }
 
 func statusSection(ctx context.Context) {
@@ -560,6 +580,30 @@ func statusSection(ctx context.Context) {
 		die(fmt.Sprintf("bindingless group: the replaced first request was dropped unrun for it, want superseded=1, got %d", bindingless.Superseded))
 	}
 	fmt.Println("  ✓ retried-then-succeeded counts once; bound 2/1/1 superseded=0, bindingless 0/0/0 superseded=1, non-matching absent")
+
+	// per-group outcomes for the same two requests: the bound group ran both,
+	// the bindingless group ran neither
+	requests, err := mAdmin.CronJobRequests(ctx, jobName, 20)
+	must(err)
+	outcomes := map[string]cron.JobRequestOutcome{}
+	for _, request := range requests {
+		outcomes[fmt.Sprintf("%s/%d", request.ConsumerGroup, request.MessageId)] = request.Outcome
+	}
+	want := map[string]cron.JobRequestOutcome{
+		fmt.Sprintf("%s/%d", boundName, first.Id):        cron.JobRequestSucceeded,
+		fmt.Sprintf("%s/%d", boundName, second.Id):       cron.JobRequestFailed,
+		fmt.Sprintf("%s/%d", bindinglessName, first.Id):  cron.JobRequestSuperseded,
+		fmt.Sprintf("%s/%d", bindinglessName, second.Id): cron.JobRequestPending,
+	}
+	if len(requests) != len(want) {
+		die(fmt.Sprintf("want %d listed (request, group) rows, got %d", len(want), len(requests)))
+	}
+	for key, outcome := range want {
+		if outcomes[key] != outcome {
+			die(fmt.Sprintf("request %s: want %s, got %s", key, outcome, outcomes[key]))
+		}
+	}
+	fmt.Println("  ✓ request listing per group: bound succeeded+failed, bindingless superseded+pending")
 }
 
 // --- harness ---
