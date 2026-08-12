@@ -45,7 +45,7 @@ func runCompactionReadCost(ctx context.Context, ds *AlertDatastore, threshold in
 	return alerts, nil
 }
 
-// compactionReadCostAlert is the pure firing decision: nil unless count crosses
+// compactionReadCostAlert is the pure decision: nil unless count crosses
 // the override, or the default warn partition count when no override is set.
 func compactionReadCostAlert(topicId int64, topicName string, count, threshold int64) *Alert {
 	if threshold == 0 {
@@ -57,7 +57,7 @@ func compactionReadCostAlert(topicId int64, topicName string, count, threshold i
 
 	// inputs are check-supplied and valid, so NewAlert can't fail here
 	a, _ := NewAlert(
-		compactionReadCostName, EntityTypeTopic, topicId, topicName, StatusFiring, SeverityWarn,
+		compactionReadCostName, EntityTypeTopic, topicId, topicName, StatusActive, SeverityWarn,
 		fmt.Sprintf("compacted topic %q has %d partitions; latest-key replay cost grows ~10µs per partition", topicName, count),
 		"A consumer replaying a never-superseded key scans from that key's partition to the current tail; the cost grows linearly with partition count and never amortizes.",
 		"Compact more aggressively or lower retention so old partitions drop, bounding replay cost.",

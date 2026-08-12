@@ -2,12 +2,12 @@ package alert
 
 import "fmt"
 
-// Status is an alert's lifecycle state on its compaction key -- a firing
+// Status is an alert's lifecycle state on its compaction key -- an active
 // alert and its later resolution are versions of the same key.
 type Status string
 
 const (
-	StatusFiring   Status = "firing"
+	StatusActive   Status = "active"
 	StatusResolved Status = "resolved"
 )
 
@@ -38,7 +38,7 @@ type Alert struct {
 	EntityType EntityType // "system" | "topic"
 	EntityId   int64      // rename-proof machine id; 0 = system
 	EntityName string     // human handle -- the topic name, or SystemEntityName
-	Status     Status     // "firing" | "resolved"
+	Status     Status     // "active" | "resolved"
 	Severity   Severity   // "warn"
 
 	// prose -- Postgres MESSAGE/DETAIL/HINT
@@ -48,7 +48,7 @@ type Alert struct {
 
 	// evidence. GUARDRAIL: neither map ever routes, keys, or dedups.
 	Data     map[string]any // measurements about the entity (the check's evidence)
-	Metadata map[string]any // context about the report (evaluator, first_fired_at, repeat count)
+	Metadata map[string]any // context about the report (evaluator, first_active_at, repeat count)
 }
 
 func NewAlert(name string, entityType EntityType, entityId int64, entityName string, status Status, severity Severity, message, detail, hint string, data, metadata map[string]any) (*Alert, error) {
@@ -77,7 +77,7 @@ func NewAlert(name string, entityType EntityType, entityId int64, entityName str
 	}
 
 	switch status {
-	case StatusFiring, StatusResolved:
+	case StatusActive, StatusResolved:
 	default:
 		return nil, fmt.Errorf("alert %q: invalid status %q", name, status)
 	}
@@ -110,7 +110,7 @@ func (a *Alert) RoutingKey() string {
 
 // CompactionKey is <name>/<entity-type>/<entity-id>. Entity-type keeps id spaces
 // from colliding across types. The ONLY place this string is composed -- a check
-// builds the same key from its name to read its head even when nothing fires.
+// builds the same key from its name to read its head even when it has nothing to publish.
 func CompactionKey(name string, entityType EntityType, entityId int64) string {
 	return fmt.Sprintf("%s/%s/%d", name, entityType, entityId)
 }

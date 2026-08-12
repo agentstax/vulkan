@@ -63,7 +63,7 @@ severity changes publish silently. After the port, delete the branch.
 
 ## Chunks (one at a time, user reviews/commits between)
 
-### Chunk 1 — terminology sweep: 'firing'/'fire' out of the alert domain
+### Chunk 1 — terminology sweep: 'firing'/'fire' out of the alert domain [DONE 2026-08-12]
 
 User-settled 2026-08-12 (reverses the earlier "alert firing stays —
 Prometheus vocabulary" carve-out): Status values become **'active' /

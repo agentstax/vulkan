@@ -3170,8 +3170,9 @@ repeatable-read transaction (user call).
   compacted streams, and message_log + compaction_head already record the
   fact. One mechanism per fact.
 - **"Firing" retired from the codebase** (Quartz jargon): JobRequest /
-  ScheduledTime / due / produce. Alert-domain 'firing'/'resolved' stays —
-  that is Prometheus vocabulary.
+  ScheduledTime / due / produce. The alert domain followed 2026-08-12:
+  Status 'firing' → 'active' ('resolved' stays; the repeat-interval
+  republish is a "repeat", never a "re-fire").
 - **Datastore reads decomposed** (2026-08-12 review): the single
   CTE-pyramid status query was four jobs in one statement; rebuilt as
   matching-groups / message-ids / compaction-head / per-group delivery

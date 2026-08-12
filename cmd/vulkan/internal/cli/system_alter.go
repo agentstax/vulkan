@@ -65,7 +65,7 @@ func newSystemAlterCmd(g *globalFlags) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.DurationVar(&alertRepeatInterval, "alert-repeat-interval", 0, "how long a firing alert stays quiet before re-emitting, e.g. 4h")
+	f.DurationVar(&alertRepeatInterval, "alert-repeat-interval", 0, "how long an active alert stays quiet before repeating, e.g. 4h")
 
 	return cmd
 }

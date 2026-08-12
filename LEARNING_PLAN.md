@@ -4522,7 +4522,7 @@ sequenced after both of these close.*
       MESSAGE/DETAIL/HINT triple (message = what + measured numbers,
       detail = the mechanism, hint = the levers by name). Evaluation is
       level-triggered, notification edge-triggered: log on the
-      inactive→firing transition, re-log at a long repeat interval while
+      inactive→active transition, re-log at a long repeat interval while
       it persists, always log resolved.
       (2) Register-time findings: the checks run once at
       producer/consumer Register (Sidekiq's boot-check pattern — the
@@ -4533,7 +4533,7 @@ sequenced after both of these close.*
       routing, retention, replay, and multi-consumer-group semantics for
       free. This is the integration surface (a consumer group forwarding
       to Slack/PagerDuty is ~20 lines of user code) and the CLI's
-      "what's firing now" read surface (compaction heads = current state).
+      "what's active now" read surface (compaction heads = current state).
       The `Alert` schema (pkg/alert, user-facing — consumers decode
       `MessageConsumer[alert.Alert]`): typed identity fields Name
       ("partition_count"), EntityType ("system"|"topic"), EntityId
@@ -4541,12 +4541,12 @@ sequenced after both of these close.*
       handle — NOTE 2026-07-30: this payload vocabulary predates
       `common.Owner`; whether these fields adopt Owner's
       kind/ids/name spelling is an alerts-Chunk-2 build decision),
-      Status ("firing"|"resolved"), Severity ("warn"; "critical"
+      Status ("active"|"resolved"), Severity ("warn"; "critical"
       reserved — the field ships in v1 so the routing key never changes
       shape); the prose triple Message/Detail/Hint; and two jsonb maps —
       Data (measurements about the entity: the check's evidence) and
       Metadata (context about the report itself: evaluator,
-      first_fired_at, repeat count). Placement test: about the subject →
+      first_active_at, repeat count). Placement test: about the subject →
       Data, about the report → Metadata. GUARDRAIL: neither map ever
       routes, keys, or dedups — a consumer branching on a map key for
       delivery has rebuilt the rejected rule engine. Typed Value/Ceiling
@@ -4564,11 +4564,11 @@ sequenced after both of these close.*
       silently stop matching after a topic rename (EntityId in the
       payload is the durable handle). Compaction key `<name>/<entity-type>/<entity-id>`
       (entity-type keeps id spaces from colliding across types)
-      — firing→resolved are versions of one key, so the topic IS the
+      — active→resolved are versions of one key, so the topic IS the
       state store: current alert state = compaction heads, history = the
       uncompacted log under ordinary retention. The retention interplay
       works FOR us: resolved alerts age out of current state
-      naturally, while the repeat-interval re-fire re-produces firing
+      naturally, while the repeat-interval republish re-produces active
       keys far inside any sane TTL — the human reminder and the state
       keepalive are the same produce. Known schema limits, recorded not
       solved: EntityName for a system-scoped alert (EntityId 0) is
@@ -4587,13 +4587,13 @@ sequenced after both of these close.*
       dispatch (a single `alert.*` consumer switching on job name was
       built 2026-08-01 and killed 2026-08-02: a central dispatcher
       re-invents the grouping the binding table owns). Each consumer's
-      handler reads the threshold from the firing's data and produces an
-      alert or not; they land after the scheduler exists. Edge-triggering
+      handler reads the threshold from the job request's data and produces
+      an alert or not; they land after the scheduler exists. Edge-triggering
       is restart-proof: the consumer reads
       each check's alert-key compaction head, compares status, produces
       only on transition or past the repeat interval — the topic is its
       own dedup memory, and the job's defer concurrency plus per-group
-      key_lease guarantee one execution per firing. It publishes through
+      key_lease guarantee one execution per job request. It publishes through
       the real `Producer[alert.Alert]` (hand-copying the compaction
       upsert would be the lab-staleness trap in production code). Checks
       live in pkg/alert as pure decision functions (measurements in →
@@ -5489,8 +5489,10 @@ scheduler; the resource-ownership model landed independently
         "superseded by <id> at <time>" inline.
       - TERMINOLOGY (settled 2026-08-11): "firing" retired — the produced
         thing is a JobRequest, its moment ScheduledTime, eligibility
-        "due", the act "produce". Alert-domain 'firing'/'resolved' stays
-        (Prometheus vocabulary).
+        "due", the act "produce". The alert domain followed 2026-08-12:
+        Status 'firing' → 'active' ('resolved' stays; the repeat-interval
+        republish is a "repeat", never a "re-fire"; AlertRepeatInterval
+        keeps its name).
       - pkg/cron reshaped to the house layered pattern (vocabulary /
         controller / datastore) before the lab chunk; verbs: controller
         `DeleteCronJob`, admin `DestroyCronJob` (AllowDestroy-gated).

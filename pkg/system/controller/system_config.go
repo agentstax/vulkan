@@ -9,8 +9,8 @@ import (
 // SystemConfig is RegisterSystem's spec -- control-plane settings scoped to no
 // single topic.
 type SystemConfig struct {
-	// AlertRepeatInterval - how long a firing alert stays quiet before it
-	// re-emits as a reminder. Default 4h.
+	// AlertRepeatInterval - how long an active alert stays quiet before it
+	// repeats as a reminder. Default 4h.
 	AlertRepeatInterval time.Duration
 }
 

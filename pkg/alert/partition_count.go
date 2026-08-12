@@ -41,7 +41,7 @@ func runPartitionCount(ctx context.Context, ds *AlertDatastore, threshold int64)
 	return alerts, nil
 }
 
-// partitionCountAlert is the pure firing decision: nil unless count crosses the
+// partitionCountAlert is the pure decision: nil unless count crosses the
 // override, or half the live ceiling when no override is set.
 func partitionCountAlert(topicId int64, topicName string, count, ceiling, threshold int64) *Alert {
 	if threshold == 0 {
@@ -53,7 +53,7 @@ func partitionCountAlert(topicId int64, topicName string, count, ceiling, thresh
 
 	// inputs are check-supplied and valid, so NewAlert can't fail here
 	a, _ := NewAlert(
-		partitionCountName, EntityTypeTopic, topicId, topicName, StatusFiring, SeverityWarn,
+		partitionCountName, EntityTypeTopic, topicId, topicName, StatusActive, SeverityWarn,
 		fmt.Sprintf("topic %q has %d partitions, approaching the lock-table ceiling (~%d)", topicName, count, ceiling),
 		`Dropping or destroying the topic locks ~5 relations per partition in one transaction; past the ceiling that fails with "out of shared memory".`,
 		"Lower the topic's retention so the janitor drops old partitions, or raise max_locks_per_transaction.",
