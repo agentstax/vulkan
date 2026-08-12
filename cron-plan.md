@@ -381,20 +381,34 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
    exact, second run-now advanced the compaction head (supersedes), runs on
    a suspended job, not-found path.
    (c) derived status BUILT 2026-08-11 — `cron.GroupStatus{ConsumerGroup,
-   Fired, Succeeded, Failed}` + `CronJobDatastore.CronJobStatus(topicId,
+   Ran, Succeeded, Failed}` + `CronJobDatastore.CronJobStatus(topicId,
    jobId, name)` (one query: matching_group CTE = groups on job_requests
-   with no bindings OR a binding whose stored regex matches the name; firing
-   CTE = per-(group, message) bool_or over delivery_log joined to
-   message_log on compaction_key = job id; fired = ran at least once —
-   success/failure/expired/killed rows — so fired = succeeded + failed
-   always; superseded and still-pending deferred firings are not fired;
-   failed = raised and never succeeded, parked retries included) +
+   with no bindings OR a binding whose stored regex matches the name;
+   job_request CTE = per-(group, message) bool_or over delivery_log joined
+   to message_log on compaction_key = job id; ran = ran at least once —
+   success/failure/expired/killed rows — so ran = succeeded + failed always;
+   superseded and still-pending deferred requests are not counted; failed =
+   raised and never succeeded, parked retries included) +
    `MessageAdmin.CronJobStatus(name)` resolving the topic via
-   topicController; `cron get` prints the GROUP/FIRED/SUCCEEDED/FAILED table
+   topicController; `cron get` prints the GROUP/RAN/SUCCEEDED/FAILED table
    ("no consumer group is bound to this job's name" when empty). Counts
    cover the 35d retention window. Verified live: bound consumer with one
-   success + one always-failing firing → 2/1/1, bindingless group row 0/0/0,
-   group bound to a different name absent.
+   success + one always-failing request → 2/1/1, bindingless group row
+   0/0/0, group bound to a different name absent.
+
+   TERMINOLOGY (settled 2026-08-11, after all three pieces built): "firing"
+   is retired from code — it was Quartz's word, and the codebase's own nouns
+   cover it: the produced thing is a JobRequest, its moment is
+   ScheduledTime, eligibility is "due", the act is "produce". Swept from
+   every identifier, comment, log message, error string, CLI text, metric
+   description, and DDL comment (IdempotencyKey param firing→scheduledTime,
+   scheduler var + WARN keys, AdvanceCronJob/SuspendCronJob param
+   fired→produced, GroupStatus.Fired→Ran, minRateFirings→
+   minRateScheduledTimes, "never fires"→"no upcoming scheduled times",
+   "fires every"→"recurs every"). The alert domain's 'firing'/'resolved'
+   Status values stay — that is Prometheus vocabulary for alerts, not the
+   cron mechanism. This doc's older design prose above still says "firing";
+   it predates the rename and dies with the doc at close-out.
 4. **cronlab + close-out**: sections — validation rejections (incl. charset,
    Feb-29 single-firing pass, Next-zero seed); fire-once + backdated row → 1
    message stamped with the NEWEST due firing; v7 dedupe proven by RE-BACKDATING
