@@ -1,6 +1,10 @@
 package alert
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/agentstax/vulkan/pkg/common"
+)
 
 // Status is an alert's lifecycle state on its compaction key -- an active
 // alert and its later resolution are versions of the same key.
@@ -16,30 +20,14 @@ type Severity string
 
 const SeverityWarn Severity = "warn"
 
-// EntityType is what an alert is about. Paired with EntityId (a rename-proof
-// machine id) it names the subject; consumer groups are NOT addressable this
-// way, having no such id.
-type EntityType string
-
-const (
-	EntityTypeSystem EntityType = "system"
-	EntityTypeTopic  EntityType = "topic"
-)
-
-// SystemEntityName is the EntityName an EntityTypeSystem alert takes when none
-// is given, so its routing key is deterministic.
-const SystemEntityName = "system"
-
 // Alert is one check finding, published to the __system.alerts topic as an
 // ordinary message.
 type Alert struct {
 	// identity
-	Name       string     // the check, e.g. "partition_count"
-	EntityType EntityType // "system" | "topic"
-	EntityId   int64      // rename-proof machine id; 0 = system
-	EntityName string     // human handle -- the topic name, or SystemEntityName
-	Status     Status     // "active" | "resolved"
-	Severity   Severity   // "warn"
+	Name     string        // the check, e.g. "partition_count"
+	Owner    *common.Owner // the resource the alert is about
+	Status   Status        // "active" | "resolved"
+	Severity Severity      // "warn"
 
 	// prose -- Postgres MESSAGE/DETAIL/HINT
 	Message string
@@ -47,33 +35,20 @@ type Alert struct {
 	Hint    string
 
 	// evidence. GUARDRAIL: neither map ever routes, keys, or dedups.
-	Data     map[string]any // measurements about the entity (the check's evidence)
+	Data     map[string]any // the check's measurements
 	Metadata map[string]any // context about the report (evaluator, first_active_at, repeat count)
 }
 
-func NewAlert(name string, entityType EntityType, entityId int64, entityName string, status Status, severity Severity, message, detail, hint string, data, metadata map[string]any) (*Alert, error) {
+func NewAlert(name string, owner *common.Owner, status Status, severity Severity, message string, detail string, hint string, data map[string]any, metadata map[string]any) (*Alert, error) {
 	if name == "" {
 		return nil, fmt.Errorf("alert name is required")
 	}
-
-	switch entityType {
-	case EntityTypeSystem:
-		// system is the id-0 singleton; it may omit the name and take the pinned one
-		if entityId != 0 {
-			return nil, fmt.Errorf("alert %q: system entity must have id 0, got %d", name, entityId)
-		}
-		if entityName == "" {
-			entityName = SystemEntityName
-		}
-	case EntityTypeTopic:
-		if entityId == 0 {
-			return nil, fmt.Errorf("alert %q: topic entity requires a non-zero id", name)
-		}
-		if entityName == "" {
-			return nil, fmt.Errorf("alert %q: EntityName is required for topic %d", name, entityId)
-		}
-	default:
-		return nil, fmt.Errorf("alert %q: invalid entity type %q", name, entityType)
+	if owner == nil {
+		return nil, fmt.Errorf("alert %q: owner is required", name)
+	}
+	// the routing key embeds the owner name
+	if owner.Name == "" {
+		return nil, fmt.Errorf("alert %q: owner name is required", name)
 	}
 
 	switch status {
@@ -87,34 +62,42 @@ func NewAlert(name string, entityType EntityType, entityId int64, entityName str
 	}
 
 	return &Alert{
-		Name:       name,
-		EntityType: entityType,
-		EntityId:   entityId,
-		EntityName: entityName,
-		Status:     status,
-		Severity:   severity,
-		Message:    message,
-		Detail:     detail,
-		Hint:       hint,
-		Data:       data,
-		Metadata:   metadata,
+		Name:     name,
+		Owner:    owner,
+		Status:   status,
+		Severity: severity,
+		Message:  message,
+		Detail:   detail,
+		Hint:     hint,
+		Data:     data,
+		Metadata: metadata,
 	}, nil
 }
 
-// RoutingKey is alert.<name>.<entity-type>.<entity-name>.<severity>. Severity is
-// LAST so a suffix binding can match on it; entity-type precedes entity-name so
-// names can't collide across types. The ONLY place this string is composed.
+// RoutingKey is alert.<name>.<owner-kind>.<owner-name>.<severity>. Severity is
+// LAST so a suffix binding can match on it; kind precedes name so names can't
+// collide across kinds. The ONLY place this string is composed.
 func (a *Alert) RoutingKey() string {
-	return fmt.Sprintf("alert.%s.%s.%s.%s", a.Name, a.EntityType, a.EntityName, a.Severity)
+	return fmt.Sprintf("alert.%s.%s.%s.%s", a.Name, a.Owner.Kind(), a.Owner.Name, a.Severity)
 }
 
-// CompactionKey is <name>/<entity-type>/<entity-id>. Entity-type keeps id spaces
-// from colliding across types. The ONLY place this string is composed -- a check
-// builds the same key from its name to read its head even when it has nothing to publish.
-func CompactionKey(name string, entityType EntityType, entityId int64) string {
-	return fmt.Sprintf("%s/%s/%d", name, entityType, entityId)
+// CompactionKey is <name>/<owner-kind>/<owner-id>. Kind keeps id spaces from
+// colliding across kinds. The ONLY place this string is composed -- a check
+// builds the same key from its name to read its head even when it has nothing
+// to publish.
+func CompactionKey(name string, owner *common.Owner) string {
+	var id int64
+	switch owner.Kind() {
+	case common.OwnerSystem:
+		id = owner.SystemId
+	case common.OwnerTopic:
+		id = owner.TopicId
+	case common.OwnerConsumerGroup:
+		id = owner.ConsumerGroupId
+	}
+	return fmt.Sprintf("%s/%s/%d", name, owner.Kind(), id)
 }
 
 func (a *Alert) CompactionKey() string {
-	return CompactionKey(a.Name, a.EntityType, a.EntityId)
+	return CompactionKey(a.Name, a.Owner)
 }

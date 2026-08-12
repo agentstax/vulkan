@@ -25,8 +25,8 @@ order. Delete this file at close-out; the 14a bullet resettles as-built.
   Postgres MESSAGE/DETAIL/HINT; (2) one-shot log-only check pass at
   producer/consumer Register; (3) `__system.alerts` topic = alerts-as-
   messages, the integration + read surface. Compaction key
-  `<name>/<entity-type>/<entity-id>` — the topic IS the state store and
-  dedup memory; the head per (check, entity) is current state.
+  `<name>/<owner-kind>/<owner-id>` — the topic IS the state store and
+  dedup memory; the head per (check, owner) is current state.
 
 ## The parked branch — mine it, then delete it
 
@@ -58,7 +58,7 @@ The ONE piece that exists nowhere on main and must be ported:
       # evidence (Data/Metadata) NEVER enters the decision. Pure func.
 
 Host-log shape: WARN on an active edge (message + detail/hint/alert/
-entity/severity keys), info one-liner on a resolve edge; repeats and
+owner/severity keys), info one-liner on a resolve edge; repeats and
 severity changes publish silently. After the port, delete the branch.
 
 ## Chunks (one at a time, user reviews/commits between)
@@ -84,7 +84,7 @@ would collide with the delivery domain).
   in prod), so the value rename has no migration surface; the alert topic
   is empty until the executor ships.
 
-### Chunk 2 — port classify into pkg/alert
+### Chunk 2 — port classify into pkg/alert [DONE 2026-08-12; branch deletion pending commit]
 
 - `classify` + table test into pkg/alert (it is alert vocabulary/logic, not
   consumer machinery), renamed to the chunk-1 vocabulary (activeHead etc.).
@@ -110,17 +110,17 @@ dispatcher switching on job name.)
 
     handler(check)(ctx, request *cron.JobRequest) error:
         threshold := decode(request.Data)       # {"threshold":0}; 0 = derive live
-        for entity := range check.entities(ds): # each check enumerates its own
+        for topic := range ds.topics():         # each check enumerates its own
                                                 # scope (AlertDatastore.topics())
-            fresh := check.decide(entity, threshold)   # pure decision func
-            head  := alertProducer.GetCompactionHead(ctx, key(check, entity))
-            publish, edge := classify(fresh, head, repeatInterval, now)
+            alert := check.decide(owner(topic), threshold)  # pure decision func
+            head  := alertProducer.GetCompactionHead(ctx, CompactionKey(check, owner))
+            publish := classify(alert, head, repeatInterval, now)
             if publish != nil:
                 alertProducer.Produce(ctx, publish,
                     RoutingKey: publish.RoutingKey(),
                     CompactionKey: publish.CompactionKey())
-                if edge: host log (WARN active / info resolved)
-        return joined per-entity errors         # one entity's failure never
+                if statusChanged(publish, head): host log (WARN active / info resolved)
+        return joined per-topic errors          # one topic's failure never
                                                 # skips the others
 
 Load-bearing facts:
@@ -179,7 +179,7 @@ build; keep it log-only (no topic writes from a register path).
 
 ### Chunk 6 — CLI read surface
 
-Read `__system.alerts` heads: current state per (check, entity), probably
+Read `__system.alerts` heads: current state per (check, owner), probably
 `vulkan alerts` or under `vulkan system`. Naming/shape at build with the
 user.
 
@@ -188,7 +188,7 @@ user.
 - Lab: register system -> suspended-vs-active check jobs, run-now a check
   job, active edge (WARN + head), repeat republish refreshes head, resolve
   edge after clearing the condition, severity-change silent publish,
-  bindingless/other groups untouched, per-entity error isolation.
+  bindingless/other groups untouched, per-topic error isolation.
 - Close-out: lab-mirror grep sweep, full fresh-DB suite, resettle the
   LEARNING_PLAN 14a "Default alerts" bullet as-built, NOTES.md Phase 14a
   (alerts) section, delete this file, update memories
@@ -205,14 +205,16 @@ user.
   dispatch.
 - The `alert` DUTY KIND is dead (2026-08-01), with alert_poll_rate_ns and
   per-check config surface — scheduling is per-check cron jobs.
-- Alert identity = typed explicit fields (Name, EntityType, EntityId,
-  EntityName, Status, Severity — v1 ships only "warn"); NewAlert validates
-  per type; id is rename-proof. Typed Value/Ceiling numeric fields
-  REJECTED; evidence lives in Data (about the entity) / Metadata (about the
-  report); neither ever routes/keys/dedups, and evidence never enters
-  classify.
-- Routing key `alert.<name>.<entity-type>.<entity-name>.<severity>`;
-  compaction key `<name>/<entity-type>/<entity-id>`; retention interplay
+- Alert identity = Name + *common.Owner + Status + Severity (v1 ships only
+  "warn"). REPLACED 2026-08-12: the Entity* fields (EntityType/EntityId/
+  EntityName + SystemEntityName) were 'entity' jargon duplicating
+  common.Owner — Owner constructors carry the validation, Owner.Kind()/ids
+  feed the keys, Owner.Name is the human handle. Typed Value/Ceiling
+  numeric fields REJECTED; evidence lives in Data (the check's
+  measurements) / Metadata (about the report); neither ever
+  routes/keys/dedups, and evidence never enters classify.
+- Routing key `alert.<name>.<owner-kind>.<owner-name>.<severity>`;
+  compaction key `<name>/<owner-kind>/<owner-id>`; retention interplay
   intentional (the repeat republish outruns it).
 - Suspended check job = alert state freezes until unsuspend (honest cron
   semantics; next run resolves) — accepted 2026-08-01.

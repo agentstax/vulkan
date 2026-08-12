@@ -3,6 +3,8 @@ package alert
 import (
 	"context"
 	"fmt"
+
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 const compactionReadCostName = "compaction_read_cost"
@@ -38,7 +40,11 @@ func runCompactionReadCost(ctx context.Context, ds *AlertDatastore, threshold in
 		if err != nil {
 			return nil, err
 		}
-		if a := compactionReadCostAlert(t.id, t.name, count, threshold); a != nil {
+		owner, err := common.NewTopicOwner(t.systemId, t.id, t.name)
+		if err != nil {
+			return nil, err
+		}
+		if a := compactionReadCostAlert(owner, count, threshold); a != nil {
 			alerts = append(alerts, a)
 		}
 	}
@@ -47,7 +53,7 @@ func runCompactionReadCost(ctx context.Context, ds *AlertDatastore, threshold in
 
 // compactionReadCostAlert is the pure decision: nil unless count crosses
 // the override, or the default warn partition count when no override is set.
-func compactionReadCostAlert(topicId int64, topicName string, count, threshold int64) *Alert {
+func compactionReadCostAlert(owner *common.Owner, count int64, threshold int64) *Alert {
 	if threshold == 0 {
 		threshold = compactionReadCostWarnPartitions
 	}
@@ -57,8 +63,8 @@ func compactionReadCostAlert(topicId int64, topicName string, count, threshold i
 
 	// inputs are check-supplied and valid, so NewAlert can't fail here
 	a, _ := NewAlert(
-		compactionReadCostName, EntityTypeTopic, topicId, topicName, StatusActive, SeverityWarn,
-		fmt.Sprintf("compacted topic %q has %d partitions; latest-key replay cost grows ~10µs per partition", topicName, count),
+		compactionReadCostName, owner, StatusActive, SeverityWarn,
+		fmt.Sprintf("compacted topic %q has %d partitions; latest-key replay cost grows ~10µs per partition", owner.Name, count),
 		"A consumer replaying a never-superseded key scans from that key's partition to the current tail; the cost grows linearly with partition count and never amortizes.",
 		"Compact more aggressively or lower retention so old partitions drop, bounding replay cost.",
 		map[string]any{

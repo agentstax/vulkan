@@ -48,15 +48,16 @@ func NewAlertDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Polic
 
 // topicRow is the slice of the topic row the checks fan out over.
 type topicRow struct {
-	id   int64
-	name string
+	id       int64
+	systemId int64
+	name     string
 }
 
 // topics lists every registered topic.
 func (d *AlertDatastore) topics(ctx context.Context) ([]topicRow, error) {
 	var topics []topicRow
 	err := d.Retry.Wrap(ctx, func() error {
-		sql := `SELECT id, name FROM topic ORDER BY id;`
+		sql := `SELECT id, system_id, name FROM topic ORDER BY id;`
 		rows, err := d.Datastore.Pool.Query(ctx, sql)
 		if err != nil {
 			return err
@@ -66,7 +67,7 @@ func (d *AlertDatastore) topics(ctx context.Context) ([]topicRow, error) {
 		var scanned []topicRow
 		for rows.Next() {
 			var t topicRow
-			if err := rows.Scan(&t.id, &t.name); err != nil {
+			if err := rows.Scan(&t.id, &t.systemId, &t.name); err != nil {
 				return err
 			}
 			scanned = append(scanned, t)

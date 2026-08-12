@@ -4535,18 +4535,19 @@ sequenced after both of these close.*
       to Slack/PagerDuty is ~20 lines of user code) and the CLI's
       "what's active now" read surface (compaction heads = current state).
       The `Alert` schema (pkg/alert, user-facing — consumers decode
-      `MessageConsumer[alert.Alert]`): typed identity fields Name
-      ("partition_count"), EntityType ("system"|"topic"), EntityId
-      (rename-proof machine identity, 0 = system), EntityName (human
-      handle — NOTE 2026-07-30: this payload vocabulary predates
-      `common.Owner`; whether these fields adopt Owner's
-      kind/ids/name spelling is an alerts-Chunk-2 build decision),
+      `MessageConsumer[alert.Alert]`): identity is Name
+      ("partition_count") + `*common.Owner` (the resource the alert is
+      about — SETTLED 2026-08-12, resolving the 2026-07-30 note: the
+      Entity* fields were 'entity' jargon duplicating Owner, so
+      EntityType/EntityId/EntityName + SystemEntityName were deleted;
+      Owner constructors carry the id validation, Owner.Kind() and the
+      kind's id feed the keys, Owner.Name is the human handle),
       Status ("active"|"resolved"), Severity ("warn"; "critical"
       reserved — the field ships in v1 so the routing key never changes
       shape); the prose triple Message/Detail/Hint; and two jsonb maps —
-      Data (measurements about the entity: the check's evidence) and
+      Data (the check's measurements) and
       Metadata (context about the report itself: evaluator,
-      first_active_at, repeat count). Placement test: about the subject →
+      first_active_at, repeat count). Placement test: about the owner →
       Data, about the report → Metadata. GUARDRAIL: neither map ever
       routes, keys, or dedups — a consumer branching on a map key for
       delivery has rebuilt the rejected rule engine. Typed Value/Ceiling
@@ -4556,31 +4557,30 @@ sequenced after both of these close.*
       (jsonb itself stores exact numerics — the loss is at the Go decode
       side), and numeric time-series belong to the otel gauges — the
       alert carries judgment + explanation.
-      Routing key `alert.<name>.<entity-type>.<entity-name>.<severity>`
-      — entity-type before entity-name so names can't collide across types;
+      Routing key `alert.<name>.<owner-kind>.<owner-name>.<severity>`
+      — kind before name so names can't collide across kinds;
       severity
       LAST so the common binding is an ends-with match
       (`alert.*.critical`); known consequence: name-based bindings
-      silently stop matching after a topic rename (EntityId in the
-      payload is the durable handle). Compaction key `<name>/<entity-type>/<entity-id>`
-      (entity-type keeps id spaces from colliding across types)
+      silently stop matching after a topic rename (the Owner ids in the
+      payload are the durable handle). Compaction key `<name>/<owner-kind>/<owner-id>`
+      (kind keeps id spaces from colliding across kinds)
       — active→resolved are versions of one key, so the topic IS the
       state store: current alert state = compaction heads, history = the
       uncompacted log under ordinary retention. The retention interplay
       works FOR us: resolved alerts age out of current state
       naturally, while the repeat-interval republish re-produces active
       keys far inside any sane TTL — the human reminder and the state
-      keepalive are the same produce. Known schema limits, recorded not
-      solved: EntityName for a system-scoped alert (EntityId 0) is
-      pinned by pkg/alert's key derivation (decide there, once); and
-      consumer-group-scoped subjects are NOT addressable — groups are
-      TEXT keys with no id, so a future per-group check (waterline lag)
-      needs a schema extension. Fine for v1: both checks are
-      topic-scoped.
+      keepalive are the same produce. The old known limits DISSOLVED
+      with the Owner switch (2026-08-12): a system alert carries the
+      real systemId (NewSystemOwner also pins its Name to "system"),
+      and consumer-group owners are addressable through
+      Owner.ConsumerGroupId — though no check emits one yet; both v1
+      checks are topic-scoped.
       Evaluation (superseded the `alert` duty kind 2026-08-01): each check
       is its own cron job in the `alert.` name family — the scheduler duty
       is the gating clock, per-job schedules replace the shared poll rate,
-      and a check enumerates its own entities at run time (the old
+      and a check enumerates its own rows at run time (the old
       per-topic Evaluate signature couldn't fit a system-scoped check).
       Execution is ONE CONFIGURED CONSUMER PER ALERT, each binding its
       own job name on the job-request topic — the binding table IS the
