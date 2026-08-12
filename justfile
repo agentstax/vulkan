@@ -85,6 +85,15 @@ abandoned-events-lab:
 duty-backoff-lab:
   go run examples/phase_1/dutybackofflab/main.go
 
+# cron lab: registration validation (charset, Feb-29, timeout-vs-rate),
+# owner cascade vs standalone survival, produce-once newest-due walk, v7
+# dedupe on a re-backdated scheduled time, suspend/unsuspend, a poisoned row
+# skipped while siblings produce, defer behind a running request, run-now
+# default-allow vs cfg-defer, run-now superseding a pending unclaimed
+# request, and consumer end-to-end with per-group status + request listing.
+cron-lab:
+  go run examples/phase_1/cronlab/main.go
+
 key-lease-lab:
   go run examples/phase_1/keyleaselab/main.go
 

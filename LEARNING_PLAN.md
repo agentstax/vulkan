@@ -5001,9 +5001,11 @@ sequenced after both of these close.*
       https://github.com/agentstax/vulkan/commit/5c3c91b904b72aa95e9d5ff344f89718a858dcc0#diff-dc9181c5c6b0becd6dcd0b5ffeabb1111c4e24a27529e99a77b2c5f74ce83933
 
 *Generic-systems refactor (design settled 2026-07-28, folded in
-2026-07-29 from `refactor-plan.md` — the five bullets below are that
-file's entire content made self-contained; DELETE `refactor-plan.md`
-once all five close). Motivation: the alerts build exposed how coupled
+2026-07-29 from `refactor-plan.md` — the five bullets below were that
+file's entire content made self-contained; `refactor-plan.md` later grew
+a worker-system chunk plan and a pkg/consumer layered-refactor record,
+folded in as the two bullets after cron; the file was DELETED 2026-08-12
+when the fifth bullet closed). Motivation: the alerts build exposed how coupled
 the maintenance/duty wiring is; these rebuild the same needs as generic
 primitives instead of per-feature plumbing. Dependency order: retry
 consolidation → message options → exclusive consumption → cron
@@ -5280,101 +5282,395 @@ scheduler; the resource-ownership model landed independently
       or is claim-time compacted, nothing left unresolved) +
       keyleaselab; full fresh-DB suite green 2026-07-31.
 
-- [ ] **`cron_job` + job scheduler + `job_request` topic** —
-      k8s-cronjob-shaped scheduled work as a generic system. Build plan:
-      `cron-plan.md` (repo root) — 4 chunks (registry + admin verbs →
-      job_request topic + scheduler duty + tick → run-now + derived
-      status + CLI → cronlab + close-out) plus the implementation
-      decisions to confirm before Chunk 1: schedule parsing =
-      robfig/cron's schedule core VENDORED into pkg/cron (no external
-      dep, runner files excluded, one marked time.Local→UTC diff),
-      `'scheduler'` duty kind riding maintain, pkg/cron layout,
-      `__system.job_requests`, `timeout_ns BIGINT` over INTERVAL,
-      compaction key = cron_job.id, and (2026-08-01 review) the
-      platform-wide DeliveryLog mode enum `'off'|'exceptions'|'all'`
-      replacing DisableDeliveryLog (default 'exceptions' = today;
-      'all' logs `'success'@attempts` in the success txns — success is
-      otherwise underivable, deletion leaves no row; job_requests runs
-      'all', hot topics never pay unless opted in) + name/handler slug
-      charset (dots cross-deliver through wildcard bindings).
-      Delete the plan at close-out; this
-      bullet resettles as-built, and closing this task also deletes
-      `refactor-plan.md`.
-      - Schema (settled incl. hygiene; owner shape RESETTLED 2026-07-30
-        after the entity table died): `id BIGSERIAL PRIMARY KEY`; owner
-        = the maintenance/migration_log owner-column shape — nullable
-        `system_id`/`topic_id`/`consumer_group_id` FKs ON DELETE
-        CASCADE + `CHECK (num_nonnulls(...) <= 1)` (`<= 1`, not `= 1`:
-        all NULL = standalone job) — GC metadata ONLY (k8s
-        ownerReferences: "whose lifecycle I'm bound to"; the scheduler
-        NEVER reads it, Postgres alone acts on it at destroy);
-        `common.Owner` is the Go currency for it (nil *Owner = the
-        standalone all-NULL row — the constructors each require one
-        target); `name TEXT
-        NOT NULL UNIQUE`; `handler TEXT NOT NULL` (which runner is
-        valid, like image); `schedule TEXT NOT NULL` ('* * * * *');
-        `concurrency TEXT NOT NULL DEFAULT 'allow'`
-        ('allow'|'defer' — the shipped ConcurrencyPolicy values; 'forbid'
-        died with the exclusive-consumption build, see that bullet's
-        rejected list; k8s-Forbid intent maps to 'defer' — guaranteed
-        rerun, never a drop) → maps to MessageOptions.Concurrency ('defer'
-        requires a CompactionKey at produce time — satisfied, job_request's
-        compaction key is the cron_job identity); `timeout INTERVAL NOT
-        NULL` (job spec, the k8s activeDeadlineSeconds analogue — scheduler
-        stamps it into MessageOptions.Timeout); `suspended BOOLEAN NOT NULL
-        DEFAULT false`; `data JSONB` (OPAQUE handler payload incl. the
-        actual target, decoded only by handlers — never resource refs
-        the system must act on; rejected: target refs inside data as
-        the GC mechanism, opaque blobs are un-garbage-collectable —
-        admin.Destroy can't find dependents it can't decode); `metadata
-        JSONB` (labels/annotations); `next_scheduled_time TIMESTAMPTZ
-        NOT NULL`; `last_scheduled_time TIMESTAMPTZ` (slot most recently
-        produced — tick-stamped scheduler truth, no consumer ever writes
-        cron_job). Partial index `(next_scheduled_time) WHERE NOT
-        suspended` = the poll predicate. Also rejected: making
-        cron_job itself an ownable resource (nothing references
-        cron_jobs yet).
-      - Registration validation — a SANITY check, not correctness
-        (key_lease owns overlap): schedule parses; minimum firing gap >=
-        timeout. Self-contained because timeout is the job's own spec —
-        no handler registry needed; consumer TimeoutGrace/AckMargin are
-        epsilon and ignored; a consumer MessageMax clamping the request down
-        only makes the check more conservative. Both errors land safe.
-      - Scheduler: 1-min poll loop (anything sub-minute stays a
-        long-lived worker); unlocked due-scan then ONE TXN PER ROW
-        (2026-08-01 adversarial review — a shared tick txn lets one bad
-        row stall every job and holds ProduceInTx's whole-topic
-        consumer-progress lock for the tick): per row `SELECT ..., now()
-        WHERE id AND next_scheduled_time <= now() AND NOT suspended FOR
-        UPDATE SKIP LOCKED` (recheck) → ProduceInTx (produce + advance
-        commit atomically) → `next_scheduled_time = Next(db_now)` +
-        `last_scheduled_time = slot` stamped in the same UPDATE (missed
-        runs are dropped, fire once — and the slot fired is the NEWEST
-        due one, `for Next(slot) <= db_now { slot = Next(slot) }`, so
-        staleness after downtime is bounded by one firing gap, no
-        knob); ALL scheduler time arithmetic on
-        the DB clock (claimDuty precedent — Go/DB skew double-fires
-        tight schedules); row failures WARN + skip, only tick-level
-        errors back off the duty. The scheduler produces EVERY due slot
-        unconditionally — concurrency policy is enforced at consume time
-        by the SHIPPED key_lease machinery, nothing new to build
-        (rejected: scheduler-side enforcement via a last_message_id
-        resolved-check — dual enforcement layers). Unsuspend admin op
-        RECOMPUTES next_scheduled_time from now() — resume on schedule,
-        no surprise fire from the stale past-due timestamp (k8s
-        spec.suspend semantics).
-      - job_request topic: compacted, compaction key = cron_job identity
-        (bounds the topic at ~1 row per job); routing_key
-        `cronjob.<handler>.<name>` (handler first → bindings are
-        `cronjob.<handler>.*`); idempotency key = deterministic
-        v7-layout UUID — scheduled_time in the 48 timestamp bits,
-        hash(cron_job.id) in the rest (preserves index locality); manual
-        "run now" uses a RANDOM key so it doesn't dedupe against the
-        slot, produced with Concurrency 'allow' — the deliberate-Allow-
-        on-a-Defer-key run-now idiom the exclusive-consumption bullet
-        records; the message is stamped with the slot time it represents.
-        Handlers consume via the existing retry machinery and must
-        respect ctx cancellation (the resolved MessageOptions.Timeout).
+- [x] **DeliveryLog mode** (platform-wide cron pre-req, BUILT 2026-08-11).
+      Success today = delivery-row deletion + NO log row (cursor-path
+      successes are O(1) per range — the throughput story). Fold the old
+      `DisableDeliveryLog` bool into one enum: `topic.DeliveryLogMode`
+      `'off' | 'failures' | 'all'`, default 'failures' = today's behavior
+      (type renamed from DeliveryLog — bare `delivery_log` read as the
+      table; middle value renamed from 'exceptions' — the mode also logs
+      superseded/deferred/expired/killed, which aren't exceptions in the
+      codebase sense). `'all'` adds `'success'@attempts` rows inside the
+      SAME success txns (no extra WAL flush): success is an
+      `OutcomeSuccess` outcome kind (log-row-only, like superseded;
+      user-picked over a `successes []int64` param that widened
+      Commit/PartialCommit for one mode), included by the buffer walks
+      ONLY under 'all' via a construction-time `includeSuccesses` gate —
+      the common case keeps its zero-alloc happy path.
+      RecordExceptionSuccess and the parked lifecycle RecordSuccess write
+      their 'success' row via a CTE in the same statement as the
+      deletion/'done' mark. The enum is threaded everywhere the bool was
+      (claim/commit/exception/kill/quarantine/janitor-reap; gates read
+      `!= off`); `delivery_log_mode TEXT NOT NULL DEFAULT 'failures'` in
+      the baseline DDL; `toTopic` maps the stored string through an
+      exhaustive switch and ERRORS on an unknown value instead of
+      silently behaving as 'failures' (read-side guard, replacing a
+      CHECK). Metrics + alerts topics pin 'off'; job_requests pins 'all';
+      CLI `--delivery-log-mode`. The delivery-log invariant amends
+      cleanly: every attempts increment ends in exactly one log row OR
+      the success-deletion — under 'all' the deletion also logs, same
+      txn. Status window: the janitor reaps delivery_log rows in the same
+      pass and at the same cutoff as message rows, so the window is
+      exactly the topic's RetentionTTL — no separate delivery_log
+      lifetime. REJECTED: deriving successes from a message_log range
+      scan + binding predicate — claim-time-compacted messages (the
+      sanctioned silent drop) match the binding and would log 'success'
+      for requests that NEVER RAN; on job_requests that is every
+      superseded request, poisoning exactly the status this mode exists
+      for. The buffer already holds the true list in memory.
+- [x] **`ProduceResult`** (platform-wide cron pre-req, own commit, BUILT
+      2026-08-11). Every produce path returns a result struct instead of
+      the bare payload: `ProduceResult[M]{Message *M; Id int64; Duplicate
+      bool}` from Produce / ProduceFunc / ProduceInTx (+ NewProduceResult
+      per house rule). Why: a dedupe used to return `(msg, nil)` —
+      indistinguishable from landed, no stored identity, weaker than
+      every precedent (SQS returns the original MessageId, Stripe flags
+      the replay, River returns UniqueSkippedAsDuplicate, NATS JetStream
+      PubAck carries `Duplicate bool` — the name and polarity adopted;
+      the sketch's `Landed` was codebase-internal vocabulary and the
+      interesting branch read as a negation). `Id` was already RETURNINGed
+      by the insert CTE and thrown away; `Message` is the BUILT payload,
+      NOT the original on dup — unrecoverable by design, the idempotency
+      table is not message-correlated. One struct keeps all three produce
+      signatures uniform and future fields non-breaking; pre-settles part
+      of 14b's Produce return-shape question. The batcher threads
+      id/duplicate per operation via `batchResponse.recordInsert` (written
+      in the scan loop, read after done closes); batcher keys are minted
+      fresh per call, so `Duplicate` there can only mean the same call's
+      own ambiguous-commit replay. The cron tick WARNs on Duplicate ("an
+      earlier ambiguous commit published this request"). REJECTED:
+      comma-ok bool (every call site pays a blank, the next field breaks
+      again); sentinel error (the retry path — the one idempotency exists
+      to protect — would read as failure); opts callback (policy-as-code,
+      same reason the consumer resolver hook died). Call-site sweep found
+      three labs binding the old `*Message` return where `work.Id` would
+      have silently resolved to `ProduceResult.Id`; idempotencykeyslab
+      asserts first-call Duplicate=false+Id>0 / replays true+0,
+      idempotencykeysracelab asserts exactly 1 of 50 concurrent same-key
+      calls stored the message.
+- [x] **`cron_job` + job scheduler + `job_request` topic** — BUILT, closed
+      out 2026-08-12 (chunks: registry 2026-08-01, scheduler duty
+      2026-08-02, run-now + derived status + CLI 2026-08-11, cronlab +
+      close-out 2026-08-12; `cron-plan.md` and `refactor-plan.md` deleted
+      at close-out per plan). k8s-cronjob-shaped scheduled work as a
+      generic system riding the shipped machinery: compacted topic,
+      key-lease concurrency, worker claims.
+      - Schema as built: `id BIGSERIAL PRIMARY KEY`; owner = the
+        maintenance owner-column shape — nullable `system_id`/`topic_id`/
+        `consumer_group_id` FKs ON DELETE CASCADE + `CHECK
+        (num_nonnulls(...) = 1)` (tightened from `<= 1` in worker chunk
+        11b: every job has exactly one owner; admin-registered jobs get
+        the system owner — they ride its lifecycle); `name TEXT NOT NULL
+        UNIQUE` — the name IS the routing key, consumers bind names
+        exactly, several per group, or via naming-convention wildcards
+        (`reports-*`) (REJECTED: a `handler` column and
+        `cronjob.<handler>.<name>` routing, an optional Config.RoutingKey,
+        and `<name>.<suffix>` synthesis — each re-invents grouping the
+        binding table owns, asymmetric with how topics route); `schedule
+        TEXT` (robfig grammar incl. TZ= and @every); `concurrency
+        'allow'|'defer'` → MessageOptions.Concurrency, enforced at
+        consume time by key_lease (REJECTED: scheduler-side enforcement —
+        dual layers); `timeout_ns BIGINT` → MessageOptions.Timeout
+        (house duration convention over INTERVAL); `suspended`;
+        `data`/`metadata JSONB NOT NULL DEFAULT '{}'` (both `any` in Go,
+        driver-marshaled, nil = {} via COALESCE — opaque to everything
+        but handlers); `next_scheduled_time` (partial index `WHERE NOT
+        suspended` = the poll predicate); `last_scheduled_time`
+        (tick-stamped scheduler truth, no consumer ever writes cron_job).
+      - Schedule parsing: robfig/cron v3.0.1's schedule core VENDORED
+        under `pkg/cron/internal/robfig` — the dir IS the vendor boundary
+        (everything inside upstream + provenance headers, everything in
+        pkg/cron proper ours; internal/ keeps it unimportable elsewhere).
+        Taken: spec.go, parser.go, constantdelay.go, the Schedule
+        interface, their test vectors (kept green). NOT taken: the
+        in-process runner (cron.go/chain.go/option.go/logger.go) — the
+        worker is ours. One marked diff: time.Local → time.UTC. Public
+        `cron.Schedule` is our own STRUCT (parsed form + source expr —
+        robfig bitmasks can't serialize back to the TEXT column); the API
+        never names an internal type. ParseSchedule itself rejects
+        no-upcoming-time and sub-1m-rate schedules (parse-don't-validate);
+        `MinRate()` = min gap over 1000 scheduled times / 400 days,
+        computed at parse; exactly one upcoming time in the horizon
+        passes (Feb-29-style schedules are legal).
+      - Register: name slug `^[a-z0-9._-]+$` — '*' banned (it's the
+        binding wildcard and Bind has no escape syntax, so a name holding
+        one could never be bound exactly); dots ALLOWED (settled
+        2026-08-01, reversing an earlier ban — binding literals are
+        QuoteMeta'd, so '.' adds no collision surface; the same
+        slugPattern guard went onto topic register/rename for one
+        platform-wide charset). Get-or-create on the registerTopic shape:
+        get → assertConfigMatches → advisory lock `cron_job:<name>` →
+        recheck → INSERT (no 23505 catch — the lock makes it
+        unreachable); identical schedule/data/cfg resolves to the
+        existing job, a differing one errors ErrCronJobConfigMismatch
+        (data/metadata compared via jsonEqual — unmarshal + DeepEqual,
+        stored jsonb comes back normalized). Alter = sparse COALESCE
+        patch; a schedule change re-seeds `next_scheduled_time =
+        Next(db_now)`. UNIFORM Next-zero rule across all three sites:
+        Register and unsuspend ERROR, the tick suspends + WARNs (column
+        is NOT NULL, tzdata drift can make a schedule unsatisfiable
+        later). Unsuspend RECOMPUTES next_scheduled_time from now() —
+        resume on schedule, no surprise produce from the stale past-due
+        timestamp (k8s spec.suspend semantics).
+      - Scheduler: a `cronscheduler` worker (pkg/worker machinery, 1-min
+        poll via maintenance metadata poll_rate); unlocked due-scan then
+        ONE TXN PER ROW (`FOR UPDATE SKIP LOCKED` recheck → ProduceInTx →
+        advance stamped in the same UPDATE); the scheduled time produced
+        is the NEWEST due one (`for Next(t) <= db_now { t = Next(t) }` —
+        missed times drop, staleness bounded by one gap); ALL time
+        arithmetic on the DB clock; row failures WARN + skip (poisoned
+        row can't stall siblings), tick errors back off the worker.
+        Duplicate produce WARNs via ProduceResult.Duplicate.
+      - job_request topic `__system.job_requests`: compacted, compaction
+        key = cron_job.id — id not name, the k8s-UID rule — bounding the
+        topic at ~1 live row per job; RetentionTTL 35d (the status
+        history horizon, covers monthly schedules); DeliveryLogModeAll
+        ('success' rows are what derived status reads). Idempotency key =
+        deterministic v7 layout — scheduled time's unix ms in the 48 time
+        bits, job id VERBATIM in the payload bits (NO hash: the per-topic
+        idempotency table is shared, a same-ms hash collision would
+        swallow another job's request; int64 fits). The v7 key covers
+        exactly ONE case — replay after an AMBIGUOUS COMMIT: produce +
+        advance + idempotency claim share the tick txn, so a rollback
+        rolls the claim back too and the replay lands fresh (never "fix"
+        IdempotencyKeyTTL for the scheduler's sake); once-per-scheduled-
+        time otherwise rides the committed advance + SKIP LOCKED.
+        RunCronJob produces a fresh v7 per call (never dedupes against
+        the schedule; ScheduledTime = now UTC, Timeout stamped from the
+        row, works while suspended), default Concurrency 'allow' so it
+        can't be blocked by a running request; `RunCronJobConfig.
+        Concurrency = defer` opts back into no-overlap; a run-now
+        supersedes a pending unclaimed request (compaction) — deliberate
+        and now observable (below).
+      - Documented semantics (decided, not bugs — each carries a
+        godoc/CLI sentence):
+        - compaction key = id means NEWEST WINS for 'allow' jobs too — a
+          backlogged consumer skips to the latest request (claim-time
+          compaction; per-scheduled-time keys rejected — unbounded
+          stale-request queue). Run-now shares the key, so it supersedes
+          a pending unclaimed request and the next request supersedes an
+          unconsumed run-now.
+        - destroy/suspend do NOT retract an already-produced unclaimed
+          request — it still runs (until retention). Name reuse mints a
+          new id/compaction key, so a destroyed job's orphan request runs
+          BESIDE the recreated job's requests; `vulkan cron destroy`
+          prints this.
+        - suspend racing a due tick can still produce that one request
+          (the suspend UPDATE blocks on the tick's row lock, applies
+          after commit) — suspend is effective at the next tick boundary.
+        - N consumer groups bound to one job name = N executions per
+          request; the key_lease overlap guarantee is PER-GROUP (k8s
+          users expect one execution — expected topology is one group per
+          job or per name-convention family, replicas share the group).
+        - TZ= schedules inherit robfig DST behavior: a spring-forward
+          time is skipped, a fall-back one produces once; MinRate sees
+          the 23h fall-back rate (conservative direction).
+        - The overlap guarantee is only as strong as handlers' ctx
+          respect — an abandoned goroutine can't be killed (the caveat
+          k8s escapes only by SIGKILLing pods).
+      - Derived status, no new writes (REJECTED: writing a delivery_log
+        row for a superseded pending message — write amplification on
+        compacted streams, and message_log + compaction_head already
+        record the fact): `GroupStatus{Ran, Succeeded, Failed,
+        Superseded}` per receiving group (ran = succeeded + failed;
+        superseded = dropped unrun for THAT group — a group that ran a
+        since-replaced request counts it in Ran) and
+        `JobRequestStatus{Outcome, SupersededBy, SupersededAt}` per
+        (request, group) via `CronJobRequests(name, limit)` — outcome
+        classify order succeeded > failed > superseded(!head) > deferred
+        > pending; the superseder is the next-newer message on the key.
+        Datastore = flat per-fact reads (matching groups, message ids,
+        compaction head, per-group delivery rollup) composed in Go, one
+        query per group — the original single CTE-pyramid statement was
+        rejected on review (2026-08-12) as four jobs welded into one.
+      - CLI: `vulkan cron register|alter|get|list|suspend|unsuspend|
+        destroy|run`; `cron run --concurrency`, `cron get --requests
+        [--limit N]` renders REQUEST/SCHEDULED/PRODUCED/GROUP/OUTCOME with
+        "superseded by <id> at <time>" inline.
+      - TERMINOLOGY (settled 2026-08-11): "firing" retired — the produced
+        thing is a JobRequest, its moment ScheduledTime, eligibility
+        "due", the act "produce". Alert-domain 'firing'/'resolved' stays
+        (Prometheus vocabulary).
+      - pkg/cron reshaped to the house layered pattern (vocabulary /
+        controller / datastore) before the lab chunk; verbs: controller
+        `DeleteCronJob`, admin `DestroyCronJob` (AllowDestroy-gated).
+        cronlab covers validation, owner cascade, newest-due walk, v7
+        dedupe, suspend/unsuspend, poison row, defer, run-now beside a
+        running request, supersede, and end-to-end status + listing.
+- [x] **Worker system** (chunk plan 2026-08-02, all 13 chunks BUILT by
+      2026-08-11; folded from `refactor-plan.md` at its deletion). Generic
+      worker machinery in a new pkg/worker, ultimately replacing
+      pkg/maintain outright — worker = a first-class resource;
+      janitor/waterline/cronscheduler are just the built-in workers we
+      ship. Deliberately built BESIDE maintain (duplicate, don't
+      retrofit) with maintain untouched until the chunk-13 cleanup.
+      - Model: `worker` row = what SHOULD run — name, exactly-one owner,
+        metadata (per-worker config like poll_rate), `target_instances`
+        (ONE number the claim gate reads; 0 = suspended; -1 =
+        NoInstanceTarget for self-claimed consumer loops; min/max are
+        rails on whoever MUTATES target and return with an alter surface
+        / autoscaler that don't exist yet). `worker_instance` row = who
+        IS alive — token + heartbeat-renewed expires_at, created_at.
+        Exclusivity moved claim-per-tick → claim-per-instance: Register
+        claims an instance slot, the heartbeat holds it, tick pacing is
+        worker-internal (no per-tick claim race). The slot claim is ONE
+        atomic statement — live-count + insert in one snapshot, the
+        AdvanceWaterline race class. Register outcomes: claimed /
+        declined (slots full — not an error, the manager retries next
+        reconcile) / error.
+      - Factory pattern, made a codebase-wide invariant here: `New*` =
+        pure factory, never touches the DB; `Register`/`Provision` is the
+        only build step, callable many times, and RETURNS the product (an
+        instance/execution) instead of mutating the factory — callers
+        operate on what Register returned; re-Register replaces
+        wound-down-stays-down. Layout: pkg/worker vocabulary
+        (Worker/WorkerInstance, Definition/Declarer/Provisioner/Execution,
+        ErrInstanceLost) → controller → controller/datastore; manager in
+        pkg/worker/manager. Pool error rule: ErrInstanceLost → respawn
+        (the healing); any other error from a spawned instance's Run →
+        propagate and tear the manager down. The manager's first
+        reconcile runs immediately (a fresh consumer must not idle out a
+        jittered first tick); InstanceTickRunner split into a claim-hold
+        half (heartbeat + release, no pacing — reusable by continuous
+        loops) composed by a tick-pacing half.
+      - Chunk 9 (consumer inversion, the pivotal one): the manager was
+        lifted OUT of consumers — the public Consumer is the higher-order
+        construct that runs manager.Runner, and the consumption loops are
+        worker rows the manager spawns like any other
+        (message_consumer/exception_consumer/delivery_consumer per group,
+        seeded at NoInstanceTarget; per-type rows make a pure retry
+        consumer visible and give a per-type suspend toggle).
+        NewConsumer validates and builds nothing stateful; Register(ctx)
+        resolves topic/group, seeds rows, builds this instance's
+        factories + runner, returns the instance; Consume(ctx, fn) sets
+        the fn slot (http.Server pattern) then blocks in runner.Run.
+        Sub-consumers (MessageConsumer/ExceptionConsumer) are pure worker
+        factories with a standalone self-claim door — no manager, no
+        upkeep; a bare ExceptionConsumer is a standalone retry loop.
+      - Chunk 10 (producer factory split, 2026-08-07, revised
+        2026-08-08): identity params moved constructor → Register —
+        NewProducer(ds, cfg) + Register(ctx, topic, version), consumer
+        likewise; one factory registers instances on any number of
+        topics/groups. Producer lifecycleCtx DROPPED (user call): Register
+        is a stateless build step whose ctx bounds only that call's I/O,
+        shutdown is per produce call via its own ctx (the batcher already
+        refuses a cancelled ctx before enqueue) — accepted trade-off: a
+        caller producing on context.Background() is no longer refused at
+        app shutdown, same contract as any database call. Deleted with
+        it: ErrShutdownRequested, DisableGracefulShutdown (producer +
+        metric-event), ErrNotRegistered/ErrAlreadyRegistered.
+        MetricEventProducer.Run registers its own instance then drains —
+        re-callable, constructor does no I/O.
+      - Chunks 11a/11b (snapshots, 2026-08-08): WorkerSnapshot (owner,
+        suspended/claimed/unclaimed verdict via classifyWorker, target/
+        live counts, attempts streak, OldestInstanceAge, UnclaimedFor)
+        and CronJobSnapshot (owner, DueFor, Overdue = !suspended && due >
+        flat 10m const — user chose flat over interval-scaled; a
+        suspended row is never overdue because unsuspend recomputes).
+        11b also tightened cron_job's owner CHECK to exactly-one and gave
+        RegisterCronJob its owner param (admin stamps the system owner).
+        11c: pkg/metrics reshaped to the layered pattern; monitor pkg
+        DELETED; otel gauges moved to pkg/metrics/metrics (gauges don't
+        belong beside controller logic — user call).
+      - Chunk 12 (daemon, 2026-08-09): `pkg/systemmanager`, the top-level
+        door — name researched against the field (kube-controller-manager,
+        autovacuum launcher, River QueueMaintainer): the umbrella process
+        is named for what it does to its children, and this codebase's
+        noun is `manager`; the daemon IS the manager run at system scope.
+        It claims THE SYSTEM MANAGER ROW (deployment-wide suspend switch
+        + claim anchor); "everything" scope = ONE downward clause in
+        listWorkers (`OR ($2 = 0 AND $3 = 0 AND t.system_id = $1)`) —
+        every worker row resolves to its system through the topic join.
+        Topic manager rows deleted (nothing would claim one; the
+        per-topic kill switch is suspending the janitor row itself).
+      - Chunk 13 (cleanup, 2026-08-11): pkg/maintain + maintenance DDL +
+        duty metrics + `maintain status` DELETED. EnsureNextPartition
+        deleted WITHOUT rehome — user-settled: partition creation is the
+        write path's job (Kafka's writer rolls segments; the janitor is
+        cleanup ONLY); correctness never depended on it — partition 0
+        exists from RegisterTopic and the produce path's reactive
+        ensureCoveringPartition heals every later boundary. Proactive
+        create-ahead is a producer TODO (sentinel-id trigger, best-effort
+        by design). 18 labs swapped/reshaped; dutybackofflab +
+        maintenancelab rewritten onto worker machinery. Post-close
+        renames: `vulkan maintain run` → `vulkan manager run` (role-noun
+        subcommand, airflow-scheduler/vault-server pattern),
+        maintenancelab → workerclaimlab, eventsnapshotlab →
+        abandonedroutinesnapshotlab. Fresh-DB verified.
+- [x] **Layered package pattern + pkg/consumer refactor** (consumer
+      record 2026-08-04, folded from `refactor-plan.md` at its deletion;
+      the pattern is now the house standard, recorded in conventions.md —
+      worker + topic 2026-08-02, system 2026-08-03, consumer 2026-08-04,
+      metrics 2026-08-08, cron 2026-08-11). Three layers per domain:
+      `pkg/<x>` vocabulary (pure read-models, consts, error sentinels; no
+      constructors for read-models, no Config types), `pkg/<x>/controller`
+      (the ONLY door to persistence: all public verbs, ALL input
+      validation, `to*` adapters), `pkg/<x>/controller/datastore`
+      (table-exact `*Data` structs in model.go, Wrap-only public methods,
+      SQL that trusts inputs). Import arrows point strictly down.
+      - pkg/consumer's constraint that fixed its shape:
+        `consumer.NewConsumer` is NON-NEGOTIABLE (the library's most
+        common entry point keeps its name and package — user call), so
+        pkg/consumer is a DOOR (like pkg/admin is topic's), not a
+        vocabulary layer, and nothing a user types may live below it.
+        Was 4362 lines / 17 files; became: the door (Consumer[M] /
+        NewConsumer / Register / ConsumerInstance / ConsumerConfig /
+        ConsumerFunc), one package per worker row (messageconsumer,
+        exceptionconsumer, deliveryconsumer PARKED — a whole-directory
+        drop later if LIFECYCLE dies; "a strictly more expensive CURSOR"
+        that re-earns its place only with non-FIFO queue work), and
+        controller + controller/datastore (20 public verbs, datastore.go's
+        1687 lines → six focused files over two layers).
+      - Rows get their OWN narrow configs (measured: they use 12/7/4 of
+        ConsumerConfig's 21 fields). WithDefaults stays at the door — its
+        derivations are interdependent (QueueSize ← BatchLimit,
+        MessageMax ← Message, ShutdownTimeout ← MessageMax.Timeout +
+        grace) — resolved ONCE, each row handed its slice; this also
+        fixed a live smell (three constructors re-running
+        WithDefaults+Validate on an already-resolved config). The per-row
+        config builders are public (four labs drive a single row
+        directly).
+      - `MessageMeta` got the one home below the rows,
+        `pkg/consumer/message`: the rows stamp it under an unexported ctx
+        key and the user reads it back, so it can't duplicate per row.
+        Rejected homes: pkg/common (consumer-only — verified the producer
+        only Fills, never Clamps), controller (the persistence door
+        addressed from a user's callback). Known wart accepted: WithMeta
+        exported means a user can stamp fake meta into their own ctx.
+      - The 2026-08-04 record called for NO base package (~150 shared
+        lines duplicated into each row — duplication beats abstraction;
+        a MessageBounds type died by the same rule); later work grew
+        `pkg/consumer/base` holding the shared definition/execution
+        scaffolding and the key-lease controller, superseding that call.
+      - Cleanups carried: ConsumerDatastore's phantom `[Message any]`
+        type param dropped (payload is json.RawMessage end to end; 16 lab
+        call sites lose the type arg); Wrap-only violations fixed
+        (exported tx-owning ReclaimWithCursor/FreshClaimMessagesWithCursor
+        went private, each dropped an unread `limit` param; Bind/
+        ClearBindings gained their missing Wrap); the four structurally
+        identical range-outcome types consolidated into ONE kinded
+        MessageOutcome living in controller (it carries no db: tags —
+        rangeState's output vocabulary, in datastore.go only by history);
+        Commit 10 params → 7, PartialCommit 11 → 8; ~140 lines of
+        commented-out dead code deleted.
+      - Shipped differently from plan: controller read-models dropped
+        `*Row` names (Message, RangeLease, Delivery — `*Row` in the layer
+        whose job is abstracting the database; `*Data` keeps row-shaped
+        names in datastore); lease tokens are uuid.UUID in controller and
+        pgtype.UUID only in datastore (pgx never leaks up); ErrLeaseLost
+        declared in datastore, re-bound in controller so errors.Is works
+        without importing the datastore; the `low >= high` guard stayed
+        datastore-side (it catches a cursor row gone backwards, not bad
+        caller input).
+      - Rejected alternatives: extracting rangeState/claimBuffer into a
+        generic package (three things reach into its internals — a
+        boundary there exports the very atomics whose correctness rests
+        on unexported write ordering); cursor/lifecycle MODE packages
+        (taxonomy, not cohesion — the rows share no code); flat runtime
+        (leaves the parked LIFECYCLE path tangled with the live ones);
+        pkg/consumer/base holding user-typed symbols (plumbing-named
+        package at 25 call sites); moving the door out per the template
+        (rejected outright by the user).
 
 **Done when:** every item above is either fixed or has a written decision,
 NOTES.md, `git tag phase-14a`.

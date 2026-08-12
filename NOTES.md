@@ -2666,3 +2666,515 @@ generated fresh per attempt?**
   `topic/metrics.TopicMetricsDatastore` the same way any other caller would,
   rather than owning its own copy of that data.
 
+
+## Phase 14a (worker system) — `worker`/`worker_instance`, the manager & the consumer inversion
+
+**What it does, and the tradeoff:** one generic answer to "what should run,
+and who is running it," replacing the per-feature maintenance/duty plumbing.
+A `worker` row is the spec — name, exactly-one owner, metadata,
+`target_instances` — and a `worker_instance` row is a live claim: a token
+plus a heartbeat-renewed `expires_at`. Exclusivity moved from
+claim-per-tick (the old duty table's conditional UPDATE every interval) to
+claim-per-instance: Register claims a slot once, the heartbeat holds it,
+and tick pacing becomes the worker's own business. Everything above rides
+one reconcile loop — the manager spawns instances up to target, respawns on
+`ErrInstanceLost`, and propagates any other error out. The tradeoff is that
+liveness is now lease-shaped: a crashed instance's row lingers until its
+lease expires, so failover latency is bounded by the instance TTL rather
+than the next tick, and the machinery must treat "instance lost" as normal
+weather rather than an error.
+
+**The aha:** the consumer is not special. Chunk 9 inverted ownership — the
+manager was lifted OUT of consumers, and the consumption loops
+(message_consumer, exception_consumer, delivery_consumer) became worker
+rows the manager spawns like any other. The public `Consumer` is just a
+higher-order construct that seeds rows and runs a manager runner; a bare
+`ExceptionConsumer` is a standalone retry loop with a self-claim door. Once
+that held, the rest followed for free: the daemon (`vulkan manager run`) is
+the SAME manager claiming the system manager row instead of a group's rows,
+"run everything in the deployment" is one extra WHERE clause in
+listWorkers, and suspending any loop anywhere is setting one integer to 0.
+
+### Explain it back
+
+**1. Why is `target_instances` a single number instead of the original
+`min_instances`/`max_instances` pair?**
+
+Answer: the claim gate reads exactly one question — "are there already
+`target` live instances?" — so one number is all the mechanism needs.
+Min/max are rails on whoever MUTATES the target (an alter surface or
+autoscaler), and neither exists yet; carrying their columns now would be
+schema for a feature that doesn't exist. 0 doubling as "suspended" also
+only works because target is a single declarative number.
+
+**2. Why must the instance-slot claim be one atomic statement?**
+
+Answer: the claim is "count live instances, and insert mine if count <
+target." Split into two statements, two registering processes can both read
+count = target−1 in overlapping snapshots and both insert — the classic
+read-then-write race, the same class AdvanceWaterline hit (and fixed by
+reading claimed+leases in one snapshot). One statement makes the count and
+the insert see the same snapshot, so overshoot is unrepresentable.
+
+**3. The factory invariant: why must `New*` never touch the DB, and why
+does `Register` RETURN the product instead of mutating the factory?**
+
+Answer: a constructor that does I/O can fail for operational reasons, which
+turns every construction site into an error-handling site and makes the
+value's validity time-dependent. With `New*` pure, validation is the only
+failure and the factory is reusable forever. Register returning an instance
+(instead of flipping internal state) means one factory can register many
+independent lives, a dead instance is replaced by calling Register again —
+wound-down-stays-down is gone — and callers hold exactly the thing whose
+lifecycle they manage.
+
+**4. Why does the manager respawn ONLY on `ErrInstanceLost` and propagate
+every other error?**
+
+Answer: losing a claim is expected weather — a lease expired under a stall,
+another process won arbitration — and the healing response is to reconcile
+and re-claim; it says nothing about the code being broken. Any other error
+from a spawned instance's Run is a real fault, and silently respawning
+would turn a crash loop into an invisible hot loop. Upkeep workers only
+exit on loss or cancel, so in practice only consumer-type instances can
+surface a fatal error.
+
+**5. Why was `EnsureNextPartition` deleted without a replacement home?**
+
+Answer: partition creation is provisioning, not cleanup — it belongs to the
+write path, the way Kafka's writer rolls segments; the janitor is cleanup
+only. Correctness never depended on the create-ahead: partition 0 exists
+from RegisterTopic, and the produce path's reactive ensureCoveringPartition
+heals every later boundary (and had been the only live creator since chunk
+5 anyway). Proactive create-ahead returns, if ever, as a producer-side
+sentinel-id trigger — best-effort by design, because the reactive heal is
+the only layer allowed to matter for correctness.
+
+**6. Why one system manager row (and no per-topic manager rows)?**
+
+Answer: nothing would ever claim a per-topic manager — the daemon runs at
+deployment scope, and the per-topic kill switch already exists as the
+topic's own janitor row. The system manager row earns its place twice over:
+it is the daemon's claim anchor (N daemons arbitrate over it with the same
+instance machinery as everything else) and the deployment-wide suspend
+switch. System scope then costs one clause in listWorkers — only a system
+owner has both topic and group unset, and every worker row resolves to its
+system through the topic join.
+
+**7. Why did the producer's `lifecycleCtx` get dropped, and what did that
+trade away?**
+
+Answer: after the factory split, Register is a stateless build step — its
+ctx bounds only that call's I/O, and the batcher already refuses a
+cancelled ctx before enqueue. A stored lifetime was therefore a pure
+admission gate duplicating what each produce call's own ctx already
+expresses. Dropping it deleted a whole error family
+(ErrShutdownRequested, DisableGracefulShutdown, Done()==nil checks). The
+trade: a caller producing on context.Background() is no longer refused
+during app shutdown — the same contract as any database call, which is
+exactly what a produce is.
+
+### Done
+
+- **Chunks 1–8**: worker + worker_instance DDL (baseline edit), pkg/worker
+  vocabulary/controller/datastore + manager, seeding beside maintain,
+  janitor/waterline/cronscheduler workers duplicated from maintain, consumer
+  running workers instead of duties.
+- **Chunk 9**: the consumer inversion — Consumer runs manager.Runner;
+  per-type worker rows at NoInstanceTarget; sub-consumers as pure factories
+  with self-claim doors; queue/poolLimiter moved off constructor signatures.
+- **Chunk 10**: producer factory split; identity params on Register;
+  lifecycleCtx dropped; MetricEventProducer.Run self-registers and drains.
+- **Chunks 11a/11b/11c**: WorkerSnapshot + CronJobSnapshot verdicts
+  (suspended/claimed/unclaimed, Overdue with a flat 10m threshold);
+  cron_job owner CHECK tightened to exactly-one; pkg/metrics layered,
+  monitor deleted, gauges into pkg/metrics/metrics.
+- **Chunk 12**: pkg/systemmanager + `vulkan manager run` claiming the
+  system manager row; topic manager rows deleted.
+- **Chunk 13**: pkg/maintain + maintenance DDL + duty metrics deleted;
+  EnsureNextPartition deleted; 18 labs swapped/reshaped; renames
+  (workerclaimlab, abandonedroutinesnapshotlab, `manager run`).
+
+### Decisions
+
+- **Duplicate, don't retrofit.** pkg/worker was built beside pkg/maintain
+  with maintain untouched until the final cleanup chunk — the migration was
+  a switch-over, never a half-converted hybrid.
+- **Claim-per-instance over claim-per-tick.** The heartbeat IS the
+  exclusivity; tick pacing is worker-internal.
+- **`NoInstanceTarget` (-1) for self-claimed loops.** Consumer-type rows
+  are visibility + a suspend toggle, not managed capacity; self-claim never
+  declines.
+- **`systemmanager` over `Maintainer`** — researched against
+  kube-controller-manager / autovacuum launcher / River QueueMaintainer:
+  the umbrella process is named for what it does to its children, and this
+  codebase's noun for that is `manager`.
+- **Snapshot verdicts are classify functions** (classifyWorker, Overdue) —
+  policy tables as enum + switch, per the house mental-model rule.
+
+## Phase 14a (consumer layering) — the layered package pattern & the pkg/consumer refactor
+
+**What it does, and the tradeoff:** every domain now has the same three-story
+shape — `pkg/<x>` is vocabulary (pure read-models, consts, error
+sentinels), `pkg/<x>/controller` is the only door to persistence (every
+public verb, ALL input validation, the `to*` adapters), and
+`pkg/<x>/controller/datastore` is table-exact SQL that trusts its inputs
+(`*Data` structs in model.go, every public method a retry-Wrap around a
+same-named private). Import arrows point strictly down. pkg/consumer — 4362
+lines across 17 files — was the hardest conversion because one symbol was
+non-negotiable: `consumer.NewConsumer` keeps its name and package. So
+pkg/consumer is a DOOR rather than a vocabulary layer, the worker-row
+packages (messageconsumer, exceptionconsumer, the parked deliveryconsumer)
+sit under it with their own narrow configs, and the read-models live in the
+controller because there is no vocabulary layer for them to sit in. The
+tradeoff is bought with duplication: no shared base package at first (~150
+lines copied into each row), narrow configs repeating field groups —
+accepted on the standing rule that duplication beats abstraction at this
+scale.
+
+**The aha:** a single non-negotiable user symbol dictated the entire
+package tree. "Nothing a user types may live below the door" (the door
+imports the rows; the rows may not import back) sorted every symbol
+mechanically — and exactly one failed the test: MessageMeta, which the rows
+stamp into ctx under an unexported key and the user reads back inside their
+consumerFunc. It cannot be duplicated per row (the keys would not match),
+so it forced the one new leaf, pkg/consumer/message. The layout wasn't
+designed so much as derived from that constraint plus the import arrows.
+
+### Explain it back
+
+**1. Why does ALL input validation live at the controller, with datastores
+trusting their inputs?**
+
+Answer: the controller is the only door — every call path goes through it,
+so validating there is once-per-operation and can return typed errors in
+domain vocabulary. Re-checking in the datastore would be a second copy of
+the same rules that drifts independently (and the datastore can't produce
+good errors anyway; it only sees shaped data). One deliberate exception
+survives: guards on values the DATABASE produced, like the cursor
+`low >= high` check — that catches a cursor row gone backwards, not bad
+caller input, so it stays beside the SQL that read it.
+
+**2. Why table-exact `*Data` structs plus `to*` adapters, instead of
+scanning straight into the vocabulary read-models?**
+
+Answer: it pins each layer to the thing it actually models. `*Data` mirrors
+the table (nullable columns, ns-integer durations, string enums), so a
+schema change is visible in exactly one file; the vocabulary type carries
+resolved Go-native meaning (time.Duration, validated enums, coalesced
+owners). Scanning into vocabulary types smears column handling across every
+query and forces the read-model to carry database shapes. The adapter is
+also where stored values get re-validated on the way OUT (an unknown enum
+in a row errors the read instead of silently misbehaving).
+
+**3. Why did MessageMeta need a home BELOW the rows, and why was pkg/common
+rejected for it?**
+
+Answer: the rows stamp meta into ctx under an unexported key and
+MetaFromContext must read that same key back — duplicated per row, the keys
+are different values and the lookup returns false. So it needs exactly one
+package the rows all import, below them and still user-reachable.
+pkg/common was rejected because it is for what BOTH sides need, and meta is
+consumer-only — verified by checking the producer's options usage: it only
+ever Fills defaults, never Clamps or resolves concurrency. The controller
+was rejected because it would put the persistence door inside a user's
+callback (`consumercontroller.MetaFromContext(ctx)`).
+
+**4. Why do the rows get their own narrow configs while WithDefaults stays
+at the door?**
+
+Answer: measured usage said the rows aren't using the whole config —
+messageconsumer reads 12 of ConsumerConfig's 21 fields, exceptionconsumer
+7, deliveryconsumer 4 — so handing each row the full struct hides what it
+actually depends on. But the DEFAULTS can't move down: the derivations are
+interdependent (QueueSize from BatchLimit, MessageMax from Message,
+ShutdownTimeout from MessageMax.Timeout + grace), so they must resolve once
+against the whole config. Door resolves, rows receive slices; that also
+fixed the live smell of three constructors re-running WithDefaults+Validate
+on an already-resolved config.
+
+**5. `ConsumerDatastore[Message any]` was deleted as a phantom type
+parameter. What made it phantom, and why is removing it a correctness-shaped
+cleanup rather than cosmetics?**
+
+Answer: the parameter appeared in zero fields, signatures, or bodies — the
+payload is json.RawMessage end to end and unmarshalling happens in the
+rows. A phantom parameter still monomorphizes the API: every caller must
+name a type argument (16 lab call sites), two datastores instantiated with
+different M are different types even though they are behaviorally
+identical, and the signature claims a type-dependence the code doesn't
+have. Deleting it makes the persistence layer's real contract — bytes in,
+bytes out — visible in its type.
+
+**6. Why collapse MessageException / MessageTerminal / MessageSuperseded /
+MessageDeferred into one kinded MessageOutcome?**
+
+Answer: they were structurally identical ({MessageId, Err}), constructed in
+exactly one place, and consumed only by Commit/PartialCommit — four names
+for one shape whose only difference is WHICH outcome it is, i.e. data, not
+type. One type carrying a kind collapses both four-armed switches into a
+single walk and shrank Commit from 10 params to 7 and PartialCommit from 11
+to 8. Four types would earn their keep only if the variants diverged
+structurally or needed compiler-enforced separation; they don't.
+
+**7. Controller read-models dropped the `*Row` suffix (MessageRow →
+Message) while datastore kept `*Data`. Why is that split right?**
+
+Answer: the controller layer's whole job is abstracting the database away,
+so names that say "row" leak the thing being hidden — and this exact naming
+had already been rejected once, and the conventions rule is that a bad name
+that turns out to be a pattern gets fixed everywhere. In the datastore,
+row-shaped names are the point: `*Data` structs ARE the table row, and
+saying so is the honest contract of that layer.
+
+### Done
+
+- **Pattern rolled across the codebase**: worker + topic (2026-08-02),
+  system (2026-08-03), consumer (2026-08-04), metrics (2026-08-08), cron
+  (2026-08-11); recorded as the Package-layout section of conventions.md.
+- **pkg/consumer**: door + messageconsumer/exceptionconsumer/
+  deliveryconsumer (parked) + message leaf + controller +
+  controller/datastore; 20 public verbs moved; datastore.go's 1687 lines →
+  six focused files over two layers; 35/38 labs green at build (3 failures
+  predated the work).
+- **Cleanups carried**: phantom type param dropped; Wrap-only violations
+  fixed (ReclaimWithCursor / FreshClaimMessagesWithCursor private, dead
+  `limit` params dropped; Bind/ClearBindings gained missing Wraps); range
+  outcomes consolidated; uuid.UUID above the datastore, pgtype.UUID below;
+  ErrLeaseLost declared where detected, re-bound in controller; ~140 lines
+  of dead code deleted.
+
+### Decisions
+
+- **The door constraint** — `consumer.NewConsumer` is non-negotiable, so
+  pkg/consumer is a door, not vocabulary; read-models live in controller.
+- **No base package at first** (~150 lines duplicated per row, per the
+  duplication-beats-abstraction rule); SUPERSEDED by later work:
+  pkg/consumer/base now holds the shared definition/execution scaffolding
+  and the key-lease controller.
+- **deliveryconsumer PARKED, not deleted** — "a strictly more expensive
+  CURSOR" that re-earns its place only with non-FIFO queue work; the layout
+  makes the eventual deletion a whole-directory drop.
+- **rangeState/claimBuffer stay private** — three things reach into their
+  internals; a package boundary there would export the very atomics whose
+  correctness rests on unexported write ordering.
+- **Row-package names keep the house stutter**
+  (messageconsumer.MessageConsumerDefinition) — revisit repo-wide at the v1
+  API review, not per-package.
+
+## Phase 14a (cron) — `cron_job`, the scheduler worker & derived job-request status
+
+**What it does, and the tradeoff:** k8s-CronJob-shaped scheduled work built
+almost entirely out of machinery that already existed. A `cron_job` row is
+the spec (schedule, concurrency, timeout, opaque data, exactly one owner);
+a `cronscheduler` worker polls the due predicate once a minute and produces
+a `JobRequest` message per due job onto one compacted `__system.job_requests`
+topic; consumers are ordinary consumer groups binding job names as routing
+keys. Concurrency ('allow'|'defer') is not enforced by the scheduler at all —
+it's stamped into MessageOptions and the shipped key-lease machinery enforces
+it at consume time, exactly like any other keyed message. The tradeoff is the
+1-minute floor and drop-don't-backfill semantics: missed scheduled times are
+never produced late (the scheduler walks to the NEWEST due time and produces
+only that), which is the right default for "run the report" work but means
+this is not a backfill engine.
+
+**The aha:** job-request *status* is entirely derivable — no status column,
+no status writes. The message log holds every produced request (compaction
+keeps losers physically present within retention), `compaction_head` says
+which request is current, and delivery_log (mode 'all', so successes leave
+rows too) holds what each group did with each request. "Superseded" is not
+recorded anywhere when it happens to a pending request; it is *computed* as
+"this group never ran it, and it is no longer the head, so nothing can ever
+claim it" — and the order of that classification matters, because a group
+that DID run a since-replaced request has a success/failure row that wins
+first. The same three sources answer both the per-group rollup
+(RAN/SUCCEEDED/FAILED/SUPERSEDED) and the per-request listing with "superseded
+by <id> at <time>" — the successor is simply the next-newer message on the
+key.
+
+### Explain it back
+
+**1. The scheduler produces every due job in its own transaction (`FOR
+UPDATE SKIP LOCKED` recheck → ProduceInTx → advance in one UPDATE) instead
+of one shared tick transaction. What two failure modes does the shared-txn
+shape have that the per-row shape avoids?**
+
+Answer: two failure modes. First, blast radius: one poisoned row (say a
+schedule column corrupted to garbage) errors its produce, and in a shared
+transaction that rolls back EVERY job's produce for the tick — and since the
+error backs off the worker, one bad row stalls the entire scheduler forever.
+Per-row transactions make a row failure a WARN + skip; siblings produce.
+Second, lock hold: ProduceInTx takes the topic's consumer-progress lock and
+its own doc says to call it LAST — a shared tick txn would hold that
+whole-topic lock from the first produce until the end of the tick, blocking
+consumer commits for as long as the tick runs.
+
+**2. After downtime, the scheduler walks `for Next(t) <= db_now { t =
+Next(t) }` and produces only the final `t`. Why is producing every missed
+scheduled time the wrong default, and what bounds how stale the produced
+time can be?**
+
+Answer: backfilling missed times is almost never what an operator wants
+from downtime — k8s CronJobs made the same call — and here it would be extra
+wrong: the topic is compacted on the job id, so a burst of stale requests
+would supersede each other instantly, and a keyed consumer only ever sees
+the newest anyway. Producing the newest due time is the same drop-missed
+semantic with zero waste. The bound: the walk lands on the last due time
+before db_now, so the produced ScheduledTime trails now by at most one
+schedule gap — after any length of downtime.
+
+**3. The idempotency key packs the scheduled time's unix ms into the v7
+time bits and the job id VERBATIM into the payload bits. Why must the job
+id not be hashed, and what property makes a fresh v7 per `RunCronJob` call
+the correct opposite choice?**
+
+Answer: the idempotency table is shared per topic, so the key must be
+globally collision-free across jobs. Hashing the id into the payload bits
+means two different jobs due in the same millisecond can collide, and a
+collision is silent — the second job's request is treated as a duplicate
+and swallowed. The id verbatim makes cross-job collision impossible (an
+int64 fits the payload bits exactly). Run-now is the opposite contract: it
+must NEVER dedupe against the schedule's request for the same moment — a
+manual run is deliberately its own request — so it takes a fresh random v7,
+and only its own ambiguous-commit replay can dedupe it.
+
+**4. Why does `job_requests` need `DeliveryLogModeAll` for status to be
+derivable at all, and why doesn't every topic pay that cost?**
+
+Answer: on the normal path, success is recorded by DELETING the delivery
+row and writing nothing — deletion leaves no row to derive from, so "this
+group ran this request successfully" is unknowable after the fact. Mode
+'all' writes a 'success'@attempts log row inside the same success
+transaction, which is exactly the positive record the status join reads.
+Every topic doesn't pay because that is one extra row per successful
+delivery — on a hot topic that erases the O(1)-per-range success-cost story
+— while job_requests produces at most one message per job per minute, so
+the volume is noise.
+
+**5. A run-now request defaults to Concurrency 'allow'. Explain why an
+'allow' request can never be blocked by (or block) a running request, in
+terms of what actually takes and holds a key lease.**
+
+Answer: the key lease is only ever touched when dispatching a 'defer'
+message — the dispatch gate acquires it, the outcome transaction releases
+it. An 'allow' message bypasses the gate entirely: it never attempts the
+acquisition, so a held lease is invisible to it (it runs beside the
+holder), and it never holds the lease itself, so nothing that later checks
+the lease can be waiting on it. Blocking is a property of the lease, and
+'allow' simply never participates in the lease.
+
+**6. In the outcome classification, `!Head` only means "superseded" because
+`Succeeded` and `Raised` are checked first. What real scenario would be
+misreported if the `!Head` case came first?**
+
+Answer: any request that actually ran and was later replaced. Take an
+@every-1m job with one consumer group: request 101 runs at 12:00 and
+succeeds; at 12:01 the scheduler produces 102, which takes the head. With
+`!Head` first, 101 now reports "superseded" even though the delivery log
+holds its success row — every completed request would flip to superseded
+one schedule gap after finishing, erasing the history the log still proves.
+Succeeded/Raised first means a terminal outcome is permanent; `!Head` only
+speaks for requests that never ran.
+
+**7. `GroupStatus.Superseded` is per group even though supersession happens
+per key. Give the concrete case where the same request counts as Ran for
+one group and Superseded for another, and why both are correct.**
+
+Answer: two groups bound to the same job name, one fast and one slow (or
+simply not running). Request 101 is produced; the fast group claims and
+runs it while it is still the head — success row, so 101 counts in Ran and
+Succeeded for that group. Before the slow group ever claims it, the
+scheduler produces 102 and the head moves; the slow group can now never
+claim 101, so for it 101 is Superseded. Both are correct because delivery
+is per-group: each group receives its own copy of the request, and one
+group's execution does nothing for another group's.
+
+**8. Unsuspend re-seeds `next_scheduled_time` from now() instead of keeping
+the stale value. What surprising behavior does the stale value cause, and
+which system's semantics does the re-seed copy?**
+
+Answer: next_scheduled_time freezes at suspend, so after a month
+suspended it is a month stale; if unsuspend kept it, the very next tick
+would see it due and immediately produce a request stamped with a
+month-old scheduled time — a surprise run of the past the moment an
+operator flips the switch. Re-seeding from now() means unsuspend resumes ON
+SCHEDULE, producing nothing until the next genuinely-due time. That copies
+k8s spec.suspend semantics (unsuspending a CronJob doesn't fire the missed
+runs).
+
+**9. Why is a superseded *pending* request invisible to delivery_log (no
+'superseded' row is ever written for it), while a dispatched-then-outraced
+defer request DOES get one?**
+
+Answer: because nothing ever happens to it. The claim query only returns
+a keyed message while it IS the compaction head, so a pending request that
+loses the head is simply never claimed — there is no delivery event, and
+delivery_log records delivery events, so writing a row there would invent
+one (and pay a write per superseded message on compacted streams, for a
+fact message_log + compaction_head already prove — one mechanism per
+fact). The dispatched-then-outraced defer request is different: it WAS
+claimed, and losing the head race at dispatch is that attempt's real
+outcome, so the 'superseded' log row is the standing invariant doing its
+job — no attempt number ever vanishes from the log.
+
+**10. The status/requests datastore reads were rebuilt from one CTE
+statement into four flat per-fact queries composed in Go, fetched per
+consumer group. What made the single statement wrong beyond taste, and what
+consistency property was deliberately given up in the split?**
+
+Answer: the statement welded four independent facts into one query — which
+groups match the name, which messages belong to the job, which is the head,
+and what each group did — forcing SQL-side machinery for what plain Go does
+better: jsonb destructuring for a payload field the controller can
+unmarshal, a CROSS JOIN to build the (request, group) matrix, a LEAD window
+for successor attribution that in Go is the slice's previous element, and a
+matching_group CTE duplicated verbatim across two verbs. Rebuilt, each fact
+is one flat query and the composition is a loop. Given up: the reads no
+longer share one snapshot, so a request produced mid-read can skew a single
+listing — accepted for a status view, and explicitly not defended with a
+repeatable-read transaction (user call).
+
+### Done
+
+- **`cron_job` registry + admin verbs** — idempotent RegisterCronJob
+  (config mismatch errors), Alter (re-seeds next_scheduled_time),
+  Suspend/Unsuspend, Get/List, Destroy (AllowDestroy-gated; controller
+  verb is Delete). Vendored robfig schedule core (one time.Local→UTC
+  diff), min rate >= 1m and >= timeout.
+- **`cronscheduler` worker** — 1-min poll on the partial index, one txn
+  per row, DB-clock arithmetic, poisoned rows WARN + skip, duplicate
+  produces WARN via ProduceResult.
+- **Run-now** — `RunCronJob(name, cfg)` with `RunCronJobConfig.Concurrency`
+  (default 'allow', opt-in 'defer'), fresh v7 key per call, supersedes
+  pending unclaimed requests.
+- **Derived status** — `CronJobStatus` (GroupStatus incl. Superseded) and
+  `CronJobRequests` (JobRequestStatus with outcome + SupersededBy/At);
+  datastore is flat per-fact reads composed in Go, one delivery rollup
+  query per group.
+- **CLI** — `vulkan cron` tree; `cron run --concurrency`; `cron get
+  --requests [--limit N]`.
+- **cronlab** — validation, owner cascade, newest-due walk, v7 dedupe,
+  suspend/unsuspend, poison row, defer, run-now beside a running request,
+  supersede, end-to-end status + listing.
+
+### Decisions
+
+- **Name IS the routing key; no handler column.** Consumers bind job names
+  (exact or wildcard); a handler segment or synthesized prefix re-invents
+  grouping the binding table already owns.
+- **Concurrency enforced at consume time only.** Scheduler-side
+  last-message-resolved checks rejected as a dual enforcement layer;
+  key_lease already owns overlap.
+- **Status is derived, never written.** A delivery_log row for a
+  superseded pending request was rejected: write amplification on
+  compacted streams, and message_log + compaction_head already record the
+  fact. One mechanism per fact.
+- **"Firing" retired from the codebase** (Quartz jargon): JobRequest /
+  ScheduledTime / due / produce. Alert-domain 'firing'/'resolved' stays —
+  that is Prometheus vocabulary.
+- **Datastore reads decomposed** (2026-08-12 review): the single
+  CTE-pyramid status query was four jobs in one statement; rebuilt as
+  matching-groups / message-ids / compaction-head / per-group delivery
+  rollup, composed in Go per group. Snapshot consistency across the reads
+  deliberately not defended (status views tolerate read skew; no
+  repeatable-read tx).
