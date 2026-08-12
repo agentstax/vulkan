@@ -15,10 +15,10 @@ import (
 // TopicName is __system.job_requests
 const TopicName = common.SystemTopicPrefix + "job_requests"
 
-// TopicConfig - RetentionTTL is the firing-history horizon; it must exceed the
-// widest firing rate (monthly covered) so a job's next firing lands before its
-// last one ages out.
-// DeliveryLogModeAll keeps a 'success' row per firing - job status uses this.
+// TopicConfig - RetentionTTL is the job-request-history horizon; it must
+// exceed the widest schedule rate (monthly covered) so a job's next request
+// lands before its last one ages out.
+// DeliveryLogModeAll keeps a 'success' row per request - job status uses this.
 func TopicConfig() *topiccontroller.TopicConfig {
 	return &topiccontroller.TopicConfig{
 		PartitionSize:   10_000,
@@ -27,12 +27,13 @@ func TopicConfig() *topiccontroller.TopicConfig {
 	}
 }
 
-// JobRequest is one firing of a cron job, produced to __system.job_requests
-// with the job's name as the routing key -- consumers bind job names.
+// JobRequest is one request to run a cron job -- the scheduler produces one
+// per due scheduled time (RunCronJob on demand) to __system.job_requests with
+// the job's name as the routing key; consumers bind job names.
 type JobRequest struct {
 	CronJobId     int64
 	Name          string
-	ScheduledTime time.Time // the firing this request represents, not when it was produced
+	ScheduledTime time.Time // the scheduled time this request represents, not when it was produced
 	Data          json.RawMessage
 	Metadata      json.RawMessage
 }
@@ -56,15 +57,16 @@ func NewJobRequest(cronJobId int64, name string, scheduledTime time.Time, data, 
 	}, nil
 }
 
-// IdempotencyKey is the deterministic idempotency key for one (firing, job):
-// the same firing replayed after an ambiguous commit dedupes, everything else
-// lands. UUIDv7 layout -- the firing's unix ms in the 48 time bits (the
-// idempotency index wants time-ordered keys), the job id VERBATIM across the
-// payload bits. NO hash: the idempotency table is shared per-topic, and a
-// same-ms hash collision would silently swallow another job's firing.
-func IdempotencyKey(firing time.Time, cronJobId int64) uuid.UUID {
+// IdempotencyKey is the deterministic idempotency key for one (job, scheduled
+// time): the same JobRequest replayed after an ambiguous commit dedupes,
+// everything else lands. UUIDv7 layout -- the scheduled time's unix ms in the
+// 48 time bits (the idempotency index wants time-ordered keys), the job id
+// VERBATIM across the payload bits. NO hash: the idempotency table is shared
+// per-topic, and a same-ms hash collision would silently swallow another
+// job's request.
+func IdempotencyKey(scheduledTime time.Time, cronJobId int64) uuid.UUID {
 	var k uuid.UUID
-	ms := uint64(firing.UnixMilli())
+	ms := uint64(scheduledTime.UnixMilli())
 	k[0] = byte(ms >> 40)
 	k[1] = byte(ms >> 32)
 	k[2] = byte(ms >> 24)

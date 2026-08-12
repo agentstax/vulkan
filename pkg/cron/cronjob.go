@@ -10,7 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// a job's name doubles as the routing key its firings are produced with,
+// a job's name doubles as the routing key its job requests are produced with,
 // so it can't contain '*' -- the binding wildcard, which Bind can't escape
 var slugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 

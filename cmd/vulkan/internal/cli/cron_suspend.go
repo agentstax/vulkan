@@ -11,9 +11,9 @@ import (
 func newCronSuspendCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "suspend <name>",
-		Short: "Stop a cron job from firing until unsuspended",
-		Long: "Stop a cron job from firing until unsuspended. A firing already produced\n" +
-			"and not yet consumed is not retracted -- suspend stops future firings only.",
+		Short: "Stop the scheduler producing a cron job until unsuspended",
+		Long: "Stop the scheduler producing a cron job until unsuspended. A job request already produced\n" +
+			"and not yet consumed is not retracted -- suspend stops future requests only.",
 		Args: requireCronJobName("suspend"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -41,9 +41,9 @@ func newCronSuspendCmd(g *globalFlags) *cobra.Command {
 func newCronUnsuspendCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "unsuspend <name>",
-		Short: "Resume a suspended cron job at its schedule's next firing",
-		Long: "Resume a suspended cron job at its schedule's next firing from now --\n" +
-			"a firing that came due while suspended is dropped, not fired late.",
+		Short: "Resume a suspended cron job at its schedule's next scheduled time",
+		Long: "Resume a suspended cron job at its schedule's next scheduled time from now --\n" +
+			"a scheduled time that came due while suspended is dropped, not produced late.",
 		Args: requireCronJobName("unsuspend"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -65,11 +65,11 @@ func newCronUnsuspendCmd(g *globalFlags) *cobra.Command {
 			job, err := mAdmin.GetCronJob(ctx, name)
 			if err != nil || job == nil {
 				// the unsuspend itself succeeded -- report that even if the
-				// follow-up read for the next-firing detail didn't cooperate
+				// follow-up read for the next-scheduled-time detail didn't cooperate
 				fmt.Fprintf(cmd.OutOrStdout(), "%s cron job %q unsuspended\n", glyphOK(), name)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s cron job %q unsuspended, next firing %s\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "%s cron job %q unsuspended, next scheduled time %s\n",
 				glyphOK(), name, timeCell(job.NextScheduledTime))
 			return nil
 		},

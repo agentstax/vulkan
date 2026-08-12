@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	minRateFirings = 1000
-	minRateHorizon = 400 * 24 * time.Hour
+	minRateScheduledTimes = 1000
+	minRateHorizon        = 400 * 24 * time.Hour
 )
 
 type Schedule struct {
@@ -36,12 +36,12 @@ func ParseSchedule(expr string) (*Schedule, error) {
 		return nil, fmt.Errorf("schedule %q: %w", expr, err)
 	}
 	if rate < time.Minute {
-		return nil, fmt.Errorf("schedule %q fires every %v -- more often than the 1m scheduler resolution", expr, rate)
+		return nil, fmt.Errorf("schedule %q recurs every %v -- more often than the 1m scheduler resolution", expr, rate)
 	}
 	return &Schedule{expr: expr, sched: sched, minRate: rate}, nil
 }
 
-// Next is the next firing strictly after t; zero = never fires again.
+// Next is the next scheduled time strictly after t; zero = none remains.
 func (s *Schedule) Next(t time.Time) time.Time {
 	return s.sched.Next(t)
 }
@@ -50,8 +50,9 @@ func (s *Schedule) String() string {
 	return s.expr
 }
 
-// MinRate is the shortest time between consecutive firings over the next 1000 firings or 400 days.
-// Fewer than two firings in that window (Feb-29-style) -> math.MaxInt64.
+// MinRate is the shortest gap between consecutive scheduled times over the
+// next 1000 scheduled times or 400 days.
+// Fewer than two scheduled times in that window (Feb-29-style) -> math.MaxInt64.
 func (s *Schedule) MinRate() time.Duration {
 	return s.minRate
 }
@@ -60,12 +61,12 @@ func minRate(sched robfig.Schedule) (time.Duration, error) {
 	start := time.Now().UTC()
 	prev := sched.Next(start)
 	if prev.IsZero() {
-		return 0, errors.New("never fires")
+		return 0, errors.New("no upcoming scheduled times")
 	}
 
 	horizon := start.Add(minRateHorizon)
 	min := time.Duration(math.MaxInt64)
-	for range minRateFirings - 1 {
+	for range minRateScheduledTimes - 1 {
 		n := sched.Next(prev)
 		if n.IsZero() || n.After(horizon) {
 			break

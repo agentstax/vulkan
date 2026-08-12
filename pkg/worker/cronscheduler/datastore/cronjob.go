@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// DueCronJobs lists the cron jobs due to fire. Unlocked -- each row is
-// rechecked under its own lock before it fires.
+// DueCronJobs lists the cron jobs with a due scheduled time. Unlocked -- each
+// row is rechecked under its own lock before its JobRequest is produced.
 func (d *CronSchedulerDatastore) DueCronJobs(ctx context.Context) ([]int64, error) {
 	var ids []int64
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -71,25 +71,25 @@ func (d *CronSchedulerDatastore) claimDueCronJob(ctx context.Context, tx produce
 	return &data, nil
 }
 
-// AdvanceCronJob moves the fired row to its next firing, in the caller's
-// producing transaction.
-func (d *CronSchedulerDatastore) AdvanceCronJob(ctx context.Context, tx producer.Tx, id int64, next time.Time, fired time.Time) error {
-	return d.advanceCronJob(ctx, tx, id, next, fired)
+// AdvanceCronJob moves the produced row to its next scheduled time, in the
+// caller's producing transaction.
+func (d *CronSchedulerDatastore) AdvanceCronJob(ctx context.Context, tx producer.Tx, id int64, next time.Time, produced time.Time) error {
+	return d.advanceCronJob(ctx, tx, id, next, produced)
 }
 
-func (d *CronSchedulerDatastore) advanceCronJob(ctx context.Context, tx producer.Tx, id int64, next time.Time, fired time.Time) error {
-	_, err := tx.Exec(ctx, `UPDATE cron_job SET next_scheduled_time = $2, last_scheduled_time = $3 WHERE id = $1;`, id, next, fired)
+func (d *CronSchedulerDatastore) advanceCronJob(ctx context.Context, tx producer.Tx, id int64, next time.Time, produced time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE cron_job SET next_scheduled_time = $2, last_scheduled_time = $3 WHERE id = $1;`, id, next, produced)
 	return err
 }
 
-// SuspendCronJob parks the fired row, in the caller's producing transaction
+// SuspendCronJob parks the produced row, in the caller's producing transaction
 // -- next_scheduled_time is NOT NULL and an unsatisfiable schedule has no
 // honest value for it.
-func (d *CronSchedulerDatastore) SuspendCronJob(ctx context.Context, tx producer.Tx, id int64, fired time.Time) error {
-	return d.suspendCronJob(ctx, tx, id, fired)
+func (d *CronSchedulerDatastore) SuspendCronJob(ctx context.Context, tx producer.Tx, id int64, produced time.Time) error {
+	return d.suspendCronJob(ctx, tx, id, produced)
 }
 
-func (d *CronSchedulerDatastore) suspendCronJob(ctx context.Context, tx producer.Tx, id int64, fired time.Time) error {
-	_, err := tx.Exec(ctx, `UPDATE cron_job SET suspended = true, last_scheduled_time = $2 WHERE id = $1;`, id, fired)
+func (d *CronSchedulerDatastore) suspendCronJob(ctx context.Context, tx producer.Tx, id int64, produced time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE cron_job SET suspended = true, last_scheduled_time = $2 WHERE id = $1;`, id, produced)
 	return err
 }

@@ -24,7 +24,7 @@ type cronJobMetric struct {
 func (m *Metrics) RegisterCronJobMetric() error {
 	overdueJobs, err := m.meter.Int64ObservableGauge(
 		"vulkan.cron.state.overdue_jobs",
-		metric.WithDescription("Unsuspended jobs due for longer than the overdue threshold -- nothing is firing them."),
+		metric.WithDescription("Unsuspended jobs due for longer than the overdue threshold -- nothing is producing their job requests."),
 		metric.WithUnit("{job}"),
 	)
 	if err != nil {
@@ -33,7 +33,7 @@ func (m *Metrics) RegisterCronJobMetric() error {
 
 	oldestDueAge, err := m.meter.Int64ObservableGauge(
 		"vulkan.cron.state.oldest_due_age",
-		metric.WithDescription("Largest now() - next_scheduled_time across unsuspended due jobs; 0 while every job fires on time."),
+		metric.WithDescription("Largest now() - next_scheduled_time across unsuspended due jobs; 0 while every job is produced on time."),
 		metric.WithUnit("ms"),
 	)
 	if err != nil {
@@ -42,7 +42,7 @@ func (m *Metrics) RegisterCronJobMetric() error {
 
 	suspendedJobs, err := m.meter.Int64ObservableGauge(
 		"vulkan.cron.state.suspended_jobs",
-		metric.WithDescription("Jobs with suspended = true -- deliberately not firing, excluded from the overdue count."),
+		metric.WithDescription("Jobs with suspended = true -- deliberately not produced, excluded from the overdue count."),
 		metric.WithUnit("{job}"),
 	)
 	if err != nil {

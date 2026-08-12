@@ -7,8 +7,7 @@ import (
 
 const partitionCountName = "partition_count"
 
-// PartitionCountJobName is the check's cron job name -- the routing key its
-// firings are produced with.
+// PartitionCountJobName is the check's cron job name -- // job requests are produced with.
 const PartitionCountJobName = "alert." + partitionCountName
 
 const partitionCountSchedule = "@hourly"

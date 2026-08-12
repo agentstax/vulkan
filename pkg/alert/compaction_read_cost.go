@@ -7,8 +7,7 @@ import (
 
 const compactionReadCostName = "compaction_read_cost"
 
-// CompactionReadCostJobName is the check's cron job name -- the routing key its
-// firings are produced with.
+// CompactionReadCostJobName is the check's cron job name -- // job requests are produced with.
 const CompactionReadCostJobName = "alert." + compactionReadCostName
 
 const compactionReadCostSchedule = "@hourly"

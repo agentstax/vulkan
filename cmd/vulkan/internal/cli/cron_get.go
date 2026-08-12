@@ -14,7 +14,7 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "get <name>",
-		Short: "Show a cron job's schedule, config, and firing state",
+		Short: "Show a cron job's schedule, config, and per-group run outcomes",
 		Args:  requireCronJobName("get"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -46,8 +46,14 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 				return failPrinted()
 			}
 
+			statuses, err := mAdmin.CronJobStatus(ctx, name)
+			if err != nil {
+				return translateAdminError(err)
+			}
+
 			fmt.Fprintf(out, "%s cron job %q (id=%d)\n", glyphOK(), name, job.Id)
 			printCronJobDetail(out, job)
+			printCronJobStatuses(out, statuses)
 			return nil
 		},
 	}
@@ -68,6 +74,23 @@ func printCronJobDetail(w io.Writer, job *cron.CronJob) {
 	fmt.Fprintf(tw, "  Metadata\t%s\n", job.Metadata)
 	fmt.Fprintf(tw, "  NextScheduledTime\t%s\n", cronNextCell(job))
 	fmt.Fprintf(tw, "  LastScheduledTime\t%s\n", cronLastCell(job))
+	tw.Flush()
+}
+
+// printCronJobStatuses is one line per consumer group whose binding matches
+// the job's name -- job request outcomes over the job_requests retention window.
+func printCronJobStatuses(w io.Writer, statuses []*cron.GroupStatus) {
+	fmt.Fprintln(w)
+	if len(statuses) == 0 {
+		fmt.Fprintln(w, "  no consumer group is bound to this job's name")
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(tw, "  GROUP\tRAN\tSUCCEEDED\tFAILED")
+	for _, status := range statuses {
+		fmt.Fprintf(tw, "  %s\t%d\t%d\t%d\n", status.ConsumerGroup, status.Ran, status.Succeeded, status.Failed)
+	}
 	tw.Flush()
 }
 
@@ -93,7 +116,7 @@ func cronNextCell(job *cron.CronJob) string {
 	return timeCell(job.NextScheduledTime)
 }
 
-// cronLastCell - NULL until the scheduler's first firing of this job.
+// cronLastCell - NULL until the scheduler first produces this job.
 func cronLastCell(job *cron.CronJob) string {
 	if job.LastScheduledTime == nil {
 		return "never"

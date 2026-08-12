@@ -211,7 +211,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
-			name TEXT NOT NULL UNIQUE,                       -- also the routing key every firing is produced with
+			name TEXT NOT NULL UNIQUE,                       -- also the routing key every job request is produced with
 			schedule TEXT NOT NULL,                          -- cron spec; UTC unless it carries TZ=
 			concurrency TEXT NOT NULL DEFAULT 'allow',       -- -> MessageOptions.Concurrency
 			timeout_ns BIGINT NOT NULL,                      -- nanoseconds; -> MessageOptions.Timeout
@@ -219,7 +219,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			data JSONB NOT NULL DEFAULT '{}',                -- opaque payload
 			metadata JSONB NOT NULL DEFAULT '{}',
 			next_scheduled_time TIMESTAMPTZ NOT NULL,
-			last_scheduled_time TIMESTAMPTZ,                 -- the firing most recently produced
+			last_scheduled_time TIMESTAMPTZ,                 -- the scheduled time most recently produced
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
 			CHECK (concurrency IN ('allow', 'defer')),
 			CHECK (timeout_ns > 0)

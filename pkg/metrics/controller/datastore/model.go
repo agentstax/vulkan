@@ -36,7 +36,7 @@ type CronJobSnapshotData struct {
 	Schedule          string
 	Suspended         bool
 	NextScheduledTime time.Time
-	LastScheduledTime pgtype.Timestamptz // NULL until the job first fires
+	LastScheduledTime pgtype.Timestamptz // NULL until the job's first produced request
 	DueForSecs        float64
 }
 

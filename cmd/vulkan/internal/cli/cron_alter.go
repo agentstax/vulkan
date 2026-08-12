@@ -31,7 +31,7 @@ func newCronAlterCmd(g *globalFlags) *cobra.Command {
 		Short: "Change a registered cron job's config (only the fields you pass)",
 		Long: "Change one or more config fields on an existing cron job. A patch --\n" +
 			"fields you don't pass are left untouched.\n\n" +
-			"A schedule change re-seeds the next firing from the new schedule -- one\n" +
+			"A schedule change re-seeds the next scheduled time from the new schedule -- one\n" +
 			"already due under the old schedule is dropped. Register calls still\n" +
 			"passing the pre-alter config will fail with a config mismatch.",
 		Example: "vulkan cron alter reports.nightly --schedule \"0 6 * * *\" --timeout 2m",
@@ -104,10 +104,10 @@ func newCronAlterCmd(g *globalFlags) *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVar(&scheduleExpr, "schedule", "", "cron spec or descriptor, UTC unless TZ= prefixed: \"30 4 * * 1\", \"@hourly\"")
-	f.DurationVar(&timeout, "timeout", 0, "how long one firing's delivery may run, e.g. 30s")
-	f.StringVar(&concurrency, "concurrency", "", "same-key policy when a firing lands while a previous one still runs: allow or defer")
-	f.StringVar(&data, "data", "", "opaque JSON payload carried on every firing")
-	f.StringVar(&metadata, "metadata", "", "opaque JSON metadata carried on every firing")
+	f.DurationVar(&timeout, "timeout", 0, "how long one job request's delivery may run, e.g. 30s")
+	f.StringVar(&concurrency, "concurrency", "", "same-key policy when a job request lands while a previous one still runs: allow or defer")
+	f.StringVar(&data, "data", "", "opaque JSON payload carried on every job request")
+	f.StringVar(&metadata, "metadata", "", "opaque JSON metadata carried on every job request")
 
 	return cmd
 }
@@ -138,7 +138,7 @@ func printCronAlterResult(w io.Writer, name string, before, updated *cron.CronJo
 }
 
 // cronJobFieldDiffs returns one row per field where the two jobs differ, over
-// exactly the fields alter can change (plus the next firing a schedule change
+// exactly the fields alter can change (plus the next scheduled time a schedule change
 // re-seeds).
 func cronJobFieldDiffs(a, b *cron.CronJob) []fieldDiff {
 	var diffs []fieldDiff

@@ -6,7 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics"
 )
 
-// CronJobSnapshots is every cron_job row's current firing health.
+// CronJobSnapshots is every cron_job row's current schedule health.
 func (c *MetricsController) CronJobSnapshots(ctx context.Context) ([]metrics.CronJobSnapshot, error) {
 	data, err := c.datastore.CronJobSnapshots(ctx)
 	if err != nil {

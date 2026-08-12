@@ -31,7 +31,7 @@ func newCronRegisterCmd(g *globalFlags) *cobra.Command {
 		Short: "Register a cron job (idempotent)",
 		Long: "Register a cron job. Idempotent -- an existing name with the same\n" +
 			"schedule/data/config is a no-op; a different one is rejected (that's\n" +
-			"alter's job). Every firing is produced with the job's name as its routing\n" +
+			"alter's job). Every job request is produced with the job's name as its routing\n" +
 			"key -- consumers bind job names.",
 		Example: "vulkan cron register reports.nightly --schedule \"30 4 * * *\" --data '{\"kind\":\"daily\"}'",
 		Args:    requireCronJobName("register", "name: lowercase [a-z0-9._-], e.g. reports.nightly"),
@@ -105,7 +105,7 @@ func newCronRegisterCmd(g *globalFlags) *cobra.Command {
 			if preJob != nil {
 				fmt.Fprintf(out, "%s cron job %q already registered (id=%d) -- no changes\n", glyphOK(), name, registered.Id)
 			} else {
-				fmt.Fprintf(out, "%s registered cron job %q (id=%d), next firing %s\n",
+				fmt.Fprintf(out, "%s registered cron job %q (id=%d), next scheduled time %s\n",
 					glyphOK(), name, registered.Id, timeCell(registered.NextScheduledTime))
 			}
 			return nil
@@ -114,10 +114,10 @@ func newCronRegisterCmd(g *globalFlags) *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVar(&scheduleExpr, "schedule", "", "cron spec or descriptor, UTC unless TZ= prefixed: \"30 4 * * 1\", \"@hourly\", \"TZ=America/New_York 0 9 * * *\" (required)")
-	f.DurationVar(&timeout, "timeout", 0, "how long one firing's delivery may run, e.g. 30s (library default)")
-	f.StringVar(&concurrency, "concurrency", "", "same-key policy when a firing lands while a previous one still runs: allow or defer (library default)")
-	f.StringVar(&data, "data", "", "opaque JSON payload carried on every firing (default {})")
-	f.StringVar(&metadata, "metadata", "", "opaque JSON metadata carried on every firing (default {})")
+	f.DurationVar(&timeout, "timeout", 0, "how long one job request's delivery may run, e.g. 30s (library default)")
+	f.StringVar(&concurrency, "concurrency", "", "same-key policy when a job request lands while a previous one still runs: allow or defer (library default)")
+	f.StringVar(&data, "data", "", "opaque JSON payload carried on every job request (default {})")
+	f.StringVar(&metadata, "metadata", "", "opaque JSON metadata carried on every job request (default {})")
 
 	// Duration flags default to 0, but 0 here means "unset -> library default",
 	// not "0s". Blank the shown default so --help doesn't advertise 0s.

@@ -10,16 +10,16 @@ import (
 
 // Config is RegisterCronJob's optional knobs.
 type Config struct {
-	// Timeout - how long one firing's delivery may run.
+	// Timeout - how long one job request's delivery may run.
 	// Default: 30s.
 	Timeout time.Duration
 
-	// Concurrency - same-key policy when a firing lands while a previous one
-	// still runs.
+	// Concurrency - same-key policy when a job request lands while a previous
+	// one still runs.
 	// Default: allow.
 	Concurrency common.ConcurrencyPolicy
 
-	// Metadata - marshaled to opaque JSON carried on every firing.
+	// Metadata - marshaled to opaque JSON carried on every job request.
 	// Default: {}.
 	Metadata any
 }

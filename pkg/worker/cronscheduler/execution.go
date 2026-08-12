@@ -17,8 +17,8 @@ import (
 )
 
 // scans cron_job for due rows at the row's poll_rate while a heartbeat holds
-// the claim, producing one JobRequest per due firing and advancing each fired
-// row to its next firing
+// the claim, producing one JobRequest per due row and advancing each produced
+// row to its next scheduled time
 type CronSchedulerExecution struct {
 	Owner  *common.Owner
 	Config *CronSchedulerConfig
@@ -94,16 +94,17 @@ func (i *CronSchedulerExecution) scan(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return err
 			}
-			i.Logger.WarnContext(ctx, "cron job firing failed -- siblings proceed", "cron_job", id, "error", err)
+			i.Logger.WarnContext(ctx, "cron job request produce failed -- siblings proceed", "cron_job", id, "error", err)
 		}
 	}
 	return nil
 }
 
-// produceJobRequest fires one due row: recheck under lock, produce the NEWEST
-// due firing, advance the row. Produce + advance + idempotency claim share the
-// transaction, so an ambiguous-commit replay rolls all three back together and
-// the cron.IdempotencyKey dedupe covers exactly that replay.
+// produceJobRequest resolves one due row: recheck under lock, produce the
+// JobRequest for the NEWEST due scheduled time, advance the row. Produce +
+// advance + idempotency claim share the transaction, so an ambiguous-commit
+// replay rolls all three back together and the cron.IdempotencyKey dedupe
+// covers exactly that replay.
 func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64) error {
 	return producer.InTransaction(ctx, i.datastore.Datastore, func(ctx context.Context, tx producer.Tx) error {
 		row, err := i.datastore.ClaimDueCronJob(ctx, tx, id)
@@ -116,15 +117,16 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 			return err
 		}
 
-		// fire the NEWEST due firing -- after downtime, staleness is at most
-		// one firing rate; older due firings are dropped, not fired late. The
-		// IsZero guard keeps an unsatisfiable schedule from spinning.
-		firing := row.NextScheduledTime
-		for next := schedule.Next(firing); !next.IsZero() && !next.After(row.DbNow); next = schedule.Next(firing) {
-			firing = next
+		// produce the NEWEST due scheduled time -- after downtime, staleness
+		// is at most one schedule rate; older due scheduled times are dropped,
+		// not produced late. The IsZero guard keeps an unsatisfiable schedule
+		// from spinning.
+		scheduledTime := row.NextScheduledTime
+		for next := schedule.Next(scheduledTime); !next.IsZero() && !next.After(row.DbNow); next = schedule.Next(scheduledTime) {
+			scheduledTime = next
 		}
 
-		request, err := cron.NewJobRequest(row.Id, row.Name, firing, row.Data, row.Metadata)
+		request, err := cron.NewJobRequest(row.Id, row.Name, scheduledTime, row.Data, row.Metadata)
 		if err != nil {
 			return err
 		}
@@ -134,7 +136,7 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 		produced, err := i.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
 			RoutingKey:     row.Name,
 			CompactionKey:  strconv.FormatInt(row.Id, 10), // id not name -- a destroyed name's reuse must not share a key
-			IdempotencyKey: cron.IdempotencyKey(firing, row.Id),
+			IdempotencyKey: cron.IdempotencyKey(scheduledTime, row.Id),
 			Message: &common.MessageOptions{
 				Concurrency: common.ConcurrencyPolicy(row.Concurrency),
 				Timeout:     row.Timeout,
@@ -144,19 +146,20 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 			return err
 		}
 		if produced.Duplicate {
-			// an earlier tick's ambiguous commit published this firing, then
+			// an earlier tick's ambiguous commit published this request, then
 			// failed to advance the row
-			i.Logger.WarnContext(ctx, "cron job firing was already published by an earlier ambiguous commit", "cron_job", row.Id, "name", row.Name, "firing", firing)
+			i.Logger.WarnContext(ctx, "cron job request was already published by an earlier ambiguous commit", "cron_job", row.Id, "name", row.Name, "scheduled_time", scheduledTime)
 		}
 
-		// next firing from the DB clock ONLY -- Go/DB skew double-fires tight schedules
+		// next scheduled time from the DB clock ONLY -- Go/DB skew
+		// double-produces tight schedules
 		next := schedule.Next(row.DbNow)
 		if next.IsZero() {
 			// schedule went unsatisfiable (tzdata drift): keep the produce,
 			// park the row -- it has no honest next_scheduled_time
-			i.Logger.WarnContext(ctx, "cron job schedule has no next firing -- suspending", "cron_job", row.Id, "name", row.Name, "schedule", row.Schedule)
-			return i.datastore.SuspendCronJob(ctx, tx, row.Id, firing)
+			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job", row.Id, "name", row.Name, "schedule", row.Schedule)
+			return i.datastore.SuspendCronJob(ctx, tx, row.Id, scheduledTime)
 		}
-		return i.datastore.AdvanceCronJob(ctx, tx, row.Id, next, firing)
+		return i.datastore.AdvanceCronJob(ctx, tx, row.Id, next, scheduledTime)
 	})
 }

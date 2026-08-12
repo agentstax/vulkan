@@ -16,8 +16,8 @@ func newCronDestroyCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "destroy <name>",
 		Short: "Permanently delete a cron job",
-		Long: "Permanently delete a cron job. A firing already produced and not yet\n" +
-			"consumed is not retracted -- destroy stops future firings only.",
+		Long: "Permanently delete a cron job. A job request already produced and not yet\n" +
+			"consumed is not retracted -- destroy stops future requests only.",
 		Args: requireCronJobName("destroy"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics/controller/datastore"
 )
 
-// overdueThreshold: how long a cron job may sit due-but-unfired before it
+// overdueThreshold: how long a cron job may sit due and unproduced before it
 // counts as overdue.
 const overdueThreshold = 10 * time.Minute
 

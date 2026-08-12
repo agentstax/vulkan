@@ -66,7 +66,7 @@ func newJobData(threshold int64) (*jobData, error) {
 	return &jobData{Threshold: threshold}, nil
 }
 
-// threshold decodes a firing's data payload. 0 means the check derives its
+// threshold decodes a job request's data payload. 0 means the check derives its
 // threshold live, or uses its default.
 func threshold(data json.RawMessage) (int64, error) {
 	var d jobData
