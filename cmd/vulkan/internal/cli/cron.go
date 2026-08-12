@@ -18,6 +18,7 @@ func newCronCmd(g *globalFlags) *cobra.Command {
 	cmd.AddCommand(newCronAlterCmd(g))
 	cmd.AddCommand(newCronSuspendCmd(g))
 	cmd.AddCommand(newCronUnsuspendCmd(g))
+	cmd.AddCommand(newCronRunCmd(g))
 	cmd.AddCommand(newCronDestroyCmd(g))
 
 	return cmd

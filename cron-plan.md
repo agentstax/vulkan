@@ -368,9 +368,18 @@ hand-copied produce shapes (lab-staleness rule). Constructor per house rule.
    idempotent re-register/mismatch diff/alter/no-fields alter/suspend/
    unsuspend/destroy + slug, schedule, JSON, concurrency, timeout>MinRate,
    not-found, non-TTY-destroy error paths.
-   (b) RunCronJob admin verb + `cron run` (run-now JobRequest via
-   Producer[cron.JobRequest], random v7 key + Concurrency Allow + stamps the
-   job's Timeout).
+   (b) RunCronJob + `cron run` BUILT 2026-08-11 —
+   `RunCronJob(ctx, name) (*producer.ProduceResult[cron.JobRequest], error)`
+   in pkg/admin/cron.go: MessageAdmin holds a Producer[cron.JobRequest]
+   (constructed in NewMessageAdmin, Registered per call), produces the
+   JobRequest with ScheduledTime = now UTC, RoutingKey = name, CompactionKey
+   = job id, MessageOptions{Concurrency allow, the job's Timeout}; NO
+   IdempotencyKey (Produce mints a fresh v7 per call — every run-now is its
+   own firing, only internal ambiguous-commit retries dedupe); suspended
+   jobs still run; schedule/next firing untouched. CLI `cron run <name>`
+   prints the produced message id. Verified live: row payload/keys/options
+   exact, second run-now advanced the compaction head (supersedes), runs on
+   a suspended job, not-found path.
    (c) derived status in `get` — one line per consumer group whose binding
    matches the job's name (normally one).
 4. **cronlab + close-out**: sections — validation rejections (incl. charset,

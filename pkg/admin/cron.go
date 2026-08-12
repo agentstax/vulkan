@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // RegisterCronJob is idempotent -- an existing name with an identical
@@ -109,6 +113,48 @@ func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error 
 		return errors.New("cron job name is required")
 	}
 	return a.cronJobDatastore.UnsuspendCronJob(ctx, name)
+}
+
+// RunCronJob produces one firing of the named job immediately, outside its
+// schedule -- the schedule and next firing are untouched, and a suspended job
+// still runs. Returns ErrCronJobNotFound if name isn't registered.
+//
+// The firing carries Concurrency 'allow' regardless of the job's own policy,
+// so it runs even while a previous firing still holds the job's key. It
+// supersedes a pending scheduled firing no consumer has claimed yet.
+func (a *MessageAdmin) RunCronJob(ctx context.Context, name string) (*producer.ProduceResult[cron.JobRequest], error) {
+	if name == "" {
+		return nil, errors.New("cron job name is required")
+	}
+
+	job, err := a.cronJobDatastore.GetCronJob(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if job == nil {
+		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+	}
+
+	instance, err := a.jobRequestProducer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
+	if err != nil {
+		return nil, err
+	}
+
+	request, err := cron.NewJobRequest(job.Id, job.Name, time.Now().UTC(), job.Data, job.Metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	// no IdempotencyKey: Produce creates a fresh v7 per call, so every produced
+	// run is its own unique job.
+	return instance.Produce(ctx, request, producer.ProduceOptions{
+		RoutingKey:    job.Name,
+		CompactionKey: strconv.FormatInt(job.Id, 10),
+		Message: &common.MessageOptions{
+			Concurrency: common.ConcurrencyAllow,
+			Timeout:     job.Timeout,
+		},
+	})
 }
 
 // DestroyCronJob permanently deletes the job. Returns ErrDestroyDisabled

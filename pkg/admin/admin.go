@@ -5,6 +5,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/producer"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
@@ -13,12 +14,13 @@ import (
 )
 
 type MessageAdmin struct {
-	systemController  *systemcontroller.SystemController
-	topicController   *topiccontroller.TopicController
-	cronJobDatastore  *cron.CronJobDatastore
-	metricsController *metricscontroller.MetricsController
-	migrateRunner     *migrate.Runner
-	allowDestroy      bool
+	systemController   *systemcontroller.SystemController
+	topicController    *topiccontroller.TopicController
+	cronJobDatastore   *cron.CronJobDatastore
+	jobRequestProducer *producer.Producer[cron.JobRequest]
+	metricsController  *metricscontroller.MetricsController
+	migrateRunner      *migrate.Runner
+	allowDestroy       bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -76,6 +78,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	jobRequestProducer, err := producer.NewProducer[cron.JobRequest](ds, &producer.ProducerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	metricsController, err := metricscontroller.NewMetricsController(ds, &metricscontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -90,11 +100,12 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	return &MessageAdmin{
-		systemController:  systemController,
-		topicController:   topicController,
-		cronJobDatastore:  cronJobDatastore,
-		metricsController: metricsController,
-		migrateRunner:     migrateRunner,
-		allowDestroy:      cfg.AllowDestroy,
+		systemController:   systemController,
+		topicController:    topicController,
+		cronJobDatastore:   cronJobDatastore,
+		jobRequestProducer: jobRequestProducer,
+		metricsController:  metricsController,
+		migrateRunner:      migrateRunner,
+		allowDestroy:       cfg.AllowDestroy,
 	}, nil
 }
