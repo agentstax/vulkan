@@ -148,6 +148,10 @@ Three layers per domain (template: worker, topic):
 - Inline `--` comments right-align as a group, to the furthest-out one. A
   ragged comment column reads as unrelated notes; an aligned one reads as the
   table it is.
+- No CHECK-constrained enums: a value-set CHECK makes every new value a
+  migration. An enum-shaped TEXT column lists its values in an inline comment
+  (`-- 'installed' | 'waiting'`); Go typing and validation are the only
+  enforcement. Structural constraints (NOT NULL, FKs, uniqueness) stay in SQL.
 
 ## Comments
 

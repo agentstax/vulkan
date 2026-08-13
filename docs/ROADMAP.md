@@ -249,6 +249,11 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Pre-v1, after 14b — measurement, evaluation, and documentation; these want a
 surface that has stopped moving.
 
+- **binding_declaration retention** — the ledger is append-only ([0511]):
+  waiting retries append attempt rows, so a long-blocked group grows the
+  table without bound. Add time-based cleanup of superseded attempt rows
+  (append-then-prune like message_log; off the register path, never touching
+  the newest installed row or a declarer's newest waiting row).
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high

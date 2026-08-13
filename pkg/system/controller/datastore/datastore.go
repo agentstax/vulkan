@@ -19,6 +19,7 @@ import (
 // - worker
 // - worker_instance
 // - binding
+// - binding_declaration
 // - compaction_head
 // - cron_job
 // - migration_log

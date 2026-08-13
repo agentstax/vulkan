@@ -181,6 +181,32 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		return err
 	}
 
+	// binding_declaration: one row appended per declaration attempt, never
+	// updated or deleted.
+	// newest installed row per group -> the effective set's declaration
+	// newest waiting row per declarer -> its latest still-blocked retry
+	// Claims never read this table; the effective set stays in binding rows.
+	createBindingDeclarationSql := `
+		CREATE TABLE IF NOT EXISTS binding_declaration (
+			id BIGSERIAL PRIMARY KEY,
+			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
+			status TEXT NOT NULL,                          -- 'installed' | 'waiting'
+			patterns TEXT[] NOT NULL,                      -- the full declared set, original NATS-style; empty = whole topic
+			declared_by TEXT NOT NULL,                     -- hostname:pid of the declaring process, display only
+			declared_at TIMESTAMPTZ NOT NULL,              -- when this declarer first stated this set; constant across its retries
+			attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when this attempt ran; an installed row's declared_at -> attempt_at is the wait it ended
+		);
+	`
+	if _, err := tx.Exec(ctx, createBindingDeclarationSql); err != nil {
+		return err
+	}
+
+	// group-scoped reads: newest installed row, newest waiting row per declarer
+	createBindingDeclarationIndexSql := `CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (consumer_group_id, id);`
+	if _, err := tx.Exec(ctx, createBindingDeclarationIndexSql); err != nil {
+		return err
+	}
+
 	// O(1) index for compaction's "is this the winner for its key" lookup --
 	// upserted synchronously in the same transaction as every keyed publish,
 	// never a background job. Shared across topics (not per-topic like
