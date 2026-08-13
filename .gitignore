@@ -8,6 +8,7 @@ go.work.sum
 # labs
 reclaimlab
 routinglab
+bench/scale/projector/projector
 bench/idempotency/env.sh
 bench/idempotency/gen_scripts.sh
 bench/idempotency/PLAN.md

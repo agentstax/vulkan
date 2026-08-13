@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -21,7 +23,9 @@ type MessageAdmin struct {
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
 	cronJobController  *croncontroller.CronJobController
+	consumerController *consumercontroller.ConsumerController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
+	alertProducer      *producer.Producer[alert.Alert]
 	metricsController  *metricscontroller.MetricsController
 	migrateRunner      *migrate.Runner
 	alertDeclarers     []worker.Declarer
@@ -94,6 +98,22 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	alertProducer, err := producer.NewProducer[alert.Alert](ds, &producer.ProducerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	consumerController, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	metricsController, err := metricscontroller.NewMetricsController(ds, &metricscontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -128,7 +148,9 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		systemController:   systemController,
 		topicController:    topicController,
 		cronJobController:  cronJobController,
+		consumerController: consumerController,
 		jobRequestProducer: jobRequestProducer,
+		alertProducer:      alertProducer,
 		metricsController:  metricsController,
 		migrateRunner:      migrateRunner,
 		alertDeclarers:     []worker.Declarer{partitionCountDefinition, compactionReadCostDefinition},

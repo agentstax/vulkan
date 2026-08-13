@@ -296,6 +296,24 @@ Read `__system.alerts` heads: current state per (check, owner), probably
 `vulkan alerts` or under `vulkan system`. Naming/shape at build with the
 user.
 
+DONE 2026-08-13. User picked `vulkan alert` tree + all-groups bindings. As
+built:
+
+- `vulkan alert list [-q]` — one row per (alert, owner): NAME OWNER STATUS
+  SEVERITY SINCE MESSAGE; quiet prints `name kind/owner`. Backed by
+  `MessageAdmin.ListAlerts` (registers the alert producer, lists heads).
+- Heads listing EXTENDS the producer's compaction machinery, not a parallel
+  read: `ListCompactionHeads` on datastore/controller/instance, sharing the
+  single head SELECT (`headSelectSql`) with `GetCompactionHead`, ordered by
+  compaction_key.
+- `vulkan alert bindings` — the TODO's binding audit surface, ALL groups:
+  GROUP TOPIC VERSION PATTERN. `ConsumerController.ListBindings` +
+  datastore join (COALESCE(display, pattern)); `MessageAdmin.ListBindings`;
+  admin grew consumerController + alertProducer fields.
+- Live-verified against the dev DB: 3 resolved partition_count heads from
+  the chunk-5 executor run render correctly; both alert consumer bindings
+  list.
+
 ### Chunk 7 — alertlab + close-out
 
 - Lab: register system -> suspended-vs-active check jobs, run-now a check

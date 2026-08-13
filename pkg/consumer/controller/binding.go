@@ -5,6 +5,14 @@ import (
 	"errors"
 )
 
+// Binding is one group's routing rule with the names a listing shows.
+type Binding struct {
+	GroupName     string
+	TopicName     string
+	SchemaVersion int64
+	Pattern       string
+}
+
 // Bind scopes a group's routing to events whose routing_key matches a wildcard
 // pattern ('*' matches any run of characters, any depth -- e.g.
 // "orders.*.created" also matches "orders.us.central1.created"). A group with
@@ -31,4 +39,19 @@ func (c *ConsumerController) ClearBindings(ctx context.Context, groupId int64) e
 	}
 
 	return c.datastore.ClearBindings(ctx, groupId)
+}
+
+// ListBindings returns every binding across all groups and topics. Groups
+// with no rows here match every event on their topic.
+func (c *ConsumerController) ListBindings(ctx context.Context) ([]*Binding, error) {
+	data, err := c.datastore.ListBindings(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bindings := make([]*Binding, 0, len(data))
+	for i := range data {
+		bindings = append(bindings, toBinding(&data[i]))
+	}
+	return bindings, nil
 }

@@ -12,3 +12,12 @@ func toGroup(data *datastore.GroupData) *Group {
 		CreatedAt: data.CreatedAt,
 	}
 }
+
+func toBinding(data *datastore.BindingData) *Binding {
+	return &Binding{
+		GroupName:     data.GroupName,
+		TopicName:     data.TopicName,
+		SchemaVersion: data.SchemaVersion,
+		Pattern:       data.Pattern,
+	}
+}

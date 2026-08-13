@@ -123,9 +123,8 @@ silently matches the union of old and new:
 - orphan cleanup on alert rename (old group + cursor + worker row + binding
   linger; inert but permanent debris): the group destroy verb + CLI (last 14a
   bullet) is the removal story -- alert renames are its motivating case.
-- read surface: binding has a `display` column built for humans but no verb or
-  CLI lists it -- add to the alert CLI chunk. you can't audit what you can't
-  list.
+- read surface DONE 2026-08-13: `vulkan alert bindings` lists every binding
+  (ConsumerController.ListBindings -> MessageAdmin.ListBindings).
 
 reconsider if latest_key should be a per topic latest_key_(topic_id) table. High update churn from many tables could be an issue. Should really do an evaluation on all system tables cursor / lease / binding / topic / latest_key tables
 
