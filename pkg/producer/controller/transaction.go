@@ -1,17 +1,17 @@
-package producer
+package controller
 
 import (
 	"context"
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/producer/controller"
+	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 )
 
 // Tx is the surface handed to a ProducerFunc/TransactionFunc closure; the
 // interface and its docs live with the datastore.
-type Tx = controller.Tx
+type Tx = datastore.Tx
 
-type TransactionFunc = controller.TransactionFunc
+type TransactionFunc func(ctx context.Context, tx Tx) error
 
 // InTransaction opens one transaction, runs transactionFunc against it, and
 // commits -- the way to publish to multiple targets atomically via ProduceInTx.
@@ -22,5 +22,15 @@ type TransactionFunc = controller.TransactionFunc
 // closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
 // keys mint fresh per call, so a rerun double-publishes.
 func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
-	return controller.InTransaction(ctx, ds, transactionFunc)
+	tx, err := ds.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := transactionFunc(ctx, datastore.NewTx(tx)); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }

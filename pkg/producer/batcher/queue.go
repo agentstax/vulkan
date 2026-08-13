@@ -1,4 +1,4 @@
-package producer
+package batcher
 
 import "sync"
 

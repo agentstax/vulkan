@@ -1,9 +1,10 @@
-package producer
+package batcher
 
 import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -19,7 +20,7 @@ const (
 
 // classifyBatchFailure maps every terminal attempt failure to exactly one
 // action. Transients and the first missing partition never reach here --
-// attemptBatch absorbs them.
+// the controller's batch append absorbs them.
 func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
 	// checked FIRST -- these can carry a statement index that is a retry
 	// artifact, NOT poison to evict
@@ -43,10 +44,13 @@ func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
 
 // resolveBatch records an outcome on every operation in the batch: attempt,
 // then apply the rulebook, until nothing is left unresolved.
-func (b *batcher[Message]) resolveBatch(ctx context.Context, batch *batch[Message]) {
+func (b *Batcher[Message]) resolveBatch(ctx context.Context, batch *batch[Message]) {
 	for batch.size() > 0 {
-		failedIdx, err := b.attemptBatch(ctx, batch)
+		appended, failedIdx, err := b.attemptBatch(ctx, batch)
 		if err == nil {
+			for i, operation := range batch.all() {
+				operation.response.recordAppended(appended[i])
+			}
 			batch.recordAll(nil)
 			return
 		}
@@ -69,4 +73,20 @@ func (b *batcher[Message]) resolveBatch(ctx context.Context, batch *batch[Messag
 			return
 		}
 	}
+}
+
+// attemptBatch hands the batch to the controller as pure appends -- queue and
+// response wiring never cross that boundary.
+func (b *Batcher[Message]) attemptBatch(ctx context.Context, batch *batch[Message]) ([]controller.Appended[Message], int, error) {
+	appends := make([]*controller.Append[Message], 0, batch.size())
+	for _, operation := range batch.all() {
+		request := operation.request
+		itemAppend, err := controller.NewAppend(request.message, request.options)
+		if err != nil {
+			// no index to pin it on -- the rulebook's split isolates the culprit
+			return nil, -1, err
+		}
+		appends = append(appends, itemAppend)
+	}
+	return b.controller.AppendMessageBatch(ctx, b.topicId, b.partitionSize, b.cfg.AttemptTimeout, appends)
 }

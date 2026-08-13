@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/producer/batcher"
+	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
@@ -14,22 +16,36 @@ import (
 type ProducerInstance[Message any] struct {
 	Topic *topic.Topic
 
-	datastore *producerDatastore[Message]
-	batcher   *batcher[Message]
+	controller *controller.ProducerController[Message]
+	batcher    *batcher.Batcher[Message]
+	cfg        ProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 
-func NewProducerInstance[Message any](resolvedTopic *topic.Topic, datastore *producerDatastore[Message]) (*ProducerInstance[Message], error) {
+// cfg is already resolved (WithDefaults + Validate) by NewProducer.
+func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerController *controller.ProducerController[Message], cfg ProducerConfig) (*ProducerInstance[Message], error) {
 	if resolvedTopic == nil {
 		return nil, errors.New("topic must not be nil")
 	}
-	if datastore == nil {
-		return nil, errors.New("datastore must not be nil")
+	if producerController == nil {
+		return nil, errors.New("controller must not be nil")
+	}
+
+	topicBatcher, err := batcher.NewBatcher(producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &batcher.BatcherConfig{
+		Logger:           cfg.Logger,
+		MaxSize:          cfg.BatchMaxSize,
+		ConcurrencyLimit: cfg.BatchConcurrencyLimit,
+		AttemptTimeout:   cfg.BatchAttemptTimeout,
+		ShutdownGrace:    cfg.BatchShutdownGrace,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &ProducerInstance[Message]{
-		Topic:     resolvedTopic,
-		datastore: datastore,
-		batcher:   newBatcher(datastore, resolvedTopic.Id, resolvedTopic.PartitionSize, datastore.cfg),
+		Topic:      resolvedTopic,
+		controller: producerController,
+		batcher:    topicBatcher,
+		cfg:        cfg,
 	}, nil
 }
 
@@ -43,7 +59,7 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, datastore *pro
 // the rerun dedups against whatever actually landed, reported as
 // ProduceResult.Duplicate == true.
 func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
+	opts.Message = opts.Message.Fill(p.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
@@ -52,20 +68,33 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 	// whole batch, so keyed calls take a per-call transaction
 	if opts.IdempotencyKey != uuid.Nil {
 		passthrough := func(context.Context, Tx, uuid.UUID) (*Message, error) { return message, nil }
-		return p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, opts)
+		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, opts)
+		if err != nil {
+			return nil, err
+		}
+		return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 	}
-	return p.batcher.produce(ctx, message, opts)
+
+	appended, err := p.batcher.Produce(ctx, message, opts)
+	if err != nil {
+		return nil, err
+	}
+	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
 func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
+	opts.Message = opts.Message.Fill(p.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 
-	return p.datastore.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+	appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+	if err != nil {
+		return nil, err
+	}
+	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
 // ProduceInTx appends producerFunc's message inside a transaction the caller
@@ -80,21 +109,22 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
 func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.datastore.cfg.Message)
+	opts.Message = opts.Message.Fill(p.cfg.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 
-	return p.datastore.AppendMessageInTx(ctx, tx.Raw(), p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+	appended, err := p.controller.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+	if err != nil {
+		return nil, err
+	}
+	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
 // GetCompactionHead returns the current compaction head under compactionKey, or nil if
 // nothing has been published under it.
 func (p *ProducerInstance[Message]) GetCompactionHead(ctx context.Context, compactionKey string) (*MessageRow[Message], error) {
-	if compactionKey == "" {
-		return nil, errors.New("compaction key is required")
-	}
-	return p.datastore.GetCompactionHead(ctx, p.Topic.Id, compactionKey)
+	return p.controller.GetCompactionHead(ctx, p.Topic.Id, compactionKey)
 }
 
 // GetCompactionHeadInTx returns the current compaction head under compactionKey,
@@ -102,8 +132,5 @@ func (p *ProducerInstance[Message]) GetCompactionHead(ctx context.Context, compa
 // It does so within the transaction and locks the found row in a FOR UPDATE
 // allowing for race-free compare and set.
 func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, compactionKey string) (*MessageRow[Message], error) {
-	if compactionKey == "" {
-		return nil, errors.New("compaction key is required")
-	}
-	return p.datastore.GetCompactionHeadInTx(ctx, tx.Raw(), p.Topic.Id, compactionKey)
+	return p.controller.GetCompactionHeadInTx(ctx, tx, p.Topic.Id, compactionKey)
 }

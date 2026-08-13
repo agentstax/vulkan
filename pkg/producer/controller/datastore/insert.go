@@ -1,0 +1,171 @@
+package datastore
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/agentstax/vulkan/internal/topic"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+)
+
+// produceInTxSavepoint is a fixed name, not per-call unique -- safe because
+// calls only ever run sequentially against one tx (pgx.Tx isn't safe for
+// concurrent use), so each use is released before the next begins.
+const produceInTxSavepoint = "sp_produce_in_tx"
+
+// ProduceFunc runs inside the append's transaction and returns the payload to
+// store -- its writes commit or roll back with the message.
+type ProduceFunc[Message any] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*Message, error)
+
+// runInsert runs produceFunc + the claim-protected message insert against an
+// already-open tx.
+func (d *ProducerDatastore[Message]) runInsert(ctx context.Context, tx pgx.Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+	payload, err := produceFunc(ctx, NewTx(tx), data.IdempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+
+	id, duplicate, err := d.insertProtected(ctx, tx, topicId, payload, data)
+	if err != nil {
+		return nil, err
+	}
+	return &AppendedData[Message]{Message: payload, Id: id, Duplicate: duplicate}, nil
+}
+
+// runInsertSavepoint wraps produceFunc + the message insert in a SAVEPOINT
+// scoped to just this call, so a missing-partition retry can't touch
+// anything else already done in tx.
+func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx pgx.Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+	if err := commitToSavepoint(ctx, tx, produceInTxSavepoint); err != nil {
+		return nil, err
+	}
+
+	payload, err := produceFunc(ctx, NewTx(tx), data.IdempotencyKey)
+	if err != nil {
+		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
+		return nil, err
+	}
+
+	id, duplicate, err := d.insertProtectedSavepoint(ctx, tx, topicId, payload, data)
+	if err != nil {
+		attemptRollbackToSavepoint(ctx, tx, produceInTxSavepoint)
+		return nil, err
+	}
+	return &AppendedData[Message]{Message: payload, Id: id, Duplicate: duplicate}, nil
+}
+
+func commitToSavepoint(ctx context.Context, tx pgx.Tx, savepointName string) error {
+	_, err := tx.Exec(ctx, "SAVEPOINT "+savepointName+";")
+	return err
+}
+
+func attemptRollbackToSavepoint(ctx context.Context, tx pgx.Tx, savepointName string) {
+	_, _ = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT "+savepointName+";")
+}
+
+// insertProtectedSavepoint pipelines the claim+insert CTE with RELEASE
+// SAVEPOINT as one round trip -- always a single statement regardless of
+// CompactionKey, so it always fully batches. duplicate=true means the claim
+// already existed.
+func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, tx pgx.Tx, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+	sql, args := protectedInsertSQL(topicId, payload, data)
+
+	batch := &pgx.Batch{}
+	batch.Queue(sql, args...)
+	batch.Queue("RELEASE SAVEPOINT " + produceInTxSavepoint + ";")
+
+	br := tx.SendBatch(ctx, batch)
+	err = br.QueryRow().Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// claim already existed -- inserted CTE never ran. Not a failure:
+		// RELEASE SAVEPOINT is still queued next and still needs reading.
+		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicId, "idempotency_key", data.IdempotencyKey)
+		duplicate = true
+	} else if err != nil {
+		br.Close()
+		return 0, false, err
+	}
+
+	if _, err := br.Exec(); err != nil { // RELEASE SAVEPOINT
+		br.Close()
+		return 0, false, err
+	}
+	return id, duplicate, br.Close()
+}
+
+// insertProtected runs the idempotency claim + message insert (+ compaction_head
+// upsert when keyed) in one round trip. duplicate=true means the claim already
+// existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
+func (d *ProducerDatastore[Message]) insertProtected(ctx context.Context, tx pgx.Tx, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+	sql, args := protectedInsertSQL(topicId, payload, data)
+
+	err = tx.QueryRow(ctx, sql, args...).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		d.Logger.DebugContext(ctx, "duplicate publish detected, idempotency claim already existed", "topic_id", topicId, "idempotency_key", data.IdempotencyKey)
+		return 0, true, nil // claim already existed -- already committed
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, false, nil
+}
+
+// protectedInsertSQL builds the claim+insert(+compaction_head upsert when keyed)
+// CTE -- shared with the savepoint-batched path so both run the exact same
+// statement. Claims against idempotency_key_<topicId>
+func protectedInsertSQL[Message any](topicId int64, payload *Message, data *AppendData[Message]) (string, []any) {
+	args := []any{data.IdempotencyKey, payload, data.RoutingKey}
+
+	var sql string
+	if data.CompactionKey != "" {
+		// claim + insert + compaction_head upsert in one round trip -- inserted
+		// stays empty when the claim already existed, so latest never fires either.
+		sql = fmt.Sprintf(`
+			WITH claim AS (
+				INSERT INTO %s (idempotency_key)
+				VALUES ($1)
+				ON CONFLICT (idempotency_key) DO NOTHING
+				RETURNING idempotency_key
+			), inserted AS (
+				INSERT INTO %s (payload, routing_key, compaction_key, compaction_rank, options)
+				SELECT $2, NULLIF($3, ''), $4, $6, $7  -- if routing_key $3 is empty string '' insert as NULL
+				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
+				RETURNING id
+			), latest AS (
+				INSERT INTO compaction_head (topic_id, compaction_key, head_id, compaction_rank)
+				SELECT $5, $4, id, $6 FROM inserted
+				ON CONFLICT (topic_id, compaction_key) DO UPDATE
+				SET head_id = EXCLUDED.head_id, compaction_rank = EXCLUDED.compaction_rank
+				-- compare rank first, if rank equal -> head_id is compared
+				WHERE (compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+			)
+			SELECT id FROM inserted;
+		`, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId))
+
+		args = append(args, data.CompactionKey, topicId, data.CompactionRank, data.Options) // $4, $5, $6, $7
+	} else {
+		// claim + insert in one round trip -- WHERE EXISTS only fires if the
+		// claim CTE landed a row, so a conflict makes both match zero rows.
+		sql = fmt.Sprintf(`
+			WITH claim AS (
+				INSERT INTO %s (idempotency_key)
+				VALUES ($1)
+				ON CONFLICT (idempotency_key) DO NOTHING
+				RETURNING idempotency_key
+			)
+			INSERT INTO %s (payload, routing_key, options)
+			SELECT
+				$2,
+				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
+				$4
+			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
+			RETURNING id;
+		`, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId))
+
+		args = append(args, data.Options) // $4
+	}
+
+	return sql, args
+}

@@ -1,4 +1,4 @@
-package producer
+package batcher
 
 import (
 	"cmp"
@@ -14,7 +14,7 @@ func newBatch[Message any](operations []*batchOperation[Message]) *batch[Message
 	// ascending CompactionKey -> every batch txn takes its compaction_head row
 	// locks in one global order: hot keys queue batch-to-batch, never deadlock
 	slices.SortStableFunc(operations, func(a, b *batchOperation[Message]) int {
-		return cmp.Compare(a.request.opts.CompactionKey, b.request.opts.CompactionKey)
+		return cmp.Compare(a.request.options.CompactionKey, b.request.options.CompactionKey)
 	})
 	return &batch[Message]{operations: operations}
 }

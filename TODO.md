@@ -185,3 +185,9 @@ Need to look at the new functionality it go 1.27 before deciding on the final pu
 Should think through making all tables append only by nature this would make us apache cassandra compliant have audit / debuggability for all operations and improve some levels of efficancy (partion based drops on everything) the main trade off is in complexity and in hot-path throughput explicitly for reads
 
 should use LOCK TIMEOUT for any ALTER sql migration commands (likely just need to document this)
+
+Need a convention for file content ordering such as:
+- vars / const at top
+- struct, new, validates
+- public -> private pairs
+- helper funcs at bottom (with helper block comment that seperates them)
