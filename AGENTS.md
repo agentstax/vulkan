@@ -39,12 +39,34 @@ covers session workflow only; the two are a set.
 
 ## Docs & record-keeping
 
-- The record-keeping surface is fixed: TODO.md (small sliding window of
-  tasks), LEARNING_PLAN.md (roadmap, settled designs, done-records),
-  conventions.md (code rules), AGENTS.md (this file). Never create new doc
-  files or ADR directories for decisions -- fold them in.
-- Planning/review docs the user asked for go in repo root where they can read
-  them; they get deleted at close-out once folded into LEARNING_PLAN.md.
-- "Explain it back" sections in LEARNING_PLAN.md/NOTES.md are the user's
-  learning exercise: write only the numbered questions, never the answers,
-  unless the user explicitly dictates or asks for edits to their own text.
+The record-keeping surface is fixed -- never create doc files outside it.
+Working docs live under docs/; only the rule files (conventions.md, this
+file) and README/CLAUDE.md stay at root:
+
+- docs/TODO.md -- sliding window of in-flight work ONLY.
+- docs/ROADMAP.md -- future work: Now / Next / Later / Parking lot. Reorder
+  by moving items; an item accumulates design notes as sub-bullets in place.
+  New ideas land in Later or the parking lot, never in TODO.md.
+- docs/HISTORY.md -- dated done-ledger, newest first, one entry per shipped
+  milestone, citing decision records as [NNNN].
+- docs/DECISIONS.md -- the index: one line per record, the retrieval layer.
+  Grep it first, open only what's needed. Record bodies live in
+  docs/decisions/ (NNNN-<slug>.md, front matter status/date/phase,
+  Context/Decision/Consequences, under 60 lines).
+  Records are append-only and written in the SAME session a design settles;
+  changing a decision means a new record plus flipping the old one's status
+  to superseded, linked both ways. A new record takes the next number after
+  the current max.
+- conventions.md (code rules) and AGENTS.md (this file) hold the binding
+  CURRENT rules -- never infer today's rules by replaying decision history.
+
+Lifecycle of a piece of work: idea -> ROADMAP (Later/parking lot) ->
+promoted to Now -> expanded in TODO.md when picked up -> design settles ->
+decision record -> ships -> HISTORY.md entry; its TODO.md and ROADMAP.md
+lines are removed.
+
+- Planning/review docs the user asked for go in repo root where they can
+  read them; deleted at close-out once folded into the surface above.
+- docs/archive/explain-it-back.md is the user's own writing (archived from
+  the deleted LEARNING_PLAN.md/NOTES.md) -- never edit it. Some decision
+  rationale exists only there; it is source material, not disposable.

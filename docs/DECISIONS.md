@@ -1,0 +1,263 @@
+# Decision records
+
+One line per record: number, date, status, title. Grep here first, then open
+only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
+
+- Numbers were allocated in per-phase blocks at extraction time, so gaps are
+  normal and numeric order is only approximate chronology — sort by the date
+  column for true order. Records 0501-0510 belong to the Phase 13 review
+  (2026-07/08) despite their high numbers.
+- A new record takes the next number after the current maximum. Records are
+  append-only: changing a decision means a new record plus flipping the old
+  one's status to `superseded` and naming the successor in both bodies.
+
+- 0001 2026-06-13 accepted (phase 1) — Claims use SELECT ... FOR UPDATE SKIP LOCKED
+- 0002 2026-06-13 accepted (phase 1) — The message DELETE commits in the same transaction as the claim
+- 0003 2026-06-13 superseded (phase 1) — The row lock is held for the entire processing duration
+- 0004 2026-06-13 accepted (phase 1) — Batch limit pinned to 1
+- 0005 2026-06-13 accepted (phase 1) — Graceful shutdown lets the in-flight batch finish under context.WithoutCancel
+- 0006 2026-06-13 accepted (phase 1) — The table is named message_log, not jobs
+- 0021 2026-06-14 accepted (phase 1.5) — The queue lives in the same Postgres database as the business data
+- 0022 2026-06-14 accepted (phase 1.5) — AppendMessage threads its transaction into a producer callback
+- 0023 2026-06-14 accepted (phase 1.5) — ProducerFunc takes a concrete pgx.Tx
+- 0041 2026-06-15 accepted (phase 2) — The claim is row data (status + locked_at), not a held DB lock
+- 0042 2026-06-15 accepted (phase 2) — Failures return to ready with a backoff on can_run_after; max attempts goes dead
+- 0043 2026-06-15 accepted (phase 2) — The dead-letter queue is WHERE status='dead', not a separate table
+- 0044 2026-06-15 accepted (phase 2) — Lease reclamation is a claim-predicate branch, not a reaper daemon
+- 0045 2026-06-15 accepted (phase 2) — The stuck window is the work timeout plus a 5s buffer
+- 0046 2026-06-15 accepted (phase 2) — The consumer owns the operational knobs; the datastore takes only connection params
+- 0047 2026-06-15 accepted (phase 2) — Delivery is at-least-once; consumerFunc must be idempotent
+- 0061 2026-06-20 accepted (phase 3) — The prefetcher blocks on WaitForRoom; the buffer never drops a claimed row
+- 0062 2026-06-20 accepted (phase 3) — The in-memory buffer stays shallow: depth is a lease-safety constraint, not a throughput lever
+- 0063 2026-06-20 accepted (phase 3) — Claim per batch, record success or failure per message
+- 0064 2026-06-20 accepted (phase 3) — Throughput is min(supply(batch), ack_capacity(workers))
+- 0065 2026-06-20 accepted (phase 3) — The claim index is a partial index on id covering ready and processing
+- 0066 2026-06-20 accepted (phase 3) — MaxConns is set explicitly on the datastore pool
+- 0067 2026-06-20 accepted (phase 3) — Scaling levers are applied in a fixed order
+- 0081 2026-06-20 accepted (phase 3.5) — Measure synchronous_commit only; skip the batch-ack measurement
+- 0082 2026-06-20 accepted (phase 3.5) — synchronous_commit=off is safe for this queue: it adds no new failure mode
+- 0083 2026-06-20 accepted (phase 3.5) — The crash lab proves off's cost is duplicate reruns, not loss, by SIGKILL with a widened WAL writer window
+- 0084 2026-06-20 accepted (phase 3.5) — The on/off sweep is read by shape with best-of-3/max, and conc=1 is the number to trust
+- 0085 2026-06-20 accepted (phase 3.5) — synchronous_commit=local is not measured
+- 0086 2026-06-20 accepted (phase 3.5) — The knob is set via ALTER DATABASE, and reset to on after the sweep
+- 0101 2026-06-23 accepted (phase 4) — Consuming reads an append-only log through a per-group cursor instead of mutating message rows
+- 0102 2026-06-23 accepted (phase 4) — The cursor claim must `ORDER BY id`; an unordered claim silently loses messages
+- 0103 2026-06-23 accepted (phase 4) — The cursor advances after each message, not once per batch
+- 0104 2026-06-23 superseded (phase 4) — `MoveCursor` stays a bare `SET position = $1` with no monotonic guard
+- 0105 2026-06-23 accepted (phase 4) — `FOR UPDATE` on the cursor serializes concurrent claims only, not the process-then-advance window
+- 0106 2026-06-23 accepted (phase 4) — Dropped lifecycle and lease machinery is parked as reference, not deleted
+- 0107 2026-06-23 accepted (phase 4) — Claimed rows are drained with `CollectRows` before the claim transaction commits
+- 0121 2026-06-23 accepted (phase 5) — A newly registered consumer group starts at position 0 and replays retained history
+- 0122 2026-06-23 accepted (phase 5) — `Process` is a continuous poll loop, not a single-shot pass
+- 0123 2026-06-23 accepted (phase 5) — The codebase keeps `message_log`/`cursor`/`position` naming rather than renaming to events/consumers
+- 0124 2026-06-23 superseded (phase 5) — Fan-out does not need a monotonic cursor guard; `MoveCursor` stays `SET position = $1`
+- 0125 2026-06-23 accepted (phase 5) — A `consumerFunc` error stops the whole poll loop; per-group retry and DLQ are deferred
+- 0126 2026-06-23 accepted (phase 5) — The poll loop waits one interval before its first claim
+- 0141 2026-06-26 accepted (phase 6.5a) — Two cursor frontiers (`claimed`, `committed`) carry the happy path with no per-message row
+- 0142 2026-06-26 accepted (phase 6.5a) — `committed` advances after each message, not once per batch at `high`
+- 0143 2026-06-26 accepted (phase 6.5a) — `MoveCursor` gains the monotonic guard `WHERE committed < $1`
+- 0144 2026-06-26 accepted (phase 6.5a) — The claim reads the pre-update `claimed` via an `old_values` CTE, not PostgreSQL 18's `old` alias
+- 0145 2026-06-26 superseded (phase 6.5a) — `claimed` advances at claim time, before processing, with no lease
+- 0161 2026-06-30 accepted (phase 6.5b) — Crash recovery rides on a lease per claimed range, not per-message rows
+- 0162 2026-06-30 accepted (phase 6.5b) — AdvanceWaterline is two statements, not one UPDATE
+- 0163 2026-06-30 accepted (phase 6.5b) — A lease covers (low, high], matching the claim read's convention
+- 0164 2026-06-30 accepted (phase 6.5b) — Reclaim drains before fresh claim, one expired lease per poll
+- 0165 2026-06-30 accepted (phase 6.5b) — The cap on repeated reclaims was deferred until the exception path existed
+- 0166 2026-06-30 accepted (phase 6.5b) — Waterline advance moved to a lazy roller; per-message MoveCursor deleted
+- 0181 2026-07-03 accepted (phase 6.5c) — A deliveries row exists only while a message needs individual attention; success is no row
+- 0182 2026-07-03 accepted (phase 6.5c) — Commit frees the lease before recording exception rows
+- 0183 2026-07-03 accepted (phase 6.5c) — The waterline pins below unresolved exceptions; dead rows do not block it
+- 0184 2026-07-03 accepted (phase 6.5c) — ClaimExceptions dead-letters crash-looping rows before claiming
+- 0185 2026-07-03 accepted (phase 6.5c) — DrainExceptions runs as its own poll loop, separate from CursorClaim
+- 0186 2026-07-03 accepted (phase 6.5c) — MessageException and MessageTerminal are two distinct types, not a flag
+- 0187 2026-07-03 accepted (phase 6.5c) — No ON CONFLICT on the exception INSERT
+- 0188 2026-07-03 accepted (phase 6.5c) — Resolution verbs are RecordExceptionSuccess/RecordExceptionFailure, not Ack/Nack
+- 0189 2026-07-03 accepted (phase 6.5c) — String building in SQL uses concat(), not ||
+- 0190 2026-07-03 accepted (phase 6.5c) — Reclaim is one atomic UPDATE, not DELETE plus INSERT
+- 0191 2026-07-03 accepted (phase 6.5c) — A range past MaxRangeReclaims moves into the per-message exception path
+- 0192 2026-07-03 accepted (phase 6.5c) — ExceptionClaim payload unmarshal failure is fatal, not retried
+- 0201 2026-07-03 accepted (phase 7) — Producers publish a routing_key attribute; groups opt in via binding rows; no binding means receive everything
+- 0202 2026-07-03 accepted (phase 7) — Routing is one shared predicate evaluated at read time in both consume paths
+- 0203 2026-07-03 accepted (phase 7) — Binding patterns are true wildcards, not NATS-style depth-precise matchers
+- 0204 2026-07-03 accepted (phase 7) — BindTopic and ClearBindings are admin calls, not Datastore interface methods
+- 0205 2026-07-03 accepted (phase 7) — Reads name their columns explicitly; SELECT * is out
+- 0206 2026-07-03 accepted (phase 7) — Matching is on routing_key only; no header or content matcher
+- 0207 2026-07-03 accepted (phase 7) — binding.kind, header_match, and their CHECK constraint were dropped
+- 0208 2026-07-03 accepted (phase 7) — FanOut keeps its full-table rescan; a per-group high-water mark is deferred
+- 0221 2026-07-08 accepted (phase 8a) — message_log is partitioned by RANGE (id), not created_at
+- 0222 2026-07-08 accepted (phase 8a) — Retention is a hybrid: whole-partition drop plus a bounded sweep of survivors
+- 0223 2026-07-08 accepted (phase 8a) — Retention respects a MIN(committed) drop floor unless explicitly opted out
+- 0224 2026-07-08 superseded (phase 8a) — Partition labs swap message_log to a lab-scale width and restore the schema on exit
+- 0225 2026-07-08 accepted (phase 8a) — Register creates cursor rows only for CURSOR-type groups
+- 0226 2026-07-08 superseded (phase 8a) — Retention shipped scoped to the one shared log, per-topic scoping deferred
+- 0227 2026-07-08 accepted (phase 8a) — Partition automation is the Janitor loop in Go, not pg_partman
+- 0241 2026-07-10 accepted (phase 8b) — Each topic is its own physical table with its own sequence, partitions, and janitor
+- 0242 2026-07-10 accepted (phase 8b) — routing_key/bindings stay a coarser concept above topics, not folded into them
+- 0243 2026-07-10 accepted (phase 8b) — topic_id joins the keys of cursor/deliveries/binding; lease gets the column only
+- 0244 2026-07-10 accepted (phase 8b) — Topic identity is a per-call datastore parameter, not a field on the datastore
+- 0245 2026-07-10 accepted (phase 8b) — Topics are registered explicitly and never auto-created on use
+- 0246 2026-07-10 accepted (phase 8b) — deliveries stays one shared table across every topic, unlike message_log
+- 0247 2026-07-10 accepted (phase 8b) — No deliveries.status index until real evidence demands one
+- 0248 2026-07-10 accepted (phase 8b) — Two routing_key slices sharing one topic share that topic's drop floor, by design
+- 0261 2026-07-11 accepted (phase 8c) — Compacted topics resolve latest-per-key at claim time, not by background deletion
+- 0262 2026-07-11 accepted (phase 8c) — latest_key trades a second synchronous write per keyed publish for an O(1) latest-per-key read
+- 0263 2026-07-11 accepted (phase 8c) — The latest-per-key predicate is unbounded, not bounded by the claim's own high
+- 0264 2026-07-11 superseded (phase 8c) — The compaction_key index is partial, covering only keyed rows
+- 0265 2026-07-11 accepted (phase 8c) — Optional produce inputs travel in a ProduceOptions struct, not positional strings
+- 0266 2026-07-11 accepted (phase 8c) — Key deletion is expressed in the payload; there is no schema-level tombstone
+- 0267 2026-07-11 accepted (phase 8c) — The latest_key upsert guard compares id values, not commit order
+- 0268 2026-07-11 accepted (phase 8c) — latest_key is one shared table across all topics, not per-topic
+- 0269 2026-07-11 accepted (phase 8c) — Retention stays compaction-unaware; janitors garbage-collect dangling latest_key rows
+- 0270 2026-07-11 rejected (phase 8c) — A latest_key backfill was built, verified live, then reverted
+- 0271 2026-07-11 accepted (phase 8c) — The correlated scan's cost was measured before committing to latest_key
+- 0272 2026-07-11 accepted (phase 8c) — The compaction_key partial index was dropped once latest_key left it without a consumer
+- 0273 2026-07-11 accepted (phase 8c) — The synchronous latest_key write cost was measured and accepted, hot-key serialization included
+- 0281 2026-07-12 accepted (phase 9) — Every consumerFunc failure shape lands in the existing per-message retry/backoff/dead-letter path
+- 0282 2026-07-12 accepted (phase 9) — Datastore blips are retried via pkg/retry with explicit retryable/permanent classification
+- 0283 2026-07-12 accepted (phase 9) — An idempotency_key claim table prevents double-publish on ambiguous commit acks
+- 0284 2026-07-12 accepted (phase 9) — The idempotency check's measured cost was cut with a batched CTE and a per-call opt-out
+- 0285 2026-07-12 accepted (phase 9) — Commit() classification lives inline at each call site; Wrap passes pre-classified errors through
+- 0286 2026-07-12 accepted (phase 9) — Graceful shutdown narrows the interrupted lease instead of freeing it
+- 0287 2026-07-12 accepted (phase 9) — One shared callSafely wraps consumerFunc for all three claim paths
+- 0288 2026-07-12 accepted (phase 9) — The hard per-message timeout is a detached-goroutine race, with abandonment accepted and tracked
+- 0289 2026-07-12 accepted (phase 9) — WorkTimeoutGrace defaults to 100ms, sized from a measured scheduler latency
+- 0290 2026-07-12 accepted (phase 9) — Timeout errors record the message id in last_error, never the work payload
+- 0291 2026-07-12 accepted (phase 9) — Panic recovery's defer lives inside the spawned goroutine and sends into done
+- 0292 2026-07-12 accepted (phase 9) — AbandonedRoutines.Remove runs after recover() within the same defer
+- 0293 2026-07-12 accepted (phase 9) — The abandoned-goroutine registry is a mutex-guarded map keyed by (MessageId, Attempt), kept as plain in-process state
+- 0294 2026-07-12 accepted (phase 9) — The retry.Wrap success-after-retries bug was fixed with a plain early-return, not a classification rewrite
+- 0301 2026-07-14 accepted (phase 10) — The waterline rollup stays lazy; no cursor update at commit time
+- 0302 2026-07-14 accepted (phase 10) — pkg/ depends on the OTel metric API only, never the SDK or an exporter
+- 0303 2026-07-14 accepted (phase 10) — The metrics snapshot is the single source for both the debug readout and the OTel instruments
+- 0304 2026-07-14 accepted (phase 10) — Logging goes through a caller-supplied interface with an io.Writer-backed default
+- 0305 2026-07-14 accepted (phase 10) — One queue-state query is the only derivation of the DB-truth health numbers
+- 0321 2026-07-16 accepted (phase 11) — Multi-topic atomic publish exposes the transaction via a closure, not a declarative PublishAll
+- 0322 2026-07-16 accepted (phase 11) — Partition self-heal in ProduceInTx is per-target via SAVEPOINT, with no opt-out
+- 0323 2026-07-16 accepted (phase 11) — InTransaction does not retry
+- 0324 2026-07-16 accepted (phase 11) — delivery_log_<topic_id> records only failed attempts; a row's absence is the success signal
+- 0325 2026-07-16 accepted (phase 11) — deliveries went per-topic, and the six remaining shared tables were singularized, before the audit table shipped
+- 0326 2026-07-16 accepted (phase 11) — Nested timeouts use context.WithTimeoutCause naming the budget that fired
+- 0327 2026-07-16 accepted (phase 11) — Commit's per-exception writes are batched; RecordException stays one message at a time
+- 0328 2026-07-16 accepted (phase 11) — The Datastore interfaces' fate was deferred to a standing cleanup phase, not decided mid-audit
+- 0341 2026-07-20 accepted (phase 11.5) — Schema lives as versioned Go code; golang-migrate and its .sql files are deleted
+- 0342 2026-07-20 accepted (phase 11.5) — A migration is a sparse struct of func fields, run against a Querier that cannot manage transactions
+- 0343 2026-07-20 accepted (phase 11.5) — One append-only schema_log table; current version is the latest-by-id success row, not MAX(schema_version)
+- 0344 2026-07-20 accepted (phase 11.5) — System scope and topic scope version independently
+- 0345 2026-07-20 accepted (phase 11.5) — One advisory lock id, two hold-times: session-scoped for a migrate run, xact-scoped for RegisterSystem
+- 0346 2026-07-20 accepted (phase 11.5) — Migration registries are explicit ordered slices, not init() registration
+- 0347 2026-07-20 accepted (phase 11.5) — Missing or mismatched schema surfaces as teaching errors, not raw Postgres errors
+- 0348 2026-07-20 accepted (phase 11.5) — AlterTopic takes a sparse pointer-per-field patch; nil means leave alone
+- 0349 2026-07-20 accepted (phase 11.5) — The alter UPDATE is one static COALESCE($n, col) statement, not a dynamically built SET list
+- 0350 2026-07-20 accepted (phase 11.5) — PartitionSize is immutable by omission from AlterConfig; dynamic partition bounds deferred
+- 0351 2026-07-20 accepted (phase 11.5) — renameTopic pins the id first and updates WHERE id = $1, never WHERE name = $1
+- 0352 2026-07-20 accepted (phase 11.5) — Renaming a topic is its own verb, not a NewName field on the alter patch
+- 0353 2026-07-20 accepted (phase 11.5) — delivery_log_<id> is always created; DisableDeliveryLog gates only the writes
+- 0354 2026-07-20 accepted (phase 11.5) — The CLI is a nested Go module, resolved locally through a gitignored go.work
+- 0355 2026-07-20 accepted (phase 11.5) — CLI flags map onto the sparse config structs via cmd.Flags().Changed
+- 0356 2026-07-20 accepted (phase 11.5) — No git tag marks this body of work
+- 0361 2026-07-28 superseded (phase 13) — MessageProducer.Register(ctx) captures the instance lifetime and gates Produce
+- 0362 2026-07-28 accepted (phase 13) — NewMessageProducer takes the raw PostgresDatastore and builds its datastores internally
+- 0363 2026-07-28 accepted (phase 13) — Register validates the topic handle fail-fast: by-name fetch plus whole-struct compare
+- 0364 2026-07-28 accepted (phase 13) — A non-cancellable lifecycle ctx is an error, with an explicit DisableGracefulShutdown opt-out
+- 0365 2026-07-28 accepted (phase 13) — Registration is once per instance, and lifecycle sentinels live in pkg/errors
+- 0366 2026-07-28 accepted (phase 13) — Consumer session loops keep their ctx and run under a merged ctx; wind-down returns nil
+- 0367 2026-07-28 accepted (phase 13) — Janitor splits into a gated public entrypoint and a private loop
+- 0368 2026-07-28 accepted (phase 13) — The consumer shutdown hook is deleted; the app that constructs the datastore closes it
+- 0369 2026-07-28 accepted (phase 13) — The payload generic is named Message, cascading Work* type names to Message*
+- 0370 2026-07-28 accepted (phase 13) — Topic administration moves to an admin object holding the datastore
+- 0371 2026-07-28 accepted (phase 13) — The table-name functions move to internal/topic
+- 0372 2026-07-28 accepted (phase 13) — Janitor and partition tuning fields are topic-scoped and persisted on the topic row
+- 0373 2026-07-28 accepted (phase 13) — QueueTimeout is renamed QueueMargin; WorkTimeout and AckMargin keep their names
+- 0374 2026-07-28 accepted (phase 13) — Datastore retry policy becomes retry.Policy, carried per config, not a global
+- 0375 2026-07-28 accepted (phase 13) — Exception retry backoff reuses retry.Policy instead of a separate config surface
+- 0376 2026-07-28 superseded (phase 13) — Always-on idempotency: make idempotency_key the enforced identity of message_log
+- 0377 2026-07-28 accepted (phase 13) — Configs validate at construction via an exported WithDefaults-then-Validate pair
+- 0378 2026-07-28 accepted (phase 13) — PartitionSafetyBuffer is deleted; the janitor always keeps the next partition created
+- 0379 2026-07-28 rejected (phase 13) — Multi-partition create-ahead (a PartitionsAhead knob) is rejected; PartitionSize is the lever
+- 0380 2026-07-28 accepted (phase 13) — The datastore interfaces are deleted in favor of the concrete types
+- 0381 2026-08-01 accepted (phase 14) — topic.Destroy drops partitions in batches across multiple transactions
+- 0382 2026-08-01 accepted (phase 14) — Partition batches use plain DROP TABLE IF EXISTS with no DETACH first
+- 0383 2026-08-01 accepted (phase 14) — Partition-drop batch size is a fixed constant of 100, not a config knob
+- 0384 2026-08-01 accepted (phase 14) — The partition drain loop is bounded, giving up via an unexported sentinel
+- 0385 2026-08-01 accepted (phase 14) — The abandoned-routines tracking map stays unbounded; no config knob
+- 0386 2026-08-01 accepted (phase 14) — The abandoned-routine Add/Remove race is fixed structurally with a reaper goroutine
+- 0387 2026-08-01 accepted (phase 14) — A missing cursor row errors loudly, detected by restructuring the claim query instead of adding an existence check
+- 0388 2026-08-01 accepted (phase 14) — The cursor-claim query locks the cursor row with FOR UPDATE in the old_values read
+- 0389 2026-08-01 accepted (phase 14) — FanOut tracks a per-group high-water mark on the cursor table; LIFECYCLE groups register cursor rows and pin retention
+- 0390 2026-08-01 accepted (phase 14) — FanOut delivers eagerly past the proven head; only the mark waits for proof
+- 0391 2026-08-01 accepted (phase 14) — FanOut's scan bound is a scalar subquery, not a join on old_values
+- 0392 2026-08-01 accepted (phase 14) — cursor claimed advances via GREATEST so a group running both paths cannot regress its frontier
+- 0393 2026-08-01 accepted (phase 14) — Binding changes are forward-only; history the FanOut mark has passed stays as routed
+- 0394 2026-08-01 accepted (phase 14) — Cursor claims stop at a proven head via a snapshot fence, not the visible MAX(id)
+- 0395 2026-08-01 accepted (phase 14) — The pending (head, xmax) pair is stored unconditionally on every poll
+- 0396 2026-08-01 accepted (phase 14) — An idle poll short-circuits after the read-only snapshot statement
+- 0397 2026-08-01 accepted (phase 14) — No index on deliveries status for v1; reopen only on measured evidence, and prefer a partial index then
+- 0398 2026-08-01 accepted (phase 14) — No DELETE CASCADEs and no triggers; integrity and logging stay in visible DML
+- 0399 2026-08-01 accepted (phase 14) — Process keeps per-tick-fatal claim errors; no loop-level retry/backoff
+- 0400 2026-08-01 accepted (phase 14) — Connection-death SQLSTATEs are retryable; resource-exhaustion, corruption, and misconfiguration codes are not
+- 0401 2026-08-06 accepted (phase 14a) — A message schema change is a new physical topic under the same name, never an in-place migration
+- 0402 2026-08-06 accepted (phase 14a) — Migrating a compacted topic to a new version is a user-space bridge consumer, not a library verb
+- 0403 2026-08-06 accepted (phase 14a) — Compaction's winner rule generalized to a signed caller-supplied rank compared before id
+- 0404 2026-08-06 accepted (phase 14a) — Message row metadata reaches consumer functions via consumer.MetaFromContext, not a signature change
+- 0405 2026-08-06 accepted (phase 14a) — The topic catalog is keyed (name, schema_version), and constructors require SchemaVersion positionally
+- 0406 2026-08-06 accepted (phase 14a) — FamilyHealth never reports a compacted topic safe to retire
+- 0407 2026-08-06 accepted (phase 14a) — The bridge derives its IdempotencyKey deterministically from the source message id
+- 0408 2026-08-06 accepted (phase 14a) — The topic catalog column is named schema_version, accepting the overlap with schema_log.schema_version
+- 0409 2026-08-06 accepted (phase 14a) — There is no unversioned GetTopic(name); every topic read is version-addressed
+- 0410 2026-08-06 accepted (phase 14a) — Topic display identity stays two structured fields, not a concatenated name@vN string
+- 0411 2026-08-06 accepted (phase 14a) — FamilyHealth and VersionHealth live in pkg/admin, not as a pkg/metrics composition
+- 0421 2026-08-08 accepted (phase 14a) — One generic worker/worker_instance pair replaces per-feature maintenance/duty plumbing
+- 0422 2026-08-08 accepted (phase 14a) — Exclusivity is claim-per-instance, not claim-per-tick
+- 0423 2026-08-08 accepted (phase 14a) — The manager respawns only on ErrInstanceLost and propagates every other error
+- 0424 2026-08-08 accepted (phase 14a) — The consumer inversion: consumption loops are worker rows the manager spawns
+- 0425 2026-08-09 accepted (phase 14a) — One system manager row; the daemon is the same manager at deployment scope
+- 0426 2026-08-08 accepted (phase 14a) — Producer split into pure factory plus Register; the stored lifecycleCtx dropped
+- 0427 2026-08-08 accepted (phase 14a) — Snapshot verdicts are classify functions returning named enums
+- 0428 2026-08-11 accepted (phase 14a) — EnsureNextPartition deleted without a replacement home
+- 0429 2026-08-08 accepted (phase 14a) — Duplicate beside pkg/maintain, don't retrofit it
+- 0430 2026-08-08 accepted (phase 14a) — NoInstanceTarget (-1) for self-claimed consumer loops
+- 0431 2026-08-09 accepted (phase 14a) — The umbrella package is systemmanager, not Maintainer
+- 0441 2026-08-02 accepted (phase 14a) — Every domain gets the same three-layer package shape
+- 0442 2026-08-02 accepted (phase 14a) — All input validation lives at the controller; datastores trust their inputs
+- 0443 2026-08-04 accepted (phase 14a) — pkg/consumer is a door, not a vocabulary layer
+- 0444 2026-08-04 accepted (phase 14a) — Consumption-loop packages sit under the door with their own narrow configs
+- 0445 2026-08-04 accepted (phase 14a) — MessageMeta lives in the one new leaf, pkg/consumer/message
+- 0446 2026-08-04 accepted (phase 14a) — ConsumerDatastore's phantom type parameter deleted
+- 0447 2026-08-04 accepted (phase 14a) — uuid.UUID above the datastore, pgtype.UUID below; ErrLeaseLost declared where detected
+- 0448 2026-08-04 superseded (phase 14a) — No shared base package for the consumption-loop packages at first
+- 0449 2026-08-04 accepted (phase 14a) — deliveryconsumer kept in the tree but not wired to run
+- 0450 2026-08-04 accepted (phase 14a) — rangeState and claimBuffer stay private, not their own packages
+- 0451 2026-08-04 accepted (phase 14a) — Consumption-loop package names keep the house stutter for now
+- 0461 2026-08-12 accepted (phase 14a) — Scheduled work is built on the existing messaging machinery, with one compacted `__system.job_requests` topic
+- 0462 2026-08-12 accepted (phase 14a) — The job name is the routing key; there is no handler column
+- 0463 2026-08-12 accepted (phase 14a) — Cron concurrency is enforced at consume time by the key lease, never by the scheduler
+- 0464 2026-08-12 accepted (phase 14a) — Missed scheduled times are dropped: the scheduler walks to the newest due time and produces only that
+- 0465 2026-08-12 accepted (phase 14a) — Job-request status is derived from existing tables, never written
+- 0466 2026-08-12 accepted (phase 14a) — `__system.job_requests` runs with `DeliveryLogModeAll` so successes leave rows
+- 0467 2026-08-12 accepted (phase 14a) — Status classification checks terminal outcomes before the not-head "superseded" case
+- 0468 2026-08-12 accepted (phase 14a) — Registry verbs: idempotent `RegisterCronJob` that errors on config mismatch, `Alter` re-seeds `next_scheduled_time`, destroy gated by `AllowDestroy`
+- 0469 2026-08-12 accepted (phase 14a) — Vendor the robfig cron schedule core instead of hand-rolling or adding a dependency
+- 0470 2026-08-12 accepted (phase 14a) — The scheduler produces each due job in its own transaction
+- 0471 2026-08-12 accepted (phase 14a) — `RunCronJob` takes a fresh v7 idempotency key per call and defaults to concurrency 'allow'
+- 0472 2026-08-12 accepted (phase 14a) — "Firing" is retired from the codebase's vocabulary
+- 0473 2026-08-12 accepted (phase 14a) — Status and request-listing reads are flat per-fact queries composed in Go, not one CTE statement
+- 0481 2026-08-13 accepted (phase 14a) — Each default alert check is its own cron job and worker-kind subpackage
+- 0482 2026-08-13 accepted (phase 14a) — One consumer group per check; the central alert dispatcher is dead
+- 0483 2026-08-13 accepted (phase 14a) — The `__system.alerts` topic is the alert state store, dedup memory, and integration surface
+- 0484 2026-08-13 accepted (phase 14a) — Alert transitions are decided by one pure function, and evidence never enters it
+- 0485 2026-08-13 accepted (phase 14a) — There is no notifier component: notification is a side effect of `Record` observing a status change
+- 0486 2026-08-13 accepted (phase 14a) — Alert executors are worker definitions the manager claims, never embedded goroutines
+- 0487 2026-08-13 accepted (phase 14a) — The alert domain owns measurement and decision; producer and consumer inject it
+- 0488 2026-08-13 accepted (phase 14a) — "handler" and "publisher" are retired as domain nouns; the write door is `AlertController.Record`
+- 0489 2026-08-13 accepted (phase 14a) — Checks declare themselves at `RegisterSystem`, with binds made idempotent by `UNIQUE` + `ON CONFLICT DO NOTHING`
+- 0490 2026-08-13 accepted (phase 14a) — The register-time evaluator pass is log-only and never writes to the alerts topic
+- 0501 2026-08-01 accepted (phase 13) — Schema provisioning is a library call, not an external migrate step
+- 0502 2026-07-28 accepted (phase 13) — The consumer gets an opt-in circuit breaker for systemic downstream failure
+- 0503 2026-07-28 accepted (phase 13) — Breaker input is user error classification, recorded as error_class on the delivery row
+- 0504 2026-07-28 accepted (phase 13) — The breaker trips per instance; global OPEN is a quorum of locally-open instances
+- 0505 2026-07-28 accepted (phase 13) — The breaker's trip threshold is a conservative debounce, not statistics
+- 0506 2026-07-28 accepted (phase 13) — Reconciliation refunds systemic failures on CLOSE, run by the probe winner; recovery is automatic
+- 0507 2026-08-01 accepted (phase 13) — The public surface is organized by three audiences; plumbing types are demoted
+- 0508 2026-08-01 accepted (phase 13) — The concurrency package goes internal; consumers build queue and pool from ConsumerConfig
+- 0509 2026-08-01 accepted (phase 13) — The retry surface is trimmed to Policy and the two error types
+- 0510 2026-08-01 accepted (phase 13) — ConsumerType and its constants are demoted; NewConsumer defaults to cursor consumption

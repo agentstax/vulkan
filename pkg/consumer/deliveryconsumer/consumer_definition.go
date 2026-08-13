@@ -3,8 +3,8 @@ package deliveryconsumer
 // The LIFECYCLE consumption path, PARKED: at the current feature set it is a
 // strictly more expensive CURSOR (a delivery row per message vs one frontier)
 // with no shipped capability CURSOR lacks. It re-earns its place only with the
-// non-FIFO queue work (priority/delay/fairness -- see TODO.md's lifecycle
-// entries). Keep its labs green; don't invest new work here.
+// non-FIFO queue work (priority/delay/fairness). Keep its labs green; don't
+// invest new work here.
 
 import (
 	"context"

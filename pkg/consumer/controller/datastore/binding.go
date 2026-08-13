@@ -18,7 +18,7 @@ import (
 // group's cursor, so history a previous binding skipped stays skipped.
 //
 // TODO - this is a true wildcard, not a NATS-style selector -- it can't pin an
-// exact token depth (see TODO.md).
+// exact token depth.
 func (d *ConsumerDatastore) Bind(ctx context.Context, groupID int64, pattern string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.bind(ctx, groupID, pattern)

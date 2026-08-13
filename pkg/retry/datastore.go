@@ -82,7 +82,7 @@ func IsTransientPgError(err error) bool {
 
 		// connection died after a statement may have shipped, so the outcome
 		// is genuinely ambiguous -- every DatastoreRetry.Wrap call site is
-		// audited for this (TODO.md); an ungated write added to one reopens it.
+		// audited for this; an ungated write added to one reopens it.
 		case "08000", "08006", "08007", "40003":
 			return true
 
