@@ -4807,25 +4807,56 @@ sequenced after both of these close.*
       supported it. It's now parsed and assigned like any other
       flag-derived field, erroring via `failUsage` on a non-numeric value
       the same way `--database-url`'s port parsing already did.
-- [ ] **Group retirement, manual half: a destroy-group verb + CLI** (the
+- [x] **Group retirement, manual half: a destroy-group verb + CLI** (the
       automated expiration half rides with **13d**, where the design
       discussion is recorded). Today a retired consumer group has NO
       deletion path short of destroying the topic: its cursor pins the
       topic's retention floor forever (the only workaround,
       `AllowDropPastCommitted`, waives the safety for live groups too),
-      the fleet daemon claims and no-op-rolls its waterline duty forever,
-      and `maintain status` shows the dead group ✓ ok — dead and healthy
-      are indistinguishable. Shape: a guarded admin verb mirroring
-      DestroyTopic — delete the group's cursor, waterline duty row,
-      bindings, lease rows, and parked delivery rows for one topic in one
-      transaction — plus the CLI command (naming at build: name after the
-      codebase's own verbs). Guards: refuse while the group holds an
-      unexpired lease (best-effort liveness until 13d presence) or parked
-      delivery rows (deleting them discards failures promised a retry);
-      force-override + confirm per the destroy precedent. The fleet needs
-      zero work — reconcile already stops a runner whose duty row
-      vanishes (the destroy-topic reap path). New public surface — 14b's
-      maintenance-tier review bullet covers it.
+      and a dead group is indistinguishable from a healthy idle one.
+      **As-built (2026-08-13, on the worker architecture — the duty
+      wording above predates chunk 13):**
+      `MessageAdmin.DestroyGroup(ctx, topicName, version, groupName,
+      opts DestroyOptions)` — AllowDestroy-gated like DestroyTopic;
+      controller verb `ConsumerController.DeleteGroup(ctx, topicId,
+      groupId, name, force)`. The datastore delete is ONE transaction
+      over the rows no FK reaches — lease, key_lease,
+      delivery_<topicId>, delivery_log_<topicId> — then the
+      consumer_group row, whose cascades take the cursor, bindings,
+      group-owned workers (and their worker_instance rows), and
+      group-owned cron jobs. A running consumer stops by itself: its
+      worker rows vanish, so the next heartbeat renew fails. Guards live
+      in ADMIN (assertGroupIdle), skipped under force, composed from the
+      metrics snapshots that already own the facts — REBUILT same day on
+      user review: the first build put three guard-shaped reads on the
+      consumer datastore (CountLiveWorkerInstances / CountUnexpiredLeases
+      / CountDeliveries), which duplicated facts WorkerSnapshot and
+      ConsumerGroupSnapshot already compute and read the worker domain's
+      tables from the consumer datastore; all three deleted, and the rule
+      went into conventions.md (datastore methods are dumb resource verbs
+      on the domain's own tables; caller-shaped reads compose above them).
+      `ErrGroupLive` = any group-owned WorkerSnapshot with
+      LiveInstances > 0 (heartbeat-fresh — replacing the bullet's
+      pre-worker "unexpired lease" wording; a bare unexpired lease no
+      longer blocks: post-destroy there is no cursor for that in-flight
+      work to matter against, and a dead group's stale leases would
+      otherwise refuse forever); `ErrGroupDeliveriesPending` = any
+      delivery row in ConsumerGroupSnapshot.Exceptions
+      (ready/inflight/deferred are failures promised a retry, dead is
+      the dead-letter record). Check-then-delete keeps the same narrow
+      race the topic destroy accepts. Sentinels live in
+      consumercontroller (the consumer domain's root is the door, so
+      the controller is its vocabulary carrier). Groups on `__system.`
+      topics are destroyable ON PURPOSE — a renamed alert's orphan
+      group is the motivating case, and RegisterSystem re-declares
+      every group the system still needs. CLI: new `vulkan group` tree,
+      `vulkan group destroy <topic> <group>` with
+      --schema-version/--force/--yes, type-the-group-name confirm,
+      non-TTY refusal without --yes — the topic-destroy shape verbatim.
+      consumergrouplab grew the destroy section: gate + not-found, each
+      guard refused live (real InsertWorker/ClaimInstance for the
+      instance guard), force sweep asserted row-by-row across all nine
+      tables; CLI smoke-verified live.
 - [x] **Duty error backoff.** BUILT + COMPLETE 2026-07-27. Previously a
       consistently-erroring duty retried at FULL poll rate forever: the
       error path kept the claim and the gate was already set at

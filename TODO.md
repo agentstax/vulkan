@@ -132,9 +132,9 @@ silently matches the union of old and new:
   what's not in the set + inserts the rest in ONE transaction -- never
   ClearBindings-then-Bind, which has a window where the group matches
   everything. re-registers then converge binding state instead of growing it.
-- orphan cleanup on alert rename (old group + cursor + worker row + binding
-  linger; inert but permanent debris): the group destroy verb + CLI (last 14a
-  bullet) is the removal story -- alert renames are its motivating case.
+- orphan cleanup on alert rename: DONE 2026-08-13 -- `MessageAdmin.DestroyGroup`
+  + `vulkan group destroy <topic> <group>` remove the old group and everything
+  it owns (guards: ErrGroupLive / ErrGroupDeliveriesPending, --force overrides).
 - read surface DONE 2026-08-13: `vulkan alert bindings` lists every binding
   (ConsumerController.ListBindings -> MessageAdmin.ListBindings).
 

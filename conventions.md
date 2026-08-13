@@ -81,6 +81,13 @@ Three layers per domain (template: worker, topic):
 - Every public datastore method is EXACTLY a `DatastoreRetry.Wrap` around a
   same-named private method -- all SQL, scanning, and result shaping live in
   the private, even for one-query reads.
+- Datastore methods are dumb resource verbs on the domain's own tables --
+  get, register, delete, list. A caller-shaped read (a guard, a health
+  check) is composed above the datastore, in the controller or admin, from
+  those verbs or from the domain that already owns the fact (metrics
+  snapshots, worker liveness). A datastore read that re-derives another
+  mechanism's fact -- or reaches another domain's tables outside a
+  transaction -- is a second read path, not a convenience.
 - File content order is pair-by-pair: each public immediately followed by its
   same-named private, then the next pair; deeper helpers a private calls
   follow the pair that uses them. Never all publics then all privates.

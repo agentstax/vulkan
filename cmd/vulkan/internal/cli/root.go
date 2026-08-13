@@ -67,6 +67,7 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 		"postgres:// connection URL (or set "+databaseURLEnv+")")
 
 	root.AddCommand(newTopicCmd(g))
+	root.AddCommand(newGroupCmd(g))
 	root.AddCommand(newCronCmd(g))
 	root.AddCommand(newAlertCmd(g))
 	root.AddCommand(newSystemCmd(g))

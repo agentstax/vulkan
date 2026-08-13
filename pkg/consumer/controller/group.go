@@ -50,3 +50,20 @@ func (c *ConsumerController) RegisterGroup(ctx context.Context, topicId int64, n
 	}
 	return toGroup(data), nil
 }
+
+// DeleteGroup deletes the group and every row it owns in one transaction.
+// A running consumer stops itself: its worker rows vanish with the group,
+// so its next heartbeat fails.
+func (c *ConsumerController) DeleteGroup(ctx context.Context, topicId int64, groupId int64, name string) error {
+	if topicId <= 0 {
+		return errors.New("topicId must be > 0")
+	}
+	if groupId <= 0 {
+		return errors.New("groupId must be > 0")
+	}
+	if name == "" {
+		return errors.New("name is required")
+	}
+
+	return c.datastore.DeleteGroup(ctx, topicId, groupId, name)
+}

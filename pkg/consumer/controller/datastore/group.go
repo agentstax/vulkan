@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -110,4 +111,50 @@ func (d *ConsumerDatastore) registerGroup(ctx context.Context, topicID int64, na
 
 	d.Logger.InfoContext(ctx, "consumer group registered (created)", "consumer_group", group.Name, "topic_id", group.TopicId, "group_id", group.Id)
 	return &group, nil
+}
+
+// DeleteGroup deletes the group and every row it owns in one transaction.
+func (d *ConsumerDatastore) DeleteGroup(ctx context.Context, topicID int64, groupID int64, name string) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.deleteGroup(ctx, topicID, groupID, name)
+	})
+}
+
+func (d *ConsumerDatastore) deleteGroup(ctx context.Context, topicID int64, groupID int64, name string) error {
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// no cascade -- nothing references lease
+	if _, err := tx.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id = $1;`, groupID); err != nil {
+		return err
+	}
+	// no cascade -- nothing references key_lease
+	if _, err := tx.Exec(ctx, `DELETE FROM key_lease WHERE consumer_group_id = $1;`, groupID); err != nil {
+		return err
+	}
+	// no cascade -- nothing references the per-topic delivery table
+	deliverySql := fmt.Sprintf(`DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryTable(topicID))
+	if _, err := tx.Exec(ctx, deliverySql, groupID); err != nil {
+		return err
+	}
+	// no cascade -- nothing references the per-topic delivery_log table
+	deliveryLogSql := fmt.Sprintf(`DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryLogTable(topicID))
+	if _, err := tx.Exec(ctx, deliveryLogSql, groupID); err != nil {
+		return err
+	}
+	// cascades: cursor, binding, migration_log, group-owned worker and
+	// cron_job rows; worker_instance follows its worker
+	if _, err := tx.Exec(ctx, `DELETE FROM consumer_group WHERE id = $1;`, groupID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	d.Logger.WarnContext(ctx, "consumer group deleted", "consumer_group", name, "topic_id", topicID, "group_id", groupID)
+	return nil
 }

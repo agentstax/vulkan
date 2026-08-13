@@ -14,20 +14,26 @@ package main
 //     the advisory-lock shape under real contention.
 //  4. destroying a topic destroys ITS groups (registry row, cursor)
 //     and leaves the same-named group on the other topic untouched.
-//  5. deleting a group row directly cascades its cursor away -- the future
-//     group-Destroy verb is exactly this delete.
+//  5. deleting a group row directly cascades its cursor away -- DestroyGroup
+//     is this delete plus the rows no FK reaches.
+//  6. DestroyGroup: AllowDestroy-gated, not-found error, refused while the
+//     group has a live worker instance or delivery rows, and force sweeps
+//     every row the group owns.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 func main() {
@@ -123,12 +129,87 @@ func main() {
 	assertChildren(ctx, ds, registered.Id, 0, "after the group row's delete")
 	fmt.Printf("  ✓ group %d deleted, cursor cascaded away\n", registered.Id)
 
+	destroySection(ctx, ds, mAdmin, cd, topicA, suffix)
+
 	// cleanup
 	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
 	must(err)
 	must(mAdmin.DestroyTopic(ctx, topicA.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
+}
+
+func destroySection(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumercontroller.ConsumerController, topicA *topic.Topic, suffix int64) {
+	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
+
+	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
+	doomed, err := cd.RegisterGroup(ctx, topicA.Id, doomedName)
+	must(err)
+	must(cd.Bind(ctx, doomed.Id, "some.routing.key"))
+
+	locked, err := admin.NewMessageAdmin(ds, nil)
+	must(err)
+	if err := locked.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, admin.ErrDestroyDisabled) {
+		die(fmt.Sprintf("destroy without AllowDestroy: want ErrDestroyDisabled, got %v", err))
+	}
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName+".missing", admin.DestroyOptions{}); !errors.Is(err, consumercontroller.ErrGroupNotFound) {
+		die(fmt.Sprintf("destroy of an unregistered group: want ErrGroupNotFound, got %v", err))
+	}
+	fmt.Printf("  ✓ AllowDestroy gate and not-found error\n")
+
+	// a live worker instance -- what a running consumer heartbeats -- refuses
+	// the destroy; releasing it clears the guard
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+	groupOwner, err := common.NewConsumerGroupOwner(topicA.SystemId, topicA.Id, doomed.Id, doomedName)
+	must(err)
+	must(workers.InsertWorker(ctx, "message_consumer", groupOwner, nil))
+	row, err := workers.GetWorker(ctx, "message_consumer", groupOwner)
+	must(err)
+	claimed, err := workers.ClaimInstance(ctx, row.Id, 30*time.Second)
+	must(err)
+	if claimed == nil {
+		die("the lab's own worker claim was declined")
+	}
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumercontroller.ErrGroupLive) {
+		die(fmt.Sprintf("destroy with a live worker instance: want ErrGroupLive, got %v", err))
+	}
+	must(workers.ReleaseInstance(ctx, claimed.Id, claimed.Token))
+	fmt.Printf("  ✓ live worker instance refuses the destroy\n")
+
+	// delivery rows refuse it; force discards them along with the rows no FK
+	// reaches (lease, key_lease, delivery_log)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_%d (consumer_group_id, message_id, status) VALUES ($1, 1, 'ready');`, topicA.Id), doomed.Id)
+	must(err)
+	_, err = ds.Pool.Exec(ctx, `INSERT INTO lease (consumer_group_id, low, high, until) VALUES ($1, 1, 10, now() + interval '1 minute');`, doomed.Id)
+	must(err)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, 1, 1, 'failure', 'lab');`, topicA.Id), doomed.Id)
+	must(err)
+	_, err = ds.Pool.Exec(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, doomed.Id)
+	must(err)
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumercontroller.ErrGroupDeliveriesPending) {
+		die(fmt.Sprintf("destroy with delivery rows: want ErrGroupDeliveriesPending, got %v", err))
+	}
+	must(mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{Force: true}))
+
+	for what, sql := range map[string]string{
+		"group rows":        `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`,
+		"cursor rows":       `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`,
+		"binding rows":      `SELECT COUNT(*) FROM binding WHERE consumer_group_id = $1;`,
+		"worker rows":       `SELECT COUNT(*) FROM worker WHERE consumer_group_id = $1;`,
+		"instance rows":     `SELECT COUNT(*) FROM worker_instance wi WHERE wi.worker_id IN (SELECT id FROM worker WHERE consumer_group_id = $1);`,
+		"lease rows":        `SELECT COUNT(*) FROM lease WHERE consumer_group_id = $1;`,
+		"key lease rows":    `SELECT COUNT(*) FROM key_lease WHERE consumer_group_id = $1;`,
+		"delivery rows":     fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d WHERE consumer_group_id = $1;`, topicA.Id),
+		"delivery log rows": fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1;`, topicA.Id),
+	} {
+		var count int
+		must(ds.Pool.QueryRow(ctx, sql, doomed.Id).Scan(&count))
+		if count != 0 {
+			die(fmt.Sprintf("force destroy left %d %s behind", count, what))
+		}
+	}
+	fmt.Printf("  ✓ delivery backlog refused, force swept group/cursor/binding/worker/instances/leases/deliveries\n")
 }
 
 // ---- helpers ----
