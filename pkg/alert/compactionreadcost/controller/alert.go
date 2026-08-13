@@ -1,4 +1,4 @@
-package compactionreadcost
+package controller
 
 import (
 	"fmt"

@@ -236,6 +236,60 @@ re-suggest hosting them outside the worker machinery):
 One-shot, log-only check pass at producer/consumer Register. Shape at
 build; keep it log-only (no topic writes from a register path).
 
+DONE 2026-08-13. REBUILT same day on user correction — the first build
+duplicated the queries/thresholds/texts into producer and consumer ("each
+side's datastore" convention misapplied); the alert domain OWNS its
+measurement and decision, so it is defined once and injected. Never
+re-suggest per-side copies of domain logic that has an owning package. As
+built:
+- pkg/alert is now PURE VOCABULARY (no producer import): publisher.go +
+  classify.go moved to new pkg/alert/publisher (publisher.Publisher,
+  producer.Producer-style naming). classify/Publish first param renamed
+  `alert` -> `found` (would shadow the package qualifier; `found` is the
+  handler's established word).
+- Each alert got the house controller/datastore layers:
+  pkg/alert/<alert>/controller (+ datastore/ moved under it). The
+  controller owns the WHOLE condition as one verb:
+  `Evaluate(ctx, owner, threshold) (*alert.Alert, error)` — nil when none
+  applies, threshold 0 = derive live (JobData semantics). The name const
+  (AlertPartitionCount / AlertCompactionReadCost), warnDivisor /
+  warnPartitions, and new<X>Alert (texts) all live in the controller —
+  it can't import its parent (parent imports consumer), so JobName =
+  "alert." + controller.Alert<X>.
+- Handler shrank to decode -> ListTopics -> loop controller.Evaluate ->
+  publisher.Publish; its threshold/ceiling logic and datastore field are
+  gone.
+- SECOND ROUND same day (user: handler/publisher mixed into the
+  definition/execution space, and both are new terminology): Handler +
+  HandlerConfig DELETED — the work is a method on the execution, janitor
+  shape (`evaluateTopics(ctx, request)`: decode -> ListTopics -> loop
+  Evaluate -> Record; definition builds+holds the condition controller).
+  pkg/alert/publisher -> pkg/alert/controller: AlertController, verb
+  `Record(ctx, name, owner, found)` (Record* family; "publish" was not a
+  codebase verb), built per claimed life in consume (repeat re-read).
+  "handler" and "publisher" retired from the domain vocabulary — the
+  nouns are alert / job / controller (Evaluate = the condition,
+  AlertController.Record = the write door) / the worker template's
+  definition/declare/execution. Vocabulary prose in pkg/alert swept
+  ("one handler finding" -> "what one run found").
+- Producer/consumer INJECT the controllers: NewProducer/NewConsumer build
+  both (like topicController) into `evaluators []alert.Evaluator` — the
+  role interface lives in the pkg/alert VOCABULARY, worker.Provisioner
+  pattern (a private per-side interface was built first and killed same
+  day: not an established pattern). logAlerts = build topic owner
+  -> loop Evaluate(ctx, owner, 0) -> WARN with found.Message/Detail/Hint/
+  Name/Owner.Name/Severity. Log-only, never fails Register; pass errors
+  log "register-time alert pass failed". Level-triggered per Register.
+- Deleted: all per-side copies (producer datastore reads/consts/texts,
+  ConsumerController PartitionCount/PartitionLockCeiling/Compacted +
+  controller/datastore/alert.go).
+- Verified: build/vet/`go test -race ./pkg/...` (77 in 63 pkgs);
+  producerregister + routinglab clean; register-pass WARNs smoke-fired
+  live on both sides (temp threshold 1 vs __system.job_requests, both
+  alerts, then reverted); executor end-to-end re-verified through the new
+  layers (daemon up -> cron alter threshold 1 -> run: 3 edge WARNs ->
+  threshold 0 -> run: 3 resolve INFOs, heads resolved).
+
 ### Chunk 6 — CLI read surface
 
 Read `__system.alerts` heads: current state per (check, owner), probably

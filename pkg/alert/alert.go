@@ -19,8 +19,8 @@ type Severity string
 
 const SeverityWarn Severity = "warn"
 
-// Alert is one handler finding, published to the __system.alerts topic as an
-// ordinary message.
+// Alert is what one run found for one owner, published to the
+// __system.alerts topic as an ordinary message.
 type Alert struct {
 	// identity
 	Name     string        // e.g. "partition_count"
@@ -34,7 +34,7 @@ type Alert struct {
 	Hint    string
 
 	// evidence -- neither map ever routes, keys, or dedups
-	Data     map[string]any // the handler's measurements of the owner
+	Data     map[string]any // the run's measurements of the owner
 	Metadata map[string]any // context about the report itself
 }
 
@@ -93,7 +93,7 @@ func (a *Alert) RoutingKey() string {
 }
 
 // CompactionKey is <name>/<owner-kind>/<owner-id>, composed nowhere else; kind
-// keeps id spaces from colliding. A handler that built no alert still builds
+// keeps id spaces from colliding. A run that built no alert still builds
 // this key to read its head.
 func CompactionKey(name string, owner *common.Owner) (string, error) {
 	var id int64

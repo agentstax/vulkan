@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/alert"
+	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
+	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
@@ -110,6 +114,8 @@ func NewMessageRow[Message any](id int64, message *Message, createdAt time.Time,
 type Producer[Message any] struct {
 	datastore       *producerDatastore[Message]
 	topicController *topiccontroller.TopicController
+	evaluators      []alert.Evaluator
+	logger          logger.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -138,9 +144,26 @@ func NewProducer[Message any](ds *coredatastore.PostgresDatastore, cfg *Producer
 		return nil, err
 	}
 
+	partitionCountController, err := partitioncountcontroller.NewPartitionCountController(ds, &partitioncountcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	compactionReadCostController, err := compactionreadcostcontroller.NewCompactionReadCostController(ds, &compactionreadcostcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Producer[Message]{
 		datastore:       producerDatastore,
 		topicController: topicController,
+		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController},
+		logger:          cfg.Logger,
 	}, nil
 }
 
@@ -167,6 +190,8 @@ func (p *Producer[Message]) Register(ctx context.Context, topicName string, vers
 	if err := p.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return nil, err
 	}
+
+	p.logAlerts(ctx, current)
 
 	return NewProducerInstance(current, p.datastore)
 }

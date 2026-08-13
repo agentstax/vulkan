@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/alert"
+	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
+	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
@@ -28,6 +31,7 @@ type Consumer[Message any] struct {
 
 	topicController *topiccontroller.TopicController
 	consumers       *consumercontroller.ConsumerController
+	evaluators      []alert.Evaluator
 }
 
 func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
@@ -57,12 +61,27 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 	if err != nil {
 		return nil, err
 	}
+	partitionCountController, err := partitioncountcontroller.NewPartitionCountController(ds, &partitioncountcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	compactionReadCostController, err := compactionreadcostcontroller.NewCompactionReadCostController(ds, &compactionreadcostcontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &Consumer[Message]{
 		Config:          cfg,
 		Logger:          cfg.Logger,
 		ds:              ds,
 		topicController: topicController,
 		consumers:       consumers,
+		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController},
 	}, nil
 }
 
@@ -91,6 +110,8 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 	if err := c.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return nil, err
 	}
+
+	c.logAlerts(ctx, current)
 
 	group, err := c.consumers.RegisterGroup(ctx, current.Id, consumerGroup)
 	if err != nil {

@@ -1,4 +1,4 @@
-package compactionreadcost
+package controller
 
 import (
 	"fmt"
@@ -8,12 +8,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-type HandlerConfig struct {
+type ControllerConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for the handler's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	Retry  *retry.Policy // transient-error retry policy for this controller's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
 }
 
-func (c *HandlerConfig) WithDefaults() *HandlerConfig {
+func (c *ControllerConfig) WithDefaults() *ControllerConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -23,7 +23,7 @@ func (c *HandlerConfig) WithDefaults() *HandlerConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *HandlerConfig) Validate() error {
+func (c *ControllerConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}

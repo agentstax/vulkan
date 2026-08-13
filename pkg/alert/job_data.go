@@ -3,7 +3,7 @@ package alert
 import "fmt"
 
 type JobData struct {
-	Threshold int64 `json:"threshold"` // 0 = the handler derives its threshold live, or uses its default
+	Threshold int64 `json:"threshold"` // 0 = Evaluate derives the alert's live default
 }
 
 func NewJobData(threshold int64) (*JobData, error) {

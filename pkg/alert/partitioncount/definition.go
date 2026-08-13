@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/alert"
+	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
@@ -29,6 +30,7 @@ type PartitionCountDefinition struct {
 	topics             *topiccontroller.TopicController
 	consumers          *consumercontroller.ConsumerController
 	systems            *systemcontroller.SystemController
+	controller         *controller.PartitionCountController
 	alertProducer      *producer.Producer[alert.Alert]
 	jobRequestConsumer *consumer.Consumer[cron.JobRequest]
 }
@@ -75,6 +77,13 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 	if err != nil {
 		return nil, err
 	}
+	partitionCountController, err := controller.NewPartitionCountController(ds, &controller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
 	alertProducer, err := producer.NewProducer[alert.Alert](ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -98,6 +107,7 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 		topics:             topics,
 		consumers:          consumers,
 		systems:            systems,
+		controller:         partitionCountController,
 		alertProducer:      alertProducer,
 		jobRequestConsumer: jobRequestConsumer,
 	}, nil
