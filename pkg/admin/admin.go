@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
+	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -9,6 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
@@ -21,6 +24,7 @@ type MessageAdmin struct {
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	metricsController  *metricscontroller.MetricsController
 	migrateRunner      *migrate.Runner
+	alertDeclarers     []worker.Declarer
 	allowDestroy       bool
 }
 
@@ -98,6 +102,23 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	// declarers here, never run -- RegisterSystem creates the alerts' consumer
+	// groups and worker rows, the system manager claims them
+	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.DefinitionConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	migrateRunner, err := migrate.NewRunner(ds, cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
@@ -110,6 +131,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		jobRequestProducer: jobRequestProducer,
 		metricsController:  metricsController,
 		migrateRunner:      migrateRunner,
+		alertDeclarers:     []worker.Declarer{partitionCountDefinition, compactionReadCostDefinition},
 		allowDestroy:       cfg.AllowDestroy,
 	}, nil
 }

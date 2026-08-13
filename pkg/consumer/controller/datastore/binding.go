@@ -11,7 +11,8 @@ import (
 // pattern ('*' matches any run of characters, any depth -- e.g.
 // "orders.*.created" also matches "orders.us.central1.created"); translated
 // here to a POSIX regex for the claim/fan-out predicate's '~' match. A group
-// with no binding at all matches every event.
+// with no binding at all matches every event. Binding a pattern the group
+// already has is a no-op.
 //
 // Binding changes apply forward only: FanOut never revisits messages below the
 // group's cursor, so history a previous binding skipped stays skipped.
@@ -32,7 +33,8 @@ func (d *ConsumerDatastore) bind(ctx context.Context, groupID int64, pattern str
 
 	sql := `
 		INSERT INTO binding (consumer_group_id, pattern, display)
-		VALUES ($1, $2, $3);
+		VALUES ($1, $2, $3)
+		ON CONFLICT (consumer_group_id, pattern) DO NOTHING;
 	`
 
 	_, err = d.Datastore.Pool.Exec(ctx, sql, groupID, expression, pattern)

@@ -172,16 +172,12 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		CREATE TABLE IF NOT EXISTS binding (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
-			pattern TEXT NOT NULL,   -- POSIX regex translated from the NATS-style pattern
-			display TEXT             -- original NATS pattern, for humans
+			pattern TEXT NOT NULL,                -- POSIX regex translated from the NATS-style pattern
+			display TEXT,                         -- original NATS pattern, for humans
+			UNIQUE (consumer_group_id, pattern)   -- backs Bind's ON CONFLICT; its index also serves the group lookup
 		);
 	`
 	if _, err := tx.Exec(ctx, createBindingSql); err != nil {
-		return err
-	}
-
-	createBindingIndexSql := `CREATE INDEX IF NOT EXISTS binding_group ON binding (consumer_group_id);`
-	if _, err := tx.Exec(ctx, createBindingIndexSql); err != nil {
 		return err
 	}
 

@@ -44,22 +44,88 @@ should consider abstracting out WorkerManager into two: WorkerScheduler and Work
 - Scheduler would act like CronJob Scheduler except it would submit two kinds of topic requests 'spawn' and 'destroy' (reconciler logic)
 - WorkerSpawner would read topic and either spawn or destroy new instances depending
 
+should consider using https://antithesis.com for production hardening and bug hunting
+
 ## BEFORE V1
 
-review / refine the comments in fanOut
-(pkg/consumer/deliveryconsumer/controller/datastore/fanout.go) -- both the Go
-comments and the ones inside snapshotSql/scanSql. remember SQL comments ship to
-Postgres, so every comment edit needs a live lab re-run (routing-lab is the cheapest).
+comment / code review sweeps:
+- review / refine the comments in fanOut
+  (pkg/consumer/deliveryconsumer/controller/datastore/fanout.go) -- both the Go
+  comments and the ones inside snapshotSql/scanSql. remember SQL comments ship to
+  Postgres, so every comment edit needs a live lab re-run (routing-lab is the
+  cheapest). (verified 2026-08-13: pgx sends comments verbatim, but the default
+  QueryExecModeCacheStatement sends query text only at prepare time -- once per
+  connection per unique query -- so the cost is observability noise, not network
+  bytes.)
+- Review code / comments in:
+  - pkg/metrics
+  - pkg/admin (health / metrics specifically)
+  - pkg/consumer/metrics (comments specifically)
+- the config-struct comment boilerplate ("pass your own *slog.Logger (own
+  Handler) or anything satisfying logger.Logger...", the Retry field comment,
+  and "Validate runs after WithDefaults...") is copied verbatim across ~40
+  config files. improving it must be one codebase-wide sweep so the files stay
+  identical -- never a per-package rewording. the "(own Handler)" fragment looks
+  like a copy artifact worth fixing in that same sweep.
+- Still open: `pkg/admin/health.go` carries a `// TODO - probably makes more
+  sense to use TopicSnapshot and derive Safe / Reason from that` comment that
+  contradicts LEARNING_PLAN 14a's recorded decision (verdict logic deliberately
+  kept in admin, separate from `pkg/metrics/controller`). Whoever picks this up:
+  confirm which is current before changing anything — either delete the stray
+  comment (settled design wins) or do the refactor and update the LEARNING_PLAN
+  record to match.
 
-group / order config options and placement of fields in tables via likeness. ie similiar fields should be logically next to each other for easier understanding.
+naming pass:
+- need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
+- our controllers have redundant verbage: topicController.GetTopic -- should just be get
+- consider rename split again to:
+  *Definition
+  - Name() string
+  *Declarer
+  - Declare(*Definition) error
+  *Provisioner
+  - Provision(*Definition) *Instance, error
+  *Instance
+  - Run() error
+  -- Right now we have Definition and Provisioner mixed which doesn't make sense logically
+- Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
 
-Need to confirm that us manually creating UUIDv7 via go code is compatible with how PG18 better optimizes storage / pages with their built in UUIDv7(). ie their isn't some metadata field that somehow gets set which tells tuples to be writen sequentially in pages it is just the values themselves
+refactor rest of packages in same patterns as worker and topic:
+- pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is not in line with our dependency injection patterns
+  - common.Owner.name not being a required field because of above is a code smell
+  - having to have random SystemOwner in pkg/migrate/datastore/system.go not good
+  - really just the entire pkg/migrate codebase needs a comb through and update
+- pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,execution}.go could use a bit more cleaning up in code, its not bad but it can be improved.
+- should probably move pkg/context and pkg/logger into pkg/common to unify for now until finalized public surface api is achieved
+
+config / field organization:
+- group / order config options and placement of fields in tables via likeness. ie similiar fields should be logically next to each other for easier understanding.
+- Need to do a pass through of config, options, vars , params etc and cleanup any dead fields
+- tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type
+
+compaction API shape:
+- rethink making GetCompactionHead live on producer. It could want to be used and called in many different places
+- Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
 
 we need to test compaction key with default produce and determine if deadlock contention by reverse ordered transactions is a problem or not.
   - ie and what extreme (or not extreme) example would it truly become a problem for users or can the system self heal through retries
   - I know we can move these users to ProduceFunc but just to know
 
-does pgx send sql comments to db? if so is that wasted bytes over the network we should try to limit
+binding lifecycle -- bindings are create-only today (Bind inserts with ON
+CONFLICT DO NOTHING; ClearBindings is clear-all and nothing calls it), and
+fanout ORs across a group's bindings, so a changed pattern on the same group
+silently matches the union of old and new:
+- make the alert Declare declarative instead of additive: one controller verb
+  (SetBindings(ctx, groupId, patterns) shape) whose datastore method deletes
+  what's not in the set + inserts the rest in ONE transaction -- never
+  ClearBindings-then-Bind, which has a window where the group matches
+  everything. re-registers then converge binding state instead of growing it.
+- orphan cleanup on alert rename (old group + cursor + worker row + binding
+  linger; inert but permanent debris): the group destroy verb + CLI (last 14a
+  bullet) is the removal story -- alert renames are its motivating case.
+- read surface: binding has a `display` column built for humans but no verb or
+  CLI lists it -- add to the alert CLI chunk. you can't audit what you can't
+  list.
 
 reconsider if latest_key should be a per topic latest_key_(topic_id) table. High update churn from many tables could be an issue. Should really do an evaluation on all system tables cursor / lease / binding / topic / latest_key tables
 
@@ -85,10 +151,6 @@ lab binaries should be produced into a /bin folder that it .gitignored except fo
 
 Consider creating a DefaultProducer and DefaultConsumer for easier quickstarts which has comments and maybe a log statement recommending not to use in prod
 
-need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
-
-Consider standardizing errors into a Handler (where), Description (why/what), Action (how to resolve if needed), Link (potential future enhancment to docs for more info).
-
 document the "consumerFunc hard timeout, goroutine abandoned" error (CallSafely in
 pkg/consumer/base/consumer.go): what it means and how to prevent it -- handle ctx.Done() inside
 consumerFunc, or raise TimeoutGrace. it should be rare; the abandoned goroutine is a
@@ -109,29 +171,7 @@ alerts published/resolved and per-topic publish failures inside an
 otherwise-succeeded handler run -- cron run status only shows the joined error,
 not how many topics failed or fired.
 
-Review code / comments in:
-- pkg/metrics
-- pkg/admin (health / metrics specifically) 
-- pkg/consumer/metrics (comments specifically)
-
-Still open: `pkg/admin/health.go` carries a `// TODO - probably makes more
-sense to use TopicSnapshot and derive Safe / Reason from that` comment that
-contradicts LEARNING_PLAN 14a's recorded decision (verdict logic deliberately
-kept in admin, separate from `pkg/metrics/controller`). Whoever picks this up:
-confirm which is current before changing anything — either delete the stray
-comment (settled design wins) or do the refactor and update the LEARNING_PLAN
-record to match.
-
 Need a destroy system
-
-rethink making GetCompactionHead live on producer. It could want to be used and called in many different places
-
-pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is not in line with our dependency injection patterns
-- common.Owner.name not being a required field because of above is a code smell
-- having to have random SystemOwner in pkg/migrate/datastore/system.go not good
-- really just the entire pkg/migrate codebase needs a comb through and update
-
-Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
 
 AlertRepeatInterval we need to do something with it should not live on system.
 when it moves, revisit the repeat-vs-retention invariant in alert.NewPublisher:
@@ -140,31 +180,8 @@ live topic row, so an operator lowering __system.alerts retention below the
 repeat interval silently breaks the guarantee that an active head republishes
 before the janitor sweeps it.
 
-Need to refactor rest of packages in same patterns as worker and topic
-
-our controllers have redundant verbage: topicController.GetTopic -- should just be get
-
-tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type
-
-pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,execution}.go could use a bit more cleaning up in code, its not bad but it can be improved.
-
-should probably move pkg/context and pkg/logger into pkg/common to unify for now until finalized public surface api is achieved
-
 Need to look at the new functionality it go 1.27 before deciding on the final public API shape. Their new features with generics could actually make generics work well and completely infer they type via method and type inference.
 
-consider rename split again to:
-*Definition
-- Name() string
-*Declarer
-- Declare(*Definition) error
-*Provisioner
-- Provision(*Definition) *Instance, error
-*Instance
-- Run() error
--- Right now we have Definition and Provisioner mixed which doesn't make sense logically
-
 Should think through making all tables append only by nature this would make us apache cassandra compliant have audit / debuggability for all operations and improve some levels of efficancy (partion based drops on everything) the main trade off is in complexity and in hot-path throughput explicitly for reads
-
-Need to do a pass through of config, options, vars , params etc and cleanup any dead fields
 
 should use LOCK TIMEOUT for any ALTER sql migration commands (likely just need to document this)

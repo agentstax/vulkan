@@ -23,7 +23,8 @@ import (
 // system.ErrSystemConfigMismatch.
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
 func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller.SystemConfig) error {
-	if _, err := a.systemController.RegisterSystem(ctx, cfg); err != nil {
+	registered, err := a.systemController.RegisterSystem(ctx, cfg)
+	if err != nil {
 		return err
 	}
 
@@ -51,6 +52,18 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller
 	}
 	for _, job := range []*alert.Job{partitionCountJob, compactionReadCostJob} {
 		if err := a.ensureSystemCronJob(ctx, job); err != nil {
+			return err
+		}
+	}
+
+	// declared after the topics: the alert declarers resolve the job_requests
+	// topic to create their consumer groups and worker rows
+	owner, err := common.NewSystemOwner(registered.Id)
+	if err != nil {
+		return err
+	}
+	for _, declarer := range a.alertDeclarers {
+		if err := declarer.Declare(ctx, owner); err != nil {
 			return err
 		}
 	}

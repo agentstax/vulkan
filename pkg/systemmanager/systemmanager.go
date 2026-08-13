@@ -4,18 +4,22 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
+	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
 	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
-// SystemManager keeps the deployment's upkeep running with no consumer up:
-// it claims the system's manager row and reconciles every worker row in the
-// deployment. Safe to run N-way -- worker claims arbitrate who runs what.
+// SystemManager keeps the deployment's upkeep running with no user process
+// up: it claims the system's manager row and reconciles every worker row in
+// the deployment, the alerts' consumers included. Safe to run N-way --
+// worker claims arbitrate who runs what.
 type SystemManager struct {
 	Config *SystemManagerConfig
 	Logger logger.Logger
@@ -62,10 +66,26 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
+	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.DefinitionConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	provisioners := []worker.Provisioner{janitorDefinition, cronSchedulerDefinition, waterlineDefinition, partitionCountDefinition, compactionReadCostDefinition}
 	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorDefinition, cronSchedulerDefinition, waterlineDefinition)
+	}, provisioners...)
 	if err != nil {
 		return nil, err
 	}

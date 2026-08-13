@@ -196,6 +196,41 @@ executor evaluates -> `__system.alerts` head moves -> WARN on edge, silence
 on repeat inside AlertRepeatInterval, info on resolve after fixing the
 condition.
 
+DONE 2026-08-13. As built (REBUILT same day onto worker Definitions after
+user review — the first build ran the consumers as errgroup goroutines
+inside SystemManager.Run, which made systemmanager non-generic; never
+re-suggest hosting them outside the worker machinery):
+- Bind made idempotent first (declares re-run every RegisterSystem):
+  `binding` gains `UNIQUE (consumer_group_id, pattern)` + `ON CONFLICT DO
+  NOTHING` in the insert; the separate binding_group index deleted — the
+  unique index serves the group lookup.
+- Each alert package is a full worker kind on the janitor/waterline
+  template: definition.go (`New<X>Definition(ds, cfg *DefinitionConfig)`,
+  `Name() = JobName`, Provision = RegisterInstance claim), declare.go
+  (Declare(ctx, systemOwner): resolve cron topic -> RegisterGroup(JobName)
+  -> Bind(exact job name) -> InsertWorker(JobName, groupOwner)),
+  execution.go (InstanceRunner heartbeat around `consume`: GetSystem
+  AlertRepeatInterval -> producer Register on `__system.alerts` ->
+  NewPublisher -> NewHandler -> jobRequestConsumer.Register ->
+  instance.Consume — publisher rebuilt per claimed life, so an altered
+  repeat applies on the next claim), metadata.go (empty, no knobs yet),
+  definition_config.go ({Logger, Retry, InstanceTTL 30s}).
+- admin.NewMessageAdmin builds both definitions as `alertDeclarers`
+  (declarer-only, never run); RegisterSystem declares them AFTER the
+  topics + cron jobs (they resolve the job_requests topic).
+- systemmanager reverted to generic: the two definitions just join
+  janitor/cronscheduler/waterline in NewManagerDefinition; Run is
+  runner-only again (pkg/systemmanager/alert.go deleted).
+- Live-verified on a fresh DB: RegisterSystem declares both group+worker
+  rows -> daemon's system manager SPAWNS both consumers ("manager spawned
+  worker worker=alert.partition_count") -> full active->resolve cycle via
+  cron alter/run threshold 1->0 (3 WARNs, heads active->resolved) ->
+  suspend: target_instances=0 does NOT kill the running instance (claim
+  gate only, same as every worker); restarted daemon skips it, and setting
+  target back to 1 makes the LIVE manager spawn it within seconds.
+- Repeat-interval silence not exercised live (4h default); classify's repeat
+  arm is the only untraveled path — alertlab (chunk 7) covers it.
+
 ### Chunk 5 — register-time findings (spine layer 2)
 
 One-shot, log-only check pass at producer/consumer Register. Shape at
