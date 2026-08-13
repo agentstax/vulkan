@@ -107,8 +107,8 @@ compaction API shape:
 - DONE 2026-08-13: standalone head reads moved off the producer into their own
   read domain -- pkg/compaction/controller
   (GetCompactionHead/ListCompactionHeads) + datastore. The producer keeps only
-  GetCompactionHeadInTx + the head upsert (the write protocol); MessageRow
-  stays canonical in producer/controller.
+  GetCompactionHeadInTx + the head upsert (the write protocol); MessageRow is
+  canonical in pkg/common, aliased by producer/producercontroller.
 - Still open for the v1 API review: a dedicated compacted-topic handle
   (Compact(Producer|Consumer) idea; NATS JetStream KV precedent -- one typed
   handle doing Get + CAS-produce with CompactionKey required). Would sit on
@@ -185,11 +185,12 @@ not how many topics failed or fired.
 Need a destroy system
 
 AlertRepeatInterval we need to do something with it should not live on system.
-when it moves, revisit the repeat-vs-retention invariant in alert.NewPublisher:
-it validates repeat against alert.TopicConfig()'s default retention, not the
-live topic row, so an operator lowering __system.alerts retention below the
-repeat interval silently breaks the guarantee that an active head republishes
-before the janitor sweeps it.
+when it moves, revisit the repeat-vs-retention invariant in
+alertcontroller.NewAlertController: it validates repeat against
+alert.TopicConfig()'s default retention, not the live topic row, so an
+operator lowering __system.alerts retention below the repeat interval
+silently breaks the guarantee that an active head republishes before the
+janitor sweeps it.
 
 Need to look at the new functionality it go 1.27 before deciding on the final public API shape. Their new features with generics could actually make generics work well and completely infer they type via method and type inference.
 

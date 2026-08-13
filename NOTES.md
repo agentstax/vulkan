@@ -3179,3 +3179,116 @@ repeatable-read transaction (user call).
   rollup, composed in Go per group. Snapshot consistency across the reads
   deliberately not defended (status views tolerate read skew; no
   repeatable-read tx).
+
+## Phase 14a (alerts) — the default checks, `classify` & the `__system.alerts` executor
+
+**What it does, and the tradeoff:** the system watches its own operational
+cliffs with machinery it already ships. Each check (`partition_count`,
+`compaction_read_cost`) is a cron job producing requests onto
+`__system.job_requests`, one consumer group per check bound to exactly its
+job name, and each executor is an ordinary worker definition the manager
+claims — so alerts get scheduling, overlap protection, retry, suspension,
+and fleet visibility without one new mechanism. What a run finds flows
+through one pure function: `classify(found, head, repeat, now)` compares
+the fresh finding against the check's compaction head on `__system.alerts`
+and returns what to publish — the topic IS the state store, the dedup
+memory, the integration surface, and (via the repeat republish) its own
+retention keepalive. The tradeoff is cron-shaped staleness: evaluation is
+level-triggered at the job's schedule, so a condition crossed between runs
+waits for the next tick, and a suspended check job freezes its alert state
+until unsuspend.
+
+**The aha:** notification and state are the same produce. There is no
+notifier component — the WARN/INFO logs are a side effect of
+`AlertController.Record` observing a STATUS CHANGE between what classify
+published and the head it replaced, so edges are derived from durable
+state, never remembered in-process. That makes the whole pipeline
+restart-proof and idempotent: a re-run reads the same head and publishes
+nothing new, a repeat republish refreshes the head silently so retention
+can never sweep a live alert, and a nil finding still flows all the way
+through Record so an active head resolves.
+
+### Explain it back
+
+**1. A run that finds nothing still calls `Record(ctx, name, owner, nil)`
+for every owner instead of skipping the produce path. What breaks if the
+nil finding short-circuits before classify?**
+
+**2. `NewAlertController` rejects `repeat >= retention`. Walk the failure
+that invariant prevents: what physically happens to an active alert's head
+when the repeat interval outlives the topic's retention TTL?**
+
+**3. The resolve arm builds the published alert from the HEAD's fields
+(name, owner, severity, message) rather than from anything the run
+produced. Why can't the run supply them, and what must carry over from the
+head for the key and the log line to be right?**
+
+**4. Why is the WARN/INFO logging restart-proof with zero in-process
+state? Name the exact comparison that makes an edge an edge, and where
+both sides of it live.**
+
+**5. One consumer group per check, bound to exactly its job name — a
+single `alert.*` consumer switching on job name was built and killed.
+What does the binding table already own that the switch re-invents, and
+what per-check operations fall out of the split for free?**
+
+**6. The executors were first hosted as errgroup goroutines inside
+`SystemManager.Run` and rebuilt as worker definitions the manager claims.
+List what the worker rows bought that the goroutines could not.**
+
+**7. The register-time pass runs with threshold 0 (derive live) and is
+log-only. Why must a Register path never write to the alerts topic, and
+why does derive-live keep the pass silent on a healthy system?**
+
+**8. In `evaluateTopics` one owner's failure is joined and the loop
+continues. Trace what that failed attempt does to the job request's
+delivery, and why the eventual retry is safe for the owners that already
+succeeded in the failed attempt.**
+
+**9. The condition (`Evaluate`) lives once, in each check's controller,
+and producer/consumer INJECT it — the first build copied the
+queries/thresholds/texts into each side's datastore per the "each side's
+datastore" convention. What marks that convention as misapplied here?**
+
+**10. alertlab suspends both check jobs while its executor runs. What
+spawns a cron scheduler inside the lab process, and exactly how did a due
+@hourly request make the lab's run-now request unclaimable?**
+
+### Done
+
+- **Terminology sweep** — alert Status 'firing' → 'active' everywhere
+  (code, records, memories); the interval republish is a "repeat".
+- **`classify` + `AlertController`** — ported from the parked
+  `default-alerts` branch (deleted), rebuilt on
+  `producer.MessageRow[alert.Alert]` heads; `Record` = head → classify →
+  produce → log on statusChanged.
+- **Check subpackages as worker kinds** — `pkg/alert/partitioncount` +
+  `pkg/alert/compactionreadcost`, definition/declare/execution over an
+  Evaluate controller and layered datastore; pkg/alert root is pure
+  vocabulary.
+- **Hosting** — Declare at RegisterSystem (idempotent Bind via UNIQUE +
+  ON CONFLICT DO NOTHING); definitions join the manager beside
+  janitor/cronscheduler/waterline.
+- **Register-time findings** — `evaluators []alert.Evaluator` on
+  producer/consumer, log-only pass at Register.
+- **CLI** — `vulkan alert list` + `vulkan alert bindings`; heads read
+  through the new pkg/compaction read domain.
+- **alertlab** — seeding/override survival, every classify arm, live
+  executor end to end, per-topic isolation; fresh-DB suite 35/35.
+
+### Decisions
+
+- **No central dispatcher** — one group per check; the binding table is
+  the dispatch (killed twice, 2026-08-02 and at executor build).
+- **"handler"/"publisher" retired as domain nouns** — the work is a
+  method on the execution; the write door is `AlertController.Record`
+  (Record* family).
+- **The alert domain owns measurement + decision** — defined once in each
+  check's controller and injected; per-side copies were built and killed
+  (the "each side's datastore" rule covers shared *needs*, not another
+  domain's logic).
+- **Evidence never enters classify** — Data/Metadata ride the alert;
+  identity + status + severity + timestamps decide.
+- **Executors are workers, never embedded goroutines** — visibility,
+  suspension, and N-way claim arbitration come from the worker machinery;
+  hosting them outside it made systemmanager non-generic.

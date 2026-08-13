@@ -85,6 +85,13 @@ abandoned-events-lab:
 duty-backoff-lab:
   go run examples/phase_1/dutybackofflab/main.go
 
+# default-alert lab: RegisterSystem seeding + operator-override survival,
+# every classify arm (edge WARN, quiet hold, repeat republish refreshing the
+# head, silent severity change, resolve INFO), the live partition_count
+# executor end to end, and per-topic isolation around a corrupted head.
+alert-lab:
+  go run examples/phase_1/alertlab/main.go
+
 # cron lab: registration validation (charset, Feb-29, timeout-vs-rate),
 # owner cascade vs standalone survival, produce-once newest-due walk, v7
 # dedupe on a re-backdated scheduled time, suspend/unsuspend, a poisoned row

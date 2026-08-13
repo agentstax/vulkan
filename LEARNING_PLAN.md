@@ -4480,7 +4480,7 @@ sequenced after both of these close.*
       through `consumer/metrics.ConsumerMetricsDatastore` and
       `topic/metrics.TopicMetricsDatastore` the same way any other reader
       would.
-- [o] **Default alerts** for approaching operational limits (full spec folded
+- [x] **Default alerts** for approaching operational limits (full spec folded
       from TODO.md; this is now the canonical record).
       **RESTRUCTURED (2026-08-01): each check is its own CRON JOB** (riding
       14a task 5's registry) — the `alert` duty kind, `alert_poll_rate_ns`,
@@ -4616,21 +4616,64 @@ sequenced after both of these close.*
       Lifecycle verbs against `__system.*` need guarding: Destroy and
       Rename refused, Alter allowed (tuning alert retention is
       legitimate). The topic gets the janitor duty like any topic.
-      Who runs it: the defaulted Consumer runs the maintenance tier, so
-      most users get the scheduler duty without asking; docs cover the
-      rest, plus the Register-time layer and DutyState's overdue gauge
-      (an unmanned scheduler duty is itself visible).
       The presence design (13d) remains the substrate that would let an
       alert say "destroy blocked: producer X seen 2s ago" instead of a
       bare threshold.
-      Build state (2026-08-02): pkg/alert checks + job seeding are ON
-      MAIN (uncommitted with the cron work); remaining — the generic
-      scheduler duty (cron-plan chunk 2), then the per-alert consumers,
-      Register-time findings, CLI read surface + lab.
-      Duty HEALTH metrics now exist (`pkg/maintain/metrics` `DutyState`:
-      overdue count by duty kind + oldest gate age); still open whether
-      duties should also emit WORK metrics (partitions dropped, rows swept,
-      roll distance) now that they run separately from consumers.
+      **As-built (executor chunks, 2026-08-12/13; supersedes the wiring
+      sentences above where they differ).** Terminology first: Status
+      values are 'active'/'resolved' — the 'firing' Prometheus carve-out
+      was reversed 2026-08-12; the interval republish is a "repeat",
+      never a "re-fire". classify was the one piece mined from the parked
+      `default-alerts` branch (0aa6fd9; branch deleted 2026-08-13). It
+      lives beside the write door: `pkg/alert/controller.AlertController`
+      — `Record(ctx, name, owner, found)` = read the key's compaction
+      head → `classify(found, head, repeat, now)` → produce → log ONLY on
+      statusChanged (WARN with detail/hint on the active edge, INFO on
+      the resolve edge; repeats and severity changes publish silently;
+      found nil still flows so an active head resolves; the repeat
+      republish moves the head to a fresh row — the retention keepalive).
+      repeat = the system row's AlertRepeatInterval, re-read per claimed
+      life; NewAlertController rejects repeat >= the alerts topic's
+      default retention. Each check is a full worker kind in its own
+      subpackage (`pkg/alert/partitioncount`, `pkg/alert/
+      compactionreadcost`) on the janitor/waterline template —
+      definition/declare/execution files plus a controller owning the
+      WHOLE condition (`Evaluate(ctx, owner, threshold)` → *Alert|nil;
+      threshold 0 = derive live; name const + prose texts inside) over
+      its own layered datastore; the pkg/alert root is pure vocabulary
+      (Alert, keys, Job/JobData, the Evaluator role interface). Built and
+      KILLED on the way (don't resurrect): Jobs()/Executors()
+      aggregators, CheckResult, the alert.Executor pair-struct, the
+      shared AlertDatastore, per-side copies of the condition in
+      producer/consumer, errgroup hosting inside SystemManager.Run, and
+      "handler"/"publisher" as domain nouns — assemblers enumerate the
+      subpackages explicitly; the nouns are alert/job/controller/worker.
+      Hosting: Declare (group + exact-name binding + worker row) runs at
+      RegisterSystem — `binding` gained UNIQUE (consumer_group_id,
+      pattern) + ON CONFLICT DO NOTHING so declares re-run; the two
+      definitions join janitor/cronscheduler/waterline in the manager, so
+      the systemmanager daemon AND every consumer instance's embedded
+      manager can claim them; per-check off switches = suspend the cron
+      job (stop producing) or worker target_instances = 0 (stop
+      evaluating). Register-time findings (layer 2): NewProducer/
+      NewConsumer build both check controllers as `evaluators
+      []alert.Evaluator` and Register runs a log-only pass (threshold 0,
+      never fails Register). CLI read surface (layer 3): `vulkan alert
+      list` (heads via the pkg/compaction read domain, spun out of the
+      producer 2026-08-13 — the producer keeps only GetCompactionHeadInTx
+      + the head upsert) and `vulkan alert bindings`. Verification:
+      `examples/phase_1/alertlab` (`just alert-lab`) covers seeding +
+      operator-override survival across re-register, EVERY classify arm
+      (a 2s-repeat controller reaches the repeat-republish arm; the
+      severity-change arm is reached by doctoring the head's stored
+      severity behind the door), the live partition_count worker end to
+      end, and per-topic error isolation via a corrupted head — the lab
+      suspends both check jobs while its executor runs because the
+      embedded manager's cron scheduler would otherwise supersede the
+      lab's run-now requests with due @hourly ones. Fresh-DB suite 35/35
+      green 2026-08-13 (consumergrouplab was asserting the chunk-13-
+      deleted maintenance table and was fixed to cursor-only in the same
+      sweep).
 - [x] **Metrics redesign** (full spec folded from TODO.md; this is now the
       canonical record). The problem: the metrics code is not composable and
       needs weird dependency management. Concretely — every metric supports
