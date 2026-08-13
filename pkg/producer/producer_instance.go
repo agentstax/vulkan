@@ -121,12 +121,6 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, prod
 	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
-// GetCompactionHead returns the current compaction head under compactionKey, or nil if
-// nothing has been published under it.
-func (p *ProducerInstance[Message]) GetCompactionHead(ctx context.Context, compactionKey string) (*MessageRow[Message], error) {
-	return p.controller.GetCompactionHead(ctx, p.Topic.Id, compactionKey)
-}
-
 // GetCompactionHeadInTx returns the current compaction head under compactionKey,
 // or nil if nothing has been published under it.
 // It does so within the transaction and locks the found row in a FOR UPDATE

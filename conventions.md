@@ -81,6 +81,9 @@ Three layers per domain (template: worker, topic):
 - Every public datastore method is EXACTLY a `DatastoreRetry.Wrap` around a
   same-named private method -- all SQL, scanning, and result shaping live in
   the private, even for one-query reads.
+- File content order is pair-by-pair: each public immediately followed by its
+  same-named private, then the next pair; deeper helpers a private calls
+  follow the pair that uses them. Never all publics then all privates.
 - Method bodies are a linear sequence of named calls -- no inline shaping
   wads. `any` values go straight to pgx as query args (driver encodes JSONB;
   never hand-call json.Marshal); nil/empty shaping happens SQL-side

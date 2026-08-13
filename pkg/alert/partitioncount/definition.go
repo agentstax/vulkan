@@ -7,6 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
+	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
@@ -32,6 +33,7 @@ type PartitionCountDefinition struct {
 	systems            *systemcontroller.SystemController
 	controller         *controller.PartitionCountController
 	alertProducer      *producer.Producer[alert.Alert]
+	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
 	jobRequestConsumer *consumer.Consumer[cron.JobRequest]
 }
 
@@ -91,6 +93,13 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 	if err != nil {
 		return nil, err
 	}
+	alertHeads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, &compactioncontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
 	jobRequestConsumer, err := consumer.NewConsumer[cron.JobRequest](ds, &consumer.ConsumerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -109,6 +118,7 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 		systems:            systems,
 		controller:         partitionCountController,
 		alertProducer:      alertProducer,
+		alertHeads:         alertHeads,
 		jobRequestConsumer: jobRequestConsumer,
 	}, nil
 }

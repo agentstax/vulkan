@@ -31,5 +31,12 @@ func toMessageRow[Message any](data *datastore.HeadData) (*MessageRow[Message], 
 	if err := json.Unmarshal(data.Payload, &message); err != nil {
 		return nil, err
 	}
-	return NewMessageRow(data.Id, &message, data.CreatedAt, data.RoutingKey, data.CompactionKey, data.CompactionRank)
+	return &MessageRow[Message]{
+		Id:             data.Id,
+		Message:        &message,
+		CreatedAt:      data.CreatedAt,
+		RoutingKey:     data.RoutingKey,
+		CompactionKey:  data.CompactionKey,
+		CompactionRank: data.CompactionRank,
+	}, nil
 }

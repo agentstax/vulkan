@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
+	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 )
@@ -15,15 +16,20 @@ import (
 // found to the __system.alerts topic and logs status changes.
 type AlertController struct {
 	alerts *producer.ProducerInstance[alert.Alert]
+	heads  *compactioncontroller.CompactionController[alert.Alert]
 	repeat time.Duration
 	logger logger.Logger
 }
 
 // alerts is a registered producer instance on the __system.alerts topic;
+// heads reads that topic's compaction heads;
 // repeat is the system row's AlertRepeatInterval.
-func NewAlertController(alerts *producer.ProducerInstance[alert.Alert], repeat time.Duration, log logger.Logger) (*AlertController, error) {
+func NewAlertController(alerts *producer.ProducerInstance[alert.Alert], heads *compactioncontroller.CompactionController[alert.Alert], repeat time.Duration, log logger.Logger) (*AlertController, error) {
 	if alerts == nil {
 		return nil, errors.New("alert producer instance must not be nil")
+	}
+	if heads == nil {
+		return nil, errors.New("compaction controller must not be nil")
 	}
 	if repeat <= 0 {
 		return nil, fmt.Errorf("repeat must be > 0, got %v", repeat)
@@ -36,5 +42,5 @@ func NewAlertController(alerts *producer.ProducerInstance[alert.Alert], repeat t
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
 	}
-	return &AlertController{alerts: alerts, repeat: repeat, logger: log}, nil
+	return &AlertController{alerts: alerts, heads: heads, repeat: repeat, logger: log}, nil
 }

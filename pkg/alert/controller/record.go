@@ -23,7 +23,7 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 		return err
 	}
 
-	head, err := c.alerts.GetCompactionHead(ctx, compactionKey)
+	head, err := c.heads.GetCompactionHead(ctx, c.alerts.Topic.Id, compactionKey)
 	if err != nil {
 		return err
 	}

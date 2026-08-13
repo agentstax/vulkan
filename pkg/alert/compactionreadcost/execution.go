@@ -69,7 +69,7 @@ func (e *CompactionReadCostExecution) consume(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	alerts, err := alertcontroller.NewAlertController(registered, system.AlertRepeatInterval, e.Logger)
+	alerts, err := alertcontroller.NewAlertController(registered, e.definition.alertHeads, system.AlertRepeatInterval, e.Logger)
 	if err != nil {
 		return err
 	}

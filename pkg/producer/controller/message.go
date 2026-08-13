@@ -1,34 +1,12 @@
 package controller
 
 import (
-	"errors"
-	"time"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// TODO - this might need to be a common type,
-// it differs from consumer.MessageRow by Message vs Payload (raw json)
-type MessageRow[Message any] struct {
-	Id             int64
-	Message        *Message
-	CreatedAt      time.Time
-	RoutingKey     string
-	CompactionKey  string
-	CompactionRank int64
-}
-
-func NewMessageRow[Message any](id int64, message *Message, createdAt time.Time, routingKey, compactionKey string, compactionRank int64) (*MessageRow[Message], error) {
-	if message == nil {
-		return nil, errors.New("message must not be nil")
-	}
-	return &MessageRow[Message]{
-		Message:        message,
-		Id:             id,
-		CreatedAt:      createdAt,
-		RoutingKey:     routingKey,
-		CompactionKey:  compactionKey,
-		CompactionRank: compactionRank,
-	}, nil
-}
+// MessageRow is one stored message, typed; the struct and its docs live in
+// pkg/common.
+type MessageRow[Message any] = common.MessageRow[Message]
 
 // Appended is one append's outcome.
 type Appended[Message any] struct {

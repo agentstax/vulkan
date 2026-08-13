@@ -4,6 +4,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
+	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
@@ -25,7 +26,7 @@ type MessageAdmin struct {
 	cronJobController  *croncontroller.CronJobController
 	consumerController *consumercontroller.ConsumerController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
-	alertProducer      *producer.Producer[alert.Alert]
+	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
 	metricsController  *metricscontroller.MetricsController
 	migrateRunner      *migrate.Runner
 	alertDeclarers     []worker.Declarer
@@ -98,7 +99,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	alertProducer, err := producer.NewProducer[alert.Alert](ds, &producer.ProducerConfig{
+	alertHeads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -150,7 +151,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		cronJobController:  cronJobController,
 		consumerController: consumerController,
 		jobRequestProducer: jobRequestProducer,
-		alertProducer:      alertProducer,
+		alertHeads:         alertHeads,
 		metricsController:  metricsController,
 		migrateRunner:      migrateRunner,
 		alertDeclarers:     []worker.Declarer{partitionCountDefinition, compactionReadCostDefinition},

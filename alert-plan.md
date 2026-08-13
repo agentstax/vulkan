@@ -313,6 +313,14 @@ built:
 - Live-verified against the dev DB: 3 resolved partition_count heads from
   the chunk-5 executor run render correctly; both alert consumer bindings
   list.
+- Follow-up same day: standalone head reads moved out of the producer into
+  the new pkg/compaction read domain (TODO "compaction API shape" taken
+  early). ListAlerts = GetTopic + CompactionController.ListCompactionHeads
+  (no producer Register); AlertController reads heads via an injected
+  CompactionController[alert.Alert]; producer keeps only
+  GetCompactionHeadInTx + the head upsert. Re-verified live: alert list,
+  forced job run 10/10 succeeded under the daemon, multitargetlab +
+  compactionheadwritelab.
 
 ### Chunk 7 — alertlab + close-out
 

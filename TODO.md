@@ -104,8 +104,20 @@ config / field organization:
 - tick rate of consumers should be set in worker metadata - in fact we need to rethink where config of these individual consumers will live long term it might all be in the metadata and that way we can split out the config per consumer type more easily and have specific metadata per consumer type
 
 compaction API shape:
-- rethink making GetCompactionHead live on producer. It could want to be used and called in many different places
-- Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
+- DONE 2026-08-13: standalone head reads moved off the producer into their own
+  read domain -- pkg/compaction/controller
+  (GetCompactionHead/ListCompactionHeads) + datastore. The producer keeps only
+  GetCompactionHeadInTx + the head upsert (the write protocol); MessageRow
+  stays canonical in producer/controller.
+- Still open for the v1 API review: a dedicated compacted-topic handle
+  (Compact(Producer|Consumer) idea; NATS JetStream KV precedent -- one typed
+  handle doing Get + CAS-produce with CompactionKey required). Would sit on
+  top of the compaction controller unchanged.
+- Also for the v1 API review: consumerFunc could hand users a
+  common.MessageRow[Message] instead of payload-arg + context MessageMeta --
+  the typed row moved to pkg/common 2026-08-13, so both sides could share it;
+  the consumer's raw internal row (payload + options columns) stays its own
+  struct either way.
 
 we need to test compaction key with default produce and determine if deadlock contention by reverse ordered transactions is a problem or not.
   - ie and what extreme (or not extreme) example would it truly become a problem for users or can the system self heal through retries
