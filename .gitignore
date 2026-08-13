@@ -5,32 +5,10 @@
 go.work
 go.work.sum
 
-# labs
-reclaimlab
-routinglab
-bench/scale/projector/projector
-bench/idempotency/env.sh
-bench/idempotency/gen_scripts.sh
-bench/idempotency/PLAN.md
-bench/idempotency/reset.sh
-bench/idempotency/run.sh
-bench/idempotency/sweep.sh
-bench/idempotency/drivers/phase_a.sh
-bench/idempotency/drivers/phase_b.sh
-bench/idempotency/drivers/phase_c.sh
-bench/idempotency/drivers/phase_d.sh
-bench/idempotency/drivers/run_all.sh
-bench/idempotency/results/phase_a.jsonl
-bench/idempotency/results/phase_b.jsonl
-bench/idempotency/results/phase_c_samples.csv
-bench/idempotency/results/phase_c.jsonl
-bench/idempotency/results/phase_d.jsonl
-bench/idempotency/results/SUMMARY.md
-bench/idempotency/scripts/claim_hotkey_b1.sql
-bench/idempotency/scripts/claim_hotkey_b100.sql
-bench/idempotency/scripts/claim_v4_b1.sql
-bench/idempotency/scripts/claim_v4_b100.sql
-bench/idempotency/scripts/claim_v7_b1.sql
-bench/idempotency/scripts/claim_v7_b100.sql
-bench/idempotency/scripts/skip_b1.sql
-bench/idempotency/scripts/skip_b100.sql
+# built binaries live in bin/ (just build-lab <lab>)
+/bin/*
+!/bin/.gitkeep
+
+# bench scratch -- only the writeup is tracked
+bench/idempotency/*
+!bench/idempotency/RESULTS.md

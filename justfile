@@ -26,6 +26,10 @@ consume group="learning.v1" processorsleep="0.1" shutdownsleep="1.0" failrate="0
 produce count="1":
   go run examples/phase_1/producer/main.go -count={{ count }}
 
+# build a lab binary into bin/ (EX: just build-lab reclaimlab)
+build-lab lab:
+  go build -o bin/{{ lab }} examples/phase_1/{{ lab }}/main.go
+
 # Phase 6.5b lab: crash mid-range, recover. Deterministic, self-verifying,
 # self-seeding -- registers its own topic and publishes its own backlog.
 reclaim-lab:

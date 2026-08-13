@@ -289,7 +289,6 @@ surface that has stopped moving.
   should be per-topic compaction_head_(topic_id) (high update churn from
   many topics), and evaluate all system tables: cursor / lease / binding /
   topic / compaction_head.
-- **Lab binaries into /bin** — .gitignored except a .gitkeep.
 - **Migration docs:** should use LOCK TIMEOUT for any ALTER migration
   commands (likely just needs documenting).
 - **Append-only tables think-through** — making all tables append-only would

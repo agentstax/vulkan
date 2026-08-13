@@ -5,6 +5,16 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-13 — Lab binaries build into bin/
+
+- `just build-lab <lab>` compiles a lab's main.go to `bin/<lab>`; `bin/*` is
+  gitignored except `.gitkeep`.
+- The per-binary .gitignore entries (`reclaimlab`, `routinglab`) and the two
+  stray compiled binaries at repo root were removed; the bench projector
+  binary followed, and .gitignore's enumerated bench/idempotency scratch list
+  collapsed to `bench/idempotency/*` + `!RESULTS.md`.
+- conventions.md renamed CONVENTIONS.md to match the doc naming pattern.
+
 ## 2026-08-13 — Record-keeping surface redesign
 
 - LEARNING_PLAN.md/TODO.md/NOTES.md reorganized into docs/: ROADMAP.md

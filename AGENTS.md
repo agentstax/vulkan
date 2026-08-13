@@ -2,7 +2,7 @@
 
 How to work in this repo.
 
-**REQUIRED: `conventions.md` (repo root) governs all code** -- dependencies,
+**REQUIRED: `CONVENTIONS.md` (repo root) governs all code** -- dependencies,
 naming, structure, package layout, datastores, constructors/configs,
 migrations, SQL, comments. Violations there are bugs, not style nits. Read it
 before writing or reviewing code unless it is already in context -- the root
@@ -40,7 +40,7 @@ covers session workflow only; the two are a set.
 ## Docs & record-keeping
 
 The record-keeping surface is fixed -- never create doc files outside it.
-Working docs live under docs/; only the rule files (conventions.md, this
+Working docs live under docs/; only the rule files (CONVENTIONS.md, this
 file) and README/CLAUDE.md stay at root:
 
 - docs/TODO.md -- sliding window of in-flight work ONLY.
@@ -57,7 +57,7 @@ file) and README/CLAUDE.md stay at root:
   changing a decision means a new record plus flipping the old one's status
   to superseded, linked both ways. A new record takes the next number after
   the current max.
-- conventions.md (code rules) and AGENTS.md (this file) hold the binding
+- CONVENTIONS.md (code rules) and AGENTS.md (this file) hold the binding
   CURRENT rules -- never infer today's rules by replaying decision history.
 
 Lifecycle of a piece of work: idea -> ROADMAP (Later/parking lot) ->
