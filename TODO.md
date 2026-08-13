@@ -104,7 +104,10 @@ opt-in --metrics-address flag that builds the sdk/metric MeterProvider + prometh
 exporter (sanctioned deps, currently imported by nothing) and serves /metrics
 CLI-side, keeping sdk/metric out of the library. also settle where per-group
 RegisterConsumerGroupMetric gets called -- likely consumer Register, where topic
-identity resolves.
+identity resolves. when this lands, instrument the alert pipeline too: counts of
+alerts published/resolved and per-topic publish failures inside an
+otherwise-succeeded handler run -- cron run status only shows the joined error,
+not how many topics failed or fired.
 
 Review code / comments in:
 - pkg/metrics
@@ -130,7 +133,12 @@ pkg/migrate/(version/support.go) and pkg/migrate/datastore(system/version.go) is
 
 Consider making a specific Compact(Producer|Consumer) - they are somewhat unique things are making it have 'required' params could make it easier for users to interact with.
 
-AlertRepeatInterval we need to do something with it should not live on system
+AlertRepeatInterval we need to do something with it should not live on system.
+when it moves, revisit the repeat-vs-retention invariant in alert.NewPublisher:
+it validates repeat against alert.TopicConfig()'s default retention, not the
+live topic row, so an operator lowering __system.alerts retention below the
+repeat interval silently breaks the guarantee that an active head republishes
+before the janitor sweeps it.
 
 Need to refactor rest of packages in same patterns as worker and topic
 

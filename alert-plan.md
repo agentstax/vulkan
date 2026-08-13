@@ -94,34 +94,59 @@ would collide with the delivery domain).
   on producer" — do NOT resolve that here; use it where it lives.)
 - Delete the `default-alerts` branch once merged (it is fully mined).
 
-### Chunk 3 — the executor
+### Chunk 3 — the executor [DONE 2026-08-12]
+
+As built (final shape, user-iterated 2026-08-12): EACH CHECK IS ITS OWN
+PROCESS IN ITS OWN SUBPACKAGE — `pkg/alert/partitioncount` and
+`pkg/alert/compactionreadcost`, one concept per file. Each check owns:
+`Name`/`JobName`/schedule consts + `NewJob()` (job.go — the cron spec
+RegisterSystem seeds; NEVER a bare-noun `Job()` factory), a `Handler`
+STRUCT (handler.go) `{datastore, publisher}` with
+`NewHandler(ds, publisher, cfg *HandlerConfig)` building its own check
+datastore, `Handle(ctx, request)` (decode threshold → run) and `run` as a method that
+publishes per topic as it goes (no results slice), an error-returning alert
+constructor `new<Check>Alert` that validates its premise (alert.go — the
+crossing DECISION lives in run, constructing an unwarranted alert is an
+error, no `a, _ :=` swallows), `HandlerConfig{Logger,Retry}`
+(handler_config.go), and ITS OWN `datastore/` SUBPACKAGE on the layered
+shape (`<Check>Datastore` Wrap-only publics, `TopicData` in model.go,
+`<Check>DatastoreConfig`). The shared AlertDatastore is DELETED
+(duplication beats abstraction). Parent pkg/alert: `Publisher` struct
+(publisher.go) `{alerts, repeat, logger}` — `Publish(ctx, name, owner,
+alert)` = head → classify → produce → log-on-statusChanged; alert nil =
+check found nothing, still flows so actives resolve. CheckResult WAS BUILT
+AND DELETED (pure pair-ferry — user: pass owner/alert directly). The `alert.Executor` pair-struct WAS BUILT AND DELETED
+(user: "too many layers of back and forth indirection") — the chunk-4 seam
+is each package's `JobName` + `NewHandler(...).Handle` directly; the only
+check→parent runtime crossing is publisher.Publish. The `Jobs()`/
+`Executors()` aggregators are DELETED — assemblers enumerate the subpackages
+explicitly (admin RegisterSystem seeds partitioncount.NewJob() +
+compactionreadcost.NewJob(); chunk 4 wires each NewHandler the way
+systemmanager lists janitor/cronscheduler/waterline). run covers EVERY
+topic — a nil alert flows through Publish so actives resolve (an uncompacted
+topic publishes nil for the same reason). No consumer imports
+anywhere in pkg/alert/*. classify's table test was removed by the user —
+labs are the verification surface.
 
 One consumer group PER check; the binding table is the dispatch. (A public
 `Run(ctx, ds, name, data)` switch + one shared `alert.*` consumer group was
 built 2026-08-01 and KILLED 2026-08-02 — never re-suggest a central
 dispatcher switching on job name.)
 
-    for each check in alert.Jobs():
+    # chunk-4 assembly, one consumer per check (as built in chunk 3):
+    publisher := alert.NewPublisher(alertsInstance, repeat, log)   # once
+    for each check package (partitioncount, compactionreadcost):
+        handler := <check>.NewHandler(ds, publisher, cfg)
         consumer := consumer.NewConsumer[cron.JobRequest](ds, cfg)
         instance := consumer.Register(ctx,
-            group = check's job name,           # "alert.partition_count"
+            group = <check>.JobName,            # "alert.partition_count"
             topic = cron.TopicName, v1)         # binding: the job name, exact
-        instance.Consume(ctx, handler(check))
+        instance.Consume(ctx, handler.Handle)
 
-    handler(check)(ctx, request *cron.JobRequest) error:
-        threshold := decode(request.Data)       # {"threshold":0}; 0 = derive live
-        for topic := range ds.topics():         # each check enumerates its own
-                                                # scope (AlertDatastore.topics())
-            alert := check.decide(owner(topic), threshold)  # pure decision func
-            head  := alertProducer.GetCompactionHead(ctx, CompactionKey(check, owner))
-            publish := classify(alert, head, repeatInterval, now)
-            if publish != nil:
-                alertProducer.Produce(ctx, publish,
-                    RoutingKey: publish.RoutingKey(),
-                    CompactionKey: publish.CompactionKey())
-                if statusChanged(publish, head): host log (WARN active / info resolved)
-        return joined per-topic errors          # one topic's failure never
-                                                # skips the others
+    # inside each package (built): Handle = decode threshold -> run;
+    # run enumerates its topics, decides, publisher.Publish per topic
+    # (head -> classify -> produce -> log on statusChanged); publish
+    # errors joined so one topic never skips the others.
 
 Load-bearing facts:
 - The job's `concurrency: defer` means key_lease already guarantees one run
@@ -137,12 +162,9 @@ Load-bearing facts:
   Register(ctx, group, topic, version) -> instance; NewProducer(ds, cfg) +
   Register(ctx, topic, version) -> instance; Produce returns
   *ProduceResult[M].
-- Open at build: where the handler/assembly code lives — pkg/alert holds
-  the run/decision funcs; the consumer assembly probably belongs in
-  systemmanager (chunk 4), keeping pkg/alert free of consumer imports.
-  Decide with the code in front of us. (pkg/alert itself is NOT yet on the
-  layered pattern — datastore.go sits directly in the package; that
-  refactor is TODO.md's "refactor rest of packages", NOT this plan.)
+- SETTLED at build: handlers live in the check subpackages, consumer
+  assembly is chunk 4's (systemmanager); pkg/alert/* has no consumer
+  imports. Each check's datastore/ subpackage is on the layered shape.
 
 ### Chunk 4 — hosting in systemmanager (user-settled 2026-08-12)
 
@@ -165,9 +187,11 @@ The daemon hosts the executors. Rationale (recorded so it isn't relitigated):
   constructor the way systemmanager itself is exposed.
 
 Build: NewSystemManager assembles the per-check consumers beside
-janitor/cronscheduler/waterline definitions; Run consumes on the manager's
-ctx (errgroup beside the runner, or as worker definitions if the shape
-fits — decide at build). Live-verify: daemon up -> due alert job produces ->
+janitor/cronscheduler/waterline definitions. EACH executor runs as its own
+separate process — its own consumer/worker rows, individually visible and
+suspendable; never merged into one shared goroutine or a single combined
+runner (user directive 2026-08-12, same rule as the per-file handlers).
+Live-verify: daemon up -> due alert job produces ->
 executor evaluates -> `__system.alerts` head moves -> WARN on edge, silence
 on repeat inside AlertRepeatInterval, info on resolve after fixing the
 condition.
@@ -213,12 +237,14 @@ user.
   numeric fields REJECTED; evidence lives in Data (the check's
   measurements) / Metadata (about the report); neither ever
   routes/keys/dedups, and evidence never enters classify.
-- Routing key `alert.<name>.<owner-kind>.<owner-name>.<severity>`;
+- Routing key `alert.<name>.<owner-kind>.<severity>.<owner-name>` (owner name
+  last: the only dot-carrying field, so the prefix keeps a fixed depth);
   compaction key `<name>/<owner-kind>/<owner-id>`; retention interplay
   intentional (the repeat republish outruns it).
 - Suspended check job = alert state freezes until unsuspend (honest cron
   semantics; next run resolves) — accepted 2026-08-01.
-- Known schema limits (recorded, not solved): system-scoped EntityName
-  pinned by key derivation; consumer-group-scoped subjects not addressable.
+- Old schema limits DISSOLVED by the Owner switch: system alerts carry the
+  real systemId, and consumer-group owners are addressable (no alert emits
+  one yet).
 - Thresholds computed live where possible (max_locks_per_transaction ->
   real partition ceiling); job data threshold 0 = derive live.

@@ -4557,11 +4557,14 @@ sequenced after both of these close.*
       (jsonb itself stores exact numerics — the loss is at the Go decode
       side), and numeric time-series belong to the otel gauges — the
       alert carries judgment + explanation.
-      Routing key `alert.<name>.<owner-kind>.<owner-name>.<severity>`
-      — kind before name so names can't collide across kinds;
-      severity
-      LAST so the common binding is an ends-with match
-      (`alert.*.critical`); known consequence: name-based bindings
+      Routing key `alert.<name>.<owner-kind>.<severity>.<owner-name>`
+      — kind before owner name so names can't collide across kinds;
+      owner name LAST because it is the only field that can contain
+      dots (topic slugs allow `.`), keeping every field before it at a
+      fixed depth for a future token-depth selector (2026-08-12,
+      reversed the earlier severity-last choice — today's `*` bindings
+      cross dots anyway, so severity still matches via
+      `alert.*.critical.*`); known consequence: name-based bindings
       silently stop matching after a topic rename (the Owner ids in the
       payload are the durable handle). Compaction key `<name>/<owner-kind>/<owner-id>`
       (kind keeps id spaces from colliding across kinds)

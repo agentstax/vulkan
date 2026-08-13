@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/alert"
+	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
+	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -39,12 +41,15 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller
 		return err
 	}
 
-	// Make sure the alert checks' cron jobs are registered.
-	jobs, err := alert.Jobs()
+	partitionCountJob, err := partitioncount.NewJob()
 	if err != nil {
 		return err
 	}
-	for _, job := range jobs {
+	compactionReadCostJob, err := compactionreadcost.NewJob()
+	if err != nil {
+		return err
+	}
+	for _, job := range []*alert.Job{partitionCountJob, compactionReadCostJob} {
 		if err := a.ensureSystemCronJob(ctx, job); err != nil {
 			return err
 		}
@@ -52,9 +57,9 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller
 	return nil
 }
 
-// ensureSystemCronJob only creates a missing job -- not a bare idempotent
-// register, whose config-mismatch check would error on a job an operator has
-// altered since.
+// ensureSystemCronJob creates the job only when missing. RegisterCronJob is
+// not used directly -- its config-mismatch check would error on a job an
+// operator has altered after creation.
 func (a *MessageAdmin) ensureSystemCronJob(ctx context.Context, job *alert.Job) error {
 	existing, err := a.cronJobController.GetCronJob(ctx, job.Name)
 	if err != nil {
