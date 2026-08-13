@@ -88,7 +88,7 @@ Update this as you go. One line per phase; the current phase gets the detail.
 | 12 — FIFO partitions | ⬜ | post-v1, unordered opt-in pool — pick up only if a real workload needs ordering; moved to the end of this document; the `Queue`/`PoolLimiter` fate + prefetch/dispatch redesign moved out to **14a**, leaving keyed dispatch lanes here |
 | 13 — Public API design review | ✅ done | v1 gate — every exported symbol across producer/consumer/topic reviewed and locked before v1, including the datastore-interfaces question (originally parked as its own short-lived "Code cleanup" phase, since retired and merged directly in here); found `MessageConsumer.Queue`/`PoolLimiter` are validated but functionally dead; circuit breaker gets its shape designed here, not built; lifecycle funcs (overridable `Lifecycle` struct vs. internal) cut to **13b**, RLS + chaos-testing cut out of the v1 gate entirely to **13c**, and `Message` generic-vs-`struct{}` + named-return-params promoted out to **14b** — all Build items now `[x]`; **no tag yet** (cut `git tag phase-13` when ready) |
 | 14 — V1 hardening, correctness & cleanup | ✅ done | `topic.Destroy` lock exhaustion fix, unbounded abandoned-routines map, FanOut rescan, cursor-claim straggler skip, `deliveries.status` index decision, DELETE CASCADEs decision, SQLSTATE retry classification — all Build items now `[x]`; the still-open functionality/cleanup/measurement items were promoted out into **14a**/**14b**/**14c**, which are the actual remaining path to v1; **no tag yet** (cut `git tag phase-14` when ready) |
-| 14a — Functionality (pre-v1) | 🔨 **right now** | default alerts, `cmd/vulkan` connection gap, group-retirement manual verb + CLI (automated expiration rides with **13d**) still open; duty error backoff done — `maintenance.attempts` bumped at claim time (`claimMessagesWithLifecycle`-style), `CalculateDelay` gate pushes on failure, reset on success, `maintain status` failing state + gauge, `dutybackofflab`; schema evolution (epoch-versioned topics via admin, `CompactionRank`, `MessageMeta` accessor, drain telegraphing, bridge-consumer reference lab) done; janitor efficiency/concurrency done — the maintenance tier: claimable duties table, `pkg/maintain` (pinned/orchestrated/fleet), consumer split into `Consumer`/`MessageConsumer`/`ExceptionConsumer`, `vulkan maintain run`/`status`; buffered claim + N-processor dispatch (CURSOR only; absorbs Phase 12's `Queue`/`PoolLimiter` fate + intra-batch concurrency) done; metrics redesign done — `pkg/metrics/datastore`+`pkg/metrics/monitor` split, `Monitor.TopicSnapshot`, `admin.TopicMetrics`, `vulkan topic get`'s extended table, labs incl. `abandonedeventslab` fixed post-build (a stray `admin/health.go` TODO re-opening the "verdict logic in admin vs. on TopicSnapshot" question is unresolved, see the bullet below) — `Queue`/`PoolLimiter` REVIVED as how a caller sets N, not deleted — promoted from Phase 14/TODO.md as the active focus before v1; generic-systems refactor folded in 2026-07-29 from `refactor-plan.md` (delete that file when done): `retry.Policy` consolidation (count inside the policy, root `MaxAttempts` deleted), MessageOptions + `Message`/`MessageMin`/`MessageMax` config trio + `ConcurrencyOverride` group-level override, resource-ownership model (entity table built then deleted; FK ownership chain + owner-column polymorphic tables + `common.Owner`, done), exclusive consumption (`key_lease`, `Concurrency: Allow|Defer`, supersede-before-lease, 'superseded'/'deferred' kinds), `cron_job` + 1-min scheduler + compacted `job_request` topic |
+| 14a — Functionality (pre-v1) | ✅ done | all 18 bullets built, gate swept 2026-08-13, 35/35 fresh-DB labs green; the arc: generic-systems refactor (`retry.Policy`, MessageOptions trio, `common.Owner` ownership chain, `key_lease` exclusive consumption, `cron_job` + scheduler + `job_request` topic), schema evolution (epoch-versioned topics, `CompactionRank`, `MessageMeta`, bridge lab), worker system (13 chunks — `worker`/`worker_instance`, manager, consumer inversion, pkg/maintain deleted), layered package pattern everywhere, metrics reshape, default alerts (per-check cron jobs + worker-kind executors, `classify`, `vulkan alert` tree, pkg/compaction read domain, generic producer), group destroy verb + `vulkan group destroy`; answers in NOTES.md (five 14a sections); tag `phase-14a` |
 | 14b — Cleanup / public API design (pre-v1) | ⬜ | `Message` generic vs. `struct{}`, named-return-params (both promoted from Phase 13), internal file-structure cleanup, `go.mod` cleanup, error-message consistency, config/options refinement, maintenance-tier surface review (`pkg/maintain`(+metrics), consumer split, producer rename, CLI — all postdate Phase 13's pass) — sequenced alongside **14a** |
 | 14c — Once 14a/14b are complete (pre-v1) | ⬜ | benchmark-recording pipeline (incl. multi-topic throughput/latency bench), idle-fleet duty-load bench (picks a rung on the settled idle-backoff fix ladder), cross-version compatibility matrix, TEST.md expand-and-refine — waits on **14a**/**14b** since all four measure or test a surface that needs to stop moving first |
 | 15 — Documentation | ⬜ | last, deliberately — docs wait until 13, 14a, 14b, and 14c stop moving the surface they'd describe |
@@ -4315,7 +4315,7 @@ freeze first, then a bug-scrub pass against it.
 
 ---
 
-## Phase 14a — Functionality (pre-v1)
+## Phase 14a — Functionality (pre-v1) ✅
 
 *Promoted out of Phase 14's flat backlog into its own explicitly ordered
 phase — this is the active "right now" focus: functionality and
@@ -4730,12 +4730,11 @@ sequenced after both of these close.*
       built into `pkg/metrics` and deliberately reverted (see the
       schema-evolution as-built above); reworked only to source data from
       `Monitor.TopicSnapshot`, the verdict logic (`evaluate()`) unchanged.
-      **Still open, surfaced during close-out, NOT decided:** a
-      `// TODO - probably makes more sense to use TopicSnapshot and derive
-      Safe / Reason from that` comment sits directly on `VersionHealth` in
-      `pkg/admin/health.go`, contradicting the "stays separate" call two
-      sentences up. Nobody has re-confirmed which one is current — resolve
-      before treating either as settled.
+      RESOLVED at the 14a gate (2026-08-13): the stray
+      `// TODO - probably makes more sense to use TopicSnapshot...` comment
+      on `VersionHealth` was deleted — the code already sources from
+      `TopicSnapshot` and `evaluate()` stays in admin, so the "stays
+      separate" call above is confirmed current (user-confirmed).
       CLI placement SETTLED: the event-derived columns
       (ABANDONED/OUTSTANDING/AVG SELF-CLEAR) were added to the existing
       `vulkan topic get` per-group table rather than a new `vulkan metrics`
@@ -4755,11 +4754,12 @@ sequenced after both of these close.*
       monotonic).
       `__system.metrics` reuses the SAME `__system.` reserved-prefix +
       idempotent system-topic-creation machinery as the default-alerts build —
-      cross-plan dependency; metrics landed first and owns it, default-alerts
-      (still parked) will consume it. Out of scope, unchanged: duty WORK
-      metrics (the open question above); any new otel metric beyond today's
-      set; a health-check HTTP surface; changing the retire-verdict LOGIC
-      (only its data source moved).
+      cross-plan dependency; metrics landed first and owns it, and the
+      default-alerts build (complete 2026-08-13) consumes it. Out of scope,
+      unchanged: any new otel metric beyond today's set; a health-check HTTP
+      surface; changing the retire-verdict LOGIC (only its data source
+      moved). (Duty WORK metrics, once an open question here, died with the
+      duty system in worker chunk 13.)
       Chunk plan: `~/.claude/plans/metrics-redesign.md` (5 chunks:
       snapshotter over live DB reads → `__system.metrics` topic + reserved
       prefix → in-proc metrics as an event stream → snapshotter derives metrics

@@ -67,15 +67,17 @@ comment / code review sweeps:
   config files. improving it must be one codebase-wide sweep so the files stay
   identical -- never a per-package rewording. the "(own Handler)" fragment looks
   like a copy artifact worth fixing in that same sweep.
-- Still open: `pkg/admin/health.go` carries a `// TODO - probably makes more
-  sense to use TopicSnapshot and derive Safe / Reason from that` comment that
-  contradicts LEARNING_PLAN 14a's recorded decision (verdict logic deliberately
-  kept in admin, separate from `pkg/metrics/controller`). Whoever picks this up:
-  confirm which is current before changing anything — either delete the stray
-  comment (settled design wins) or do the refactor and update the LEARNING_PLAN
-  record to match.
+- RESOLVED at the 14a gate (2026-08-13): the stray `pkg/admin/health.go` TODO
+  comment on VersionHealth was deleted — settled design confirmed (verdict
+  logic stays in admin, data already sourced from TopicSnapshot).
 
 naming pass:
+- "parked" (banned word) still lives in messageconsumer comment/log prose and
+  reclaim.go's `WITH parked AS` CTE name, plus prose in
+  exceptionlab/deliveryloglab/shutdowntruncationlab -- sweep to the codebase's
+  own words (insert/record an exception row). GroupLag.ParkedExceptions and
+  the CLI PARKED column were already renamed UNRESOLVED at the 14a gate
+  (2026-08-13).
 - need to rename consumer waterline stuff to something like cursor.committed. Waterline is useful for understanding should not dictate code naming and terminology
 - our controllers have redundant verbage: topicController.GetTopic -- should just be get
 - consider rename split again to:

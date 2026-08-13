@@ -10,7 +10,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// TODO - probably makes more sense to use TopicSnapshot and derive Safe / Reason from that
 type VersionHealth struct {
 	Topic     *topic.Topic
 	Compacted bool
@@ -77,7 +76,7 @@ func (h *VersionHealth) evaluate() {
 	var lagging []string
 	for _, g := range h.Groups {
 		lag := g.GroupLag()
-		if lag.Lag > 0 || lag.ParkedExceptions > 0 {
+		if lag.Lag > 0 || lag.UnresolvedExceptions > 0 {
 			lagging = append(lagging, g.ConsumerGroup)
 		}
 	}

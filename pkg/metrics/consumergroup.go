@@ -41,7 +41,7 @@ type GroupLag struct {
 	Committed        int64
 	Head             int64
 	Lag              int64 // Head - Committed, floored at 0
-	ParkedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
+	UnresolvedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
 }
 
 func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
@@ -50,6 +50,6 @@ func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
 		Committed:        s.Cursor.Committed,
 		Head:             s.Cursor.Head,
 		Lag:              max(s.Cursor.Backlog, 0),
-		ParkedExceptions: s.Exceptions.Ready + s.Exceptions.Inflight + s.Exceptions.Deferred,
+		UnresolvedExceptions: s.Exceptions.Ready + s.Exceptions.Inflight + s.Exceptions.Deferred,
 	}
 }
