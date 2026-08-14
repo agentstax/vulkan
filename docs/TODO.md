@@ -27,15 +27,23 @@ mismatched registration waits visibly, forever, never fencing an incumbent.
   reading binding rows, unchanged. dev-DB drop+recreate verified, bootstrap
   idempotent.
 
-- [ ] Chunk 2 — datastore verbs (add-only; Bind/ClearBindings untouched).
-  One transaction that locks the consumer_group row (FOR UPDATE — nothing
-  else serializes concurrent installers now that installed rows have no
-  uniqueness), reads the newest installed declaration, checks fresh
-  worker_instance heartbeats for the group's workers inline, and either
-  appends an installed row + swaps binding rows, or appends a waiting
-  attempt row; plus flat reads for the newest installed declaration and each
-  declarer's newest waiting row. Table-exact structs in model.go, Wrap-only
-  public/private pairs, pair-by-pair file order.
+- [x] Chunk 2 — datastore verbs (2026-08-13; add-only, Bind/ClearBindings
+  untouched). consumercontroller/datastore/binding_declaration.go:
+  DeclareBindings(ctx, groupID, patterns, declaredBy, declaredAt) ->
+  (DeclarationOutcome installed|joined|waiting, stored patterns, error) —
+  one transaction: consumer_group row FOR UPDATE (serializes installers),
+  newest installed declaration read, element-wise set compare (patterns
+  arrive sorted+deduplicated from the controller), inline fresh
+  worker_instance EXISTS, then append installed + swap binding rows /
+  append waiting row / join with nothing written. One flat read for both
+  the transaction and callers: ListDeclarations(groupID, status) — newest
+  attempt row per declarer via DISTINCT ON, served by the
+  (consumer_group_id, status, declared_by, id) index; effective set =
+  newestDeclaration (highest id) over the installed rows, open waiters =
+  the caller's comparison against it. BindingDeclarationData + status
+  consts in model.go. Verified against dev DB: install/join/swap, blocked +
+  retry appends, dead-fleet install keeping the wait span, empty-set
+  install.
 
 - [ ] Chunk 3 — controller classify + declare verb.
   Pure classify(declared set, stored set, live declarers) -> named-action

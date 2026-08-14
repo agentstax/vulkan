@@ -57,6 +57,12 @@ each func param has explicit type, never combined
 - One concept = one named home. Policy tables become a pure classify function
   returning a named-action enum + an exhaustive switch driver. Prefer the
   simplest construct that fits the mental model.
+- A function returns one value plus an error; three return types are the
+  sign it is doing too much. First ask whether the extra value has a real
+  consumer -- usually another verb already owns that fact, so delete it,
+  don't wrap it. Only when callers genuinely need both does the pair become
+  a named result struct (with its New<Struct> constructor). The comma-ok
+  bool for expected absence is the exception.
 
 ## Package layout
 

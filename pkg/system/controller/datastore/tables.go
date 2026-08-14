@@ -201,8 +201,9 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		return err
 	}
 
-	// group-scoped reads: newest installed row, newest waiting row per declarer
-	createBindingDeclarationIndexSql := `CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (consumer_group_id, id);`
+	// helps listDeclarations so it doesn't have to sequential
+	// scan a long wait's appended retry rows
+	createBindingDeclarationIndexSql := `CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (consumer_group_id, status, declared_by, id);`
 	if _, err := tx.Exec(ctx, createBindingDeclarationIndexSql); err != nil {
 		return err
 	}
