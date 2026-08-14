@@ -262,3 +262,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0509 2026-08-01 accepted (phase 13) — The retry surface is trimmed to Policy and the two error types
 - 0510 2026-08-01 accepted (phase 13) — ConsumerType and its constants are demoted; NewConsumer defaults to cursor consumption
 - 0511 2026-08-13 accepted (phase 14a) — Binding sets are declared at consumer Register; replacement waits for zero live declarers
+- 0512 2026-08-14 accepted (phase 14) — Producer create-ahead triggers at the partition's 80% mark id; heal path serialized by advisory lock

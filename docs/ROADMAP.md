@@ -20,24 +20,8 @@ Behavior changes that must land before the 14b cleanup pass — 14b is
 naming/shape only, so anything that adds or moves behavior goes first,
 otherwise the API review locks a surface that is still due to change.
 
-- **Producer proactive partition create-ahead** (settled design 2026-08-11;
-  replaces the old janitor create-ahead deleted with pkg/maintain — creation
-  is the write path's job, Kafka-style segment roll; janitor is cleanup only).
-  - Fire `ensureCoveringPartition` when an append's returned id range contains
-    the partition's sentinel id (~80% mark) — ids are unique fleet-wide, so
-    exactly one producer process fires per partition with zero coordination.
-  - Gate intra-process with an atomic per-topic attempted flag (or x/sync
-    singleflight) so batch pipelining can't double-fire while the DDL round
-    trip is in flight.
-  - Best-effort BY DESIGN: DatastoreRetry absorbs blips, then warn and drop —
-    the reactive heal at the boundary is the only layer allowed to matter for
-    correctness, so every failure above it is drop-and-log.
-  - The heal path keeps the residual thundering herd (every in-flight produce
-    at a missed boundary fires `ensureCoveringPartition` concurrently): cap it
-    with `pg_try_advisory_xact_lock(topic_id, partition)` before the CREATE —
-    one winner does DDL, losers return instantly and just retry their insert.
-  - Optional second sentinel (~95%) only if the drop warn ever shows up in
-    practice.
+- **Producer proactive partition create-ahead** — design settled [0512];
+  in flight, chunk plan in TODO.md.
 
 - **Otel metrics exposure story.** Nothing constructs
   pkg/metrics/metrics.Metrics yet, so every Register*Metric gauge is dormant.
