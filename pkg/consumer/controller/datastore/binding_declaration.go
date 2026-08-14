@@ -6,24 +6,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
-)
-
-// DeclarationOutcome is where one DeclareBindings attempt ended up.
-type DeclarationOutcome string
-
-const (
-	DeclarationInstalled DeclarationOutcome = "installed" // installed row appended, binding rows swapped
-	DeclarationJoined    DeclarationOutcome = "joined"    // requested set already stored; nothing written
-	DeclarationWaiting   DeclarationOutcome = "waiting"   // waiting row appended; a live instance still declares the stored set
 )
 
 // DeclareBindings states the group's full binding set in one transaction and
 // reports the end state (see classifyDeclaration). patterns must arrive
 // sorted and deduplicated -- sets are compared element-wise.
-func (d *ConsumerDatastore) DeclareBindings(ctx context.Context, groupID int64, patterns []string, declaredBy string, declaredAt time.Time) (DeclarationOutcome, error) {
-	var outcome DeclarationOutcome
+func (d *ConsumerDatastore) DeclareBindings(ctx context.Context, groupID int64, patterns []string, declaredBy string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
+	var outcome binding.DeclarationOutcome
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		outcome, err = d.declareBindings(ctx, groupID, patterns, declaredBy, declaredAt)
@@ -32,7 +24,7 @@ func (d *ConsumerDatastore) DeclareBindings(ctx context.Context, groupID int64, 
 	return outcome, err
 }
 
-func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, patterns []string, declaredBy string, declaredAt time.Time) (DeclarationOutcome, error) {
+func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, patterns []string, declaredBy string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -72,13 +64,13 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, 
 
 	outcome := classifyDeclaration(found, storedPatterns, patterns, live)
 	switch outcome {
-	case DeclarationJoined:
+	case binding.DeclarationJoined:
 		// the stored set already matches -- nothing to write
-	case DeclarationWaiting:
+	case binding.DeclarationWaiting:
 		if err := d.appendDeclaration(ctx, tx, groupID, BindingDeclarationWaiting, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
-	case DeclarationInstalled:
+	case binding.DeclarationInstalled:
 		if err := d.appendDeclaration(ctx, tx, groupID, BindingDeclarationInstalled, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
@@ -91,24 +83,24 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, 
 		return "", err
 	}
 
-	if outcome == DeclarationInstalled {
+	if outcome == binding.DeclarationInstalled {
 		d.Logger.InfoContext(ctx, "binding set installed", "group_id", groupID, "patterns", patterns, "previous_patterns", storedPatterns, "declared_by", declaredBy)
 	}
 	return outcome, nil
 }
 
-func classifyDeclaration(found bool, storedPatterns []string, patterns []string, live bool) DeclarationOutcome {
+func classifyDeclaration(found bool, storedPatterns []string, patterns []string, live bool) binding.DeclarationOutcome {
 	switch {
 	case !found:
-		return DeclarationInstalled // first declarer wins
+		return binding.DeclarationInstalled // first declarer wins
 	case equalPatterns(storedPatterns, patterns):
-		return DeclarationJoined
+		return binding.DeclarationJoined
 	case !live:
-		return DeclarationInstalled // nothing live declares the stored set
+		return binding.DeclarationInstalled // nothing live declares the stored set
 	default:
 		// waiting never changes the effective set -- a missed case blocks
 		// loudly instead of installing silently
-		return DeclarationWaiting
+		return binding.DeclarationWaiting
 	}
 }
 

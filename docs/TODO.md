@@ -45,12 +45,19 @@ mismatched registration waits visibly, forever, never fencing an incumbent.
   retry appends, dead-fleet install keeping the wait span, empty-set
   install.
 
-- [ ] Chunk 3 — controller classify + declare verb.
-  Pure classify(declared set, stored set, live declarers) -> named-action
-  enum (join / swap / wait) + exhaustive switch driver; a controller verb the
-  consumer door calls per attempt, all input validation here (pattern
-  validation moves from Bind). Old Bind/ClearBindings still present so the
-  build stays green.
+- [x] Chunk 3 — controller declare verb (2026-08-13). The classify + switch
+  driver landed in the datastore in chunk 2 (the decision must sit under the
+  group lock); the controller layer is
+  ConsumerController.DeclareBindings(ctx, groupId, patterns, declaredAt) ->
+  (DeclarationOutcome, error): validation (groupId, no empty pattern,
+  non-zero declaredAt), normalizePatterns (sort + dedup, non-nil so an
+  empty set stores as {} not NULL), declarerIdentity() = hostname:pid. The
+  DeclarationOutcome enum lives once in the pkg/consumer/binding vocabulary
+  package (pkg/consumer is a door, so its vocabulary lives in subpackages —
+  message precedent), imported by controller and datastore alike. Old
+  Bind/ClearBindings untouched. Verified against dev DB:
+  unsorted+duplicated input installs once, reordered same set joins, nil
+  patterns = whole topic, three validation rejects.
 
 - [ ] Chunk 4 — consumer door: Register states the set.
   Consumer.Register(ctx, group, topic, version, bindings) — no bindings =

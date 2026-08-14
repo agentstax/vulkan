@@ -32,8 +32,9 @@ Storage is an append-only `binding_declaration` ledger, one row per Register
 attempt: `installed` rows are set changes (the effective declaration is the
 group's newest installed row, and set-change history is retained as audit);
 `waiting` rows are attempts blocked on a live incumbent's different set,
-re-appended on every retry (declarer identity hostname:pid, display only;
-the requested set travels as a `patterns TEXT[]` column). Each row carries
+re-appended on every retry (declarer identity hostname:pid:random, computed
+once per process — containers often run as pid 1 under cloned hostnames —
+display only; the requested set travels as a `patterns TEXT[]` column). Each row carries
 two timestamps: `declared_at`, when the declarer first stated the set —
 constant across its retries — and `attempt_at`, when this attempt ran; a
 declarer's newest attempt_at is its liveness heartbeat, and the installed
