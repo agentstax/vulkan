@@ -68,7 +68,8 @@ func main() {
 	step("seed a row in every topic-scoped table")
 
 	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	must(cd.Bind(ctx, groupID, "orders.*"))
+	_, err = cd.DeclareBindings(ctx, groupID, []string{"orders.*"}, time.Now())
+	must(err)
 
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")

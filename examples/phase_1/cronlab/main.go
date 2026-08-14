@@ -657,9 +657,8 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	must(err)
 	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name)
 	must(err)
-	for _, binding := range bindings {
-		must(controller.Bind(ctx, group.Id, binding))
-	}
+	_, err = controller.DeclareBindings(ctx, group.Id, bindings, time.Now())
+	must(err)
 	return group.Id
 }
 

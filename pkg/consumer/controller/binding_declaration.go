@@ -11,8 +11,9 @@ import (
 )
 
 // DeclareBindings states the group's full binding set -- no patterns = the
-// whole topic. declaredAt is when this declarer first stated the set and
-// stays fixed across its retries; callers retry on DeclarationWaiting.
+// whole topic, '*' in a pattern matches any run of characters.
+// declaredAt is when the declarer first stated the set, fixed across its
+// retries; callers retry on DeclarationWaiting.
 func (c *ConsumerController) DeclareBindings(ctx context.Context, groupId int64, patterns []string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
 	if groupId <= 0 {
 		return "", errors.New("groupId must be > 0")

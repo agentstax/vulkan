@@ -9,7 +9,8 @@ import (
 )
 
 // a job's name doubles as the routing key its job requests are produced with,
-// so it can't contain '*' -- the binding wildcard, which Bind can't escape
+// so it can't contain '*' -- the binding wildcard, which a pattern can't
+// escape
 var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // CronJob is one row of cron_job.

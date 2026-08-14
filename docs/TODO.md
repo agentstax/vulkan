@@ -76,10 +76,20 @@ mismatched registration waits visibly, forever, never fencing an incumbent.
   live incumbent, Consume waiting out the incumbent then swapping and
   consuming a routed message, clean stop); cronlab + alertlab pass.
 
-- [ ] Chunk 5 — delete the create-only path.
-  Alert declare.go Bind calls, ConsumerController.Bind/ClearBindings, and
-  the datastore Bind/clearBindings pairs all go; grep for stragglers.
-  Register is now the only writer of binding rows.
+- [x] Chunk 5 — delete the create-only path (2026-08-13).
+  ConsumerController.Bind/ClearBindings and the datastore Bind/clearBindings
+  pairs deleted (ListBindings + wildcardToRegex stay); alert declare.go
+  drops its Bind call — the group is born undeclared and the consumer
+  declares {JobName} at Register (no claim can run before then, so no
+  whole-topic window). The wildcard semantics + forward-only doc moved from
+  Bind onto ConsumerController.DeclareBindings; stale Bind mentions fixed in
+  binding DDL comment and cron SlugPattern comment. Labs converted to
+  DeclareBindings with full sets (cronlab/alertlab registerGroup helpers,
+  topiclab, consumergrouplab, deletetopiclab; routinglab's reset declares
+  nil = whole topic where it cleared bindings). replaceBindings' plain
+  INSERT is now the only binding writer — the transitional duplicate-key
+  window with Bind is gone. Sweep grep clean; routinglab, topiclab,
+  consumergrouplab, deletetopiclab, cronlab, alertlab all pass.
 
 - [ ] Chunk 6 — read surface.
   ListBindings (datastore -> controller Binding read-model -> MessageAdmin)

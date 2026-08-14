@@ -174,7 +174,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
 			pattern TEXT NOT NULL,                -- POSIX regex translated from the NATS-style pattern
 			display TEXT,                         -- original NATS pattern, for humans
-			UNIQUE (consumer_group_id, pattern)   -- backs Bind's ON CONFLICT; its index also serves the group lookup
+			UNIQUE (consumer_group_id, pattern)   -- its index also serves the group lookup
 		);
 	`
 	if _, err := tx.Exec(ctx, createBindingSql); err != nil {

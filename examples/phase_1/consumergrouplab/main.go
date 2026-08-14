@@ -145,7 +145,8 @@ func destroySection(ctx context.Context, ds *coredatastore.PostgresDatastore, mA
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
 	doomed, err := cd.RegisterGroup(ctx, topicA.Id, doomedName)
 	must(err)
-	must(cd.Bind(ctx, doomed.Id, "some.routing.key"))
+	_, err = cd.DeclareBindings(ctx, doomed.Id, []string{"some.routing.key"}, time.Now())
+	must(err)
 
 	locked, err := admin.NewMessageAdmin(ds, nil)
 	must(err)

@@ -139,7 +139,8 @@ func main() {
 
 	headBefore := head(ctx, ds, topicC.Id)      // topicC is fresh, this is 0
 	publish(ctx, wpCInstance, "orders.created") // id headBefore+1, published BEFORE any binding exists
-	must(cd.Bind(ctx, groupRouteID, "orders.*"))
+	_, err = cd.DeclareBindings(ctx, groupRouteID, []string{"orders.*"}, time.Now())
+	must(err)
 	publish(ctx, wpCInstance, "orders.updated")  // id headBefore+2, matches, published AFTER the binding
 	publish(ctx, wpCInstance, "payments.charge") // id headBefore+3, does not match
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
@@ -166,8 +167,10 @@ func main() {
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
 	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX))
 	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY))
-	must(cd.Bind(ctx, groupXID, "sliceX.*"))
-	must(cd.Bind(ctx, groupYID, "sliceY.*"))
+	_, err = cd.DeclareBindings(ctx, groupXID, []string{"sliceX.*"}, time.Now())
+	must(err)
+	_, err = cd.DeclareBindings(ctx, groupYID, []string{"sliceY.*"}, time.Now())
+	must(err)
 
 	for range 5 { // 5 rows, all in sliceX -- the 5th self-heals partition 1 into place
 		publish(ctx, wpDInstance, "sliceX.event")

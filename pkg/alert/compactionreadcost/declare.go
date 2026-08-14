@@ -10,9 +10,9 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Declare creates the alert's consumer group on the job_requests topic, bound
-// to exactly its job name, and the group's worker row; existing rows are left
-// untouched, so RegisterSystem runs it every time.
+// Declare creates the alert's consumer group on the job_requests topic and
+// the group's worker row; existing rows are left untouched, so RegisterSystem
+// runs it every time. The consumer declares its job-name binding at Register.
 func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *common.Owner) error {
 	if err := workercontroller.ValidateOwner(owner, common.OwnerSystem, JobName); err != nil {
 		return err
@@ -28,9 +28,6 @@ func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *commo
 
 	group, err := d.consumers.RegisterGroup(ctx, cronTopic.Id, JobName)
 	if err != nil {
-		return err
-	}
-	if err := d.consumers.Bind(ctx, group.Id, JobName); err != nil {
 		return err
 	}
 

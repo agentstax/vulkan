@@ -7,7 +7,7 @@ package main
 // rows from earlier runs (a trick the pre-8b shared-message_log version needed
 // and this one doesn't).
 //
-// Drives the real datastore methods directly (Bind, ClaimMessagesWithCursor,
+// Drives the real datastore methods directly (DeclareBindings, ClaimMessagesWithCursor,
 // FanOut, ClaimMessagesWithLifecycle) so matching is deterministic and asserted on
 // exact returned rows, not inferred from timing.
 //
@@ -90,8 +90,10 @@ func main() {
 
 	// ===== bind cursorGroup and lifecycleGroup, THEN publish the rest =====
 	step("bind cursorGroup to orders.*.created, lifecycleGroup to payments.*")
-	must(cd.Bind(ctx, cursorGroupID, "orders.*.created"))
-	must(cd.Bind(ctx, lifecycleGroupID, "payments.*"))
+	_, err = cd.DeclareBindings(ctx, cursorGroupID, []string{"orders.*.created"}, time.Now())
+	must(err)
+	_, err = cd.DeclareBindings(ctx, lifecycleGroupID, []string{"payments.*"}, time.Now())
+	must(err)
 
 	msg2 := publish(ctx, wpInstance, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
 	msg3 := publish(ctx, wpInstance, "orders.eu.updated")          // wrong tail, does not match
@@ -172,7 +174,8 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consume
 		must(err)
 		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), gID)
 		must(err)
-		must(cd.ClearBindings(ctx, gID))
+		_, err = cd.DeclareBindings(ctx, gID, nil, time.Now())
+		must(err)
 		// settled/pending must ride along -- the claim gate assumes
 		// gate >= settled >= claimed; bumping claimed alone breaks that and a
 		// poll where the fresh pair doesn't prove would regress the cursor
