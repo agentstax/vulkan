@@ -20,49 +20,6 @@ Behavior changes that must land before the 14b cleanup pass — 14b is
 naming/shape only, so anything that adds or moves behavior goes first,
 otherwise the API review locks a surface that is still due to change.
 
-- **Binding lifecycle** (settled design 2026-08-13). Bindings are create-only
-  today (`Bind` inserts with ON CONFLICT DO NOTHING; `ClearBindings` is
-  clear-all and nothing calls it), so a changed pattern on the same group
-  silently matches the union of old and new. Settled: a group's bindings are
-  declared at consumer Register and replaceable only when no live instance
-  still declares the current set (K8s leader-lease / RabbitMQ
-  single-active-consumer precedent).
-  - `Register(ctx, group, topic, version, bindings)` states the group's full
-    set. No bindings = whole topic. Bind/ClearBindings leave the public
-    surface.
-  - Same set as stored (or none stored): install/join immediately.
-  - Different set + a live instance (fresh worker_instance heartbeat) still
-    declares the stored set: the registering instance WAITS — a first-class
-    visible state, retried on an interval, logged loudly, no timeout knob
-    (deadline policy belongs to orchestrator readiness probes; K8s leader
-    election also waits forever). Never fence or kill a running incumbent.
-  - Different set + zero live declarers: swap the set in one transaction,
-    join.
-  - Consequences that fall out with no special handling: rolling deploy
-    converges when the old fleet's leases lapse (the deploy's own kill of old
-    instances is the consent); failed-deploy rollback is symmetric
-    (rolled-back instances re-register and win once the new fleet is dead —
-    durable state never outlives running code); two divergent apps on one
-    group = first to register wins untouched, second waits forever and never
-    goes ready.
-  - No union window ever: old set stays effective until the swap; each claim
-    reads exactly one declared set (claim.go read-time predicate; fanout gets
-    the same for free if LIFECYCLE un-parks).
-  - Read surface shows the stored set + declarer + any waiting declaration
-    (extend `vulkan alert bindings` / ListBindings).
-  - Rejected on the way (don't re-suggest): additive Bind kept + SetBindings
-    convergence verb (last-writer-wins flip-flop under divergent apps);
-    versioned declarations (durable version can't see a rollback —
-    rolled-back fleet silently runs under new bindings); union of live
-    instances' patterns (divergent apps run as the union forever); epoch
-    fencing that kills mismatched incumbents (divergent apps crash-loop each
-    other).
-  - Already shipped alongside (2026-08-13): `MessageAdmin.DestroyGroup` +
-    `vulkan group destroy` for orphan cleanup on alert rename (guards
-    ErrGroupLive / ErrGroupDeliveriesPending, --force overrides), and
-    `vulkan alert bindings` listing every binding
-    (ConsumerController.ListBindings -> MessageAdmin.ListBindings).
-
 - **Producer proactive partition create-ahead** (settled design 2026-08-11;
   replaces the old janitor create-ahead deleted with pkg/maintain — creation
   is the write path's job, Kafka-style segment roll; janitor is cleanup only).
@@ -210,6 +167,9 @@ internal cleanup; no new behavior. Locks the surface before v1.
   - A file content ordering convention: vars/const at top; struct, New,
     validates; public->private pairs; helper funcs at bottom behind a helper
     block comment.
+  - A blank-line convention inside function bodies: when a statement gets a
+    blank line before/after it and when it doesn't -- decide the rule, write
+    it into CONVENTIONS.md, and sweep for consistency.
 - **Refactor remaining packages into the worker/topic layered pattern:**
   - pkg/migrate needs a full comb-through: pkg/migrate/version/support.go and
     pkg/migrate/datastore system/version.go don't follow the dependency

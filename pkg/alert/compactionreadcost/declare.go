@@ -3,6 +3,7 @@ package compactionreadcost
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
@@ -10,9 +11,9 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Declare creates the alert's consumer group on the job_requests topic and
-// the group's worker row; existing rows are left untouched, so RegisterSystem
-// runs it every time. The consumer declares its job-name binding at Register.
+// Declare creates the alert's consumer group on the job_requests topic, its
+// job-name binding declaration, and the group's worker row; existing rows are
+// left untouched, so RegisterSystem runs it every time.
 func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *common.Owner) error {
 	if err := workercontroller.ValidateOwner(owner, common.OwnerSystem, JobName); err != nil {
 		return err
@@ -28,6 +29,11 @@ func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *commo
 
 	group, err := d.consumers.RegisterGroup(ctx, cronTopic.Id, JobName)
 	if err != nil {
+		return err
+	}
+
+	// a waiting outcome is fine -- the consumer retries the declaration in Consume
+	if _, err := d.consumers.DeclareBindings(ctx, group.Id, []string{JobName}, time.Now()); err != nil {
 		return err
 	}
 

@@ -47,6 +47,12 @@ exception-lab:
 routing-lab:
   go run examples/phase_1/routinglab/main.go
 
+# binding lifecycle lab: sets declared at consumer Register -- same-set join,
+# a divergent set waiting on a live incumbent, and the dead-fleet swap that
+# ends the wait, consuming under the new set.
+binding-lab:
+  go run examples/phase_1/bindinglab/main.go
+
 # Phase 8a lab (a): id-range partitioning prunes claim reads to 1-2 partitions.
 # Self-contained -- registers its own topic at a lab-scale partition width
 # (Phase 8b made partition width a per-topic Register() param, so no more

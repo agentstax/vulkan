@@ -3,7 +3,7 @@
 // executor claimed as a real worker.
 //
 // Sections:
-//  1. seeding -- both check jobs + consumer groups + worker
+//  1. seeding -- both check jobs + consumer groups + exact declarations + worker
 //     rows exist after RegisterSystem; an operator's altered threshold and a
 //     suspended job survive a re-register
 //  2. classify -- driven through AlertController with a 2s repeat: the active
@@ -118,7 +118,7 @@ func main() {
 // --- sections ---
 
 func seedingSection(ctx context.Context) {
-	step("seeding: jobs/groups/workers exist; operator changes survive re-register")
+	step("seeding: jobs/groups/bindings/workers exist; operator changes survive re-register")
 
 	partitionCountJob, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
 	must(err)
@@ -136,6 +136,22 @@ func seedingSection(ctx context.Context) {
 		die("RegisterSystem must seed the " + compactionreadcost.JobName + " cron job")
 	}
 
+	declarations, err := mAdmin.ListDeclarations(ctx)
+	must(err)
+	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName} {
+		declared := false
+		for _, declaration := range declarations {
+			if declaration.GroupName == jobName && declaration.TopicName == cron.TopicName &&
+				declaration.Status == binding.DeclarationInstalled &&
+				len(declaration.Patterns) == 1 && declaration.Patterns[0] == jobName {
+				declared = true
+			}
+		}
+		if !declared {
+			die("group " + jobName + " must declare exactly its job name at RegisterSystem")
+		}
+	}
+
 	partitionCountGroup = scalarInt64(ctx,
 		`SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`,
 		jobRequests.Id, partitioncount.JobName)
@@ -148,7 +164,7 @@ func seedingSection(ctx context.Context) {
 	if row == nil {
 		die("RegisterSystem must declare the " + partitioncount.JobName + " worker row")
 	}
-	fmt.Println("  ✓ both check jobs and the worker row exist")
+	fmt.Println("  ✓ both check jobs, exact declarations, and the worker row exist")
 
 	// GET-THEN-CREATE seeding: an operator's altered threshold and a
 	// suspended job must survive RegisterSystem

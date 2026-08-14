@@ -59,6 +59,9 @@ The listing surface reads the ledger, not binding rows: each group's newest
 installed row plus its open waiters. A joined attempt appends nothing, so a
 wait ended by someone else installing the same set resolves by set
 comparison against the effective row, not by any row of the waiter's own.
+A group with no declaration reads as whole-topic everywhere bindings are
+read, so seeded groups with static sets (the alert consumers) declare at
+RegisterSystem; their consumer joins at its own Register.
 
 **Consequences.** A rolling deploy converges when the old fleet's heartbeats
 lapse — the deploy killing the old instances is the consent; rollback is

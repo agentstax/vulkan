@@ -5,6 +5,34 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-13 — Binding lifecycle: sets declared at consumer Register [0511]
+
+- `Consumer.Register(ctx, group, topic, version, bindings)` states the
+  group's full binding set (nil = whole topic). Consume re-attempts the
+  declaration until installed or joined before starting the manager; a
+  waiting outcome (a live instance still declares a different set) retries
+  every `ConsumerConfig.BindingRetryInterval` with a Warn per attempt,
+  forever — never fencing the incumbent.
+- Storage is the append-only `binding_declaration` table, one row per
+  attempt: effective set = the group's newest installed row, a declarer's
+  newest waiting row is its retry heartbeat; `declared_at` (episode start)
+  + `attempt_at` per row; concurrent installers serialize on the
+  consumer_group row lock; claims keep reading `binding` rows, swapped only
+  inside the install transaction. Declarer identity is
+  `common.ProcessIdentity` (hostname:pid:random, once per process).
+- The create-only path is gone: ConsumerController.Bind/ClearBindings and
+  their datastore pairs deleted. Alert `Declare` states {JobName} through
+  DeclareBindings at RegisterSystem — an undeclared group reads as
+  whole-topic, which had `cron get --requests`-style listings matching every
+  job.
+- Read surface: `MessageAdmin.ListDeclarations` returns
+  `binding.Declaration` rows (each group's effective declaration plus open
+  waiters); `vulkan alert bindings` shows status/patterns/declarer/
+  timestamps. The per-pattern ListBindings listing was deleted.
+- New bindinglab (`just binding-lab`): same-set join, divergent wait against
+  a live incumbent, dead-fleet swap ending in consumption under the new
+  set. Six labs moved from Bind onto DeclareBindings. 40/40 fresh-DB suite.
+
 ## 2026-08-13 — Lab binaries build into bin/
 
 - `just build-lab <lab>` compiles a lab's main.go to `bin/<lab>`; `bin/*` is
