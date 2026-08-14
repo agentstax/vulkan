@@ -176,6 +176,11 @@ internal cleanup; no new behavior. Locks the surface before v1.
     Config structs, renamed OptionalConfig to make the split obvious at call
     sites. Could make compaction_key + compaction_rank required params of a
     single 'compaction' option to avoid validation.
+  - Re-evaluate consumer Register params — Consumer.Register grew to 5
+    (ctx, group, topic, version, bindings) and NewConsumerInstance to 7 with
+    the binding lifecycle work (2026-08-13); structure them (e.g. a named
+    registration struct or rebalanced required/optional split) instead of
+    letting the lists keep growing.
   - Group/order config options and table fields by likeness.
   - Pass through config/options/vars/params and delete dead fields.
 - **Comment sweeps:**

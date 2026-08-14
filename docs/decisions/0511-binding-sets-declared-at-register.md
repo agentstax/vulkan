@@ -26,7 +26,10 @@ public surface. Per registration:
 
 The wait lives in Consume: Register attempts the install once and returns;
 Consume retries on an interval before starting the manager, so a waiting
-instance never consumes and never goes ready.
+instance never consumes and never goes ready. Consume re-attempts the
+declaration even when Register's attempt installed — between the two calls
+the instance has no live worker_instance heartbeat, so another declarer may
+have legitimately replaced the set in that window.
 
 Storage is an append-only `binding_declaration` ledger, one row per Register
 attempt: `installed` rows are set changes (the effective declaration is the

@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -87,9 +89,10 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 
 // Register resolves the named topic and registers the consumer group on it,
 // returning an instance ready to Consume. Callable many times -- each call
-// returns an independent instance. ctx bounds only this call's I/O; the
-// instance's lifetime is Consume's ctx.
-func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, topicName string, version topic.SchemaVersion) (*ConsumerInstance[Message], error) {
+// returns an independent instance.
+// bindings is the group's full set; nil = the whole topic.
+// ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
+func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, topicName string, version topic.SchemaVersion, bindings []string) (*ConsumerInstance[Message], error) {
 	if consumerGroup == "" {
 		return nil, errors.New("consumer group is required")
 	}
@@ -125,6 +128,16 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, err
 	}
 
+	declaredAt := time.Now()
+	outcome, err := c.consumers.DeclareBindings(ctx, group.Id, bindings, declaredAt)
+	if err != nil {
+		return nil, err
+	}
+	if outcome == binding.DeclarationWaiting {
+		c.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
+			"group", group.Name, "patterns", bindings)
+	}
+
 	// built per instance -- two instances must never share one event queue
 	abandonedEvents, err := consumermetrics.NewMetricEventProducer(c.ds, &consumermetrics.MetricEventConfig{
 		Logger: c.Config.Logger,
@@ -134,5 +147,5 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, err
 	}
 
-	return NewConsumerInstance[Message](owner, c.ds, abandonedEvents, c.Config)
+	return NewConsumerInstance[Message](owner, c.ds, abandonedEvents, c.consumers, bindings, declaredAt, c.Config)
 }

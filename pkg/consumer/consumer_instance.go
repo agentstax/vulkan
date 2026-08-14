@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumer/binding"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
@@ -22,12 +25,16 @@ type ConsumerInstance[Message any] struct {
 
 	ds              *datastore.PostgresDatastore
 	abandonedEvents *consumermetrics.MetricEventProducer
+	consumers       *consumercontroller.ConsumerController
+	bindings        []string
+	declaredAt      time.Time
 	permit          *consumePermit
 }
 
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
 // so there is nothing left to default or validate here.
-func NewConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, abandonedEvents *consumermetrics.MetricEventProducer, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+// bindings and declaredAt are Register's declaration, re-attempted by Consume.
+func NewConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, abandonedEvents *consumermetrics.MetricEventProducer, consumers *consumercontroller.ConsumerController, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -36,6 +43,12 @@ func NewConsumerInstance[Message any](owner *common.Owner, ds *datastore.Postgre
 	}
 	if abandonedEvents == nil {
 		return nil, errors.New("abandonedEvents must not be nil")
+	}
+	if consumers == nil {
+		return nil, errors.New("consumers must not be nil")
+	}
+	if declaredAt.IsZero() {
+		return nil, errors.New("declaredAt is required")
 	}
 	if cfg == nil {
 		return nil, errors.New("config must not be nil")
@@ -52,6 +65,9 @@ func NewConsumerInstance[Message any](owner *common.Owner, ds *datastore.Postgre
 		Logger:          cfg.Logger,
 		ds:              ds,
 		abandonedEvents: abandonedEvents,
+		consumers:       consumers,
+		bindings:        bindings,
+		declaredAt:      declaredAt,
 		permit:          permit,
 	}, nil
 }
@@ -76,6 +92,15 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	}
 	defer release()
 
+	// blocking until bindings install or join
+	if err := i.declareBindings(ctx); err != nil {
+		// a cancel during the wait is a requested stop, not a failure
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+
 	runner, err := i.newManagerRunner(ctx, consumerFunc)
 	if err != nil {
 		return err
@@ -98,4 +123,31 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		i.Logger.InfoContext(context.WithoutCancel(ctx), "consumer stopped", "group", i.Owner.Name, "topic", i.Owner.TopicId)
 	}
 	return err
+}
+
+// declareBindings retries the declaration until it is installed or joined.
+func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context) error {
+	for attempt := 1; ; attempt++ {
+		// Register's outcome is not trusted -- another declarer may have
+		// replaced the set while this instance had no live heartbeat
+		outcome, err := i.consumers.DeclareBindings(ctx, i.Owner.ConsumerGroupId, i.bindings, i.declaredAt)
+		if err != nil {
+			return err
+		}
+		if outcome != binding.DeclarationWaiting {
+			return nil
+		}
+
+		i.Logger.WarnContext(ctx, "binding declaration waiting -- a live instance still declares a different set",
+			"group", i.Owner.Name,
+			"patterns", i.bindings,
+			"attempt", attempt,
+			"elapsed", time.Since(i.declaredAt).Round(time.Second))
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(i.Config.BindingRetryInterval):
+		}
+	}
 }

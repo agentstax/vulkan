@@ -43,6 +43,7 @@ type ConsumerConfig struct {
 	TimeoutGrace            time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	InstanceTTL             time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
+	BindingRetryInterval    time.Duration // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
 	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: retry.NewDefaultRetryPolicy().
 	ShutdownTimeout         time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
 	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
@@ -123,6 +124,10 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 		c.InstanceTTL = 30 * time.Second
 	}
 
+	if c.BindingRetryInterval == 0 {
+		c.BindingRetryInterval = 10 * time.Second
+	}
+
 	c.Message = c.Message.WithDefaults()
 
 	// ceilings must always exist -- lease sizing and the kill backstop need them
@@ -188,6 +193,9 @@ func (c *ConsumerConfig) Validate() error {
 	}
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
+	}
+	if c.BindingRetryInterval <= 0 {
+		return fmt.Errorf("BindingRetryInterval must be > 0, got %v", c.BindingRetryInterval)
 	}
 	if c.ShutdownTimeout <= 0 {
 		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)

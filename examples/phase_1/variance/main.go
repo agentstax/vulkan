@@ -91,7 +91,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1))
+	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

@@ -89,7 +89,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	workInstance, err := workConsumer.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1))
+	workInstance, err := workConsumer.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)

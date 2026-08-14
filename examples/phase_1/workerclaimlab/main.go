@@ -150,7 +150,7 @@ func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName s
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	cInstance, err := c.Register(lifecycleCtx, group, topicName, topic.SchemaVersion(1))
+	cInstance, err := c.Register(lifecycleCtx, group, topicName, topic.SchemaVersion(1), nil)
 	must(err)
 
 	done := make(chan error, 1)

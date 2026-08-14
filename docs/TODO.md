@@ -59,13 +59,22 @@ mismatched registration waits visibly, forever, never fencing an incumbent.
   unsorted+duplicated input installs once, reordered same set joins, nil
   patterns = whole topic, three validation rejects.
 
-- [ ] Chunk 4 — consumer door: Register states the set.
-  Consumer.Register(ctx, group, topic, version, bindings) — no bindings =
-  whole topic. Register attempts install once; Consume retries on an
-  interval with loud logs until installed, then starts the manager. Every
-  Register call site ripples with its true set in the same chunk: alert
-  executions (partitioncount, compactionreadcost) pass JobName so their
-  binding never regresses to whole-topic mid-migration.
+- [x] Chunk 4 — consumer door: Register states the set (2026-08-13).
+  Consumer.Register(ctx, group, topic, version, bindings) — nil = whole
+  topic. Register attempts the declaration once (waiting is not an error,
+  logged Info); the instance carries bindings + declaredAt + the consumer
+  controller, and Consume re-attempts the declaration before starting the
+  manager EVEN when Register installed — between Register and Consume the
+  instance has no live heartbeat, so another declarer may have replaced the
+  set. A waiting Consume retries every
+  ConsumerConfig.BindingRetryInterval (default 10s) with a Warn per attempt
+  (group, patterns, attempt, elapsed since declaredAt); cancelling ctx during
+  the wait returns nil like any requested stop. Call sites rippled: alert
+  executions (partitioncount, compactionreadcost) pass []string{JobName};
+  cronlab's startConsumer takes the group's set; 8 whole-topic lab sites pass
+  nil. Verified against dev DB (install/join at Register, waiting under a
+  live incumbent, Consume waiting out the incumbent then swapping and
+  consuming a routed message, clean stop); cronlab + alertlab pass.
 
 - [ ] Chunk 5 — delete the create-only path.
   Alert declare.go Bind calls, ConsumerController.Bind/ClearBindings, and

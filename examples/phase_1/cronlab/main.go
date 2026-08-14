@@ -314,7 +314,7 @@ func deferSection(ctx context.Context) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	stop := startConsumer(ctx, groupName, 3, func(ctx context.Context, request *cron.JobRequest) error {
+	stop := startConsumer(ctx, groupName, []string{prefix + ".defer"}, 3, func(ctx context.Context, request *cron.JobRequest) error {
 		var first bool
 		once.Do(func() { first = true })
 		if first {
@@ -363,7 +363,7 @@ func runNowOverrideSection(ctx context.Context) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	stop := startConsumer(ctx, groupName, 3, func(ctx context.Context, request *cron.JobRequest) error {
+	stop := startConsumer(ctx, groupName, []string{prefix + ".runnow"}, 3, func(ctx context.Context, request *cron.JobRequest) error {
 		var first bool
 		once.Do(func() { first = true })
 		if first {
@@ -443,7 +443,7 @@ func supersedeSection(ctx context.Context) {
 
 	var handled int64
 	var mu sync.Mutex
-	stop := startConsumer(ctx, groupName, 1, func(ctx context.Context, request *cron.JobRequest) error {
+	stop := startConsumer(ctx, groupName, []string{prefix + ".supersede"}, 1, func(ctx context.Context, request *cron.JobRequest) error {
 		mu.Lock()
 		defer mu.Unlock()
 		handled++
@@ -518,7 +518,7 @@ func statusSection(ctx context.Context) {
 	var mu sync.Mutex
 	attempts := map[time.Time]int{}
 	var firstScheduledTime time.Time
-	stop := startConsumer(ctx, boundName, 1, func(ctx context.Context, request *cron.JobRequest) error {
+	stop := startConsumer(ctx, boundName, []string{jobName}, 1, func(ctx context.Context, request *cron.JobRequest) error {
 		mu.Lock()
 		defer mu.Unlock()
 		if firstScheduledTime.IsZero() {
@@ -665,7 +665,7 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 
 // startConsumer runs one consumer instance on the group until the returned
 // stop is called.
-func startConsumer(ctx context.Context, group string, concurrency int, handler func(context.Context, *cron.JobRequest) error) func() {
+func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *cron.JobRequest) error) func() {
 	jobRequestConsumer, err := consumer.NewConsumer[cron.JobRequest](ds, &consumer.ConsumerConfig{
 		ClaimPollRate:           schedulerPollRate,
 		MessageConcurrency:      concurrency,
@@ -674,7 +674,7 @@ func startConsumer(ctx context.Context, group string, concurrency int, handler f
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := jobRequestConsumer.Register(lifecycleCtx, group, cron.TopicName, topic.SchemaVersion(1))
+	instance, err := jobRequestConsumer.Register(lifecycleCtx, group, cron.TopicName, topic.SchemaVersion(1), bindings)
 	must(err)
 	done := make(chan struct{})
 	go func() {

@@ -75,7 +75,7 @@ func (e *CompactionReadCostExecution) consume(ctx context.Context) error {
 	}
 	e.alerts = alerts
 
-	instance, err := e.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1))
+	instance, err := e.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
 	if err != nil {
 		return err
 	}

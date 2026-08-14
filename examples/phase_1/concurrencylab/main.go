@@ -118,7 +118,7 @@ func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, 
 		AckMargin:               2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1))
+	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1), nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -195,7 +195,7 @@ func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicN
 		AckMargin:               2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1))
+	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1), nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)

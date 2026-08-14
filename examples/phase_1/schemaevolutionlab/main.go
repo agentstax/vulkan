@@ -232,7 +232,7 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 		DisableGracefulShutdown: true,
 	})
 	must(err)
-	cInstance, err := c.Register(ctx, group, name, topic.SchemaVersion(1))
+	cInstance, err := c.Register(ctx, group, name, topic.SchemaVersion(1), nil)
 	must(err)
 	return cInstance
 }
