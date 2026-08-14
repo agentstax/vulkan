@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	"github.com/agentstax/vulkan/pkg/consumer/controller/datastore"
 )
 
@@ -13,11 +14,15 @@ func toGroup(data *datastore.GroupData) *Group {
 	}
 }
 
-func toBinding(data *datastore.BindingData) *Binding {
-	return &Binding{
+func toDeclaration(data *datastore.BindingDeclarationData) *binding.Declaration {
+	return &binding.Declaration{
 		GroupName:     data.GroupName,
 		TopicName:     data.TopicName,
 		SchemaVersion: data.SchemaVersion,
-		Pattern:       data.Pattern,
+		Status:        binding.DeclarationOutcome(data.Status),
+		Patterns:      data.Patterns,
+		DeclaredBy:    data.DeclaredBy,
+		DeclaredAt:    data.DeclaredAt,
+		AttemptAt:     data.AttemptAt,
 	}
 }

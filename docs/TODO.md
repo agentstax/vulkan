@@ -91,10 +91,31 @@ mismatched registration waits visibly, forever, never fencing an incumbent.
   window with Bind is gone. Sweep grep clean; routinglab, topiclab,
   consumergrouplab, deletetopiclab, cronlab, alertlab all pass.
 
-- [ ] Chunk 6 — read surface.
-  ListBindings (datastore -> controller Binding read-model -> MessageAdmin)
-  gains declarer + waiting-declaration info; `vulkan alert bindings` columns
-  extended to show them.
+- [x] Chunk 6 — read surface (2026-08-13). The per-pattern binding listing
+  was REPLACED, not extended: binding rows are transactionally identical to
+  the newest installed declaration, and the old listing could not show
+  whole-topic sets or waiters, so ListBindings
+  (admin/controller/datastore + Binding read-model + BindingData) was
+  deleted and the surface is now MessageAdmin.ListDeclarations ->
+  ConsumerController.ListDeclarations -> datastore
+  ListBindingDeclarations. ONE private read serves listing and declare txn
+  alike: listBindingDeclarations(ctx, querier, groupID) -- DISTINCT ON
+  newest row per group/status/declarer with names, groupID 0 = every group
+  (listWorkers widening-clause idiom); the txn calls it group-scoped on the
+  tx and picks newestInstalledDeclaration in Go, one BindingDeclarationData
+  struct. Controller composes in Go: effective =
+  newest installed row per group; open waiter = a waiting row that is its
+  declarer's newest row AND differs from the effective set (a waiter whose
+  set someone else installed resolves silently -- joined appends nothing).
+  Public read-model binding.Declaration (status reuses DeclarationOutcome).
+  `vulkan alert bindings` keeps its name; columns now
+  GROUP/TOPIC/VERSION/STATUS/PATTERNS/DECLARED BY/DECLARED AT/LAST ATTEMPT,
+  empty set renders "(whole topic)". alertlab's exact-binding seeding check
+  moved to the executor section (RegisterSystem no longer binds; only a
+  running consumer declares) and asserts via ListDeclarations. Verified:
+  10/10 scratch checks on dev DB (effective+waiter listing, swap, both
+  waiter-resolution paths, whole-topic row), CLI renders live, alertlab
+  passes.
 
 - [ ] Chunk 7 — labs + gate.
   routinglab reshaped onto Register-declared sets; new lab covering same-set

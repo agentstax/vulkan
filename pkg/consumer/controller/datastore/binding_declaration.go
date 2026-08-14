@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/consumer/binding"
@@ -47,11 +49,11 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, 
 		return "", err
 	}
 
-	installedRows, err := d.listDeclarations(ctx, tx, groupID, BindingDeclarationInstalled)
+	declarations, err := d.listBindingDeclarations(ctx, tx, groupID)
 	if err != nil {
 		return "", err
 	}
-	installed, found := newestDeclaration(installedRows)
+	installed, found := newestInstalledDeclaration(declarations)
 
 	live, err := d.groupHasLiveInstance(ctx, tx, groupID)
 	if err != nil {
@@ -158,36 +160,42 @@ func (d *ConsumerDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, grou
 	return nil
 }
 
-// ListDeclarations reads the group's newest attempt row per declarer with
-// the given status.
-func (d *ConsumerDatastore) ListDeclarations(ctx context.Context, groupID int64, bindingDeclarationStatus BindingDeclarationStatus) ([]BindingDeclarationData, error) {
+// ListBindingDeclarations reads every group's newest attempt row per declarer
+// and status, with the names a listing shows.
+func (d *ConsumerDatastore) ListBindingDeclarations(ctx context.Context) ([]BindingDeclarationData, error) {
 	var declarations []BindingDeclarationData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		declarations, err = d.listDeclarations(ctx, d.Datastore.Pool, groupID, bindingDeclarationStatus)
+		declarations, err = d.listBindingDeclarations(ctx, d.Datastore.Pool, 0)
 		return err
 	})
 	return declarations, err
 }
 
-func (d *ConsumerDatastore) listDeclarations(ctx context.Context, querier datastore.Querier, groupID int64, bindingDeclarationStatus BindingDeclarationStatus) ([]BindingDeclarationData, error) {
+func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier datastore.Querier, groupID int64) ([]BindingDeclarationData, error) {
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller
 	sql := `
-		SELECT DISTINCT ON (declared_by)
-			id,
-			consumer_group_id,
-			status,
-			patterns,
-			declared_by,
-			declared_at,
-			attempt_at
+		SELECT DISTINCT ON (binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by)
+			binding_declaration.id,
+			binding_declaration.consumer_group_id,
+			consumer_group.name,
+			topic.name,
+			topic.schema_version,
+			binding_declaration.status,
+			binding_declaration.patterns,
+			binding_declaration.declared_by,
+			binding_declaration.declared_at,
+			binding_declaration.attempt_at
 		FROM binding_declaration
-		WHERE consumer_group_id = $1 AND status = $2
-		ORDER BY declared_by, id DESC;
+		JOIN consumer_group ON consumer_group.id = binding_declaration.consumer_group_id
+		JOIN topic ON topic.id = consumer_group.topic_id
+		-- $1 = 0 -> every group
+		WHERE ($1 = 0 OR binding_declaration.consumer_group_id = $1)
+		ORDER BY binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by, binding_declaration.id DESC;
 	`
 
-	rows, err := querier.Query(ctx, sql, groupID, bindingDeclarationStatus)
+	rows, err := querier.Query(ctx, sql, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +207,9 @@ func (d *ConsumerDatastore) listDeclarations(ctx context.Context, querier datast
 		if err := rows.Scan(
 			&declaration.Id,
 			&declaration.ConsumerGroupId,
+			&declaration.GroupName,
+			&declaration.TopicName,
+			&declaration.SchemaVersion,
 			&declaration.Status,
 			&declaration.Patterns,
 			&declaration.DeclaredBy,
@@ -212,11 +223,35 @@ func (d *ConsumerDatastore) listDeclarations(ctx context.Context, querier datast
 	return declarations, rows.Err()
 }
 
-// newestDeclaration picks the highest-id row; among installed rows that is
-// the effective set's declaration.
-func newestDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
+// translates a '*'-wildcard pattern into an anchored POSIX regex suitable for
+// the `~` operator: '*' -> `.*` (any characters, unbounded), literal segments
+// regex-escaped.
+func wildcardToRegex(pattern string) (string, error) {
+	if pattern == "" {
+		return "", fmt.Errorf("consumer: empty topic pattern")
+	}
+
+	segments := strings.Split(pattern, "*")
+	var builder strings.Builder
+	builder.WriteByte('^')
+	for i, segment := range segments {
+		if i > 0 {
+			builder.WriteString(".*")
+		}
+		builder.WriteString(regexp.QuoteMeta(segment))
+	}
+	builder.WriteByte('$')
+	return builder.String(), nil
+}
+
+// newestInstalledDeclaration picks the highest-id installed row -- the
+// effective set's declaration.
+func newestInstalledDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
 	var newest *BindingDeclarationData
 	for i := range declarations {
+		if declarations[i].Status != BindingDeclarationInstalled {
+			continue
+		}
 		if newest == nil || declarations[i].Id > newest.Id {
 			newest = &declarations[i]
 		}

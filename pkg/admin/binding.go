@@ -3,11 +3,13 @@ package admin
 import (
 	"context"
 
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumer/binding"
 )
 
-// ListBindings returns every consumer group binding. Groups with no rows here
-// match every event on their topic.
-func (a *MessageAdmin) ListBindings(ctx context.Context) ([]*consumercontroller.Binding, error) {
-	return a.consumerController.ListBindings(ctx)
+// ListDeclarations returns every group's effective binding declaration and
+// any declarers still waiting to change it.
+// Groups with empty (no) binding declaration do not show here - even though
+// they work, they just match on every message in their topic.
+func (a *MessageAdmin) ListDeclarations(ctx context.Context) ([]*binding.Declaration, error) {
+	return a.consumerController.ListDeclarations(ctx)
 }

@@ -55,6 +55,11 @@ remain the effective set's only home — a newest-generation filter there
 would tax the claim hot path; after this ships only the install/swap
 transaction writes them.
 
+The listing surface reads the ledger, not binding rows: each group's newest
+installed row plus its open waiters. A joined attempt appends nothing, so a
+wait ended by someone else installing the same set resolves by set
+comparison against the effective row, not by any row of the waiter's own.
+
 **Consequences.** A rolling deploy converges when the old fleet's heartbeats
 lapse — the deploy killing the old instances is the consent; rollback is
 symmetric, so durable state never outlives running code. Two divergent apps

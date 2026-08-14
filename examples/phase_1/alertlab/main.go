@@ -3,7 +3,7 @@
 // executor claimed as a real worker.
 //
 // Sections:
-//  1. seeding -- both check jobs + consumer groups + exact bindings + worker
+//  1. seeding -- both check jobs + consumer groups + worker
 //     rows exist after RegisterSystem; an operator's altered threshold and a
 //     suspended job survive a re-register
 //  2. classify -- driven through AlertController with a 2s repeat: the active
@@ -33,6 +33,7 @@ import (
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
+	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
@@ -117,7 +118,7 @@ func main() {
 // --- sections ---
 
 func seedingSection(ctx context.Context) {
-	step("seeding: jobs/groups/bindings/workers exist; operator changes survive re-register")
+	step("seeding: jobs/groups/workers exist; operator changes survive re-register")
 
 	partitionCountJob, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
 	must(err)
@@ -135,20 +136,6 @@ func seedingSection(ctx context.Context) {
 		die("RegisterSystem must seed the " + compactionreadcost.JobName + " cron job")
 	}
 
-	bindings, err := mAdmin.ListBindings(ctx)
-	must(err)
-	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName} {
-		bound := false
-		for _, binding := range bindings {
-			if binding.GroupName == jobName && binding.TopicName == cron.TopicName && binding.Pattern == jobName {
-				bound = true
-			}
-		}
-		if !bound {
-			die("group " + jobName + " must be bound to exactly its job name")
-		}
-	}
-
 	partitionCountGroup = scalarInt64(ctx,
 		`SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`,
 		jobRequests.Id, partitioncount.JobName)
@@ -161,7 +148,7 @@ func seedingSection(ctx context.Context) {
 	if row == nil {
 		die("RegisterSystem must declare the " + partitioncount.JobName + " worker row")
 	}
-	fmt.Println("  ✓ both check jobs, exact bindings, and the worker row exist")
+	fmt.Println("  ✓ both check jobs and the worker row exist")
 
 	// GET-THEN-CREATE seeding: an operator's altered threshold and a
 	// suspended job must survive RegisterSystem
@@ -310,6 +297,22 @@ func executorSection(ctx context.Context) {
 	firstRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
 	must(err)
 	waitDelivered(ctx, firstRun.Id, "success")
+
+	// the running executor's Register declared the group's set
+	declarations, err := mAdmin.ListDeclarations(ctx)
+	must(err)
+	declared := false
+	for _, declaration := range declarations {
+		if declaration.GroupName == partitioncount.JobName && declaration.TopicName == cron.TopicName &&
+			declaration.Status == binding.DeclarationInstalled &&
+			len(declaration.Patterns) == 1 && declaration.Patterns[0] == partitioncount.JobName {
+			declared = true
+		}
+	}
+	if !declared {
+		die("the live executor must declare exactly its job name")
+	}
+	fmt.Println("  ✓ the executor declared exactly its job name")
 
 	labKey := partitionCountKey(labTopicOwner)
 	jobRequestsOwner, err := common.NewTopicOwner(jobRequests.SystemId, jobRequests.Id, jobRequests.Name)
