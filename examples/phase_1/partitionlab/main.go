@@ -60,14 +60,19 @@ func main() {
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	step("publish 14 messages -- every partition boundary self-heals on the produce path")
-	for range 14 {
+	step("publish 14 messages -- each partition's 80% trigger creates the next ahead")
+	for i := int64(1); i <= 14; i++ {
 		publish(ctx, wpInstance)
+		// ids 4/9/14 are the 80% trigger points at width 5. Creation is a
+		// detached goroutine racing the next publish's insert (which would
+		// heal-and-burn an id if it won) -- waiting here keeps the lab's id
+		// layout deterministic: 14 rows land contiguously as ids 1-14.
+		if i == 4 || i == 9 || i == 14 {
+			waitForPartition(ctx, ds, tp.Id, i/partitionSize+1)
+		}
 	}
-	// each boundary costs one rolled-back insert, which burns an id -- 14 rows
-	// land as ids 1-17 with 5/10/15 skipped, healing partitions 1-3 into place
 	partitionCount := countPartitions(ctx, ds, tp.Id)
-	fmt.Printf("  %d partitions exist (0-3, each created by the insert that first crossed into it)\n", partitionCount)
+	fmt.Printf("  %d partitions exist (0-3, 1-3 each created ahead at the prior partition's trigger)\n", partitionCount)
 	assertInt("4 partitions exist at width 5", partitionCount, 4)
 
 	step("EXPLAIN (0,3] -- entirely inside message_log_<id>_0")
@@ -91,6 +96,20 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 		return common.NewWork(30, "admin@example.com")
 	}, producer.ProduceOptions{})
 	must(err)
+}
+
+func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, n int64) {
+	table := fmt.Sprintf("message_log_%d_%d", topicID, n)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var exists bool
+		must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL;`, table).Scan(&exists))
+		if exists {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	die(fmt.Sprintf("%s was not created ahead within 10s", table))
 }
 
 func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {

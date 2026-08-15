@@ -5,6 +5,27 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-14 — Producer proactive partition create-ahead [0512] [0513]
+
+- Append paths create the next partition early: an appended id (or batch
+  range) landing on a partition's trigger point (80%, 95% backstop —
+  `CreateAheadGate`) wins a per-topic monotonic CAS claim and runs
+  `ensureCoveringPartition` in a detached goroutine. Best-effort by design:
+  warn-and-drop, the boundary heal stays the only correctness layer. One id
+  sequence means exactly one append fleet-wide sees each trigger id — zero
+  coordination.
+- The heal path's thundering herd is capped: a blocking
+  `pg_advisory_xact_lock` under the existing 2s lock_timeout means one
+  winner runs the CREATE and losers wake after its commit to a no-op.
+- The detached run's timeout derives from the retry policy (new
+  `Policy.CalculateTotalDelay` + per-attempt allowance); lock_timeout
+  expiries reclassify as retryable on this path only; a destroyed topic
+  evicts its gate entry on undefined_table. `TopicConfig.Validate` gained a
+  `PartitionSize >= 2` floor.
+- createaheadlab proves all three append paths create ahead of the boundary
+  (partition exists before it, zero heal warns, contiguous ids);
+  partitionlab reshaped onto deterministic create-ahead polling.
+
 ## 2026-08-13 — Binding lifecycle: sets declared at consumer Register [0511]
 
 - `Consumer.Register(ctx, group, topic, version, bindings)` states the

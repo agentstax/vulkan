@@ -278,6 +278,13 @@ schema-gate-lab:
 producer-batch-lab:
   go run examples/phase_1/producerbatchlab/main.go
 
+# create-ahead lab: every append path (per-call, batched, in-tx) creates the
+# next partition at the 80% trigger point -- polled into existence before the
+# boundary, zero heal warns, ids contiguous (no burned boundary id), exactly
+# one partition ahead.
+create-ahead-lab:
+  go run examples/phase_1/createaheadlab/main.go
+
 # worker claim lab: N consumers on one topic coordinate through worker claims --
 # target-1 rows (janitor, waterline) hold exactly one live instance (not N),
 # failover to a survivor within a reconcile tick when consumers die, and full

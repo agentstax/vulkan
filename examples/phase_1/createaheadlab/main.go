@@ -1,0 +1,256 @@
+package main
+
+// Create-ahead lab: the produce path creates the NEXT partition at the 80%
+// trigger point, so the boundary insert never pays the failed-insert/DDL/retry
+// heal. One scenario per append path -- per-call ProduceFunc, batched Produce,
+// caller-owned-tx ProduceInTx -- each drives publishes across a partition
+// boundary at lab width 100 and asserts:
+//   - the next partition exists BEFORE any id needs it (polled after id 80)
+//   - the "no partition covers" heal warn never fires
+//   - ids stay contiguous (a heal burns the boundary id; create-ahead doesn't)
+//   - exactly one partition was created ahead, not a runaway chain
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/google/uuid"
+)
+
+const partitionSize = int64(100)
+
+// id 80 is partition 0's 80% trigger point; 105 crosses the boundary at 100
+const triggerPublishes = int64(80)
+const totalPublishes = int64(105)
+
+func main() {
+	ctx := context.Background()
+
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+		User: "example_user", Pass: "example_password",
+		Host: "localhost", Port: 5432, Database: "example_db",
+	})
+	must(err)
+	defer ds.Close()
+
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	must(err)
+	must(mAdmin.RegisterSystem(ctx, nil))
+
+	perCallScenario(ctx, ds, mAdmin)
+	batchedScenario(ctx, ds, mAdmin)
+	inTxScenario(ctx, ds, mAdmin)
+
+	fmt.Println("\n✅ CREATE-AHEAD LAB PASSED")
+	fmt.Println("   Every append path created the next partition at the 80% trigger point,")
+	fmt.Println("   the boundary insert landed without a heal, and no id was burned.")
+}
+
+// perCallScenario: ProduceFunc publishes one at a time -- the single-id
+// trigger path (shouldTriggerWithId inside AppendMessage).
+func perCallScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+	step("per-call ProduceFunc: partition 1 exists before the boundary")
+	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "percall")
+	defer cleanup()
+
+	for range triggerPublishes {
+		publish(ctx, wpInstance)
+	}
+	waitForPartition(ctx, ds, tp.Id, 1)
+
+	for range totalPublishes - triggerPublishes {
+		publish(ctx, wpInstance)
+	}
+	assertCreateAheadWon(ctx, ds, tp.Id, warns)
+}
+
+// batchedScenario: payload-only Produce calls ride the batcher -- the id-range
+// trigger path (shouldTriggerWithRange inside AppendMessageBatch).
+func batchedScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+	step("batched Produce: a batch's id range fires the trigger before the boundary")
+	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "batched")
+	defer cleanup()
+
+	// 85 concurrent publishes cover id 80 inside some batch's range but stay
+	// well under the boundary at 100
+	publishConcurrent(ctx, wpInstance, 5, 17)
+	waitForPartition(ctx, ds, tp.Id, 1)
+
+	publishConcurrent(ctx, wpInstance, 4, 5) // 20 more cross the boundary
+	assertCreateAheadWon(ctx, ds, tp.Id, warns)
+}
+
+// inTxScenario: the trigger id lands via ProduceInTx -- it fires pre-commit,
+// and the create backs off until this tx's commit releases the parent lock.
+func inTxScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+	step("ProduceInTx: pre-commit trigger, create lands after the caller commits")
+	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "intx")
+	defer cleanup()
+
+	for range triggerPublishes - 1 {
+		publish(ctx, wpInstance)
+	}
+	must(producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+		_, err := wpInstance.ProduceInTx(ctx, tx, workFunc, producer.ProduceOptions{}) // id 80
+		return err
+	}))
+	waitForPartition(ctx, ds, tp.Id, 1)
+
+	for range totalPublishes - triggerPublishes {
+		publish(ctx, wpInstance)
+	}
+	assertCreateAheadWon(ctx, ds, tp.Id, warns)
+}
+
+// ---- helpers ----
+
+func register(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.Topic, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
+	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	must(err)
+
+	warns, err := NewWarnCounter(logger.NewDefaultLogger(os.Stdout))
+	must(err)
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Logger: warns})
+	must(err)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	must(err)
+
+	cleanup := func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}
+	return tp, wpInstance, warns, cleanup
+}
+
+func workFunc(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	return common.NewWork(30, "admin@example.com")
+}
+
+func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work]) {
+	_, err := wpInstance.ProduceFunc(ctx, workFunc, producer.ProduceOptions{})
+	must(err)
+}
+
+func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], workers int, perWorker int) {
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range perWorker {
+				work, err := common.NewWork(30, "admin@example.com")
+				must(err)
+				_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{})
+				must(err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// waitForPartition polls for message_log_<topicId>_<n> -- the creation is a
+// detached goroutine, so "before the boundary" is proven by seeing the table
+// while publishes are still below it.
+func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
+	table := fmt.Sprintf("message_log_%d_%d", topicId, n)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if regclassExists(ctx, ds, table) {
+			fmt.Printf("  ✓ %s created ahead, head still below the boundary\n", table)
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	die(fmt.Sprintf("%s was not created ahead within 10s", table))
+}
+
+// assertCreateAheadWon: no heal warn, no drop warn, ids contiguous (a heal
+// burns the boundary id on its rolled-back insert), and only partition 1 was
+// created ahead.
+func assertCreateAheadWon(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, warns *WarnCounter) {
+	assertInt("zero boundary-heal warns", warns.HealWarns.Load(), 0)
+	assertInt("zero create-ahead drop warns", warns.DropWarns.Load(), 0)
+
+	var count int64
+	var maxId int64
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT count(*), COALESCE(max(id), 0) FROM message_log_%d;
+	`, topicId)).Scan(&count, &maxId))
+	assertInt("every publish landed", count, totalPublishes)
+	assertInt("ids contiguous -- no id burned at the boundary", maxId, totalPublishes)
+
+	if regclassExists(ctx, ds, fmt.Sprintf("message_log_%d_2", topicId)) {
+		die("partition 2 exists -- create-ahead ran past the next partition")
+	}
+	fmt.Println("  ✓ exactly one partition created ahead")
+}
+
+func regclassExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string) bool {
+	var exists bool
+	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL;`, table).Scan(&exists))
+	return exists
+}
+
+// WarnCounter counts the two warns this lab must prove absent, delegating
+// every record to the wrapped logger.
+type WarnCounter struct {
+	HealWarns atomic.Int64
+	DropWarns atomic.Int64
+
+	inner logger.Logger
+}
+
+func NewWarnCounter(inner logger.Logger) (*WarnCounter, error) {
+	if inner == nil {
+		return nil, fmt.Errorf("inner logger must not be nil")
+	}
+	return &WarnCounter{inner: inner}, nil
+}
+
+func (w *WarnCounter) DebugContext(ctx context.Context, msg string, args ...any) {
+	w.inner.DebugContext(ctx, msg, args...)
+}
+func (w *WarnCounter) InfoContext(ctx context.Context, msg string, args ...any) {
+	w.inner.InfoContext(ctx, msg, args...)
+}
+func (w *WarnCounter) WarnContext(ctx context.Context, msg string, args ...any) {
+	if strings.Contains(msg, "no partition covers") {
+		w.HealWarns.Add(1)
+	}
+	if strings.Contains(msg, "create-ahead failed") {
+		w.DropWarns.Add(1)
+	}
+	w.inner.WarnContext(ctx, msg, args...)
+}
+func (w *WarnCounter) ErrorContext(ctx context.Context, msg string, args ...any) {
+	w.inner.ErrorContext(ctx, msg, args...)
+}
+
+func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
+func must(err error) {
+	if err != nil {
+		die(err.Error())
+	}
+}
+func die(msg string) {
+	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
+	os.Exit(1)
+}
+func assertInt(label string, got, want int64) {
+	if got != want {
+		die(fmt.Sprintf("%s: got %d, want %d", label, got, want))
+	}
+	fmt.Printf("  ✓ %s (%d)\n", label, got)
+}

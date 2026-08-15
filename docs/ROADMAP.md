@@ -20,9 +20,6 @@ Behavior changes that must land before the 14b cleanup pass — 14b is
 naming/shape only, so anything that adds or moves behavior goes first,
 otherwise the API review locks a surface that is still due to change.
 
-- **Producer proactive partition create-ahead** — design settled [0512];
-  in flight, chunk plan in TODO.md.
-
 - **Otel metrics exposure story.** Nothing constructs
   pkg/metrics/metrics.Metrics yet, so every Register*Metric gauge is dormant.
   - Research (2026-08-09): libraries take a Meter in config and the host app
