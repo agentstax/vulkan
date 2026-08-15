@@ -29,7 +29,8 @@ in on purpose. The database must already have the Vulkan schema applied.
 Topics are created from your code, by `admin.RegisterTopic`. There is no
 `vulkan topic register`: the CLI reads config and never writes it, so a
 topic created from a shell would just be overwritten by the next call your
-code makes. `vulkan system` works the same way and always has.
+code makes. `vulkan system` and `vulkan cron` work the same way — cron jobs
+come from `admin.RegisterCronJob`.
 
 Names are dot-namespaced by domain and entity, `<domain>.<entity>[.<event>]`
 (e.g. `orders.created`, `billing.invoice.paid`); topics are addressed by id

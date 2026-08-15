@@ -1,12 +1,10 @@
 package controller
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/cron"
 )
 
 // CronJobConfig is RegisterCronJob's optional knobs.
@@ -43,33 +41,6 @@ func (c *CronJobConfig) Validate() error {
 	}
 	if err := c.Concurrency.Validate(); err != nil {
 		return fmt.Errorf("Concurrency: %w", err)
-	}
-	return nil
-}
-
-// AlterCronJobConfig is Alter's sparse patch -- an unset field means leave
-// unchanged (for Data/Metadata that means nil, where Register's nil = {}).
-// Name is absent -- it is the routing key consumers bind; a different name is
-// a different job, not a config change.
-type AlterCronJobConfig struct {
-	Schedule    *cron.Schedule
-	Timeout     *time.Duration
-	Concurrency common.ConcurrencyPolicy // "" = unchanged
-	Data        any
-	Metadata    any
-}
-
-func (c *AlterCronJobConfig) Validate() error {
-	if c.Schedule == nil && c.Timeout == nil && c.Concurrency == "" && c.Data == nil && c.Metadata == nil {
-		return errors.New("no fields set -- an alter must change at least one field")
-	}
-	if c.Timeout != nil && *c.Timeout <= 0 {
-		return fmt.Errorf("Timeout must be > 0, got %v", *c.Timeout)
-	}
-	if c.Concurrency != "" {
-		if err := c.Concurrency.Validate(); err != nil {
-			return fmt.Errorf("Concurrency: %w", err)
-		}
 	}
 	return nil
 }

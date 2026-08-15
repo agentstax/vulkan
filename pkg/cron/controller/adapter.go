@@ -93,38 +93,10 @@ func toRegisterCronJobData(name string, schedule *cron.Schedule, data any, cfg *
 	}
 }
 
-func toAlterCronJobData(cfg *AlterCronJobConfig) *datastore.AlterCronJobData {
-	return &datastore.AlterCronJobData{
-		Schedule:    cfg.Schedule,
-		Concurrency: concurrencyString(cfg.Concurrency),
-		TimeoutNs:   durationNs(cfg.Timeout),
-		Data:        cfg.Data,
-		Metadata:    cfg.Metadata,
-	}
-}
-
 func concurrencyEnum(concurrency string) (common.ConcurrencyPolicy, error) {
 	policy := common.ConcurrencyPolicy(concurrency)
 	if err := policy.Validate(); err != nil {
 		return "", fmt.Errorf("stored concurrency: %w", err)
 	}
 	return policy, nil
-}
-
-func concurrencyString(concurrency common.ConcurrencyPolicy) *string {
-	if concurrency == "" {
-		return nil
-	}
-	s := string(concurrency)
-	return &s
-}
-
-// durationNs widens *time.Duration to the *int64 the _ns columns store,
-// passing nil through so COALESCE sees NULL.
-func durationNs(d *time.Duration) *int64 {
-	if d == nil {
-		return nil
-	}
-	ns := int64(*d)
-	return &ns
 }

@@ -13,45 +13,55 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
-	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 // RegisterSystem stands up the shared control-plane schema every topic uses;
-// call it once before registering any topic. Idempotent.
+// call it once before registering any topic. Safe to call on every startup:
+// cfg is applied on every call, so changing a value and redeploying changes
+// the system's topics and its built-in alerts' cron jobs.
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
-func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller.SystemConfig) error {
-	registered, err := a.systemController.RegisterSystem(ctx, cfg)
+func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemConfig) error {
+	if cfg == nil {
+		cfg = &RegisterSystemConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
+	registered, err := a.systemController.RegisterSystem(ctx, cfg.System)
 	if err != nil {
 		return err
 	}
 
-	// Make sure the system's owned topics are registered:
+	// the system's own topics:
 	// - __system.metrics
 	// - __system.alerts
 	// - __system.job_requests
-	if err := a.ensureSystemTopic(ctx, metrics.TopicName, metrics.TopicConfig()); err != nil {
+
+	// registerTopic, not RegisterTopic -- the latter guards the __system. prefix
+	if _, err := a.registerTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), metrics.TopicConfig()); err != nil {
 		return err
 	}
-	if err := a.ensureSystemTopic(ctx, alert.TopicName, alert.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, alert.TopicName, topic.SchemaVersion(1), alert.TopicConfig()); err != nil {
 		return err
 	}
-	if err := a.ensureSystemTopic(ctx, cron.TopicName, cron.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, cron.TopicName, topic.SchemaVersion(1), cron.TopicConfig()); err != nil {
 		return err
 	}
 
-	partitionCountJob, err := partitioncount.NewJob()
+	partitionCountJob, err := partitioncount.NewJob(cfg.PartitionCount)
 	if err != nil {
 		return err
 	}
-	compactionReadCostJob, err := compactionreadcost.NewJob()
+	compactionReadCostJob, err := compactionreadcost.NewJob(cfg.CompactionReadCost)
 	if err != nil {
 		return err
 	}
 	for _, job := range []*alert.Job{partitionCountJob, compactionReadCostJob} {
-		if err := a.ensureSystemCronJob(ctx, job); err != nil {
+		if _, err := a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Data, job.Config); err != nil {
 			return err
 		}
 	}
@@ -68,36 +78,6 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller
 		}
 	}
 	return nil
-}
-
-// ensureSystemCronJob creates the job only when missing. RegisterCronJob is
-// not used directly -- its config-mismatch check would error on a job an
-// operator has altered after creation.
-func (a *MessageAdmin) ensureSystemCronJob(ctx context.Context, job *alert.Job) error {
-	existing, err := a.cronJobController.GetCronJob(ctx, job.Name)
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return nil
-	}
-
-	_, err = a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Data, job.Config)
-	return err
-}
-
-func (a *MessageAdmin) ensureSystemTopic(ctx context.Context, name string, cfg *topiccontroller.TopicConfig) error {
-	existing, err := a.topicController.GetTopic(ctx, name, topic.SchemaVersion(1))
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		return nil
-	}
-
-	// registerTopic bypasses the __system. reserved-name guard that RegisterTopic enforces.
-	_, err = a.registerTopic(ctx, name, topic.SchemaVersion(1), cfg)
-	return err
 }
 
 // GetSystem returns the singleton system config. Returns

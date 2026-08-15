@@ -10,10 +10,9 @@ import (
 )
 
 // RegisterCronJob resolves name to its job, creating it owned by owner if it
-// doesn't exist; an existing job with a differing schedule/data/cfg errors
-// with cron.ErrCronJobConfigMismatch. cfg may be nil or a sparse struct --
-// WithDefaults fills every field left unset, Validate rejects what's out of
-// range.
+// doesn't exist; an existing job takes schedule, data and cfg -- the newest
+// declaration wins. cfg may be nil or a sparse struct -- WithDefaults fills
+// every field left unset, Validate rejects what's out of range.
 func (c *CronJobController) RegisterCronJob(ctx context.Context, owner *common.Owner, name string, schedule *cron.Schedule, data any, cfg *CronJobConfig) (*cron.CronJob, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
@@ -53,26 +52,6 @@ func (c *CronJobController) GetCronJob(ctx context.Context, name string) (*cron.
 		return nil, err
 	}
 	return toCronJob(found)
-}
-
-// UpdateCronJob applies cfg's set fields to the named job.
-// Returns (nil, nil) if name isn't registered.
-func (c *CronJobController) UpdateCronJob(ctx context.Context, name string, cfg *AlterCronJobConfig) (*cron.CronJob, error) {
-	if name == "" {
-		return nil, errors.New("name is required")
-	}
-	if cfg == nil {
-		cfg = &AlterCronJobConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	updated, err := c.datastore.UpdateCronJob(ctx, name, toAlterCronJobData(cfg))
-	if err != nil || updated == nil {
-		return nil, err
-	}
-	return toCronJob(updated)
 }
 
 // ListCronJobs returns every cron job, ordered by name.

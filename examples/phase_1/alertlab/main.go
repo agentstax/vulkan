@@ -4,8 +4,8 @@
 //
 // Sections:
 //  1. seeding -- both check jobs + consumer groups + exact declarations + worker
-//     rows exist after RegisterSystem; an operator's altered threshold and a
-//     suspended job survive a re-register
+//     rows exist after RegisterSystem; a declared threshold applies on a
+//     re-register and a suspended job survives one
 //  2. classify -- driven through AlertController with a 2s repeat: the active
 //     edge WARNs once, an unchanged condition publishes nothing, the repeat
 //     republish moves the head to a fresh row, a severity change publishes
@@ -36,7 +36,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
-	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -118,7 +117,7 @@ func main() {
 // --- sections ---
 
 func seedingSection(ctx context.Context) {
-	step("seeding: jobs/groups/bindings/workers exist; operator changes survive re-register")
+	step("seeding: jobs/groups/bindings/workers exist; declared threshold applies, suspended survives")
 
 	partitionCountJob, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
 	must(err)
@@ -166,21 +165,17 @@ func seedingSection(ctx context.Context) {
 	}
 	fmt.Println("  ✓ both check jobs, exact declarations, and the worker row exist")
 
-	// GET-THEN-CREATE seeding: an operator's altered threshold and a
-	// suspended job must survive RegisterSystem
-	altered, err := alert.NewJobData(7)
-	must(err)
-	_, err = mAdmin.AlterCronJob(ctx, partitioncount.JobName, &croncontroller.AlterCronJobConfig{Data: altered})
-	must(err)
+	// a declared threshold applies on every RegisterSystem, and a suspended
+	// alert job stays suspended through one
 	must(mAdmin.SuspendCronJob(ctx, compactionreadcost.JobName))
-	must(mAdmin.RegisterSystem(ctx, nil))
+	declareThreshold(ctx, 7)
 
 	reread, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
 	must(err)
-	survived, err := alert.ToJobData(reread.Data)
+	redeclared, err := alert.ToJobData(reread.Data)
 	must(err)
-	if survived.Threshold != 7 {
-		die(fmt.Sprintf("altered threshold must survive re-register, got %d", survived.Threshold))
+	if redeclared.Threshold != 7 {
+		die(fmt.Sprintf("declared threshold must apply on re-register, got %d", redeclared.Threshold))
 	}
 	readCostJob, err = mAdmin.GetCronJob(ctx, compactionreadcost.JobName)
 	must(err)
@@ -188,12 +183,17 @@ func seedingSection(ctx context.Context) {
 		die("a suspended check job must survive re-register")
 	}
 
-	restored, err := alert.NewJobData(0)
-	must(err)
-	_, err = mAdmin.AlterCronJob(ctx, partitioncount.JobName, &croncontroller.AlterCronJobConfig{Data: restored})
-	must(err)
+	declareThreshold(ctx, 0)
 	must(mAdmin.UnsuspendCronJob(ctx, compactionreadcost.JobName))
-	fmt.Println("  ✓ altered threshold and suspended state survived re-register")
+	fmt.Println("  ✓ declared threshold applied, suspended state survived re-register")
+}
+
+// declareThreshold re-declares the partition_count alert at threshold, through
+// the same call a user changing it would make.
+func declareThreshold(ctx context.Context, threshold int64) {
+	must(mAdmin.RegisterSystem(ctx, &admin.RegisterSystemConfig{
+		PartitionCount: &partitioncount.JobConfig{Threshold: threshold},
+	}))
 }
 
 func classifySection(ctx context.Context) {
@@ -305,10 +305,7 @@ func executorSection(ctx context.Context) {
 	otherGroup := registerGroup(ctx, prefix+".other", "some.other.job")
 	bindinglessGroup := registerGroup(ctx, prefix+".bindingless")
 
-	one, err := alert.NewJobData(1)
-	must(err)
-	_, err = mAdmin.AlterCronJob(ctx, partitioncount.JobName, &croncontroller.AlterCronJobConfig{Data: one})
-	must(err)
+	declareThreshold(ctx, 1)
 
 	firstRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
 	must(err)
@@ -397,10 +394,7 @@ func isolationSection(ctx context.Context) {
 	exec(ctx, fmt.Sprintf(
 		`UPDATE message_log_%d SET payload = '"corrupt"'::jsonb WHERE id = $1;`, alertsTopic.Id), corruptedHead)
 
-	restored, err := alert.NewJobData(0)
-	must(err)
-	_, err = mAdmin.AlterCronJob(ctx, partitioncount.JobName, &croncontroller.AlterCronJobConfig{Data: restored})
-	must(err)
+	declareThreshold(ctx, 0)
 	resolveRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
 	must(err)
 

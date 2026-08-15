@@ -3,7 +3,7 @@
 //
 // Sections:
 //  1. validation -- charset/star names, sub-minute and no-upcoming schedules,
-//     timeout vs min rate, register mismatch, Feb-29 single-scheduled-time pass
+//     timeout vs min rate, re-register wins, Feb-29 single-scheduled-time pass
 //  2. ownership -- a topic-owned job dies with its topic, a system-owned
 //     job survives
 //  3. produce-once -- a backdated row produces ONE message stamped with the
@@ -97,7 +97,7 @@ func main() {
 // --- sections ---
 
 func validationSection(ctx context.Context) {
-	step("validation: names, schedules, timeout vs min rate, register mismatch")
+	step("validation: names, schedules, timeout vs min rate, re-register wins")
 
 	hourly := parse("@hourly")
 
@@ -132,19 +132,32 @@ func validationSection(ctx context.Context) {
 	must(mAdmin.DestroyCronJob(ctx, prefix+".feb29"))
 	fmt.Printf("  ✓ Feb-29 schedule registered, seeded to %s\n", feb29.NextScheduledTime.UTC().Format("2006-01-02"))
 
-	first, err := mAdmin.RegisterCronJob(ctx, prefix+".mismatch", hourly, map[string]string{"kind": "lab"}, nil)
+	first, err := mAdmin.RegisterCronJob(ctx, prefix+".redeclare", hourly, map[string]string{"kind": "lab"}, nil)
 	must(err)
-	again, err := mAdmin.RegisterCronJob(ctx, prefix+".mismatch", hourly, map[string]string{"kind": "lab"}, nil)
+	again, err := mAdmin.RegisterCronJob(ctx, prefix+".redeclare", hourly, map[string]string{"kind": "lab"}, nil)
 	must(err)
 	if again.Id != first.Id {
 		die(fmt.Sprintf("identical re-register resolved to a different job: %d vs %d", again.Id, first.Id))
 	}
-	_, err = mAdmin.RegisterCronJob(ctx, prefix+".mismatch", parse("@daily"), map[string]string{"kind": "lab"}, nil)
-	if !errors.Is(err, cron.ErrCronJobConfigMismatch) {
-		die(fmt.Sprintf("differing re-register: want ErrCronJobConfigMismatch, got %v", err))
+
+	daily := parse("@daily")
+	must(mAdmin.SuspendCronJob(ctx, prefix+".redeclare"))
+	redeclared, err := mAdmin.RegisterCronJob(ctx, prefix+".redeclare", daily, map[string]string{"kind": "lab"}, nil)
+	must(err)
+	if redeclared.Id != first.Id {
+		die(fmt.Sprintf("re-register resolved to a different job: %d vs %d", redeclared.Id, first.Id))
 	}
-	must(mAdmin.DestroyCronJob(ctx, prefix+".mismatch"))
-	fmt.Println("  ✓ identical re-register is a no-op, differing one is a config mismatch")
+	if redeclared.Schedule != daily.String() {
+		die(fmt.Sprintf("re-registered schedule = %q, want %q", redeclared.Schedule, daily))
+	}
+	if !redeclared.NextScheduledTime.After(time.Now().UTC()) {
+		die(fmt.Sprintf("a schedule change must re-seed the next scheduled time, got %v", redeclared.NextScheduledTime))
+	}
+	if !redeclared.Suspended {
+		die("a re-register must leave a suspended job suspended")
+	}
+	must(mAdmin.DestroyCronJob(ctx, prefix+".redeclare"))
+	fmt.Println("  ✓ identical re-register is a no-op, a differing one wins and leaves suspended alone")
 }
 
 func ownershipSection(ctx context.Context) {

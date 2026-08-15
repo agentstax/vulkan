@@ -34,13 +34,21 @@ their override machinery comes back out here.
    settling for both there. `group config get`
    prints KEY / WORKER / VALUE. Two labs hand-built the layered shape for
    Provision (dutybackofflab, cronlab) and now pass the flat one.
-3. **Cron + alert config** ([0520] [0521]) — delete cron_alter.go,
-   cron_register.go (taking fieldDiff with it), AlterCronJob,
-   AlterCronJobConfig, ErrCronJobConfigMismatch; RegisterCronJob goes
-   latest-wins and logs a schedule re-seed; a JobConfig per built-in alert
-   (Schedule, Threshold, current consts as WithDefaults values) composed into
-   admin.RegisterSystemConfig; ensureSystemCronJob + ensureSystemTopic
-   collapse into ordinary register calls; register must leave Suspended alone.
+3. **Cron + alert config** ([0520] [0521]) — DONE. cron_alter.go,
+   cron_register.go (taking fieldDiff with it), AlterCronJob, UpdateCronJob,
+   AlterCronJobConfig, AlterCronJobData, toAlterCronJobData and
+   ErrCronJobConfigMismatch deleted; registerCronJob's found path writes the
+   declared config through `replaceCronJobConfig`, re-seeding
+   next_scheduled_time only when the schedule changed and leaving the owner
+   columns and suspended alone; partitioncount and compactionreadcost each
+   grew a JobConfig (Schedule, Threshold), composed into
+   admin.RegisterSystemConfig, which RegisterSystem now takes;
+   ensureSystemCronJob and ensureSystemTopic are gone -- RegisterSystem
+   registers the three system topics and both check jobs outright.
+   cronlab's mismatch scenario is now a re-register-wins scenario that also
+   asserts suspended survives; alertlab declares its thresholds through
+   RegisterSystemConfig; reservedtopiclab has its declared-config assertion
+   back.
 4. **Labs + close-out** — topiclab PROOF 2 is already failing on unmodified
    code and blocks the gate: it asserts topicA's remaining partitions are
    exactly [1] after a drop, but create-ahead ([0512] [0513]) pre-creates

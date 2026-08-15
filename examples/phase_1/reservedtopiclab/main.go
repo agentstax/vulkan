@@ -56,11 +56,12 @@ func main() {
 	err = mAdmin.DestroyTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})
 	assertReserved("DestroyTopic(__system.metrics)", err)
 
-	step("re-running RegisterSystem converges on the same row")
+	step("re-running RegisterSystem keeps the same row and re-declares its config")
 	must(mAdmin.RegisterSystem(ctx, nil))
 	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)
+	assertDuration("declared retention across re-run", afterRerun.RetentionTTL, metrics.TopicConfig().RetentionTTL)
 
 	fmt.Println("\n✅ RESERVED TOPIC LAB PASSED")
 }

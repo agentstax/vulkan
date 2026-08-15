@@ -50,6 +50,3 @@ func latencyCell(d time.Duration) string {
 	}
 	return d.Round(time.Second).String()
 }
-
-// fieldDiff is one row of an existing-vs-requested comparison table.
-type fieldDiff struct{ name, existing, requested string }

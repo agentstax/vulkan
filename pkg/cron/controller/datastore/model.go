@@ -36,16 +36,6 @@ type RegisterCronJobData struct {
 	Metadata    any
 }
 
-// AlterCronJobData is UpdateCronJob's sparse patch -- a nil field means leave
-// the column unchanged.
-type AlterCronJobData struct {
-	Schedule    *cron.Schedule
-	Concurrency *string
-	TimeoutNs   *int64
-	Data        any
-	Metadata    any
-}
-
 // GroupStatusData is one consumer group's CronJobStatus counts.
 type GroupStatusData struct {
 	ConsumerGroup string

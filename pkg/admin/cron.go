@@ -15,14 +15,19 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RegisterCronJob is idempotent -- an existing name with an identical
-// schedule/data/cfg resolves to its job; a differing one errors with
-// ErrCronJobConfigMismatch, so two callers disagreeing about the schedule
-// can't silently share a job.
+// RegisterCronJob creates the job named name if it doesn't exist and returns
+// it. Safe to call on every startup: schedule, data and cfg are applied on
+// every call, so changing one and redeploying changes the job -- and two
+// services passing different values for one name will overwrite each other.
 //   - name: must not contain '*'.
-//   - schedule: from cron.ParseSchedule; min rate 1m and >= cfg.Timeout
+//   - schedule: from cron.ParseSchedule; min rate 1m and >= cfg.Timeout.
+//     A changed schedule decides when the job next runs -- a run already due
+//     under the old one is dropped, not produced late.
 //   - data: marshaled to the job's JSON payload
 //   - cfg: may be nil or sparse
+//
+// A suspended job stays suspended across a call -- only SuspendCronJob and
+// UnsuspendCronJob change that.
 func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedule *cron.Schedule, data any, cfg *croncontroller.CronJobConfig) (*cron.CronJob, error) {
 	if name == "" {
 		return nil, errors.New("cron job name is required")
@@ -45,30 +50,6 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 	}
 
 	return a.cronJobController.RegisterCronJob(ctx, owner, name, schedule, data, cfg)
-}
-
-// AlterCronJob applies cfg's set fields to the named job and returns the
-// updated job. Returns ErrCronJobNotFound if name isn't registered.
-//
-// Two consequences to plan around:
-//   - A schedule change re-seeds next_scheduled_time from the new schedule --
-//     a scheduled time already due under the old one is dropped.
-//   - RegisterCronJob calls still passing the pre-alter config will fail with
-//     ErrCronJobConfigMismatch -- deliberate, so declarative register calls
-//     can't silently drift from what an operator changed.
-func (a *MessageAdmin) AlterCronJob(ctx context.Context, name string, cfg *croncontroller.AlterCronJobConfig) (*cron.CronJob, error) {
-	if name == "" {
-		return nil, errors.New("cron job name is required")
-	}
-
-	updated, err := a.cronJobController.UpdateCronJob(ctx, name, cfg)
-	if err != nil {
-		return nil, err
-	}
-	if updated == nil {
-		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
-	}
-	return updated, nil
 }
 
 // GetCronJob returns (nil, nil), not an error, if name isn't registered.

@@ -2,17 +2,13 @@ package datastore
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"reflect"
-	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/cron"
 )
 
 // RegisterCronJob resolves register.Name to its row, creating it owned by
-// owner if it doesn't exist.
+// owner if it doesn't exist. An existing row takes register's config.
 func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Owner, register *RegisterCronJobData) (*CronJobData, error) {
 	var job *CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -31,11 +27,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 		return nil, err
 	}
 	if found != nil {
-		if err := d.assertConfigMatches(found, owner, register); err != nil {
-			return nil, err
-		}
-		d.Logger.InfoContext(ctx, "cron job registered (already existed)", "cron_job", found.Name, "cron_job_id", found.Id)
-		return found, nil
+		return d.replaceCronJobConfig(ctx, found, register)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -55,11 +47,7 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 		return nil, err
 	}
 	if found != nil {
-		if err := d.assertConfigMatches(found, owner, register); err != nil {
-			return nil, err
-		}
-		d.Logger.InfoContext(ctx, "cron job registered (already existed)", "cron_job", found.Name, "cron_job_id", found.Id)
-		return found, nil
+		return d.replaceCronJobConfig(ctx, found, register)
 	}
 
 	dbNow, err := d.dbNow(ctx, tx)
@@ -115,48 +103,4 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 
 	d.Logger.InfoContext(ctx, "cron job registered (created)", "cron_job", job.Name, "cron_job_id", job.Id, "schedule", job.Schedule, "next_scheduled_time", job.NextScheduledTime)
 	return job, nil
-}
-
-func (d *CronJobDatastore) assertConfigMatches(found *CronJobData, owner *common.Owner, register *RegisterCronJobData) error {
-	dataJson, err := marshalJson(register.Data)
-	if err != nil {
-		return fmt.Errorf("data: %w", err)
-	}
-	metadataJson, err := marshalJson(register.Metadata)
-	if err != nil {
-		return fmt.Errorf("Metadata: %w", err)
-	}
-
-	systemId, topicId, consumerGroupId := owner.IdColumns()
-	matches := found.SystemId == systemId &&
-		found.TopicId == topicId &&
-		found.ConsumerGroupId == consumerGroupId &&
-		found.Schedule == register.Schedule.String() &&
-		found.Concurrency == register.Concurrency &&
-		found.TimeoutNs == register.TimeoutNs &&
-		jsonEqual(found.Data, dataJson) &&
-		jsonEqual(found.Metadata, metadataJson)
-	if !matches {
-		return fmt.Errorf("%w: %s: existing=%+v got={SystemId:%d TopicId:%d ConsumerGroupId:%d Schedule:%s Concurrency:%s Timeout:%v Data:%s Metadata:%s}",
-			cron.ErrCronJobConfigMismatch, found.Name, *found, systemId, topicId, consumerGroupId, register.Schedule, register.Concurrency, time.Duration(register.TimeoutNs), dataJson, metadataJson)
-	}
-	return nil
-}
-
-// marshalJson mirrors what the INSERT stores: nil -> {} (its COALESCE).
-func marshalJson(v any) (json.RawMessage, error) {
-	if v == nil {
-		return json.RawMessage(`{}`), nil
-	}
-	return json.Marshal(v)
-}
-
-// jsonEqual matches jsonb's = -- the stored side comes back normalized, so
-// key order and whitespace can't count.
-func jsonEqual(a, b json.RawMessage) bool {
-	var av, bv any
-	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
-		return false
-	}
-	return reflect.DeepEqual(av, bv)
 }

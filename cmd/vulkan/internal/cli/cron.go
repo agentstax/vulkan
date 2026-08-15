@@ -9,13 +9,11 @@ import (
 func newCronCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cron",
-		Short: "Register, inspect, alter, suspend, and destroy cron jobs",
+		Short: "Inspect, run, suspend, and destroy cron jobs",
 	}
 
-	cmd.AddCommand(newCronRegisterCmd(g))
 	cmd.AddCommand(newCronListCmd(g))
 	cmd.AddCommand(newCronGetCmd(g))
-	cmd.AddCommand(newCronAlterCmd(g))
 	cmd.AddCommand(newCronSuspendCmd(g))
 	cmd.AddCommand(newCronUnsuspendCmd(g))
 	cmd.AddCommand(newCronRunCmd(g))
