@@ -3,6 +3,7 @@ package compactionreadcost
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
@@ -10,7 +11,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -22,12 +22,13 @@ type CompactionReadCostExecution struct {
 	Owner  *common.Owner
 	Logger logger.Logger
 
-	definition *CompactionReadCostDefinition
-	runner     *workercontroller.InstanceRunner
-	alerts     *alertcontroller.AlertController // built per claimed life in consume
+	definition     *CompactionReadCostDefinition
+	runner         *workercontroller.InstanceRunner
+	repeatInterval time.Duration
+	alerts         *alertcontroller.AlertController // built per claimed life in consume
 }
 
-func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, owner *common.Owner, claimed *worker.WorkerInstance) (*CompactionReadCostExecution, error) {
+func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*CompactionReadCostExecution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -41,10 +42,11 @@ func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, ow
 	}
 
 	return &CompactionReadCostExecution{
-		Owner:      owner,
-		Logger:     definition.Logger,
-		definition: definition,
-		runner:     runner,
+		Owner:          owner,
+		Logger:         definition.Logger,
+		definition:     definition,
+		runner:         runner,
+		repeatInterval: repeatInterval,
 	}, nil
 }
 
@@ -55,21 +57,14 @@ func (e *CompactionReadCostExecution) Run(ctx context.Context) error {
 }
 
 // consume is one claimed life: the alert controller is built here so every
-// claim re-reads the system row's AlertRepeatInterval.
+// claim applies the claimed row's repeat_interval against the alerts topic's
+// live retention.
 func (e *CompactionReadCostExecution) consume(ctx context.Context) error {
-	system, err := e.definition.systems.GetSystem(ctx)
-	if err != nil {
-		return err
-	}
-	if system == nil {
-		return migrate.ErrNotRegistered
-	}
-
 	registered, err := e.definition.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	alerts, err := alertcontroller.NewAlertController(registered, e.definition.alertHeads, system.AlertRepeatInterval, e.Logger)
+	alerts, err := alertcontroller.NewAlertController(ctx, registered, e.definition.alertHeads, e.repeatInterval, e.Logger)
 	if err != nil {
 		return err
 	}

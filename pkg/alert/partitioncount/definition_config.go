@@ -17,6 +17,11 @@ type DefinitionConfig struct {
 	// between heartbeats.
 	// Default: 30s.
 	InstanceTTL time.Duration
+
+	// RepeatInterval - how long an active alert stays quiet before it
+	// repeats as a reminder.
+	// Default: 4h.
+	RepeatInterval time.Duration
 }
 
 func (c *DefinitionConfig) WithDefaults() *DefinitionConfig {
@@ -26,6 +31,9 @@ func (c *DefinitionConfig) WithDefaults() *DefinitionConfig {
 	c.Retry = c.Retry.WithDefaults()
 	if c.InstanceTTL == 0 {
 		c.InstanceTTL = 30 * time.Second
+	}
+	if c.RepeatInterval == 0 {
+		c.RepeatInterval = 4 * time.Hour
 	}
 	return c
 }
@@ -38,6 +46,9 @@ func (c *DefinitionConfig) Validate() error {
 	}
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
+	}
+	if c.RepeatInterval <= 0 {
+		return fmt.Errorf("RepeatInterval must be > 0, got %v", c.RepeatInterval)
 	}
 	return nil
 }

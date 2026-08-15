@@ -212,7 +212,7 @@ func classifySection(ctx context.Context) {
 	heads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, nil)
 	must(err)
 	capture := newCaptureLogger()
-	alerts, err := alertcontroller.NewAlertController(instance, heads, classifyRepeat, capture)
+	alerts, err := alertcontroller.NewAlertController(ctx, instance, heads, classifyRepeat, capture)
 	must(err)
 
 	key, err := alert.CompactionKey(labCheckName, labTopicOwner)
@@ -453,7 +453,7 @@ func startExecutor(ctx context.Context) func() {
 	var execution worker.Execution
 	deadline := time.Now().Add(60 * time.Second)
 	for {
-		execution, err = definition.Provision(ctx, row.Id, groupOwner, nil)
+		execution, err = definition.Provision(ctx, row.Id, groupOwner, row.Metadata)
 		must(err)
 		if execution != nil {
 			break

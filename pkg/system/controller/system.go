@@ -8,11 +8,9 @@ import (
 )
 
 // RegisterSystem creates the shared control-plane schema and resolves the
-// singleton system config, returning it. Idempotent -- a cfg matching the
-// seeded row resolves as a no-op; a differing one errors with
-// system.ErrSystemConfigMismatch. cfg may be nil or a sparse struct --
-// WithDefaults fills every field left unset, Validate rejects what's out of
-// range.
+// singleton system row, returning it. Idempotent. cfg may be nil or a sparse
+// struct -- WithDefaults fills every field left unset, Validate rejects
+// what's out of range.
 func (c *SystemController) RegisterSystem(ctx context.Context, cfg *SystemConfig) (*system.System, error) {
 	if cfg == nil {
 		cfg = &SystemConfig{}
@@ -22,7 +20,7 @@ func (c *SystemController) RegisterSystem(ctx context.Context, cfg *SystemConfig
 		return nil, err
 	}
 
-	registered, err := c.datastore.RegisterSystem(ctx, toRegisterSystemData(cfg))
+	registered, err := c.datastore.RegisterSystem(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -56,9 +54,9 @@ func (c *SystemController) DeleteSystem(ctx context.Context) error {
 	return c.datastore.DeleteSystem(ctx)
 }
 
-// UpdateSystem applies cfg's non-nil fields to the singleton system config and
-// returns the updated config. Returns (nil, nil) if the system hasn't been
-// registered.
+// UpdateSystem applies cfg's non-nil fields to the singleton system config
+// and returns the updated config. No alterable fields exist today, so
+// Validate rejects every call until a system-wide knob lands.
 func (c *SystemController) UpdateSystem(ctx context.Context, cfg *AlterSystemConfig) (*system.System, error) {
 	if cfg == nil {
 		cfg = &AlterSystemConfig{}
@@ -66,10 +64,5 @@ func (c *SystemController) UpdateSystem(ctx context.Context, cfg *AlterSystemCon
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-
-	updated, err := c.datastore.UpdateSystem(ctx, toAlterSystemData(cfg))
-	if err != nil || updated == nil {
-		return nil, err
-	}
-	return toSystem(updated), nil
+	return c.GetSystem(ctx)
 }

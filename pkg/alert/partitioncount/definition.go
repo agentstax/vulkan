@@ -14,7 +14,6 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
-	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -30,7 +29,6 @@ type PartitionCountDefinition struct {
 	workers            *workercontroller.WorkerController
 	topics             *topiccontroller.TopicController
 	consumers          *consumercontroller.ConsumerController
-	systems            *systemcontroller.SystemController
 	controller         *controller.PartitionCountController
 	alertProducer      *producer.Producer[alert.Alert]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
@@ -66,13 +64,6 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 		return nil, err
 	}
 	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-	systems, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -115,7 +106,6 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 		workers:            workers,
 		topics:             topics,
 		consumers:          consumers,
-		systems:            systems,
 		controller:         partitionCountController,
 		alertProducer:      alertProducer,
 		alertHeads:         alertHeads,
@@ -130,9 +120,16 @@ func (d *PartitionCountDefinition) Name() string {
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
 func (d *PartitionCountDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+	parsed, err := workercontroller.ParseMetadata[partitionCountMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
 	claimed, err := workercontroller.RegisterInstance(ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newPartitionCountExecution(d, owner, claimed)
+	return newPartitionCountExecution(d, owner, claimed, parsed.RepeatInterval.Effective())
 }

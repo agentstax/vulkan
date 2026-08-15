@@ -20,9 +20,7 @@ import (
 )
 
 // RegisterSystem stands up the shared control-plane schema every topic uses;
-// call it once before registering any topic. Idempotent -- a cfg matching the
-// seeded row resolves as a no-op; a differing one errors with
-// system.ErrSystemConfigMismatch.
+// call it once before registering any topic. Idempotent.
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
 func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *systemcontroller.SystemConfig) error {
 	registered, err := a.systemController.RegisterSystem(ctx, cfg)
@@ -116,14 +114,9 @@ func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
 }
 
 // AlterSystem applies cfg's non-nil fields to the singleton system config and
-// returns the updated config. Returns migrate.ErrNotRegistered if
-// RegisterSystem hasn't run.
-//
-// Two consequences:
-//   - A consumer of this config snapshots it at startup, so an alter takes
-//     effect on its NEXT restart, not live.
-//   - A RegisterSystem call still passing the pre-alter cfg fails with
-//     system.ErrSystemConfigMismatch.
+// returns the updated config. No alterable fields exist today, so every call
+// fails validation until a system-wide knob lands. Returns
+// migrate.ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *systemcontroller.AlterSystemConfig) (*system.System, error) {
 	updated, err := a.systemController.UpdateSystem(ctx, cfg)
 	if err != nil {

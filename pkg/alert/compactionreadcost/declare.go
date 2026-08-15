@@ -41,5 +41,7 @@ func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *commo
 	if err != nil {
 		return err
 	}
-	return d.workers.InsertWorker(ctx, JobName, groupOwner, nil)
+	return d.workers.InsertWorker(ctx, JobName, groupOwner, &workercontroller.WorkerConfig{
+		Metadata: toCompactionReadCostMetadata(d.Config),
+	})
 }

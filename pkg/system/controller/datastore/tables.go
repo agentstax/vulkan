@@ -18,7 +18,6 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	createSystemSql := `
 		CREATE TABLE IF NOT EXISTS system (
 			id BIGSERIAL PRIMARY KEY,
-			alert_repeat_interval_ns BIGINT NOT NULL, -- nanoseconds; how long an active alert stays quiet before repeating
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);

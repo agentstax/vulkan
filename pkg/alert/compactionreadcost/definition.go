@@ -14,7 +14,6 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
-	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -30,7 +29,6 @@ type CompactionReadCostDefinition struct {
 	workers            *workercontroller.WorkerController
 	topics             *topiccontroller.TopicController
 	consumers          *consumercontroller.ConsumerController
-	systems            *systemcontroller.SystemController
 	controller         *controller.CompactionReadCostController
 	alertProducer      *producer.Producer[alert.Alert]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
@@ -66,13 +64,6 @@ func NewCompactionReadCostDefinition(ds *coredatastore.PostgresDatastore, cfg *D
 		return nil, err
 	}
 	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-	systems, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -115,7 +106,6 @@ func NewCompactionReadCostDefinition(ds *coredatastore.PostgresDatastore, cfg *D
 		workers:            workers,
 		topics:             topics,
 		consumers:          consumers,
-		systems:            systems,
 		controller:         compactionReadCostController,
 		alertProducer:      alertProducer,
 		alertHeads:         alertHeads,
@@ -130,9 +120,16 @@ func (d *CompactionReadCostDefinition) Name() string {
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
 func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+	parsed, err := workercontroller.ParseMetadata[compactionReadCostMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
 	claimed, err := workercontroller.RegisterInstance(ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newCompactionReadCostExecution(d, owner, claimed)
+	return newCompactionReadCostExecution(d, owner, claimed, parsed.RepeatInterval.Effective())
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -23,8 +24,8 @@ type AlertController struct {
 
 // alerts is a registered producer instance on the __system.alerts topic;
 // heads reads that topic's compaction heads;
-// repeat is the system row's AlertRepeatInterval.
-func NewAlertController(alerts *producer.ProducerInstance[alert.Alert], heads *compactioncontroller.CompactionController[alert.Alert], repeat time.Duration, log logger.Logger) (*AlertController, error) {
+// repeat is the alert worker row's repeat_interval.
+func NewAlertController(ctx context.Context, alerts *producer.ProducerInstance[alert.Alert], heads *compactioncontroller.CompactionController[alert.Alert], repeat time.Duration, log logger.Logger) (*AlertController, error) {
 	if alerts == nil {
 		return nil, errors.New("alert producer instance must not be nil")
 	}
@@ -34,13 +35,18 @@ func NewAlertController(alerts *producer.ProducerInstance[alert.Alert], heads *c
 	if repeat <= 0 {
 		return nil, fmt.Errorf("repeat must be > 0, got %v", repeat)
 	}
-	// an active head must repeat before retention sweeps it -- checked against
-	// the registration default; a live topic altered below repeat is out of scope
-	if retention := alert.TopicConfig().RetentionTTL; repeat >= retention {
-		return nil, fmt.Errorf("repeat must be < the %s topic's retention %v, got %v", alert.TopicName, retention, repeat)
-	}
 	if log == nil {
 		log = logger.NewDefaultLogger(os.Stdout)
+	}
+
+	// alert repeat needs to be less than retention ttl otherwise could sweep
+	// alert head and fake repeat early
+	retention := alerts.Topic.RetentionTTL
+	if retention > 0 && repeat >= retention {
+		clamped := retention / 2
+		log.WarnContext(ctx, "alert repeat interval at or above the alerts topic's retention -- clamped",
+			"repeat", repeat, "retention", retention, "clamped", clamped)
+		repeat = clamped
 	}
 	return &AlertController{alerts: alerts, heads: heads, repeat: repeat, logger: log}, nil
 }

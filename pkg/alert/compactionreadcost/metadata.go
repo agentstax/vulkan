@@ -1,9 +1,22 @@
 package compactionreadcost
 
-// compactionReadCostMetadata is the worker row's own tuning; the row carries no
-// knobs yet.
-type compactionReadCostMetadata struct{}
+import (
+	"fmt"
+	"time"
+
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+)
+
+// compactionReadCostMetadata is the group-level config for this worker.
+// The alert's Declare defines the default keys.
+// Operators who alter the group define the override keys.
+type compactionReadCostMetadata struct {
+	RepeatInterval workercontroller.MetadataValue[time.Duration] `json:"repeat_interval"`
+}
 
 func (m *compactionReadCostMetadata) Validate() error {
+	if m.RepeatInterval.Effective() <= 0 {
+		return fmt.Errorf("repeat_interval must be > 0, got %v", m.RepeatInterval.Effective())
+	}
 	return nil
 }
