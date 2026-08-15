@@ -120,7 +120,7 @@ func main() {
 	fmt.Println("  -> nothing amortizes this: every checkpoint re-measures the IDENTICAL row, older with")
 	fmt.Println("     each step only because MORE history piled up behind it, never resolved cheaper")
 
-	fmt.Println("\n✅ COMPACTION SCALE LAB — numbers gathered, see LEARNING_PLAN.md's 8c \"Open question\" bullet")
+	fmt.Println("\n✅ COMPACTION SCALE LAB — numbers gathered; decision records [0261]/[0263] (docs/decisions/) hold what was decided on them")
 }
 
 // ---- helpers ----

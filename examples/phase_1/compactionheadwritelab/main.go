@@ -51,8 +51,8 @@ func main() {
 	fixedCostScenario(ctx, ds)
 	hotKeyContentionScenario(ctx, ds)
 
-	fmt.Println("\n✅ LATEST KEYS WRITE-COST LAB — numbers gathered, see LEARNING_PLAN.md's 8c")
-	fmt.Println("   \"Known tradeoff\" bullet for what they mean and whether they change anything.")
+	fmt.Println("\n✅ LATEST KEYS WRITE-COST LAB — numbers gathered; decision record [0262]")
+	fmt.Println("   (docs/decisions/) holds the write-per-keyed-publish tradeoff they measure.")
 }
 
 // fixedCostScenario: N sequential, single-threaded publishes per case --

@@ -1,7 +1,8 @@
 package main
 
-// Phase 8b's own lab: proves the five claims LEARNING_PLAN.md's 8b section
-// makes about per-topic tables, live against a real DB rather than asserted.
+// Phase 8b's own lab: proves the five claims Phase 8b settled about
+// per-topic tables (DECISIONS.md, phase 8b records), live against a real DB
+// rather than asserted.
 //
 // Each proof registers its own disposable topic(s), destroyed on exit, so
 // this lab is self-contained and re-runnable without leftover state --

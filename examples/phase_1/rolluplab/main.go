@@ -1,8 +1,8 @@
 package main
 
 // Rollup lab: measures the numbers behind the lazy-vs-synchronous
-// AdvanceWaterline decision (LEARNING_PLAN.waterlineDatastore's "Resolve the lazy-vs-
-// synchronous rollup"). Three scenarios:
+// AdvanceWaterline decision (record [0301] in docs/decisions/: the rollup
+// stays lazy). Three scenarios:
 //
 //   - Staleness: how long after a range's Commit does `committed` actually
 //     reflect it -- the lazy roller's own ticker (RollWaterline) vs. calling
@@ -58,8 +58,8 @@ func main() {
 	fixedCostScenario(ctx, ds)
 	contentionScenario(ctx, ds)
 
-	fmt.Println("\n✅ ROLLUP LAB — numbers gathered, see LEARNING_PLAN.waterlineDatastore's Phase 10")
-	fmt.Println("   \"Resolve the lazy-vs-synchronous rollup\" bullet for the decision these drove.")
+	fmt.Println("\n✅ ROLLUP LAB — numbers gathered; decision record [0301] (docs/decisions/)")
+	fmt.Println("   holds the lazy-vs-synchronous decision these numbers drove.")
 }
 
 // ---- scenario 1: staleness ----

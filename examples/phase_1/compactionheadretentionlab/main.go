@@ -16,7 +16,7 @@ package main
 // A key touched again inside the ttl window proves the opposite case in
 // each scenario too: retention doing nothing to a key that's still alive --
 // this is intentional expiration, not compaction-awareness bolted onto
-// retention (see LEARNING_PLAN.janitorDatastore's 8c "Decided" note).
+// retention (decision record [0269] in docs/decisions/).
 
 import (
 	"context"

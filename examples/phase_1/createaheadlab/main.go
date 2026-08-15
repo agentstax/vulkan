@@ -8,7 +8,7 @@ package main
 //   - the next partition exists BEFORE any id needs it (polled after id 80)
 //   - the "no partition covers" heal warn never fires
 //   - ids stay contiguous (a heal burns the boundary id; create-ahead doesn't)
-//   - exactly one partition was created ahead, not a runaway chain
+//   - creation never runs past the triggers' reach (no runaway chain)
 
 import (
 	"context"
@@ -191,10 +191,14 @@ func assertCreateAheadWon(ctx context.Context, ds *coredatastore.PostgresDatasto
 	assertInt("every publish landed", count, totalPublishes)
 	assertInt("ids contiguous -- no id burned at the boundary", maxId, totalPublishes)
 
-	if regclassExists(ctx, ds, fmt.Sprintf("message_log_%d_2", topicId)) {
-		die("partition 2 exists -- create-ahead ran past the next partition")
+	// partition 2 MAY exist: the 95% trigger's detached run reads MAX(id)
+	// when it lands, and under load head can already be past the boundary --
+	// creating after the current head is what ensureCoveringPartition does.
+	// Partition 3 is unreachable with 105 ids: that would be a runaway chain.
+	if regclassExists(ctx, ds, fmt.Sprintf("message_log_%d_3", topicId)) {
+		die("partition 3 exists -- create-ahead ran away past the trigger's reach")
 	}
-	fmt.Println("  ✓ exactly one partition created ahead")
+	fmt.Println("  ✓ no runaway creation past the triggers' reach")
 }
 
 func regclassExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string) bool {

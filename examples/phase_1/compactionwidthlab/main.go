@@ -1,9 +1,8 @@
 package main
 
 // Log compaction width/planner lab: measures the read-cost tradeoff the
-// unbounded compaction predicate creates (see LEARNING_PLAN.md's 8c "Open
-// question" bullet -- read that first, this lab is what turns it into a
-// number).
+// unbounded compaction predicate creates (decision records [0261]/[0263] in
+// docs/decisions/ -- this lab is what turns the tradeoff into a number).
 //
 // Proving a row IS the latest for its key (NOT EXISTS a newer one) has no
 // early termination -- it costs one partition scan per partition from that
@@ -38,7 +37,9 @@ import (
 
 const (
 	narrowPartitionSize = int64(4)
-	widePartitionSize   = int64(50)
+	// wide enough that 40 seeded rows stay below the 80% create-ahead trigger
+	// (id 80) -- at 50, id 40 IS the trigger and an empty partition 1 appears
+	widePartitionSize = int64(100)
 )
 
 type Record struct {
@@ -120,8 +121,8 @@ func main() {
 	assertTrue("wide: both cases stay inside the one partition all 40 rows share",
 		negWide == 1 && posWide == 1)
 
-	fmt.Println("\n✅ COMPACTION WIDTH LAB — numbers gathered, see LEARNING_PLAN.md's 8c")
-	fmt.Println("   \"Open question\" bullet for what they mean and whether they change anything.")
+	fmt.Println("\n✅ COMPACTION WIDTH LAB — numbers gathered; decision records [0261]/[0263]")
+	fmt.Println("   (docs/decisions/) hold what they mean and what was decided on them.")
 }
 
 // ---- helpers ----
