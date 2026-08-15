@@ -154,14 +154,14 @@ internal cleanup; no new behavior. Locks the surface before v1.
 - **go.mod cleanup after factoring examples into a separate module** —
   blocked until examples are a separate module; either do that split now or
   decide the go.mod weight isn't worth it pre-v1 and drop this.
-- **Maintenance-tier surface review** — everything the maintenance tier
-  exported postdates Phase 13's painstaking pass, so it hasn't had one:
-  pkg/maintain (op verbs + ListDuties/FleetDuty,
-  Janitor/WaterlineRoller/Maintainer/FleetMaintainer, both configs),
-  pkg/maintain/metrics (DutyState/DutyStatus), the consumer split
+- **Worker-tier surface review** — everything the worker tier exports
+  postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
+  and its kind subpackages (janitor, waterline, manager, cronscheduler),
+  pkg/worker/controller (WorkerController, MetadataValue, the configs),
+  pkg/systemmanager, the consumer split
   (Consumer/MessageConsumer/ExceptionConsumer/DeliveryConsumer, one shared
   ConsumerConfig), the renamed Producer/ProducerConfig, and the
-  `vulkan maintain` commands. Same rigor as Phase 13.
+  `vulkan manager` commands. Same rigor as Phase 13.
   One deliberate trap to re-examine: NewMessageConsumer KEPT its signature
   while changing meaning (bundle -> bare work loop) — decide whether the
   bare piece constructors should be harder to reach by accident.
@@ -197,19 +197,20 @@ surface that has stopped moving.
   rather than the library's own bottleneck. Single-topic skip-vs-claim was
   already measured in bench/idempotency/RESULTS.md; multi-topic contention
   is still open.
-- **Idle-fleet duty-load benchmark** (14c; measure BEFORE building any fix).
-  An idle deployment pays per duty per interval: winner's claim UPDATE +
-  no-op work each tick, and — the growing term — every replica's LOSING
-  claim attempt (R replicas x D duties x 1/rate no-op UPDATEs). Bench idle
-  `maintain run` at 100 / 1k / 10k duties x 1-3 replicas: Postgres CPU, QPS,
-  where the curve hurts. Result picks a rung on the settled fix ladder
-  (cheapest first, don't skip rungs): (1) per-topic rates already exist —
-  coarsen quiet topics, document; (2) idle backoff inside dutyRunner only —
-  no progress backs off toward a cap (~10x rate), any progress snaps back;
-  cost is a committed-staleness spike on wake, janitor side covered by the
-  producer's partition self-heal; (3) LISTEN/NOTIFY-woken duties — real
-  complexity, only if (2) measurably fails. Prior: rung 1 carries to ~1k
-  duties, rung 2 well past 10k, rung 3 never earns it.
+- **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
+  fix). An idle deployment pays per worker row per poll: winner's claim
+  UPDATE + no-op work each tick, and — the growing term — every replica's
+  LOSING claim attempt (R replicas x W rows x 1/poll_rate no-op UPDATEs).
+  Bench an idle fleet at 100 / 1k / 10k worker rows x 1-3 replicas:
+  Postgres CPU, QPS, where the curve hurts. Result picks a rung on the
+  settled fix ladder (cheapest first, don't skip rungs): (1) per-row
+  poll_rate already exists in worker metadata — coarsen quiet topics' rows,
+  document; (2) idle backoff inside the instance tick runner only — no
+  progress backs off toward a cap (~10x poll_rate), any progress snaps
+  back; cost is a committed-staleness spike on wake, janitor side covered
+  by the producer's partition self-heal; (3) LISTEN/NOTIFY-woken workers —
+  real complexity, only if (2) measurably fails. Prior: rung 1 carries to
+  ~1k rows, rung 2 well past 10k, rung 3 never earns it.
 - **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs
@@ -473,9 +474,9 @@ prerequisite if quorum-as-a-fraction wins.
     group re-seeds and REPLAYS what retention holds — duplicate work, not
     data loss. Stakes: with allow_drop_past_committed=false (default) an
     abandoned group's cursor pins partition drops. Hard rules: expiry must
-    telegraph (idle/expiring visible in maintain status/DutyState BEFORE the
-    reaper), and unresolved delivery rows refuse-or-alert, never silent
-    drop.
+    telegraph (idle/expiring visible in worker snapshots/state gauges
+    BEFORE the reaper), and unresolved delivery rows refuse-or-alert, never
+    silent drop.
   - Real systems: RabbitMQ if-unused; Kafka group membership
     (session.timeout.ms as the TTL sweep); Temporal worker pollers view.
 - **Post-v1 research backlog** (14d):
@@ -490,15 +491,16 @@ prerequisite if quorum-as-a-fraction wins.
     https://packagemain.tech/p/golang-optimizations-for-highvolume — mine
     for the actual hot paths (claim, produce, janitor loops), don't apply
     speculatively.
-  - maintenance_log duty-failure evidence table (design settled; rides the
-    duty-error backoff's fenced failure UPDATE): one SHARED append-only
-    table, failed duty runs only — `maintenance_log (id BIGSERIAL PK, duty,
-    topic_id, consumer_group, error TEXT, attempts INT, created_at)`; NO
-    success/recovery rows (absence IS success). The write rides the backoff
-    UPDATE's fence as one data-modifying CTE, so a runner that lost its
-    claim mid-run can't write noise. Retention: each topic's janitor sweeps
-    its own rows past ~7d in its existing pass. Surfacing: maintain status
-    joins the latest log row per failing duty.
+  - worker_log failure-evidence table (design settled under the old
+    maintenance-tier names; rides the worker backoff's fenced failure
+    UPDATE): one SHARED append-only table, failed worker runs only —
+    `worker_log (id BIGSERIAL PK, worker, topic_id, consumer_group, error
+    TEXT, attempts INT, created_at)`; NO success/recovery rows (absence IS
+    success). The write rides the backoff UPDATE's fence as one
+    data-modifying CTE, so an instance that lost its claim mid-run can't
+    write noise. Retention: the janitor sweeps rows past ~7d in its
+    existing pass. Surfacing: worker snapshots join the latest log row per
+    failing worker.
 - **Claim-fence transaction-xmax logic -> its own async ticker** (really
   want) — abstract the fence read into an async ticker with claimers
   reading a shared in-memory value; the query is cheap so the poll rate can

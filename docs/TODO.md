@@ -21,13 +21,38 @@ docs/decisions/.
    metadata + live __system.alerts retention, clamp + warn; system table
    drops alert_repeat_interval_ns; SystemConfig/AlterSystem/`vulkan system
    alter` become field-less stubs.
-4. **AlterGroup + group CLI**: admin.AlterGroup + AlterGroupConfig (sparse
-   pointers + explicit clear signals) writing the override layer;
-   `vulkan group alter` (--clear) and `vulkan group get` (effective value +
-   source per tunable).
-5. **Worker CLI tree**: `vulkan worker list / get / alter / suspend /
-   resume` — poweruser door; alter writes overrides + target_instances; no
+4. **common.Update[T] + library reshape** ([0517]; reshapes the uncommitted
+   chunk-4 code, library layer only): `common.Update[T]` (zero = unchanged,
+   `Set(v)`, `Unset[T]()`); AlterGroupConfig fields onto it, Clear deleted;
+   workercontroller.AlterWorkerConfig ClearOverrides -> UnsetOverrides;
+   delete the system alter stub (AlterSystem, AlterSystemConfig,
+   `vulkan system alter`).
+5. **Group config CLI**: `group config get|set|unset` with the per-key
+   table (parse/format/help — the single home for key knowledge), dotted
+   `message.*` set (whole-doc forbidden), single-key get = filtered table;
+   delete `group alter` + bare `group get`.
+6. **Topic onto the surface**: AlterTopicConfig defaulted fields ->
+   Update[T], admin resolves Unset from WithDefaults; `topic config`
+   replaces `topic alter` (alter.go deleted); `topic get` drops the
+   alterable columns.
+7. **Cron onto the surface**: AlterCronJobConfig Timeout/Concurrency ->
+   Update[T], Schedule/Data/Metadata stay set-only pointers; `cron config`
+   replaces `cron alter`; `data.*` dotted set (JSON-literal-else-string
+   inference), whole-doc set allowed, `unset data.<path>` deletes the
+   field; schedule-reseed + register drift-gate docs move to the surviving
+   verbs.
+8. **Worker verbs + addressing**: `vulkan worker list / get / scale /
+   suspend / resume` — poweruser door; addressing = worker name +
+   --topic/--group scope flags, built here; scale writes target_instances
+   through AlterWorker; admin Suspend/Unsuspend worker verbs; no
    register/destroy (rows owned by their domains).
-6. **Lab + close-out**: config-layering lab (override picked up next claim
-   life, clear returns to default, alert repeat clamp); sweep labs for
-   metadata mirrors; HISTORY/ROADMAP close-out; fresh-DB suite.
+9. **Worker config CLI**: `worker config get|set|unset` — reuses chunk-8
+   addressing and the chunk-5 key-table machinery; reaches every row kind
+   (consumer kinds, manager, waterline, janitor, cronscheduler, alert
+   consumers incl. repeat_interval).
+10. **Lab + close-out**: config-layering lab (override picked up next
+    claim life, unset returns to default, alert repeat clamp); sweep labs
+    for metadata mirrors; HISTORY/ROADMAP close-out; fresh-DB suite. Note:
+    [0515] says "Register writes default" — the write actually happens in
+    Declare at Consume start; fix wording in the HISTORY entry, not the
+    record.

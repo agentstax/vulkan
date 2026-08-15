@@ -267,3 +267,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0514 2026-08-15 accepted (phase 14) — DestroySystem is RegisterSystem's inverse: drop every topic, then the control-plane schema
 - 0515 2026-08-15 accepted (phase 14) — Group tunables live in worker metadata as {default, override}; users tune through domain nouns
 - 0516 2026-08-15 accepted (phase 14) — AlertRepeatInterval moves to alert worker metadata; system config becomes a stub
+- 0517 2026-08-15 accepted (phase 14) — Uniform config get/set/unset surface; alter dies in the CLI; Go Alter* verbs take tri-state Update[T] (amends 0515, 0516)
