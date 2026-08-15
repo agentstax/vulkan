@@ -24,8 +24,8 @@ authority axis is an org artifact its users do not have.
 **Decision.**
 - Config is declared in code. The latest declaration wins. The CLI reads
   config and never writes it.
-- Topic tunables (retention_ttl, allow_drop_past_committed,
-  idempotency_key_ttl, delivery_log_mode) are overwritten by each
+- Topic mutable config (retention_ttl, allow_drop_past_committed,
+  idempotency_key_ttl, delivery_log_mode) is overwritten by each
   RegisterTopic. A register whose values differ from stored logs old -> new at
   Info: two apps declaring one topic differently is the only mistake this model
   cannot prevent by construction, and that line -- later the declaration trail,
@@ -36,8 +36,8 @@ authority axis is an org artifact its users do not have.
   name) and defeats the janitor's allow_drop_past_committed guard
   (lastIdInPartition computed on the wrong grid drops uncommitted ids).
   Changing it is a topic migration, not a config write.
-- Group and worker tunables stay in worker metadata and lose the override
-  layer -- one value, written by the declaring code at each Register.
+- Group and worker mutable config stays in worker metadata and loses the
+  override layer -- one value, written by the declaring code at each Register.
 - Producers, consumers and workers resolve topics with GetTopic.
   RegisterTopic belongs to admin.
 - The CLI keeps verbs and inspection (register, destroy, rename, migrate,
@@ -47,10 +47,10 @@ authority axis is an org artifact its users do not have.
 AlterGroup, AlterWorker(s), their Alter*Config types, MetadataValue's Override
 layer, applyOverrides, pkg/common/update.go, and `config set` / `config unset`
 for every resource (`config get` stays). ErrTopicConfigMismatch narrows from
-five columns to one. Changing any tunable now requires a redeploy, which for a
-team owning both the app and the database costs minutes and buys a git history.
-Rejected: scope chains of system/topic/group/worker defaults -- with a handful
-of topics a shared default is a Go variable in the user's own code, and
+five columns to one. Changing any mutable config field now requires a redeploy,
+which for a team owning both the app and the database costs minutes and buys a
+git history. Rejected: scope chains of system/topic/group/worker defaults --
+with a handful of topics a shared default is a Go variable in the user's code, and
 reimplementing variable scoping inside a database is worse than composition;
 operator overrides at any scope, whose whole justification disappears once the
 operator and the developer are one person. Adding an operator writer later is

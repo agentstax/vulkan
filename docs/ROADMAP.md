@@ -47,7 +47,7 @@ otherwise the API review locks a surface that is still due to change.
     pkg/common/update.go, and `config set`/`config unset` for every resource.
     `config get` stays.
   - ErrTopicConfigMismatch narrows to partition_size alone; a register whose
-    tunables differ from stored logs old -> new at Info.
+    mutable config differs from stored logs old -> new at Info.
   - [0516]'s repeat_interval relocation stands — it lands as a code-declared
     metadata field with no override layer.
   - Labs call RegisterTopic from app-code position today; they move to
@@ -62,6 +62,8 @@ otherwise the API review locks a surface that is still due to change.
     sweep would delete the only way to tune the alerts vulkan ships.
   - Register overwrites declared fields and never touches action state
     (Suspended). alertlab's threshold assertion inverts accordingly.
+  - The CLI creates nothing ([0521]): `vulkan topic register` and `vulkan cron
+    register` are deleted, matching `vulkan system`, which never had one.
 
 ## Next
 
@@ -207,8 +209,9 @@ surface that has stopped moving.
 - **Topic config as append-only declaration rows.** Design settled in [0519];
   build deferred so the config surface from [0518] settles first. topic keeps
   identity only (id, system_id, schema_version, created_at); a
-  topic_declaration table holds name, partition_size and the four tunables
-  with declared_by/declared_at, newest row by MAX(id), full snapshots,
+  topic_declaration table holds name, partition_size and the four mutable
+  config fields with declared_by/declared_at, newest row by MAX(id), full
+  snapshots,
   appended only on change. Two details that carry the work: uniqueness of
   (name, schema_version) goes procedural, so renameTopic gains registerTopic's
   per-name advisory lock (both keys, sorted) and ErrTopicNameTaken comes from

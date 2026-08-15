@@ -12,7 +12,6 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 func main() {
@@ -57,18 +56,11 @@ func main() {
 	err = mAdmin.DestroyTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})
 	assertReserved("DestroyTopic(__system.metrics)", err)
 
-	step("AlterTopic allowed on the system topic")
-	newRetention := 48 * time.Hour
-	altered, err := mAdmin.AlterTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), &topiccontroller.AlterTopicConfig{RetentionTTL: common.Set(newRetention)})
-	must(err)
-	assertDuration("retention altered", altered.RetentionTTL, newRetention)
-
-	step("re-running RegisterSystem converges without reverting the alter")
+	step("re-running RegisterSystem converges on the same row")
 	must(mAdmin.RegisterSystem(ctx, nil))
 	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)
-	assertDuration("altered retention survives re-run", afterRerun.RetentionTTL, newRetention)
 
 	fmt.Println("\n✅ RESERVED TOPIC LAB PASSED")
 }

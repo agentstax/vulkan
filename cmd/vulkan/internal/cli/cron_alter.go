@@ -161,3 +161,4 @@ func cronJobFieldDiffs(a, b *cron.CronJob) []fieldDiff {
 	add("NextScheduledTime", timeCell(a.NextScheduledTime), timeCell(b.NextScheduledTime))
 	return diffs
 }
+

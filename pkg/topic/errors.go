@@ -2,8 +2,9 @@ package topic
 
 import "errors"
 
-// ErrTopicConfigMismatch means Register was called with a Config that differs from the topic's existing row
-var ErrTopicConfigMismatch = errors.New("topic config does not match existing topic")
+// ErrTopicConfigMismatch means Register was called with a PartitionSize the topic wasn't created with.
+// Every other config field can be changed by registering again.
+var ErrTopicConfigMismatch = errors.New("topic partition size does not match existing topic")
 
 // ErrTopicNotFound means the named topic has no row.
 var ErrTopicNotFound = errors.New("topic not found")

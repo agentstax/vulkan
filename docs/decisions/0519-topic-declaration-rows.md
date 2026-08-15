@@ -19,10 +19,10 @@ newest by MAX(id).
   id is referenced by consumer_group, worker, cron_job and migration_log,
   keyed by compaction_head, and names message_log_<id>,
   message_log_<id>_<n> and idempotency_key_<id>, so it can never move.
-- topic_declaration holds name, partition_size and the four tunables, plus
-  declared_by (common.ProcessIdentity) and declared_at. The newest row per
-  topic_id is effective, by MAX(id). No currency marker: pure append-only,
-  matching binding_declaration.
+- topic_declaration holds name, partition_size and the four mutable config
+  fields, plus declared_by (common.ProcessIdentity) and declared_at. The newest
+  row per topic_id is effective, by MAX(id). No currency marker: pure
+  append-only, matching binding_declaration.
 - Identity is what a topic is looked up by. schema_version is half the lookup
   key, so it stays on topic; partition_size is immutable but nothing resolves
   a topic by it, so it is a declaration field. Immutability and identity are

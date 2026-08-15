@@ -24,35 +24,16 @@ in on purpose. The database must already have the Vulkan schema applied.
 
 ## Usage
 
-### Register a topic
+### Creating topics
 
-Idempotent — re-running with the same config is a no-op. Names are
-dot-namespaced by domain and entity, `<domain>.<entity>[.<event>]` (e.g.
-`orders.created`, `billing.invoice.paid`); topics are addressed by id
+Topics are created from your code, by `admin.RegisterTopic`. There is no
+`vulkan topic register`: the CLI reads config and never writes it, so a
+topic created from a shell would just be overwritten by the next call your
+code makes. `vulkan system` works the same way and always has.
+
+Names are dot-namespaced by domain and entity, `<domain>.<entity>[.<event>]`
+(e.g. `orders.created`, `billing.invoice.paid`); topics are addressed by id
 internally, so a name is safe to rename later.
-
-```console
-$ vulkan topic register orders.created --retention-ttl 720h
-✓ registered topic "orders.created" (id=42)
-```
-
-A *different* config on an existing name is refused (changing config is
-`alter`'s job, not `register`):
-
-```console
-$ vulkan topic register orders.created --retention-ttl 168h
-error: topic "orders.created" already exists with a different configuration
-
-  FIELD          EXISTING   REQUESTED
-  RetentionTTL   720h0m0s   168h0m0s
-
-register cannot change an existing topic's config -- that's alter's job.
-```
-
-Flags mirror the topic config — `--partition-size`, `--retention-ttl`,
-`--idempotency-key-ttl`, `--janitor-poll-rate`, `--janitor-sweep-batch-size`,
-`--allow-drop-past-committed`, `--disable-delivery-log` — and anything left
-unset uses the library default. See `vulkan topic register --help` for each.
 
 ### List topics
 

@@ -9,10 +9,9 @@ import (
 func newTopicCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "topic",
-		Short: "Register, inspect, configure, rename, and destroy topics",
+		Short: "Inspect, rename, and destroy topics",
 	}
 
-	cmd.AddCommand(newTopicRegisterCmd(g))
 	cmd.AddCommand(newTopicListCmd(g))
 	cmd.AddCommand(newTopicGetCmd(g))
 	cmd.AddCommand(newTopicConfigCmd(g))
@@ -23,10 +22,9 @@ func newTopicCmd(g *globalFlags) *cobra.Command {
 }
 
 // requireTopicName is the shared Args rule for every single-topic command
-// (register/get/destroy): exactly one name, with a verb-specific usage line when
-// it's missing so all three fail identically instead of leaking cobra's generic
-// "accepts 1 arg(s)" text. extraLines are appended to the missing-name error --
-// register uses one to hint at the naming convention.
+// (get/rename/destroy): exactly one name, with a verb-specific usage line when
+// it's missing so they fail identically instead of leaking cobra's generic
+// "accepts 1 arg(s)" text. extraLines are appended to the missing-name error.
 func requireTopicName(verb string, extraLines ...string) cobra.PositionalArgs {
 	return func(_ *cobra.Command, args []string) error {
 		if len(args) < 1 {

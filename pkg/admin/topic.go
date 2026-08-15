@@ -32,15 +32,19 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
 	return a.topicController.ListTopics(ctx)
 }
 
-// RegisterTopic is idempotent -- an existing (name, version) with an
-// identical cfg resolves to its topic; a differing one errors with
-// ErrTopicConfigMismatch.
+// RegisterTopic creates topic (name, version) if it doesn't exist and returns
+// it. Safe to call on every startup: cfg is applied on every call, so changing
+// a value and redeploying changes the topic -- and two services passing
+// different cfg for one topic will overwrite each other.
 //   - name: must match ^[a-z0-9._-]+$; dot-namespaced by domain and entity
 //     ("orders.created", "billing.invoice.paid"); safe to rename later --
 //     topics are addressed by id internally, not name
 //   - version: must be >= 1; a version that doesn't exist yet under name is
 //     a whole new physical topic, never a migration of an existing one
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
+//
+// PartitionSize is fixed at creation; passing a different one returns
+// ErrTopicConfigMismatch.
 func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
@@ -67,32 +71,6 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 	}
 
 	return a.topicController.RegisterTopic(ctx, sys.Id, name, version, cfg)
-}
-
-// AlterTopic sets and unsets config fields on topic (name, version) and
-// returns the updated topic -- an unset field goes back to its default, not
-// to the value the topic was registered with. Returns ErrTopicNotFound if
-// that (name, version) isn't registered.
-//
-// Two consequences to plan around:
-//   - Running producers/consumers snapshot the topic at their Register, so an
-//     alter takes effect on their NEXT restart, not live.
-//   - RegisterTopic calls still passing the pre-alter config will fail with
-//     ErrTopicConfigMismatch -- deliberate, so declarative register calls
-//     can't silently drift from what an operator changed.
-func (a *MessageAdmin) AlterTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.AlterTopicConfig) (*topic.Topic, error) {
-	if name == "" {
-		return nil, errors.New("topic name is required")
-	}
-
-	updated, err := a.topicController.UpdateTopic(ctx, name, version, cfg)
-	if err != nil {
-		return nil, err
-	}
-	if updated == nil {
-		return nil, fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
-	}
-	return updated, nil
 }
 
 // MigrateTopic moves topic (name, version) to targetVersion.

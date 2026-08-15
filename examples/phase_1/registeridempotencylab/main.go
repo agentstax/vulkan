@@ -1,18 +1,16 @@
 package main
 
-// register idempotency lab: re-registering a topic is idempotent, and a
-// conflicting config is rejected -- guarding the struct-equality check in
-// topic.registerTopic. created_at/updated_at are db-assigned and a Config carries
-// neither, so the existing-topic branch threads the stored row's timestamps
-// into ToTopic before the *found != *want compare. Forget that and every
-// re-register would falsely report a config mismatch -- this lab is the tripwire.
+// register idempotency lab: re-registering a topic resolves to the same row,
+// and the newest declaration's mutable config replaces what is stored -- guarding
+// registerTopic's found path (replaceTopicConfig).
 //
 // Confirms:
-//  1. first Register creates the topic and stamps created_at == updated_at
-//     (no alter path yet, so they start equal).
-//  2. re-registering the SAME config resolves to the same topic, no error --
-//     NOT a mismatch (the timestamp edge).
-//  3. re-registering a DIFFERENT config returns ErrTopicConfigMismatch.
+//  1. first Register creates the topic and stamps created_at == updated_at.
+//  2. re-registering the SAME config resolves to the same topic, no error and
+//     no write.
+//  3. re-registering DIFFERENT mutable config keeps the id and replaces the values.
+//  4. re-registering a different PartitionSize returns ErrTopicConfigMismatch:
+//     message_log's partition boundaries are derived from it.
 
 import (
 	"context"
@@ -63,12 +61,23 @@ func main() {
 	}
 	fmt.Printf("  ✓ re-register resolved same id=%d, no mismatch\n", again.Id)
 
-	step("re-register DIFFERENT config is rejected")
-	_, err = mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour})
-	if !errors.Is(err, topic.ErrTopicConfigMismatch) {
-		die(fmt.Sprintf("re-register with different config must return ErrTopicConfigMismatch, got: %v", err))
+	step("re-register DIFFERENT config replaces the stored mutable config")
+	redeclared, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour})
+	must(err)
+	if redeclared.Id != created.Id {
+		die(fmt.Sprintf("re-declare resolved a different id: got %d, want %d", redeclared.Id, created.Id))
 	}
-	fmt.Printf("  ✓ different config rejected with ErrTopicConfigMismatch\n")
+	if redeclared.RetentionTTL != 168*time.Hour {
+		die(fmt.Sprintf("re-declared RetentionTTL = %v, want 168h", redeclared.RetentionTTL))
+	}
+	fmt.Printf("  ✓ newest declaration won: retention now %v on the same id=%d\n", redeclared.RetentionTTL, redeclared.Id)
+
+	step("re-register DIFFERENT PartitionSize is rejected")
+	_, err = mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour, PartitionSize: created.PartitionSize + 1})
+	if !errors.Is(err, topic.ErrTopicConfigMismatch) {
+		die(fmt.Sprintf("re-register with a different PartitionSize must return ErrTopicConfigMismatch, got: %v", err))
+	}
+	fmt.Printf("  ✓ changed PartitionSize rejected with ErrTopicConfigMismatch\n")
 
 	fmt.Printf("\n✅ register idempotency lab PASSED\n")
 }

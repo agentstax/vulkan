@@ -95,28 +95,6 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 	return toTopic(registered)
 }
 
-// UpdateTopic applies cfg's set and unset fields to topic (name, version).
-// Returns (nil, nil) if that (name, version) is not found.
-func (c *TopicController) UpdateTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *AlterTopicConfig) (*topic.Topic, error) {
-	if name == "" {
-		return nil, errors.New("name is required")
-	}
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
-	if cfg == nil {
-		cfg = &AlterTopicConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-
-	updated, err := c.datastore.UpdateTopic(ctx, name, int64(version), toAlterTopicData(cfg))
-	if err != nil || updated == nil {
-		return nil, err
-	}
-	return toTopic(updated)
-}
 
 // RenameTopic moves every version under oldName to newName in one statement.
 // Returns (nil, nil) if no version is registered under oldName

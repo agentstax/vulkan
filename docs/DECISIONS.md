@@ -146,7 +146,7 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0345 2026-07-20 accepted (phase 11.5) — One advisory lock id, two hold-times: session-scoped for a migrate run, xact-scoped for RegisterSystem
 - 0346 2026-07-20 accepted (phase 11.5) — Migration registries are explicit ordered slices, not init() registration
 - 0347 2026-07-20 accepted (phase 11.5) — Missing or mismatched schema surfaces as teaching errors, not raw Postgres errors
-- 0348 2026-07-20 accepted (phase 11.5) — AlterTopic takes a sparse pointer-per-field patch; nil means leave alone
+- 0348 2026-07-20 superseded (phase 11.5) — AlterTopic takes a sparse pointer-per-field patch; nil means leave alone
 - 0349 2026-07-20 accepted (phase 11.5) — The alter UPDATE is one static COALESCE($n, col) statement, not a dynamically built SET list
 - 0350 2026-07-20 accepted (phase 11.5) — PartitionSize is immutable by omission from AlterConfig; dynamic partition bounds deferred
 - 0351 2026-07-20 accepted (phase 11.5) — renameTopic pins the id first and updates WHERE id = $1, never WHERE name = $1
@@ -271,3 +271,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0518 2026-08-15 accepted (phase 14) — Config is code-owned, the latest declaration wins, and the CLI never writes config (supersedes 0515, 0517)
 - 0519 2026-08-15 accepted (phase 14) — Topic config lives in append-only declaration rows; topic keeps identity only
 - 0520 2026-08-15 accepted (phase 14) — Cron jobs are declared like every other resource; built-in alert config moves into RegisterSystem (amends 0518)
+- 0521 2026-08-15 accepted (phase 14) — Only a declarer writes config, so the CLI creates nothing (amends 0518, 0520)

@@ -18,12 +18,3 @@ type TopicData struct {
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 }
-
-// AlterTopicData is UpdateTopic's sparse patch -- a nil field means leave
-// the column unchanged.
-type AlterTopicData struct {
-	RetentionTTLNs         *int64
-	AllowDropPastCommitted *bool
-	IdempotencyKeyTTLNs    *int64
-	DeliveryLogMode        *string
-}

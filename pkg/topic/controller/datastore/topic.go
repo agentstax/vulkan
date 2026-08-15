@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"time"
 )
 
 // GetTopic resolves topic (name, schemaVersion).
@@ -124,8 +125,8 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*TopicData, error) {
 }
 
 // RegisterTopic resolves data's (name, schema_version) to its row, creating
-// it (and its per-topic tables) if it doesn't exist. An existing row must
-// match data's tuning columns.
+// it (and its per-topic tables) if it doesn't exist. An existing row takes
+// data's mutable config; its partition_size must match.
 func (d *TopicDatastore) RegisterTopic(ctx context.Context, data *TopicData) (*TopicData, error) {
 	var registered *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -145,11 +146,7 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 		return nil, err
 	}
 	if found != nil {
-		if err := d.assertConfigMatches(found, data); err != nil {
-			return nil, err
-		}
-		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
-		return found, nil
+		return d.replaceTopicConfig(ctx, found, data)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -169,11 +166,7 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 		return nil, err
 	}
 	if found != nil {
-		if err := d.assertConfigMatches(found, data); err != nil {
-			return nil, err
-		}
-		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
-		return found, nil
+		return d.replaceTopicConfig(ctx, found, data)
 	}
 
 	insertSql := `
@@ -208,51 +201,27 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 	return &created, nil
 }
 
-// assertConfigMatches compares the tuning columns -- the db-assigned ones
-// (id, timestamps) only exist on found.
-func (d *TopicDatastore) assertConfigMatches(found *TopicData, data *TopicData) error {
-	matches := found.PartitionSize == data.PartitionSize &&
-		found.RetentionTTLNs == data.RetentionTTLNs &&
-		found.AllowDropPastCommitted == data.AllowDropPastCommitted &&
-		found.IdempotencyKeyTTLNs == data.IdempotencyKeyTTLNs &&
-		found.DeliveryLogMode == data.DeliveryLogMode
-	if !matches {
-		return fmt.Errorf("%w: topic %s version %d: existing=%+v got=%+v", topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, *found, *data)
-	}
-	return nil
-}
-
-// UpdateTopic applies alter's non-nil fields to (name, schemaVersion).
-// Returns (nil, nil) if that (name, schemaVersion) is not found.
-func (d *TopicDatastore) UpdateTopic(ctx context.Context, name string, schemaVersion int64, alter *AlterTopicData) (*TopicData, error) {
-	var updated *TopicData
-	err := d.DatastoreRetry.Wrap(ctx, func() error {
-		var err error
-		updated, err = d.updateTopic(ctx, name, schemaVersion, alter)
-		return err
-	})
-	return updated, err
-}
-
-func (d *TopicDatastore) updateTopic(ctx context.Context, name string, schemaVersion int64, alter *AlterTopicData) (*TopicData, error) {
-	// read-before-write is only for the old -> new log line
-	old, err := d.getTopic(ctx, d.Datastore.Pool, name, schemaVersion)
-	if err != nil {
-		return nil, err
-	}
-	if old == nil {
-		return nil, nil
+// replaceTopicConfig overwrites an already-registered topic's mutable config
+// with data's: the newest declaration wins.
+// partition_size is not mutable config.
+func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicData, data *TopicData) (*TopicData, error) {
+	if found.PartitionSize != data.PartitionSize {
+		return nil, fmt.Errorf("%w: topic %s version %d: partition_size is fixed at %d, got %d",
+			topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, found.PartitionSize, data.PartitionSize)
 	}
 
-	// a nil param reaches Postgres as NULL
-	// COALESCE keeps the column's current value if nil passed
+	if !configDiffers(found, data) {
+		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
+		return found, nil
+	}
+
 	sql := `
 		UPDATE topic
 		SET
-			retention_ttl_ns = COALESCE($2, retention_ttl_ns),
-			allow_drop_past_committed = COALESCE($3, allow_drop_past_committed),
-			idempotency_key_ttl_ns = COALESCE($4, idempotency_key_ttl_ns),
-			delivery_log_mode = COALESCE($5, delivery_log_mode),
+			retention_ttl_ns = $2,
+			allow_drop_past_committed = $3,
+			idempotency_key_ttl_ns = $4,
+			delivery_log_mode = $5,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING
@@ -270,11 +239,11 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, schemaVer
 	`
 
 	row := d.Datastore.Pool.QueryRow(ctx, sql,
-		old.Id,
-		alter.RetentionTTLNs,
-		alter.AllowDropPastCommitted,
-		alter.IdempotencyKeyTTLNs,
-		alter.DeliveryLogMode,
+		found.Id,
+		data.RetentionTTLNs,
+		data.AllowDropPastCommitted,
+		data.IdempotencyKeyTTLNs,
+		data.DeliveryLogMode,
 	)
 	updated, err := d.scanTopicData(row)
 	if err != nil {
@@ -285,27 +254,23 @@ func (d *TopicDatastore) updateTopic(ctx context.Context, name string, schemaVer
 		return nil, nil
 	}
 
-	d.Logger.InfoContext(ctx, "topic altered", alterLogFields(old, updated)...)
+	// the only signal that two services declare this topic differently
+	d.Logger.InfoContext(ctx, "topic registered (config replaced)",
+		"topic", updated.Name,
+		"topic_id", updated.Id,
+		"retention_ttl", time.Duration(updated.RetentionTTLNs),
+		"allow_drop_past_committed", updated.AllowDropPastCommitted,
+		"idempotency_key_ttl", time.Duration(updated.IdempotencyKeyTTLNs),
+		"delivery_log_mode", updated.DeliveryLogMode)
 	return updated, nil
 }
 
-// alterLogFields renders old -> new pairs for just the fields that changed.
-func alterLogFields(old, updated *TopicData) []any {
-	fields := []any{"topic", updated.Name, "topic_id", updated.Id}
-
-	if old.RetentionTTLNs != updated.RetentionTTLNs {
-		fields = append(fields, "retention_ttl", fmt.Sprintf("%v -> %v", time.Duration(old.RetentionTTLNs), time.Duration(updated.RetentionTTLNs)))
-	}
-	if old.AllowDropPastCommitted != updated.AllowDropPastCommitted {
-		fields = append(fields, "allow_drop_past_committed", fmt.Sprintf("%v -> %v", old.AllowDropPastCommitted, updated.AllowDropPastCommitted))
-	}
-	if old.IdempotencyKeyTTLNs != updated.IdempotencyKeyTTLNs {
-		fields = append(fields, "idempotency_key_ttl", fmt.Sprintf("%v -> %v", time.Duration(old.IdempotencyKeyTTLNs), time.Duration(updated.IdempotencyKeyTTLNs)))
-	}
-	if old.DeliveryLogMode != updated.DeliveryLogMode {
-		fields = append(fields, "delivery_log_mode", fmt.Sprintf("%v -> %v", old.DeliveryLogMode, updated.DeliveryLogMode))
-	}
-	return fields
+// configDiffers reports whether the declaration would change any mutable config field.
+func configDiffers(found *TopicData, data *TopicData) bool {
+	return found.RetentionTTLNs != data.RetentionTTLNs ||
+		found.AllowDropPastCommitted != data.AllowDropPastCommitted ||
+		found.IdempotencyKeyTTLNs != data.IdempotencyKeyTTLNs ||
+		found.DeliveryLogMode != data.DeliveryLogMode
 }
 
 // RenameTopic moves every version under oldName to newName in one statement.

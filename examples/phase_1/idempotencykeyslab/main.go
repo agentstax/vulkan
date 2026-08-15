@@ -22,10 +22,12 @@ package main
 //     compaction_head.
 //   - configRoundTripScenario: IdempotencyKeyTTL persists correctly through
 //     re-registration -- Topic-level config, not a per-call default that
-//     silently resets and trips ErrTopicConfigMismatch.
+//     silently resets. A re-register with a changed mutable config field replaces the
+//     stored value; only a changed PartitionSize is rejected.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -247,19 +249,28 @@ func configRoundTripScenario(ctx context.Context, ds *coredatastore.PostgresData
 		die(fmt.Sprintf("default IdempotencyKeyTTL = %v, want 1h", tp1.IdempotencyKeyTTL))
 	}
 
-	// re-registering with the SAME (defaulted) config must NOT trip ErrTopicConfigMismatch --
-	// this is the exact bug caught earlier: an unpersisted field compares as a mismatch
-	// against itself on every re-register.
-	_, err = mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
+	// a re-register with the same (defaulted) config leaves the row alone
+	tp2, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
 	must(err)
-	fmt.Println("  ✓ default IdempotencyKeyTTL (1h) survives a re-register with no mismatch")
-
-	// a genuinely different IdempotencyKeyTTL on re-register must still be caught
-	_, err = mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000, IdempotencyKeyTTL: 2 * time.Hour})
-	if err == nil {
-		die("expected ErrTopicConfigMismatch for a changed IdempotencyKeyTTL, got nil")
+	if tp2.IdempotencyKeyTTL != time.Hour {
+		die(fmt.Sprintf("re-registered IdempotencyKeyTTL = %v, want 1h", tp2.IdempotencyKeyTTL))
 	}
-	fmt.Println("  ✓ a changed IdempotencyKeyTTL on re-register is correctly caught as a mismatch")
+	fmt.Println("  ✓ default IdempotencyKeyTTL (1h) survives a re-register unchanged")
+
+	// the newest declaration wins -- a changed mutable config field replaces the stored one
+	tp3, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000, IdempotencyKeyTTL: 2 * time.Hour})
+	must(err)
+	if tp3.IdempotencyKeyTTL != 2*time.Hour {
+		die(fmt.Sprintf("re-declared IdempotencyKeyTTL = %v, want 2h", tp3.IdempotencyKeyTTL))
+	}
+	fmt.Println("  ✓ a changed IdempotencyKeyTTL on re-register replaces the stored value")
+
+	// partition_size is not mutable config -- message_log's boundaries depend on it
+	_, err = mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 2000, IdempotencyKeyTTL: 2 * time.Hour})
+	if !errors.Is(err, topic.ErrTopicConfigMismatch) {
+		die(fmt.Sprintf("expected ErrTopicConfigMismatch for a changed PartitionSize, got %v", err))
+	}
+	fmt.Println("  ✓ a changed PartitionSize on re-register is rejected")
 }
 
 // ---- helpers ----
