@@ -24,17 +24,23 @@ func (d *ProducerDatastore[Message]) AppendMessage(ctx context.Context, topicId 
 // a partition boundary fails -> creates the partition -> and retries.
 func (d *ProducerDatastore[Message]) appendMessage(ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.appendMessageTransaction(ctx, topicId, produceFunc, data)
-	if err == nil || !isMissingPartition(err) {
-		return appended, err
+	if isMissingPartition(err) {
+		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
+		if healErr := d.ensureCoveringPartition(ctx, topicId, partitionSize); healErr != nil {
+			return nil, healErr
+		}
+		// Rerunning produceFunc is safe because its
+		// writes all go through the tx that just rolled back
+		appended, err = d.appendMessageTransaction(ctx, topicId, produceFunc, data)
 	}
-
-	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
-	if err := d.ensureCoveringPartition(ctx, topicId, partitionSize); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	// Rerunning produceFunc is safe because its
-	// writes all go through the tx that just rolled back
-	return d.appendMessageTransaction(ctx, topicId, produceFunc, data)
+
+	if d.createAheadGate.shouldTriggerWithId(topicId, partitionSize, appended.Id) {
+		d.createPartitionAhead(topicId, partitionSize)
+	}
+	return appended, nil
 }
 
 // appendMessageTransaction opens the append's own transaction: produceFunc +
@@ -81,13 +87,22 @@ func (d *ProducerDatastore[Message]) appendMessageTransaction(ctx context.Contex
 // its own error handling.
 func (d *ProducerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
-	if err == nil || !isMissingPartition(err) {
-		return appended, err
+	if isMissingPartition(err) {
+		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
+		if healErr := d.ensureCoveringPartition(ctx, topicId, partitionSize); healErr != nil {
+			return nil, healErr
+		}
+		appended, err = d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
 	}
-
-	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
-	if err := d.ensureCoveringPartition(ctx, topicId, partitionSize); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	return d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
+
+	// pre-commit on purpose: a rollback burns the id either way, and an early
+	// empty partition is harmless. The CREATE waits on this tx's own parent
+	// lock, so its first attempts back off until the caller commits.
+	if d.createAheadGate.shouldTriggerWithId(topicId, partitionSize, appended.Id) {
+		d.createPartitionAhead(topicId, partitionSize)
+	}
+	return appended, nil
 }

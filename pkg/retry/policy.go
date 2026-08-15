@@ -21,6 +21,16 @@ func (p *Policy) CalculateDelay(attempt int) time.Duration {
 	return max(MIN_DELAY, min(d, p.MaxDelay))
 }
 
+// CalculateTotalDelay returns the schedule's total sleep time. Wrap never
+// sleeps after the last attempt, so the sum stops at MaxRetries-2.
+func (p *Policy) CalculateTotalDelay() time.Duration {
+	var total time.Duration
+	for attempt := range p.MaxRetries - 1 {
+		total += p.CalculateDelay(attempt)
+	}
+	return total
+}
+
 func NewDefaultRetryPolicy() *Policy {
 	return &Policy{
 		MaxRetries: 6,

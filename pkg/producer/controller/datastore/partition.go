@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -17,6 +18,11 @@ import (
 // claim behind the lock, so a stuck lock holder would stall the whole topic --
 // better to fail this produce fast and let the caller's retry policy own it.
 const ddlLockTimeout = 2 * time.Second
+
+// createAheadAttemptAllowance is one attempt's share of the create-ahead
+// timeout: two lock_timeout-bounded waits (advisory lock, CREATE) plus
+// round-trip slack.
+const createAheadAttemptAllowance = 3 * ddlLockTimeout
 
 // isMissingPartition matches an insert routed to a partition that doesn't exist yet.
 func isMissingPartition(err error) bool {
@@ -95,4 +101,46 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 // 2^20 (~1M). A partition past 2^20 bleeds into the next topic's key range.
 func advisoryLockKey(topicId int64, partition int64) int64 {
 	return topicId<<20 | partition
+}
+
+// createPartitionAhead creates the next partition early, in the background.
+// Best-effort: a failure warns and drops.
+func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partitionSize int64) {
+	go func() {
+		// the produce ctx dies with its caller, so the run carries its own
+		ctx, cancel := context.WithTimeout(context.Background(), d.createAheadTimeout)
+		defer cancel()
+
+		err := d.DatastoreRetry.Wrap(ctx, func() error {
+			err := d.ensureCoveringPartition(ctx, topicId, partitionSize)
+			// lock_timeout classifies permanent -- right for the heal's
+			// fail-fast, wrong here: lock contention is exactly the case this
+			// run's backoff schedule exists to ride out
+			if isLockNotAvailable(err) {
+				return retry.NewRetryableError(err)
+			}
+			return err
+		})
+		if err != nil {
+			// a missing parent table means the topic was destroyed while this
+			// goroutine was in flight -- drop its claim entry
+			if isMissingTable(err) {
+				d.createAheadGate.Delete(topicId)
+				return
+			}
+			d.Logger.WarnContext(ctx, "partition create-ahead failed -- the first insert past the boundary will create it", "topic_id", topicId, "error", err)
+		}
+	}()
+}
+
+// isMissingTable matches a statement against a table that no longer exists.
+func isMissingTable(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "42P01" // undefined_table
+}
+
+// isLockNotAvailable matches a lock_timeout expiry.
+func isLockNotAvailable(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "55P03" // lock_not_available
 }

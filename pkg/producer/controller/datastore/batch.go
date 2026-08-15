@@ -15,19 +15,26 @@ import (
 // failure in pipeline order, -1 when the failure carries no index.
 func (d *ProducerDatastore[Message]) AppendMessageBatch(ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
 	appended, failedIdx, err := d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
-	if err == nil || !isMissingPartition(err) {
+	if isMissingPartition(err) {
+		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
+		healErr := d.DatastoreRetry.Wrap(ctx, func() error {
+			return d.ensureCoveringPartition(ctx, topicId, partitionSize)
+		})
+		if healErr != nil {
+			return nil, -1, healErr
+		}
+		// a partition miss persisting past the heal is terminal
+		appended, failedIdx, err = d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
+	}
+	if err != nil {
 		return appended, failedIdx, err
 	}
 
-	d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
-	healErr := d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.ensureCoveringPartition(ctx, topicId, partitionSize)
-	})
-	if healErr != nil {
-		return nil, -1, healErr
+	firstId, lastId := appendedIdRange(appended)
+	if d.createAheadGate.shouldTriggerWithRange(topicId, partitionSize, firstId, lastId) {
+		d.createPartitionAhead(topicId, partitionSize)
 	}
-	// a partition miss persisting past the heal is terminal
-	return d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
+	return appended, failedIdx, nil
 }
 
 // appendMessageBatch reruns one-attempt transactions under the transient-retry
@@ -97,4 +104,21 @@ func (d *ProducerDatastore[Message]) appendMessageBatchTransaction(ctx context.C
 		return nil, -1, err
 	}
 	return appended, -1, nil
+}
+
+// appendedIdRange returns the first and last inserted ids, skipping the zero
+// ids of duplicates; (0, 0) when nothing new was inserted.
+func appendedIdRange[Message any](appended []AppendedData[Message]) (int64, int64) {
+	var firstId int64
+	var lastId int64
+	for _, data := range appended {
+		if data.Id == 0 {
+			continue
+		}
+		if firstId == 0 {
+			firstId = data.Id
+		}
+		lastId = data.Id
+	}
+	return firstId, lastId
 }

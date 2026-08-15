@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"errors"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
@@ -12,6 +13,9 @@ type ProducerDatastore[Message any] struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *retry.DatastoreRetry // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger         logger.Logger
+
+	createAheadGate    *CreateAheadGate
+	createAheadTimeout time.Duration
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -33,9 +37,22 @@ func NewProducerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Pro
 		return nil, err
 	}
 
+	// trigger create-ahead at 80% or 95% full partition
+	createAheadGate, err := NewCreateAheadGate([]float64{0.80, 0.95})
+	if err != nil {
+		return nil, err
+	}
+
+	// the full retry schedule plus per-attempt DB work -- so the timeout only
+	// cuts what lock_timeout can't bound (head-read lock waits, network hangs)
+	createAheadTimeout := datastoreRetry.CalculateTotalDelay() +
+		time.Duration(datastoreRetry.MaxRetries)*createAheadAttemptAllowance
+
 	return &ProducerDatastore[Message]{
-		Datastore:      ds,
-		DatastoreRetry: datastoreRetry,
-		Logger:         cfg.Logger,
+		Datastore:          ds,
+		DatastoreRetry:     datastoreRetry,
+		Logger:             cfg.Logger,
+		createAheadGate:    createAheadGate,
+		createAheadTimeout: createAheadTimeout,
 	}, nil
 }

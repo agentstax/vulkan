@@ -17,8 +17,8 @@ Chunks in order; each ships on its own.
     lock wait; losers wake after the winner commits and `IF NOT EXISTS`
     no-ops. Key uses the `next` the function already computes.
   - Verify: build, `go test -race` on pkg/producer/..., partitionlab.
-- [ ] **Chunk 2 — trigger + per-topic gate + async creation** in the
-  producer datastore.
+- [x] **Chunk 2 — trigger + per-topic gate + async creation** in the
+  producer datastore. Built 2026-08-14.
   - One method: mark math (`partition = firstId/size`,
     `mark = partition*size + size*8/10`, contained in [firstId, lastId]),
     per-topic `atomic.Int64` highest-partition-attempted advanced by CAS
