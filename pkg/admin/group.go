@@ -9,7 +9,6 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
-	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 // GetGroup reads the group's config.
@@ -31,28 +30,6 @@ func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, version t
 		}
 	}
 	return workers, nil
-}
-
-// AlterGroup sets and unsets operator overrides on the group's config.
-// Overrides survive redeploys until unset and take effect when the group
-// next claims work, not live. A key the group's code doesn't declare fails
-// the whole alter -- nothing changes.
-func (a *MessageAdmin) AlterGroup(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string, cfg *AlterGroupConfig) error {
-	if cfg == nil {
-		cfg = &AlterGroupConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-
-	groupOwner, err := a.groupOwner(ctx, topicName, version, groupName)
-	if err != nil {
-		return err
-	}
-	_, err = a.workerController.AlterWorkers(ctx, groupOwner, &workercontroller.AlterWorkerConfig{
-		Overrides: cfg.overrides(),
-	})
-	return err
 }
 
 // groupOwner resolves the group registered under groupName on topic

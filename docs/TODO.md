@@ -8,7 +8,7 @@ docs/decisions/.
 layering plan of [0515]/[0517]; chunks 1-3 of that plan are committed and
 their override machinery comes back out here.
 
-1. **Topic write path** — IN PROGRESS. Done: AlterTopic, AlterTopicConfig,
+1. **Topic write path** — DONE. AlterTopic, AlterTopicConfig,
    UpdateTopic (controller + datastore), AlterTopicData, toAlterTopicData /
    toAlterValue, `topic config set|unset` deleted; registerTopic's found path
    now writes the declared mutable config through `replaceTopicConfig`, rejecting
@@ -20,11 +20,20 @@ their override machinery comes back out here.
    declaration wins and only PartitionSize is rejected; reservedtopiclab's
    alter step dropped. Chunk 3 owes reservedtopiclab a declared-config
    assertion once ensureSystemTopic collapses into a register.
-2. **Group/worker write path** — delete AlterGroup, AlterWorker(s),
-   AlterGroupConfig, AlterWorkerConfig, MetadataValue's Override layer,
-   applyOverrides, `group config set|unset`; consumer Declare writes the plain
-   value; `group config get` kept. pkg/common/update.go goes last, once
-   nothing references it.
+2. **Group/worker write path** — DONE. AlterGroup, AlterWorker(s),
+   AlterGroupConfig, AlterWorkerConfig, MetadataValue, mergeMetadata,
+   declaresKey, applyOverrides, WorkerMetadataData, `group config set|unset`
+   and pkg/common/update.go all deleted; worker metadata is now the plain
+   typed value per key, so every kind's metadata struct holds `time.Duration`
+   / `int` / `common.MessageOptions` directly and its Validate reads the
+   field. insertWorker is a latest-wins upsert -- it writes metadata onto an
+   existing row instead of merging, and errors if the row went missing
+   between the insert and the update. target_instances stays create-only:
+   0 is how a worker is suspended, so a redeclaration writing it would resume
+   a suspended row -- the same rule chunk 3 owes cron's Suspended, and worth
+   settling for both there. `group config get`
+   prints KEY / WORKER / VALUE. Two labs hand-built the layered shape for
+   Provision (dutybackofflab, cronlab) and now pass the flat one.
 3. **Cron + alert config** ([0520] [0521]) — delete cron_alter.go,
    cron_register.go (taking fieldDiff with it), AlterCronJob,
    AlterCronJobConfig, ErrCronJobConfigMismatch; RegisterCronJob goes

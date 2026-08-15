@@ -131,5 +131,5 @@ func (d *PartitionCountDefinition) Provision(ctx context.Context, workerId int64
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newPartitionCountExecution(d, owner, claimed, parsed.RepeatInterval.Effective())
+	return newPartitionCountExecution(d, owner, claimed, parsed.RepeatInterval)
 }

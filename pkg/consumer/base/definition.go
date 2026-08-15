@@ -81,8 +81,8 @@ func (c *BaseDefinition[Message]) Name() string {
 	return c.workerName
 }
 
-// DeclareWorker creates the group's worker row and refreshes each metadata
-// key's default; an operator's overrides survive redeclaration.
+// DeclareWorker creates the group's worker row and writes metadata onto it --
+// the newest declaration wins.
 // NoInstanceTarget: a consumer's claim gate is the caller asking to consume,
 // not a count on the row.
 func (c *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *common.Owner, metadata any) error {

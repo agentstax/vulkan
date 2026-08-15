@@ -68,8 +68,8 @@ func main() {
 	row, err := workers.GetWorker(ctx, janitor.WorkerJanitor, owner)
 	must(err)
 	execution, err := janitorDefinition.Provision(ctx, row.Id, owner, map[string]any{
-		"poll_rate":        map[string]any{"default": int64(pollRate)},
-		"sweep_batch_size": map[string]any{"default": 1000},
+		"poll_rate":        int64(pollRate),
+		"sweep_batch_size": 1000,
 	})
 	must(err)
 	if execution == nil {

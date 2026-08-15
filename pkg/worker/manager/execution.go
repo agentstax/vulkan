@@ -30,7 +30,7 @@ func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claime
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate.Effective(), &controller.InstanceTickRunnerConfig{
+	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    manager.Config.InstanceTTL,
 		JitterFraction: manager.Config.JitterFraction,
 		Logger:         logger.With(manager.Logger, "worker", WorkerManager, "scope", owner.Name),
@@ -55,7 +55,7 @@ func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claime
 // requested stop returns nil. The claimed instance releases on the way out
 // however Run exits.
 func (i *ManagerExecution) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate.Effective())
+	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate)
 
 	// a fatal spawned-instance error cancels runCtx through the group
 	group, runCtx := errgroup.WithContext(ctx)

@@ -6,53 +6,50 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// messageConsumerMetadata is the group-level config for this worker.
-// Consumer declarations defines the default keys.
-// Operator's who alter the group define the override keys.
+// messageConsumerMetadata is the group-level config for this worker,
+// written by the group's consumer declaration.
 type messageConsumerMetadata struct {
-	ClaimPollRate           workercontroller.MetadataValue[time.Duration]            `json:"claim_poll_rate"`
-	MaxRangeReclaims        workercontroller.MetadataValue[int]                      `json:"max_range_reclaims"`
-	ExceptionInitialBackoff workercontroller.MetadataValue[time.Duration]            `json:"exception_initial_backoff"`
-	Message                 workercontroller.MetadataValue[common.MessageOptions]    `json:"message"`
-	ConcurrencyOverride     workercontroller.MetadataValue[common.ConcurrencyPolicy] `json:"concurrency_override"`
+	ClaimPollRate           time.Duration            `json:"claim_poll_rate"`
+	MaxRangeReclaims        int                      `json:"max_range_reclaims"`
+	ExceptionInitialBackoff time.Duration            `json:"exception_initial_backoff"`
+	Message                 common.MessageOptions    `json:"message"`
+	ConcurrencyOverride     common.ConcurrencyPolicy `json:"concurrency_override"`
 }
 
 func (m *messageConsumerMetadata) Validate() error {
-	if m.ClaimPollRate.Effective() <= 0 {
-		return fmt.Errorf("claim_poll_rate must be > 0, got %v", m.ClaimPollRate.Effective())
+	if m.ClaimPollRate <= 0 {
+		return fmt.Errorf("claim_poll_rate must be > 0, got %v", m.ClaimPollRate)
 	}
-	if m.MaxRangeReclaims.Effective() < 1 {
-		return fmt.Errorf("max_range_reclaims must be >= 1, got %d", m.MaxRangeReclaims.Effective())
+	if m.MaxRangeReclaims < 1 {
+		return fmt.Errorf("max_range_reclaims must be >= 1, got %d", m.MaxRangeReclaims)
 	}
-	if m.ExceptionInitialBackoff.Effective() <= 0 {
-		return fmt.Errorf("exception_initial_backoff must be > 0, got %v", m.ExceptionInitialBackoff.Effective())
+	if m.ExceptionInitialBackoff <= 0 {
+		return fmt.Errorf("exception_initial_backoff must be > 0, got %v", m.ExceptionInitialBackoff)
 	}
-	message := m.Message.Effective()
-	if err := message.Validate(); err != nil {
+	if err := m.Message.Validate(); err != nil {
 		return fmt.Errorf("message: %w", err)
 	}
-	if err := m.ConcurrencyOverride.Effective().Validate(); err != nil {
+	if err := m.ConcurrencyOverride.Validate(); err != nil {
 		return fmt.Errorf("concurrency_override: %w", err)
 	}
 	return nil
 }
 
-// A message override outside the config's own MessageMin/MessageMax is
-// clamped into them -- the bounds the group's code declared always hold.
+// The stored message document is whatever declared the group last; clamping it
+// keeps this process inside the MessageMin/MessageMax its own code sets.
 func (c *MessageConsumerConfig) withMetadata(ctx context.Context, metadata *messageConsumerMetadata) *MessageConsumerConfig {
 	applied := *c
-	applied.ClaimPollRate = metadata.ClaimPollRate.Effective()
-	applied.MaxRangeReclaims = metadata.MaxRangeReclaims.Effective()
-	applied.ExceptionInitialBackoff = metadata.ExceptionInitialBackoff.Effective()
-	applied.ConcurrencyOverride = metadata.ConcurrencyOverride.Effective()
+	applied.ClaimPollRate = metadata.ClaimPollRate
+	applied.MaxRangeReclaims = metadata.MaxRangeReclaims
+	applied.ExceptionInitialBackoff = metadata.ExceptionInitialBackoff
+	applied.ConcurrencyOverride = metadata.ConcurrencyOverride
 
-	message := metadata.Message.Effective()
+	message := metadata.Message
 	applied.Message = message.Clamp(c.MessageMin, c.MessageMax)
 	if !applied.Message.Equal(&message) {
-		c.Logger.WarnContext(ctx, "message override outside the group's bounds -- clamped", "override", message, "clamped", applied.Message)
+		c.Logger.WarnContext(ctx, "stored message options outside this consumer's bounds -- clamped", "stored", message, "clamped", applied.Message)
 	}
 	return &applied
 }

@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/spf13/cobra"
@@ -21,11 +20,10 @@ func newGroupConfigGetCmd(g *globalFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "get <topic> <group> [key]",
-		Short: "Show the group's config: default, override, and the effective value",
-		Long: `Show each config key the group's consumer kinds declare: the default the
-group's code declares, the operator override if one is set, and which of
-the two is in effect. Pass a key to show just that key; message shows one
-line per field, named as set accepts them.`,
+		Short: "Show the group's config",
+		Long: `Show each config key the group's consumer kinds declare, and the value it
+runs with. Pass a key to show just that key; message shows one line per
+field.`,
 		Example: `  vulkan group config get orders billing
   vulkan group config get orders billing claim_poll_rate
   vulkan group config get orders billing message`,
@@ -76,16 +74,13 @@ line per field, named as set accepts them.`,
 
 // groupConfigLine is one config key on one worker row, ready to print.
 type groupConfigLine struct {
-	key          string
-	worker       string
-	defaultCell  string
-	overrideCell string
-	hasOverride  bool
+	key       string
+	worker    string
+	valueCell string
 }
 
-// groupConfigLines flattens the rows' metadata into print lines: one per
-// {default, override} key, and one per message field so the KEY column
-// names exactly what set accepts.
+// groupConfigLines flattens the rows' metadata into print lines: one per key,
+// and one per message field so the KEY column names the field itself.
 func groupConfigLines(workers []*worker.Worker) []groupConfigLine {
 	var lines []groupConfigLine
 	for _, row := range workers {
@@ -94,24 +89,15 @@ func groupConfigLines(workers []*worker.Worker) []groupConfigLine {
 			continue
 		}
 		for key, value := range metadata {
-			layers, ok := value.(map[string]any)
-			if !ok {
-				continue
-			}
 			if key == "message" {
-				lines = append(lines, messageConfigLines(row.Name, layers)...)
+				lines = append(lines, messageConfigLines(row.Name, value)...)
 				continue
 			}
-			line := groupConfigLine{
-				key:         key,
-				worker:      row.Name,
-				defaultCell: formatMetadataValue(key, layers["default"]),
-			}
-			if layers["override"] != nil {
-				line.overrideCell = formatMetadataValue(key, layers["override"])
-				line.hasOverride = true
-			}
-			lines = append(lines, line)
+			lines = append(lines, groupConfigLine{
+				key:       key,
+				worker:    row.Name,
+				valueCell: formatMetadataValue(key, value),
+			})
 		}
 	}
 	slices.SortFunc(lines, func(a, b groupConfigLine) int {
@@ -124,50 +110,27 @@ func groupConfigLines(workers []*worker.Worker) []groupConfigLine {
 }
 
 // messageConfigLines is one row's message document expanded to a line per
-// field. The override is one whole document, so when one is set every field
-// reads from it.
-func messageConfigLines(workerName string, layers map[string]any) []groupConfigLine {
-	defaults, err := decodeMessageOptions(layers["default"])
+// field. A document that doesn't decode prints as raw JSON rather than
+// dropping out of the table.
+func messageConfigLines(workerName string, document any) []groupConfigLine {
+	options, err := decodeMessageOptions(document)
 	if err != nil {
-		return []groupConfigLine{rawConfigLine("message", workerName, layers)}
-	}
-	var override *common.MessageOptions
-	if layers["override"] != nil {
-		override, err = decodeMessageOptions(layers["override"])
-		if err != nil {
-			return []groupConfigLine{rawConfigLine("message", workerName, layers)}
-		}
+		return []groupConfigLine{{
+			key:       "message",
+			worker:    workerName,
+			valueCell: formatMetadataValue("message", document),
+		}}
 	}
 
 	var lines []groupConfigLine
 	for _, field := range messageFieldKeys {
-		line := groupConfigLine{
-			key:         field.path,
-			worker:      workerName,
-			defaultCell: field.read(defaults),
-		}
-		if override != nil {
-			line.overrideCell = field.read(override)
-			line.hasOverride = true
-		}
-		lines = append(lines, line)
+		lines = append(lines, groupConfigLine{
+			key:       field.path,
+			worker:    workerName,
+			valueCell: field.read(options),
+		})
 	}
 	return lines
-}
-
-// rawConfigLine prints a document that doesn't decode as raw JSON rather
-// than dropping it from the table.
-func rawConfigLine(key string, workerName string, layers map[string]any) groupConfigLine {
-	line := groupConfigLine{
-		key:         key,
-		worker:      workerName,
-		defaultCell: formatMetadataValue(key, layers["default"]),
-	}
-	if layers["override"] != nil {
-		line.overrideCell = formatMetadataValue(key, layers["override"])
-		line.hasOverride = true
-	}
-	return line
 }
 
 // filterGroupConfigLines keeps one key's lines -- message matches all its
@@ -184,23 +147,15 @@ func filterGroupConfigLines(lines []groupConfigLine, key string) []groupConfigLi
 
 func printGroupConfigLines(w io.Writer, lines []groupConfigLine) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "  KEY\tWORKER\tDEFAULT\tOVERRIDE\tEFFECTIVE\tSOURCE")
+	fmt.Fprintln(tw, "  KEY\tWORKER\tVALUE")
 	for _, line := range lines {
-		defaultCell := cellOrDash(line.defaultCell)
-		override, effective, source := "-", defaultCell, "default"
-		if line.hasOverride {
-			override = cellOrDash(line.overrideCell)
-			effective = override
-			source = "override"
-		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n",
-			line.key, line.worker, defaultCell, override, effective, source)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", line.key, line.worker, cellOrDash(line.valueCell))
 	}
 	tw.Flush()
 }
 
-// formatMetadataValue renders one metadata layer's value for the table --
-// duration keys arrive from JSONB as float64 nanoseconds.
+// formatMetadataValue renders one metadata value for the table -- duration
+// keys arrive from JSONB as float64 nanoseconds.
 func formatMetadataValue(key string, value any) string {
 	if value == nil {
 		return ""

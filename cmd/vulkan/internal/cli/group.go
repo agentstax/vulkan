@@ -7,7 +7,7 @@ import (
 func newGroupCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "group",
-		Short: "Inspect, configure, and destroy consumer groups",
+		Short: "Inspect and destroy consumer groups",
 	}
 
 	cmd.AddCommand(newGroupConfigCmd(g))

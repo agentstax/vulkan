@@ -131,5 +131,5 @@ func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId i
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newCompactionReadCostExecution(d, owner, claimed, parsed.RepeatInterval.Effective())
+	return newCompactionReadCostExecution(d, owner, claimed, parsed.RepeatInterval)
 }

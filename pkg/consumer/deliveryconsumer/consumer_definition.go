@@ -60,8 +60,8 @@ func NewDeliveryConsumerDefinition[Message any](ds *datastore.PostgresDatastore,
 	}, nil
 }
 
-// Declare creates this kind's worker row and refreshes its metadata defaults
-// from the config; operator overrides survive.
+// Declare creates this kind's worker row and writes the config onto it --
+// the newest declaration wins.
 func (f *DeliveryConsumerDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
 	return f.DeclareWorker(ctx, owner, toDeliveryConsumerMetadata(f.Config))
 }

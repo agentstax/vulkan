@@ -3,7 +3,6 @@ package controller
 import (
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
@@ -32,29 +31,6 @@ func (c *WorkerConfig) WithDefaults() *WorkerConfig {
 func (c *WorkerConfig) Validate() error {
 	if c.TargetInstances < worker.NoInstanceTarget {
 		return fmt.Errorf("TargetInstances must be >= %d, got %d", worker.NoInstanceTarget, c.TargetInstances)
-	}
-	return nil
-}
-
-// AlterWorkerConfig is AlterWorker's spec.
-type AlterWorkerConfig struct {
-	// Overrides - metadata key -> the change to its override. A changed key
-	// no targeted row declares fails the alter.
-	Overrides map[string]common.Update[any]
-}
-
-func (c *AlterWorkerConfig) Validate() error {
-	changed := false
-	for key, update := range c.Overrides {
-		if key == "" {
-			return fmt.Errorf("Overrides keys must not be empty")
-		}
-		if update.IsChanged() {
-			changed = true
-		}
-	}
-	if !changed {
-		return fmt.Errorf("no overrides set -- an alter must change at least one metadata key")
 	}
 	return nil
 }
