@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
 )
@@ -41,12 +42,26 @@ func toRegisterTopicData(systemId int64, name string, version topic.SchemaVersio
 }
 
 func toAlterTopicData(cfg *AlterTopicConfig) *datastore.AlterTopicData {
+	defaults := (&TopicConfig{}).WithDefaults()
 	return &datastore.AlterTopicData{
-		RetentionTTLNs:         durationNs(cfg.RetentionTTL),
-		AllowDropPastCommitted: cfg.AllowDropPastCommitted,
-		IdempotencyKeyTTLNs:    durationNs(cfg.IdempotencyKeyTTL),
-		DeliveryLogMode:        deliveryLogModeString(cfg.DeliveryLogMode),
+		RetentionTTLNs:         durationNs(toAlterValue(cfg.RetentionTTL, defaults.RetentionTTL)),
+		AllowDropPastCommitted: toAlterValue(cfg.AllowDropPastCommitted, defaults.AllowDropPastCommitted),
+		IdempotencyKeyTTLNs:    durationNs(toAlterValue(cfg.IdempotencyKeyTTL, defaults.IdempotencyKeyTTL)),
+		DeliveryLogMode:        deliveryLogModeString(toAlterValue(cfg.DeliveryLogMode, defaults.DeliveryLogMode)),
 	}
+}
+
+// toAlterValue flattens one field's Update to the pointer the COALESCE patch
+// takes: unchanged -> nil (keep the column), set -> the value, unset -> the
+// field's default.
+func toAlterValue[T any](update common.Update[T], defaultValue T) *T {
+	if value, ok := update.Value(); ok {
+		return &value
+	}
+	if update.IsUnset() {
+		return &defaultValue
+	}
+	return nil
 }
 
 func deliveryLogModeEnum(deliveryLogMode string) (topic.DeliveryLogMode, error) {

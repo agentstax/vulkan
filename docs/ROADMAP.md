@@ -38,11 +38,30 @@ otherwise the API review locks a surface that is still due to change.
     otherwise-succeeded handler run — cron run status only shows the joined
     error, not how many topics failed or fired.
 
-- **Config layering + AlertRepeatInterval relocation.** Design settled in
-  [0515] (group tunables in worker metadata as {default, override}; group
-  alter/get + worker CLI tree) and [0516] (repeat_interval to alert worker
-  metadata, live-retention clamp, system config stub). In flight — chunk
-  plan in TODO.md.
+- **Config becomes code-owned.** Design settled in [0518]: code is the only
+  config writer, the latest declaration wins, the CLI reads config and never
+  writes it. Replaces the layering work of [0515]/[0517], which is superseded
+  before it finished landing.
+  - Deletion sweep: AlterTopic, AlterGroup, AlterWorker(s), their Alter*Config
+    types, MetadataValue's Override layer, applyOverrides,
+    pkg/common/update.go, and `config set`/`config unset` for every resource.
+    `config get` stays.
+  - ErrTopicConfigMismatch narrows to partition_size alone; a register whose
+    tunables differ from stored logs old -> new at Info.
+  - [0516]'s repeat_interval relocation stands — it lands as a code-declared
+    metadata field with no override layer.
+  - Labs call RegisterTopic from app-code position today; they move to
+    GetTopic wherever they are standing in for a producer or consumer.
+  - Cron joins the sweep ([0520]): cron_alter.go, AlterCronJob and
+    AlterCronJobConfig go, ErrCronJobConfigMismatch is deleted outright, and
+    ensureSystemCronJob/ensureSystemTopic collapse into ordinary register
+    calls now that nothing needs to dodge a mismatch check.
+  - New surface in the same sweep ([0520]): a JobConfig per built-in alert
+    (Schedule, Threshold, current consts as defaults) composed into
+    admin.RegisterSystemConfig, which RegisterSystem now takes. Without it the
+    sweep would delete the only way to tune the alerts vulkan ships.
+  - Register overwrites declared fields and never touches action state
+    (Suspended). alertlab's threshold assertion inverts accordingly.
 
 ## Next
 
@@ -185,6 +204,16 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Pre-v1, after 14b — measurement, evaluation, and documentation; these want a
 surface that has stopped moving.
 
+- **Topic config as append-only declaration rows.** Design settled in [0519];
+  build deferred so the config surface from [0518] settles first. topic keeps
+  identity only (id, system_id, schema_version, created_at); a
+  topic_declaration table holds name, partition_size and the four tunables
+  with declared_by/declared_at, newest row by MAX(id), full snapshots,
+  appended only on change. Two details that carry the work: uniqueness of
+  (name, schema_version) goes procedural, so renameTopic gains registerTopic's
+  per-name advisory lock (both keys, sorted) and ErrTopicNameTaken comes from
+  a check rather than 23505; and partition_size's immutability is enforced at
+  append. Worker metadata takes the same shape afterwards.
 - **binding_declaration retention** — the ledger is append-only ([0511]):
   waiting retries append attempt rows, so a long-blocked group grows the
   table without bound. Add time-based cleanup of superseded attempt rows

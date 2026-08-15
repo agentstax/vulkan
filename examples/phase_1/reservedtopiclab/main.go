@@ -59,7 +59,7 @@ func main() {
 
 	step("AlterTopic allowed on the system topic")
 	newRetention := 48 * time.Hour
-	altered, err := mAdmin.AlterTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), &topiccontroller.AlterTopicConfig{RetentionTTL: &newRetention})
+	altered, err := mAdmin.AlterTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), &topiccontroller.AlterTopicConfig{RetentionTTL: common.Set(newRetention)})
 	must(err)
 	assertDuration("retention altered", altered.RetentionTTL, newRetention)
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -91,29 +92,31 @@ func (c *TopicConfig) Validate() error {
 	return nil
 }
 
-// AlterTopicConfig is Alter's sparse patch -- a nil field means leave unchanged.
+// AlterTopicConfig is UpdateTopic's patch -- the zero value leaves a field
+// unchanged, Set writes it, Unset writes the default TopicConfig.WithDefaults
+// fills (not the value the topic was registered with).
 // PartitionSize is absent -- currently immutable (future work)
 // Name is absent -- renaming is its own verb, not a config change.
 type AlterTopicConfig struct {
-	RetentionTTL           *time.Duration
-	AllowDropPastCommitted *bool
-	IdempotencyKeyTTL      *time.Duration
-	DeliveryLogMode        *topic.DeliveryLogMode
+	RetentionTTL           common.Update[time.Duration]
+	AllowDropPastCommitted common.Update[bool]
+	IdempotencyKeyTTL      common.Update[time.Duration]
+	DeliveryLogMode        common.Update[topic.DeliveryLogMode]
 }
 
 func (c *AlterTopicConfig) Validate() error {
-	if c.RetentionTTL == nil && c.AllowDropPastCommitted == nil && c.IdempotencyKeyTTL == nil &&
-		c.DeliveryLogMode == nil {
+	if !c.RetentionTTL.IsChanged() && !c.AllowDropPastCommitted.IsChanged() &&
+		!c.IdempotencyKeyTTL.IsChanged() && !c.DeliveryLogMode.IsChanged() {
 		return errors.New("no fields set -- an alter must change at least one field")
 	}
-	if c.RetentionTTL != nil && *c.RetentionTTL < 0 {
-		return fmt.Errorf("RetentionTTL must be >= 0, got %v", *c.RetentionTTL)
+	if value, ok := c.RetentionTTL.Value(); ok && value < 0 {
+		return fmt.Errorf("RetentionTTL must be >= 0, got %v", value)
 	}
-	if c.IdempotencyKeyTTL != nil && *c.IdempotencyKeyTTL <= 0 {
-		return fmt.Errorf("IdempotencyKeyTTL must be > 0, got %v", *c.IdempotencyKeyTTL)
+	if value, ok := c.IdempotencyKeyTTL.Value(); ok && value <= 0 {
+		return fmt.Errorf("IdempotencyKeyTTL must be > 0, got %v", value)
 	}
-	if c.DeliveryLogMode != nil {
-		if err := validateDeliveryLogMode(*c.DeliveryLogMode); err != nil {
+	if value, ok := c.DeliveryLogMode.Value(); ok {
+		if err := validateDeliveryLogMode(value); err != nil {
 			return err
 		}
 	}

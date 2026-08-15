@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-15
 phase: "14"
 ---
@@ -50,3 +50,8 @@ columns; the worker CLI ([0515] poweruser tier) becomes
 verb pairs (typed-set/stringly-unset asymmetry), a `default` value sentinel
 (reserves the word in every future string key), per-field --clear-* flags
 (gcloud's flag sprawl).
+
+Superseded by [0518]: config stops being writable from the CLI at all, so the
+set/unset vocabulary and Update[T] have nothing to configure. `config get`
+and the alter-free verb naming survive; every set/unset command and every
+Alter* verb is deleted.

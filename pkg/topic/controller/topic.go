@@ -95,7 +95,7 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 	return toTopic(registered)
 }
 
-// UpdateTopic applies cfg's non-nil fields to topic's (name, version).
+// UpdateTopic applies cfg's set and unset fields to topic (name, version).
 // Returns (nil, nil) if that (name, version) is not found.
 func (c *TopicController) UpdateTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *AlterTopicConfig) (*topic.Topic, error) {
 	if name == "" {

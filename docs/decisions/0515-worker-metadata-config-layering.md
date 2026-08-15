@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-15
 phase: "14"
 ---
@@ -45,3 +45,8 @@ survive deploys instead of silently reverting (the K8s HPA-vs-CI/CD failure).
 Drift between code and override is visible in group get, never fought over.
 Rejected: register-vs-alter mismatch errors (RabbitMQ's escape from exactly
 that), last-writer-wins (the silent-revert outage pattern).
+
+Superseded by [0518]: vulkan's users deploy one team's few apps against one
+database, so the operator and the developer are the same person and the
+override layer has no second writer to protect. The metadata home and the
+per-kind structs stand; the override layer and the alter verbs are deleted.

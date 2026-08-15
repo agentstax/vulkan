@@ -69,9 +69,10 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 	return a.topicController.RegisterTopic(ctx, sys.Id, name, version, cfg)
 }
 
-// AlterTopic applies cfg's non-nil fields to topic (name, version) and
-// returns the updated topic. Returns ErrTopicNotFound if that
-// (name, version) isn't registered.
+// AlterTopic sets and unsets config fields on topic (name, version) and
+// returns the updated topic -- an unset field goes back to its default, not
+// to the value the topic was registered with. Returns ErrTopicNotFound if
+// that (name, version) isn't registered.
 //
 // Two consequences to plan around:
 //   - Running producers/consumers snapshot the topic at their Register, so an
