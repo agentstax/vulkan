@@ -526,6 +526,14 @@ prerequisite if quorum-as-a-fraction wins.
   need "who's next", one index entry per pending message regardless).
   Only worth building if range-granular crash redelivery shows up as a real
   cost — it's rare-path today.
+- **json.Number sweep for jsonb-through-Go paths** — any jsonb that
+  round-trips through a Go `map[string]any` (insertWorker's metadata merge is
+  the known case) decodes numbers as float64, silently corrupting integers
+  above 2^53 (~104 days in nanoseconds) on write-back. Fix is decoding with
+  `json.Decoder.UseNumber()` (scan the jsonb as bytes, decode both maps
+  ourselves); the merge itself never touches values, so digit-strings pass
+  through lossless. Do it as one audited sweep of every such path, not a spot
+  fix — pre-v1 the realistic values sit far below the threshold.
 - **BRIN indexes** — look into using them for different tables.
 - **DeadLetterTopic consumer** — consume on events to the DLQ.
 - **Shadow/Mirror functionality** — watch exactly the same cursor as another

@@ -14,6 +14,15 @@ type Policy struct {
 	Exponent   int           `json:"exponent,omitempty"`
 }
 
+func NewDefaultRetryPolicy() *Policy {
+	return &Policy{
+		MaxRetries: 6,
+		BaseDelay:  time.Second,
+		MaxDelay:   5 * time.Minute,
+		Exponent:   2,
+	}
+}
+
 // CalculateDelay returns the clamped exponential backoff
 // Algo: BaseDelay * Exponent^attempt, floored at 0 and ceiled at MaxDelay.
 func (p *Policy) CalculateDelay(attempt int) time.Duration {
@@ -31,13 +40,11 @@ func (p *Policy) CalculateTotalDelay() time.Duration {
 	return total
 }
 
-func NewDefaultRetryPolicy() *Policy {
-	return &Policy{
-		MaxRetries: 6,
-		BaseDelay:  time.Second,
-		MaxDelay:   5 * time.Minute,
-		Exponent:   2,
+func (p *Policy) Equal(other *Policy) bool {
+	if p == nil || other == nil {
+		return p == other
 	}
+	return *p == *other
 }
 
 func (p *Policy) WithDefaults() *Policy {

@@ -130,7 +130,7 @@ func (d *CompactionReadCostDefinition) Name() string {
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
 func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	claimed, _, err := workercontroller.RegisterInstance[compactionReadCostMetadata](ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, metadata, d.Config.InstanceTTL)
+	claimed, err := workercontroller.RegisterInstance(ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

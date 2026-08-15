@@ -81,25 +81,23 @@ func (c *BaseDefinition[Message]) Name() string {
 	return c.workerName
 }
 
-// Declare creates the owner group's worker row; an existing row is left
-// untouched, so a declaration lost to a crash heals on the next Consume.
+// DeclareWorker creates the group's worker row and refreshes each metadata
+// key's default; an operator's overrides survive redeclaration.
 // NoInstanceTarget: a consumer's claim gate is the caller asking to consume,
 // not a count on the row.
-func (c *BaseDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
+func (c *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *common.Owner, metadata any) error {
 	if err := workercontroller.ValidateOwner(owner, common.OwnerConsumerGroup, c.workerName); err != nil {
 		return err
 	}
 
 	return c.workers.InsertWorker(ctx, c.workerName, owner, &workercontroller.WorkerConfig{
+		Metadata:        metadata,
 		TargetInstances: worker.NoInstanceTarget,
 	})
 }
 
-// a nil instance is a declined claim, not an error -- try again later.
-func (c *BaseDefinition[Message]) RegisterInstance(ctx context.Context, workerId int64, owner *common.Owner, metadata any, instanceTTL time.Duration) (*worker.WorkerInstance, error) {
-	claimed, _, err := workercontroller.RegisterInstance[baseMetadata](ctx, c.workers, workerId, owner, common.OwnerConsumerGroup, c.workerName, metadata, instanceTTL)
-	if err != nil || claimed == nil {
-		return nil, err
-	}
-	return claimed, nil
+// RegisterInstance claims one live instance under the worker row; a nil
+// instance is a declined claim, not an error.
+func (c *BaseDefinition[Message]) RegisterInstance(ctx context.Context, workerId int64, owner *common.Owner, instanceTTL time.Duration) (*worker.WorkerInstance, error) {
+	return workercontroller.RegisterInstance(ctx, c.workers, workerId, owner, common.OwnerConsumerGroup, c.workerName, instanceTTL)
 }

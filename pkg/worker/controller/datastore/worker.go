@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -9,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// InsertWorker creates the (name, owner) worker row; an existing row is left
-// untouched.
+// InsertWorker creates the (name, owner) worker row.
+// Metadata is merged between incoming values and existing overrides.
 func (d *WorkerDatastore) InsertWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.insertWorker(ctx, name, owner, metadata, targetInstances)
@@ -18,13 +19,67 @@ func (d *WorkerDatastore) InsertWorker(ctx context.Context, name string, owner *
 }
 
 func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
-	sql := `
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	insertSql := `
 		INSERT INTO worker (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
 		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
 		ON CONFLICT DO NOTHING;
 	`
-	_, err := d.Datastore.Pool.Exec(ctx, sql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances)
-	return err
+	if _, err := tx.Exec(ctx, insertSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances); err != nil {
+		return err
+	}
+	if metadata == nil {
+		return tx.Commit(ctx)
+	}
+
+	// the row lock serializes against a concurrent alter writing an override
+	// between the read and the refresh
+	selectSql := `
+		SELECT metadata
+		FROM worker
+		WHERE name = $4
+			AND system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3
+		FOR UPDATE;
+	`
+	var existing map[string]any
+	if err := tx.QueryRow(ctx, selectSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name).Scan(&existing); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("worker %q was deleted while its declaration was in flight -- likely a concurrent destroy; rerun the declaration if the owner still exists", name)
+		}
+		return err
+	}
+
+	// metadata arrives as the caller's typed struct; the merge needs map form
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	var incoming map[string]any
+	if err := json.Unmarshal(raw, &incoming); err != nil {
+		return err
+	}
+
+	merged := mergeMetadata(existing, incoming)
+
+	updateSql := `
+		UPDATE worker
+		SET metadata = $5
+		WHERE name = $4
+			AND system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3;
+	`
+	if _, err := tx.Exec(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, merged); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a
@@ -121,4 +176,32 @@ func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *com
 		return nil, err
 	}
 	return &data, nil
+}
+
+// mergeMetadata is the redeclaration rule: incoming defaults win, stored
+// overrides survive, keys absent from incoming are dropped.
+func mergeMetadata(existing map[string]any, incoming map[string]any) map[string]any {
+	merged := make(map[string]any, len(incoming))
+	for key, incomingValue := range incoming {
+		merged[key] = incomingValue
+		existingValue, ok := existing[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		override, ok := existingValue["override"]
+		if !ok {
+			continue
+		}
+		incomingObject, ok := incomingValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		withOverride := make(map[string]any, len(incomingObject)+1)
+		for field, value := range incomingObject {
+			withOverride[field] = value
+		}
+		withOverride["override"] = override
+		merged[key] = withOverride
+	}
+	return merged
 }

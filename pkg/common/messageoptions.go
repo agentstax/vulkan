@@ -46,23 +46,6 @@ type MessageOptions struct {
 	Retry *retry.Policy `json:"retry,omitempty"`
 }
 
-func (o *MessageOptions) WithDefaults() *MessageOptions {
-	if o == nil {
-		o = &MessageOptions{}
-	}
-	if o.Timeout == 0 {
-		o.Timeout = 30 * time.Second
-	}
-	if o.Retry == nil {
-		o.Retry = &retry.Policy{}
-	}
-	if o.Retry.MaxRetries == 0 {
-		o.Retry.MaxRetries = 3 // redelivery caps at 3 attempts by default -- the Policy default of 6 is tuned for internal retries
-	}
-	o.Retry = o.Retry.WithDefaults()
-	return o
-}
-
 // returns new copy not modified pointer
 func (o *MessageOptions) Fill(defaults *MessageOptions) *MessageOptions {
 	if o == nil && defaults == nil {
@@ -119,6 +102,32 @@ func (o *MessageOptions) ResolveConcurrency(override ConcurrencyPolicy) *Message
 		resolved.Concurrency = ConcurrencyAllow
 	}
 	return &resolved
+}
+
+func (o *MessageOptions) Equal(other *MessageOptions) bool {
+	if o == nil || other == nil {
+		return o == other
+	}
+	return o.Concurrency == other.Concurrency &&
+		o.Timeout == other.Timeout &&
+		o.Retry.Equal(other.Retry)
+}
+
+func (o *MessageOptions) WithDefaults() *MessageOptions {
+	if o == nil {
+		o = &MessageOptions{}
+	}
+	if o.Timeout == 0 {
+		o.Timeout = 30 * time.Second
+	}
+	if o.Retry == nil {
+		o.Retry = &retry.Policy{}
+	}
+	if o.Retry.MaxRetries == 0 {
+		o.Retry.MaxRetries = 3 // redelivery caps at 3 attempts by default -- the Policy default of 6 is tuned for internal retries
+	}
+	o.Retry = o.Retry.WithDefaults()
+	return o
 }
 
 func (o *MessageOptions) Validate() error {

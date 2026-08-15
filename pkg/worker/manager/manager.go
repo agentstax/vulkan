@@ -82,7 +82,14 @@ func (m *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
-	claimed, parsed, err := controller.RegisterInstance[managerMetadata](ctx, m.workers, workerId, owner, owner.Kind(), WorkerManager, metadata, m.Config.InstanceTTL)
+	parsed, err := controller.ParseMetadata[managerMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
+	claimed, err := controller.RegisterInstance(ctx, m.workers, workerId, owner, owner.Kind(), WorkerManager, m.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

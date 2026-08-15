@@ -80,7 +80,14 @@ func (j *JanitorDefinition) Name() string {
 // nil = declined (target_instances already filled) -- not an error, try
 // again later.
 func (j *JanitorDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	claimed, parsed, err := controller.RegisterInstance[janitorMetadata](ctx, j.workers, workerId, owner, common.OwnerTopic, WorkerJanitor, metadata, j.Config.InstanceTTL)
+	parsed, err := controller.ParseMetadata[janitorMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
+	claimed, err := controller.RegisterInstance(ctx, j.workers, workerId, owner, common.OwnerTopic, WorkerJanitor, j.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

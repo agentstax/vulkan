@@ -79,7 +79,14 @@ func (s *CronSchedulerDefinition) Name() string {
 // Register claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
 func (s *CronSchedulerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	claimed, parsed, err := controller.RegisterInstance[cronSchedulerMetadata](ctx, s.workers, workerId, owner, common.OwnerSystem, WorkerCronScheduler, metadata, s.Config.InstanceTTL)
+	parsed, err := controller.ParseMetadata[cronSchedulerMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
+	claimed, err := controller.RegisterInstance(ctx, s.workers, workerId, owner, common.OwnerSystem, WorkerCronScheduler, s.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

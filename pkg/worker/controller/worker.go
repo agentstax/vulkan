@@ -8,9 +8,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// InsertWorker creates the (name, owner) worker row; an existing row is left
-// untouched. cfg may be nil or a sparse struct -- WithDefaults fills every
-// field left unset, Validate rejects what's out of range.
+// InsertWorker creates the (name, owner) worker row.
+// Metadata is merged between incoming values and existing overrides.
 func (c *WorkerController) InsertWorker(ctx context.Context, name string, owner *common.Owner, cfg *WorkerConfig) error {
 	if name == "" {
 		return errors.New("name is required")

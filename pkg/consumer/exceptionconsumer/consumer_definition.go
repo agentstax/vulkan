@@ -9,6 +9,7 @@ import (
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 // setting this row's target_instances to 0 suspends just this kind's new
@@ -53,20 +54,34 @@ func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore
 	}, nil
 }
 
+// Declare creates this kind's worker row and refreshes its metadata defaults
+// from the config; operator overrides survive.
+func (f *ExceptionConsumerDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
+	return f.DeclareWorker(ctx, owner, toExceptionConsumerMetadata(f.Config))
+}
+
 // a nil Execution is a declined claim, not an error -- try again later.
 func (f *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	claimed, err := f.RegisterInstance(ctx, workerId, owner, metadata, f.Config.InstanceTTL)
+	parsed, err := workercontroller.ParseMetadata[exceptionConsumerMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
+	claimed, err := f.RegisterInstance(ctx, workerId, owner, f.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
 
-	base, err := consumerbase.NewBaseConsumer(ctx, f.BaseDefinition, owner, f.Config.TimeoutGrace, f.Config.AckMargin)
+	cfg := f.Config.withMetadata(ctx, parsed)
+	base, err := consumerbase.NewBaseConsumer(ctx, f.BaseDefinition, owner, cfg.TimeoutGrace, cfg.AckMargin)
 	if err != nil {
 		return nil, err
 	}
-	runner, err := newExceptionRunner(base, f.consumers, f.Config)
+	runner, err := newExceptionRunner(base, f.consumers, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return consumerbase.NewBaseExecution(f.BaseDefinition, owner, claimed, f.Config.InstanceTTL, runner.run)
+	return consumerbase.NewBaseExecution(f.BaseDefinition, owner, claimed, cfg.InstanceTTL, runner.run)
 }
