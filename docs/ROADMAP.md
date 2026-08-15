@@ -38,20 +38,11 @@ otherwise the API review locks a surface that is still due to change.
     otherwise-succeeded handler run — cron run status only shows the joined
     error, not how many topics failed or fired.
 
-- **AlertRepeatInterval relocation.** It should not live on system config.
-  When it moves, revisit the repeat-vs-retention invariant in
-  alertcontroller.NewAlertController: it validates repeat against
-  alert.TopicConfig()'s default retention, not the live topic row, so an
-  operator lowering __system.alerts retention below the repeat interval
-  silently breaks the guarantee that an active head republishes before the
-  janitor sweeps it.
-
-- **Consumer tick rate → worker metadata.** Tick rate of consumers should be
-  set in worker metadata — and rethink where config of individual consumers
-  lives long term: it might all be in the metadata, so config can split per
-  consumer type with type-specific metadata. (Moved out of 14b's
-  config/field-organization sweep: this relocates behavior, so it must settle
-  before 14b locks the Config structs.)
+- **Config layering + AlertRepeatInterval relocation.** Design settled in
+  [0515] (group tunables in worker metadata as {default, override}; group
+  alter/get + worker CLI tree) and [0516] (repeat_interval to alert worker
+  metadata, live-retention clamp, system config stub). In flight — chunk
+  plan in TODO.md.
 
 ## Next
 
@@ -76,6 +67,9 @@ internal cleanup; no new behavior. Locks the surface before v1.
     NewDeliveryConsumer directly).
   - Trim redundant pairs generally: e.g. DestroyTopic + DestroyTopicVersion
     can only confuse — consider one DestroyTopic with a version option.
+  - Decide whether the field-less system config stub (RegisterSystem cfg /
+    AlterSystem / `vulkan system alter`) stays in the v1 public surface or
+    gets deleted until a real system-wide knob exists ([0516]).
 - **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
   decide and document. Weigh Go 1.27's new generics/type-inference features
   before finalizing.

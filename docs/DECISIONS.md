@@ -265,3 +265,5 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0512 2026-08-14 accepted (phase 14) — Producer create-ahead triggers at the partition's 80% mark id; heal path serialized by advisory lock
 - 0513 2026-08-14 accepted (phase 14) — Create-ahead ships with the 95% backstop mark, and destroyed topics evict their claim entry (amends 0512)
 - 0514 2026-08-15 accepted (phase 14) — DestroySystem is RegisterSystem's inverse: drop every topic, then the control-plane schema
+- 0515 2026-08-15 accepted (phase 14) — Group tunables live in worker metadata as {default, override}; users tune through domain nouns
+- 0516 2026-08-15 accepted (phase 14) — AlertRepeatInterval moves to alert worker metadata; system config becomes a stub

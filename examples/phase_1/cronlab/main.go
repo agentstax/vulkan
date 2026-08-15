@@ -629,7 +629,7 @@ func startScheduler(ctx context.Context) func() {
 	deadline := time.Now().Add(60 * time.Second)
 	for {
 		execution, err = definition.Provision(ctx, row.Id, owner, map[string]any{
-			"poll_rate": int64(schedulerPollRate),
+			"poll_rate": map[string]any{"default": int64(schedulerPollRate)},
 		})
 		must(err)
 		if execution != nil {
