@@ -38,10 +38,6 @@ otherwise the API review locks a surface that is still due to change.
     otherwise-succeeded handler run — cron run status only shows the joined
     error, not how many topics failed or fired.
 
-- **Destroy system.** Need a destroy verb for the system scope (topics have
-  Destroy, groups got DestroyGroup 2026-08-13; the system row and its tables
-  have nothing).
-
 - **AlertRepeatInterval relocation.** It should not live on system config.
   When it moves, revisit the repeat-vs-retention invariant in
   alertcontroller.NewAlertController: it validates repeat against

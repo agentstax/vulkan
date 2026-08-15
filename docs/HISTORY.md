@@ -5,6 +5,20 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-15 — Destroy system [0514]
+
+- `admin.DestroySystem` completes the destroy-verb set (topic, group,
+  system): RegisterSystem's inverse, deleting every registered topic through
+  the existing `DeleteTopic` path, then dropping the shared control-plane
+  tables in one transaction under the register's own advisory lock.
+- Guards unless Force: any live worker instance -> `system.ErrSystemLive`;
+  any non-`__system.` topic -> `system.ErrTopicsRegistered` (Force takes
+  user topics and their messages too).
+- `vulkan system destroy` with --force/--yes; the confirmation phrase is the
+  connected database's name (`current_database()`).
+- destroysystemlab covers both guards (worker guard outranks topic guard),
+  the clean teardown of all 13 tables, and re-registering afterward.
+
 ## 2026-08-14 — Producer proactive partition create-ahead [0512] [0513]
 
 - Append paths create the next partition early: an appended id (or batch

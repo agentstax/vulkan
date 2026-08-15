@@ -12,6 +12,7 @@ func newSystemCmd(g *globalFlags) *cobra.Command {
 
 	cmd.AddCommand(newSystemGetCmd(g))
 	cmd.AddCommand(newSystemAlterCmd(g))
+	cmd.AddCommand(newSystemDestroyCmd(g))
 
 	return cmd
 }

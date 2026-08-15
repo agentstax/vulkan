@@ -207,6 +207,13 @@ idempotency-keys-race-lab:
 delete-topic-lab:
   go run examples/phase_1/deletetopiclab/main.go
 
+# destroy-system lab: DestroySystem is RegisterSystem's inverse [0514] --
+# a registered user topic and a running consumer each refuse the unforced
+# destroy (worker guard outranks the topic guard), the clean destroy drops
+# every control-plane table, and RegisterSystem stands the schema back up.
+destroy-system-lab:
+  go run examples/phase_1/destroysystemlab/main.go
+
 # register idempotency lab: re-registering a topic is idempotent (same config
 # resolves to the same topic, not an error) and a conflicting config is
 # rejected with ErrTopicConfigMismatch -- guards the created_at/updated_at

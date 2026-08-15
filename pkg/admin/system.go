@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
@@ -148,4 +150,84 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 		return err
 	}
 	return a.migrateRunner.RunOnce(ctx, targetVersion, owner, systemMigrations.Registry)
+}
+
+// DestroySystem permanently deletes:
+// - every registered topic and its messages
+// - the system topics
+// - cron jobs
+// - consumer groups
+// - workers
+// - shared control-plane tables
+//
+// Returns ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set.
+// Idempotent -- a system already destroyed (or never registered) resolves as
+// a no-op, and a re-run after a partial failure resumes where it stopped.
+//
+// Unless opts.Force is set:
+//   - a worker instance is still live   -> system.ErrSystemLive
+//   - a non-system topic is registered  -> system.ErrTopicsRegistered
+func (a *MessageAdmin) DestroySystem(ctx context.Context, opts DestroyOptions) error {
+	if !a.allowDestroy {
+		return ErrDestroyDisabled
+	}
+
+	sys, err := a.systemController.GetSystem(ctx)
+	if err != nil {
+		return err
+	}
+	// already destroyed -- the end state this call exists to produce holds
+	if sys == nil {
+		return nil
+	}
+
+	if !opts.Force {
+		if err := a.assertSystemIdle(ctx); err != nil {
+			return err
+		}
+	}
+
+	// each topic through the same delete path DestroyTopic uses, keeping its
+	// partition-drain safety against a still-writing producer
+	topics, err := a.topicController.ListTopics(ctx)
+	if err != nil {
+		return err
+	}
+	for _, found := range topics {
+		if err := a.topicController.DeleteTopic(ctx, found.Id, found.Name); err != nil {
+			return err
+		}
+	}
+
+	return a.systemController.DeleteSystem(ctx)
+}
+
+// assertSystemIdle is DestroySystem's guard: nothing is running against the
+// schema, and no user topic would be taken with it.
+func (a *MessageAdmin) assertSystemIdle(ctx context.Context) error {
+	// a running manager or consumer heartbeats its worker instances
+	workers, err := a.metricsController.WorkerSnapshots(ctx)
+	if err != nil {
+		return err
+	}
+	for _, snapshot := range workers {
+		if snapshot.LiveInstances > 0 {
+			return fmt.Errorf("%w: worker %s", system.ErrSystemLive, snapshot.Name)
+		}
+	}
+
+	topics, err := a.topicController.ListTopics(ctx)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, found := range topics {
+		if !isReservedTopicName(found.Name) {
+			names = append(names, found.Name)
+		}
+	}
+	if len(names) > 0 {
+		return fmt.Errorf("%w: %s", system.ErrTopicsRegistered, strings.Join(names, ", "))
+	}
+	return nil
 }

@@ -49,6 +49,13 @@ func (c *SystemController) GetSystem(ctx context.Context) (*system.System, error
 	return toSystem(found), nil
 }
 
+// DeleteSystem drops the shared control-plane schema -- every table
+// RegisterSystem creates. Callers drop the per-topic tables first; a topic
+// still registered when this runs leaves its physical tables orphaned.
+func (c *SystemController) DeleteSystem(ctx context.Context) error {
+	return c.datastore.DeleteSystem(ctx)
+}
+
 // UpdateSystem applies cfg's non-nil fields to the singleton system config and
 // returns the updated config. Returns (nil, nil) if the system hasn't been
 // registered.

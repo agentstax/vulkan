@@ -264,3 +264,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0511 2026-08-13 accepted (phase 14a) — Binding sets are declared at consumer Register; replacement waits for zero live declarers
 - 0512 2026-08-14 accepted (phase 14) — Producer create-ahead triggers at the partition's 80% mark id; heal path serialized by advisory lock
 - 0513 2026-08-14 accepted (phase 14) — Create-ahead ships with the 95% backstop mark, and destroyed topics evict their claim entry (amends 0512)
+- 0514 2026-08-15 accepted (phase 14) — DestroySystem is RegisterSystem's inverse: drop every topic, then the control-plane schema

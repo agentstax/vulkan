@@ -176,21 +176,25 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
 	}
 
-	return a.destroyTopic(ctx, found, opts)
-}
-
-func (a *MessageAdmin) destroyTopic(ctx context.Context, found *topic.Topic, opts DestroyOptions) error {
 	if !opts.Force {
-		empty, err := a.topicController.IsEmpty(ctx, found.Id)
-		if err != nil {
+		if err := a.assertTopicIdle(ctx, found.Id, found.Name); err != nil {
 			return err
-		}
-		if !empty {
-			return fmt.Errorf("%w: %s", topic.ErrTopicNotEmpty, found.Name)
 		}
 	}
 
 	return a.topicController.DeleteTopic(ctx, found.Id, found.Name)
+}
+
+// assertTopicIdle is DestroyTopic's guard: no message would be discarded.
+func (a *MessageAdmin) assertTopicIdle(ctx context.Context, topicId int64, name string) error {
+	empty, err := a.topicController.IsEmpty(ctx, topicId)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return fmt.Errorf("%w: %s", topic.ErrTopicNotEmpty, name)
+	}
+	return nil
 }
 
 func isReservedTopicName(name string) bool {
