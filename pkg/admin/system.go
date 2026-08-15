@@ -113,21 +113,6 @@ func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
 	return sys, nil
 }
 
-// AlterSystem applies cfg's non-nil fields to the singleton system config and
-// returns the updated config. No alterable fields exist today, so every call
-// fails validation until a system-wide knob lands. Returns
-// migrate.ErrNotRegistered if RegisterSystem hasn't run.
-func (a *MessageAdmin) AlterSystem(ctx context.Context, cfg *systemcontroller.AlterSystemConfig) (*system.System, error) {
-	updated, err := a.systemController.UpdateSystem(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	if updated == nil {
-		return nil, migrate.ErrNotRegistered
-	}
-	return updated, nil
-}
-
 // MigrateSystem moves the system schema to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/jackc/pgx/v5"
@@ -80,6 +81,207 @@ func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// AlterWorker applies each overrides key's Update to the (name, owner)
+// worker row's metadata and returns the row. Errors if the row was never
+// declared or doesn't declare a changed key.
+func (d *WorkerDatastore) AlterWorker(ctx context.Context, name string, owner *common.Owner, overrides map[string]common.Update[any]) (*WorkerData, error) {
+	var altered *WorkerData
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		altered, err = d.alterWorker(ctx, name, owner, overrides)
+		return err
+	})
+	return altered, err
+}
+
+func (d *WorkerDatastore) alterWorker(ctx context.Context, name string, owner *common.Owner, overrides map[string]common.Update[any]) (*WorkerData, error) {
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1. the existing metadata, locked against a concurrent declaration
+	selectSql := `
+		SELECT metadata
+		FROM worker
+		WHERE name = $4
+			AND system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3
+		FOR UPDATE;
+	`
+	var metadata map[string]any
+	if err := tx.QueryRow(ctx, selectSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name).Scan(&metadata); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("worker %q has no worker row -- the owner's register declares it", name)
+		}
+		return nil, err
+	}
+
+	// every changed key must exist on the row
+	for key, update := range overrides {
+		if update.IsChanged() && !declaresKey(metadata, key) {
+			return nil, fmt.Errorf("worker %q does not declare metadata key %q", name, key)
+		}
+	}
+
+	// 2. apply the updates
+	applied := applyOverrides(metadata, overrides)
+
+	// 3. write the new metadata
+	updateSql := `
+		UPDATE worker
+		SET metadata = $5
+		WHERE name = $4
+			AND system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3;
+	`
+	if _, err := tx.Exec(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, applied); err != nil {
+		return nil, err
+	}
+
+	// 4. return the row as the table now has it
+	readSql := `
+		SELECT
+			id,
+			system_id,
+			topic_id,
+			consumer_group_id,
+			name,
+			metadata,
+			target_instances
+		FROM worker
+		WHERE name = $4
+			AND system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3;
+	`
+	var data WorkerData
+	if err := tx.QueryRow(ctx, readSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name).
+		Scan(&data.Id, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.Name, &data.Metadata, &data.TargetInstances); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &data, nil
+}
+
+// AlterWorkers applies each overrides key's Update to every worker row
+// owner owns directly, in one transaction, and returns the rows. A changed
+// key no row declares fails the whole transaction -- nothing is written.
+func (d *WorkerDatastore) AlterWorkers(ctx context.Context, owner *common.Owner, overrides map[string]common.Update[any]) ([]WorkerData, error) {
+	var altered []WorkerData
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		altered, err = d.alterWorkers(ctx, owner, overrides)
+		return err
+	})
+	return altered, err
+}
+
+func (d *WorkerDatastore) alterWorkers(ctx context.Context, owner *common.Owner, overrides map[string]common.Update[any]) ([]WorkerData, error) {
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// 1. every owned row's metadata, locked against concurrent declarations;
+	// name order keeps two concurrent alters locking in the same order
+	selectSql := `
+		SELECT id, metadata
+		FROM worker
+		WHERE system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3
+		ORDER BY name
+		FOR UPDATE;
+	`
+	rows, err := tx.Query(ctx, selectSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn())
+	if err != nil {
+		return nil, err
+	}
+	var workers []WorkerMetadataData
+	for rows.Next() {
+		var data WorkerMetadataData
+		if err := rows.Scan(&data.Id, &data.Metadata); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		workers = append(workers, data)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// every changed key must exist on at least one row
+	for key, update := range overrides {
+		if !update.IsChanged() {
+			continue
+		}
+		declared := false
+		for _, data := range workers {
+			if declaresKey(data.Metadata, key) {
+				declared = true
+				break
+			}
+		}
+		if !declared {
+			return nil, fmt.Errorf("no worker row of this owner declares metadata key %q", key)
+		}
+	}
+
+	// 2. apply the updates  3. write each row's new metadata
+	updateSql := `UPDATE worker SET metadata = $2 WHERE id = $1;`
+	for _, data := range workers {
+		applied := applyOverrides(data.Metadata, overrides)
+		if _, err := tx.Exec(ctx, updateSql, data.Id, applied); err != nil {
+			return nil, err
+		}
+	}
+
+	// 4. return the rows as the table now has them
+	readSql := `
+		SELECT
+			id,
+			system_id,
+			topic_id,
+			consumer_group_id,
+			name,
+			metadata,
+			target_instances
+		FROM worker
+		WHERE system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3
+		ORDER BY name;
+	`
+	readRows, err := tx.Query(ctx, readSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn())
+	if err != nil {
+		return nil, err
+	}
+	defer readRows.Close()
+	var altered []WorkerData
+	for readRows.Next() {
+		var data WorkerData
+		if err := readRows.Scan(&data.Id, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.Name, &data.Metadata, &data.TargetInstances); err != nil {
+			return nil, err
+		}
+		altered = append(altered, data)
+	}
+	if err := readRows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return altered, nil
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a
@@ -178,30 +380,60 @@ func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *com
 	return &data, nil
 }
 
-// mergeMetadata is the redeclaration rule: incoming defaults win, stored
-// overrides survive, keys absent from incoming are dropped.
+// mergeMetadata applies the redeclaration rule to incoming in place:
+// incoming defaults win, stored overrides survive, keys absent from
+// incoming are dropped.
 func mergeMetadata(existing map[string]any, incoming map[string]any) map[string]any {
-	merged := make(map[string]any, len(incoming))
 	for key, incomingValue := range incoming {
-		merged[key] = incomingValue
-		existingValue, ok := existing[key].(map[string]any)
+		existingLayers, ok := existing[key].(map[string]any)
 		if !ok {
 			continue
 		}
-		override, ok := existingValue["override"]
+		override, ok := existingLayers["override"]
 		if !ok {
 			continue
 		}
-		incomingObject, ok := incomingValue.(map[string]any)
+		incomingLayers, ok := incomingValue.(map[string]any)
 		if !ok {
 			continue
 		}
-		withOverride := make(map[string]any, len(incomingObject)+1)
-		for field, value := range incomingObject {
-			withOverride[field] = value
-		}
-		withOverride["override"] = override
-		merged[key] = withOverride
+		incomingLayers["override"] = override
 	}
-	return merged
+	return incoming
+}
+
+// declaresKey reports whether metadata carries the key's {default, override}
+// layers -- an override exists only on a key the owner's code declares.
+func declaresKey(metadata map[string]any, key string) bool {
+	_, ok := metadata[key].(map[string]any)
+	return ok
+}
+
+// applyOverrides returns a copy of metadata with each key's Update applied
+// to its {default, override} layers; keys metadata doesn't declare are
+// skipped.
+func applyOverrides(metadata map[string]any, overrides map[string]common.Update[any]) map[string]any {
+	// a fresh copy, layers included -- the caller's metadata stays untouched
+	applied := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		if layers, ok := value.(map[string]any); ok {
+			applied[key] = maps.Clone(layers)
+			continue
+		}
+		applied[key] = value
+	}
+
+	// set or remove each changed key's override
+	for key, update := range overrides {
+		layers, ok := applied[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		if value, ok := update.Value(); ok {
+			layers["override"] = value
+		} else if update.IsUnset() {
+			delete(layers, "override")
+		}
+	}
+	return applied
 }

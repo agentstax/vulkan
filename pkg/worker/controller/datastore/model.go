@@ -17,6 +17,13 @@ type WorkerData struct {
 	TargetInstances int
 }
 
+// WorkerMetadataData is AlterWorkers' working row: the row id plus the
+// metadata being rewritten.
+type WorkerMetadataData struct {
+	Id       int64
+	Metadata map[string]any
+}
+
 // ListWorkersData is one row of ListWorkers' query: the worker row plus the
 // owner columns joined from topic and consumer_group.
 type ListWorkersData struct {

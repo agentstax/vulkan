@@ -53,16 +53,3 @@ func (c *SystemController) GetSystem(ctx context.Context) (*system.System, error
 func (c *SystemController) DeleteSystem(ctx context.Context) error {
 	return c.datastore.DeleteSystem(ctx)
 }
-
-// UpdateSystem applies cfg's non-nil fields to the singleton system config
-// and returns the updated config. No alterable fields exist today, so
-// Validate rejects every call until a system-wide knob lands.
-func (c *SystemController) UpdateSystem(ctx context.Context, cfg *AlterSystemConfig) (*system.System, error) {
-	if cfg == nil {
-		cfg = &AlterSystemConfig{}
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-	return c.GetSystem(ctx)
-}

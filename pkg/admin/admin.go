@@ -15,6 +15,7 @@ import (
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
@@ -28,6 +29,7 @@ type MessageAdmin struct {
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
 	metricsController  *metricscontroller.MetricsController
+	workerController   *workercontroller.WorkerController
 	migrateRunner      *migrate.Runner
 	alertDeclarers     []worker.Declarer
 	allowDestroy       bool
@@ -123,6 +125,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	workerController, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// declarers here, never run -- RegisterSystem creates the alerts' consumer
 	// groups and worker rows, the system manager claims them
 	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
@@ -153,6 +163,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		jobRequestProducer: jobRequestProducer,
 		alertHeads:         alertHeads,
 		metricsController:  metricsController,
+		workerController:   workerController,
 		migrateRunner:      migrateRunner,
 		alertDeclarers:     []worker.Declarer{partitionCountDefinition, compactionReadCostDefinition},
 		allowDestroy:       cfg.AllowDestroy,
