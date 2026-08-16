@@ -10,43 +10,55 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 )
 
+// RecordOutcome is what one Record call published.
+type RecordOutcome string
+
+const (
+	RecordOutcomeActive   RecordOutcome = "active"   // published a new active alert
+	RecordOutcomeResolved RecordOutcome = "resolved" // published the head resolved
+	RecordOutcomeNothing  RecordOutcome = "nothing"  // classify chose not to publish
+)
+
 // Record classifies found against the owner's compaction head and produces
 // the outcome. found is nil when the run found nothing -- it still flows
 // to classify so an active head resolves.
-func (c *AlertController) Record(ctx context.Context, name string, owner *common.Owner, found *alert.Alert) error {
+func (c *AlertController) Record(ctx context.Context, name string, owner *common.Owner, found *alert.Alert) (RecordOutcome, error) {
 	if owner == nil {
-		return errors.New("owner must not be nil")
+		return "", errors.New("owner must not be nil")
 	}
 
 	compactionKey, err := alert.CompactionKey(name, owner)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	head, err := c.heads.GetCompactionHead(ctx, c.alerts.Topic.Id, compactionKey)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	published, err := classify(found, head, c.repeat, time.Now())
 	if err != nil {
-		return err
+		return "", err
 	}
 	if published == nil {
-		return nil
+		return RecordOutcomeNothing, nil
 	}
 
 	if _, err := c.alerts.Produce(ctx, published, producer.ProduceOptions{
 		RoutingKey:    published.RoutingKey(),
 		CompactionKey: compactionKey,
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	if statusChanged(published, head) {
 		c.logAlerts(ctx, published)
 	}
-	return nil
+	if published.Status == alert.StatusResolved {
+		return RecordOutcomeResolved, nil
+	}
+	return RecordOutcomeActive, nil
 }
 
 func (c *AlertController) logAlerts(ctx context.Context, published *alert.Alert) {

@@ -11,9 +11,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+	"golang.org/x/sync/errgroup"
 )
 
 // PartitionCountExecution consumes the alert's job requests while a heartbeat
@@ -26,6 +29,7 @@ type PartitionCountExecution struct {
 	runner         *workercontroller.InstanceRunner
 	repeatInterval time.Duration
 	alerts         *alertcontroller.AlertController // built per claimed life in consume
+	measurements   *producer.ProducerInstance[metrics.Measurement]
 }
 
 func newPartitionCountExecution(definition *PartitionCountDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*PartitionCountExecution, error) {
@@ -70,6 +74,12 @@ func (e *PartitionCountExecution) consume(ctx context.Context) error {
 	}
 	e.alerts = alerts
 
+	measurements, err := e.definition.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	if err != nil {
+		return err
+	}
+	e.measurements = measurements
+
 	instance, err := e.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
 	if err != nil {
 		return err
@@ -89,25 +99,78 @@ func (e *PartitionCountExecution) evaluateTopics(ctx context.Context, request *c
 	}
 
 	// one topic's failure never skips the others
+	var evaluated, failed, published, resolved int64
 	var errs error
 	for _, listed := range topics {
+		evaluated++
 		owner, err := common.NewTopicOwner(listed.SystemId, listed.Id, listed.Name)
 		if err != nil {
+			failed++
 			errs = errors.Join(errs, err)
 			continue
 		}
 
 		found, err := e.definition.controller.Evaluate(ctx, owner, jobData.Threshold)
 		if err != nil {
+			failed++
 			errs = errors.Join(errs, err)
 			continue
 		}
 
-		err = e.alerts.Record(ctx, controller.AlertPartitionCount, owner, found)
+		outcome, err := e.alerts.Record(ctx, controller.AlertPartitionCount, owner, found)
 		if err != nil {
+			failed++
 			errs = errors.Join(errs, err)
 			continue
 		}
+		switch outcome {
+		case alertcontroller.RecordOutcomeActive:
+			published++
+		case alertcontroller.RecordOutcomeResolved:
+			resolved++
+		}
 	}
-	return errs
+
+	// the summary goes out even on a failed run
+	err = e.produceCheckSummary(ctx, evaluated, failed, published, resolved)
+	return errors.Join(errs, err)
+}
+
+func (e *PartitionCountExecution) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
+	attributes := map[string]string{"alert": controller.AlertPartitionCount}
+	at := time.Now()
+
+	counts := []struct {
+		name  string
+		value int64
+		unit  metrics.Unit
+	}{
+		{metrics.MetricCheckTopicsEvaluated, evaluated, metrics.UnitCount("topic")},
+		{metrics.MetricCheckTopicsFailed, failed, metrics.UnitCount("topic")},
+		{metrics.MetricCheckPublishedAlerts, published, metrics.UnitCount("alert")},
+		{metrics.MetricCheckResolvedAlerts, resolved, metrics.UnitCount("alert")},
+	}
+
+	measurements := make([]*metrics.Measurement, 0, len(counts))
+	for _, count := range counts {
+		measurement, err := metrics.NewMeasurement(count.name, metrics.KindGauge, float64(count.value), count.unit, attributes, at)
+		if err != nil {
+			return err
+		}
+		measurements = append(measurements, measurement)
+	}
+
+	// concurrent sends share the producer's batched transactions; serial
+	// sends would commit one transaction per measurement
+	group, groupCtx := errgroup.WithContext(ctx)
+	for _, measurement := range measurements {
+		group.Go(func() error {
+			_, err := e.measurements.Produce(groupCtx, measurement, producer.ProduceOptions{
+				RoutingKey:    measurement.Name,
+				CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
+			})
+			return err
+		})
+	}
+	return group.Wait()
 }

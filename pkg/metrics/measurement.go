@@ -27,6 +27,20 @@ const (
 	MetricSuspendedJobs = "vulkan.cron.state.suspended_jobs" // jobs with suspended = true, excluded from the overdue count
 )
 
+// alert state, fleet-wide
+const (
+	MetricActiveAlerts   = "vulkan.alert.state.active_alerts"   // heads with status 'active'
+	MetricResolvedAlerts = "vulkan.alert.state.resolved_alerts" // heads with status 'resolved', until retention sweeps them
+)
+
+// alert check runs, one set of below per run
+const (
+	MetricCheckTopicsEvaluated = "vulkan.alert.check.topics_evaluated" // topics the run checked
+	MetricCheckTopicsFailed    = "vulkan.alert.check.topics_failed"    // topics whose evaluate or publish errored
+	MetricCheckPublishedAlerts = "vulkan.alert.check.published_alerts" // Record calls that published a new active alert
+	MetricCheckResolvedAlerts  = "vulkan.alert.check.resolved_alerts"  // Record calls that published the head resolved
+)
+
 // topic state -- attributes: topic, version
 const (
 	MetricTopicCompacted = "vulkan.topic.state.compacted" // 1 once the topic has ever seen a keyed publish, else 0

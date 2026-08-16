@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
+	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
@@ -28,6 +30,7 @@ type MetricsCollectorExecution struct {
 	runner           *controller.InstanceTickRunner
 	metrics          *metricscontroller.MetricsController
 	topics           *topiccontroller.TopicController
+	alertHeads       *compactioncontroller.CompactionController[alert.Alert]
 	metadata         *metricsCollectorMetadata
 	producerInstance *producer.ProducerInstance[metrics.Measurement]
 }
@@ -60,6 +63,7 @@ func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *
 		runner:           runner,
 		metrics:          collector.metrics,
 		topics:           collector.topics,
+		alertHeads:       collector.alertHeads,
 		metadata:         metadata,
 		producerInstance: producerInstance,
 	}, nil
@@ -84,6 +88,9 @@ func (i *MetricsCollectorExecution) collect(ctx context.Context) error {
 		return err
 	}
 	if err := i.collectCronJobs(ctx); err != nil {
+		return err
+	}
+	if err := i.collectAlerts(ctx); err != nil {
 		return err
 	}
 	return i.collectTopics(ctx)
@@ -168,6 +175,41 @@ func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
 		return err
 	}
 	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedJobs, metrics.KindGauge, float64(suspended), metrics.UnitCount("job"), nil, at)
+	if err != nil {
+		return err
+	}
+	return i.produceMeasurement(ctx, measurement)
+}
+
+func (i *MetricsCollectorExecution) collectAlerts(ctx context.Context) error {
+	alertsTopic, err := i.topics.GetTopic(ctx, alert.TopicName, topic.SchemaVersion(1))
+	if err != nil {
+		return err
+	}
+	heads, err := i.alertHeads.ListCompactionHeads(ctx, alertsTopic.Id)
+	if err != nil {
+		return err
+	}
+
+	var active, resolved int64
+	for _, head := range heads {
+		switch head.Message.Status {
+		case alert.StatusActive:
+			active++
+		case alert.StatusResolved:
+			resolved++
+		}
+	}
+
+	at := time.Now()
+	measurement, err := metrics.NewMeasurement(metrics.MetricActiveAlerts, metrics.KindGauge, float64(active), metrics.UnitCount("alert"), nil, at)
+	if err != nil {
+		return err
+	}
+	if err := i.produceMeasurement(ctx, measurement); err != nil {
+		return err
+	}
+	measurement, err = metrics.NewMeasurement(metrics.MetricResolvedAlerts, metrics.KindGauge, float64(resolved), metrics.UnitCount("alert"), nil, at)
 	if err != nil {
 		return err
 	}

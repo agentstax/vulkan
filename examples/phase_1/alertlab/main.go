@@ -37,6 +37,7 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -220,8 +221,16 @@ func classifySection(ctx context.Context) {
 	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.StatusActive, alert.SeverityWarn, "labcheck condition holds", nil)
 	must(err)
 
+	record := func(found *alert.Alert, want alertcontroller.RecordOutcome, arm string) {
+		outcome, err := alerts.Record(ctx, labCheckName, labTopicOwner, found)
+		must(err)
+		if outcome != want {
+			die(fmt.Sprintf("%s: want outcome %q, got %q", arm, want, outcome))
+		}
+	}
+
 	// active edge: first publish moves the head and WARNs once
-	must(alerts.Record(ctx, labCheckName, labTopicOwner, found))
+	record(found, alertcontroller.RecordOutcomeActive, "active edge")
 	if got := alertMessageCount(ctx, key); got != 1 {
 		die(fmt.Sprintf("active edge: want 1 published message, got %d", got))
 	}
@@ -234,7 +243,7 @@ func classifySection(ctx context.Context) {
 	fmt.Println("  ✓ active edge published the head and WARNed once")
 
 	// unchanged condition inside the repeat interval: nothing publishes
-	must(alerts.Record(ctx, labCheckName, labTopicOwner, found))
+	record(found, alertcontroller.RecordOutcomeNothing, "quiet hold")
 	if got := alertMessageCount(ctx, key); got != 1 {
 		die(fmt.Sprintf("quiet hold: want no republish inside the repeat interval, got %d messages", got))
 	}
@@ -245,7 +254,7 @@ func classifySection(ctx context.Context) {
 	// live alert
 	firstHead := headId(ctx, key)
 	time.Sleep(classifyRepeat + 500*time.Millisecond)
-	must(alerts.Record(ctx, labCheckName, labTopicOwner, found))
+	record(found, alertcontroller.RecordOutcomeActive, "repeat")
 	if got := alertMessageCount(ctx, key); got != 2 {
 		die(fmt.Sprintf("repeat: want a republish past the interval, got %d messages", got))
 	}
@@ -262,7 +271,7 @@ func classifySection(ctx context.Context) {
 	exec(ctx, fmt.Sprintf(
 		`UPDATE message_log_%d SET payload = jsonb_set(payload, '{Severity}', '"lab-critical"') WHERE id = $1;`,
 		alertsTopic.Id), headId(ctx, key))
-	must(alerts.Record(ctx, labCheckName, labTopicOwner, found))
+	record(found, alertcontroller.RecordOutcomeActive, "severity change")
 	if got := alertMessageCount(ctx, key); got != 3 {
 		die(fmt.Sprintf("severity change: want an immediate republish, got %d messages", got))
 	}
@@ -272,7 +281,7 @@ func classifySection(ctx context.Context) {
 	fmt.Println("  ✓ severity change republished immediately and silently")
 
 	// resolve edge: a nil finding resolves the head with one INFO
-	must(alerts.Record(ctx, labCheckName, labTopicOwner, nil))
+	record(nil, alertcontroller.RecordOutcomeResolved, "resolve edge")
 	if got := alertMessageCount(ctx, key); got != 4 {
 		die(fmt.Sprintf("resolve edge: want a resolve publish, got %d messages", got))
 	}
@@ -284,7 +293,7 @@ func classifySection(ctx context.Context) {
 	}
 
 	// resolved head + nil finding: nothing
-	must(alerts.Record(ctx, labCheckName, labTopicOwner, nil))
+	record(nil, alertcontroller.RecordOutcomeNothing, "resolved + nothing found")
 	if got := alertMessageCount(ctx, key); got != 4 {
 		die(fmt.Sprintf("resolved + nothing found must publish nothing, got %d messages", got))
 	}
@@ -342,6 +351,14 @@ func executorSection(ctx context.Context) {
 	}
 	fmt.Println("  ✓ threshold-1 run published active heads with WARN edges")
 
+	summary := readCheckSummary(ctx)
+	if summary[vulkanmetrics.MetricCheckTopicsEvaluated] < 2 ||
+		summary[vulkanmetrics.MetricCheckTopicsFailed] != 0 ||
+		summary[vulkanmetrics.MetricCheckPublishedAlerts] != summary[vulkanmetrics.MetricCheckTopicsEvaluated] {
+		die(fmt.Sprintf("threshold-1 run: want every evaluated topic published and none failed, got %v", summary))
+	}
+	fmt.Println("  ✓ check summary: every evaluated topic published, none failed")
+
 	// inside the system's 4h repeat interval the same finding publishes nothing
 	published := alertMessageCount(ctx, labKey)
 	secondRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
@@ -354,6 +371,13 @@ func executorSection(ctx context.Context) {
 		die(fmt.Sprintf("repeat-interval run: want no new WARN, got %d", got))
 	}
 	fmt.Println("  ✓ a second run inside the repeat interval published nothing")
+
+	summary = readCheckSummary(ctx)
+	if summary[vulkanmetrics.MetricCheckPublishedAlerts] != 0 ||
+		summary[vulkanmetrics.MetricCheckTopicsFailed] != 0 {
+		die(fmt.Sprintf("repeat-interval run: want a quiet summary, got %v", summary))
+	}
+	fmt.Println("  ✓ check summary: the quiet run counted zero publishes")
 
 	// exact-name dispatch: the live consumer never claims another job's
 	// request, and alert traffic leaves other groups alone
@@ -412,6 +436,15 @@ func isolationSection(ctx context.Context) {
 	}
 	fmt.Println("  ✓ healthy topics resolved in the same attempt the corrupted owner failed")
 
+	// resolved is left unasserted here: an automatic retry may already have
+	// overwritten the summary, and only its failed/published counts repeat
+	summary := readCheckSummary(ctx)
+	if summary[vulkanmetrics.MetricCheckTopicsFailed] != 1 ||
+		summary[vulkanmetrics.MetricCheckPublishedAlerts] != 0 {
+		die(fmt.Sprintf("isolation: the failed run must still produce its summary, got %v", summary))
+	}
+	fmt.Println("  ✓ check summary went out on the failed run: exactly 1 topic failed")
+
 	// fixing the head lets the request's retry resolve the last owner
 	exec(ctx, fmt.Sprintf(
 		`UPDATE message_log_%d SET payload = $1::jsonb WHERE id = $2;`, alertsTopic.Id), saved, corruptedHead)
@@ -423,6 +456,13 @@ func isolationSection(ctx context.Context) {
 		die(fmt.Sprintf("isolation: want 1 resolve INFO for the fixed owner, got %d", got))
 	}
 	fmt.Println("  ✓ retry resolved the fixed owner; healthy topics resolved exactly once")
+
+	summary = readCheckSummary(ctx)
+	if summary[vulkanmetrics.MetricCheckTopicsFailed] != 0 ||
+		summary[vulkanmetrics.MetricCheckResolvedAlerts] != 1 {
+		die(fmt.Sprintf("isolation retry: want 0 failed and only the fixed owner resolved, got %v", summary))
+	}
+	fmt.Println("  ✓ retry summary: zero failed, only the fixed owner resolved")
 }
 
 // --- harness ---
@@ -565,6 +605,33 @@ func (c *captureLogger) count(level string, alertName string, ownerName string) 
 }
 
 // --- assertion helpers ---
+
+// readCheckSummary returns the partition_count check summary heads by metric
+// name -- the latest run's counts, read the same way `vulkan metrics list`
+// reads them.
+func readCheckSummary(ctx context.Context) map[string]float64 {
+	heads, err := mAdmin.ListMeasurements(ctx)
+	must(err)
+	attributes := map[string]string{"alert": partitioncountcontroller.AlertPartitionCount}
+	byKey := make(map[string]float64, len(heads))
+	for _, head := range heads {
+		byKey[head.CompactionKey] = head.Message.Value
+	}
+	summary := make(map[string]float64, 4)
+	for _, name := range []string{
+		vulkanmetrics.MetricCheckTopicsEvaluated,
+		vulkanmetrics.MetricCheckTopicsFailed,
+		vulkanmetrics.MetricCheckPublishedAlerts,
+		vulkanmetrics.MetricCheckResolvedAlerts,
+	} {
+		value, ok := byKey[vulkanmetrics.MeasurementKey(name, attributes)]
+		if !ok {
+			die(fmt.Sprintf("no check summary head for %s", name))
+		}
+		summary[name] = value
+	}
+	return summary
+}
 
 func partitionCountKey(owner *common.Owner) string {
 	key, err := alert.CompactionKey(partitioncountcontroller.AlertPartitionCount, owner)

@@ -29,8 +29,72 @@ otherwise the API review locks a surface that is still due to change.
 **The 14b cleanup / public API design pass** — naming, shape, comments, and
 internal cleanup; no new behavior. Locks the surface before v1.
 
+Ordered: internal restructuring first, public-surface decisions late so they
+stay revisable, text polish (naming/errors/logging/comments) last.
+
+- **Refactor remaining packages into the worker/topic layered pattern:**
+  - pkg/migrate needs a full comb-through: pkg/migrate/version/support.go and
+    pkg/migrate/datastore system/version.go don't follow the dependency
+    injection patterns; common.Owner.name not being required is a smell
+    caused by it; the stray SystemOwner in pkg/migrate/datastore/system.go
+    likewise.
+  - pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,
+    execution}.go could be cleaner — not bad, but improvable.
+  - Probably move pkg/context and pkg/logger into pkg/common until the final
+    public surface is settled.
+- **Internal file-structure cleanup:**
+  - Split pkg/producer/datastore.go and other internal-only readability debt.
+  - The parked LIFECYCLE surface and its cursor counterparts move to an
+    internal package (still exported there, private by convention), true
+    public APIs living in pkg — this is also when the removed
+    datastore-interfaces question gets its "re-add if desired" revisit.
+  - A file content ordering convention: vars/const at top; struct, New,
+    validates; public->private pairs; helper funcs at bottom behind a helper
+    block comment.
+  - A blank-line convention inside function bodies: when a statement gets a
+    blank line before/after it and when it doesn't -- decide the rule, write
+    it into CONVENTIONS.md, and sweep for consistency.
+- **Querier interface** — see if it can make stronger contracts with internal
+  or public code.
+- **Worker-tier surface review** — everything the worker tier exports
+  postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
+  and its kind subpackages (janitor, waterline, manager, cronscheduler),
+  pkg/worker/controller (WorkerController, MetadataValue, the configs),
+  pkg/systemmanager, the consumer split
+  (Consumer/MessageConsumer/ExceptionConsumer/DeliveryConsumer, one shared
+  ConsumerConfig), the renamed Producer/ProducerConfig, and the
+  `vulkan manager` commands. Same rigor as Phase 13.
+  One deliberate trap to re-examine: NewMessageConsumer KEPT its signature
+  while changing meaning (bundle -> bare work loop) — decide whether the
+  bare piece constructors should be harder to reach by accident.
+- **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
+  decide and document. Weigh Go 1.27's new generics/type-inference features
+  before finalizing.
+- **Compaction API shape** (for the v1 review; the standalone-head-read move
+  into pkg/compaction/controller shipped 2026-08-13):
+  - A dedicated compacted-topic handle — Compact(Producer|Consumer) idea;
+    NATS JetStream KV precedent: one typed handle doing Get + CAS-produce
+    with CompactionKey required. Would sit on top of the compaction
+    controller unchanged.
+  - consumerFunc could hand users a common.MessageRow[Message] instead of
+    payload-arg + context MessageMeta — the typed row moved to pkg/common
+    2026-08-13, so both sides could share it; the consumer's raw internal
+    row (payload + options columns) stays its own struct either way.
+- **Config & options refinement:**
+  - Required variables become plain params; only truly optional ones stay in
+    Config structs, renamed OptionalConfig to make the split obvious at call
+    sites. Could make compaction_key + compaction_rank required params of a
+    single 'compaction' option to avoid validation.
+  - Re-evaluate consumer Register params — Consumer.Register grew to 5
+    (ctx, group, topic, version, bindings) and NewConsumerInstance to 7 with
+    the binding lifecycle work (2026-08-13); structure them (e.g. a named
+    registration struct or rebalanced required/optional split) instead of
+    letting the lists keep growing.
+  - Group/order config options and table fields by likeness.
+  - Pass through config/options/vars/params and delete dead fields.
 - **Public surface trim** (decisions settled 2026-08-01, recorded in
-  _public-surface.md; build pending):
+  _public-surface.md; build pending — deliberately late so the decisions get
+  re-confirmed after living with the surface through the passes above):
   - `concurrency` pkg hidden entirely — consumers build queue + pool
     internally from ConsumerConfig, constructors drop the two params (also
     removes the consumer.Buffered leak).
@@ -50,11 +114,6 @@ internal cleanup; no new behavior. Locks the surface before v1.
   - Decide whether the field-less system config stub (RegisterSystem cfg /
     AlterSystem / `vulkan system alter`) stays in the v1 public surface or
     gets deleted until a real system-wide knob exists ([0516]).
-- **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
-  decide and document. Weigh Go 1.27's new generics/type-inference features
-  before finalizing.
-- **Named-return-params house style** — decide and apply consistently across
-  the reviewed surface.
 - **Naming pass:**
   - "parked" (banned word) still lives in messageconsumer comment/log prose
     and reclaim.go's `WITH parked AS` CTE name, plus prose in
@@ -76,6 +135,8 @@ internal cleanup; no new behavior. Locks the surface before v1.
       reaches for, and it matches the worker_instance row the struct
       holds. `Execution` may survive only as the interface name the
       Instance structs implement.
+- **Named-return-params house style** — decide and apply consistently across
+  the reviewed surface (same sweep as the naming pass).
 - **Error message consistency and obsession.** Standardize every error
   message to be understandable and actionable — enrich context, eventually
   add doc links. Consider a standard shape: Handler (where), Description
@@ -84,18 +145,13 @@ internal cleanup; no new behavior. Locks the surface before v1.
     (coordinates with the circuit breaker's error_class enum).
 - **Logging consistency and obsession.** Informative, actionable,
   filterable/queryable, consistently structured.
-- **Config & options refinement:**
-  - Required variables become plain params; only truly optional ones stay in
-    Config structs, renamed OptionalConfig to make the split obvious at call
-    sites. Could make compaction_key + compaction_rank required params of a
-    single 'compaction' option to avoid validation.
-  - Re-evaluate consumer Register params — Consumer.Register grew to 5
-    (ctx, group, topic, version, bindings) and NewConsumerInstance to 7 with
-    the binding lifecycle work (2026-08-13); structure them (e.g. a named
-    registration struct or rebalanced required/optional split) instead of
-    letting the lists keep growing.
-  - Group/order config options and table fields by likeness.
-  - Pass through config/options/vars/params and delete dead fields.
+- **DefaultProducer / DefaultConsumer** for easier quickstarts, with comments
+  and maybe a log statement recommending not to use in prod.
+- **go.mod cleanup after factoring examples into a separate module** —
+  blocked until examples are a separate module; either do that split now or
+  decide the go.mod weight isn't worth it pre-v1 and drop this.
+- **Comment conventions for public surfaces** — a standard: description,
+  defaults, errors, doc links. Plus standardized SQL formatting.
 - **Comment sweeps:**
   - fanOut (pkg/consumer/deliveryconsumer/controller/datastore/fanout.go) —
     both the Go comments and the ones inside snapshotSql/scanSql. SQL
@@ -112,58 +168,6 @@ internal cleanup; no new behavior. Locks the surface before v1.
     it must be ONE codebase-wide sweep so the files stay identical, never a
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
-- **Comment conventions for public surfaces** — a standard: description,
-  defaults, errors, doc links. Plus standardized SQL formatting.
-- **Internal file-structure cleanup:**
-  - Split pkg/producer/datastore.go and other internal-only readability debt.
-  - The parked LIFECYCLE surface and its cursor counterparts move to an
-    internal package (still exported there, private by convention), true
-    public APIs living in pkg — this is also when the removed
-    datastore-interfaces question gets its "re-add if desired" revisit.
-  - A file content ordering convention: vars/const at top; struct, New,
-    validates; public->private pairs; helper funcs at bottom behind a helper
-    block comment.
-  - A blank-line convention inside function bodies: when a statement gets a
-    blank line before/after it and when it doesn't -- decide the rule, write
-    it into CONVENTIONS.md, and sweep for consistency.
-- **Refactor remaining packages into the worker/topic layered pattern:**
-  - pkg/migrate needs a full comb-through: pkg/migrate/version/support.go and
-    pkg/migrate/datastore system/version.go don't follow the dependency
-    injection patterns; common.Owner.name not being required is a smell
-    caused by it; the stray SystemOwner in pkg/migrate/datastore/system.go
-    likewise.
-  - pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,
-    execution}.go could be cleaner — not bad, but improvable.
-  - Probably move pkg/context and pkg/logger into pkg/common until the final
-    public surface is settled.
-- **go.mod cleanup after factoring examples into a separate module** —
-  blocked until examples are a separate module; either do that split now or
-  decide the go.mod weight isn't worth it pre-v1 and drop this.
-- **Worker-tier surface review** — everything the worker tier exports
-  postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
-  and its kind subpackages (janitor, waterline, manager, cronscheduler),
-  pkg/worker/controller (WorkerController, MetadataValue, the configs),
-  pkg/systemmanager, the consumer split
-  (Consumer/MessageConsumer/ExceptionConsumer/DeliveryConsumer, one shared
-  ConsumerConfig), the renamed Producer/ProducerConfig, and the
-  `vulkan manager` commands. Same rigor as Phase 13.
-  One deliberate trap to re-examine: NewMessageConsumer KEPT its signature
-  while changing meaning (bundle -> bare work loop) — decide whether the
-  bare piece constructors should be harder to reach by accident.
-- **Compaction API shape** (for the v1 review; the standalone-head-read move
-  into pkg/compaction/controller shipped 2026-08-13):
-  - A dedicated compacted-topic handle — Compact(Producer|Consumer) idea;
-    NATS JetStream KV precedent: one typed handle doing Get + CAS-produce
-    with CompactionKey required. Would sit on top of the compaction
-    controller unchanged.
-  - consumerFunc could hand users a common.MessageRow[Message] instead of
-    payload-arg + context MessageMeta — the typed row moved to pkg/common
-    2026-08-13, so both sides could share it; the consumer's raw internal
-    row (payload + options columns) stays its own struct either way.
-- **Querier interface** — see if it can make stronger contracts with internal
-  or public code.
-- **DefaultProducer / DefaultConsumer** for easier quickstarts, with comments
-  and maybe a log statement recommending not to use in prod.
 
 ## Later
 

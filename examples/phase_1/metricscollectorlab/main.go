@@ -156,6 +156,8 @@ func main() {
 		metrics.MeasurementKey(metrics.MetricOverdueJobs, nil):        false,
 		metrics.MeasurementKey(metrics.MetricOldestDueAge, nil):       false,
 		metrics.MeasurementKey(metrics.MetricSuspendedJobs, nil):      false,
+		metrics.MeasurementKey(metrics.MetricActiveAlerts, nil):       false,
+		metrics.MeasurementKey(metrics.MetricResolvedAlerts, nil):     false,
 	}
 	for _, topicName := range topicNames {
 		expected[metrics.MeasurementKey(metrics.MetricTopicCompacted, map[string]string{

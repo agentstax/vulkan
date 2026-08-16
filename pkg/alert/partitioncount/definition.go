@@ -11,6 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -22,14 +23,15 @@ type PartitionCountDefinition struct {
 	Config *DefinitionConfig
 	Logger logger.Logger
 
-	ds                 *coredatastore.PostgresDatastore
-	workers            *workercontroller.WorkerController
-	topics             *topiccontroller.TopicController
-	consumers          *consumercontroller.ConsumerController
-	controller         *controller.PartitionCountController
-	alertProducer      *producer.Producer[alert.Alert]
-	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
-	jobRequestConsumer *consumer.Consumer[cron.JobRequest]
+	ds                  *coredatastore.PostgresDatastore
+	workers             *workercontroller.WorkerController
+	topics              *topiccontroller.TopicController
+	consumers           *consumercontroller.ConsumerController
+	controller          *controller.PartitionCountController
+	alertProducer       *producer.Producer[alert.Alert]
+	alertHeads          *compactioncontroller.CompactionController[alert.Alert]
+	measurementProducer *producer.Producer[metrics.Measurement]
+	jobRequestConsumer  *consumer.Consumer[cron.JobRequest]
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -88,6 +90,13 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 	if err != nil {
 		return nil, err
 	}
+	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, &producer.ProducerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
 	jobRequestConsumer, err := consumer.NewConsumer[cron.JobRequest](ds, &consumer.ConsumerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -97,16 +106,17 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 	}
 
 	return &PartitionCountDefinition{
-		Config:             cfg,
-		Logger:             cfg.Logger,
-		ds:                 ds,
-		workers:            workers,
-		topics:             topics,
-		consumers:          consumers,
-		controller:         partitionCountController,
-		alertProducer:      alertProducer,
-		alertHeads:         alertHeads,
-		jobRequestConsumer: jobRequestConsumer,
+		Config:              cfg,
+		Logger:              cfg.Logger,
+		ds:                  ds,
+		workers:             workers,
+		topics:              topics,
+		consumers:           consumers,
+		controller:          partitionCountController,
+		alertProducer:       alertProducer,
+		alertHeads:          alertHeads,
+		measurementProducer: measurementProducer,
+		jobRequestConsumer:  jobRequestConsumer,
 	}, nil
 }
 
