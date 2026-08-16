@@ -68,6 +68,25 @@ func TestNewSampleValidation(t *testing.T) {
 	}
 }
 
+func TestUnitValidate(t *testing.T) {
+	for _, unit := range []Unit{"", "ms", "By", UnitMilliseconds, UnitCount("worker"), "By/{request}"} {
+		if err := unit.Validate(); err != nil {
+			t.Fatalf("unit %q rejected: %v", unit, err)
+		}
+	}
+	for _, unit := range []Unit{"per worker", "{worker", "worker}", "{}", "{{worker}}", "{a} b"} {
+		if err := unit.Validate(); err == nil {
+			t.Fatalf("unit %q accepted", unit)
+		}
+	}
+}
+
+func TestNewSampleRejectsMalformedUnit(t *testing.T) {
+	if _, err := NewSample("lag", KindGauge, 1, "{", nil, time.Now()); err == nil {
+		t.Fatal("malformed unit accepted")
+	}
+}
+
 func TestKindValidate(t *testing.T) {
 	if err := KindGauge.Validate(); err != nil {
 		t.Fatalf("gauge rejected: %v", err)

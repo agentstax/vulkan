@@ -15,17 +15,16 @@ docs/decisions/.
   first, limit required. Also: partial (compaction_key, id) index on
   message_log in the baseline DDL, and compaction's HeadData renamed
   MessageData now that heads and history rows share it.
-- [ ] 3. Collector worker, fleet samples. pkg/worker/metricscollector on the
-  waterline template, system-scope owner, worker name metrics_collector.
-  Declared in RegisterSystem -- alertDeclarers generalizes to systemDeclarers
-  rather than a second loop. Provisioned by SystemManager AND every embedded
-  consumer manager. Poll interval in worker metadata. Emits the
-  vulkan.worker.state.* samples with CompactionKey: SampleKey(...).
-  metrics.TopicConfig() gains AllowDropPastCommitted: true, and its
-  RetentionTTL comment states the new semantic: retention = history depth =
-  how long a dead series lingers. Collector excludes __system.metrics:
-  no topic-level samples for it, no per-group samples for groups on it;
-  other __system. topics stay included.
+- [x] 3. Collector worker, fleet samples. pkg/worker/metricscollector on the
+  cronscheduler template, system-scope owner, worker name metrics_collector.
+  Declared via the system controller's existing declarer list (joined
+  cronscheduler + manager there -- no alertDeclarers change needed).
+  Provisioned by SystemManager AND every embedded consumer manager. Poll
+  interval in worker metadata (default 30s). Emits the vulkan.worker.state.*
+  samples (name consts in pkg/metrics) with CompactionKey + RoutingKey.
+  metrics.TopicConfig() gained AllowDropPastCommitted: true and the
+  retention-is-history-window comment. The __system.metrics exclusion has
+  nothing to exclude until chunk 4's topic/group samples -- lands there.
 - [ ] 4. Full sample coverage: cron-job samples (vulkan.cron.state.*),
   per-group samples, topic samples. Mapping snapshot verbs to sample names;
   loop shape unchanged.

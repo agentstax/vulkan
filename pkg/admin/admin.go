@@ -19,6 +19,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
+	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 )
 
 type MessageAdmin struct {
@@ -60,11 +61,19 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	metricsCollectorDefinition, err := metricscollector.NewMetricsCollectorDefinition(ds, &metricscollector.MetricsCollectorConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// a declarer here, never run -- admin creates manager rows, it doesn't claim them
 	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorDefinition, cronSchedulerDefinition)
+	}, janitorDefinition, cronSchedulerDefinition, metricsCollectorDefinition)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +81,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, cronSchedulerDefinition, managerDefinition)
+	}, cronSchedulerDefinition, metricsCollectorDefinition, managerDefinition)
 	if err != nil {
 		return nil, err
 	}

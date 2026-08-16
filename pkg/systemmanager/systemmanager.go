@@ -13,6 +13,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
+	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
@@ -66,6 +67,14 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
+	metricsCollectorDefinition, err := metricscollector.NewMetricsCollectorDefinition(ds, &metricscollector.MetricsCollectorConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -81,7 +90,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	provisioners := []worker.Provisioner{janitorDefinition, cronSchedulerDefinition, waterlineDefinition, partitionCountDefinition, compactionReadCostDefinition}
+	provisioners := []worker.Provisioner{janitorDefinition, cronSchedulerDefinition, metricsCollectorDefinition, waterlineDefinition, partitionCountDefinition, compactionReadCostDefinition}
 	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

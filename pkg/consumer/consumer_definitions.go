@@ -10,6 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
+	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
@@ -96,6 +97,13 @@ func (i *ConsumerInstance[Message]) newTopicDefinitions() ([]worker.Provisioner,
 	if err != nil {
 		return nil, err
 	}
+	metricsCollectorDefinition, err := metricscollector.NewMetricsCollectorDefinition(i.ds, &metricscollector.MetricsCollectorConfig{
+		Logger: i.Logger,
+		Retry:  i.Config.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
 
-	return []worker.Provisioner{cronSchedulerDefinition, janitorDefinition}, nil
+	return []worker.Provisioner{cronSchedulerDefinition, metricsCollectorDefinition, janitorDefinition}, nil
 }

@@ -13,9 +13,12 @@ const TopicName = common.SystemTopicPrefix + "metrics"
 
 func TopicConfig() *topiccontroller.TopicConfig {
 	return &topiccontroller.TopicConfig{
-		PartitionSize:   10_000,
-		RetentionTTL:    24 * time.Hour,
-		DeliveryLogMode: topic.DeliveryLogModeOff,
+		PartitionSize: 10_000,
+		// retention is the sample history window: how far back a series
+		// reads, and how long a series that stopped reporting keeps its head
+		RetentionTTL:           24 * time.Hour,
+		AllowDropPastCommitted: true, // a lagging metrics consumer loses samples rather than blocking cleanup
+		DeliveryLogMode:        topic.DeliveryLogModeOff,
 	}
 }
 
