@@ -16,7 +16,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"golang.org/x/sync/errgroup"
 )
 
 // PartitionCountExecution consumes the alert's job requests while a heartbeat
@@ -151,26 +150,22 @@ func (e *PartitionCountExecution) produceCheckSummary(ctx context.Context, evalu
 		{metrics.MetricCheckResolvedAlerts, resolved, metrics.UnitCount("alert")},
 	}
 
-	measurements := make([]*metrics.Measurement, 0, len(counts))
+	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(counts))
 	for _, count := range counts {
 		measurement, err := metrics.NewMeasurement(count.name, metrics.KindGauge, float64(count.value), count.unit, attributes, at)
 		if err != nil {
 			return err
 		}
-		measurements = append(measurements, measurement)
+		item, err := producer.NewProduceItem(measurement, producer.ProduceOptions{
+			RoutingKey:    measurement.Name,
+			CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
+		})
+		if err != nil {
+			return err
+		}
+		items = append(items, item)
 	}
 
-	// concurrent sends share the producer's batched transactions; serial
-	// sends would commit one transaction per measurement
-	group, groupCtx := errgroup.WithContext(ctx)
-	for _, measurement := range measurements {
-		group.Go(func() error {
-			_, err := e.measurements.Produce(groupCtx, measurement, producer.ProduceOptions{
-				RoutingKey:    measurement.Name,
-				CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
-			})
-			return err
-		})
-	}
-	return group.Wait()
+	_, err := e.measurements.ProduceBatch(ctx, items...)
+	return err
 }

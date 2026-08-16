@@ -275,3 +275,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0522 2026-08-16 accepted (phase 14) — Metrics are samples on __system.metrics written by a collector worker; otel exposure moves to its own module
 - 0523 2026-08-16 accepted (phase 14) — The metric point type is Measurement, not Sample (amends 0522)
 - 0524 2026-08-16 accepted (phase 14) — Alert pipeline instrumentation: state gauges pulled by the collector, run outcomes pushed by the handler (follows 0522)
+- 0525 2026-08-16 accepted (phase 14) — ProduceBatch: one call, N messages, one transaction (explicit batch verb beside the batcher)

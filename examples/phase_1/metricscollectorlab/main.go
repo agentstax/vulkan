@@ -1,9 +1,9 @@
 package main
 
 // Metrics collector lab: a full-size collection pass under -race -- the
-// collectTopics errgroup fans out topic snapshots under TopicConcurrency
-// while every group's 14 measurements produce concurrently against ONE
-// ProducerInstance, sharing the producer's batched transactions. Then the
+// collectTopics errgroup fans out topic snapshots under TopicConcurrency,
+// every fanned-out topic driving singles and per-group ProduceBatch calls
+// against ONE ProducerInstance concurrently. Then the
 // pipeline's read half: heads and history through the same admin verbs
 // `vulkan metrics list` / `vulkan metrics get` render, and a real
 // `vulkan manager run --metrics-address` process scraped over HTTP.

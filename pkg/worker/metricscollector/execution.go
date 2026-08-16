@@ -297,24 +297,24 @@ func (i *MetricsCollectorExecution) collectConsumerGroup(ctx context.Context, sn
 		{metrics.MetricAbandonedSelfClearLatencyAvg, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.UnitMilliseconds},
 	}
 
-	measurements := make([]*metrics.Measurement, 0, len(points))
+	items := make([]*producer.ProduceItem[metrics.Measurement], 0, len(points))
 	for _, point := range points {
 		measurement, err := metrics.NewMeasurement(point.name, metrics.KindGauge, point.value, point.unit, attributes, at)
 		if err != nil {
 			return err
 		}
-		measurements = append(measurements, measurement)
+		item, err := producer.NewProduceItem(measurement, producer.ProduceOptions{
+			RoutingKey:    measurement.Name,
+			CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
+		})
+		if err != nil {
+			return err
+		}
+		items = append(items, item)
 	}
 
-	// concurrent sends share the producer's batched transactions; serial
-	// sends would commit one transaction per measurement
-	group, groupCtx := errgroup.WithContext(ctx)
-	for _, measurement := range measurements {
-		group.Go(func() error {
-			return i.produceMeasurement(groupCtx, measurement)
-		})
-	}
-	return group.Wait()
+	_, err := i.producerInstance.ProduceBatch(ctx, items...)
+	return err
 }
 
 func (i *MetricsCollectorExecution) produceMeasurement(ctx context.Context, measurement *metrics.Measurement) error {

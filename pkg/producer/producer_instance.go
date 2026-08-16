@@ -3,6 +3,7 @@ package producer
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
@@ -82,6 +83,47 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
+// ProduceBatch appends every item in ONE transaction, returning once all are
+// durably committed -- none land unless all do. Results are in argument
+// order. A batch never shares its transaction with concurrent Produce calls
+// or other batches.
+//
+// Items must not set an IdempotencyKey (see NewProduceItem), so nothing
+// dedups across calls: retrying past a ctx cancelled mid-commit (or your
+// own crash) can publish every item twice, exactly as with unkeyed Produce.
+func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*ProduceItem[Message]) ([]*ProduceResult[Message], error) {
+	if len(items) == 0 {
+		return nil, errors.New("at least one item is required")
+	}
+
+	appends := make([]*controller.Append[Message], 0, len(items))
+	for i, item := range items {
+		appendItem, err := p.toAppend(item)
+		if err != nil {
+			return nil, fmt.Errorf("item %d: %w", i, err)
+		}
+		appends = append(appends, appendItem)
+	}
+
+	appendedRows, failedIdx, err := p.controller.AppendMessageBatch(ctx, p.Topic.Id, p.Topic.PartitionSize, p.cfg.BatchAttemptTimeout, appends)
+	if err != nil {
+		if failedIdx >= 0 {
+			return nil, fmt.Errorf("item %d: %w", failedIdx, err)
+		}
+		return nil, err
+	}
+
+	results := make([]*ProduceResult[Message], 0, len(appendedRows))
+	for _, appendedRow := range appendedRows {
+		result, err := NewProduceResult(appendedRow.Message, appendedRow.Id, appendedRow.Duplicate)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
 func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
@@ -127,4 +169,23 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, prod
 // allowing for race-free compare and set.
 func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, compactionKey string) (*MessageRow[Message], error) {
 	return p.controller.GetCompactionHeadInTx(ctx, tx, p.Topic.Id, compactionKey)
+}
+
+// toAppend shapes one batch item for the controller: fills message options
+// and generates the key the datastore's ambiguous-commit rerun dedups on.
+func (p *ProducerInstance[Message]) toAppend(item *ProduceItem[Message]) (*controller.Append[Message], error) {
+	if item == nil {
+		return nil, errors.New("item must not be nil")
+	}
+	if item.Options.IdempotencyKey != uuid.Nil {
+		return nil, errors.New("IdempotencyKey is not supported in a batch -- produce keyed messages individually")
+	}
+	options := item.Options
+	options.Message = options.Message.Fill(p.cfg.Message)
+	idempotencyKey, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+	options.IdempotencyKey = idempotencyKey
+	return controller.NewAppend(item.Message, options)
 }

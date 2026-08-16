@@ -5,6 +5,30 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-16 — Alert pipeline instrumented [0524]
+
+- The metrics collector's pass gained collectAlerts: fleet-level
+  vulkan.alert.state.active_alerts / resolved_alerts gauges counted from
+  the __system.alerts compaction heads, nil attributes, always produced.
+  Per-name or per-severity series were rejected -- they would be enumerated
+  from the heads themselves and go stale when heads sweep out of retention
+  or a severity transitions.
+- AlertController.Record returns RecordOutcome (active | resolved |
+  nothing) beside its error, so a handler counts what its run did without
+  a second head read.
+- Both alert executions produce a per-run vulkan.alert.check.* summary --
+  topics_evaluated / topics_failed / published_alerts / resolved_alerts,
+  attribute alert=<name> -- at the end of every run INCLUDING failed ones,
+  so a run that failed 1 of 9 topics no longer looks like a total failure.
+  Head = latest run, retained log = one row per run; no cumulative counter
+  state. The four produces run concurrently on one instance to share the
+  producer's batched transactions; a failed summary produce joins the
+  run's error.
+- alertlab asserts the outcome of every classify arm and the summary after
+  each executor run (including topics_failed = 1 on the corrupted-head
+  run); metricscollectorlab's coverage set gained the state gauges.
+  Fresh-DB suite 36/36.
+
 ## 2026-08-16 — Metrics collection and otel exposure [0522] [0523]
 
 - pkg/metrics gained the measurement vocabulary: Measurement (name, kind,

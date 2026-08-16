@@ -2,12 +2,16 @@ package main
 
 // Producer batching acceptance lab: the permanent home for what the
 // throwaway in-package batcher harness verified, driven entirely through
-// the public API. Five scenarios:
+// the public API. Six scenarios:
 //
 //   - batchedExactlyOnceScenario: N concurrent callers through payload-only
 //     Produce all land exactly once (messages AND claim rows), xmin grouping
 //     proves calls actually shared transactions, and a caller-keyed Produce
 //     routes to the per-call path and dedups across its own retries.
+//   - produceBatchScenario: one explicit ProduceBatch call commits every
+//     item in ONE transaction (single xmin) with results in argument order;
+//     a poisoned item rolls the whole batch back, naming its index; caller
+//     keys and empty batches are rejected.
 //   - faultIsolationScenario: one server-side-poisoned payload (jsonb
 //     rejects \u0000) and one client-side-unencodable payload each fail ONLY
 //     their own caller -- everyone sharing their batches still lands.
@@ -55,6 +59,7 @@ func main() {
 	defer ds.Close()
 
 	batchedExactlyOnceScenario(ctx, ds)
+	produceBatchScenario(ctx, ds)
 	faultIsolationScenario(ctx, ds)
 	hotCompactionKeysScenario(ctx, ds)
 	partitionHealScenario(ctx, ds)
@@ -116,6 +121,81 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 		must(err)
 	}
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total+1, "a caller-keyed Produce routed per-call and deduped its retry")
+}
+
+// produceBatchScenario: the explicit batch verb -- unlike the batcher's
+// collapsed singles, the caller hands over the whole batch and gets
+// all-or-nothing back.
+func produceBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+	step("ProduceBatch: one transaction, argument order, all-or-nothing")
+
+	const total = 30
+	tp, cleanup := registerTopic(ctx, ds, "producebatch", largePartitionSize)
+	defer cleanup()
+
+	wp, err := producer.NewProducer[json.RawMessage](ds, nil)
+	must(err)
+	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	must(err)
+
+	items := make([]*producer.ProduceItem[json.RawMessage], 0, total)
+	for s := range total {
+		payload := json.RawMessage(fmt.Sprintf(`{"seq": %d}`, s))
+		item, err := producer.NewProduceItem(&payload, producer.ProduceOptions{})
+		must(err)
+		items = append(items, item)
+	}
+	results, err := wpInstance.ProduceBatch(ctx, items...)
+	must(err)
+	if len(results) != total {
+		die(fmt.Sprintf("want %d results, got %d", total, len(results)))
+	}
+	for s := 1; s < len(results); s++ {
+		if results[s].Id <= results[s-1].Id {
+			die(fmt.Sprintf("result %d id %d not after result %d id %d -- argument order broken", s, results[s].Id, s-1, results[s-1].Id))
+		}
+	}
+	fmt.Println("  ✓ ids strictly ascending in argument order")
+	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, "every item landed")
+
+	var txns int
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(
+		`SELECT count(DISTINCT xmin::text) FROM message_log_%d;`, tp.Id)).Scan(&txns))
+	if txns != 1 {
+		die(fmt.Sprintf("batch spread across %d transactions, want 1", txns))
+	}
+	fmt.Printf("  ✓ all %d rows share one transaction\n", total)
+
+	// all-or-nothing: item 2 is rejected server-side (jsonb refuses \u0000),
+	// so items 0-1 that already appended must roll back with it
+	badItems := make([]*producer.ProduceItem[json.RawMessage], 0, 5)
+	for s := range 5 {
+		payload := json.RawMessage(fmt.Sprintf(`{"seq": %d}`, s))
+		if s == 2 {
+			payload = json.RawMessage(`{"seq": "\u0000"}`)
+		}
+		item, err := producer.NewProduceItem(&payload, producer.ProduceOptions{})
+		must(err)
+		badItems = append(badItems, item)
+	}
+	_, err = wpInstance.ProduceBatch(ctx, badItems...)
+	if err == nil {
+		die("a batch with a poisoned item committed")
+	}
+	if !strings.Contains(err.Error(), "item 2") {
+		die(fmt.Sprintf("batch error must name the failed item, got: %v", err))
+	}
+	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, "the poisoned batch rolled back whole -- nothing landed")
+
+	// caller keys are single-Produce-only; an empty batch is a usage error
+	keyedPayload := json.RawMessage(`{"seq": 0}`)
+	if _, err := producer.NewProduceItem(&keyedPayload, producer.ProduceOptions{IdempotencyKey: uuid.Must(uuid.NewV7())}); err == nil {
+		die("NewProduceItem accepted a caller IdempotencyKey")
+	}
+	if _, err := wpInstance.ProduceBatch(ctx); err == nil {
+		die("an empty ProduceBatch did not error")
+	}
+	fmt.Println("  ✓ caller IdempotencyKey and empty batch rejected")
 }
 
 // faultIsolationScenario: 20 concurrent produces where payload 7 is rejected

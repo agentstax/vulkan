@@ -20,9 +20,9 @@ Behavior changes that must land before the 14b cleanup pass — 14b is
 naming/shape only, so anything that adds or moves behavior goes first,
 otherwise the API review locks a surface that is still due to change.
 
-- **Instrument the alert pipeline.** Design settled in [0524]: alert state
-  gauges pulled by the collector from the alert heads, check-run outcome
-  summaries pushed by the handler. In flight — chunk plan in TODO.md.
+- **Multi-message Produce.** Design settled in [0525]: ProduceBatch +
+  ProduceItem, one transaction all-or-nothing, no caller keys. In flight —
+  chunk plan in TODO.md.
 
 ## Next
 
@@ -174,26 +174,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1, after 14b — measurement, evaluation, and documentation; these want a
 surface that has stopped moving.
 
-- **Multi-message Produce.** One Produce call carrying N messages, at least
-  1 validated, so callers stop spawning goroutines to share the batcher's
-  transactions (the metrics collector's errgroup pattern).
-  - The batch unit must be a (message, options) pair, not bare messages
-    under one ProduceOptions — the motivating caller varies RoutingKey and
-    CompactionKey per message.
-  - All-or-nothing: one transaction, one error, ids returned in argument
-    order. No SQS-style per-entry partial results. This is atomic
-    multi-message publish — Kafka needs transactions for it, Postgres gives
-    it as one INSERT.
-  - Never enter the batcher as N splittable entries — a MaxSize split
-    breaks the atomicity. Either the direct-transaction path keyed produces
-    already use, or the batcher learns indivisible groups (len <= MaxSize
-    becomes a validation).
-  - First cut probably rejects per-item IdempotencyKey — keyed produces
-    bypass the batcher, and hot keys collapsing shared transactions is the
-    storm the idempotency-key redesign closed.
-  - SEQUENCING: changes the public Produce signature, so if accepted this
-    promotes to Now ahead of the 14b lock -- it cannot actually wait for
-    Later.
 - **Topic config as append-only declaration rows.** Design settled in [0519];
   build deferred so the config surface from [0518] settles first. topic keeps
   identity only (id, system_id, schema_version, created_at); a
