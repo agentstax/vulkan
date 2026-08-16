@@ -15,33 +15,22 @@ import (
 // - delivery_<id>
 // - delivery_log_<id>
 //
-// Split one per topic instead of shared because:
-// - Drop Partition functionality -- DropExpiredPartitions/SweepExpiredPartitions only expire a
-// partition once every cursor reading it has committed past it.
-// Shared across topics, that cursor floor was computed over every topic's
-// cursors at once, so one lagging consumer group on topic A blocked
-// partition drops for a completely unrelated topic B riding along in the
-// same table. Per-topic tables scope the floor to that topic's own cursors.
-// - Per topic retention -- Identifying when to drop a partition requires
-// looking at max(id) created_at > ttl for that partition. Under a shared topic table;
-// topic 1 or topic 2 could be that max(id) and as such would drive when a
-// partition is dropped ie would not have per topic retention it would be global retention.
-// - Blast Radius -- If message processing has high failure rate (say in the event of an outage)
-// delivery_<id> gets hit with a ton of churn (insert+delete). If shared, a topic with a high failure
-// rate would bloat that singular shared table and slow down every OTHER topic's claim
-// queries hitting the same physical disk pages. Per-topic contains that churn to
-// the noisy topic alone.
-// - Dense ID sequence -- A shared BIGSERIAL would leave each topic's ids scattered
-// across a sparse subset of it, which breaks the head/partitionSize math
-// EnsureNextPartition uses to create partitions when they are needed
+// Per-topic tables instead of shared ones:
+//   - partition drops wait on every cursor in the table -> one lagging group
+//     on topic A would block drops for unrelated topic B
+//   - retention reads each partition's age -> the youngest topic sharing a
+//     partition would set every other topic's expiry
+//   - a failure outage churns delivery_<id> with insert+delete -> shared, that
+//     churn would slow every other topic's claim queries
+//   - the create-ahead partition math needs ids dense from the topic's own
+//     sequence -> a shared BIGSERIAL scatters them
 func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
 	createTableSql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			id BIGSERIAL PRIMARY KEY, -- own sequence per table, so each topic's ids are independent.
-			-- Should never optimize cache sequence like:
-			--   ALTER SEQUENCE table_name_id_seq CACHE 32
-			-- the consumer's claim fence assumes ids are issued in INSERT order,
-			-- and a cached sequence hands out-of-order id blocks
+			id BIGSERIAL PRIMARY KEY,
+			-- never ALTER SEQUENCE ... CACHE on this sequence: the consumer's
+			-- claim fence assumes ids are issued in INSERT order, and a cached
+			-- sequence hands out out-of-order id blocks
 
 			routing_key TEXT,
 			compaction_key TEXT,
@@ -62,6 +51,16 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			FOR VALUES FROM (0) TO (%d);
 	`, iTopic.MessageLogPartitionTable(id, 0), iTopic.MessageLogTable(id), partitionSize)
 	if _, err := tx.Exec(ctx, createPartitionSql); err != nil {
+		return err
+	}
+
+	// keeps a key's history read (ListCompactionKeyMessages) an index scan.
+	// partial, so topics that never set a compaction key pay nothing.
+	createCompactionKeyIndexSql := fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS %s_compaction_key ON %s (compaction_key, id)
+			WHERE compaction_key IS NOT NULL;
+	`, iTopic.MessageLogTable(id), iTopic.MessageLogTable(id))
+	if _, err := tx.Exec(ctx, createCompactionKeyIndexSql); err != nil {
 		return err
 	}
 

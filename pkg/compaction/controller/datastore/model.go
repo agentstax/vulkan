@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// HeadData is the compaction head's message row, column-exact.
-type HeadData struct {
+// MessageData is one compacted message row.
+type MessageData struct {
 	Id             int64           `db:"id"`
 	Payload        json.RawMessage `db:"payload"`
 	CreatedAt      time.Time       `db:"created_at"`

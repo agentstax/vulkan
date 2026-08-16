@@ -11,8 +11,8 @@ import (
 
 // GetCompactionHead reads the current compaction head under compactionKey,
 // nil if the key has no head.
-func (d *CompactionDatastore) GetCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*HeadData, error) {
-	var head *HeadData
+func (d *CompactionDatastore) GetCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
+	var head *MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		head, err = d.getCompactionHead(ctx, topicId, compactionKey)
@@ -21,7 +21,7 @@ func (d *CompactionDatastore) GetCompactionHead(ctx context.Context, topicId int
 	return head, err
 }
 
-func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*HeadData, error) {
+func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			m.id,
@@ -35,7 +35,7 @@ func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int
 		WHERE h.topic_id = $1 AND h.compaction_key = $2;
 	`, topic.MessageLogTable(topicId))
 
-	var head HeadData
+	var head MessageData
 	err := d.Datastore.Pool.QueryRow(ctx, sql, topicId, compactionKey).Scan(
 		&head.Id,
 		&head.Payload,
@@ -55,8 +55,8 @@ func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int
 
 // ListCompactionHeads reads every key's current head on the topic, ordered by
 // compaction key.
-func (d *CompactionDatastore) ListCompactionHeads(ctx context.Context, topicId int64) ([]HeadData, error) {
-	var heads []HeadData
+func (d *CompactionDatastore) ListCompactionHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
+	var heads []MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		heads, err = d.listCompactionHeads(ctx, topicId)
@@ -65,7 +65,7 @@ func (d *CompactionDatastore) ListCompactionHeads(ctx context.Context, topicId i
 	return heads, err
 }
 
-func (d *CompactionDatastore) listCompactionHeads(ctx context.Context, topicId int64) ([]HeadData, error) {
+func (d *CompactionDatastore) listCompactionHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			m.id,
@@ -86,9 +86,9 @@ func (d *CompactionDatastore) listCompactionHeads(ctx context.Context, topicId i
 	}
 	defer rows.Close()
 
-	var heads []HeadData
+	var heads []MessageData
 	for rows.Next() {
-		var head HeadData
+		var head MessageData
 		if err := rows.Scan(
 			&head.Id,
 			&head.Payload,

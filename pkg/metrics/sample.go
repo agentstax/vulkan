@@ -1,0 +1,89 @@
+package metrics
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+)
+
+type Kind string
+
+const (
+	KindGauge   Kind = "gauge"   // a point-in-time level, each sample replaces the last
+	KindCounter Kind = "counter" // a running total, each sample carries the new total
+)
+
+func (k Kind) Validate() error {
+	switch k {
+	case KindGauge, KindCounter:
+		return nil
+	default:
+		return fmt.Errorf("kind must be %q or %q, got %q", KindGauge, KindCounter, k)
+	}
+}
+
+// Sample is one metric point on the __system.metrics topic. Names starting
+// with "vulkan." are reserved for Vulkan's own samples.
+type Sample struct {
+	Name       string            `json:"name"`
+	Kind       Kind              `json:"kind"`
+	Value      float64           `json:"value"`
+	Unit       string            `json:"unit"`
+	Attributes map[string]string `json:"attributes"`
+	At         time.Time         `json:"at"`
+}
+
+func NewSample(name string, kind Kind, value float64, unit string, attributes map[string]string, at time.Time) (*Sample, error) {
+	if name == "" {
+		return nil, errors.New("name is required")
+	}
+	if err := kind.Validate(); err != nil {
+		return nil, err
+	}
+	if at.IsZero() {
+		return nil, errors.New("at is required")
+	}
+
+	return &Sample{
+		Name:       name,
+		Kind:       kind,
+		Value:      value,
+		Unit:       unit,
+		Attributes: attributes,
+		At:         at,
+	}, nil
+}
+
+// SampleKey is the compaction key a Sample is produced under. Attribute keys
+// are sorted, so equal attribute sets always yield one key -- map iteration
+// order must never reach it.
+//
+// Ex: ("lag", {"group": "billing", "topic": "orders"}) -> "lag|group=billing,topic=orders"
+// Ex: ("lag", nil) -> "lag"
+func SampleKey(name string, attributes map[string]string) string {
+	if len(attributes) == 0 {
+		return name
+	}
+
+	keys := make([]string, 0, len(attributes))
+	for key := range attributes {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var builder strings.Builder
+	builder.WriteString(name)
+	for i, key := range keys {
+		if i == 0 {
+			builder.WriteString("|")
+		} else {
+			builder.WriteString(",")
+		}
+		builder.WriteString(key)
+		builder.WriteString("=")
+		builder.WriteString(attributes[key])
+	}
+	return builder.String()
+}
