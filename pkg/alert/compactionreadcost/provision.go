@@ -1,4 +1,4 @@
-package partitioncount
+package compactionreadcost
 
 import (
 	"context"
@@ -8,13 +8,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 // Declare creates the alert's consumer group on the job_requests topic and its
 // job-name binding declaration, then writes the alert's config onto the group's
 // worker row -- the newest declaration wins. RegisterSystem runs it every time.
-func (d *PartitionCountDefinition) Declare(ctx context.Context, owner *common.Owner) error {
+func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *common.Owner) error {
 	if err := workercontroller.ValidateOwner(owner, common.OwnerSystem, JobName); err != nil {
 		return err
 	}
@@ -42,6 +43,23 @@ func (d *PartitionCountDefinition) Declare(ctx context.Context, owner *common.Ow
 		return err
 	}
 	return d.workers.RegisterWorker(ctx, JobName, groupOwner, &workercontroller.WorkerConfig{
-		Metadata: toPartitionCountMetadata(d.Config),
+		Metadata: toCompactionReadCostMetadata(d.Config),
 	})
+}
+
+// Provision claims one live instance. nil = declined (target_instances
+// already filled) -- not an error, try again later.
+func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+	parsed, err := workercontroller.ParseMetadata[compactionReadCostMetadata](metadata)
+	if err != nil {
+		return nil, err
+	}
+	if err := parsed.Validate(); err != nil {
+		return nil, err
+	}
+	claimed, err := workercontroller.RegisterInstance(ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
+	if err != nil || claimed == nil {
+		return nil, err
+	}
+	return newCompactionReadCostExecution(d, owner, claimed, parsed.RepeatInterval)
 }

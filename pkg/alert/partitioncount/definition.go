@@ -1,12 +1,10 @@
 package partitioncount
 
 import (
-	"context"
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
-	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
@@ -15,7 +13,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
@@ -115,21 +112,4 @@ func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *Defin
 
 func (d *PartitionCountDefinition) Name() string {
 	return JobName
-}
-
-// Provision claims one live instance. nil = declined (target_instances
-// already filled) -- not an error, try again later.
-func (d *PartitionCountDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	parsed, err := workercontroller.ParseMetadata[partitionCountMetadata](metadata)
-	if err != nil {
-		return nil, err
-	}
-	if err := parsed.Validate(); err != nil {
-		return nil, err
-	}
-	claimed, err := workercontroller.RegisterInstance(ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
-	if err != nil || claimed == nil {
-		return nil, err
-	}
-	return newPartitionCountExecution(d, owner, claimed, parsed.RepeatInterval)
 }

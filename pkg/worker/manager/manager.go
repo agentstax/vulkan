@@ -1,11 +1,9 @@
 package manager
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -72,26 +70,4 @@ func NewManagerDefinition(ds *coredatastore.PostgresDatastore, cfg *ManagerConfi
 
 func (m *ManagerDefinition) Name() string {
 	return WorkerManager
-}
-
-// Register claims one live instance. owner is the row's own owner and the
-// instance's reconcile scope -- the deeper the owner, the shorter the chain.
-// nil = declined, which for a manager row means target_instances was set away
-// from worker.NoInstanceTarget.
-func (m *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	if owner == nil {
-		return nil, errors.New("owner must not be nil")
-	}
-	parsed, err := controller.ParseMetadata[managerMetadata](metadata)
-	if err != nil {
-		return nil, err
-	}
-	if err := parsed.Validate(); err != nil {
-		return nil, err
-	}
-	claimed, err := controller.RegisterInstance(ctx, m.workers, workerId, owner, owner.Kind(), WorkerManager, m.Config.InstanceTTL)
-	if err != nil || claimed == nil {
-		return nil, err
-	}
-	return newManagerExecution(m, owner, claimed, parsed)
 }

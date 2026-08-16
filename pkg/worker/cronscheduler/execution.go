@@ -9,7 +9,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler/datastore"
@@ -24,21 +23,21 @@ type CronSchedulerExecution struct {
 	Config *CronSchedulerConfig
 	Logger logger.Logger
 
-	runner    *controller.InstanceTickRunner
-	datastore *datastore.CronSchedulerDatastore
-	producer  *producer.Producer[cron.JobRequest]
-	metadata  *cronSchedulerMetadata
-
-	// registered by Run before the first scan -- scan never sees it nil
+	runner           *controller.InstanceTickRunner
+	datastore        *datastore.CronSchedulerDatastore
+	metadata         *cronSchedulerMetadata
 	producerInstance *producer.ProducerInstance[cron.JobRequest]
 }
 
-func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata) (*CronSchedulerExecution, error) {
+func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata, producerInstance *producer.ProducerInstance[cron.JobRequest]) (*CronSchedulerExecution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
+	}
+	if producerInstance == nil {
+		return nil, errors.New("producerInstance must not be nil")
 	}
 
 	runner, err := controller.NewInstanceTickRunner(cronScheduler.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
@@ -52,13 +51,13 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 	}
 
 	return &CronSchedulerExecution{
-		Owner:     owner,
-		Config:    cronScheduler.Config,
-		Logger:    cronScheduler.Logger,
-		runner:    runner,
-		datastore: cronScheduler.datastore,
-		producer:  cronScheduler.producer,
-		metadata:  metadata,
+		Owner:            owner,
+		Config:           cronScheduler.Config,
+		Logger:           cronScheduler.Logger,
+		runner:           runner,
+		datastore:        cronScheduler.datastore,
+		metadata:         metadata,
+		producerInstance: producerInstance,
 	}, nil
 }
 
@@ -67,13 +66,7 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 func (i *CronSchedulerExecution) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "cron scheduler starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
 
-	producerInstance, err := i.producer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
-	if err != nil {
-		return err
-	}
-	i.producerInstance = producerInstance
-
-	err = i.runner.Run(ctx, i.scan)
+	err := i.runner.Run(ctx, i.scan)
 	if err == nil {
 		i.Logger.InfoContext(ctx, "cron scheduler stopped", "system", i.Owner.SystemId)
 	}

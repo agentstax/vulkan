@@ -1,15 +1,11 @@
 package janitor
 
 import (
-	"context"
 	"errors"
-	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
 )
@@ -74,31 +70,4 @@ func NewJanitorDefinition(ds *coredatastore.PostgresDatastore, cfg *JanitorConfi
 
 func (j *JanitorDefinition) Name() string {
 	return WorkerJanitor
-}
-
-// Register claims one live instance, then resolves the topic it sweeps.
-// nil = declined (target_instances already filled) -- not an error, try
-// again later.
-func (j *JanitorDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	parsed, err := controller.ParseMetadata[janitorMetadata](metadata)
-	if err != nil {
-		return nil, err
-	}
-	if err := parsed.Validate(); err != nil {
-		return nil, err
-	}
-	claimed, err := controller.RegisterInstance(ctx, j.workers, workerId, owner, common.OwnerTopic, WorkerJanitor, j.Config.InstanceTTL)
-	if err != nil || claimed == nil {
-		return nil, err
-	}
-
-	current, err := j.topics.GetTopicById(ctx, owner.TopicId)
-	if err != nil {
-		return nil, err
-	}
-	if current == nil {
-		return nil, fmt.Errorf("topic %d not found -- register it with MessageAdmin.RegisterTopic first", owner.TopicId)
-	}
-
-	return newJanitorExecution(j, current, claimed, parsed)
 }
