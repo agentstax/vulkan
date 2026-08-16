@@ -33,11 +33,17 @@ docs/decisions/.
   topic name never share a key); collector definition gained a
   TopicController for ListTopics; __system.metrics skipped by name in
   collectTopics.
-- [ ] 5. CLI reads. Admin gains a CompactionController[metrics.Sample]
+- [x] 5. CLI reads. Admin gains a CompactionController[metrics.Sample]
   sibling to alertHeads (safe: only samples carry compaction keys on the
   topic). `vulkan metrics list` over heads; `vulkan metrics get` over
   ListCompactionKeyMessages, one block per attribute set, series cap,
-  --attribute/--system/--user filters. Mirrors alert_list.go.
+  --attribute/--system/--user filters. Mirrors alert_list.go. As built:
+  admin verbs ListSamples + ListSampleMessages(compactionKey, limit);
+  list has --system/--user (name-prefix filter) and -q printing series
+  keys; get <name> has --attribute (repeatable key=value), --limit 10,
+  --series 10 with a truncation notice; sampleValueCell renders by UCUM
+  unit (ms -> duration, annotation/none -> bare number, other real units
+  verbatim beside the number).
 - [ ] 6. Otel module extraction. New nested module (otelvulkan/, joins
   go.work with no require line like cmd/vulkan; release tagging becomes a
   three-module story -- update cmd/vulkan/go.mod's note). pkg/metrics/metrics

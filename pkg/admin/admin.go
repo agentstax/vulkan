@@ -9,6 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -29,6 +30,7 @@ type MessageAdmin struct {
 	consumerController *consumercontroller.ConsumerController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
+	sampleHeads        *compactioncontroller.CompactionController[metrics.Sample] // safe to type the whole topic: only samples carry compaction keys on __system.metrics, so heads and key reads never see an abandoned-routine event
 	metricsController  *metricscontroller.MetricsController
 	workerController   *workercontroller.WorkerController
 	migrateRunner      *migrate.Runner
@@ -118,6 +120,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
+	sampleHeads, err := compactioncontroller.NewCompactionController[metrics.Sample](ds, &compactioncontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	consumerController, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -171,6 +181,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		consumerController: consumerController,
 		jobRequestProducer: jobRequestProducer,
 		alertHeads:         alertHeads,
+		sampleHeads:        sampleHeads,
 		metricsController:  metricsController,
 		workerController:   workerController,
 		migrateRunner:      migrateRunner,
