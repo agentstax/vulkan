@@ -5,6 +5,39 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-15 — Config becomes code-owned [0518] [0520] [0521]
+
+- Config is declared in code and the latest declaration wins. RegisterTopic,
+  a consumer/worker Declare and RegisterCronJob each write their declared
+  mutable config onto the row they find, logging old -> new at Info when it
+  replaces something different (`replaceTopicConfig`, `replaceCronJobConfig`,
+  each in its datastore's `replace.go`).
+- Deleted: AlterTopic, AlterGroup, AlterWorker(s), AlterCronJob, their
+  Alter*Config/Alter*Data types and to* adapters, UpdateTopic, UpdateCronJob,
+  MetadataValue with applyOverrides/mergeMetadata/declaresKey,
+  pkg/common/update.go, ErrCronJobConfigMismatch, and `topic config
+  set|unset` / `group config set|unset`. Both `config get`s stay.
+- Worker metadata is the plain typed value per key -- each kind's metadata
+  struct holds a `time.Duration` / `int` / `common.MessageOptions` directly,
+  and the stored JSONB flattens from `{"poll_rate":{"default":N}}` to
+  `{"poll_rate":N}`. [0516]'s repeat_interval lands as one of those fields.
+- Identity and action state are not config: partition_size still raises
+  ErrTopicConfigMismatch, a cron job's owner columns are written at creation
+  only, and both `suspended` and `target_instances = 0` survive a
+  redeclaration -- SuspendCronJob/UnsuspendCronJob are what change the former.
+- The CLI creates nothing ([0521]): `vulkan topic register` and `vulkan cron
+  register` are deleted, matching `vulkan system`, which never had one, and
+  cmd/vulkan/README.md says where topics and cron jobs come from instead.
+- New surface in the same sweep ([0520]): a JobConfig (Schedule, Threshold)
+  per built-in alert, composed into admin.RegisterSystemConfig, which
+  RegisterSystem now takes; ensureSystemCronJob and ensureSystemTopic
+  collapsed into ordinary register calls.
+- Labs: the producer/consumer stand-ins (consumer, bench, variance, crashlab)
+  resolve their topic with GetTopic and exit with a clear message when it
+  isn't registered; registeridempotencylab, idempotencykeyslab, cronlab,
+  alertlab and reservedtopiclab assert the newest declaration wins; topiclab's
+  partition proofs wait for create-ahead's partition instead of racing it.
+
 ## 2026-08-15 — Destroy system [0514]
 
 - `admin.DestroySystem` completes the destroy-verb set (topic, group,

@@ -113,9 +113,9 @@ func main() {
 
 	// ===== PROOF 2: a badly-lagging group on topic B does not block a drop on topic A =====
 	step("PROOF 2: a badly-lagging group on topic B does not block a drop on topic A")
-	for range 2 { // topicA now has 5 rows -- the 5th crossed into partition 1 via the produce self-heal
-		publish(ctx, wpAInstance, "")
-	}
+	publish(ctx, wpAInstance, "") // id 4, the trigger point create-ahead builds partition 1 from
+	waitForPartition(ctx, ds, topicA.Id, 1)
+	publish(ctx, wpAInstance, "") // id 5, landing in the partition that is already there
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
@@ -173,9 +173,11 @@ func main() {
 	_, err = cd.DeclareBindings(ctx, groupYID, []string{"sliceY.*"}, time.Now())
 	must(err)
 
-	for range 5 { // 5 rows, all in sliceX -- the 5th self-heals partition 1 into place
+	for range 4 { // 4 rows, all in sliceX -- the 4th builds partition 1 through create-ahead
 		publish(ctx, wpDInstance, "sliceX.event")
 	}
+	waitForPartition(ctx, ds, topicD.Id, 1)
+	publish(ctx, wpDInstance, "sliceX.event") // id 5, landing in the partition that is already there
 	time.Sleep(ttl + ttlMargin)
 
 	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
@@ -255,6 +257,29 @@ func allIds(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID in
 }
 
 func assertPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, label string, want []int64) {
+	assertInt64s(label, partitions(ctx, ds, topicID), want)
+}
+
+// waitForPartition blocks until partition n exists. Create-ahead runs in a
+// background goroutine off the produce that hits its trigger point id, so a
+// publish right behind that one races it: the goroutine reads MAX(id) and
+// builds the partition after whatever it sees.
+func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, n int64) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		for _, existing := range partitions(ctx, ds, topicID) {
+			if existing == n {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			die(fmt.Sprintf("partition %d of topic %d never appeared", n, topicID))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func partitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) []int64 {
 	prefix := fmt.Sprintf("message_log_%d_", topicID)
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n
@@ -274,7 +299,7 @@ func assertPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 		got = append(got, n)
 	}
 	must(rows.Err())
-	assertInt64s(label, got, want)
+	return got
 }
 
 func ids(msgs []messageconsumercontroller.Message) []int64 {

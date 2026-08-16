@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// replaceCronJobConfig overwrites an already-registered topic's mutable config
-// with data's: the newest declaration wins.
+// replaceCronJobConfig overwrites an already-registered cron job's mutable
+// config with register's: the newest declaration wins.
 func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *CronJobData, register *RegisterCronJobData) (*CronJobData, error) {
 	dataJson, err := marshalJson(register.Data)
 	if err != nil {

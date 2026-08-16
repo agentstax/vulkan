@@ -26,7 +26,7 @@ func main() {
 	routingKeyPtr := flag.String("routing-key", "", "routing key attached to each message (optional)")
 
 	// -topic name
-	topicPtr := flag.String("topic", "learning.v1", "topic to publish to (auto-registered if new)")
+	topicPtr := flag.String("topic", "learning.v1", "topic to publish to (this command declares it -- the other examples only read it)")
 
 	// must always parse
 	flag.Parse()

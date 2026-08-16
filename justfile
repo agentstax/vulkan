@@ -95,7 +95,7 @@ abandoned-events-lab:
 duty-backoff-lab:
   go run examples/phase_1/dutybackofflab/main.go
 
-# default-alert lab: RegisterSystem seeding + operator-override survival,
+# default-alert lab: RegisterSystem seeding + declared thresholds applying,
 # every classify arm (edge WARN, quiet hold, repeat republish refreshing the
 # head, silent severity change, resolve INFO), the live partition_count
 # executor end to end, and per-topic isolation around a corrupted head.

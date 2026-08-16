@@ -18,14 +18,13 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 func main() {
 	// FLAGS
 
 	groupPtr := flag.String("group", "learning.v1", "consumer group name")
-	topicPtr := flag.String("topic", "learning.v1", "topic to consume from (auto-registered if new)")
+	topicPtr := flag.String("topic", "learning.v1", "topic to consume from (must already be registered, e.g. via `just produce`)")
 	processorSleepPtr := flag.Float64("processor-sleep", 0.1, "artifical sleep in consumer func for testing (in seconds)")
 	failRatePtr := flag.Float64("fail-rate", 0.0, "artifical fail rate in consumer func for testing")
 	crashAfterPtr := flag.Float64("crash-after", -1, "artificial crash after n attempts for testing")
@@ -68,9 +67,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
 	if err != nil {
 		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	if t == nil {
+		fmt.Printf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 		os.Exit(1)
 	}
 

@@ -38,33 +38,6 @@ otherwise the API review locks a surface that is still due to change.
     otherwise-succeeded handler run — cron run status only shows the joined
     error, not how many topics failed or fired.
 
-- **Config becomes code-owned.** Design settled in [0518]: code is the only
-  config writer, the latest declaration wins, the CLI reads config and never
-  writes it. Replaces the layering work of [0515]/[0517], which is superseded
-  before it finished landing.
-  - Deletion sweep: AlterTopic, AlterGroup, AlterWorker(s), their Alter*Config
-    types, MetadataValue's Override layer, applyOverrides,
-    pkg/common/update.go, and `config set`/`config unset` for every resource.
-    `config get` stays.
-  - ErrTopicConfigMismatch narrows to partition_size alone; a register whose
-    mutable config differs from stored logs old -> new at Info.
-  - [0516]'s repeat_interval relocation stands — it lands as a code-declared
-    metadata field with no override layer.
-  - Labs call RegisterTopic from app-code position today; they move to
-    GetTopic wherever they are standing in for a producer or consumer.
-  - Cron joins the sweep ([0520]): cron_alter.go, AlterCronJob and
-    AlterCronJobConfig go, ErrCronJobConfigMismatch is deleted outright, and
-    ensureSystemCronJob/ensureSystemTopic collapse into ordinary register
-    calls now that nothing needs to dodge a mismatch check.
-  - New surface in the same sweep ([0520]): a JobConfig per built-in alert
-    (Schedule, Threshold, current consts as defaults) composed into
-    admin.RegisterSystemConfig, which RegisterSystem now takes. Without it the
-    sweep would delete the only way to tune the alerts vulkan ships.
-  - Register overwrites declared fields and never touches action state
-    (Suspended). alertlab's threshold assertion inverts accordingly.
-  - The CLI creates nothing ([0521]): `vulkan topic register` and `vulkan cron
-    register` are deleted, matching `vulkan system`, which never had one.
-
 ## Next
 
 **The 14b cleanup / public API design pass** — naming, shape, comments, and

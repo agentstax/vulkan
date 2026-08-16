@@ -3,7 +3,7 @@
 // executor claimed as a real worker.
 //
 // Sections:
-//  1. seeding -- both check jobs + consumer groups + exact declarations + worker
+//  1. seeding -- both alert cron jobs + consumer groups + exact declarations + worker
 //     rows exist after RegisterSystem; a declared threshold applies on a
 //     re-register and a suspended job survives one
 //  2. classify -- driven through AlertController with a 2s repeat: the active
@@ -99,8 +99,8 @@ func main() {
 	classifySection(ctx)
 
 	// the executor's embedded consumer spawns a cron scheduler -- suspend the
-	// check jobs so only the lab's run-nows produce requests (a suspended job
-	// still runs on run-now)
+	// alert cron jobs so only the lab's run-nows produce requests (a suspended
+	// job still runs on run-now)
 	must(mAdmin.SuspendCronJob(ctx, partitioncount.JobName))
 	must(mAdmin.SuspendCronJob(ctx, compactionreadcost.JobName))
 
@@ -163,7 +163,7 @@ func seedingSection(ctx context.Context) {
 	if row == nil {
 		die("RegisterSystem must declare the " + partitioncount.JobName + " worker row")
 	}
-	fmt.Println("  ✓ both check jobs, exact declarations, and the worker row exist")
+	fmt.Println("  ✓ both alert cron jobs, exact declarations, and the worker row exist")
 
 	// a declared threshold applies on every RegisterSystem, and a suspended
 	// alert job stays suspended through one
@@ -180,7 +180,7 @@ func seedingSection(ctx context.Context) {
 	readCostJob, err = mAdmin.GetCronJob(ctx, compactionreadcost.JobName)
 	must(err)
 	if !readCostJob.Suspended {
-		die("a suspended check job must survive re-register")
+		die("a suspended alert cron job must survive re-register")
 	}
 
 	declareThreshold(ctx, 0)

@@ -23,7 +23,6 @@ import (
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
-	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
 func main() {
@@ -69,9 +68,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(1)
+	}
+	if t == nil {
+		fmt.Printf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 		os.Exit(1)
 	}
 
