@@ -129,6 +129,40 @@ Three layers per domain (template: worker, topic):
   (see Package layout). Constructors nil-check required deps, then
   default+validate their own config, returning errors all the way through.
 
+## Pointers & receivers
+
+- Pointer receivers on everything a constructor builds -- controllers,
+  datastores, configs, workers. Value receivers only on small immutable
+  vocabulary types (Owner's accessors, a string enum's `Validate`). Never
+  mix receiver kinds on one type: pointer-receiver methods are absent from
+  the value's method set, so `T` and `*T` satisfy interfaces differently
+  and a copied value silently loses the mutating methods.
+- A pointer param states that the callee mutates or shares the value --
+  never a performance reflex. Flat row-shaped structs and stdlib values
+  (`time.Time`, `uuid.UUID`) pass by value; nested read-models travel as
+  pointers end to end. Slices and maps are already reference-backed, so
+  element types are values (`[]Data` out of datastores) unless the element
+  is itself pointer-classified (`[]*Topic`); never `[]*T` to make room for
+  nil entries.
+- Config structs are passed as `*Config` while being resolved --
+  `WithDefaults()` mutates in place. A long-lived instance stores a value
+  copy once resolved, so caller mutations after construction change nothing.
+- Constructors return `(*Struct, error)`, nil on error: a caller that
+  ignores the error panics at first use with a stack trace, instead of
+  proceeding on a zero value that looks meaningful.
+- Outside the error path a pointer is never nil (`*common.Owner` is the
+  template): no nil-safe receivers, no nil-means-unset params. Expected
+  absence is comma-ok; a param nothing populates yet gets deleted.
+- A struct holding a mutex, atomic, or connection pool is pointer-only:
+  copying it copies the lock, which is a data race, not a style slip.
+- A value copy is not isolation: any slice, map, or pointer field inside it
+  still aliases the original's backing memory, so mutating a copy can break
+  the original's invariants.
+- Accept interfaces only at real seams (`logger.Logger`; `Querier` stays
+  private); return concrete `(*Struct, error)`. Never return a concrete
+  pointer through an interface-typed return -- a typed nil stored in an
+  interface compares non-nil, so every downstream nil guard lies.
+
 ## Migrations
 
 - Pre-v1, every schema change edits the baseline `CREATE TABLE` DDL in place
