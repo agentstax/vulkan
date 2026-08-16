@@ -5,6 +5,24 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-16 — Multi-message Produce [0525]
+
+- ProducerInstance gained ProduceBatch(ctx, items...): every item in one
+  transaction, none land unless all do, results in argument order, a
+  failure named as "item N". ProduceItem{Message, Options} via
+  NewProduceItem, which rejects a caller IdempotencyKey — one hot key
+  would stall the batch's shared transaction, so keyed messages stay on
+  Produce. No new write path: it drives controller.AppendMessageBatch (the
+  batcher's flush verb); a private toAppend adapter fills options and
+  generates the fresh v7 the datastore's ambiguous-commit rerun dedups on.
+  Nothing dedups across calls, exactly as with unkeyed Produce.
+- Dogfooded: collectConsumerGroup and both alert produceCheckSummary
+  methods replaced their errgroup fan-outs with one ProduceBatch call each.
+- producer-batch-lab's new produceBatchScenario proves the contract: 30
+  items under a single xmin, ids ascending in argument order, a
+  jsonb-poisoned item rolling the whole batch back with "item 2" in the
+  error, caller-key and empty-batch rejections. Fresh-DB suite 36/36.
+
 ## 2026-08-16 — Alert pipeline instrumented [0524]
 
 - The metrics collector's pass gained collectAlerts: fleet-level

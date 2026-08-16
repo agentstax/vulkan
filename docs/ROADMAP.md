@@ -16,16 +16,6 @@ the item is removed.
 
 ## Now
 
-Behavior changes that must land before the 14b cleanup pass — 14b is
-naming/shape only, so anything that adds or moves behavior goes first,
-otherwise the API review locks a surface that is still due to change.
-
-- **Multi-message Produce.** Design settled in [0525]: ProduceBatch +
-  ProduceItem, one transaction all-or-nothing, no caller keys. In flight —
-  chunk plan in TODO.md.
-
-## Next
-
 **The 14b cleanup / public API design pass** — naming, shape, comments, and
 internal cleanup; no new behavior. Locks the surface before v1.
 
@@ -33,11 +23,32 @@ Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
 - **Refactor remaining packages into the worker/topic layered pattern:**
-  - pkg/migrate needs a full comb-through: pkg/migrate/version/support.go and
-    pkg/migrate/datastore system/version.go don't follow the dependency
-    injection patterns; common.Owner.name not being required is a smell
-    caused by it; the stray SystemOwner in pkg/migrate/datastore/system.go
-    likewise.
+  - pkg/migrate needs a full comb-through (surveyed 2026-08-16, all 670
+    lines + callers; proposed shape below, not yet reviewed):
+    - Version / SystemOwner / IsLocked / AssertSchemaSupported are free
+      funcs taking a raw Querier -- the banned public-signature shape; the
+      topic and worker controllers feed them by reaching through two layers
+      of exported fields (c.datastore.Datastore.Pool). Proposal: make them
+      Runner methods; those controllers build a Runner from their own
+      *PostgresDatastore at construction and hold it.
+    - Runner + MigrateDatastore have exported fields, bare (ds, retryPolicy,
+      log) params with nil-tolerated logger, no Config structs. Proposal:
+      RunnerConfig + MigrateDatastoreConfig with WithDefaults/Validate,
+      unexported fields, Wrap-only same-named pairs on the datastore
+      publics; internals-only verbs (RecordSuccess, TryRecordFailure)
+      unexport.
+    - Owner.Name "diagnostics only" exists ONLY because the schema gate
+      fabricates NewTopicOwner(systemId, topicId, "") at support.go and
+      topic/controller/schema.go -- the read never uses the name. Proposal:
+      split the gate by what callers know -- AssertSystemSchemaSupported
+      (ctx, systemId) / AssertTopicSchemaSupported(ctx, systemId, topicId),
+      datastore reads by id columns -- then NewTopicOwner /
+      NewConsumerGroupOwner reject an empty name.
+    - SystemOwner stays in migrate (as a Runner method): admin imports
+      migrate so rehoming is a cycle, and migrate must resolve the system
+      before schemas are trustworthy (it owns the 42P01 handling).
+    - Checkpoint: invariant-lab + schema-gate-lab, CLI migrate
+      status/up/down paths, fresh-DB suite.
   - pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,
     execution}.go could be cleaner — not bad, but improvable.
   - Probably move pkg/context and pkg/logger into pkg/common until the final
@@ -168,6 +179,8 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     it must be ONE codebase-wide sweep so the files stay identical, never a
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
+
+## Next
 
 ## Later
 
