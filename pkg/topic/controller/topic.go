@@ -78,7 +78,7 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 		return nil, err
 	}
 
-	registered, err := c.datastore.RegisterTopic(ctx, toRegisterTopicData(systemId, name, version, cfg))
+	registered, err := c.datastore.RegisterTopic(ctx, toTopicData(systemId, name, version, cfg))
 	if err != nil {
 		return nil, err
 	}

@@ -9,15 +9,15 @@ import (
 )
 
 // replaceTopicConfig overwrites an already-registered topic's mutable config
-// with data's: the newest declaration wins.
+// with declared's: the newest declaration wins.
 // partition_size is not mutable config.
-func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicData, data *TopicData) (*TopicData, error) {
-	if found.PartitionSize != data.PartitionSize {
+func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicData, declared *TopicData) (*TopicData, error) {
+	if found.PartitionSize != declared.PartitionSize {
 		return nil, fmt.Errorf("%w: topic %s version %d: partition_size is fixed at %d, got %d",
-			topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, found.PartitionSize, data.PartitionSize)
+			topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, found.PartitionSize, declared.PartitionSize)
 	}
 
-	if !configDiffers(found, data) {
+	if !configDiffers(found, declared) {
 		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
 		return found, nil
 	}
@@ -47,10 +47,10 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 
 	row := d.Datastore.Pool.QueryRow(ctx, sql,
 		found.Id,
-		data.RetentionTTLNs,
-		data.AllowDropPastCommitted,
-		data.IdempotencyKeyTTLNs,
-		data.DeliveryLogMode,
+		declared.RetentionTTLNs,
+		declared.AllowDropPastCommitted,
+		declared.IdempotencyKeyTTLNs,
+		declared.DeliveryLogMode,
 	)
 	updated, err := d.scanTopicData(row)
 	if err != nil {
@@ -72,10 +72,11 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 	return updated, nil
 }
 
-// configDiffers reports whether the declaration would change any mutable config field.
-func configDiffers(found *TopicData, data *TopicData) bool {
-	return found.RetentionTTLNs != data.RetentionTTLNs ||
-		found.AllowDropPastCommitted != data.AllowDropPastCommitted ||
-		found.IdempotencyKeyTTLNs != data.IdempotencyKeyTTLNs ||
-		found.DeliveryLogMode != data.DeliveryLogMode
+// configDiffers reports whether the declaration would change any mutable
+// config field.
+func configDiffers(found *TopicData, declared *TopicData) bool {
+	return found.RetentionTTLNs != declared.RetentionTTLNs ||
+		found.AllowDropPastCommitted != declared.AllowDropPastCommitted ||
+		found.IdempotencyKeyTTLNs != declared.IdempotencyKeyTTLNs ||
+		found.DeliveryLogMode != declared.DeliveryLogMode
 }

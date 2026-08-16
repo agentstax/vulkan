@@ -9,17 +9,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// InsertWorker creates the (name, owner) worker row, or writes metadata onto
+// RegisterWorker creates the (name, owner) worker row, or writes metadata onto
 // the existing one -- the newest declaration wins. targetInstances is set at
 // creation only: 0 is how a worker is suspended, and a redeclaration would
 // resume it.
-func (d *WorkerDatastore) InsertWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
+func (d *WorkerDatastore) RegisterWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.insertWorker(ctx, name, owner, metadata, targetInstances)
+		return d.registerWorker(ctx, name, owner, metadata, targetInstances)
 	})
 }
 
-func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
+func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err

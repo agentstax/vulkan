@@ -9,18 +9,18 @@ import (
 )
 
 // replaceCronJobConfig overwrites an already-registered cron job's mutable
-// config with register's: the newest declaration wins.
-func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *CronJobData, register *RegisterCronJobData) (*CronJobData, error) {
-	dataJson, err := marshalJson(register.Data)
+// config with declared's: the newest declaration wins.
+func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *CronJobData, declared *RegisterCronJobData) (*CronJobData, error) {
+	dataJson, err := marshalJson(declared.Data)
 	if err != nil {
 		return nil, fmt.Errorf("data: %w", err)
 	}
-	metadataJson, err := marshalJson(register.Metadata)
+	metadataJson, err := marshalJson(declared.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 
-	if !configDiffers(found, register, dataJson, metadataJson) {
+	if !configDiffers(found, declared, dataJson, metadataJson) {
 		d.Logger.InfoContext(ctx, "cron job registered (already existed)", "cron_job", found.Name, "cron_job_id", found.Id)
 		return found, nil
 	}
@@ -28,14 +28,14 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 	// a scheduled time already due under the old schedule is dropped, not
 	// produced late -- the new schedule decides when the job next runs
 	var next *time.Time
-	if found.Schedule != register.Schedule.String() {
+	if found.Schedule != declared.Schedule.String() {
 		dbNow, err := d.dbNow(ctx, d.Datastore.Pool)
 		if err != nil {
 			return nil, err
 		}
-		seeded := register.Schedule.Next(dbNow)
+		seeded := declared.Schedule.Next(dbNow)
 		if seeded.IsZero() {
-			return nil, fmt.Errorf("schedule %q has no scheduled time after %v", register.Schedule, dbNow)
+			return nil, fmt.Errorf("schedule %q has no scheduled time after %v", declared.Schedule, dbNow)
 		}
 		next = &seeded
 	}
@@ -66,7 +66,7 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 			last_scheduled_time;
 	`
 	row := d.Datastore.Pool.QueryRow(ctx, sql, found.Id,
-		register.Schedule.String(), register.Concurrency, register.TimeoutNs, dataJson, metadataJson, next)
+		declared.Schedule.String(), declared.Concurrency, declared.TimeoutNs, dataJson, metadataJson, next)
 	updated, err := d.scanCronJobData(row)
 	if err != nil {
 		return nil, err
@@ -88,29 +88,30 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 	return updated, nil
 }
 
-// configDiffers reports whether the declaration would change any config column.
-func configDiffers(found *CronJobData, register *RegisterCronJobData, dataJson json.RawMessage, metadataJson json.RawMessage) bool {
-	return found.Schedule != register.Schedule.String() ||
-		found.Concurrency != register.Concurrency ||
-		found.TimeoutNs != register.TimeoutNs ||
+// configDiffers reports whether the declaration would change any mutable
+// config field.
+func configDiffers(found *CronJobData, declared *RegisterCronJobData, dataJson json.RawMessage, metadataJson json.RawMessage) bool {
+	return found.Schedule != declared.Schedule.String() ||
+		found.Concurrency != declared.Concurrency ||
+		found.TimeoutNs != declared.TimeoutNs ||
 		!jsonEqual(found.Data, dataJson) ||
 		!jsonEqual(found.Metadata, metadataJson)
 }
 
 // marshalJson mirrors what the INSERT stores: nil -> {} (its COALESCE).
-func marshalJson(v any) (json.RawMessage, error) {
-	if v == nil {
+func marshalJson(value any) (json.RawMessage, error) {
+	if value == nil {
 		return json.RawMessage(`{}`), nil
 	}
-	return json.Marshal(v)
+	return json.Marshal(value)
 }
 
 // jsonEqual matches jsonb's = -- the stored side comes back normalized, so
 // key order and whitespace can't count.
-func jsonEqual(a, b json.RawMessage) bool {
-	var av, bv any
-	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
+func jsonEqual(stored json.RawMessage, declared json.RawMessage) bool {
+	var storedValue, declaredValue any
+	if json.Unmarshal(stored, &storedValue) != nil || json.Unmarshal(declared, &declaredValue) != nil {
 		return false
 	}
-	return reflect.DeepEqual(av, bv)
+	return reflect.DeepEqual(storedValue, declaredValue)
 }

@@ -164,7 +164,7 @@ func destroySection(ctx context.Context, ds *coredatastore.PostgresDatastore, mA
 	must(err)
 	groupOwner, err := common.NewConsumerGroupOwner(topicA.SystemId, topicA.Id, doomed.Id, doomedName)
 	must(err)
-	must(workers.InsertWorker(ctx, "message_consumer", groupOwner, nil))
+	must(workers.RegisterWorker(ctx, "message_consumer", groupOwner, nil))
 	row, err := workers.GetWorker(ctx, "message_consumer", groupOwner)
 	must(err)
 	claimed, err := workers.ClaimInstance(ctx, row.Id, 30*time.Second)

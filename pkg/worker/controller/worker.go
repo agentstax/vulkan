@@ -8,10 +8,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// InsertWorker creates the (name, owner) worker row, or writes cfg.Metadata
+// RegisterWorker creates the (name, owner) worker row, or writes cfg.Metadata
 // onto the existing one -- the newest declaration wins. cfg.TargetInstances
 // applies at creation only.
-func (c *WorkerController) InsertWorker(ctx context.Context, name string, owner *common.Owner, cfg *WorkerConfig) error {
+func (c *WorkerController) RegisterWorker(ctx context.Context, name string, owner *common.Owner, cfg *WorkerConfig) error {
 	if name == "" {
 		return errors.New("name is required")
 	}
@@ -26,7 +26,7 @@ func (c *WorkerController) InsertWorker(ctx context.Context, name string, owner 
 		return err
 	}
 
-	return c.datastore.InsertWorker(ctx, name, owner, cfg.Metadata, cfg.TargetInstances)
+	return c.datastore.RegisterWorker(ctx, name, owner, cfg.Metadata, cfg.TargetInstances)
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain -- a

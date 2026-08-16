@@ -19,7 +19,7 @@ func (m *ManagerDefinition) Declare(ctx context.Context, owner *common.Owner) er
 		return errors.New("owner must not be nil")
 	}
 
-	return m.workers.InsertWorker(ctx, WorkerManager, owner, &controller.WorkerConfig{
+	return m.workers.RegisterWorker(ctx, WorkerManager, owner, &controller.WorkerConfig{
 		Metadata:        defaultManagerMetadata(),
 		TargetInstances: worker.NoInstanceTarget,
 	})

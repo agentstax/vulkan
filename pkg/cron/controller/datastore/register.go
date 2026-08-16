@@ -7,13 +7,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// RegisterCronJob resolves register.Name to its row, creating it owned by
+// RegisterCronJob resolves declared.Name to its row, creating it owned by
 // owner if it doesn't exist. An existing row takes register's config.
-func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Owner, register *RegisterCronJobData) (*CronJobData, error) {
+func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
 	var job *CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		job, err = d.registerCronJob(ctx, owner, register)
+		job, err = d.registerCronJob(ctx, owner, declared)
 		return err
 	})
 	return job, err
@@ -21,13 +21,13 @@ func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Ow
 
 // registerCronJob registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Owner, register *RegisterCronJobData) (*CronJobData, error) {
-	found, err := d.getCronJob(ctx, d.Datastore.Pool, register.Name)
+func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
+	found, err := d.getCronJob(ctx, d.Datastore.Pool, declared.Name)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceCronJobConfig(ctx, found, register)
+		return d.replaceCronJobConfig(ctx, found, declared)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -37,26 +37,26 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 	defer tx.Rollback(ctx)
 
 	// txn-scoped, per-name -- auto-released at commit/rollback
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));`, register.Name); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));`, declared.Name); err != nil {
 		return nil, err
 	}
 
 	// re-check under the lock -- a racing register may have committed while we waited
-	found, err = d.getCronJob(ctx, tx, register.Name)
+	found, err = d.getCronJob(ctx, tx, declared.Name)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceCronJobConfig(ctx, found, register)
+		return d.replaceCronJobConfig(ctx, found, declared)
 	}
 
 	dbNow, err := d.dbNow(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	next := register.Schedule.Next(dbNow)
+	next := declared.Schedule.Next(dbNow)
 	if next.IsZero() {
-		return nil, fmt.Errorf("schedule %q has no scheduled time after %v", register.Schedule, dbNow)
+		return nil, fmt.Errorf("schedule %q has no scheduled time after %v", declared.Schedule, dbNow)
 	}
 
 	insertSql := `
@@ -90,8 +90,8 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 	`
 	job, err := d.scanCronJobData(tx.QueryRow(ctx, insertSql,
 		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(),
-		register.Name, register.Schedule.String(), register.Concurrency, register.TimeoutNs,
-		register.Data, register.Metadata, next,
+		declared.Name, declared.Schedule.String(), declared.Concurrency, declared.TimeoutNs,
+		declared.Data, declared.Metadata, next,
 	))
 	if err != nil {
 		return nil, err

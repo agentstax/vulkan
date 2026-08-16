@@ -6,7 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// WorkerConfig is InsertWorker's spec -- every field is optional.
+// WorkerConfig is RegisterWorker's spec -- every field is optional.
 type WorkerConfig struct {
 	// Metadata - the worker's tuning knobs, stored as JSONB; each worker kind
 	// owns its shape.

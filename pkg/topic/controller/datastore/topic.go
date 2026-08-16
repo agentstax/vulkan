@@ -123,14 +123,14 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*TopicData, error) {
 	return topics, nil
 }
 
-// RegisterTopic resolves data's (name, schema_version) to its row, creating
+// RegisterTopic resolves declared's (name, schema_version) to its row, creating
 // it (and its per-topic tables) if it doesn't exist. An existing row takes
-// data's mutable config; its partition_size must match.
-func (d *TopicDatastore) RegisterTopic(ctx context.Context, data *TopicData) (*TopicData, error) {
+// declared's mutable config; its partition_size must match.
+func (d *TopicDatastore) RegisterTopic(ctx context.Context, declared *TopicData) (*TopicData, error) {
 	var registered *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		registered, err = d.registerTopic(ctx, data)
+		registered, err = d.registerTopic(ctx, declared)
 		return err
 	})
 	return registered, err
@@ -138,14 +138,14 @@ func (d *TopicDatastore) RegisterTopic(ctx context.Context, data *TopicData) (*T
 
 // registerTopic registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*TopicData, error) {
+func (d *TopicDatastore) registerTopic(ctx context.Context, declared *TopicData) (*TopicData, error) {
 	// private getTopic, not GetTopic -- otherwise would have nested retries.
-	found, err := d.getTopic(ctx, d.Datastore.Pool, data.Name, data.SchemaVersion)
+	found, err := d.getTopic(ctx, d.Datastore.Pool, declared.Name, declared.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceTopicConfig(ctx, found, data)
+		return d.replaceTopicConfig(ctx, found, declared)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -155,17 +155,17 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 	defer tx.Rollback(ctx)
 
 	// txn-scoped, per-name -- auto-released at commit/rollback
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, data.Name); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err != nil {
 		return nil, err
 	}
 
 	// re-check under the lock -- a racing register may have committed while we waited
-	found, err = d.getTopic(ctx, tx, data.Name, data.SchemaVersion)
+	found, err = d.getTopic(ctx, tx, declared.Name, declared.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceTopicConfig(ctx, found, data)
+		return d.replaceTopicConfig(ctx, found, declared)
 	}
 
 	insertSql := `
@@ -173,13 +173,13 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, data *TopicData) (*T
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at;
 	`
-	created := *data
-	if err := tx.QueryRow(ctx, insertSql, data.SystemId, data.Name, data.SchemaVersion, data.PartitionSize, data.RetentionTTLNs, data.AllowDropPastCommitted, data.IdempotencyKeyTTLNs, data.DeliveryLogMode).
+	created := *declared
+	if err := tx.QueryRow(ctx, insertSql, declared.SystemId, declared.Name, declared.SchemaVersion, declared.PartitionSize, declared.RetentionTTLNs, declared.AllowDropPastCommitted, declared.IdempotencyKeyTTLNs, declared.DeliveryLogMode).
 		Scan(&created.Id, &created.CreatedAt, &created.UpdatedAt); err != nil {
 		return nil, err
 	}
 
-	if err := d.createTopicTables(ctx, tx, created.Id, data.PartitionSize); err != nil {
+	if err := d.createTopicTables(ctx, tx, created.Id, declared.PartitionSize); err != nil {
 		return nil, err
 	}
 

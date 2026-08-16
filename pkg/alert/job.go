@@ -21,13 +21,13 @@ func NewJob(name string, schedule string, data *JobData, cfg *croncontroller.Cro
 	if data == nil {
 		return nil, errors.New("job data is required")
 	}
-	sched, err := cron.ParseSchedule(schedule)
+	parsed, err := cron.ParseSchedule(schedule)
 	if err != nil {
 		return nil, err
 	}
 	return &Job{
 		Name:     name,
-		Schedule: sched,
+		Schedule: parsed,
 		Data:     data,
 		Config:   cfg,
 	}, nil

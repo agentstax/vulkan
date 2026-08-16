@@ -36,7 +36,7 @@ so a change takes effect on their next restart, not live.`,
 type topicConfigKey struct {
 	key   string
 	value string
-	read  func(t *topic.Topic) string
+	read  func(found *topic.Topic) string
 }
 
 // topicConfigKeys holds the keys config get prints. PartitionSize is absent --
@@ -45,29 +45,29 @@ var topicConfigKeys = []topicConfigKey{
 	{
 		key:   "retention_ttl",
 		value: "duration, e.g. 720h (0 keeps messages forever)",
-		read: func(t *topic.Topic) string {
-			return retentionDetail(t.RetentionTTL)
+		read: func(found *topic.Topic) string {
+			return retentionDetail(found.RetentionTTL)
 		},
 	},
 	{
 		key:   "allow_drop_past_committed",
 		value: "true or false",
-		read: func(t *topic.Topic) string {
-			return strconv.FormatBool(t.AllowDropPastCommitted)
+		read: func(found *topic.Topic) string {
+			return strconv.FormatBool(found.AllowDropPastCommitted)
 		},
 	},
 	{
 		key:   "idempotency_key_ttl",
 		value: "duration, e.g. 1h",
-		read: func(t *topic.Topic) string {
-			return t.IdempotencyKeyTTL.String()
+		read: func(found *topic.Topic) string {
+			return found.IdempotencyKeyTTL.String()
 		},
 	},
 	{
 		key:   "delivery_log_mode",
 		value: "off, failures, or all",
-		read: func(t *topic.Topic) string {
-			return string(t.DeliveryLogMode)
+		read: func(found *topic.Topic) string {
+			return string(found.DeliveryLogMode)
 		},
 	},
 }
@@ -91,12 +91,12 @@ func errUnknownTopicConfigKey(key string) error {
 	return failUsage("unknown config key %q -- known keys:\n%s", key, strings.Join(known, "\n"))
 }
 
-func printTopicConfigLines(w io.Writer, t *topic.Topic, entries []topicConfigKey) {
+func printTopicConfigLines(w io.Writer, found *topic.Topic, entries []topicConfigKey) {
 	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "", 1)
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  KEY\tDEFAULT\tVALUE")
 	for _, entry := range entries {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", entry.key, entry.read(defaults), entry.read(t))
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", entry.key, entry.read(defaults), entry.read(found))
 	}
 	tw.Flush()
 }
@@ -104,13 +104,13 @@ func printTopicConfigLines(w io.Writer, t *topic.Topic, entries []topicConfigKey
 // retentionDetail is the retention cell: raw Go duration string, plus a day
 // parenthetical when it's whole days ("720h0m0s (30d)"); "forever" for
 // keep-indefinitely.
-func retentionDetail(d time.Duration) string {
-	if d == 0 {
+func retentionDetail(retention time.Duration) string {
+	if retention == 0 {
 		return "forever"
 	}
 	const day = 24 * time.Hour
-	if d%day == 0 {
-		return fmt.Sprintf("%s (%dd)", d, d/day)
+	if retention%day == 0 {
+		return fmt.Sprintf("%s (%dd)", retention, retention/day)
 	}
-	return d.String()
+	return retention.String()
 }

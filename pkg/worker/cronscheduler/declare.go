@@ -15,7 +15,7 @@ func (s *CronSchedulerDefinition) Declare(ctx context.Context, owner *common.Own
 		return err
 	}
 
-	return s.workers.InsertWorker(ctx, WorkerCronScheduler, owner, &controller.WorkerConfig{
+	return s.workers.RegisterWorker(ctx, WorkerCronScheduler, owner, &controller.WorkerConfig{
 		Metadata: defaultCronSchedulerMetadata(),
 	})
 }

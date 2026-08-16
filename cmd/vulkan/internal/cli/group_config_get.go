@@ -74,9 +74,9 @@ field.`,
 
 // groupConfigLine is one config key on one worker row, ready to print.
 type groupConfigLine struct {
-	key       string
-	worker    string
-	valueCell string
+	key    string
+	worker string
+	value  string
 }
 
 // groupConfigLines flattens the rows' metadata into print lines: one per key,
@@ -94,9 +94,9 @@ func groupConfigLines(workers []*worker.Worker) []groupConfigLine {
 				continue
 			}
 			lines = append(lines, groupConfigLine{
-				key:       key,
-				worker:    row.Name,
-				valueCell: formatMetadataValue(key, value),
+				key:    key,
+				worker: row.Name,
+				value:  formatMetadataValue(key, value),
 			})
 		}
 	}
@@ -116,18 +116,18 @@ func messageConfigLines(workerName string, document any) []groupConfigLine {
 	options, err := decodeMessageOptions(document)
 	if err != nil {
 		return []groupConfigLine{{
-			key:       "message",
-			worker:    workerName,
-			valueCell: formatMetadataValue("message", document),
+			key:    "message",
+			worker: workerName,
+			value:  formatMetadataValue("message", document),
 		}}
 	}
 
 	var lines []groupConfigLine
 	for _, field := range messageFieldKeys {
 		lines = append(lines, groupConfigLine{
-			key:       field.path,
-			worker:    workerName,
-			valueCell: field.read(options),
+			key:    field.path,
+			worker: workerName,
+			value:  field.read(options),
 		})
 	}
 	return lines
@@ -149,7 +149,7 @@ func printGroupConfigLines(w io.Writer, lines []groupConfigLine) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  KEY\tWORKER\tVALUE")
 	for _, line := range lines {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", line.key, line.worker, cellOrDash(line.valueCell))
+		fmt.Fprintf(tw, "  %s\t%s\t%s\n", line.key, line.worker, cellOrDash(line.value))
 	}
 	tw.Flush()
 }
@@ -181,25 +181,25 @@ func formatMetadataValue(key string, value any) string {
 	return string(raw)
 }
 
-func cellOrDash(s string) string {
-	if s == "" {
+func cellOrDash(cell string) string {
+	if cell == "" {
 		return "-"
 	}
-	return s
+	return cell
 }
 
 // durationCell renders a decoded duration field; zero means absent.
-func durationCell(d time.Duration) string {
-	if d == 0 {
+func durationCell(duration time.Duration) string {
+	if duration == 0 {
 		return ""
 	}
-	return d.String()
+	return duration.String()
 }
 
 // intCell renders a decoded int field; zero means absent.
-func intCell(n int) string {
-	if n == 0 {
+func intCell(value int) string {
+	if value == 0 {
 		return ""
 	}
-	return strconv.Itoa(n)
+	return strconv.Itoa(value)
 }

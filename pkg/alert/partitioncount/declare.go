@@ -41,7 +41,7 @@ func (d *PartitionCountDefinition) Declare(ctx context.Context, owner *common.Ow
 	if err != nil {
 		return err
 	}
-	return d.workers.InsertWorker(ctx, JobName, groupOwner, &workercontroller.WorkerConfig{
+	return d.workers.RegisterWorker(ctx, JobName, groupOwner, &workercontroller.WorkerConfig{
 		Metadata: toPartitionCountMetadata(d.Config),
 	})
 }

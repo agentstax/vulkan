@@ -90,7 +90,7 @@ func (c *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *comm
 		return err
 	}
 
-	return c.workers.InsertWorker(ctx, c.workerName, owner, &workercontroller.WorkerConfig{
+	return c.workers.RegisterWorker(ctx, c.workerName, owner, &workercontroller.WorkerConfig{
 		Metadata:        metadata,
 		TargetInstances: worker.NoInstanceTarget,
 	})

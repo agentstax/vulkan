@@ -27,7 +27,7 @@ func toTopic(data *datastore.TopicData) (*topic.Topic, error) {
 	}, nil
 }
 
-func toRegisterTopicData(systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) *datastore.TopicData {
+func toTopicData(systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) *datastore.TopicData {
 	return &datastore.TopicData{
 		SystemId:               systemId,
 		Name:                   name,

@@ -15,7 +15,7 @@ func (j *JanitorDefinition) Declare(ctx context.Context, owner *common.Owner) er
 		return err
 	}
 
-	return j.workers.InsertWorker(ctx, WorkerJanitor, owner, &controller.WorkerConfig{
+	return j.workers.RegisterWorker(ctx, WorkerJanitor, owner, &controller.WorkerConfig{
 		Metadata: defaultJanitorMetadata(),
 	})
 }

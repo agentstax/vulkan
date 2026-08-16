@@ -15,7 +15,7 @@ func (w *WaterlineDefinition) Declare(ctx context.Context, owner *common.Owner) 
 		return err
 	}
 
-	return w.workers.InsertWorker(ctx, WorkerWaterline, owner, &controller.WorkerConfig{
+	return w.workers.RegisterWorker(ctx, WorkerWaterline, owner, &controller.WorkerConfig{
 		Metadata: defaultWaterlineMetadata(),
 	})
 }
