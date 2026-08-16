@@ -178,6 +178,21 @@ func (d *CronJobDatastore) dbNow(ctx context.Context, q datastore.Querier) (time
 	return now, err
 }
 
+// nextScheduledTime is the first scheduled time schedule produces after the db
+// clock. A schedule with none left (a Feb-29 rule past its last leap year)
+// cannot be registered.
+func (d *CronJobDatastore) nextScheduledTime(ctx context.Context, q datastore.Querier, schedule *cron.Schedule) (time.Time, error) {
+	dbNow, err := d.dbNow(ctx, q)
+	if err != nil {
+		return time.Time{}, err
+	}
+	next := schedule.Next(dbNow)
+	if next.IsZero() {
+		return time.Time{}, fmt.Errorf("schedule %q has no scheduled time after %v", schedule, dbNow)
+	}
+	return next, nil
+}
+
 // scanCronJobData scans a row shaped like getCronJob's SELECT -- the column
 // list every one of those queries shares.
 func (d *CronJobDatastore) scanCronJobData(row pgx.Row) (*CronJobData, error) {

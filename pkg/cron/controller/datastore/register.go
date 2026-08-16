@@ -2,13 +2,12 @@ package datastore
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
 // RegisterCronJob resolves declared.Name to its row, creating it owned by
-// owner if it doesn't exist. An existing row takes register's config.
+// owner if it doesn't exist. An existing row takes declared's config.
 func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
 	var job *CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -50,13 +49,9 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 		return d.replaceCronJobConfig(ctx, found, declared)
 	}
 
-	dbNow, err := d.dbNow(ctx, tx)
+	next, err := d.nextScheduledTime(ctx, tx, declared.Schedule)
 	if err != nil {
 		return nil, err
-	}
-	next := declared.Schedule.Next(dbNow)
-	if next.IsZero() {
-		return nil, fmt.Errorf("schedule %q has no scheduled time after %v", declared.Schedule, dbNow)
 	}
 
 	insertSql := `

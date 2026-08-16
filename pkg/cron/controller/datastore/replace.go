@@ -29,13 +29,9 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 	// produced late -- the new schedule decides when the job next runs
 	var next *time.Time
 	if found.Schedule != declared.Schedule.String() {
-		dbNow, err := d.dbNow(ctx, d.Datastore.Pool)
+		seeded, err := d.nextScheduledTime(ctx, d.Datastore.Pool, declared.Schedule)
 		if err != nil {
 			return nil, err
-		}
-		seeded := declared.Schedule.Next(dbNow)
-		if seeded.IsZero() {
-			return nil, fmt.Errorf("schedule %q has no scheduled time after %v", declared.Schedule, dbNow)
 		}
 		next = &seeded
 	}

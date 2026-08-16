@@ -95,7 +95,6 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 	return toTopic(registered)
 }
 
-
 // RenameTopic moves every version under oldName to newName in one statement.
 // Returns (nil, nil) if no version is registered under oldName
 // ErrTopicNameTaken if newName already has any (name, version) registered.

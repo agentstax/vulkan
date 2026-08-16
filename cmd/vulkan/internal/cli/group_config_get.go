@@ -154,24 +154,22 @@ func printGroupConfigLines(w io.Writer, lines []groupConfigLine) {
 	tw.Flush()
 }
 
-// formatMetadataValue renders one metadata value for the table -- duration
-// keys arrive from JSONB as float64 nanoseconds.
+// formatMetadataValue renders one metadata value for the table -- a duration
+// key arrives from JSONB as float64 nanoseconds, indistinguishable from a
+// plain count, so the key's name is what tells them apart.
 func formatMetadataValue(key string, value any) string {
 	if value == nil {
 		return ""
 	}
-	switch key {
-	case "claim_poll_rate", "exception_initial_backoff", "poll_rate", "repeat_interval":
-		if ns, ok := value.(float64); ok {
-			return time.Duration(int64(ns)).String()
-		}
+	if nanoseconds, ok := value.(float64); ok && isDurationKey(key) {
+		return time.Duration(int64(nanoseconds)).String()
 	}
-	switch v := value.(type) {
+	switch typed := value.(type) {
 	case string:
-		return v
+		return typed
 	case float64:
-		if v == float64(int64(v)) {
-			return strconv.FormatInt(int64(v), 10)
+		if typed == float64(int64(typed)) {
+			return strconv.FormatInt(int64(typed), 10)
 		}
 	}
 	raw, err := json.Marshal(value)
@@ -179,6 +177,20 @@ func formatMetadataValue(key string, value any) string {
 		return fmt.Sprintf("%v", value)
 	}
 	return string(raw)
+}
+
+// durationKeySuffixes are how every worker kind names a time.Duration field:
+// poll_rate, repeat_interval, exception_initial_backoff. A kind naming one
+// some other way prints its raw nanoseconds until the name joins this list.
+var durationKeySuffixes = []string{"_rate", "_interval", "_backoff", "_ttl", "_timeout", "_delay", "_margin"}
+
+func isDurationKey(key string) bool {
+	for _, suffix := range durationKeySuffixes {
+		if strings.HasSuffix(key, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func cellOrDash(cell string) string {

@@ -15,9 +15,12 @@ func newGroupConfigCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Read a consumer group's config",
-		Long: `A group's config comes from the config your code passes when it starts
-consuming, and is applied every time that runs. Changing a value means
-changing that code and redeploying; this command only reads.
+		Long: `A group's config comes from the cfg your code passes to consumer Register,
+and is applied every time that runs. Changing a value means changing that
+code and redeploying; this command only reads.
+
+Each consumer kind declares its own keys, so the WORKER column names the row
+a value came from and there is no single default to show.
 
 A running consumer reads its config when it claims work, so a change takes
 effect at its next claim, not live.`,
