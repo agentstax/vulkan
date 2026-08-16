@@ -20,19 +20,15 @@ Behavior changes that must land before the 14b cleanup pass — 14b is
 naming/shape only, so anything that adds or moves behavior goes first,
 otherwise the API review locks a surface that is still due to change.
 
-- **Otel metrics exposure story.** Nothing constructs
-  pkg/metrics/metrics.Metrics yet, so every Register*Metric gauge is dormant.
-  - Research (2026-08-09): libraries take a Meter in config and the host app
-    owns the exporter (River otelriver, otelgrpc; our MetricsConfig.Meter
-    noop-default already matches); server processes host their own scrape
-    endpoint (Temporal listenAddress, k8s /metrics, RabbitMQ :15692).
-  - Mapping: SystemManagerConfig grows a Meter for embedders; `vulkan manager
-    run` grows an opt-in --metrics-address flag that builds the sdk/metric
-    MeterProvider + prometheus exporter (sanctioned deps, currently imported
-    by nothing) and serves /metrics CLI-side, keeping sdk/metric out of the
-    library.
-  - Also settle where per-group RegisterConsumerGroupMetric gets called —
-    likely consumer Register, where topic identity resolves.
+- **Metrics collection and otel exposure.** Design settled in [0522]. A
+  collector worker publishes metrics.Sample (name, kind, value, unit,
+  attributes, at) to __system.metrics keyed by SampleKey(name, attributes), so
+  compaction heads give current values and the retained log gives history.
+  Core keeps collection and the CLI read surface; the otel bridge, Prometheus
+  exporter and /metrics handler move to a separate module with its own go.mod,
+  and core drops its otel dependencies. Users produce the same Sample, so
+  their own metrics ride the same bridge and CLI. Carries one new core verb —
+  ListCompactionKeyMessages on CompactionController.
   - When this lands, instrument the alert pipeline too: counts of alerts
     published/resolved and per-topic publish failures inside an
     otherwise-succeeded handler run — cron run status only shows the joined

@@ -272,3 +272,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0519 2026-08-15 accepted (phase 14) — Topic config lives in append-only declaration rows; topic keeps identity only
 - 0520 2026-08-15 accepted (phase 14) — Cron jobs are declared like every other resource; built-in alert config moves into RegisterSystem (amends 0518)
 - 0521 2026-08-15 accepted (phase 14) — Only a declarer writes config, so the CLI creates nothing (amends 0518, 0520)
+- 0522 2026-08-16 accepted (phase 14) — Metrics are samples on __system.metrics written by a collector worker; otel exposure moves to its own module
