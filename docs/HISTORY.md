@@ -5,6 +5,37 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-16 — Metrics collection and otel exposure [0522] [0523]
+
+- pkg/metrics gained the measurement vocabulary: Measurement (name, kind,
+  value, unit, attributes, at) — [0523] renamed the point type from Sample —
+  plus the Metric* name consts under the reserved "vulkan." prefix,
+  NewMeasurement and MeasurementKey. Measurements land on __system.metrics
+  keyed by MeasurementKey(name, attributes), so compaction heads are the
+  current value per series and the retained log is its history.
+- pkg/worker/metricscollector: a system-scope worker on the cronscheduler
+  template, declared at RegisterSystem and provisioned by SystemManager and
+  every embedded consumer manager. Each pass at the row's poll_rate (default
+  30s) produces fleet worker/cron measurements, then snapshots topics
+  concurrently under TopicConcurrency with each group's measurements
+  produced concurrently so the producer's batcher collapses them into shared
+  transactions; __system.metrics itself is skipped by name.
+- Reads: ListCompactionKeyMessages on CompactionController (the one new core
+  verb), admin ListMeasurements / ListMeasurementMessages, and the CLI's
+  `vulkan metrics list` / `vulkan metrics get`.
+- otelvulkan nested module — core dropped its otel/prometheus deps outright
+  (pkg/metrics/metrics deleted; release tagging is now a three-module
+  story). Metrics registers an instrument per metric name on one meter
+  (yours, or the global provider's by default); Exporter owns a private
+  Metrics whose provider's only reader is the otel Prometheus reader and
+  serves /metrics, registering names that appeared since the last scrape;
+  MetricsProducer / MetricsConsumer publish and read user measurements on
+  the same topic, with the reserved prefix rejected at Produce.
+- `vulkan manager run --metrics-address` serves /metrics beside the manager,
+  failing fast if the system isn't registered. metricscollectorlab drives
+  collector -> topic -> admin reads -> a scraped manager subprocess under
+  -race; fresh-DB suite 36/36.
+
 ## 2026-08-15 — Config becomes code-owned [0518] [0520] [0521]
 
 - Config is declared in code and the latest declaration wins. RegisterTopic,

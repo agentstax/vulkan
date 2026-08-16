@@ -20,19 +20,11 @@ Behavior changes that must land before the 14b cleanup pass — 14b is
 naming/shape only, so anything that adds or moves behavior goes first,
 otherwise the API review locks a surface that is still due to change.
 
-- **Metrics collection and otel exposure.** Design settled in [0522]. A
-  collector worker publishes metrics.Sample (name, kind, value, unit,
-  attributes, at) to __system.metrics keyed by SampleKey(name, attributes), so
-  compaction heads give current values and the retained log gives history.
-  Core keeps collection and the CLI read surface; the otel bridge, Prometheus
-  exporter and /metrics handler move to a separate module with its own go.mod,
-  and core drops its otel dependencies. Users produce the same Sample, so
-  their own metrics ride the same bridge and CLI. Carries one new core verb —
-  ListCompactionKeyMessages on CompactionController.
-  - When this lands, instrument the alert pipeline too: counts of alerts
-    published/resolved and per-topic publish failures inside an
-    otherwise-succeeded handler run — cron run status only shows the joined
-    error, not how many topics failed or fired.
+- **Instrument the alert pipeline** (follow-on to the shipped metrics
+  collection, [0522] [0523]): counts of alerts published/resolved and
+  per-topic publish failures inside an otherwise-succeeded handler run —
+  cron run status only shows the joined error, not how many topics failed
+  or fired.
 
 ## Next
 
