@@ -52,12 +52,12 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			heads, err := mAdmin.ListSamples(ctx)
+			heads, err := mAdmin.ListMeasurements(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}
 
-			matched := make([]*producer.MessageRow[metrics.Sample], 0, len(heads))
+			matched := make([]*producer.MessageRow[metrics.Measurement], 0, len(heads))
 			for _, head := range heads {
 				if head.Message.Name != name {
 					continue
@@ -69,22 +69,22 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 			}
 
 			if len(matched) == 0 {
-				fmt.Fprintf(out, "%s no samples published under %q\n", glyphNo(), name)
+				fmt.Fprintf(out, "%s no measurements published under %q\n", glyphNo(), name)
 				return failPrinted()
 			}
 
-			fmt.Fprintf(out, "%s metric %q (%s)\n", glyphOK(), name, sampleKindUnitCell(matched[0].Message))
+			fmt.Fprintf(out, "%s metric %q (%s)\n", glyphOK(), name, measurementKindUnitCell(matched[0].Message))
 
 			shown := matched
 			if len(shown) > series {
 				shown = shown[:series]
 			}
 			for _, head := range shown {
-				messages, err := mAdmin.ListSampleMessages(ctx, head.CompactionKey, limit)
+				messages, err := mAdmin.ListMeasurementMessages(ctx, head.CompactionKey, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}
-				printSampleSeries(out, head.Message.Attributes, messages)
+				printMeasurementSeries(out, head.Message.Attributes, messages)
 			}
 
 			if len(matched) > series {
@@ -96,7 +96,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringArrayVar(&attributes, "attribute", nil, "key=value a series must carry; repeatable, all must match")
-	f.IntVar(&limit, "limit", 10, "how many of the newest samples each series lists")
+	f.IntVar(&limit, "limit", 10, "how many of the newest measurements each series lists")
 	f.IntVar(&series, "series", 10, "how many attribute sets to list before truncating")
 	return cmd
 }
@@ -123,27 +123,27 @@ func attributesMatch(attributes map[string]string, filter map[string]string) boo
 	return true
 }
 
-// sampleKindUnitCell - "gauge, {message}"; just "gauge" with no unit.
-func sampleKindUnitCell(sample *metrics.Sample) string {
-	if sample.Unit == "" {
-		return string(sample.Kind)
+// measurementKindUnitCell - "gauge, {message}"; just "gauge" with no unit.
+func measurementKindUnitCell(measurement *metrics.Measurement) string {
+	if measurement.Unit == "" {
+		return string(measurement.Kind)
 	}
-	return fmt.Sprintf("%s, %s", sample.Kind, sample.Unit)
+	return fmt.Sprintf("%s, %s", measurement.Kind, measurement.Unit)
 }
 
-// printSampleSeries is one attribute set's block, newest sample first --
-// samples older than the retention window are gone.
-func printSampleSeries(w io.Writer, attributes map[string]string, messages []*producer.MessageRow[metrics.Sample]) {
+// printMeasurementSeries is one attribute set's block, newest measurement first --
+// measurements older than the retention window are gone.
+func printMeasurementSeries(w io.Writer, attributes map[string]string, messages []*producer.MessageRow[metrics.Measurement]) {
 	fmt.Fprintf(w, "\n  %s\n", seriesHeading(attributes))
 	if len(messages) == 0 {
-		fmt.Fprintln(w, "  no samples in the retention window")
+		fmt.Fprintln(w, "  no measurements in the retention window")
 		return
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  AT\tVALUE")
 	for _, message := range messages {
-		fmt.Fprintf(tw, "  %s\t%s\n", timeCell(message.Message.At.Local()), sampleValueCell(message.Message))
+		fmt.Fprintf(tw, "  %s\t%s\n", timeCell(message.Message.At.Local()), measurementValueCell(message.Message))
 	}
 	tw.Flush()
 }
@@ -152,5 +152,5 @@ func seriesHeading(attributes map[string]string) string {
 	if len(attributes) == 0 {
 		return "(no attributes)"
 	}
-	return sampleAttributesCell(attributes)
+	return measurementAttributesCell(attributes)
 }

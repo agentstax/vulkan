@@ -14,7 +14,7 @@ import (
 func newMetricsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "metrics",
-		Short: "Inspect published metric samples",
+		Short: "Inspect published metrics",
 	}
 
 	cmd.AddCommand(newMetricsListCmd(g))
@@ -23,30 +23,30 @@ func newMetricsCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-// sampleValueCell renders a value by its UCUM unit: a real unit carries a
+// measurementValueCell renders a value by its UCUM unit: a real unit carries a
 // dimension the cell can format ("ms" -> 47s), while a braced annotation is
 // only a human label for a dimensionless count, so its number prints bare.
 // Real units other than "ms" print verbatim beside the number.
-func sampleValueCell(sample *metrics.Sample) string {
-	unit := string(sample.Unit)
+func measurementValueCell(measurement *metrics.Measurement) string {
+	unit := string(measurement.Unit)
 	switch {
-	case sample.Unit == metrics.UnitMilliseconds:
-		return time.Duration(sample.Value * float64(time.Millisecond)).Round(time.Millisecond).String()
+	case measurement.Unit == metrics.UnitMilliseconds:
+		return time.Duration(measurement.Value * float64(time.Millisecond)).Round(time.Millisecond).String()
 	case unit == "" || (strings.HasPrefix(unit, "{") && strings.HasSuffix(unit, "}")):
-		return sampleNumber(sample.Value)
+		return measurementNumber(measurement.Value)
 	default:
-		return sampleNumber(sample.Value) + " " + unit
+		return measurementNumber(measurement.Value) + " " + unit
 	}
 }
 
-// sampleNumber prints 32 as "32", not "32.000000".
-func sampleNumber(value float64) string {
+// measurementNumber prints 32 as "32", not "32.000000".
+func measurementNumber(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-// sampleAttributesCell - "group=billing,topic=orders", sorted like SampleKey;
+// measurementAttributesCell - "group=billing,topic=orders", sorted like MeasurementKey;
 // "-" with no attributes.
-func sampleAttributesCell(attributes map[string]string) string {
+func measurementAttributesCell(attributes map[string]string) string {
 	if len(attributes) == 0 {
 		return "-"
 	}

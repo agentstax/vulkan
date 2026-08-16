@@ -9,28 +9,28 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// MetricsConsumer reads the sample stream on __system.metrics -- every
+// MetricsConsumer reads the measurement stream on __system.metrics -- every
 // publish, Vulkan's own and yours -- for forwarding into your own backend
 // without an otel pipeline.
 type MetricsConsumer struct {
-	consumer *consumer.Consumer[metrics.Sample]
+	consumer *consumer.Consumer[metrics.Measurement]
 }
 
 // cfg may be nil or a sparse struct -- the underlying consumer defaults and
 // validates it.
 func NewMetricsConsumer(ds *coredatastore.PostgresDatastore, cfg *consumer.ConsumerConfig) (*MetricsConsumer, error) {
-	sampleConsumer, err := consumer.NewConsumer[metrics.Sample](ds, cfg)
+	measurementConsumer, err := consumer.NewConsumer[metrics.Measurement](ds, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &MetricsConsumer{consumer: sampleConsumer}, nil
+	return &MetricsConsumer{consumer: measurementConsumer}, nil
 }
 
 // Register registers consumerGroup on __system.metrics, returning an
-// instance ready to Consume. Samples route under their name, so names is
-// the group's binding set -- sample names or wildcard patterns; nil = every
-// sample.
+// instance ready to Consume. Measurements route under their metric name, so
+// names is the group's binding set -- metric names or wildcard patterns;
+// nil = every metric.
 // Returns ErrTopicNotFound until RegisterSystem has run.
-func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string, names []string) (*consumer.ConsumerInstance[metrics.Sample], error) {
+func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string, names []string) (*consumer.ConsumerInstance[metrics.Measurement], error) {
 	return c.consumer.Register(ctx, consumerGroup, metrics.TopicName, topic.SchemaVersion(1), names)
 }

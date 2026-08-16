@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestSampleKeyDeterministic(t *testing.T) {
+func TestMeasurementKeyDeterministic(t *testing.T) {
 	attributes := map[string]string{
 		"topic":   "orders",
 		"group":   "billing",
@@ -14,57 +14,57 @@ func TestSampleKeyDeterministic(t *testing.T) {
 
 	want := "vulkan.consumer.group.lag|group=billing,topic=orders,version=1"
 	for range 100 {
-		got := SampleKey("vulkan.consumer.group.lag", attributes)
+		got := MeasurementKey("vulkan.consumer.group.lag", attributes)
 		if got != want {
-			t.Fatalf("SampleKey = %q, want %q", got, want)
+			t.Fatalf("MeasurementKey = %q, want %q", got, want)
 		}
 	}
 }
 
-func TestSampleKeyNoAttributes(t *testing.T) {
-	got := SampleKey("vulkan.worker.state.unclaimed_workers", nil)
+func TestMeasurementKeyNoAttributes(t *testing.T) {
+	got := MeasurementKey("vulkan.worker.state.unclaimed_workers", nil)
 	if got != "vulkan.worker.state.unclaimed_workers" {
-		t.Fatalf("SampleKey = %q, want bare name", got)
+		t.Fatalf("MeasurementKey = %q, want bare name", got)
 	}
 
-	got = SampleKey("vulkan.worker.state.unclaimed_workers", map[string]string{})
+	got = MeasurementKey("vulkan.worker.state.unclaimed_workers", map[string]string{})
 	if got != "vulkan.worker.state.unclaimed_workers" {
-		t.Fatalf("SampleKey with empty map = %q, want bare name", got)
+		t.Fatalf("MeasurementKey with empty map = %q, want bare name", got)
 	}
 }
 
-func TestSampleKeyDistinctAttributeSets(t *testing.T) {
-	first := SampleKey("lag", map[string]string{"topic": "orders"})
-	second := SampleKey("lag", map[string]string{"topic": "payments"})
+func TestMeasurementKeyDistinctAttributeSets(t *testing.T) {
+	first := MeasurementKey("lag", map[string]string{"topic": "orders"})
+	second := MeasurementKey("lag", map[string]string{"topic": "payments"})
 	if first == second {
 		t.Fatalf("distinct attribute values collided: %q", first)
 	}
 
-	bare := SampleKey("lag", nil)
+	bare := MeasurementKey("lag", nil)
 	if first == bare {
 		t.Fatalf("attributed key collided with bare name: %q", first)
 	}
 }
 
-func TestNewSampleValidation(t *testing.T) {
+func TestNewMeasurementValidation(t *testing.T) {
 	at := time.Now()
 
-	if _, err := NewSample("", KindGauge, 1, "", nil, at); err == nil {
+	if _, err := NewMeasurement("", KindGauge, 1, "", nil, at); err == nil {
 		t.Fatal("empty name accepted")
 	}
-	if _, err := NewSample("lag", Kind("histogram"), 1, "", nil, at); err == nil {
+	if _, err := NewMeasurement("lag", Kind("histogram"), 1, "", nil, at); err == nil {
 		t.Fatal("unknown kind accepted")
 	}
-	if _, err := NewSample("lag", KindGauge, 1, "", nil, time.Time{}); err == nil {
+	if _, err := NewMeasurement("lag", KindGauge, 1, "", nil, time.Time{}); err == nil {
 		t.Fatal("zero at accepted")
 	}
 
-	sample, err := NewSample("lag", KindGauge, 42, "{message}", map[string]string{"topic": "orders"}, at)
+	measurement, err := NewMeasurement("lag", KindGauge, 42, "{message}", map[string]string{"topic": "orders"}, at)
 	if err != nil {
-		t.Fatalf("valid sample rejected: %v", err)
+		t.Fatalf("valid measurement rejected: %v", err)
 	}
-	if sample.Value != 42 || sample.Unit != "{message}" {
-		t.Fatalf("fields not carried: %+v", sample)
+	if measurement.Value != 42 || measurement.Unit != "{message}" {
+		t.Fatalf("fields not carried: %+v", measurement)
 	}
 }
 
@@ -81,8 +81,8 @@ func TestUnitValidate(t *testing.T) {
 	}
 }
 
-func TestNewSampleRejectsMalformedUnit(t *testing.T) {
-	if _, err := NewSample("lag", KindGauge, 1, "{", nil, time.Now()); err == nil {
+func TestNewMeasurementRejectsMalformedUnit(t *testing.T) {
+	if _, err := NewMeasurement("lag", KindGauge, 1, "{", nil, time.Now()); err == nil {
 		t.Fatal("malformed unit accepted")
 	}
 }

@@ -13,7 +13,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
-// Exporter serves the samples as a Prometheus /metrics endpoint: its own
+// Exporter serves the measurements as a Prometheus /metrics endpoint: its own
 // Metrics bound to a provider whose only reader is the otel Prometheus
 // reader -- every scrape drives the observation callback, so /metrics
 // serves values read at scrape time, never a cache.
@@ -69,25 +69,25 @@ func NewExporter(ds *coredatastore.PostgresDatastore, cfg *ExporterConfig) (*Exp
 }
 
 // Handler serves the Prometheus /metrics endpoint. Each request first
-// registers instruments for sample names that appeared since the last
+// registers instruments for metric names that appeared since the last
 // scrape, then the reader's collection runs the observation callback.
 // A failed registration pass still serves the last instrument set.
 func (e *Exporter) Handler() http.Handler {
 	serve := promhttp.HandlerFor(e.registry, promhttp.HandlerOpts{})
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if err := e.metrics.RegisterSampleInstruments(request.Context()); err != nil {
-			e.Logger.WarnContext(request.Context(), "sample instrument registration failed", "error", err)
+		if err := e.metrics.RegisterMetricInstruments(request.Context()); err != nil {
+			e.Logger.WarnContext(request.Context(), "metric instrument registration failed", "error", err)
 		}
 		serve.ServeHTTP(writer, request)
 	})
 }
 
-// RegisterSampleInstruments runs the registration pass. Handler runs it per
+// RegisterMetricInstruments runs the registration pass. Handler runs it per
 // scrape; call it directly to fail fast at startup instead of on the first
 // scrape.
 // Returns ErrTopicNotFound until RegisterSystem has run.
-func (e *Exporter) RegisterSampleInstruments(ctx context.Context) error {
-	return e.metrics.RegisterSampleInstruments(ctx)
+func (e *Exporter) RegisterMetricInstruments(ctx context.Context) error {
+	return e.metrics.RegisterMetricInstruments(ctx)
 }
 
 // Close shuts the meter provider down; the registry stops receiving updates.

@@ -13,7 +13,7 @@ import (
 )
 
 type MetricsConfig struct {
-	// Meter receives the sample instruments -- pass one from your own
+	// Meter receives the metric instruments -- pass one from your own
 	// provider to feed your own otel pipeline.
 	// Default: the global otel provider's meter.
 	Meter metric.Meter

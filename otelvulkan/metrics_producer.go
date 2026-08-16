@@ -12,21 +12,21 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// MetricsProducer publishes your own metric samples to __system.metrics,
+// MetricsProducer publishes your own measurements to __system.metrics,
 // where Metrics, the Exporter's /metrics endpoint, and the vulkan metrics
 // CLI read them beside Vulkan's own.
 type MetricsProducer struct {
-	producer *producer.Producer[metrics.Sample]
+	producer *producer.Producer[metrics.Measurement]
 }
 
 // cfg may be nil or a sparse struct -- the underlying producer defaults and
 // validates it.
 func NewMetricsProducer(ds *coredatastore.PostgresDatastore, cfg *producer.ProducerConfig) (*MetricsProducer, error) {
-	sampleProducer, err := producer.NewProducer[metrics.Sample](ds, cfg)
+	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &MetricsProducer{producer: sampleProducer}, nil
+	return &MetricsProducer{producer: measurementProducer}, nil
 }
 
 // Register resolves __system.metrics and returns an instance ready to
@@ -40,32 +40,32 @@ func (p *MetricsProducer) Register(ctx context.Context) (*MetricsProducerInstanc
 	return newMetricsProducerInstance(instance)
 }
 
-// MetricsProducerInstance produces each sample under its series' compaction
+// MetricsProducerInstance produces each measurement under its series' compaction
 // key, so the newest publish is the series' current value and the topic's
 // retained log is its history.
 type MetricsProducerInstance struct {
-	instance *producer.ProducerInstance[metrics.Sample]
+	instance *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newMetricsProducerInstance(instance *producer.ProducerInstance[metrics.Sample]) (*MetricsProducerInstance, error) {
+func newMetricsProducerInstance(instance *producer.ProducerInstance[metrics.Measurement]) (*MetricsProducerInstance, error) {
 	if instance == nil {
 		return nil, errors.New("instance must not be nil")
 	}
 	return &MetricsProducerInstance{instance: instance}, nil
 }
 
-// Produce publishes one sample under SampleKey(name, attributes). Build the
-// sample with metrics.NewSample.
-func (p *MetricsProducerInstance) Produce(ctx context.Context, sample *metrics.Sample) (*producer.ProduceResult[metrics.Sample], error) {
-	if sample == nil {
-		return nil, errors.New("sample must not be nil")
+// Produce publishes one measurement under MeasurementKey(name, attributes). Build the
+// measurement with metrics.NewMeasurement.
+func (p *MetricsProducerInstance) Produce(ctx context.Context, measurement *metrics.Measurement) (*producer.ProduceResult[metrics.Measurement], error) {
+	if measurement == nil {
+		return nil, errors.New("measurement must not be nil")
 	}
-	if strings.HasPrefix(sample.Name, metrics.SampleNameReservedPrefix) {
-		return nil, fmt.Errorf("sample name %q uses the %q prefix, reserved for Vulkan's own samples", sample.Name, metrics.SampleNameReservedPrefix)
+	if strings.HasPrefix(measurement.Name, metrics.MetricNameReservedPrefix) {
+		return nil, fmt.Errorf("metric name %q uses the %q prefix, reserved for Vulkan's own metrics", measurement.Name, metrics.MetricNameReservedPrefix)
 	}
 
-	return p.instance.Produce(ctx, sample, producer.ProduceOptions{
-		RoutingKey:    sample.Name,
-		CompactionKey: metrics.SampleKey(sample.Name, sample.Attributes),
+	return p.instance.Produce(ctx, measurement, producer.ProduceOptions{
+		RoutingKey:    measurement.Name,
+		CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 	})
 }

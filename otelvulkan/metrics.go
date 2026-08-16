@@ -1,8 +1,8 @@
-// Package otelvulkan exposes a Vulkan deployment's metric samples over
-// OpenTelemetry: each series' newest sample on __system.metrics becomes an
+// Package otelvulkan exposes a Vulkan deployment's measurements over
+// OpenTelemetry: each series' newest measurement on __system.metrics becomes an
 // observable instrument. Metrics feeds any otel meter you own; Exporter
 // builds on it to serve a Prometheus /metrics endpoint; MetricsProducer and
-// MetricsConsumer publish and read your own samples on the same topic.
+// MetricsConsumer publish and read your own measurements on the same topic.
 package otelvulkan
 
 import (
@@ -24,8 +24,8 @@ import (
 
 const meterScopeName = "github.com/agentstax/vulkan/otelvulkan"
 
-// Metrics registers the samples on an otel meter: one observable instrument
-// per sample name, whose values are each series' newest sample, read live
+// Metrics registers the measurements on an otel meter: one observable instrument
+// per metric name, whose values are each series' newest measurement, read live
 // whenever the meter's reader collects. Pass your own meter through
 // MetricsConfig.Meter to feed your own pipeline.
 type Metrics struct {
@@ -33,11 +33,11 @@ type Metrics struct {
 	Logger logger.Logger
 
 	topics *topiccontroller.TopicController
-	heads  *compactioncontroller.CompactionController[metrics.Sample]
+	heads  *compactioncontroller.CompactionController[metrics.Measurement]
 	meter  metric.Meter
 
 	// instruments can only be created outside the observation callback, so
-	// RegisterSampleInstruments creates instruments for names it hasn't
+	// RegisterMetricInstruments creates instruments for names it hasn't
 	// seen; the mutex orders concurrent callers doing that
 	mutex        sync.Mutex
 	topicId      int64
@@ -67,7 +67,7 @@ func NewMetrics(ds *coredatastore.PostgresDatastore, cfg *MetricsConfig) (*Metri
 		return nil, err
 	}
 
-	heads, err := compactioncontroller.NewCompactionController[metrics.Sample](ds, &compactioncontroller.ControllerConfig{
+	heads, err := compactioncontroller.NewCompactionController[metrics.Measurement](ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -85,12 +85,12 @@ func NewMetrics(ds *coredatastore.PostgresDatastore, cfg *MetricsConfig) (*Metri
 	}, nil
 }
 
-// RegisterSampleInstruments creates one observable instrument per sample
+// RegisterMetricInstruments creates one observable instrument per measurement
 // name currently on the topic, skipping names already registered. Run it
 // before the first collection, and again whenever new names may have
 // appeared -- the Exporter runs it per scrape.
 // Returns ErrTopicNotFound until RegisterSystem has run.
-func (m *Metrics) RegisterSampleInstruments(ctx context.Context) error {
+func (m *Metrics) RegisterMetricInstruments(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, m.Config.CollectTimeout)
 	defer cancel()
 
@@ -142,13 +142,13 @@ func (m *Metrics) RegisterSampleInstruments(ctx context.Context) error {
 	return nil
 }
 
-// a counter sample carries a running total, so it maps to the monotonic
+// a counter measurement carries a running total, so it maps to the monotonic
 // observable; everything else is a point-in-time gauge
-func (m *Metrics) newInstrument(sample *metrics.Sample) (metric.Float64Observable, error) {
-	if sample.Kind == metrics.KindCounter {
-		return m.meter.Float64ObservableCounter(sample.Name, metric.WithUnit(string(sample.Unit)))
+func (m *Metrics) newInstrument(measurement *metrics.Measurement) (metric.Float64Observable, error) {
+	if measurement.Kind == metrics.KindCounter {
+		return m.meter.Float64ObservableCounter(measurement.Name, metric.WithUnit(string(measurement.Unit)))
 	}
-	return m.meter.Float64ObservableGauge(sample.Name, metric.WithUnit(string(sample.Unit)))
+	return m.meter.Float64ObservableGauge(measurement.Name, metric.WithUnit(string(measurement.Unit)))
 }
 
 // observe runs inside every collection the meter's reader drives. A
@@ -173,7 +173,7 @@ func (m *Metrics) observe(ctx context.Context, observer metric.Observer) error {
 		instrument, seen := instruments[row.Message.Name]
 		if !seen {
 			// name first published mid-collection -- the next
-			// RegisterSampleInstruments creates its instrument
+			// RegisterMetricInstruments creates its instrument
 			continue
 		}
 		observer.ObserveFloat64(instrument, row.Message.Value, metric.WithAttributes(toAttributes(row.Message.Attributes)...))

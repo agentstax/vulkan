@@ -12,7 +12,7 @@ type metricsCollectorMetadata struct {
 }
 
 // defaultMetricsCollectorMetadata is the config the system's declaration
-// starts with -- 30s keeps a sample fresher than the typical scrape interval
+// starts with -- 30s keeps a measurement fresher than the typical scrape interval
 // without the snapshot queries running hot.
 func defaultMetricsCollectorMetadata() *metricsCollectorMetadata {
 	return &metricsCollectorMetadata{PollRate: 30 * time.Second}

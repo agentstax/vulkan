@@ -30,9 +30,9 @@ type MessageAdmin struct {
 	consumerController *consumercontroller.ConsumerController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
-	// only samples carry compaction keys on __system.metrics, so this
-	// Sample-typed controller's reads never see an abandoned-routine event
-	sampleHeads       *compactioncontroller.CompactionController[metrics.Sample]
+	// only measurements carry compaction keys on __system.metrics, so this
+	// Measurement-typed controller's reads never see an abandoned-routine event
+	measurementHeads  *compactioncontroller.CompactionController[metrics.Measurement]
 	metricsController *metricscontroller.MetricsController
 	workerController  *workercontroller.WorkerController
 	migrateRunner     *migrate.Runner
@@ -122,7 +122,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	sampleHeads, err := compactioncontroller.NewCompactionController[metrics.Sample](ds, &compactioncontroller.ControllerConfig{
+	measurementHeads, err := compactioncontroller.NewCompactionController[metrics.Measurement](ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -183,7 +183,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		consumerController: consumerController,
 		jobRequestProducer: jobRequestProducer,
 		alertHeads:         alertHeads,
-		sampleHeads:        sampleHeads,
+		measurementHeads:   measurementHeads,
 		metricsController:  metricsController,
 		workerController:   workerController,
 		migrateRunner:      migrateRunner,

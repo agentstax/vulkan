@@ -21,7 +21,7 @@ type MetricsCollectorDefinition struct {
 	workers  *controller.WorkerController
 	metrics  *metricscontroller.MetricsController
 	topics   *topiccontroller.TopicController
-	producer *producer.Producer[metrics.Sample] // each Provision registers its own instance from it
+	producer *producer.Producer[metrics.Measurement] // each Provision registers its own instance from it
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -62,7 +62,7 @@ func NewMetricsCollectorDefinition(ds *coredatastore.PostgresDatastore, cfg *Met
 		return nil, err
 	}
 
-	sampleProducer, err := producer.NewProducer[metrics.Sample](ds, &producer.ProducerConfig{
+	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -76,7 +76,7 @@ func NewMetricsCollectorDefinition(ds *coredatastore.PostgresDatastore, cfg *Met
 		workers:  workers,
 		metrics:  metricsController,
 		topics:   topics,
-		producer: sampleProducer,
+		producer: measurementProducer,
 	}, nil
 }
 

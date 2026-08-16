@@ -19,7 +19,7 @@ import (
 )
 
 // reads the deployment's snapshots at the row's poll_rate while a heartbeat
-// holds the claim, producing one Sample per metric to __system.metrics
+// holds the claim, producing one Measurement per metric to __system.metrics
 type MetricsCollectorExecution struct {
 	Owner  *common.Owner
 	Config *MetricsCollectorConfig
@@ -29,10 +29,10 @@ type MetricsCollectorExecution struct {
 	metrics          *metricscontroller.MetricsController
 	topics           *topiccontroller.TopicController
 	metadata         *metricsCollectorMetadata
-	producerInstance *producer.ProducerInstance[metrics.Sample]
+	producerInstance *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *metricsCollectorMetadata, producerInstance *producer.ProducerInstance[metrics.Sample]) (*MetricsCollectorExecution, error) {
+func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *metricsCollectorMetadata, producerInstance *producer.ProducerInstance[metrics.Measurement]) (*MetricsCollectorExecution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -78,7 +78,7 @@ func (i *MetricsCollectorExecution) Run(ctx context.Context) error {
 }
 
 // collect is one collection pass. A failed produce fails the whole pass --
-// the next tick reproduces every sample, so nothing is salvaged per sample.
+// the next tick reproduces every measurement, so nothing is salvaged per measurement.
 func (i *MetricsCollectorExecution) collect(ctx context.Context) error {
 	if err := i.collectWorkers(ctx); err != nil {
 		return err
@@ -110,25 +110,25 @@ func (i *MetricsCollectorExecution) collectWorkers(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	sample, err := metrics.NewSample(metrics.SampleUnclaimedWorkers, metrics.KindGauge, float64(unclaimed), metrics.UnitCount("worker"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricUnclaimedWorkers, metrics.KindGauge, float64(unclaimed), metrics.UnitCount("worker"), nil, at)
 	if err != nil {
 		return err
 	}
-	if err := i.produceSample(ctx, sample); err != nil {
+	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
-	sample, err = metrics.NewSample(metrics.SampleOldestUnclaimedAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricOldestUnclaimedAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
 	if err != nil {
 		return err
 	}
-	if err := i.produceSample(ctx, sample); err != nil {
+	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
-	sample, err = metrics.NewSample(metrics.SampleFailingWorkers, metrics.KindGauge, float64(failing), metrics.UnitCount("worker"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricFailingWorkers, metrics.KindGauge, float64(failing), metrics.UnitCount("worker"), nil, at)
 	if err != nil {
 		return err
 	}
-	return i.produceSample(ctx, sample)
+	return i.produceMeasurement(ctx, measurement)
 }
 
 func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
@@ -153,25 +153,25 @@ func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
 	}
 
 	at := time.Now()
-	sample, err := metrics.NewSample(metrics.SampleOverdueJobs, metrics.KindGauge, float64(overdue), metrics.UnitCount("job"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueJobs, metrics.KindGauge, float64(overdue), metrics.UnitCount("job"), nil, at)
 	if err != nil {
 		return err
 	}
-	if err := i.produceSample(ctx, sample); err != nil {
+	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
-	sample, err = metrics.NewSample(metrics.SampleOldestDueAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricOldestDueAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
 	if err != nil {
 		return err
 	}
-	if err := i.produceSample(ctx, sample); err != nil {
+	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
-	sample, err = metrics.NewSample(metrics.SampleSuspendedJobs, metrics.KindGauge, float64(suspended), metrics.UnitCount("job"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedJobs, metrics.KindGauge, float64(suspended), metrics.UnitCount("job"), nil, at)
 	if err != nil {
 		return err
 	}
-	return i.produceSample(ctx, sample)
+	return i.produceMeasurement(ctx, measurement)
 }
 
 func (i *MetricsCollectorExecution) collectTopics(ctx context.Context) error {
@@ -184,7 +184,7 @@ func (i *MetricsCollectorExecution) collectTopics(ctx context.Context) error {
 	group.SetLimit(i.Config.TopicConcurrency)
 
 	for _, current := range topics {
-		// samples about __system.metrics would land on the topic they
+		// measurements about __system.metrics would land on the topic they
 		// measure, so its own numbers would never settle -- skipped
 		if current.Name == metrics.TopicName {
 			continue
@@ -209,14 +209,14 @@ func (i *MetricsCollectorExecution) collectTopic(ctx context.Context, current *t
 	if snapshot.Compacted {
 		compacted = 1
 	}
-	sample, err := metrics.NewSample(metrics.SampleTopicCompacted, metrics.KindGauge, compacted, "", map[string]string{
+	measurement, err := metrics.NewMeasurement(metrics.MetricTopicCompacted, metrics.KindGauge, compacted, "", map[string]string{
 		"topic":   current.Name,
 		"version": version,
 	}, at)
 	if err != nil {
 		return err
 	}
-	if err := i.produceSample(ctx, sample); err != nil {
+	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
 
@@ -239,46 +239,46 @@ func (i *MetricsCollectorExecution) collectConsumerGroup(ctx context.Context, sn
 		value float64
 		unit  metrics.Unit
 	}{
-		{metrics.SampleCursorHead, float64(snapshot.Cursor.Head), metrics.UnitCount("message")},
-		{metrics.SampleCursorClaimed, float64(snapshot.Cursor.Claimed), metrics.UnitCount("message")},
-		{metrics.SampleCursorCommitted, float64(snapshot.Cursor.Committed), metrics.UnitCount("message")},
-		{metrics.SampleCursorBacklog, float64(snapshot.Cursor.Backlog), metrics.UnitCount("message")},
-		{metrics.SampleCursorInflight, float64(snapshot.Cursor.Inflight), metrics.UnitCount("message")},
-		{metrics.SampleReadyExceptions, float64(snapshot.Exceptions.Ready), metrics.UnitCount("exception")},
-		{metrics.SampleInflightExceptions, float64(snapshot.Exceptions.Inflight), metrics.UnitCount("exception")},
-		{metrics.SampleDeferredExceptions, float64(snapshot.Exceptions.Deferred), metrics.UnitCount("exception")},
-		{metrics.SampleDeadExceptions, float64(snapshot.Exceptions.Dead), metrics.UnitCount("exception")},
-		{metrics.SampleOldestUnresolvedAge, float64(snapshot.Exceptions.OldestUnresolvedAge.Milliseconds()), metrics.UnitMilliseconds},
-		{metrics.SampleOpenLeases, float64(snapshot.OpenLeases), metrics.UnitCount("lease")},
-		{metrics.SampleAbandonedOutstanding, float64(snapshot.AbandonedRoutines.Outstanding), metrics.UnitCount("routine")},
-		{metrics.SampleAbandonedTotal, float64(snapshot.AbandonedRoutines.Total), metrics.UnitCount("routine")},
-		{metrics.SampleAbandonedSelfClearLatencyAvg, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.UnitMilliseconds},
+		{metrics.MetricCursorHead, float64(snapshot.Cursor.Head), metrics.UnitCount("message")},
+		{metrics.MetricCursorClaimed, float64(snapshot.Cursor.Claimed), metrics.UnitCount("message")},
+		{metrics.MetricCursorCommitted, float64(snapshot.Cursor.Committed), metrics.UnitCount("message")},
+		{metrics.MetricCursorBacklog, float64(snapshot.Cursor.Backlog), metrics.UnitCount("message")},
+		{metrics.MetricCursorInflight, float64(snapshot.Cursor.Inflight), metrics.UnitCount("message")},
+		{metrics.MetricReadyExceptions, float64(snapshot.Exceptions.Ready), metrics.UnitCount("exception")},
+		{metrics.MetricInflightExceptions, float64(snapshot.Exceptions.Inflight), metrics.UnitCount("exception")},
+		{metrics.MetricDeferredExceptions, float64(snapshot.Exceptions.Deferred), metrics.UnitCount("exception")},
+		{metrics.MetricDeadExceptions, float64(snapshot.Exceptions.Dead), metrics.UnitCount("exception")},
+		{metrics.MetricOldestUnresolvedAge, float64(snapshot.Exceptions.OldestUnresolvedAge.Milliseconds()), metrics.UnitMilliseconds},
+		{metrics.MetricOpenLeases, float64(snapshot.OpenLeases), metrics.UnitCount("lease")},
+		{metrics.MetricAbandonedOutstanding, float64(snapshot.AbandonedRoutines.Outstanding), metrics.UnitCount("routine")},
+		{metrics.MetricAbandonedTotal, float64(snapshot.AbandonedRoutines.Total), metrics.UnitCount("routine")},
+		{metrics.MetricAbandonedSelfClearLatencyAvg, float64(snapshot.AbandonedRoutines.SelfClearLatencyAvg.Milliseconds()), metrics.UnitMilliseconds},
 	}
 
-	samples := make([]*metrics.Sample, 0, len(points))
+	measurements := make([]*metrics.Measurement, 0, len(points))
 	for _, point := range points {
-		sample, err := metrics.NewSample(point.name, metrics.KindGauge, point.value, point.unit, attributes, at)
+		measurement, err := metrics.NewMeasurement(point.name, metrics.KindGauge, point.value, point.unit, attributes, at)
 		if err != nil {
 			return err
 		}
-		samples = append(samples, sample)
+		measurements = append(measurements, measurement)
 	}
 
 	// concurrent sends share the producer's batched transactions; serial
-	// sends would commit one transaction per sample
+	// sends would commit one transaction per measurement
 	group, groupCtx := errgroup.WithContext(ctx)
-	for _, sample := range samples {
+	for _, measurement := range measurements {
 		group.Go(func() error {
-			return i.produceSample(groupCtx, sample)
+			return i.produceMeasurement(groupCtx, measurement)
 		})
 	}
 	return group.Wait()
 }
 
-func (i *MetricsCollectorExecution) produceSample(ctx context.Context, sample *metrics.Sample) error {
-	_, err := i.producerInstance.Produce(ctx, sample, producer.ProduceOptions{
-		RoutingKey:    sample.Name,
-		CompactionKey: metrics.SampleKey(sample.Name, sample.Attributes),
+func (i *MetricsCollectorExecution) produceMeasurement(ctx context.Context, measurement *metrics.Measurement) error {
+	_, err := i.producerInstance.Produce(ctx, measurement, producer.ProduceOptions{
+		RoutingKey:    measurement.Name,
+		CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
 	})
 	return err
 }
