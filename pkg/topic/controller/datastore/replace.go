@@ -17,7 +17,8 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 			topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, found.PartitionSize, declared.PartitionSize)
 	}
 
-	if !configDiffers(found, declared) {
+	changes := configChanges(found, declared)
+	if len(changes) == 0 {
 		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
 		return found, nil
 	}
@@ -63,20 +64,30 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 
 	// the only signal that two services declare this topic differently
 	d.Logger.InfoContext(ctx, "topic registered (config replaced)",
-		"topic", updated.Name,
-		"topic_id", updated.Id,
-		"retention_ttl", time.Duration(updated.RetentionTTLNs),
-		"allow_drop_past_committed", updated.AllowDropPastCommitted,
-		"idempotency_key_ttl", time.Duration(updated.IdempotencyKeyTTLNs),
-		"delivery_log_mode", updated.DeliveryLogMode)
+		append([]any{"topic", updated.Name, "topic_id", updated.Id, "schema_version", updated.SchemaVersion}, changes...)...)
 	return updated, nil
 }
 
-// configDiffers reports whether the declaration would change any mutable
-// config field.
-func configDiffers(found *TopicData, declared *TopicData) bool {
-	return found.RetentionTTLNs != declared.RetentionTTLNs ||
-		found.AllowDropPastCommitted != declared.AllowDropPastCommitted ||
-		found.IdempotencyKeyTTLNs != declared.IdempotencyKeyTTLNs ||
-		found.DeliveryLogMode != declared.DeliveryLogMode
+// configChanges is every mutable config field the declaration would change,
+// as log args. Empty means the declaration matches what is stored.
+func configChanges(found *TopicData, declared *TopicData) []any {
+	var changes []any
+	if found.RetentionTTLNs != declared.RetentionTTLNs {
+		changes = append(changes, "retention_ttl", replaced(time.Duration(found.RetentionTTLNs), time.Duration(declared.RetentionTTLNs)))
+	}
+	if found.AllowDropPastCommitted != declared.AllowDropPastCommitted {
+		changes = append(changes, "allow_drop_past_committed", replaced(found.AllowDropPastCommitted, declared.AllowDropPastCommitted))
+	}
+	if found.IdempotencyKeyTTLNs != declared.IdempotencyKeyTTLNs {
+		changes = append(changes, "idempotency_key_ttl", replaced(time.Duration(found.IdempotencyKeyTTLNs), time.Duration(declared.IdempotencyKeyTTLNs)))
+	}
+	if found.DeliveryLogMode != declared.DeliveryLogMode {
+		changes = append(changes, "delivery_log_mode", replaced(found.DeliveryLogMode, declared.DeliveryLogMode))
+	}
+	return changes
+}
+
+// replaced renders one field's change as the log line carries it: old -> new.
+func replaced(stored any, declared any) string {
+	return fmt.Sprintf("%v -> %v", stored, declared)
 }

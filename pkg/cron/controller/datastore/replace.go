@@ -20,7 +20,8 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 
-	if !configDiffers(found, declared, dataJson, metadataJson) {
+	changes := configChanges(found, declared, dataJson, metadataJson)
+	if len(changes) == 0 {
 		d.Logger.InfoContext(ctx, "cron job registered (already existed)", "cron_job", found.Name, "cron_job_id", found.Id)
 		return found, nil
 	}
@@ -73,25 +74,35 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 
 	// the only signal that two services declare this job differently
 	d.Logger.InfoContext(ctx, "cron job registered (config replaced)",
-		"cron_job", updated.Name,
-		"cron_job_id", updated.Id,
-		"schedule", updated.Schedule,
-		"concurrency", updated.Concurrency,
-		"timeout", time.Duration(updated.TimeoutNs),
-		"data", string(updated.Data),
-		"metadata", string(updated.Metadata),
-		"next_scheduled_time", updated.NextScheduledTime)
+		append([]any{"cron_job", updated.Name, "cron_job_id", updated.Id, "next_scheduled_time", updated.NextScheduledTime}, changes...)...)
 	return updated, nil
 }
 
-// configDiffers reports whether the declaration would change any mutable
-// config field.
-func configDiffers(found *CronJobData, declared *RegisterCronJobData, dataJson json.RawMessage, metadataJson json.RawMessage) bool {
-	return found.Schedule != declared.Schedule.String() ||
-		found.Concurrency != declared.Concurrency ||
-		found.TimeoutNs != declared.TimeoutNs ||
-		!jsonEqual(found.Data, dataJson) ||
-		!jsonEqual(found.Metadata, metadataJson)
+// configChanges is every mutable config field the declaration would change,
+// as log args. Empty means the declaration matches what is stored.
+func configChanges(found *CronJobData, declared *RegisterCronJobData, dataJson json.RawMessage, metadataJson json.RawMessage) []any {
+	var changes []any
+	if found.Schedule != declared.Schedule.String() {
+		changes = append(changes, "schedule", replaced(found.Schedule, declared.Schedule))
+	}
+	if found.Concurrency != declared.Concurrency {
+		changes = append(changes, "concurrency", replaced(found.Concurrency, declared.Concurrency))
+	}
+	if found.TimeoutNs != declared.TimeoutNs {
+		changes = append(changes, "timeout", replaced(time.Duration(found.TimeoutNs), time.Duration(declared.TimeoutNs)))
+	}
+	if !jsonEqual(found.Data, dataJson) {
+		changes = append(changes, "data", replaced(string(found.Data), string(dataJson)))
+	}
+	if !jsonEqual(found.Metadata, metadataJson) {
+		changes = append(changes, "metadata", replaced(string(found.Metadata), string(metadataJson)))
+	}
+	return changes
+}
+
+// replaced renders one field's change as the log line carries it: old -> new.
+func replaced(stored any, declared any) string {
+	return fmt.Sprintf("%v -> %v", stored, declared)
 }
 
 // marshalJson mirrors what the INSERT stores: nil -> {} (its COALESCE).

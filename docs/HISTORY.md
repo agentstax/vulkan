@@ -8,10 +8,17 @@ ledger was created; dates come from the phase git tags.
 ## 2026-08-15 — Config becomes code-owned [0518] [0520] [0521]
 
 - Config is declared in code and the latest declaration wins. RegisterTopic,
-  a consumer/worker Declare and RegisterCronJob each write their declared
-  mutable config onto the row they find, logging old -> new at Info when it
-  replaces something different (`replaceTopicConfig`, `replaceCronJobConfig`,
-  each in its datastore's `replace.go`).
+  RegisterCronJob and RegisterWorker (renamed from InsertWorker, since it
+  creates-or-takes the declaration like every other register) each write their
+  declared mutable config onto the row they find. All three report the same
+  three outcomes at Info -- created, already existed, config replaced -- and
+  the replaced line carries `field="old -> new"` for each field that actually
+  moved, which is how two services declaring one thing differently gets found.
+  Topic and cron do it in their datastore's `replace.go`; the worker's UPDATE
+  returns both sides of its metadata through a self-join on the pre-SET row.
+- A destroy racing a declaration is an error in all three paths, not a silent
+  nil: the topic and cron registers used to return `(nil, nil)`, which their
+  controllers dereferenced.
 - Deleted: AlterTopic, AlterGroup, AlterWorker(s), AlterCronJob, their
   Alter*Config/Alter*Data types and to* adapters, UpdateTopic, UpdateCronJob,
   MetadataValue with applyOverrides/mergeMetadata/declaresKey,

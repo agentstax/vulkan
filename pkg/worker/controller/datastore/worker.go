@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -48,7 +49,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	}
 
 	// the stored alias reads the row as it was before the SET, so the same
-	// statement writes the declaration and reports whether it changed anything
+	// statement writes the declaration and returns both sides of the change
 	updateSql := `
 		UPDATE worker w
 		SET metadata = COALESCE($5, '{}'::jsonb)
@@ -58,10 +59,15 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 			AND w.system_id IS NOT DISTINCT FROM $1
 			AND w.topic_id IS NOT DISTINCT FROM $2
 			AND w.consumer_group_id IS NOT DISTINCT FROM $3
-		RETURNING stored.metadata IS DISTINCT FROM COALESCE($5, '{}'::jsonb);
+		RETURNING
+			stored.metadata IS DISTINCT FROM w.metadata,
+			stored.metadata,
+			w.metadata;
 	`
-	var replaced bool
-	err = tx.QueryRow(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).Scan(&replaced)
+	var changed bool
+	var storedMetadata, declaredMetadata json.RawMessage
+	err = tx.QueryRow(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).
+		Scan(&changed, &storedMetadata, &declaredMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("worker %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", name)
 	}
@@ -72,13 +78,20 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	if !replaced {
+	if !changed {
 		d.Logger.InfoContext(ctx, "worker declared (already existed)", "worker", name, "owner", owner.Name)
 		return nil
 	}
 	// the only signal that two services declare this worker differently
-	d.Logger.InfoContext(ctx, "worker declared (config replaced)", "worker", name, "owner", owner.Name, "metadata", metadata)
+	d.Logger.InfoContext(ctx, "worker declared (config replaced)", "worker", name, "owner", owner.Name,
+		"metadata", replaced(string(storedMetadata), string(declaredMetadata)))
 	return nil
+}
+
+// replaced renders the change as the log line carries it: old -> new. Both
+// sides come back from the same statement, so jsonb has normalized both.
+func replaced(stored string, declared string) string {
+	return fmt.Sprintf("%v -> %v", stored, declared)
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a
