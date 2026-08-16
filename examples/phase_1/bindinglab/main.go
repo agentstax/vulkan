@@ -60,7 +60,9 @@ func main() {
 	topicName = fmt.Sprintf("bindinglab.%d", time.Now().UnixNano())
 	registered, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
 	must(err)
-	defer func() { must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})) }()
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
 
 	// ===== install + join =====
 	step("Register declares the set; a same-set Register joins without writing")

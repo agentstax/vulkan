@@ -37,19 +37,19 @@ type ExceptionSnapshot struct {
 // GroupLag is a group's drain progress -- the retire-relevant distillation
 // of its snapshot.
 type GroupLag struct {
-	ConsumerGroup    string
-	Committed        int64
-	Head             int64
-	Lag              int64 // Head - Committed, floored at 0
+	ConsumerGroup        string
+	Committed            int64
+	Head                 int64
+	Lag                  int64 // Head - Committed, floored at 0
 	UnresolvedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
 }
 
 func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
 	return GroupLag{
-		ConsumerGroup:    s.ConsumerGroup,
-		Committed:        s.Cursor.Committed,
-		Head:             s.Cursor.Head,
-		Lag:              max(s.Cursor.Backlog, 0),
+		ConsumerGroup:        s.ConsumerGroup,
+		Committed:            s.Cursor.Committed,
+		Head:                 s.Cursor.Head,
+		Lag:                  max(s.Cursor.Backlog, 0),
 		UnresolvedExceptions: s.Exceptions.Ready + s.Exceptions.Inflight + s.Exceptions.Deferred,
 	}
 }
