@@ -22,6 +22,13 @@ type MetricsCollectorConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
+	// TopicConcurrency caps how many topics one collection pass snapshots
+	// and produces at once. The collector shares its connection pool with
+	// the process embedding it, so the cap is what keeps a large topic
+	// count from crowding out that process's own traffic.
+	// Default: 4.
+	TopicConcurrency int
+
 	Logger       logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Retry        *retry.Policy // transient-error retry policy for the collector's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
 	CollectRetry *retry.Policy // failed-collection backoff curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
@@ -33,6 +40,9 @@ func (c *MetricsCollectorConfig) WithDefaults() *MetricsCollectorConfig {
 	}
 	if c.JitterFraction == 0 {
 		c.JitterFraction = 0.1
+	}
+	if c.TopicConcurrency == 0 {
+		c.TopicConcurrency = 4
 	}
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
@@ -50,6 +60,9 @@ func (c *MetricsCollectorConfig) Validate() error {
 	}
 	if c.JitterFraction < 0 || c.JitterFraction >= 1 {
 		return fmt.Errorf("JitterFraction must be in [0, 1), got %v", c.JitterFraction)
+	}
+	if c.TopicConcurrency < 1 {
+		return fmt.Errorf("TopicConcurrency must be >= 1, got %d", c.TopicConcurrency)
 	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)

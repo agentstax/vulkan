@@ -8,6 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
@@ -19,6 +20,7 @@ type MetricsCollectorDefinition struct {
 
 	workers  *controller.WorkerController
 	metrics  *metricscontroller.MetricsController
+	topics   *topiccontroller.TopicController
 	producer *producer.Producer[metrics.Sample] // each Provision registers its own instance from it
 }
 
@@ -52,6 +54,14 @@ func NewMetricsCollectorDefinition(ds *coredatastore.PostgresDatastore, cfg *Met
 		return nil, err
 	}
 
+	topics, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	sampleProducer, err := producer.NewProducer[metrics.Sample](ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -65,6 +75,7 @@ func NewMetricsCollectorDefinition(ds *coredatastore.PostgresDatastore, cfg *Met
 		Logger:   cfg.Logger,
 		workers:  workers,
 		metrics:  metricsController,
+		topics:   topics,
 		producer: sampleProducer,
 	}, nil
 }

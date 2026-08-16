@@ -25,9 +25,14 @@ docs/decisions/.
   metrics.TopicConfig() gained AllowDropPastCommitted: true and the
   retention-is-history-window comment. The __system.metrics exclusion has
   nothing to exclude until chunk 4's topic/group samples -- lands there.
-- [ ] 4. Full sample coverage: cron-job samples (vulkan.cron.state.*),
+- [x] 4. Full sample coverage: cron-job samples (vulkan.cron.state.*),
   per-group samples, topic samples. Mapping snapshot verbs to sample names;
-  loop shape unchanged.
+  loop shape unchanged. As built: names mirror the dormant otel gauges
+  verbatim (3 cron, 14 consumer-group, plus vulkan.topic.state.compacted);
+  attributes are group/topic/version (version so two schema versions of one
+  topic name never share a key); collector definition gained a
+  TopicController for ListTopics; __system.metrics skipped by name in
+  collectTopics.
 - [ ] 5. CLI reads. Admin gains a CompactionController[metrics.Sample]
   sibling to alertHeads (safe: only samples carry compaction keys on the
   topic). `vulkan metrics list` over heads; `vulkan metrics get` over
@@ -42,5 +47,8 @@ docs/decisions/.
   drops otel/prometheus entirely; CONVENTIONS dependency list updates.
 - [ ] 7. Dogfood + checkpoint. `vulkan manager run --metrics-address`
   (cmd/vulkan imports the otel module), metricslab driving collector ->
-  topic -> CLI -> /metrics, full fresh-DB suite. Alert-pipeline
-  instrumentation stays a ROADMAP follow-on.
+  topic -> CLI -> /metrics, full fresh-DB suite. metricslab must exercise a
+  full-size collection pass under -race: concurrent collectTopic fan-out
+  (TopicConcurrency) plus each group's concurrent produces against one
+  ProducerInstance. Alert-pipeline instrumentation stays a ROADMAP
+  follow-on.

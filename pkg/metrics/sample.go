@@ -9,11 +9,41 @@ import (
 	"unicode"
 )
 
-// sample names published by the metrics collector worker
+// worker claim state, fleet-wide
 const (
 	SampleUnclaimedWorkers   = "vulkan.worker.state.unclaimed_workers"    // workers with no live instance and a nonzero target
 	SampleOldestUnclaimedAge = "vulkan.worker.state.oldest_unclaimed_age" // largest now() - expires_at among unclaimed workers, in ms
 	SampleFailingWorkers     = "vulkan.worker.state.failing_workers"      // workers with a live instance on a nonzero failure streak
+)
+
+// cron-job schedule health, fleet-wide
+const (
+	SampleOverdueJobs   = "vulkan.cron.state.overdue_jobs"   // unsuspended jobs due past the overdue threshold -- nothing is producing them
+	SampleOldestDueAge  = "vulkan.cron.state.oldest_due_age" // largest now() - next_scheduled_time among unsuspended jobs, in ms
+	SampleSuspendedJobs = "vulkan.cron.state.suspended_jobs" // jobs with suspended = true, excluded from the overdue count
+)
+
+// topic state -- attributes: topic, version
+const (
+	SampleTopicCompacted = "vulkan.topic.state.compacted" // 1 once the topic has ever seen a keyed publish, else 0
+)
+
+// consumer-group state -- attributes: group, topic, version
+const (
+	SampleCursorHead                   = "vulkan.consumer.cursor.head"                               // highest message id ever appended -- the log frontier
+	SampleCursorClaimed                = "vulkan.consumer.cursor.claimed"                            // the group's read frontier
+	SampleCursorCommitted              = "vulkan.consumer.cursor.committed"                          // everything at or below this id is done or dead
+	SampleCursorBacklog                = "vulkan.consumer.cursor.backlog"                            // head - committed -- the waterline gap
+	SampleCursorInflight               = "vulkan.consumer.cursor.inflight"                           // claimed - committed -- claimed but not yet resolved
+	SampleReadyExceptions              = "vulkan.consumer.exceptions.ready"                          // delivery rows waiting to be retried
+	SampleInflightExceptions           = "vulkan.consumer.exceptions.inflight"                       // delivery rows leased out to a retry attempt
+	SampleDeferredExceptions           = "vulkan.consumer.exceptions.deferred"                       // delivery rows waiting for their compaction key's key_lease to free
+	SampleDeadExceptions               = "vulkan.consumer.exceptions.dead"                           // dead-lettered delivery rows -- DLQ size
+	SampleOldestUnresolvedAge          = "vulkan.consumer.exceptions.oldest_unresolved_age"          // age of the oldest ready/inflight/deferred row, in ms
+	SampleOpenLeases                   = "vulkan.consumer.open_leases"                               // currently open leases for the (group, topic)
+	SampleAbandonedOutstanding         = "vulkan.consumer.abandoned_routines.outstanding"            // abandoned events with no matching cleared event
+	SampleAbandonedTotal               = "vulkan.consumer.abandoned_routines.total"                  // distinct abandoned events within the metrics topic's retention window
+	SampleAbandonedSelfClearLatencyAvg = "vulkan.consumer.abandoned_routines.self_clear_latency_avg" // mean cleared - abandoned latency over matched pairs, in ms
 )
 
 type Kind string
