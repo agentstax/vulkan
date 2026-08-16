@@ -8,8 +8,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// messageConsumerMetadata is the group-level config for this worker,
-// written by the group's consumer declaration.
+// messageConsumerMetadata is the config stored on the message consumer
+// worker row.
 type messageConsumerMetadata struct {
 	ClaimPollRate           time.Duration            `json:"claim_poll_rate"`
 	MaxRangeReclaims        int                      `json:"max_range_reclaims"`
@@ -37,8 +37,10 @@ func (m *messageConsumerMetadata) Validate() error {
 	return nil
 }
 
-// The stored message document is whatever declared the group last; clamping it
-// keeps this process inside the MessageMin/MessageMax its own code sets.
+// withMetadata resolves what this run uses: the stored config, with its message
+// options clamped. The stored options are whatever declared the group last, so
+// the clamp is what keeps this process inside the MessageMin/MessageMax its own
+// code sets.
 func (c *MessageConsumerConfig) withMetadata(ctx context.Context, metadata *messageConsumerMetadata) *MessageConsumerConfig {
 	applied := *c
 	applied.ClaimPollRate = metadata.ClaimPollRate

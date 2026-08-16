@@ -8,7 +8,7 @@ import (
 
 // WorkerConfig is RegisterWorker's spec -- every field is optional.
 type WorkerConfig struct {
-	// Metadata - the worker's tuning knobs, stored as JSONB; each worker kind
+	// Metadata - the worker's own config, stored as JSONB; each worker kind
 	// owns its shape.
 	// Default: nil (stored as '{}').
 	Metadata any

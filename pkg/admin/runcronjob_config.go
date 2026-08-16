@@ -6,7 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// RunCronJobConfig is RunCronJob's optional knobs.
+// RunCronJobConfig is RunCronJob's spec -- every field is optional.
 type RunCronJobConfig struct {
 	// Concurrency - the produced request's concurrent-run policy.
 	// Default: allow (the request runs even while a previous one is still running).

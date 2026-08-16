@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// managerMetadata is the worker row's own tuning.
+// managerMetadata is the config stored on the manager worker row.
 type managerMetadata struct {
 	// PollRate is the discovery cadence: how often the manager refreshes the
 	// worker set, spawns/stops instances to match, and sweeps expired
@@ -14,7 +14,7 @@ type managerMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultManagerMetadata is the tuning the declaration starts with.
+// defaultManagerMetadata is the config the declaration starts with.
 func defaultManagerMetadata() *managerMetadata {
 	return &managerMetadata{PollRate: time.Second}
 }

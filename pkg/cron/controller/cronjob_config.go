@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// CronJobConfig is RegisterCronJob's optional knobs.
+// CronJobConfig is RegisterCronJob's spec -- every field is optional.
 type CronJobConfig struct {
 	// Timeout - how long one job request's delivery may run.
 	// Default: 30s.

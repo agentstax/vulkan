@@ -36,11 +36,6 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 
-	// the system's own topics:
-	// - __system.metrics
-	// - __system.alerts
-	// - __system.job_requests
-
 	// registerTopic, not RegisterTopic -- the latter guards the __system. prefix
 	if _, err := a.registerTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), metrics.TopicConfig()); err != nil {
 		return err

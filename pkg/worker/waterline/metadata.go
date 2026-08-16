@@ -5,12 +5,12 @@ import (
 	"time"
 )
 
-// waterlineMetadata is the worker row's own tuning.
+// waterlineMetadata is the config stored on the waterline worker row.
 type waterlineMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultWaterlineMetadata is the tuning every group's declaration starts with.
+// defaultWaterlineMetadata is the config every group's declaration starts with.
 func defaultWaterlineMetadata() *waterlineMetadata {
 	return &waterlineMetadata{PollRate: time.Second}
 }

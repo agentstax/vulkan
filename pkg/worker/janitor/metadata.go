@@ -5,13 +5,13 @@ import (
 	"time"
 )
 
-// janitorMetadata is the worker row's own tuning.
+// janitorMetadata is the config stored on the janitor worker row.
 type janitorMetadata struct {
 	PollRate       time.Duration `json:"poll_rate"`
 	SweepBatchSize int           `json:"sweep_batch_size"` // rows deleted per sweep transaction
 }
 
-// defaultJanitorMetadata is the tuning every topic's declaration starts with.
+// defaultJanitorMetadata is the config every topic's declaration starts with.
 func defaultJanitorMetadata() *janitorMetadata {
 	return &janitorMetadata{
 		PollRate:       5 * time.Second,

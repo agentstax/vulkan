@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// compactionReadCostMetadata is the group-level config for this worker,
-// written by the alert's Declare.
+// compactionReadCostMetadata is the config stored on the alert's worker row.
 type compactionReadCostMetadata struct {
 	RepeatInterval time.Duration `json:"repeat_interval"`
 }

@@ -63,8 +63,8 @@ func newTopicGetCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-// printTopicDetail shows the register-time-only layout; the alterable
-// columns live under topic config get.
+// printTopicDetail shows the columns fixed at creation; the declared config
+// lives under topic config get.
 func printTopicDetail(w io.Writer, t *topic.Topic) {
 	fmt.Fprintf(w, "\nv%d (id=%d)\n", t.SchemaVersion, t.Id)
 

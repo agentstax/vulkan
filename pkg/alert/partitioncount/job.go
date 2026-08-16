@@ -9,6 +9,9 @@ import (
 
 const JobName = "alert." + controller.AlertPartitionCount
 
+// NewJob builds the cron job the partition_count alert is evaluated on.
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
 func NewJob(cfg *JobConfig) (*alert.Job, error) {
 	if cfg == nil {
 		cfg = &JobConfig{}

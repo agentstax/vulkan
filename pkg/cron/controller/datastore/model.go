@@ -25,8 +25,8 @@ type CronJobData struct {
 	LastScheduledTime *time.Time
 }
 
-// RegisterCronJobData is RegisterCronJob's insert input. Schedule stays parsed
-// -- the insert computes next_scheduled_time from it.
+// RegisterCronJobData is one declaration of a cron job, as RegisterCronJob
+// takes it. Schedule stays parsed -- next_scheduled_time is computed from it.
 type RegisterCronJobData struct {
 	Name        string
 	Schedule    *cron.Schedule

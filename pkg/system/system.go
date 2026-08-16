@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// System is the singleton system row, read back for get/alter.
+// System is the singleton system row, read back by GetSystem.
 type System struct {
 	Id        int64
 	CreatedAt time.Time

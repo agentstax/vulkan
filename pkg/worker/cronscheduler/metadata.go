@@ -5,12 +5,12 @@ import (
 	"time"
 )
 
-// cronSchedulerMetadata is the worker row's own tuning.
+// cronSchedulerMetadata is the config stored on the cron scheduler worker row.
 type cronSchedulerMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultCronSchedulerMetadata is the tuning the system's declaration starts with --
+// defaultCronSchedulerMetadata is the config the system's declaration starts with --
 // anything needing sub-minute frequency stays a long-lived worker, so the
 // scan paces at a minute.
 func defaultCronSchedulerMetadata() *cronSchedulerMetadata {

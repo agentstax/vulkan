@@ -9,7 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Declare creates owner's manager worker row and writes the default tuning
+// Declare creates owner's manager worker row and writes the default config
 // onto it -- the newest declaration wins. Registers run it every time, so a
 // declaration lost to a crash heals on the next one. Any owner kind declares
 // one, and no instance target -- every process reconciling owner's chain

@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// partitionCountMetadata is the group-level config for this worker,
-// written by the alert's Declare.
+// partitionCountMetadata is the config stored on the alert's worker row.
 type partitionCountMetadata struct {
 	RepeatInterval time.Duration `json:"repeat_interval"`
 }

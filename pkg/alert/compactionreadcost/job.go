@@ -9,6 +9,9 @@ import (
 
 const JobName = "alert." + controller.AlertCompactionReadCost
 
+// NewJob builds the cron job the compaction_read_cost alert is evaluated on.
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
 func NewJob(cfg *JobConfig) (*alert.Job, error) {
 	if cfg == nil {
 		cfg = &JobConfig{}

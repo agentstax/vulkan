@@ -7,6 +7,7 @@ import (
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 )
 
+// Job is one built-in alert's cron job, as RegisterSystem declares it.
 type Job struct {
 	Name     string
 	Schedule *cron.Schedule
@@ -14,6 +15,8 @@ type Job struct {
 	Config   *croncontroller.CronJobConfig
 }
 
+// NewJob parses schedule so a bad expression fails here, not at register.
+// cfg may be nil.
 func NewJob(name string, schedule string, data *JobData, cfg *croncontroller.CronJobConfig) (*Job, error) {
 	if name == "" {
 		return nil, errors.New("job name is required")
