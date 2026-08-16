@@ -7,9 +7,9 @@ import (
 )
 
 // A Declarer states desired state: a worker row for the given owner.
-// Declaring is idempotent -- an existing row is left untouched -- so owners
-// declare on every register and a declaration lost to a crash heals on the
-// next one.
+// Declaring is repeatable -- an existing row takes the declaration's config,
+// the newest wins -- so owners declare on every register and a declaration
+// lost to a crash heals on the next one.
 type Declarer interface {
 	Declare(ctx context.Context, owner *common.Owner) error
 }
