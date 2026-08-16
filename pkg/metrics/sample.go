@@ -9,6 +9,10 @@ import (
 	"unicode"
 )
 
+// SampleNameReservedPrefix marks Vulkan's own samples -- user producers
+// must not use it.
+const SampleNameReservedPrefix = "vulkan."
+
 // worker claim state, fleet-wide
 const (
 	SampleUnclaimedWorkers   = "vulkan.worker.state.unclaimed_workers"    // workers with no live instance and a nonzero target

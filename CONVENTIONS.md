@@ -6,14 +6,15 @@ each func param has explicit type, never combined
 
 ## Dependencies
 
-- Main module deps stay minimal: std lib + pgx + google/uuid + otel/prometheus
-  + x/sync. Never `go get` a new dep for domain logic.
+- Main module deps stay minimal: std lib + pgx + google/uuid + x/sync. Never
+  `go get` a new dep for domain logic.
 - When battle-tested code exists for a problem (e.g. cron parsing), VENDOR it:
   copy the needed source files + their tests + license verbatim into the owning
   package with provenance headers, take only the parts needed, keep local diffs
   to marked one-liners. Hand-roll only when nothing battle-tested fits.
-- The CLI's nested module (cobra/fang/lipgloss) is the sanctioned exception --
-  separate module, not the library.
+- The nested modules are the sanctioned exception -- separate modules, not
+  the library: cmd/vulkan (cobra/fang/lipgloss) and otelvulkan
+  (otel/prometheus).
 
 ## Naming & terminology
 

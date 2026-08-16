@@ -30,12 +30,14 @@ type MessageAdmin struct {
 	consumerController *consumercontroller.ConsumerController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
-	sampleHeads        *compactioncontroller.CompactionController[metrics.Sample] // safe to type the whole topic: only samples carry compaction keys on __system.metrics, so heads and key reads never see an abandoned-routine event
-	metricsController  *metricscontroller.MetricsController
-	workerController   *workercontroller.WorkerController
-	migrateRunner      *migrate.Runner
-	alertDeclarers     []worker.Declarer
-	allowDestroy       bool
+	// only samples carry compaction keys on __system.metrics, so this
+	// Sample-typed controller's reads never see an abandoned-routine event
+	sampleHeads       *compactioncontroller.CompactionController[metrics.Sample]
+	metricsController *metricscontroller.MetricsController
+	workerController  *workercontroller.WorkerController
+	migrateRunner     *migrate.Runner
+	alertDeclarers    []worker.Declarer
+	allowDestroy      bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {

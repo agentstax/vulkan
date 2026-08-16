@@ -5,8 +5,9 @@ go 1.26.4
 // The parent module github.com/agentstax/vulkan is resolved locally via the
 // repo-root go.work (use .) and deliberately has NO require line here: it's
 // unpublished, so any placeholder version poisons the whole workspace graph.
-// The require gets added, pinned to a real tag, only at release -- see
-// TODO.md's two-step tagging note.
+// Release is a three-module story: the root module tags first, then each
+// nested module (cmd/vulkan, otelvulkan) adds its require pinned to that
+// real tag and tags itself.
 
 require (
 	charm.land/lipgloss/v2 v2.0.5

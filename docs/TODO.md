@@ -44,13 +44,42 @@ docs/decisions/.
   --series 10 with a truncation notice; sampleValueCell renders by UCUM
   unit (ms -> duration, annotation/none -> bare number, other real units
   verbatim beside the number).
-- [ ] 6. Otel module extraction. New nested module (otelvulkan/, joins
+- [x] 6. Otel module extraction. New nested module (otelvulkan/, joins
   go.work with no require line like cmd/vulkan; release tagging becomes a
   three-module story -- update cmd/vulkan/go.mod's note). pkg/metrics/metrics
   moves and reshapes into the head-driven bridge (Float64ObservableGauge by
   sample name -- instruments can't be created inside a callback, so new names
   need a registration pass) + Prometheus exporter + Handler(). Core go.mod
   drops otel/prometheus entirely; CONVENTIONS dependency list updates.
+  As built: two layers (user-directed). otelvulkan.Metrics (NewMetrics(ds,
+  cfg); user renamed from Meter) registers the sample instruments on otel
+  meters -- MetricsConfig.Meter takes the user's own (default: the global
+  otel provider's), so their own readers/pipeline collect the data;
+  RegisterSampleInstruments lists heads and creates a gauge -- or
+  observable counter for KindCounter -- per unseen name per registered
+  meter, replacing that meter's callback registration, and the observation
+  callback lists heads again under CollectTimeout (default 5s), observing
+  by name with attributes as labels. Metrics holds exactly ONE meter (the
+  ecosystem norm; a shared-*Metrics NewExporter signature was tried and
+  reverted -- it forced a registered-meter list because readers attach at
+  provider construction). otelvulkan.Exporter (NewExporter(ds, cfg)) owns a
+  private Metrics bound to its provider's meter, with the otel Prometheus
+  reader as that provider's only reader; Handler() runs the registration
+  pass per scrape then serves (delegated RegisterSampleInstruments is
+  public for fail-fast startup); scope-info labels dropped
+  (WithoutScopeInfo).
+  pkg/metrics/metrics deleted outright (nothing constructed it).
+- [x] 6.5. User sample producer/consumer (item 1 of the original module
+  scope, restored; user renamed Sample* -> Metrics*).
+  otelvulkan.MetricsProducer (core producer.ProducerConfig passed through;
+  Register(ctx) pins __system.metrics v1) whose instance Produce(ctx,
+  sample) sets RoutingKey = name and CompactionKey = SampleKey(name,
+  attributes), rejecting the reserved prefix (new
+  metrics.SampleNameReservedPrefix const, also used by the CLI --system/
+  --user filter). otelvulkan.MetricsConsumer wraps
+  consumer.Consumer[metrics.Sample]; Register(ctx, group, names) uses
+  sample names as the binding set (samples route under their name), nil =
+  every sample, returning the core ConsumerInstance.
 - [ ] 7. Dogfood + checkpoint. `vulkan manager run --metrics-address`
   (cmd/vulkan imports the otel module), metricslab driving collector ->
   topic -> CLI -> /metrics, full fresh-DB suite. metricslab must exercise a

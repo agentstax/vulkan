@@ -43,7 +43,7 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 
 			filtered := make([]*producer.MessageRow[metrics.Sample], 0, len(heads))
 			for _, head := range heads {
-				fromCollector := strings.HasPrefix(head.Message.Name, "vulkan.")
+				fromCollector := strings.HasPrefix(head.Message.Name, metrics.SampleNameReservedPrefix)
 				if system && !fromCollector {
 					continue
 				}
