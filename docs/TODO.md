@@ -80,10 +80,20 @@ docs/decisions/.
   consumer.Consumer[metrics.Measurement]; Register(ctx, group, names) uses
   metric names as the binding set (measurements route under their metric
   name), nil = every metric, returning the core ConsumerInstance.
-- [ ] 7. Dogfood + checkpoint. `vulkan manager run --metrics-address`
-  (cmd/vulkan imports the otel module), metricslab driving collector ->
-  topic -> CLI -> /metrics, full fresh-DB suite. metricslab must exercise a
+- [x] 7. Dogfood + checkpoint. `vulkan manager run --metrics-address`
+  (cmd/vulkan imports the otel module), lab driving collector ->
+  topic -> CLI -> /metrics, full fresh-DB suite. The lab must exercise a
   full-size collection pass under -race: concurrent collectTopic fan-out
   (TopicConcurrency) plus each group's concurrent produces against one
   ProducerInstance. Alert-pipeline instrumentation stays a ROADMAP
-  follow-on.
+  follow-on. As built: --metrics-address on manager run builds an
+  otelvulkan.Exporter, fail-fast registers instruments (ErrTopicNotFound
+  -> the system-not-registered error), serves /metrics beside the manager,
+  and a server failure drains the manager; the lab is metricscollectorlab
+  (`just metrics-collector-lab`, builds bin/vulkan then runs -race --
+  the metricslab name was already taken by the abandoned-events lab):
+  6 topics x 2 groups x 5 messages, the real collector worker claimed at a
+  200ms poll_rate, full head coverage + seeded values + history >= 2 rows
+  via admin ListMeasurements/ListMeasurementMessages, then a real
+  `bin/vulkan manager run --metrics-address` subprocess scraped over HTTP
+  and SIGTERMed. Fresh-DB suite 36/36 (35 prior labs + this one).

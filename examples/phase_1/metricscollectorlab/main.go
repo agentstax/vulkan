@@ -1,0 +1,313 @@
+package main
+
+// Metrics collector lab: a full-size collection pass under -race -- the
+// collectTopics errgroup fans out topic snapshots under TopicConcurrency
+// while every group's 14 measurements produce concurrently against ONE
+// ProducerInstance, sharing the producer's batched transactions. Then the
+// pipeline's read half: heads and history through the same admin verbs
+// `vulkan metrics list` / `vulkan metrics get` render, and a real
+// `vulkan manager run --metrics-address` process scraped over HTTP.
+// Self-seeding (6 topics x 2 groups x 5 messages), self-cleaning; expects
+// bin/vulkan built by the justfile recipe.
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/agentstax/vulkan/examples/phase_1/common"
+	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
+	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
+	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
+)
+
+const (
+	databaseURL      = "postgres://example_user:example_password@localhost:5432/example_db"
+	topicCount       = 6
+	groupsPerTopic   = 2
+	messagesPerTopic = 5
+	collectorRate    = 200 * time.Millisecond
+	metricsAddress   = "127.0.0.1:19565"
+)
+
+var groupMetricNames = []string{
+	metrics.MetricCursorHead,
+	metrics.MetricCursorClaimed,
+	metrics.MetricCursorCommitted,
+	metrics.MetricCursorBacklog,
+	metrics.MetricCursorInflight,
+	metrics.MetricReadyExceptions,
+	metrics.MetricInflightExceptions,
+	metrics.MetricDeferredExceptions,
+	metrics.MetricDeadExceptions,
+	metrics.MetricOldestUnresolvedAge,
+	metrics.MetricOpenLeases,
+	metrics.MetricAbandonedOutstanding,
+	metrics.MetricAbandonedTotal,
+	metrics.MetricAbandonedSelfClearLatencyAvg,
+}
+
+func main() {
+	ctx := context.Background()
+	run := time.Now().UnixNano()
+
+	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+		User: "example_user", Pass: "example_password",
+		Host: "localhost", Port: 5432, Database: "example_db",
+	})
+	must(err)
+	defer ds.Close()
+
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	must(err)
+	must(mAdmin.RegisterSystem(ctx, nil))
+
+	step("seed 6 topics x 2 groups x 5 messages -- more topics than TopicConcurrency")
+	consumers, err := consumercontroller.NewConsumerController(ds, nil)
+	must(err)
+	workProducer, err := producer.NewProducer[common.Work](ds, nil)
+	must(err)
+
+	topicNames := make([]string, 0, topicCount)
+	groupNames := make([]string, 0, groupsPerTopic)
+	for g := range groupsPerTopic {
+		groupNames = append(groupNames, fmt.Sprintf("metricscollectorlab.%c", 'a'+g))
+	}
+	for t := range topicCount {
+		name := fmt.Sprintf("metricscollectorlab.%d.%d", run, t)
+		registered, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+		must(err)
+		topicNames = append(topicNames, name)
+		defer func() {
+			must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		}()
+
+		for _, group := range groupNames {
+			_, err := consumers.RegisterGroup(ctx, registered.Id, group)
+			must(err)
+		}
+
+		instance, err := workProducer.Register(ctx, name, topic.SchemaVersion(1))
+		must(err)
+		for range messagesPerTopic {
+			work, err := common.NewWork(30, "admin@example.com")
+			must(err)
+			_, err = instance.Produce(ctx, work, producer.ProduceOptions{})
+			must(err)
+		}
+	}
+
+	step("claim the real metrics_collector worker at a fast poll rate")
+	system, err := mAdmin.GetSystem(ctx)
+	must(err)
+	systemOwner, err := vulkancommon.NewSystemOwner(system.Id)
+	must(err)
+	workers, err := workercontroller.NewWorkerController(ds, nil)
+	must(err)
+	row, err := workers.GetWorker(ctx, metricscollector.WorkerMetricsCollector, systemOwner)
+	must(err)
+
+	definition, err := metricscollector.NewMetricsCollectorDefinition(ds, &metricscollector.MetricsCollectorConfig{
+		TopicConcurrency: 4,
+	})
+	must(err)
+
+	// a crashed earlier run's claim lingers until its InstanceTTL expires --
+	// retry past it instead of dying
+	var execution worker.Execution
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		execution, err = definition.Provision(ctx, row.Id, systemOwner, map[string]any{
+			"poll_rate": int64(collectorRate),
+		})
+		must(err)
+		if execution != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			die("metrics collector declined the instance for 60s -- is another claimant running?")
+		}
+		time.Sleep(time.Second)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	collectorDone := make(chan error, 1)
+	go func() { collectorDone <- execution.Run(runCtx) }()
+
+	step("wait for full head coverage: fleet + cron + every lab topic and group")
+	expected := map[string]bool{
+		metrics.MeasurementKey(metrics.MetricUnclaimedWorkers, nil):   false,
+		metrics.MeasurementKey(metrics.MetricOldestUnclaimedAge, nil): false,
+		metrics.MeasurementKey(metrics.MetricFailingWorkers, nil):     false,
+		metrics.MeasurementKey(metrics.MetricOverdueJobs, nil):        false,
+		metrics.MeasurementKey(metrics.MetricOldestDueAge, nil):       false,
+		metrics.MeasurementKey(metrics.MetricSuspendedJobs, nil):      false,
+	}
+	for _, topicName := range topicNames {
+		expected[metrics.MeasurementKey(metrics.MetricTopicCompacted, map[string]string{
+			"topic": topicName, "version": "1",
+		})] = false
+		for _, group := range groupNames {
+			for _, name := range groupMetricNames {
+				expected[metrics.MeasurementKey(name, map[string]string{
+					"group": group, "topic": topicName, "version": "1",
+				})] = false
+			}
+		}
+	}
+	var heads []*producer.MessageRow[metrics.Measurement]
+	must(waitFor(30*time.Second, func() (bool, error) {
+		heads, err = mAdmin.ListMeasurements(ctx)
+		if err != nil {
+			return false, err
+		}
+		covered := 0
+		for _, head := range heads {
+			if _, ok := expected[head.CompactionKey]; ok {
+				expected[head.CompactionKey] = true
+			}
+		}
+		for _, seen := range expected {
+			if seen {
+				covered++
+			}
+		}
+		return covered == len(expected), nil
+	}))
+	fmt.Printf("  ✓ all %d expected series present (%d heads total)\n", len(expected), len(heads))
+
+	step("head values match the seeded state -- nothing consumed yet")
+	byKey := make(map[string]*metrics.Measurement, len(heads))
+	for _, head := range heads {
+		byKey[head.CompactionKey] = head.Message
+		if head.Message.Attributes["topic"] == metrics.TopicName {
+			die(fmt.Sprintf("measurement %s measures __system.metrics -- exclusion broken", head.CompactionKey))
+		}
+	}
+	for _, topicName := range topicNames {
+		assertValue(byKey, metrics.MetricTopicCompacted, map[string]string{
+			"topic": topicName, "version": "1",
+		}, 0)
+		for _, group := range groupNames {
+			attributes := map[string]string{"group": group, "topic": topicName, "version": "1"}
+			assertValue(byKey, metrics.MetricCursorHead, attributes, messagesPerTopic)
+			assertValue(byKey, metrics.MetricCursorBacklog, attributes, messagesPerTopic)
+			assertValue(byKey, metrics.MetricCursorClaimed, attributes, 0)
+			assertValue(byKey, metrics.MetricDeadExceptions, attributes, 0)
+		}
+	}
+	fmt.Printf("  ✓ compacted=0, head=%d, backlog=%d, claimed=0, dead=0 across %d groups\n",
+		messagesPerTopic, messagesPerTopic, topicCount*groupsPerTopic)
+
+	step("history accumulates under the head -- one row per collection pass")
+	historyKey := metrics.MeasurementKey(metrics.MetricCursorBacklog, map[string]string{
+		"group": groupNames[0], "topic": topicNames[0], "version": "1",
+	})
+	must(waitFor(10*time.Second, func() (bool, error) {
+		history, err := mAdmin.ListMeasurementMessages(ctx, historyKey, 10)
+		if err != nil {
+			return false, err
+		}
+		return len(history) >= 2, nil
+	}))
+	fmt.Println("  ✓ >= 2 retained rows for one series key")
+
+	cancel()
+	must(<-collectorDone)
+
+	step("vulkan manager run --metrics-address serves the heads as Prometheus text")
+	manager := exec.Command("./bin/vulkan", "manager", "run",
+		"--metrics-address", metricsAddress,
+		"--database-url", databaseURL,
+	)
+	manager.Stderr = os.Stderr
+	must(manager.Start())
+
+	var scrape string
+	must(waitFor(15*time.Second, func() (bool, error) {
+		response, err := http.Get("http://" + metricsAddress + "/metrics")
+		if err != nil {
+			return false, nil // not listening yet
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			return false, err
+		}
+		scrape = string(body)
+		return response.StatusCode == http.StatusOK, nil
+	}))
+
+	for _, series := range []string{
+		"vulkan_worker_state_unclaimed_workers ",
+		"vulkan_cron_state_overdue_jobs ",
+		fmt.Sprintf("vulkan_consumer_cursor_backlog{group=%q,topic=%q,version=\"1\"} %d", groupNames[0], topicNames[0], messagesPerTopic),
+		fmt.Sprintf("vulkan_topic_state_compacted{topic=%q,version=\"1\"} 0", topicNames[topicCount-1]),
+	} {
+		if !strings.Contains(scrape, series) {
+			die(fmt.Sprintf("scrape missing %q", series))
+		}
+		fmt.Printf("  ✓ %s\n", strings.TrimRight(series, " "))
+	}
+
+	must(manager.Process.Signal(syscall.SIGTERM))
+	must(manager.Wait())
+	fmt.Println("  ✓ manager process exited cleanly on SIGTERM")
+
+	fmt.Println("\n✅ METRICS COLLECTOR LAB PASSED")
+}
+
+// ---- helpers ----
+
+func assertValue(byKey map[string]*metrics.Measurement, name string, attributes map[string]string, want float64) {
+	key := metrics.MeasurementKey(name, attributes)
+	head, ok := byKey[key]
+	if !ok {
+		die(fmt.Sprintf("no head for %s", key))
+	}
+	if head.Value != want {
+		die(fmt.Sprintf("%s: got %v, want %v", key, head.Value, want))
+	}
+}
+
+func waitFor(timeout time.Duration, cond func() (bool, error)) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		ok, err := cond()
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for condition")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
+func must(err error) {
+	if err != nil {
+		die(err.Error())
+	}
+}
+func die(msg string) {
+	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
+	os.Exit(1)
+}

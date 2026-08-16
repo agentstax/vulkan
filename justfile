@@ -89,6 +89,15 @@ abandoned-routine-snapshot-lab:
 metrics-lab:
   go run examples/phase_1/metricslab/main.go
 
+# metrics collector lab: a full-size collection pass under -race (topic
+# fan-out under TopicConcurrency, each group's measurements produced
+# concurrently on one ProducerInstance), heads/history read through the
+# admin verbs the CLI renders, and a real `vulkan manager run
+# --metrics-address` process scraped over HTTP.
+metrics-collector-lab:
+  go build -o bin/vulkan ./cmd/vulkan
+  go run -race examples/phase_1/metricscollectorlab/main.go
+
 abandoned-events-lab:
   go run examples/phase_1/abandonedeventslab/main.go
 
