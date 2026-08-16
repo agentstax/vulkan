@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// InsertWorker creates the (name, owner) worker row, or takes metadata onto
+// InsertWorker creates the (name, owner) worker row, or writes metadata onto
 // the existing one -- the newest declaration wins. targetInstances is set at
 // creation only: 0 is how a worker is suspended, and a redeclaration would
 // resume it.
@@ -31,28 +31,54 @@ func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *
 	insertSql := `
 		INSERT INTO worker (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
 		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
-		ON CONFLICT DO NOTHING;
+		ON CONFLICT DO NOTHING
+		RETURNING id;
 	`
-	if _, err := tx.Exec(ctx, insertSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances); err != nil {
+	var createdId int64
+	err = tx.QueryRow(ctx, insertSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances).Scan(&createdId)
+	if err == nil {
+		if err := tx.Commit(ctx); err != nil {
+			return err
+		}
+		d.Logger.InfoContext(ctx, "worker declared (created)", "worker", name, "owner", owner.Name, "worker_id", createdId)
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 
+	// the stored alias reads the row as it was before the SET, so the same
+	// statement writes the declaration and reports whether it changed anything
 	updateSql := `
-		UPDATE worker
+		UPDATE worker w
 		SET metadata = COALESCE($5, '{}'::jsonb)
-		WHERE name = $4
-			AND system_id IS NOT DISTINCT FROM $1
-			AND topic_id IS NOT DISTINCT FROM $2
-			AND consumer_group_id IS NOT DISTINCT FROM $3;
+		FROM worker stored
+		WHERE stored.id = w.id
+			AND w.name = $4
+			AND w.system_id IS NOT DISTINCT FROM $1
+			AND w.topic_id IS NOT DISTINCT FROM $2
+			AND w.consumer_group_id IS NOT DISTINCT FROM $3
+		RETURNING stored.metadata IS DISTINCT FROM COALESCE($5, '{}'::jsonb);
 	`
-	updated, err := tx.Exec(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata)
+	var replaced bool
+	err = tx.QueryRow(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).Scan(&replaced)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("worker %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", name)
+	}
 	if err != nil {
 		return err
 	}
-	if updated.RowsAffected() == 0 {
-		return fmt.Errorf("worker %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", name)
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
-	return tx.Commit(ctx)
+	if !replaced {
+		d.Logger.InfoContext(ctx, "worker declared (already existed)", "worker", name, "owner", owner.Name)
+		return nil
+	}
+	// the only signal that two services declare this worker differently
+	d.Logger.InfoContext(ctx, "worker declared (config replaced)", "worker", name, "owner", owner.Name, "metadata", metadata)
+	return nil
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a

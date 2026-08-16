@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// InsertWorker creates the (name, owner) worker row, or takes cfg.Metadata
+// InsertWorker creates the (name, owner) worker row, or writes cfg.Metadata
 // onto the existing one -- the newest declaration wins. cfg.TargetInstances
 // applies at creation only.
 func (c *WorkerController) InsertWorker(ctx context.Context, name string, owner *common.Owner, cfg *WorkerConfig) error {
