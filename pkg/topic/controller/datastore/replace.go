@@ -57,8 +57,8 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 		return nil, err
 	}
 	if updated == nil {
-		// destroyed between the read and the update
-		return nil, nil
+		return nil, fmt.Errorf("topic %q version %d was deleted while its declaration was in flight -- rerun the declaration if it should still exist",
+			found.Name, found.SchemaVersion)
 	}
 
 	// the only signal that two services declare this topic differently

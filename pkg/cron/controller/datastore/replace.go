@@ -72,8 +72,7 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 		return nil, err
 	}
 	if updated == nil {
-		// destroyed between the read and the update
-		return nil, nil
+		return nil, fmt.Errorf("cron job %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", found.Name)
 	}
 
 	// the only signal that two services declare this job differently

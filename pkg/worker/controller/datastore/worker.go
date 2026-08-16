@@ -50,7 +50,7 @@ func (d *WorkerDatastore) insertWorker(ctx context.Context, name string, owner *
 		return err
 	}
 	if updated.RowsAffected() == 0 {
-		return fmt.Errorf("worker %q was deleted while its declaration was in flight -- likely a concurrent destroy; rerun the declaration if the owner still exists", name)
+		return fmt.Errorf("worker %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", name)
 	}
 	return tx.Commit(ctx)
 }
