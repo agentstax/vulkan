@@ -24,11 +24,13 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (examples, bench, CLI included) — pkg/consumer/options.go deleted as
       dead code. The exported Config pointer field itself stays with the
       unexport chunk.
-- [ ] **Producer/batcher config duplicated.** producer_config.go:24-41
-      duplicates batcher/batcher_config.go:14-31 field for field, including
-      both default sets and both validations; NewProducerInstance always
-      passes explicit values (producer_instance.go:34-40), so the batcher's
-      defaults are unreachable and drift silently. One home for the fact.
+- [x] **Producer/batcher config duplicated.** Resolved 2026-08-17: the four
+      flat Batch* fields on ProducerConfig became one nested
+      `Batch batcher.BatcherConfig` field — fields, docs, defaults, and
+      validation now live only in the batcher; ProducerConfig's
+      WithDefaults/Validate delegate (Batch.Logger inherits Logger when
+      unset, errors wrap as "Batch: ..."). Public change:
+      cfg.BatchMaxSize -> cfg.Batch.MaxSize. producer-batch-lab green.
 - [ ] **Metrics datastore retry field name.**
       pkg/metrics/controller/datastore/datastore.go:15 names it `Retry`;
       the other 16 datastores say `DatastoreRetry`. Rename + call sites.

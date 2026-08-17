@@ -44,7 +44,7 @@ func (d *ProducerDatastore[Message]) appendMessageBatch(ctx context.Context, top
 	err = d.DatastoreRetry.Wrap(ctx, func() error {
 		// bound each attempt -- a hung database must not hold the batch forever
 		attemptCtx, cancel := context.WithTimeoutCause(ctx, attemptTimeout,
-			fmt.Errorf("batch attempt exceeded BatchAttemptTimeout (%s) for topic %d", attemptTimeout, topicId))
+			fmt.Errorf("batch attempt exceeded Batch.AttemptTimeout (%s) for topic %d", attemptTimeout, topicId))
 		defer cancel()
 
 		results, idx, err := d.appendMessageBatchTransaction(attemptCtx, topicId, appends)

@@ -40,6 +40,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/producer/batcher"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
@@ -260,7 +261,7 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	defer cleanup()
 
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -301,7 +302,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	defer cleanup()
 
 	// cap <= PartitionSize so one heal covers a whole batch
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{BatchMaxSize: 5})
+	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
@@ -345,7 +346,7 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	// the three arms share ONE caller count so the ratio is fair -- but N
 	// callers blocked ~one commit each also CAPS arrival (Little's law), so
 	// none of them is the batcher's ceiling. Saturate it: enough callers that
-	// batches ride at BatchMaxSize, which only the batched path can absorb
+	// batches ride at Batch.MaxSize, which only the batched path can absorb
 	// (a per-call arm would need a pool connection per caller).
 	const satProducers, satMsgs = 800, 50
 	saturated := timeArm(ctx, ds, "saturated", satProducers, satMsgs, func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error {

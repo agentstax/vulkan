@@ -31,13 +31,7 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 		return nil, errors.New("controller must not be nil")
 	}
 
-	topicBatcher, err := batcher.NewBatcher(producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &batcher.BatcherConfig{
-		Logger:           cfg.Logger,
-		MaxSize:          cfg.BatchMaxSize,
-		ConcurrencyLimit: cfg.BatchConcurrencyLimit,
-		AttemptTimeout:   cfg.BatchAttemptTimeout,
-		ShutdownGrace:    cfg.BatchShutdownGrace,
-	})
+	topicBatcher, err := batcher.NewBatcher(producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &cfg.Batch)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +99,7 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 		appends = append(appends, appendItem)
 	}
 
-	appendedRows, failedIdx, err := p.controller.AppendMessageBatch(ctx, p.Topic.Id, p.Topic.PartitionSize, p.cfg.BatchAttemptTimeout, appends)
+	appendedRows, failedIdx, err := p.controller.AppendMessageBatch(ctx, p.Topic.Id, p.Topic.PartitionSize, p.cfg.Batch.AttemptTimeout, appends)
 	if err != nil {
 		if failedIdx >= 0 {
 			return nil, fmt.Errorf("item %d: %w", failedIdx, err)
