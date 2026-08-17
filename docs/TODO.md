@@ -42,9 +42,12 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       repo-wide ("fix every occurrence, not just the new one"); zero
       identifiers ending in ID remain outside UUID. All four modules
       build; pure rename, no SQL or log keys touched.
-- [ ] **Janitor model.go missing.** sweptRow is declared inside sweepBatch
-      (pkg/worker/janitor/datastore/sweep.go:72-75) beside its query; move
-      it to a model.go. (Waterline has no row structs — nothing to move.)
+- [x] **Janitor model.go missing.** Resolved 2026-08-17: sweptRow moved
+      out of sweepBatch's body into a new
+      pkg/worker/janitor/datastore/model.go, kept unexported (no reader
+      outside the package; the convention governs location, and
+      RowToStructByName only needs exported fields). Waterline scans into
+      scalars — no row structs, so no file created there.
 - [ ] **Dead db: tags + import-alias drift.**
       compaction/controller/datastore/model.go:10-15 and
       producer/controller/datastore/model.go:32-37 carry db: tags but all

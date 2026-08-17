@@ -67,13 +67,6 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	}
 	defer tx.Rollback(ctx)
 
-	// sweptRow is sweepBatch's own RETURNING shape -- CompactionKey only exists
-	// to tell whether the compaction_head cleanup is worth running at all.
-	type sweptRow struct {
-		Id            int64   `db:"id"`
-		CompactionKey *string `db:"compaction_key"`
-	}
-
 	sweepSql := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE id IN (
