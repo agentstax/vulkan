@@ -55,7 +55,7 @@ func classify(err error) error {
 }
 
 // IsTransientPgError reports whether a retry is safe -- never a
-// deterministic rejection (a business-logic *pgconn.PgError, consumer.ErrLeaseLost).
+// deterministic rejection (a business-logic *pgconn.PgError, errors.ErrLeaseLost).
 func IsTransientPgError(err error) bool {
 	if err == nil {
 		return false

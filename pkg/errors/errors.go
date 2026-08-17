@@ -14,3 +14,7 @@ var ErrAlreadyConsuming = errors.New("already consuming")
 // requested. Pass the application's shutdown context, or opt out with the
 // config's DisableGracefulShutdown.
 var ErrLifecycleContextNotCancellable = errors.New("lifecycle context can never be cancelled")
+
+// ErrLeaseLost means the row was reclaimed by another consumer between the
+// claim and the write.
+var ErrLeaseLost = errors.New("lease lost: row reclaimed by another consumer")

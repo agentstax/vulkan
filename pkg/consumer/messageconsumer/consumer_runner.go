@@ -14,6 +14,7 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumer/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/message"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -121,7 +122,7 @@ func (r *messageRunner[Message]) closeRange(ctx context.Context, state *rangeSta
 			fmt.Errorf("force reclaim exceeded AckMargin (%s) for group %q topic %d", r.cfg.AckMargin, r.Owner.Name, r.Topic.Id))
 		defer cancel()
 
-		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, consumerbase.ErrLeaseLost) {
+		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, vulkanerrors.ErrLeaseLost) {
 			r.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", r.Owner.Name, "topic", r.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
 		}
 		return
@@ -291,7 +292,7 @@ func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeS
 	switch {
 	case err == nil:
 		r.buffer.Remove(commit.Lease.Token)
-	case errors.Is(err, consumerbase.ErrLeaseLost):
+	case errors.Is(err, vulkanerrors.ErrLeaseLost):
 		r.Logger.DebugContext(ctx, "lease lost at commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
 		r.buffer.Remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
 	default:
@@ -314,7 +315,7 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
 	// range (including the already-resolved prefix) to sit out a full reclaim.
 	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode); err != nil {
-		if errors.Is(err, consumerbase.ErrLeaseLost) {
+		if errors.Is(err, vulkanerrors.ErrLeaseLost) {
 			r.Logger.DebugContext(ctx, "lease lost at partial commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}

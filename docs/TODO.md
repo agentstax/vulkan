@@ -112,14 +112,17 @@ One chunk = one review; work top to bottom within a section, reorder freely.
 
 ### One-decision sweeps
 
-- [ ] **Sentinel ownership + homes.** topic/system sentinels are raised
-      only from pkg/admin (admin/system.go:168,183); cron's are raised from
-      its own datastore. Pick the rule, write it into CONVENTIONS.md,
-      sweep. Same review: rehome base.ErrLeaseLost — the messageconsumer
-      and exceptionconsumer datastores import all of pkg/consumer/base for
-      it (exceptionconsumer .../datastore/outcome.go:9), the clearest arrow
-      violation in the consumer tree — and decide whether pkg/errors' two
-      Consume-lifecycle sentinels move to pkg/consumer.
+- [x] **Sentinel ownership + homes.** Resolved 2026-08-17. Rule (now in
+      CONVENTIONS.md, Package layout): sentinels are declared in the
+      owning domain's vocabulary, cross-stack ones in pkg/errors;
+      whichever layer detects the condition raises it — so the
+      admin-vs-datastore "asymmetry" was two valid cases of one rule, no
+      sweep needed. ErrLeaseLost moved base → pkg/errors (its stated
+      purpose; leaf import), freeing the messageconsumer/exceptionconsumer
+      datastores and reclaimlab from importing runtime-heavy base;
+      pkg/errors' two sentinels stay put — that question closes as "no".
+      base/errors.go deleted; stale retry comment fixed. reclaim-lab
+      green.
 - [ ] **Slice element returns.** topic/controller/datastore/topic.go:77,206
       and cron return []*Data; metrics/compaction return []Data; convention
       says values. Sweep to []Data.

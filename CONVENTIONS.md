@@ -79,6 +79,10 @@ Three layers per domain (template: worker, topic):
   Table-exact `*Data` structs live in `model.go`, never beside the query that
   returns them. An enum type travels with its const block.
 - Import arrows point strictly downward.
+- Error sentinels are declared in the owning domain's `pkg/<x>` vocabulary
+  (`errors.go`); a sentinel shared across different stacks lives in
+  `pkg/errors`. Whichever layer detects the condition raises it -- admin
+  for guards it composes, a datastore for facts its own query discovers.
 - A config file is named for the struct it declares, never bare `config.go` --
   `<x>_config.go`, `controller_config.go`, `datastore_config.go`. A package
   that grows a second config gets a second file rather than a shared one.

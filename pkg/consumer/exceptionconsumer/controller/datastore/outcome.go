@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
-	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -270,7 +270,7 @@ func (d *ExceptionConsumerDatastore) recordAndReleaseKey(ctx context.Context, ke
 		d.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group_id", keyClaim.ConsumerGroupId, "compaction_key", keyClaim.CompactionKey)
 	}
 	if tag.RowsAffected() == 0 {
-		return consumerbase.ErrLeaseLost
+		return vulkanerrors.ErrLeaseLost
 	}
 	return nil
 }
@@ -281,7 +281,7 @@ func (d *ExceptionConsumerDatastore) record(ctx context.Context, sql string, arg
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return consumerbase.ErrLeaseLost
+		return vulkanerrors.ErrLeaseLost
 	}
 	return nil
 }

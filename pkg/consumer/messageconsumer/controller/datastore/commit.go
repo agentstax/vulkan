@@ -6,7 +6,7 @@ import (
 	"time"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
-	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
+	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
@@ -44,7 +44,7 @@ func (d *MessageConsumerDatastore) commit(ctx context.Context, topicId int64, gr
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return consumerbase.ErrLeaseLost
+		return vulkanerrors.ErrLeaseLost
 	}
 
 	// no ON CONFLICT needed: only the worker whose token still matches the lease
@@ -99,7 +99,7 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return consumerbase.ErrLeaseLost
+		return vulkanerrors.ErrLeaseLost
 	}
 
 	// same parking shape as commit -- only the lease-side effect differs.
