@@ -73,9 +73,9 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       its own TargetInstances end to end). WorkerData.SystemId KEPT: the
       no-reader rule governs the vocabulary layer, while row structs are
       bound by table-exact — consistent with the db-tags template call.
-- [ ] **Misnamed config file.** worker/controller/runner_config.go declares
-      InstanceTickRunnerConfig — rename the file (sibling
-      instance_runner_config.go has it right).
+- [x] **Misnamed config file.** Resolved 2026-08-17: runner_config.go
+      renamed instance_tick_runner_config.go (git mv), matching the
+      InstanceTickRunnerConfig it declares.
 - [ ] **Manager pool cleanups.** newExecutionPool returns no error and
       nil-checks nothing (pkg/worker/manager/pool.go:46); bare
       spawnedExecution/workerChange literals (:135, :84-92); stop reads the
