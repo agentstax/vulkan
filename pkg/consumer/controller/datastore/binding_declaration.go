@@ -149,10 +149,7 @@ func (d *ConsumerDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, grou
 		VALUES ($1, $2, $3);
 	`
 	for _, display := range patterns {
-		expression, err := wildcardToRegex(display)
-		if err != nil {
-			return err
-		}
+		expression := wildcardToRegex(display)
 		if _, err := tx.Exec(ctx, insertSql, groupId, expression, display); err != nil {
 			return err
 		}
@@ -226,11 +223,7 @@ func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier
 // translates a '*'-wildcard pattern into an anchored POSIX regex suitable for
 // the `~` operator: '*' -> `.*` (any characters, unbounded), literal segments
 // regex-escaped.
-func wildcardToRegex(pattern string) (string, error) {
-	if pattern == "" {
-		return "", fmt.Errorf("consumer: empty topic pattern")
-	}
-
+func wildcardToRegex(pattern string) string {
 	segments := strings.Split(pattern, "*")
 	var builder strings.Builder
 	builder.WriteByte('^')
@@ -241,7 +234,7 @@ func wildcardToRegex(pattern string) (string, error) {
 		builder.WriteString(regexp.QuoteMeta(segment))
 	}
 	builder.WriteByte('$')
-	return builder.String(), nil
+	return builder.String()
 }
 
 // NewestInstalledDeclaration picks the highest-id installed row -- the

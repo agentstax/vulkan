@@ -2,7 +2,6 @@ package datastore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
@@ -235,10 +234,6 @@ func (d *ExceptionConsumerDatastore) recordExceptionSuperseded(ctx context.Conte
 // recordAndReleaseKey records outcome and releases keyClaim
 // in the same transaction.
 func (d *ExceptionConsumerDatastore) recordAndReleaseKey(ctx context.Context, keyClaim *KeyLeaseData, sql string, args ...any) error {
-	if keyClaim == nil {
-		return errors.New("recordAndReleaseKey requires a key claim -- use record for keyless outcomes")
-	}
-
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err

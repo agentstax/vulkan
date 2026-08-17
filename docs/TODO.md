@@ -219,7 +219,7 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       Shaping loop + eventKey moved to adapter.go as
       toAbandonedRoutineSnapshot. abandoned-events-lab +
       abandoned-routine-snapshot-lab + alert-lab green.
-- [ ] **Consumer declaration enums + re-validation.** The datastore public
+- [x] **Consumer declaration enums + re-validation.** The datastore public
       DeclareBindings returns vocabulary binding.DeclarationOutcome while
       its model.go:13-18 defines BindingDeclarationStatus for the same
       column — two enums, one fact; wildcardToRegex re-validates the empty
@@ -227,6 +227,15 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (.../datastore/binding_declaration.go:229-232 vs controller :27-29);
       exceptionconsumer's recordAndReleaseKey re-checks a nil the callers
       already branched on (outcome.go:238-240).
+    - Resolved 2026-08-17. Enum half closed as no-change: they are two
+      facts, not one — DeclarationOutcome is the attempt-level result of
+      the sanctioned classify function and includes joined, which never
+      lands in a row; BindingDeclarationStatus is the column's value set
+      traveling with the datastore model. wildcardToRegex's empty-pattern
+      error deleted (controller already rejects "": datastores trust
+      inputs) — it now returns just the string. recordAndReleaseKey's
+      nil guard deleted: all three callers branch on keyClaim == nil
+      first. binding-lab + exception-lab + defer-lab green.
 
 ### Package restructures
 
