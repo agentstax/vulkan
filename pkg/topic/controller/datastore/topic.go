@@ -74,8 +74,8 @@ func (d *TopicDatastore) getTopicById(ctx context.Context, id int64) (*TopicData
 	return d.scanTopicData(d.Datastore.Pool.QueryRow(ctx, sql, id))
 }
 
-func (d *TopicDatastore) ListTopics(ctx context.Context) ([]*TopicData, error) {
-	var topics []*TopicData
+func (d *TopicDatastore) ListTopics(ctx context.Context) ([]TopicData, error) {
+	var topics []TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		topics, err = d.listTopics(ctx)
@@ -84,7 +84,7 @@ func (d *TopicDatastore) ListTopics(ctx context.Context) ([]*TopicData, error) {
 	return topics, err
 }
 
-func (d *TopicDatastore) listTopics(ctx context.Context) ([]*TopicData, error) {
+func (d *TopicDatastore) listTopics(ctx context.Context) ([]TopicData, error) {
 	sql := `
 		SELECT
 			id,
@@ -108,13 +108,13 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]*TopicData, error) {
 	}
 	defer rows.Close()
 
-	var topics []*TopicData
+	var topics []TopicData
 	for rows.Next() {
 		topicData, err := d.scanTopicData(rows)
 		if err != nil {
 			return nil, err
 		}
-		topics = append(topics, topicData)
+		topics = append(topics, *topicData)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -203,8 +203,8 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, declared *TopicData)
 // RenameTopic moves every version under oldName to newName in one statement.
 // Returns (nil, nil) if no version is registered under oldName
 // ErrTopicNameTaken if newName already has any (name, version) registered.
-func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newName string) ([]*TopicData, error) {
-	var topics []*TopicData
+func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
+	var topics []TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		topics, err = d.renameTopic(ctx, oldName, newName)
@@ -213,7 +213,7 @@ func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newNam
 	return topics, err
 }
 
-func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) ([]*TopicData, error) {
+func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
 	sql := `
 		UPDATE topic
 		SET name = $2, updated_at = NOW()
@@ -238,13 +238,13 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 	}
 	defer rows.Close()
 
-	var topics []*TopicData
+	var topics []TopicData
 	for rows.Next() {
 		topicData, err := d.scanTopicData(rows)
 		if err != nil {
 			return nil, err
 		}
-		topics = append(topics, topicData)
+		topics = append(topics, *topicData)
 	}
 	if err := rows.Err(); err != nil {
 		// 23505 = unqiue constraint violation ie name taken

@@ -47,7 +47,7 @@ func (c *TopicController) ListTopics(ctx context.Context) ([]*topic.Topic, error
 
 	var topics []*topic.Topic
 	for _, data := range listed {
-		listedTopic, err := toTopic(data)
+		listedTopic, err := toTopic(&data)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +113,7 @@ func (c *TopicController) RenameTopic(ctx context.Context, oldName string, newNa
 
 	var topics []*topic.Topic
 	for _, data := range renamed {
-		renamedTopic, err := toTopic(data)
+		renamedTopic, err := toTopic(&data)
 		if err != nil {
 			return nil, err
 		}

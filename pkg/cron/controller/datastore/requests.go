@@ -11,8 +11,8 @@ import (
 
 // CronJobRequests is the job's newest limit requests, one row per
 // (request, consumer group that receives it), newest request first.
-func (d *CronJobDatastore) CronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]*JobRequestStatusData, error) {
-	var requests []*JobRequestStatusData
+func (d *CronJobDatastore) CronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
+	var requests []JobRequestStatusData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		requests, err = d.cronJobRequests(ctx, jobRequestsTopicId, cronJobId, name, limit)
@@ -21,7 +21,7 @@ func (d *CronJobDatastore) CronJobRequests(ctx context.Context, jobRequestsTopic
 	return requests, err
 }
 
-func (d *CronJobDatastore) cronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]*JobRequestStatusData, error) {
+func (d *CronJobDatastore) cronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
 	compactionKey := strconv.FormatInt(cronJobId, 10)
 
 	groups, err := d.matchingGroups(ctx, jobRequestsTopicId, name)
@@ -38,7 +38,7 @@ func (d *CronJobDatastore) cronJobRequests(ctx context.Context, jobRequestsTopic
 	}
 
 	ids := messageIds(messages)
-	var statuses []*JobRequestStatusData
+	var statuses []JobRequestStatusData
 	for _, group := range groups {
 		outcomes, err := d.requestOutcomes(ctx, jobRequestsTopicId, group.Id, ids)
 		if err != nil {
@@ -59,12 +59,12 @@ func (d *CronJobDatastore) cronJobRequests(ctx context.Context, jobRequestsTopic
 
 // groupJobRequestStatuses is one consumer group's row per request, newest
 // request first.
-func groupJobRequestStatuses(group *matchingGroupData, messages []*jobMessageData, headId int64, outcomes map[int64]requestOutcomeData) []*JobRequestStatusData {
-	var statuses []*JobRequestStatusData
+func groupJobRequestStatuses(group matchingGroupData, messages []jobMessageData, headId int64, outcomes map[int64]requestOutcomeData) []JobRequestStatusData {
+	var statuses []JobRequestStatusData
 	for i, message := range messages {
 
 		outcome := outcomes[message.Id]
-		status := &JobRequestStatusData{
+		status := JobRequestStatusData{
 			ConsumerGroup: group.Name,
 			MessageId:     message.Id,
 			Payload:       message.Payload,
@@ -88,7 +88,7 @@ func groupJobRequestStatuses(group *matchingGroupData, messages []*jobMessageDat
 
 // jobMessages is the newest limit message-log rows on the job's compaction
 // key, newest first.
-func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId int64, compactionKey string, limit int) ([]*jobMessageData, error) {
+func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId int64, compactionKey string, limit int) ([]jobMessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT m.id, m.payload, m.created_at
 		FROM %s m
@@ -103,13 +103,13 @@ func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId i
 	}
 	defer rows.Close()
 
-	var messages []*jobMessageData
+	var messages []jobMessageData
 	for rows.Next() {
 		var message jobMessageData
 		if err := rows.Scan(&message.Id, &message.Payload, &message.CreatedAt); err != nil {
 			return nil, err
 		}
-		messages = append(messages, &message)
+		messages = append(messages, message)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId i
 	return messages, nil
 }
 
-func messageIds(messages []*jobMessageData) []int64 {
+func messageIds(messages []jobMessageData) []int64 {
 	ids := make([]int64, len(messages))
 	for i, message := range messages {
 		ids[i] = message.Id

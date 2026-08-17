@@ -63,7 +63,7 @@ func (c *CronJobController) ListCronJobs(ctx context.Context) ([]*cron.CronJob, 
 
 	var jobs []*cron.CronJob
 	for _, data := range listed {
-		job, err := toCronJob(data)
+		job, err := toCronJob(&data)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +124,7 @@ func (c *CronJobController) CronJobRequests(ctx context.Context, jobRequestsTopi
 
 	var requests []*cron.JobRequestStatus
 	for _, data := range listed {
-		request, err := toJobRequestStatus(data)
+		request, err := toJobRequestStatus(&data)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +153,7 @@ func (c *CronJobController) CronJobStatus(ctx context.Context, jobRequestsTopicI
 
 	var statuses []*cron.GroupStatus
 	for _, data := range listed {
-		statuses = append(statuses, toGroupStatus(data))
+		statuses = append(statuses, toGroupStatus(&data))
 	}
 	return statuses, nil
 }

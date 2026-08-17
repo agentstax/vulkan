@@ -123,9 +123,24 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       pkg/errors' two sentinels stay put — that question closes as "no".
       base/errors.go deleted; stale retry comment fixed. reclaim-lab
       green.
-- [ ] **Slice element returns.** topic/controller/datastore/topic.go:77,206
+- [x] **Slice element returns.** topic/controller/datastore/topic.go:77,206
       and cron return []*Data; metrics/compaction return []Data; convention
       says values. Sweep to []Data.
+    - Resolved 2026-08-17. Datastore list returns swept to value slices:
+      ListTopics/RenameTopic → []TopicData, ListCronJobs → []CronJobData,
+      CronJobStatus → []GroupStatusData, CronJobRequests →
+      []JobRequestStatusData, plus cron's private matchingGroups/jobMessages
+      and the groupStatus/groupJobRequestStatuses helpers (value params +
+      value returns). Adapters keep *Data params (shared with single-row
+      Gets); controller loops pass &listed[i]. Vocabulary returns
+      ([]*topic.Topic etc.) unchanged — read-models stay
+      pointer-classified. Full-repo []*T sweep also caught consumer
+      controller openWaiters → []BindingDeclarationData (was a pointer
+      filter over a value slice). Left alone: batcher queue /
+      claimbuffer rangeState (shared mutable state, correctly pointers)
+      and the producer append chain (ProduceItem → Append → AppendData
+      pointer slices — public produce API shape, deferred to the v1 API
+      review). cron-lab + reserved-topic-lab + binding-lab green.
 - [ ] **Janitor reads another domain's fact.** cursorFloor
       (janitor/datastore/partition.go:45-56) reads cursor JOIN
       consumer_group outside any transaction, re-deriving the committed

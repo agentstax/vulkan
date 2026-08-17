@@ -48,7 +48,7 @@ func (c *ConsumerController) ListDeclarations(ctx context.Context) ([]*binding.D
 		}
 		declarations = append(declarations, toDeclaration(effective))
 		for _, waiter := range openWaiters(rows, effective) {
-			declarations = append(declarations, toDeclaration(waiter))
+			declarations = append(declarations, toDeclaration(&waiter))
 		}
 	}
 
@@ -91,8 +91,8 @@ func newestInstalled(rows []datastore.BindingDeclarationData) (*datastore.Bindin
 }
 
 // openWaiters finds the waiting rows whose declarer is still blocked.
-func openWaiters(rows []datastore.BindingDeclarationData, effective *datastore.BindingDeclarationData) []*datastore.BindingDeclarationData {
-	var waiters []*datastore.BindingDeclarationData
+func openWaiters(rows []datastore.BindingDeclarationData, effective *datastore.BindingDeclarationData) []datastore.BindingDeclarationData {
+	var waiters []datastore.BindingDeclarationData
 	for i := range rows {
 		row := &rows[i]
 		if row.Status != datastore.BindingDeclarationWaiting {
@@ -104,7 +104,7 @@ func openWaiters(rows []datastore.BindingDeclarationData, effective *datastore.B
 		if slices.Equal(row.Patterns, effective.Patterns) {
 			continue
 		}
-		waiters = append(waiters, row)
+		waiters = append(waiters, rows[i])
 	}
 	return waiters
 }

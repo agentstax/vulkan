@@ -12,8 +12,8 @@ import (
 
 // CronJobStatus is one GroupStatusData per consumer group that receives the
 // job's requests. Counts cover the topic's retention window.
-func (d *CronJobDatastore) CronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*GroupStatusData, error) {
-	var statuses []*GroupStatusData
+func (d *CronJobDatastore) CronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
+	var statuses []GroupStatusData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		statuses, err = d.cronJobStatus(ctx, jobRequestsTopicId, cronJobId, name)
@@ -22,7 +22,7 @@ func (d *CronJobDatastore) CronJobStatus(ctx context.Context, jobRequestsTopicId
 	return statuses, err
 }
 
-func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*GroupStatusData, error) {
+func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
 	compactionKey := strconv.FormatInt(cronJobId, 10)
 
 	groups, err := d.matchingGroups(ctx, jobRequestsTopicId, name)
@@ -38,7 +38,7 @@ func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId
 		return nil, err
 	}
 
-	var statuses []*GroupStatusData
+	var statuses []GroupStatusData
 	for _, group := range groups {
 		outcomes, err := d.requestOutcomes(ctx, jobRequestsTopicId, group.Id, messageIds)
 		if err != nil {
@@ -51,7 +51,7 @@ func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId
 
 // matchingGroups is every consumer group that receives the job's requests,
 // ordered by name.
-func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicId int64, name string) ([]*matchingGroupData, error) {
+func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicId int64, name string) ([]matchingGroupData, error) {
 	sql := `
 		SELECT cg.id, cg.name
 		FROM consumer_group cg
@@ -71,13 +71,13 @@ func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicI
 	}
 	defer rows.Close()
 
-	var groups []*matchingGroupData
+	var groups []matchingGroupData
 	for rows.Next() {
 		var group matchingGroupData
 		if err := rows.Scan(&group.Id, &group.Name); err != nil {
 			return nil, err
 		}
-		groups = append(groups, &group)
+		groups = append(groups, group)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -172,8 +172,8 @@ func (d *CronJobDatastore) requestOutcomes(ctx context.Context, jobRequestsTopic
 
 // 'superseded' and still-pending 'deferred' requests never
 // ran, so ran = succeeded + failed always holds
-func groupStatus(group *matchingGroupData, messageIds []int64, headId int64, outcomes map[int64]requestOutcomeData) *GroupStatusData {
-	status := &GroupStatusData{ConsumerGroup: group.Name}
+func groupStatus(group matchingGroupData, messageIds []int64, headId int64, outcomes map[int64]requestOutcomeData) GroupStatusData {
+	status := GroupStatusData{ConsumerGroup: group.Name}
 	for _, messageId := range messageIds {
 		outcome := outcomes[messageId]
 		switch {

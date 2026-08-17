@@ -44,8 +44,8 @@ func (d *CronJobDatastore) getCronJob(ctx context.Context, q datastore.Querier, 
 	return d.scanCronJobData(q.QueryRow(ctx, sql, name))
 }
 
-func (d *CronJobDatastore) ListCronJobs(ctx context.Context) ([]*CronJobData, error) {
-	var jobs []*CronJobData
+func (d *CronJobDatastore) ListCronJobs(ctx context.Context) ([]CronJobData, error) {
+	var jobs []CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		jobs, err = d.listCronJobs(ctx)
@@ -54,7 +54,7 @@ func (d *CronJobDatastore) ListCronJobs(ctx context.Context) ([]*CronJobData, er
 	return jobs, err
 }
 
-func (d *CronJobDatastore) listCronJobs(ctx context.Context) ([]*CronJobData, error) {
+func (d *CronJobDatastore) listCronJobs(ctx context.Context) ([]CronJobData, error) {
 	sql := `
 		SELECT
 			id,
@@ -79,13 +79,13 @@ func (d *CronJobDatastore) listCronJobs(ctx context.Context) ([]*CronJobData, er
 	}
 	defer rows.Close()
 
-	var jobs []*CronJobData
+	var jobs []CronJobData
 	for rows.Next() {
 		job, err := d.scanCronJobData(rows)
 		if err != nil {
 			return nil, err
 		}
-		jobs = append(jobs, job)
+		jobs = append(jobs, *job)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
