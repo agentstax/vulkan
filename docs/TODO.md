@@ -84,10 +84,23 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       reconcile now return error (refresh propagates, surfacing as a
       failed tick); stop guards the map read with comma-ok + warn;
       receiver `s` on spawnedExecution. worker-claim-lab green.
-- [ ] **systemmanager Run re-entry.** Run builds a fresh manager.Runner per
-      call (pkg/systemmanager/systemmanager.go:118-124), so two concurrent
-      Runs race for the same manager row. Guard or document. (The raw
-      ds.Pool read at :113 resolves with the migrate chunk.)
+- [x] **systemmanager Run re-entry.** Resolved 2026-08-17: not a data race
+      — the manager row is unbound (NoInstanceTarget), so a double Run
+      means two full reconcile loops in one process, not corruption.
+      Guarded anyway with the consumer's permit pattern: atomic.Bool
+      CompareAndSwap in Run, second concurrent call refused with an error;
+      doc comment states one-Run-at-a-time. (The raw ds.Pool read still
+      resolves with the migrate chunk.)
+- [x] **Permit raised to pkg/concurrency.** Resolved 2026-08-17
+      (user-directed follow-on): consumePermit promoted to
+      concurrency.Permit — Acquire() (release, ok), callers word their own
+      refusal errors. Three sites converted: ConsumerInstance.Consume
+      (ErrAlreadyConsuming wording unchanged), SystemManager.Run (same
+      shape), BaseExecution.Run (one-shot: release discarded, replacing
+      the started atomic.Bool). pkg/consumer/permit.go deleted;
+      permit_test.go added; the snapshot/trigger CAS sites
+      (rangestate, create_ahead_gate) deliberately untouched — different
+      pattern. routing-lab green.
 - [ ] **Metricscollector point table.** The 14-row inline anonymous-struct
       table (pkg/worker/metricscollector/execution.go:279-298) gets a named
       type.

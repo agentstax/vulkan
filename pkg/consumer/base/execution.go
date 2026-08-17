@@ -3,10 +3,10 @@ package base
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -17,7 +17,7 @@ import (
 type BaseExecution struct {
 	instanceRunner *workercontroller.InstanceRunner
 	run            func(ctx context.Context) error
-	started        atomic.Bool
+	permit         *concurrency.Permit // never released -- Run is one-shot
 }
 
 func NewBaseExecution[Message any](baseDefinition *BaseDefinition[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseExecution, error) {
@@ -42,16 +42,22 @@ func NewBaseExecution[Message any](baseDefinition *BaseDefinition[Message], owne
 		return nil, err
 	}
 
+	permit, err := concurrency.NewPermit()
+	if err != nil {
+		return nil, err
+	}
+
 	return &BaseExecution{
 		instanceRunner: instanceRunner,
 		run:            run,
+		permit:         permit,
 	}, nil
 }
 
 // a BaseExecution wraps one claimed worker instance -- once Run returns that
 // instance is released, so the execution is spent and can never run again.
 func (e *BaseExecution) Run(ctx context.Context) error {
-	if !e.started.CompareAndSwap(false, true) {
+	if _, ok := e.permit.Acquire(); !ok {
 		return errors.New("execution already ran -- its claimed worker instance is released")
 	}
 

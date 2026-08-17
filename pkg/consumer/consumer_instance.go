@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
@@ -28,7 +29,7 @@ type ConsumerInstance[Message any] struct {
 	consumers       *consumercontroller.ConsumerController
 	bindings        []string
 	declaredAt      time.Time
-	permit          *consumePermit
+	permit          *concurrency.Permit // held for the length of a Consume call
 }
 
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
@@ -54,7 +55,7 @@ func NewConsumerInstance[Message any](owner *common.Owner, ds *datastore.Postgre
 		return nil, errors.New("config must not be nil")
 	}
 
-	permit, err := newConsumePermit(owner)
+	permit, err := concurrency.NewPermit()
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +87,9 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		return fmt.Errorf("%w: consumer group %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, i.Owner.Name, lifecycleContextHelp)
 	}
 
-	release, err := i.permit.acquire()
-	if err != nil {
-		return err
+	release, ok := i.permit.Acquire()
+	if !ok {
+		return fmt.Errorf("%w: consumer group %q on topic %d", vulkanerrors.ErrAlreadyConsuming, i.Owner.Name, i.Owner.TopicId)
 	}
 	defer release()
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
+	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -27,6 +28,7 @@ type SystemManager struct {
 
 	ds      *datastore.PostgresDatastore
 	manager *manager.ManagerDefinition
+	permit  *concurrency.Permit // held for the length of a Run call
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -99,17 +101,32 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
+	permit, err := concurrency.NewPermit()
+	if err != nil {
+		return nil, err
+	}
+
 	return &SystemManager{
 		Config:  cfg,
 		Logger:  cfg.Logger,
 		ds:      ds,
 		manager: managerDefinition,
+		permit:  permit,
 	}, nil
 }
 
 // Run claims and reconciles until ctx cancels; a requested stop returns nil.
+// One Run at a time per instance -- a second concurrent call is refused.
 // Returns migrate.ErrNotRegistered when no system has been registered.
 func (s *SystemManager) Run(ctx context.Context) error {
+	// the manager row is unbound (NoInstanceTarget), so no claim gate refuses
+	// a second claim -- meaning a second Run runs a rival reconcile loop
+	release, ok := s.permit.Acquire()
+	if !ok {
+		return errors.New("this SystemManager is already running")
+	}
+	defer release()
+
 	owner, err := migrate.SystemOwner(ctx, s.ds.Pool)
 	if err != nil {
 		return err
