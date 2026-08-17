@@ -76,11 +76,14 @@ One chunk = one review; work top to bottom within a section, reorder freely.
 - [x] **Misnamed config file.** Resolved 2026-08-17: runner_config.go
       renamed instance_tick_runner_config.go (git mv), matching the
       InstanceTickRunnerConfig it declares.
-- [ ] **Manager pool cleanups.** newExecutionPool returns no error and
-      nil-checks nothing (pkg/worker/manager/pool.go:46); bare
-      spawnedExecution/workerChange literals (:135, :84-92); stop reads the
-      map without comma-ok (:158-160); receiver `i` on
-      spawnedExecution.finished (:100).
+- [x] **Manager pool cleanups.** Resolved 2026-08-17: newExecutionPool now
+      (*executionPool, error) with nil-checks (Run propagates);
+      newSpawnedExecution and newWorkerChange constructors replace the bare
+      literals — newWorkerChange returns a value (flat slice element) and
+      rejects the workerRemoved/nil-worker mispairing, so diff and
+      reconcile now return error (refresh propagates, surfacing as a
+      failed tick); stop guards the map read with comma-ok + warn;
+      receiver `s` on spawnedExecution. worker-claim-lab green.
 - [ ] **systemmanager Run re-entry.** Run builds a fresh manager.Runner per
       call (pkg/systemmanager/systemmanager.go:118-124), so two concurrent
       Runs race for the same manager row. Guard or document. (The raw

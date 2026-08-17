@@ -19,12 +19,52 @@ type executionPool struct {
 	group        *errgroup.Group               // every spawned Run goroutine; its first fatal error cancels the manager's run
 }
 
+func newExecutionPool(provisioners map[string]worker.Provisioner, group *errgroup.Group, log logger.Logger) (*executionPool, error) {
+	if provisioners == nil {
+		return nil, errors.New("provisioners must not be nil")
+	}
+	if group == nil {
+		return nil, errors.New("group must not be nil")
+	}
+	if log == nil {
+		return nil, errors.New("logger must not be nil")
+	}
+	return &executionPool{
+		logger:       log,
+		provisioners: provisioners,
+		running:      make(map[int64]*spawnedExecution),
+		group:        group,
+	}, nil
+}
+
 type spawnedExecution struct {
 	stop context.CancelFunc
 	done chan struct{} // closed when the execution's Run returns
 
 	worker string // for the stop log -- the row itself is gone by then
 	owner  string
+}
+
+func newSpawnedExecution(stop context.CancelFunc, workerName string, ownerName string) (*spawnedExecution, error) {
+	if stop == nil {
+		return nil, errors.New("stop must not be nil")
+	}
+	return &spawnedExecution{
+		stop:   stop,
+		done:   make(chan struct{}),
+		worker: workerName,
+		owner:  ownerName,
+	}, nil
+}
+
+// finished reports whether the execution's Run has returned.
+func (s *spawnedExecution) finished() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
 }
 
 // changeType classifies one worker row's difference between the desired set
@@ -43,18 +83,25 @@ type workerChange struct {
 	worker *worker.Worker // nil on workerRemoved -- the row is gone
 }
 
-func newExecutionPool(provisioners map[string]worker.Provisioner, group *errgroup.Group, log logger.Logger) *executionPool {
-	return &executionPool{
-		logger:       log,
-		provisioners: provisioners,
-		running:      make(map[int64]*spawnedExecution),
-		group:        group,
+// newWorkerChange rejects a pairing diff can never produce: workerRemoved is
+// the one change whose row is already gone.
+func newWorkerChange(change changeType, id int64, desiredWorker *worker.Worker) (workerChange, error) {
+	if id <= 0 {
+		return workerChange{}, fmt.Errorf("id must be > 0, got %d", id)
 	}
+	if (change == workerRemoved) != (desiredWorker == nil) {
+		return workerChange{}, errors.New("desiredWorker must be nil exactly when the change is workerRemoved")
+	}
+	return workerChange{change: change, id: id, worker: desiredWorker}, nil
 }
 
 // reconcile makes the running set match desired -- one action per diffed change.
-func (p *executionPool) reconcile(ctx context.Context, desiredWorkers []*worker.Worker) {
-	for _, change := range p.diff(desiredWorkers) {
+func (p *executionPool) reconcile(ctx context.Context, desiredWorkers []*worker.Worker) error {
+	changes, err := p.diff(desiredWorkers)
+	if err != nil {
+		return err
+	}
+	for _, change := range changes {
 		switch change.change {
 		case workerAdded:
 			p.start(ctx, change.worker)
@@ -68,42 +115,46 @@ func (p *executionPool) reconcile(ctx context.Context, desiredWorkers []*worker.
 			p.start(ctx, change.worker)
 		}
 	}
+	return nil
 }
 
 // diff compares desired against running and returns what reconcile must act
 // on; workers running as desired produce no change.
-func (p *executionPool) diff(desiredWorkers []*worker.Worker) []workerChange {
+func (p *executionPool) diff(desiredWorkers []*worker.Worker) ([]workerChange, error) {
 	want := make(map[int64]bool, len(desiredWorkers))
 	var changes []workerChange
 
 	for _, desiredWorker := range desiredWorkers {
 		want[desiredWorker.Id] = true
 		spawned, running := p.running[desiredWorker.Id]
+
+		var change workerChange
+		var err error
 		switch {
 		case !running:
-			changes = append(changes, workerChange{change: workerAdded, id: desiredWorker.Id, worker: desiredWorker})
+			change, err = newWorkerChange(workerAdded, desiredWorker.Id, desiredWorker)
 		case spawned.finished():
-			changes = append(changes, workerChange{change: workerExited, id: desiredWorker.Id, worker: desiredWorker})
+			change, err = newWorkerChange(workerExited, desiredWorker.Id, desiredWorker)
+		default:
+			continue // running as desired
 		}
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, change)
 	}
 
 	for id := range p.running {
 		if !want[id] {
-			changes = append(changes, workerChange{change: workerRemoved, id: id})
+			change, err := newWorkerChange(workerRemoved, id, nil)
+			if err != nil {
+				return nil, err
+			}
+			changes = append(changes, change)
 		}
 	}
 
-	return changes
-}
-
-// finished reports whether the execution's Run has returned.
-func (i *spawnedExecution) finished() bool {
-	select {
-	case <-i.done:
-		return true
-	default:
-		return false
-	}
+	return changes, nil
 }
 
 // start spawns one worker row through its provisioner under its own child ctx.
@@ -132,7 +183,12 @@ func (p *executionPool) start(ctx context.Context, desiredWorker *worker.Worker)
 	}
 
 	executionCtx, stop := context.WithCancel(ctx)
-	spawned := &spawnedExecution{stop: stop, done: make(chan struct{}), worker: desiredWorker.Name, owner: desiredWorker.Owner.Name}
+	spawned, err := newSpawnedExecution(stop, desiredWorker.Name, desiredWorker.Owner.Name)
+	if err != nil {
+		stop()
+		p.logger.WarnContext(ctx, "manager could not track spawned worker -- retrying next reconcile", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name, "error", err)
+		return
+	}
 
 	// pure interpreter of the execution's exit declaration, no policy of its own
 	p.group.Go(func() error {
@@ -156,7 +212,11 @@ func (p *executionPool) start(ctx context.Context, desiredWorker *worker.Worker)
 // stop cancels one execution and forgets it. The goroutine drains on its own
 // time -- the group keeps tracking it, so Wait still covers it.
 func (p *executionPool) stop(ctx context.Context, id int64) {
-	spawned := p.running[id]
+	spawned, ok := p.running[id]
+	if !ok {
+		p.logger.WarnContext(ctx, "manager has no running execution for worker row -- nothing to stop", "worker_id", id)
+		return
+	}
 	spawned.stop()
 	delete(p.running, id)
 	p.logger.InfoContext(ctx, "manager stopped worker", "worker", spawned.worker, "owner", spawned.owner)

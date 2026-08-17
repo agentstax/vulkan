@@ -59,10 +59,14 @@ func (i *ManagerExecution) Run(ctx context.Context) error {
 
 	// a fatal spawned-instance error cancels runCtx through the group
 	group, runCtx := errgroup.WithContext(ctx)
-	i.pool = newExecutionPool(i.provisioners, group, i.Logger)
+	pool, err := newExecutionPool(i.provisioners, group, i.Logger)
+	if err != nil {
+		return err
+	}
+	i.pool = pool
 
 	// run is blocking
-	err := i.runner.Run(runCtx, i.refresh)
+	err = i.runner.Run(runCtx, i.refresh)
 
 	// every spawned instance's ctx derives from the pass ctx, so the pool is
 	// already stopping -- Wait drains the instances and carries the first
@@ -84,7 +88,9 @@ func (i *ManagerExecution) refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	i.pool.reconcile(ctx, workers)
+	if err := i.pool.reconcile(ctx, workers); err != nil {
+		return err
+	}
 
 	swept, err := i.workers.SweepExpiredInstances(ctx)
 	if err != nil {
