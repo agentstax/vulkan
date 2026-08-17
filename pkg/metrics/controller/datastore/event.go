@@ -2,7 +2,6 @@ package datastore
 
 import (
 	"context"
-	"sync/atomic"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -54,23 +53,14 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 	return events, rows.Err()
 }
 
-// resolveMetricsTopicId is the __system.metrics topic's own id, cached after
-// the first lookup -- the id is assigned once at topic creation and never
-// changes, so every later EventTimestamps call reuses it instead of
-// re-querying.
+// resolveMetricsTopicId is the __system.metrics topic's own id.
 func (d *MetricsDatastore) resolveMetricsTopicId(ctx context.Context) (int64, error) {
-	if id := atomic.LoadInt64(&d.metricsTopicId); id != -1 {
-		return id, nil
-	}
-
 	var id int64
 	err := d.Datastore.Pool.QueryRow(ctx,
-		`SELECT id FROM topic WHERE name = $1 ORDER BY schema_version DESC LIMIT 1;`, metrics.TopicName,
+		`SELECT id FROM topic WHERE name = $1 AND schema_version = 1;`, metrics.TopicName,
 	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-
-	atomic.StoreInt64(&d.metricsTopicId, id)
 	return id, nil
 }

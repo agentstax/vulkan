@@ -14,9 +14,6 @@ type MetricsDatastore struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *retry.DatastoreRetry
 	Logger         logger.Logger
-
-	// metricsTopicId caches __system.metrics's own topic id
-	metricsTopicId int64
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -42,6 +39,5 @@ func NewMetricsDatastore(ds *datastore.PostgresDatastore, cfg *MetricsDatastoreC
 		Datastore:      ds,
 		DatastoreRetry: datastoreRetry,
 		Logger:         cfg.Logger,
-		metricsTopicId: -1, // invalidates cache
 	}, nil
 }

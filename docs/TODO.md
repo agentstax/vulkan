@@ -156,10 +156,20 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       sweepExpiredPartitions/dropExpiredPartitions are gone;
       allowDropPastCommitted skips the read entirely. drop-floor-lab +
       sweep-lab + compaction-head-retention-lab green.
-- [ ] **Metrics topic-id cache.** MetricsDatastore caches metricsTopicId
+- [x] **Metrics topic-id cache.** MetricsDatastore caches metricsTopicId
       (datastore.go:19,45) via resolveMetricsTopicId reading the topic
       table (event.go:61-75) — a fact topic/controller owns, and the only
       mutable cache state on any datastore.
+    - Resolved 2026-08-17, user picked resolve-per-call. Cache field +
+      atomic deleted; resolveMetricsTopicId is a plain per-call read
+      pinned to schema_version = 1 (was ORDER BY schema_version DESC — a
+      divergent second derivation). Reading the topic table stays in the
+      metrics datastore: its charter is deriving snapshots from rows
+      other domains maintain. The cache was also a live hazard — a
+      destroy + re-register left it pointing at a dropped message_log
+      table. Threading the id down callers was rejected (leaks
+      metricsTopicId into snapshot public signatures).
+      abandoned-routine-snapshot-lab green.
 - [ ] **newestInstalled duplicated across the layer boundary.**
       consumer/controller/binding_declaration.go:80-123 re-implements the
       datastore's newestInstalledDeclaration
