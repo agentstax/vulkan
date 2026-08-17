@@ -22,39 +22,14 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
-- **Refactor remaining packages into the worker/topic layered pattern:**
-  - pkg/migrate needs a full comb-through (surveyed 2026-08-16, all 670
-    lines + callers; proposed shape below, not yet reviewed):
-    - Version / SystemOwner / IsLocked / AssertSchemaSupported are free
-      funcs taking a raw Querier -- the banned public-signature shape; the
-      topic and worker controllers feed them by reaching through two layers
-      of exported fields (c.datastore.Datastore.Pool). Proposal: make them
-      Runner methods; those controllers build a Runner from their own
-      *PostgresDatastore at construction and hold it.
-    - Runner + MigrateDatastore have exported fields, bare (ds, retryPolicy,
-      log) params with nil-tolerated logger, no Config structs. Proposal:
-      RunnerConfig + MigrateDatastoreConfig with WithDefaults/Validate,
-      unexported fields, Wrap-only same-named pairs on the datastore
-      publics; internals-only verbs (RecordSuccess, TryRecordFailure)
-      unexport.
-    - Owner.Name "diagnostics only" exists ONLY because the schema gate
-      fabricates NewTopicOwner(systemId, topicId, "") at support.go and
-      topic/controller/schema.go -- the read never uses the name. Proposal:
-      split the gate by what callers know -- AssertSystemSchemaSupported
-      (ctx, systemId) / AssertTopicSchemaSupported(ctx, systemId, topicId),
-      datastore reads by id columns -- then NewTopicOwner /
-      NewConsumerGroupOwner reject an empty name.
-    - SystemOwner stays in migrate (as a Runner method): admin imports
-      migrate so rehoming is a cycle, and migrate must resolve the system
-      before schemas are trustworthy (it owns the 42P01 handling).
-    - Checkpoint: invariant-lab + schema-gate-lab, CLI migrate
-      status/up/down paths, fresh-DB suite.
-  - pkg/consumer/consumer.go and pkg/consumer/base/{consumer,definition,
-    execution}.go could be cleaner — not bad, but improvable.
-  - Probably move pkg/context and pkg/logger into pkg/common until the final
-    public surface is settled.
+- **Refactor remaining packages into the worker/topic layered pattern** —
+  pkg-wide audit done 2026-08-17; expanded into TODO.md as a chunk queue,
+  one chunk per review (the 2026-08-16 pkg/migrate survey moved there with
+  it).
 - **Internal file-structure cleanup:**
-  - Split pkg/producer/datastore.go and other internal-only readability debt.
+  - Internal-only readability debt sweep. (The pkg/producer/datastore.go
+    split already happened — it lives as nine files under
+    pkg/producer/controller/datastore; stale mention removed 2026-08-17.)
   - The parked LIFECYCLE surface and its cursor counterparts move to an
     internal package (still exported there, private by convention), true
     public APIs living in pkg — this is also when the removed
@@ -66,7 +41,36 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     blank line before/after it and when it doesn't -- decide the rule, write
     it into CONVENTIONS.md, and sweep for consistency.
 - **Querier interface** — see if it can make stronger contracts with internal
-  or public code.
+  or public code. Coupled to TODO.md's produce-transaction seam chunk
+  (pgx.Tx in producer datastore publics, cronscheduler's tx-taking datastore
+  methods) — settle the two together.
+  Audited 2026-08-17 (every non-test pgx symbol in pkg/; proposal not yet
+  reviewed):
+  - The codebase draws exactly one line worth typing: owns the transaction
+    boundary vs runs statements inside someone else's. Pool, conn, and tx
+    share identical Exec/Query/QueryRow/SendBatch/CopyFrom signatures;
+    savepoints are plain Exec strings; nothing else pgx does is a seam.
+    No interface hierarchy — one interface protects the one invariant.
+  - producer datastore.Tx (transaction.go:13) is already a second copy of
+    Querier — the same three methods + CopyFrom + Raw() under another name.
+  - Proposal: widen Querier to Exec/Query/QueryRow/SendBatch/CopyFrom
+    ("what pool, conn, and tx can all do, minus Begin/Commit/Rollback" —
+    decision 0342's contract, unchanged); redefine producer Tx as
+    { datastore.Querier; Raw() pgx.Tx }; every datastore private running
+    inside a boundary it doesn't own takes q datastore.Querier (~15
+    signatures narrow from tx pgx.Tx). pgx.Tx then appears only as a local
+    in the Begin-owning private and in the producer adapter seam that
+    builds the user's Tx via NewTx (runInsert / runInsertSavepoint /
+    AppendMessageInTx / InTransaction). Rule lands in CONVENTIONS.md.
+  - Non-goals, so the pattern stays closed: no Beginner/pool interface and
+    no wrapping of Rows/Row/CommandTag ([0023] accepted pgx coupling; a
+    wrapper enforces nothing); *pgxpool.Conn stays concrete in migrate —
+    the advisory lock pins a session, and the concrete type is that
+    contract.
+  - Precedent: sqlc's generated DBTX draws the same line
+    (Exec/Query/QueryRow/CopyFrom, no transaction control).
+  - Ride-along for the seam chunk: Tx's comment claims callers avoid
+    importing pgx — false, Query returns pgx.Rows.
 - **Worker-tier surface review** — everything the worker tier exports
   postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
   and its kind subpackages (janitor, waterline, manager, cronscheduler),
@@ -146,6 +150,14 @@ stay revisable, text polish (naming/errors/logging/comments) last.
       reaches for, and it matches the worker_instance row the struct
       holds. `Execution` may survive only as the interface name the
       Instance structs implement.
+  - Mechanical nits from the 2026-08-17 layered-pattern audit: receiver
+    letters not matching the type initial (`i` on the *Execution types,
+    `c` on *BaseDefinition, `f` on the definitions' provision methods);
+    truncated/single-letter domain names (`sched`, `op`, `n`, `g`, `min`
+    shadowing the builtin); withMetadata config methods living outside
+    their *_config.go files; exported methods on unexported types
+    (claimBuffer, rangeState, batchResponse, createAheadGate.Delete);
+    cronscheduler's nine-column single-line SELECT.
 - **Named-return-params house style** — decide and apply consistently across
   the reviewed surface (same sweep as the naming pass).
 - **Error message consistency and obsession.** Standardize every error
