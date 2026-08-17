@@ -6,7 +6,7 @@ import "context"
 // compaction_head row means latest-per-key winners outlive retention.
 func (d *MetricsDatastore) IsCompacted(ctx context.Context, topicId int64) (bool, error) {
 	var compacted bool
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		compacted, err = d.isCompacted(ctx, topicId)
 		return err

@@ -13,7 +13,7 @@ import (
 // each was seen.
 func (d *MetricsDatastore) EventTimestamps(ctx context.Context, routingKey string, eventType string) ([]EventTimestampData, error) {
 	var events []EventTimestampData
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		events, err = d.eventTimestamps(ctx, routingKey, eventType)
 		return err

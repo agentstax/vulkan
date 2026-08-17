@@ -11,7 +11,7 @@ import (
 // (topicId, consumerGroup).
 func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
 	var snapshot *ConsumerGroupSnapshotData
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		snapshot, err = d.consumerGroupSnapshot(ctx, topicId, consumerGroup)
 		return err
@@ -90,7 +90,7 @@ func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId in
 // health view must account for before the topic can be considered drained.
 func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
 	var groups []string
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		groups, err = d.listConsumerGroups(ctx, topicId)
 		return err

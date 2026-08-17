@@ -31,9 +31,10 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       WithDefaults/Validate delegate (Batch.Logger inherits Logger when
       unset, errors wrap as "Batch: ..."). Public change:
       cfg.BatchMaxSize -> cfg.Batch.MaxSize. producer-batch-lab green.
-- [ ] **Metrics datastore retry field name.**
-      pkg/metrics/controller/datastore/datastore.go:15 names it `Retry`;
-      the other 16 datastores say `DatastoreRetry`. Rename + call sites.
+- [x] **Metrics datastore retry field name.** Resolved 2026-08-17: field
+      renamed `Retry` -> `DatastoreRetry` (and the constructor local to
+      `datastoreRetry`), matching every sibling datastore; six Wrap call
+      sites updated. No references existed outside the package.
 - [ ] **Id casing.** `TopicID` in exceptionconsumer and deliveryconsumer
       datastore model.go (exceptionconsumer .../model.go:24,
       deliveryconsumer .../model.go:17) vs the house `Id`; adapters

@@ -6,7 +6,7 @@ import "context"
 // worker_instance liveness.
 func (d *MetricsDatastore) WorkerSnapshots(ctx context.Context) ([]WorkerSnapshotData, error) {
 	var workers []WorkerSnapshotData
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		workers, err = d.workerSnapshots(ctx)
 		return err

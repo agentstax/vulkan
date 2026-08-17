@@ -6,7 +6,7 @@ import "context"
 // state.
 func (d *MetricsDatastore) CronJobSnapshots(ctx context.Context) ([]CronJobSnapshotData, error) {
 	var jobs []CronJobSnapshotData
-	err := d.Retry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
 		jobs, err = d.cronJobSnapshots(ctx)
 		return err

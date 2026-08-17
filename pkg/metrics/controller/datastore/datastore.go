@@ -11,9 +11,9 @@ import (
 // MetricsDatastore derives every snapshot live from rows other domains
 // already maintain.
 type MetricsDatastore struct {
-	Datastore *datastore.PostgresDatastore
-	Retry     *retry.DatastoreRetry
-	Logger    logger.Logger
+	Datastore      *datastore.PostgresDatastore
+	DatastoreRetry *retry.DatastoreRetry
+	Logger         logger.Logger
 
 	// metricsTopicId caches __system.metrics's own topic id
 	metricsTopicId int64
@@ -33,14 +33,14 @@ func NewMetricsDatastore(ds *datastore.PostgresDatastore, cfg *MetricsDatastoreC
 		return nil, err
 	}
 
-	dsRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	datastoreRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MetricsDatastore{
 		Datastore:      ds,
-		Retry:          dsRetry,
+		DatastoreRetry: datastoreRetry,
 		Logger:         cfg.Logger,
 		metricsTopicId: -1, // invalidates cache
 	}, nil
