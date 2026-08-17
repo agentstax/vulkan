@@ -8,29 +8,29 @@ import (
 
 // WorkerData models the worker table row exactly.
 type WorkerData struct {
-	Id              int64
-	SystemId        *int64
-	TopicId         *int64
-	ConsumerGroupId *int64
-	Name            string
-	Metadata        any // pgx encodes to and decodes from JSONB
-	TargetInstances int
+	Id              int64  `db:"id"`
+	SystemId        *int64 `db:"system_id"`
+	TopicId         *int64 `db:"topic_id"`
+	ConsumerGroupId *int64 `db:"consumer_group_id"`
+	Name            string `db:"name"`
+	Metadata        any    `db:"metadata"` // pgx encodes to and decodes from JSONB
+	TargetInstances int    `db:"target_instances"`
 }
 
 // ListWorkersData is one row of ListWorkers' query: the worker row plus the
 // owner columns joined from topic and consumer_group.
 type ListWorkersData struct {
 	WorkerData
-	OwnerSystemId int64 // system_id resolved through the topic when the row's own is NULL
-	OwnerTopicId  int64 // through the group for group-owned rows
-	TopicName     string
-	ConsumerGroup string
+	OwnerSystemId int64  `db:"owner_system_id"` // system_id resolved through the topic when the row's own is NULL
+	OwnerTopicId  int64  `db:"owner_topic_id"`  // through the group for group-owned rows
+	TopicName     string `db:"topic_name"`
+	ConsumerGroup string `db:"consumer_group"`
 }
 
 type WorkerInstanceData struct {
-	Id        int64
-	WorkerId  int64
-	Token     pgtype.UUID
-	ExpiresAt time.Time
-	Attempts  int
+	Id        int64       `db:"id"`
+	WorkerId  int64       `db:"worker_id"`
+	Token     pgtype.UUID `db:"token"`
+	ExpiresAt time.Time   `db:"expires_at"`
+	Attempts  int         `db:"attempts"`
 }

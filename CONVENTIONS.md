@@ -88,6 +88,10 @@ Three layers per domain (template: worker, topic):
 - Every public datastore method is EXACTLY a `DatastoreRetry.Wrap` around a
   same-named private method -- all SQL, scanning, and result shaping live in
   the private, even for one-query reads.
+- Every scan-destination row struct tags each field `db:"column"` with the
+  column or alias its query returns -- the tag is the field's column
+  contract regardless of scan style. Write shapes, derived outcomes, and
+  composite aggregates carry no tags.
 - Datastore methods are dumb resource verbs on the domain's own tables --
   get, register, delete, list. A caller-shaped read (a guard, a health
   check) is composed above the datastore, in the controller or admin, from

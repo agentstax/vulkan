@@ -10,19 +10,19 @@ import (
 // CronJobData models the cron_job table row exactly -- the nullable owner id
 // columns scan COALESCE'd to 0.
 type CronJobData struct {
-	Id                int64
-	SystemId          int64
-	TopicId           int64
-	ConsumerGroupId   int64
-	Name              string
-	Schedule          string
-	Concurrency       string
-	TimeoutNs         int64
-	Suspended         bool
-	Data              json.RawMessage
-	Metadata          json.RawMessage
-	NextScheduledTime time.Time
-	LastScheduledTime *time.Time
+	Id                int64           `db:"id"`
+	SystemId          int64           `db:"system_id"`
+	TopicId           int64           `db:"topic_id"`
+	ConsumerGroupId   int64           `db:"consumer_group_id"`
+	Name              string          `db:"name"`
+	Schedule          string          `db:"schedule"`
+	Concurrency       string          `db:"concurrency"`
+	TimeoutNs         int64           `db:"timeout_ns"`
+	Suspended         bool            `db:"suspended"`
+	Data              json.RawMessage `db:"data"`
+	Metadata          json.RawMessage `db:"metadata"`
+	NextScheduledTime time.Time       `db:"next_scheduled_time"`
+	LastScheduledTime *time.Time      `db:"last_scheduled_time"`
 }
 
 // RegisterCronJobData is one declaration of a cron job, as RegisterCronJob
@@ -61,21 +61,21 @@ type JobRequestStatusData struct {
 
 // matchingGroupData is one consumer group that receives a job's requests.
 type matchingGroupData struct {
-	Id   int64
-	Name string
+	Id   int64  `db:"id"`
+	Name string `db:"name"`
 }
 
 // jobMessageData is one of a job's message-log rows.
 type jobMessageData struct {
-	Id        int64
-	Payload   json.RawMessage
-	CreatedAt time.Time
+	Id        int64           `db:"id"`
+	Payload   json.RawMessage `db:"payload"`
+	CreatedAt time.Time       `db:"created_at"`
 }
 
 // requestOutcomeData is one message's delivery history for one consumer
 // group, rolled up to booleans. The zero value reads as "never delivered".
 type requestOutcomeData struct {
-	Succeeded bool
-	Raised    bool
-	Deferred  bool
+	Succeeded bool `db:"succeeded"`
+	Raised    bool `db:"raised"`
+	Deferred  bool `db:"deferred"`
 }

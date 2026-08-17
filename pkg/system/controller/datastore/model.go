@@ -6,7 +6,7 @@ import (
 
 // SystemData models the system table row exactly.
 type SystemData struct {
-	Id        int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Id        int64     `db:"id"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 }

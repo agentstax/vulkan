@@ -6,15 +6,15 @@ import (
 
 // TopicData models the topic table row exactly.
 type TopicData struct {
-	Id                     int64
-	SystemId               int64
-	Name                   string
-	SchemaVersion          int64
-	PartitionSize          int64
-	RetentionTTLNs         int64
-	AllowDropPastCommitted bool
-	IdempotencyKeyTTLNs    int64
-	DeliveryLogMode        string
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	Id                     int64     `db:"id"`
+	SystemId               int64     `db:"system_id"`
+	Name                   string    `db:"name"`
+	SchemaVersion          int64     `db:"schema_version"`
+	PartitionSize          int64     `db:"partition_size"`
+	RetentionTTLNs         int64     `db:"retention_ttl_ns"`
+	AllowDropPastCommitted bool      `db:"allow_drop_past_committed"`
+	IdempotencyKeyTTLNs    int64     `db:"idempotency_key_ttl_ns"`
+	DeliveryLogMode        string    `db:"delivery_log_mode"`
+	CreatedAt              time.Time `db:"created_at"`
+	UpdatedAt              time.Time `db:"updated_at"`
 }

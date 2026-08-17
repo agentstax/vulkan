@@ -55,11 +55,16 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       imports converted (metrics, producer, compaction, messageconsumer,
       deliveryconsumer, waterline, janitor), matching the 16 files and all
       template packages that already aliased.
-- [ ] **db: tags on every *Data struct — decide + sweep.** User leans
-      toward requiring db: tags on all datastore row models (the inverse
-      of the dead-tag finding). If adopted: write into CONVENTIONS.md and
-      sweep the untagged models (worker, cron, consumer group/binding,
-      base keylease, janitor sweptRow — audit as part of the sweep).
+- [x] **db: tags on every *Data struct.** Resolved 2026-08-17: rule
+      settled from the already-tagged files' implicit pattern — every
+      scan-destination row struct tags each field with its query's column
+      or alias; write shapes (AppendData, RegisterCronJobData,
+      OutcomeData), derived outcomes (AppendedData, both KeyLeaseData),
+      and composites (ClaimedRangeData) stay untagged. 16 structs tagged
+      across topic, system, metrics, cron, worker, cronscheduler,
+      consumer; rule written into CONVENTIONS.md (Datastores). SQL
+      untouched — unaliased expression outputs tag by their column
+      concept.
 - [x] **pgtype.UUID in worker public signatures.** Resolved 2026-08-17:
       the four datastore instance publics (+ their privates) now take
       uuid.UUID; toTokenData moved from the controller adapter into the
@@ -101,9 +106,9 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       permit_test.go added; the snapshot/trigger CAS sites
       (rangestate, create_ahead_gate) deliberately untouched — different
       pattern. routing-lab green.
-- [ ] **Metricscollector point table.** The 14-row inline anonymous-struct
-      table (pkg/worker/metricscollector/execution.go:279-298) gets a named
-      type.
+- [x] **Metricscollector point table.** CLOSED 2026-08-17 without change:
+      the gaugePoint named type was applied then rolled back by the user —
+      the inline anonymous-struct table stays as is; not needed.
 
 ### One-decision sweeps
 
