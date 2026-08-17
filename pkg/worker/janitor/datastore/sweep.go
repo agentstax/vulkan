@@ -30,14 +30,6 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicId i
 		return err
 	}
 
-	floor, err := d.cursorFloor(ctx, topicId)
-	if err != nil {
-		return err
-	}
-	if allowDropPastCommitted {
-		floor = nil
-	}
-
 	cutoff := time.Now().Add(-ttl)
 
 	// caps a full drain to break any potential infinite loops
@@ -45,7 +37,7 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicId i
 
 	for _, n := range partitions { // every partition, independently -- one backlog can't block the rest
 		for range maxBatches {
-			swept, err := d.sweepBatch(ctx, topicId, n, cutoff, floor, batchSize, deliveryLogMode)
+			swept, err := d.sweepBatch(ctx, topicId, n, cutoff, allowDropPastCommitted, batchSize, deliveryLogMode)
 			if err != nil {
 				return err
 			}
@@ -60,12 +52,20 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicId i
 
 // sweepBatch deletes up to batchSize expired rows from the front of partition n,
 // plus their orphaned delivery/delivery_log rows, in one transaction.
-func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int64, cutoff time.Time, floor *int64, batchSize int, deliveryLogMode topic.DeliveryLogMode) (int, error) {
+func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int64, cutoff time.Time, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) (int, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
+
+	var floor *int64
+	if !allowDropPastCommitted {
+		floor, err = d.cursorFloor(ctx, tx, topicId)
+		if err != nil {
+			return 0, err
+		}
+	}
 
 	sweepSql := fmt.Sprintf(`
 		DELETE FROM %s

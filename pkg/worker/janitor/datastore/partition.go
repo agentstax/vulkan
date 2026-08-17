@@ -7,6 +7,7 @@ import (
 	"time"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -42,7 +43,7 @@ func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64
 // offset within this topic (nil if none exist yet). Scoped through the group
 // registry so a lagging group on another topic can't block this topic's
 // drops/sweeps.
-func (d *JanitorDatastore) cursorFloor(ctx context.Context, topicId int64) (*int64, error) {
+func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier, topicId int64) (*int64, error) {
 	sql := `
 		SELECT MIN(c.committed)
 		FROM cursor c
@@ -51,7 +52,7 @@ func (d *JanitorDatastore) cursorFloor(ctx context.Context, topicId int64) (*int
 	`
 
 	var floor *int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, topicId).Scan(&floor)
+	err := q.QueryRow(ctx, sql, topicId).Scan(&floor)
 	return floor, err
 }
 

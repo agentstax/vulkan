@@ -141,10 +141,21 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       and the producer append chain (ProduceItem → Append → AppendData
       pointer slices — public produce API shape, deferred to the v1 API
       review). cron-lab + reserved-topic-lab + binding-lab green.
-- [ ] **Janitor reads another domain's fact.** cursorFloor
+- [x] **Janitor reads another domain's fact.** cursorFloor
       (janitor/datastore/partition.go:45-56) reads cursor JOIN
       consumer_group outside any transaction, re-deriving the committed
       fact the waterline owns. Decide the sanctioned source.
+    - Resolved 2026-08-17, user picked read-inside-each-txn. cursorFloor
+      isn't a re-derivation (it aggregates the stored cursor.committed the
+      waterline maintains) — the smell was the outside-tx read reused
+      across many later transactions. cursorFloor now takes
+      datastore.Querier (getTopic pattern) and runs on the deleting
+      transaction: sweepBatch reads it at tx start, dropPartition reads
+      it inside its tx and returns (dropped bool, err) — false when the
+      floor still protects the partition. The standalone pre-reads in
+      sweepExpiredPartitions/dropExpiredPartitions are gone;
+      allowDropPastCommitted skips the read entirely. drop-floor-lab +
+      sweep-lab + compaction-head-retention-lab green.
 - [ ] **Metrics topic-id cache.** MetricsDatastore caches metricsTopicId
       (datastore.go:19,45) via resolveMetricsTopicId reading the topic
       table (event.go:61-75) — a fact topic/controller owns, and the only

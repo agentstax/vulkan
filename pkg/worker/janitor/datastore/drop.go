@@ -45,11 +45,6 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId in
 		return err
 	}
 
-	floor, err := d.cursorFloor(ctx, topicId)
-	if err != nil {
-		return err
-	}
-
 	for _, n := range partitions {
 		if n >= activePartition {
 			continue // never touch the active partition, or anything at/after it
@@ -63,36 +58,46 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId in
 			continue // not this partition's turn yet -- each partition is judged independently
 		}
 
-		lastIdInPartition := (n+1)*partitionSize - 1
-		if !allowDropPastCommitted && floor != nil && lastIdInPartition > *floor {
-			continue // a lagging group hasn't resolved this range yet
-		}
-
-		if err := d.dropPartition(ctx, topicId, n, partitionSize, deliveryLogMode); err != nil {
+		dropped, err := d.dropPartition(ctx, topicId, n, partitionSize, allowDropPastCommitted, deliveryLogMode)
+		if err != nil {
 			return err
 		}
-		d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicId, "partition", n)
+		if dropped {
+			d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicId, "partition", n)
+		}
 	}
 
 	return nil
 }
 
 // dropPartition removes the partition and its delivery/delivery_log rows in
-// one transaction.
-func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n int64, partitionSize int64, deliveryLogMode topic.DeliveryLogMode) error {
+// one transaction. Returns false without dropping when a lagging group's
+// committed floor still protects the partition.
+func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n int64, partitionSize int64, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) (bool, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(ctx)
 
 	// also cap the orphan DELETEs' row-lock waits
 	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
-		return err
+		return false, err
 	}
 
 	low := n * partitionSize
 	high := (n + 1) * partitionSize
+
+	if !allowDropPastCommitted {
+		floor, err := d.cursorFloor(ctx, tx, topicId)
+		if err != nil {
+			return false, err
+		}
+		lastIdInPartition := high - 1
+		if floor != nil && lastIdInPartition > *floor {
+			return false, nil // a lagging group hasn't resolved this range yet
+		}
+	}
 
 	// otherwise these delivery rows (mostly 'dead' DLQ, since live ones are
 	// already floor-protected) would join to nothing and park forever.
@@ -102,7 +107,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 			AND message_id < $2;
 	`, iTopic.DeliveryTable(topicId))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
-		return err
+		return false, err
 	}
 
 	if deliveryLogMode != topic.DeliveryLogModeOff {
@@ -112,7 +117,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 				AND message_id < $2;
 		`, iTopic.DeliveryLogTable(topicId))
 		if _, err := tx.Exec(ctx, orphanLogSql, low, high); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -125,7 +130,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 			AND head_id < $3;
 	`
 	if _, err := tx.Exec(ctx, orphanKeySql, topicId, low, high); err != nil {
-		return err
+		return false, err
 	}
 
 	dropSql := fmt.Sprintf(`
@@ -133,8 +138,11 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	`, iTopic.MessageLogPartitionTable(topicId, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
-		return err
+		return false, err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
