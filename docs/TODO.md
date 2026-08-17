@@ -180,13 +180,28 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       inside declareBindings' transaction); controller's newestInstalled
       deleted, ListDeclarations calls the exported one. binding-lab
       green.
-- [ ] **Cron datastore drift.** Hand-called json.Marshal in replace.go:113
+- [x] **Cron datastore drift.** Hand-called json.Marshal in replace.go:113
       (rule: any goes straight to pgx); unsuspendCronJob re-derives
       next-scheduled-time inline (cronjob.go:122-142) beside the named
       helper (:184); dbNow/nextScheduledTime placed after a pair that never
       calls them; RegisterCronJobData is not table-exact (model.go:30-37);
       LastScheduledTime is *time.Time here vs pgtype.Timestamptz in metrics
       for the same column — pick one nullable-column shape.
+    - Resolved 2026-08-17. replace.go: marshalJson + jsonEqual deleted —
+      the marshal fed a Go-side mirror of jsonb's `=`; the UPDATE now
+      takes declared.Data/Metadata straight to pgx with SQL-side COALESCE
+      (matching the INSERT) and configChanges compares found against the
+      RETURNING row, both jsonb-normalized. Behavior note: a no-op
+      re-registration now performs an idempotent UPDATE instead of
+      returning early; both log messages preserved. unsuspendCronJob uses
+      the nextScheduledTime helper (its own error text folds into a
+      "stays suspended" wrap); dbNow/nextScheduledTime moved to follow
+      the Unsuspend pair that calls them. RegisterCronJobData closed as
+      no-change: it's a declaration write shape, and write shapes are
+      untagged/not table-exact per the settled db-tag rule. Metrics
+      CronJobSnapshotData.LastScheduledTime pgtype.Timestamptz →
+      *time.Time (the codebase's majority nullable-timestamp shape).
+      cron-lab + metrics-collector-lab green.
 - [ ] **Metrics drift.** Bare "abandoned"/"cleared" strings
       (controller/abandonedroutine.go:33,37) duplicate consumer/metrics
       EventAbandoned/EventCleared; IsCompacted (metrics) vs Compacted

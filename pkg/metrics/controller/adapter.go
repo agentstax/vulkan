@@ -69,8 +69,8 @@ func toCronJobSnapshot(data datastore.CronJobSnapshotData) (metrics.CronJobSnaps
 		NextScheduledTime: data.NextScheduledTime,
 		DueFor:            time.Duration(data.DueForSecs * float64(time.Second)),
 	}
-	if data.LastScheduledTime.Valid {
-		snapshot.LastScheduledTime = data.LastScheduledTime.Time
+	if data.LastScheduledTime != nil {
+		snapshot.LastScheduledTime = *data.LastScheduledTime
 	}
 
 	// a suspended row's next_scheduled_time goes stale on purpose --

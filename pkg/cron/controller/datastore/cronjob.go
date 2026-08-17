@@ -132,13 +132,9 @@ func (d *CronJobDatastore) unsuspendCronJob(ctx context.Context, name string) er
 	if err != nil {
 		return fmt.Errorf("schedule %q: %w", job.Schedule, err)
 	}
-	dbNow, err := d.dbNow(ctx, d.Datastore.Pool)
+	next, err := d.nextScheduledTime(ctx, d.Datastore.Pool, schedule)
 	if err != nil {
-		return err
-	}
-	next := schedule.Next(dbNow)
-	if next.IsZero() {
-		return fmt.Errorf("schedule %q has no scheduled time after %v -- cron job %q stays suspended", job.Schedule, dbNow, name)
+		return fmt.Errorf("cron job %q stays suspended: %w", name, err)
 	}
 
 	tag, err := d.Datastore.Pool.Exec(ctx, `UPDATE cron_job SET suspended = false, next_scheduled_time = $2 WHERE name = $1;`, name, next)
@@ -149,24 +145,6 @@ func (d *CronJobDatastore) unsuspendCronJob(ctx context.Context, name string) er
 		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
 	}
 	d.Logger.InfoContext(ctx, "cron job unsuspended", "cron_job", name, "next_scheduled_time", next)
-	return nil
-}
-
-func (d *CronJobDatastore) DeleteCronJob(ctx context.Context, name string) error {
-	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.deleteCronJob(ctx, name)
-	})
-}
-
-func (d *CronJobDatastore) deleteCronJob(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `DELETE FROM cron_job WHERE name = $1;`, name)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
-	}
-	d.Logger.WarnContext(ctx, "cron job destroyed", "cron_job", name)
 	return nil
 }
 
@@ -191,6 +169,24 @@ func (d *CronJobDatastore) nextScheduledTime(ctx context.Context, q datastore.Qu
 		return time.Time{}, fmt.Errorf("schedule %q has no scheduled time after %v", schedule, dbNow)
 	}
 	return next, nil
+}
+
+func (d *CronJobDatastore) DeleteCronJob(ctx context.Context, name string) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.deleteCronJob(ctx, name)
+	})
+}
+
+func (d *CronJobDatastore) deleteCronJob(ctx context.Context, name string) error {
+	tag, err := d.Datastore.Pool.Exec(ctx, `DELETE FROM cron_job WHERE name = $1;`, name)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+	}
+	d.Logger.WarnContext(ctx, "cron job destroyed", "cron_job", name)
+	return nil
 }
 
 // scanCronJobData scans a row shaped like getCronJob's SELECT -- the column

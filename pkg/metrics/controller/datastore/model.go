@@ -2,8 +2,6 @@ package datastore
 
 import (
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // WorkerSnapshotData is one row of WorkerSnapshots' query: the worker row's
@@ -33,11 +31,11 @@ type CronJobSnapshotData struct {
 	TopicName       string `db:"topic_name"`
 	GroupName       string `db:"group_name"`
 
-	Schedule          string             `db:"schedule"`
-	Suspended         bool               `db:"suspended"`
-	NextScheduledTime time.Time          `db:"next_scheduled_time"`
-	LastScheduledTime pgtype.Timestamptz `db:"last_scheduled_time"` // NULL until the job's first produced request
-	DueForSecs        float64            `db:"due_for_secs"`
+	Schedule          string     `db:"schedule"`
+	Suspended         bool       `db:"suspended"`
+	NextScheduledTime time.Time  `db:"next_scheduled_time"`
+	LastScheduledTime *time.Time `db:"last_scheduled_time"` // NULL until the job's first produced request
+	DueForSecs        float64    `db:"due_for_secs"`
 }
 
 // ConsumerGroupSnapshotData is one (group, topic)'s cursor row plus the
