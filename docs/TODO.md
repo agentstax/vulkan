@@ -60,10 +60,13 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       of the dead-tag finding). If adopted: write into CONVENTIONS.md and
       sweep the untagged models (worker, cron, consumer group/binding,
       base keylease, janitor sweptRow — audit as part of the sweep).
-- [ ] **pgtype.UUID in worker public signatures.** toTokenData
-      (worker/controller/adapter.go:57) hands pgtype.UUID down; four
-      datastore publics carry it (worker/controller/datastore/
-      instance.go:67,94,119,150). Driver types stay inside the datastore.
+- [x] **pgtype.UUID in worker public signatures.** Resolved 2026-08-17:
+      the four datastore instance publics (+ their privates) now take
+      uuid.UUID; toTokenData moved from the controller adapter into the
+      datastore, converting at the query-arg boundary.
+      WorkerInstanceData.Token stays pgtype.UUID (table-exact scan target,
+      same precedent as metrics' pgtype.Timestamptz). worker-claim-lab
+      green.
 - [ ] **Worker vocabulary dead fields.** Worker.TargetInstances
       (pkg/worker/worker.go:17) and WorkerInstance.ExpiresAt
       (instance.go:14) are written by adapters and read nowhere;

@@ -5,7 +5,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller/datastore"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
@@ -52,8 +51,4 @@ func toWorkerInstance(data *datastore.WorkerInstanceData) *worker.WorkerInstance
 		ExpiresAt: data.ExpiresAt,
 		Attempts:  data.Attempts,
 	}
-}
-
-func toTokenData(token uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: token, Valid: true}
 }

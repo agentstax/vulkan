@@ -47,7 +47,7 @@ func (c *WorkerController) RenewInstance(ctx context.Context, instanceId int64, 
 	if ttl <= 0 {
 		return fmt.Errorf("ttl must be > 0, got %v", ttl)
 	}
-	return c.datastore.RenewInstance(ctx, instanceId, toTokenData(token), ttl)
+	return c.datastore.RenewInstance(ctx, instanceId, token, ttl)
 }
 
 // RecordInstanceSuccess resets the instance's consecutive-failure count.
@@ -55,7 +55,7 @@ func (c *WorkerController) RecordInstanceSuccess(ctx context.Context, instanceId
 	if err := validInstanceInputs(instanceId, token); err != nil {
 		return err
 	}
-	return c.datastore.RecordInstanceSuccess(ctx, instanceId, toTokenData(token))
+	return c.datastore.RecordInstanceSuccess(ctx, instanceId, token)
 }
 
 // RecordInstanceFailure adds one to the instance's consecutive-failure count,
@@ -64,7 +64,7 @@ func (c *WorkerController) RecordInstanceFailure(ctx context.Context, instanceId
 	if err := validInstanceInputs(instanceId, token); err != nil {
 		return 0, err
 	}
-	return c.datastore.RecordInstanceFailure(ctx, instanceId, toTokenData(token))
+	return c.datastore.RecordInstanceFailure(ctx, instanceId, token)
 }
 
 // ReleaseInstance removes the instance row immediately, so on a graceful
@@ -73,7 +73,7 @@ func (c *WorkerController) ReleaseInstance(ctx context.Context, instanceId int64
 	if err := validInstanceInputs(instanceId, token); err != nil {
 		return err
 	}
-	return c.datastore.ReleaseInstance(ctx, instanceId, toTokenData(token))
+	return c.datastore.ReleaseInstance(ctx, instanceId, token)
 }
 
 // SweepExpiredInstances removes instance rows past expires_at, returning the
