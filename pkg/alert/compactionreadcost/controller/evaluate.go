@@ -26,7 +26,7 @@ func (c *CompactionReadCostController) Evaluate(ctx context.Context, owner *comm
 		threshold = warnPartitions
 	}
 
-	compacted, err := c.datastore.Compacted(ctx, owner.TopicId)
+	compacted, err := c.datastore.IsCompacted(ctx, owner.TopicId)
 	if err != nil {
 		return nil, err
 	}

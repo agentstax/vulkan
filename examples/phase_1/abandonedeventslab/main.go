@@ -116,8 +116,8 @@ func main() {
 	}
 
 	abandoned, cleared := rows[0], rows[1]
-	assertEqual("first event type", string(abandoned.Event.EventType), string(consumermetrics.EventAbandoned))
-	assertEqual("second event type", string(cleared.Event.EventType), string(consumermetrics.EventCleared))
+	assertEqual("first event type", string(abandoned.Event.EventType), string(vulkanmetrics.EventAbandoned))
+	assertEqual("second event type", string(cleared.Event.EventType), string(vulkanmetrics.EventCleared))
 	assertEqual("abandoned event group", abandoned.Event.Group, group)
 	assertEqual("abandoned event topic id", fmt.Sprint(abandoned.Event.TopicId), fmt.Sprint(tp.Id))
 	assertEqual("abandoned/cleared share the same message id", fmt.Sprint(abandoned.Event.MessageId), fmt.Sprint(cleared.Event.MessageId))

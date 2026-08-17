@@ -4,18 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/agentstax/vulkan/pkg/metrics"
 )
-
-// eventKey is the (message, attempt) identity an abandoned event and its
-// matching cleared event share -- topicId/group are already fixed by the
-// routing key both reads filter on, so they're not part of the key.
-type eventKey struct {
-	MessageId int64
-	Attempt   int
-}
 
 // AbandonedRoutineSnapshot pairs the abandoned/cleared events for (topicId,
 // group) read directly off __system.metrics's own message log.
@@ -30,36 +21,14 @@ func (c *MetricsController) AbandonedRoutineSnapshot(ctx context.Context, topicI
 	// one read per event type keeps each query's intent obvious instead of
 	// one query encoding both via CASE/HAVING
 	routingKey := metrics.AbandonedRoutineKey(topicId, group)
-	abandoned, err := c.datastore.EventTimestamps(ctx, routingKey, "abandoned")
+	abandoned, err := c.datastore.EventTimestamps(ctx, routingKey, metrics.EventAbandoned)
 	if err != nil {
 		return nil, err
 	}
-	cleared, err := c.datastore.EventTimestamps(ctx, routingKey, "cleared")
+	cleared, err := c.datastore.EventTimestamps(ctx, routingKey, metrics.EventCleared)
 	if err != nil {
 		return nil, err
 	}
 
-	clearedAt := make(map[eventKey]time.Time, len(cleared))
-	for _, event := range cleared {
-		clearedAt[eventKey{MessageId: event.MessageId, Attempt: event.Attempt}] = event.At
-	}
-
-	var snapshot metrics.AbandonedRoutineSnapshot
-	var latencySum time.Duration
-	var matched int64
-	for _, event := range abandoned {
-		snapshot.Total++
-		at, ok := clearedAt[eventKey{MessageId: event.MessageId, Attempt: event.Attempt}]
-		if !ok {
-			snapshot.Outstanding++
-			continue
-		}
-		latencySum += at.Sub(event.At)
-		matched++
-	}
-	if matched > 0 {
-		snapshot.SelfClearLatencyAvg = latencySum / time.Duration(matched)
-	}
-
-	return &snapshot, nil
+	return toAbandonedRoutineSnapshot(abandoned, cleared), nil
 }

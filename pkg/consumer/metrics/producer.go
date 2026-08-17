@@ -61,11 +61,11 @@ func (e *MetricEventProducer) Run(ctx context.Context) error {
 }
 
 func (e *MetricEventProducer) Add(ctx context.Context, topicId int64, group string, messageId int64, attempt int) {
-	e.enqueue(NewGoRoutineEvent(EventAbandoned, topicId, group, messageId, attempt, time.Now()))
+	e.enqueue(NewGoRoutineEvent(metrics.EventAbandoned, topicId, group, messageId, attempt, time.Now()))
 }
 
 func (e *MetricEventProducer) Remove(ctx context.Context, topicId int64, group string, messageId int64, attempt int) {
-	e.enqueue(NewGoRoutineEvent(EventCleared, topicId, group, messageId, attempt, time.Now()))
+	e.enqueue(NewGoRoutineEvent(metrics.EventCleared, topicId, group, messageId, attempt, time.Now()))
 }
 
 func (e *MetricEventProducer) enqueue(event *GoRoutineEvent) {

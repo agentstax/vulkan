@@ -202,12 +202,23 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       CronJobSnapshotData.LastScheduledTime pgtype.Timestamptz →
       *time.Time (the codebase's majority nullable-timestamp shape).
       cron-lab + metrics-collector-lab green.
-- [ ] **Metrics drift.** Bare "abandoned"/"cleared" strings
+- [x] **Metrics drift.** Bare "abandoned"/"cleared" strings
       (controller/abandonedroutine.go:33,37) duplicate consumer/metrics
       EventAbandoned/EventCleared; IsCompacted (metrics) vs Compacted
       (compactionreadcost) name the identical query — one verb; the inline
       shaping loop + bare eventKey struct (abandonedroutine.go:15,42-62)
       breaks the file's own adapter pattern.
+    - Resolved 2026-08-17. EventType + EventAbandoned/EventCleared moved
+      consumer/metrics → pkg/metrics routing.go, beside AbandonedRoutineKey
+      whose comment already states the shared-wire-contract principle
+      (consumer/metrics imports pkg/metrics already; the reverse would be
+      a new cross-stack arrow). GoRoutineEvent/EventTimestamps now carry
+      metrics.EventType end to end. compactionreadcost Compacted →
+      IsCompacted (matches IsEmpty/IsCompacted verb; duplication of the
+      query itself is the sanctioned each-side-writes-its-own shape).
+      Shaping loop + eventKey moved to adapter.go as
+      toAbandonedRoutineSnapshot. abandoned-events-lab +
+      abandoned-routine-snapshot-lab + alert-lab green.
 - [ ] **Consumer declaration enums + re-validation.** The datastore public
       DeclareBindings returns vocabulary binding.DeclarationOutcome while
       its model.go:13-18 defines BindingDeclarationStatus for the same

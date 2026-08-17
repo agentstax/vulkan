@@ -102,3 +102,36 @@ func toConsumerGroupSnapshot(consumerGroup string, data *datastore.ConsumerGroup
 	}
 	return snapshot
 }
+
+func toAbandonedRoutineSnapshot(abandoned []datastore.EventTimestampData, cleared []datastore.EventTimestampData) *metrics.AbandonedRoutineSnapshot {
+	// eventKey is the (message, attempt) identity an abandoned event and its
+	// matching cleared event share -- topicId/group are already fixed by the
+	// routing key both reads filter on, so they're not part of the key.
+	type eventKey struct {
+		MessageId int64
+		Attempt   int
+	}
+
+	clearedAt := make(map[eventKey]time.Time, len(cleared))
+	for _, event := range cleared {
+		clearedAt[eventKey{MessageId: event.MessageId, Attempt: event.Attempt}] = event.At
+	}
+
+	var snapshot metrics.AbandonedRoutineSnapshot
+	var latencySum time.Duration
+	var matched int64
+	for _, event := range abandoned {
+		snapshot.Total++
+		at, ok := clearedAt[eventKey{MessageId: event.MessageId, Attempt: event.Attempt}]
+		if !ok {
+			snapshot.Outstanding++
+			continue
+		}
+		latencySum += at.Sub(event.At)
+		matched++
+	}
+	if matched > 0 {
+		snapshot.SelfClearLatencyAvg = latencySum / time.Duration(matched)
+	}
+	return &snapshot
+}

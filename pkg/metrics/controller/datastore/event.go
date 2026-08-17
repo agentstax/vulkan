@@ -10,7 +10,7 @@ import (
 // EventTimestamps is every distinct (message, attempt) of eventType under
 // routingKey on __system.metrics's own message log, with the earliest time
 // each was seen.
-func (d *MetricsDatastore) EventTimestamps(ctx context.Context, routingKey string, eventType string) ([]EventTimestampData, error) {
+func (d *MetricsDatastore) EventTimestamps(ctx context.Context, routingKey string, eventType metrics.EventType) ([]EventTimestampData, error) {
 	var events []EventTimestampData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -20,7 +20,7 @@ func (d *MetricsDatastore) EventTimestamps(ctx context.Context, routingKey strin
 	return events, err
 }
 
-func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey string, eventType string) ([]EventTimestampData, error) {
+func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey string, eventType metrics.EventType) ([]EventTimestampData, error) {
 	metricsTopicId, err := d.resolveMetricsTopicId(ctx)
 	if err != nil {
 		return nil, err
