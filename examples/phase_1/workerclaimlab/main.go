@@ -82,11 +82,11 @@ func main() {
 	for i := range consumers {
 		running = append(running, start(ctx, ds, tp.Name, i))
 	}
-	groupID := scalar(ctx, ds, `SELECT id FROM consumer_group WHERE topic_id=$1 AND name=$2`, tp.Id, group)
+	groupId := scalar(ctx, ds, `SELECT id FROM consumer_group WHERE topic_id=$1 AND name=$2`, tp.Id, group)
 
 	// ===== phase 1: N consumers, one live instance per target-1 row =====
 	step("PHASE 1: 3 consumers for 8s -- janitor/waterline hold exactly 1 live instance, never 3")
-	maxLive, live := sampleLive(ctx, ds, tp.Id, groupID, 8*time.Second)
+	maxLive, live := sampleLive(ctx, ds, tp.Id, groupId, 8*time.Second)
 	for _, name := range exclusive {
 		fmt.Printf("  %-18s live=%d max seen=%d\n", name, live[name], maxLive[name])
 		assertInt(name+" never exceeded its target", int64(maxLive[name]), 1)
@@ -100,7 +100,7 @@ func main() {
 	for _, rc := range running[:2] {
 		rc.stop()
 	}
-	maxLive, live = sampleLive(ctx, ds, tp.Id, groupID, 6*time.Second)
+	maxLive, live = sampleLive(ctx, ds, tp.Id, groupId, 6*time.Second)
 	for _, name := range exclusive {
 		fmt.Printf("  %-18s live=%d max seen=%d\n", name, live[name], maxLive[name])
 		assertInt(name+" still never exceeded its target", int64(maxLive[name]), 1)
@@ -112,7 +112,7 @@ func main() {
 	step("PHASE 3: kill the survivor -- claims release, nothing stays live")
 	running[2].stop()
 	time.Sleep(instanceTTL) // a released row is gone at once; the TTL wait covers a claim mid-renewal
-	_, live = sampleLive(ctx, ds, tp.Id, groupID, 2*time.Second)
+	_, live = sampleLive(ctx, ds, tp.Id, groupId, 2*time.Second)
 	for _, name := range append(exclusive, "message_consumer") {
 		fmt.Printf("  %-18s live=%d\n", name, live[name])
 		assertInt(name+" has no live instance", int64(live[name]), 0)
@@ -168,7 +168,7 @@ func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName s
 // sampleLive polls the chain's worker rows for dur and tracks live instance
 // counts per row: the last count seen and the highest ever seen -- the max
 // is what proves the claim gate held while processes fought over it.
-func sampleLive(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, groupID int64, dur time.Duration) (map[string]int, map[string]int) {
+func sampleLive(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, groupId int64, dur time.Duration) (map[string]int, map[string]int) {
 	maxLive := map[string]int{}
 	live := map[string]int{}
 	deadline := time.Now().Add(dur)
@@ -179,7 +179,7 @@ func sampleLive(ctx context.Context, ds *coredatastore.PostgresDatastore, topicI
 			LEFT JOIN worker_instance i ON i.worker_id = w.id
 			WHERE w.topic_id = $1
 				OR w.consumer_group_id = $2
-			GROUP BY w.name`, topicID, groupID)
+			GROUP BY w.name`, topicId, groupId)
 		must(err)
 		for rows.Next() {
 			var name string

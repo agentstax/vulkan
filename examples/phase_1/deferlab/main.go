@@ -66,7 +66,7 @@ type Rec struct {
 
 var (
 	ds      *coredatastore.PostgresDatastore
-	topicID int64
+	topicId int64
 
 	runsMu sync.Mutex
 	runs   = map[string]int{} // "key:version" -> completed consumerFunc calls
@@ -90,7 +90,7 @@ func main() {
 	topicName := fmt.Sprintf("deferlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
-	topicID = tp.Id
+	topicId = tp.Id
 
 	cd, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
@@ -103,7 +103,7 @@ func main() {
 
 	step("defer on a free key: runs holding the key lease, releases on success")
 	publish(ctx, wpInstance, "u:1", 1, common.ConcurrencyDefer)
-	g1 := groupID(ctx, cd, "deferlab.g1")
+	g1 := groupId(ctx, cd, "deferlab.g1")
 	var heldDuringRun int
 	consume(ctx, tp.Name, "deferlab.g1", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:1" {
@@ -125,7 +125,7 @@ func main() {
 
 	step("allow (unset policy) keyed message never touches the key lease")
 	publish(ctx, wpInstance, "u:2", 1, "")
-	g2 := groupID(ctx, cd, "deferlab.g2")
+	g2 := groupId(ctx, cd, "deferlab.g2")
 	allowHeld := -1
 	consume(ctx, tp.Name, "deferlab.g2", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:2" {
@@ -141,7 +141,7 @@ func main() {
 
 	step("unkeyed under ConcurrencyOverride Defer runs as Allow")
 	publishUnkeyed(ctx, wpInstance, 1)
-	g3 := groupID(ctx, cd, "deferlab.g3")
+	g3 := groupId(ctx, cd, "deferlab.g3")
 	unkeyedHeld := -1
 	consume(ctx, tp.Name, "deferlab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyDefer}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "" {
@@ -157,7 +157,7 @@ func main() {
 
 	step("ConcurrencyOverride Allow beats a message's own Defer")
 	publish(ctx, wpInstance, "u:3", 1, common.ConcurrencyDefer)
-	g4 := groupID(ctx, cd, "deferlab.g4")
+	g4 := groupId(ctx, cd, "deferlab.g4")
 	overrideHeld := -1
 	consume(ctx, tp.Name, "deferlab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyAllow}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:3" {
@@ -172,12 +172,12 @@ func main() {
 	fmt.Println("  ✓ ran without a lease")
 
 	step("busy key: each head deferred during the hold gets its own 'deferred' row at commit")
-	g5 := groupID(ctx, cd, "deferlab.g5")
+	g5 := groupId(ctx, cd, "deferlab.g5")
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startOnce sync.Once
 	publish(ctx, wpInstance, "u:4", 1, common.ConcurrencyDefer)
-	v1 := messageID(ctx, "u:4", 1)
+	v1 := messageId(ctx, "u:4", 1)
 
 	done := make(chan struct{})
 	go func() {
@@ -194,11 +194,11 @@ func main() {
 
 	<-started // v1 is running and holds the key
 	publish(ctx, wpInstance, "u:4", 2, common.ConcurrencyDefer)
-	v2 := messageID(ctx, "u:4", 2)
+	v2 := messageId(ctx, "u:4", 2)
 	waitFor(func() bool { return deliveryStatus(ctx, g5, v2) == "deferred" }, "v2's 'deferred' row")
 
 	publish(ctx, wpInstance, "u:4", 3, common.ConcurrencyDefer)
-	v3 := messageID(ctx, "u:4", 3)
+	v3 := messageId(ctx, "u:4", 3)
 	waitFor(func() bool { return deliveryStatus(ctx, g5, v3) == "deferred" }, "v3's 'deferred' row")
 	if s := deliveryStatus(ctx, g5, v2); s != "deferred" {
 		die(fmt.Sprintf("v2's 'deferred' row must sit untouched next to v3's, got status %q", s))
@@ -229,13 +229,13 @@ func main() {
 	fmt.Printf("  ✓ v2 and v3 each hold a 'deferred' row, key freed (v1=%d v2=%d v3=%d)\n", v1, v2, v3)
 
 	step("head moved between claim and dispatch: resolves superseded, never runs")
-	g6 := groupID(ctx, cd, "deferlab.g6")
+	g6 := groupId(ctx, cd, "deferlab.g6")
 	blockStarted := make(chan struct{})
 	blockRelease := make(chan struct{})
 	var blockOnce sync.Once
 	publishUnkeyed(ctx, wpInstance, 2) // the blocker -- pins the single processor
 	publish(ctx, wpInstance, "u:5", 1, common.ConcurrencyDefer)
-	v5old := messageID(ctx, "u:5", 1)
+	v5old := messageId(ctx, "u:5", 1)
 
 	done6 := make(chan struct{})
 	go func() {
@@ -267,9 +267,9 @@ func main() {
 	fmt.Println("  ✓ never ran, logged superseded, no delivery row")
 
 	step("a failing Defer message frees the key")
-	g7 := groupID(ctx, cd, "deferlab.g7")
+	g7 := groupId(ctx, cd, "deferlab.g7")
 	publish(ctx, wpInstance, "u:6", 1, common.ConcurrencyDefer)
-	v6 := messageID(ctx, "u:6", 1)
+	v6 := messageId(ctx, "u:6", 1)
 	consume(ctx, tp.Name, "deferlab.g7", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
 		if message.Key == "u:6" {
@@ -318,7 +318,7 @@ func main() {
 	fmt.Println("  ✓ v2 superseded with full audit, v3 ran and popped")
 
 	step("a held key excludes its 'deferred' row from the claim, kill backstop blind to it")
-	g8 := groupID(ctx, cd, "deferlab.g8")
+	g8 := groupId(ctx, cd, "deferlab.g8")
 	started8 := make(chan struct{})
 	release8 := make(chan struct{})
 	var once8 sync.Once
@@ -333,13 +333,13 @@ func main() {
 	publish(ctx, wpInstance, "u:7", 1, common.ConcurrencyDefer)
 	<-started8 // v1 is running and holds the key
 	publish(ctx, wpInstance, "u:7", 2, common.ConcurrencyDefer)
-	v7 := messageID(ctx, "u:7", 2)
+	v7 := messageId(ctx, "u:7", 2)
 	waitFor(func() bool { return deliveryStatus(ctx, g8, v7) == "deferred" }, "v2's 'deferred' row")
 
 	// exhausted-looking or not, a 'deferred' row is outside the kill
 	// backstop's 'inflight' predicate. Driven directly so no consumer touches
 	// the row mid-check.
-	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
+	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
 	must(exceptionConsumers.KillExceptions(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures))
 	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
 		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
@@ -352,7 +352,7 @@ func main() {
 	}
 	// the unexpired key_lease alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
-	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicID), g8, v7)
+	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
 	if _, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
@@ -385,7 +385,7 @@ func main() {
 	fmt.Println("  ✓ excluded from the claim while held, survived the backstop, ran on release")
 
 	step("a failed holder's retry supersedes once a newer head runs")
-	g9 := groupID(ctx, cd, "deferlab.g9")
+	g9 := groupId(ctx, cd, "deferlab.g9")
 	failV1 := func(ctx context.Context, message *Rec) error {
 		record(message)
 		if message.Key == "u:8" && message.Version == 1 {
@@ -396,7 +396,7 @@ func main() {
 	stopCursor9 := startConsumer(ctx, tp.Name, "deferlab.g9", nil, 3, failV1)
 	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "deferlab.g9", nil, failV1)
 	publish(ctx, wpInstance, "u:8", 1, common.ConcurrencyDefer)
-	v8old := messageID(ctx, "u:8", 1)
+	v8old := messageId(ctx, "u:8", 1)
 	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "ready" }, "v1 to fail and go 'ready'")
 	publish(ctx, wpInstance, "u:8", 2, common.ConcurrencyDefer)
 	waitFor(func() bool { return ran("u:8", 2) }, "v2 to run on the freed key")
@@ -424,11 +424,11 @@ func main() {
 	fmt.Println("  ✓ retry gate refused v1, attempts decremented back, superseded logged")
 
 	step("a crashed holder's expired key lease: redemption takes the key over")
-	g10 := groupID(ctx, cd, "deferlab.g10")
+	g10 := groupId(ctx, cd, "deferlab.g10")
 	// a crashed holder's key_lease row: unexpired, never released
 	execSql(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, g10)
 	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyDefer)
-	v10 := messageID(ctx, "u:10", 1)
+	v10 := messageId(ctx, "u:10", 1)
 	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
@@ -454,7 +454,7 @@ func main() {
 	fmt.Println("  ✓ refused")
 
 	step("torture: two consumers per loop fight one key through an abandoned holder and head churn")
-	g11 := groupID(ctx, cd, "deferlab.g11")
+	g11 := groupId(ctx, cd, "deferlab.g11")
 	// a short per-message Timeout so v1's sleeping run is abandoned mid-hold --
 	// its failure recording frees the key while the goroutine sleeps on
 	tortureMessageCfg := func() *messageconsumer.MessageConsumerConfig {
@@ -479,14 +479,14 @@ func main() {
 	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
 
 	publish(ctx, wpInstance, "u:11", 1, common.ConcurrencyDefer)
-	tv1 := messageID(ctx, "u:11", 1)
+	tv1 := messageId(ctx, "u:11", 1)
 	<-started11 // v1 runs holding the key
 	publish(ctx, wpInstance, "u:11", 2, common.ConcurrencyDefer)
 	publish(ctx, wpInstance, "u:11", 3, common.ConcurrencyDefer)
 	publish(ctx, wpInstance, "u:11", 4, common.ConcurrencyDefer)
-	tv2 := messageID(ctx, "u:11", 2)
-	tv3 := messageID(ctx, "u:11", 3)
-	tv4 := messageID(ctx, "u:11", 4)
+	tv2 := messageId(ctx, "u:11", 2)
+	tv3 := messageId(ctx, "u:11", 3)
+	tv4 := messageId(ctx, "u:11", 4)
 
 	// interleaving-robust: whichever versions deferred vs superseded at
 	// dispatch, the end state is fixed -- v4 runs and pops, everything else
@@ -706,52 +706,52 @@ func publishUnkeyed(ctx context.Context, wpInstance *producer.ProducerInstance[R
 	must(err)
 }
 
-func groupID(ctx context.Context, cd *consumercontroller.ConsumerController, name string) int64 {
-	g, err := cd.RegisterGroup(ctx, topicID, name)
+func groupId(ctx context.Context, cd *consumercontroller.ConsumerController, name string) int64 {
+	g, err := cd.RegisterGroup(ctx, topicId, name)
 	must(err)
 	return g.Id
 }
 
-func messageID(ctx context.Context, key string, version int) int64 {
+func messageId(ctx context.Context, key string, version int) int64 {
 	var id int64
-	sql := fmt.Sprintf(`SELECT id FROM message_log_%d WHERE compaction_key = $1 AND (payload->>'version')::int = $2`, topicID)
+	sql := fmt.Sprintf(`SELECT id FROM message_log_%d WHERE compaction_key = $1 AND (payload->>'version')::int = $2`, topicId)
 	must(ds.Pool.QueryRow(ctx, sql, key, version).Scan(&id))
 	return id
 }
 
-func leaseCount(ctx context.Context, groupID int64) int {
+func leaseCount(ctx context.Context, groupId int64) int {
 	var n int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM key_lease WHERE consumer_group_id = $1`, groupID).Scan(&n))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM key_lease WHERE consumer_group_id = $1`, groupId).Scan(&n))
 	return n
 }
 
 // deliveryCount counts the group's delivery rows; status "" counts them all.
-func deliveryCount(ctx context.Context, groupID int64, status string) int {
+func deliveryCount(ctx context.Context, groupId int64, status string) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d WHERE consumer_group_id = $1 AND ($2 = '' OR status = $2)`, topicID)
-	must(ds.Pool.QueryRow(ctx, sql, groupID, status).Scan(&n))
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d WHERE consumer_group_id = $1 AND ($2 = '' OR status = $2)`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, groupId, status).Scan(&n))
 	return n
 }
 
 // deliveryStatus returns "" when the message has no delivery row.
-func deliveryStatus(ctx context.Context, groupID int64, messageID int64) string {
+func deliveryStatus(ctx context.Context, groupId int64, messageId int64) string {
 	var s string
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
-	must(ds.Pool.QueryRow(ctx, sql, groupID, messageID).Scan(&s))
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&s))
 	return s
 }
 
-func deliveryAttempts(ctx context.Context, groupID int64, messageID int64) int {
+func deliveryAttempts(ctx context.Context, groupId int64, messageId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT attempts FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
-	must(ds.Pool.QueryRow(ctx, sql, groupID, messageID).Scan(&n))
+	sql := fmt.Sprintf(`SELECT attempts FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&n))
 	return n
 }
 
 // logStatuses returns the message's delivery_log statuses keyed by attempt.
-func logStatuses(ctx context.Context, groupID int64, messageID int64) map[int]string {
-	sql := fmt.Sprintf(`SELECT attempt, status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
-	rows, err := ds.Pool.Query(ctx, sql, groupID, messageID)
+func logStatuses(ctx context.Context, groupId int64, messageId int64) map[int]string {
+	sql := fmt.Sprintf(`SELECT attempt, status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	rows, err := ds.Pool.Query(ctx, sql, groupId, messageId)
 	must(err)
 	defer rows.Close()
 
@@ -771,18 +771,18 @@ func execSql(ctx context.Context, sql string, args ...any) {
 	must(err)
 }
 
-func logCount(ctx context.Context, groupID int64, messageID int64) int {
+func logCount(ctx context.Context, groupId int64, messageId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
-	must(ds.Pool.QueryRow(ctx, sql, groupID, messageID).Scan(&n))
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&n))
 	return n
 }
 
 // logRow returns the message's single delivery_log row's status and error.
-func logRow(ctx context.Context, groupID int64, messageID int64) (string, string) {
+func logRow(ctx context.Context, groupId int64, messageId int64) (string, string) {
 	var status, logErr string
-	sql := fmt.Sprintf(`SELECT status, error FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicID)
-	must(ds.Pool.QueryRow(ctx, sql, groupID, messageID).Scan(&status, &logErr))
+	sql := fmt.Sprintf(`SELECT status, error FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&status, &logErr))
 	return status, logErr
 }
 

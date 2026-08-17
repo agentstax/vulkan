@@ -135,18 +135,18 @@ type metricsRow struct {
 	Event      consumermetrics.GoRoutineEvent
 }
 
-func metricsRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int {
+func metricsRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d`, topicID)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d`, topicId)).Scan(&count))
 	return count
 }
 
-func metricsRowsSince(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, sinceCount int) []metricsRow {
+func metricsRowsSince(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, sinceCount int) []metricsRow {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, routing_key, payload FROM message_log_%d
 		ORDER BY id
 		OFFSET %d
-	`, topicID, sinceCount))
+	`, topicId, sinceCount))
 	must(err)
 	defer rows.Close()
 

@@ -50,8 +50,8 @@ type Rec struct {
 
 var (
 	ds      *coredatastore.PostgresDatastore
-	topicID int64
-	groupID int64
+	topicId int64
+	groupId int64
 )
 
 func main() {
@@ -72,7 +72,7 @@ func main() {
 	topicName := fmt.Sprintf("keyleaselab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
-	topicID = tp.Id
+	topicId = tp.Id
 
 	cd, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
@@ -86,13 +86,13 @@ func main() {
 	must(err)
 	g, err := cd.RegisterGroup(ctx, tp.Id, group)
 	must(err)
-	groupID = g.Id
+	groupId = g.Id
 
 	step("seed: two versions of user:1 -- the newer is the compaction head")
 	publish(ctx, wpInstance, "user:1", 1)
 	publish(ctx, wpInstance, "user:1", 2)
-	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM message_log_%d WHERE compaction_key = 'user:1'`, topicID))
-	headID := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:1'`, topicID)
+	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM message_log_%d WHERE compaction_key = 'user:1'`, topicId))
+	headID := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:1'`, topicId)
 	if staleID == headID {
 		die("seed broken: stale and head ids match")
 	}
@@ -136,7 +136,7 @@ func main() {
 		WHERE consumer_group_id = $1
 			AND compaction_key = $2
 			AND lease_token = $3;
-	`, groupID, "user:1", held.Token)
+	`, groupId, "user:1", held.Token)
 	must(err)
 	if tag.RowsAffected() != 1 {
 		die("the in-txn release should have matched the held row")
@@ -223,13 +223,13 @@ func main() {
 
 	step("old-then-new order: a newer head produced mid-hold waits for the release")
 	publish(ctx, wpInstance, "user:3", 1)
-	old3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicID)
+	old3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicId)
 	holding := claim(ctx, keyLeases, "user:3", old3, 30*time.Second)
 	if holding.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want acquired on user:3, got %s", holding.Verdict))
 	}
 	publish(ctx, wpInstance, "user:3", 2)
-	new3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicID)
+	new3 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:3'`, topicId)
 	if c := claim(ctx, keyLeases, "user:3", new3, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy for the new head while the old holds the key, got %s", c.Verdict))
 	}
@@ -254,7 +254,7 @@ func main() {
 
 	step("janitor sweep removes expired rows, leaves live ones")
 	publish(ctx, wpInstance, "user:2", 1)
-	head2 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:2'`, topicID)
+	head2 := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = 'user:2'`, topicId)
 	expired := claim(ctx, keyLeases, "user:1", headID, 50*time.Millisecond)
 	if expired.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("sweep setup: want acquired, got %s", expired.Verdict))
@@ -264,11 +264,11 @@ func main() {
 		die(fmt.Sprintf("sweep setup: want acquired, got %s", live.Verdict))
 	}
 	time.Sleep(100 * time.Millisecond)
-	must(janitorDatastore.SweepExpiredKeyLeases(ctx, topicID, 1)) // batchSize 1 forces the batch loop
+	must(janitorDatastore.SweepExpiredKeyLeases(ctx, topicId, 1)) // batchSize 1 forces the batch loop
 	if n := leaseCount(ctx); n != 1 {
 		die(fmt.Sprintf("want only the live row to survive the sweep, count=%d", n))
 	}
-	survivor := scalarString(ctx, `SELECT compaction_key FROM key_lease WHERE consumer_group_id = $1`, groupID)
+	survivor := scalarString(ctx, `SELECT compaction_key FROM key_lease WHERE consumer_group_id = $1`, groupId)
 	if survivor != "user:2" {
 		die(fmt.Sprintf("sweep removed the wrong row, survivor=%s", survivor))
 	}
@@ -285,7 +285,7 @@ func main() {
 }
 
 func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key string, msgID int64, d time.Duration) *keyleasecontroller.KeyLeaseClaim {
-	c, err := cd.ClaimKeyLease(ctx, topicID, groupID, key, msgID, d)
+	c, err := cd.ClaimKeyLease(ctx, topicId, groupId, key, msgID, d)
 	must(err)
 	return c
 }
@@ -299,7 +299,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], ke
 
 func leaseCount(ctx context.Context) int {
 	var n int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM key_lease WHERE consumer_group_id = $1`, groupID).Scan(&n))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM key_lease WHERE consumer_group_id = $1`, groupId).Scan(&n))
 	return n
 }
 

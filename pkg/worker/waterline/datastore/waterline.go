@@ -20,17 +20,17 @@ import (
 //	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursor comes back fresh, lease stale.
-func (d *WaterlineDatastore) AdvanceWaterline(ctx context.Context, topicID int64, groupID int64) (int64, error) {
+func (d *WaterlineDatastore) AdvanceWaterline(ctx context.Context, topicId int64, groupId int64) (int64, error) {
 	var committed int64
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		committed, err = d.advanceWaterline(ctx, topicID, groupID)
+		committed, err = d.advanceWaterline(ctx, topicId, groupId)
 		return err
 	})
 	return committed, err
 }
 
-func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicID int64, groupID int64) (int64, error) {
+func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicId int64, groupId int64) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
 	// 		earliest unresolved delivery -- 'dead' be definition does not count
@@ -44,10 +44,10 @@ func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicID int64
 		)
 		FROM cursor
 		WHERE consumer_group_id = $1;
-	`, topic.DeliveryTable(topicID))
+	`, topic.DeliveryTable(topicId))
 
 	var target int64
-	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupID).Scan(&target); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupId).Scan(&target); err != nil {
 		return 0, err
 	}
 
@@ -60,6 +60,6 @@ func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicID int64
 	`
 
 	var committed int64
-	err := d.Datastore.Pool.QueryRow(ctx, rollSql, groupID, target).Scan(&committed)
+	err := d.Datastore.Pool.QueryRow(ctx, rollSql, groupId, target).Scan(&committed)
 	return committed, err
 }

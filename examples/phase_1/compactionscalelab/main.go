@@ -125,8 +125,8 @@ func main() {
 
 // ---- helpers ----
 
-func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) {
-	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicID)
+func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) {
+	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql)
 	must(err)
 }
@@ -134,11 +134,11 @@ func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, to
 // createPartitions issues every CREATE TABLE ... PARTITION OF statement for
 // [from, to) as ONE multi-statement Exec -- a network round trip per
 // partition would dominate the lab's own runtime at these checkpoint sizes.
-func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, from, to int64) {
+func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, from, to int64) {
 	if to <= from {
 		return
 	}
-	logTable := fmt.Sprintf("message_log_%d", topicID)
+	logTable := fmt.Sprintf("message_log_%d", topicId)
 	var sql strings.Builder
 	for n := from; n < to; n++ {
 		fmt.Fprintf(&sql, "CREATE TABLE IF NOT EXISTS %s_%d PARTITION OF %s FOR VALUES FROM (%d) TO (%d);\n",
@@ -152,14 +152,14 @@ func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // unkeyed traffic never touches the compaction subplan (compactionlab
 // already proved that), so it's free filler for growing the topic's row
 // count/tail position without affecting what's being measured.
-func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, count int64) {
+func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, count int64) {
 	if count <= 0 {
 		return
 	}
 	sql := fmt.Sprintf(`
 		INSERT INTO message_log_%d (payload, compaction_key)
 		SELECT '{}'::jsonb, NULL FROM generate_series(1, $1);
-	`, topicID)
+	`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql, count)
 	must(err)
 }
@@ -168,8 +168,8 @@ func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // latest for its key, counting only partitions the Append node ACTUALLY
 // EXECUTED against (see compactionwidthlab for why mentions alone don't
 // mean touched), plus the plan's own reported wall-clock Execution Time.
-func explainStaleNegative(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) (int, float64, string) {
-	logTable := fmt.Sprintf("message_log_%d", topicID)
+func explainStaleNegative(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) (int, float64, string) {
+	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m
 		WHERE m.id = 1

@@ -110,20 +110,20 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-func head(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicID))
+func head(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicId))
 }
 
-func countInRange(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, low, high int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id > $1 AND id <= $2`, topicID), low, high)
+func countInRange(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, low, high int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id > $1 AND id <= $2`, topicId), low, high)
 }
 
-func partitionCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
+func partitionCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
 		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, topicID))
+	`, topicId))
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {

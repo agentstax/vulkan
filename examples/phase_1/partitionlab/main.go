@@ -98,8 +98,8 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, n int64) {
-	table := fmt.Sprintf("message_log_%d_%d", topicID, n)
+func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
+	table := fmt.Sprintf("message_log_%d_%d", topicId, n)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		var exists bool
@@ -112,19 +112,19 @@ func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 	die(fmt.Sprintf("%s was not created ahead within 10s", table))
 }
 
-func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
+func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
 		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, topicID))
+	`, topicId))
 }
 
 // explainReadMessages EXPLAINs the exact query readMessages runs on a claim
 // (WHERE m.id > low AND m.id <= high) and counts distinct message_log_<id>_N
 // partitions named anywhere in the plan -- pruned partitions never appear.
-func explainReadMessages(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, low, high int64, want int) {
-	logTable := fmt.Sprintf("message_log_%d", topicID)
+func explainReadMessages(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, low, high int64, want int) {
+	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1

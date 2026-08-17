@@ -15,7 +15,7 @@ import (
 func main() {
 	ctx := context.Background()
 	run := time.Now().UnixNano()
-	topicID := run // no real topic needs to exist -- the events just carry this id as data
+	topicId := run // no real topic needs to exist -- the events just carry this id as data
 	group := fmt.Sprintf("abandonedroutinesnapshotlab.%d", run)
 
 	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
@@ -33,7 +33,7 @@ func main() {
 	must(err)
 
 	step("never-produced (topic, group) -> zeroes, not an error")
-	snapshot, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, group)
+	snapshot, err := metricsController.AbandonedRoutineSnapshot(ctx, topicId, group)
 	must(err)
 	assertInt64("Total", snapshot.Total, 0)
 	assertInt64("Outstanding", snapshot.Outstanding, 0)
@@ -47,24 +47,24 @@ func main() {
 	must(err)
 	go func() { must(producerB.Run(ctx)) }()
 
-	producerA.Add(ctx, topicID, group, 1, 1) // matched pair, cleared by A
-	producerB.Add(ctx, topicID, group, 2, 1) // matched pair, cleared by B
+	producerA.Add(ctx, topicId, group, 1, 1) // matched pair, cleared by A
+	producerB.Add(ctx, topicId, group, 2, 1) // matched pair, cleared by B
 	time.Sleep(20 * time.Millisecond)        // let the self-clear latency be non-zero and measurable
-	producerA.Remove(ctx, topicID, group, 1, 1)
-	producerB.Remove(ctx, topicID, group, 2, 1)
-	producerA.Add(ctx, topicID, group, 3, 1) // never cleared -- outstanding
+	producerA.Remove(ctx, topicId, group, 1, 1)
+	producerB.Remove(ctx, topicId, group, 2, 1)
+	producerA.Add(ctx, topicId, group, 3, 1) // never cleared -- outstanding
 
 	// events are produced off the hot path via a buffered channel drained by
 	// a background goroutine -- give it a moment to actually land
 	must(waitFor(10*time.Second, func() (bool, error) {
-		s, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, group)
+		s, err := metricsController.AbandonedRoutineSnapshot(ctx, topicId, group)
 		if err != nil {
 			return false, err
 		}
 		return s.Total == 3, nil
 	}))
 
-	snapshot, err = metricsController.AbandonedRoutineSnapshot(ctx, topicID, group)
+	snapshot, err = metricsController.AbandonedRoutineSnapshot(ctx, topicId, group)
 	must(err)
 	assertInt64("Total", snapshot.Total, 3)
 	assertInt64("Outstanding", snapshot.Outstanding, 1)
@@ -75,7 +75,7 @@ func main() {
 
 	step("a different group on the same topic id sees none of the above")
 	otherGroup := fmt.Sprintf("abandonedroutinesnapshotlab.other.%d", run)
-	isolated, err := metricsController.AbandonedRoutineSnapshot(ctx, topicID, otherGroup)
+	isolated, err := metricsController.AbandonedRoutineSnapshot(ctx, topicId, otherGroup)
 	must(err)
 	assertInt64("Total", isolated.Total, 0)
 	assertInt64("Outstanding", isolated.Outstanding, 0)

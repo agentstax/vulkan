@@ -13,18 +13,18 @@ import (
 // ClaimMessagesWithCursor tries to pick up a crashed range (an expired lease)
 // and only claims fresh work from the frontier if there's nothing to reclaim --
 // so crashed ranges drain first.
-func (d *MessageConsumerDatastore) ClaimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+func (d *MessageConsumerDatastore) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
 	var claimed *ClaimedRangeData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimMessagesWithCursor(ctx, topicID, groupID, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
+		claimed, err = d.claimMessagesWithCursor(ctx, topicId, groupId, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *MessageConsumerDatastore) claimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
-	reclaimed, err := d.reclaimWithCursor(ctx, topicID, groupID, maxRangeReclaims, leaseDuration, deliveryLogMode)
+func (d *MessageConsumerDatastore) claimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+	reclaimed, err := d.reclaimWithCursor(ctx, topicId, groupId, maxRangeReclaims, leaseDuration, deliveryLogMode)
 	if err != nil {
 		return nil, err
 	}
@@ -34,11 +34,11 @@ func (d *MessageConsumerDatastore) claimMessagesWithCursor(ctx context.Context, 
 
 	// nothing to reclaim, or the one reclaimable range was poisoned and just got
 	// quarantined instead -> try standard fresh claim (nil when caught up)
-	return d.freshClaimMessagesWithCursor(ctx, topicID, groupID, limit, leaseDuration)
+	return d.freshClaimMessagesWithCursor(ctx, topicId, groupId, limit, leaseDuration)
 }
 
-// readMessages reads topicID's message_log rows in (low, high], ordered by id.
-func (d *MessageConsumerDatastore) readMessages(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, low int64, high int64) ([]MessageData, error) {
+// readMessages reads topicId's message_log rows in (low, high], ordered by id.
+func (d *MessageConsumerDatastore) readMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, low int64, high int64) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			m.id,
@@ -80,9 +80,9 @@ func (d *MessageConsumerDatastore) readMessages(ctx context.Context, tx pgx.Tx, 
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, iTopic.MessageLogTable(topicID))
+	`, iTopic.MessageLogTable(topicId))
 
-	rows, err := tx.Query(ctx, sql, low, high, groupID, topicID)
+	rows, err := tx.Query(ctx, sql, low, high, groupId, topicId)
 	if err != nil {
 		return nil, err
 	}

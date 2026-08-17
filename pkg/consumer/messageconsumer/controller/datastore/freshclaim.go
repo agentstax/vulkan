@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Context, topicID int64, groupID int64, limit int, leaseDuration time.Duration) (*ClaimedRangeData, error) {
+func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, leaseDuration time.Duration) (*ClaimedRangeData, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -34,13 +34,13 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 			c.pending_head
 		FROM cursor c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicID))
+	`, topic.MessageLogTable(topicId))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
-	if err := tx.QueryRow(ctx, snapshotSql, groupID).Scan(&snapshotHead, &snapshotXmax, &claimed, &settledHead, &pendingHead); err != nil {
+	if err := tx.QueryRow(ctx, snapshotSql, groupId).Scan(&snapshotHead, &snapshotXmax, &claimed, &settledHead, &pendingHead); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
+			return nil, fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupId, topicId)
 		}
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 		SELECT u.low, u.high FROM updated u;
 	`
 
-	cursorRows, err := tx.Query(ctx, cursorSql, groupID, limit, snapshotHead, snapshotXmax)
+	cursorRows, err := tx.Query(ctx, cursorSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 		if errors.Is(err, pgx.ErrNoRows) {
 			// if we didnt error a consumer with no cursor row would otherwise
 			// poll forever looking caught up while messages accumulate
-			return nil, fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
+			return nil, fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupId, topicId)
 		}
 
 		return nil, err
@@ -184,12 +184,12 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 		return nil, nil
 	}
 
-	return d.claimMessages(ctx, tx, topicID, groupID, claimedRange.Low, claimedRange.High, leaseDuration)
+	return d.claimMessages(ctx, tx, topicId, groupId, claimedRange.Low, claimedRange.High, leaseDuration)
 }
 
 // low and high come from the cursor statement above, never from a caller --
 // this guard catches a cursor row that went backwards, not bad input.
-func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRangeData, error) {
+func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRangeData, error) {
 	if low >= high {
 		return nil, errors.New("invalid claimed range")
 	}
@@ -206,7 +206,7 @@ func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx,
 		RETURNING *;
 	`
 
-	leaseRows, err := tx.Query(ctx, leaseSql, groupID, low, high, leaseDuration.Seconds())
+	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx,
 		return nil, err
 	}
 
-	messages, err := d.readMessages(ctx, tx, topicID, groupID, low, high)
+	messages, err := d.readMessages(ctx, tx, topicId, groupId, low, high)
 	if err != nil {
 		return nil, err
 	}

@@ -164,15 +164,15 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 // resets all three groups to a clean slate and fast-forwards their cursors to
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
-func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumercontroller.ConsumerController, topicID int64, groups ...string) (int64, map[string]int64) {
-	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicID))
+func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumercontroller.ConsumerController, topicId int64, groups ...string) (int64, map[string]int64) {
+	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicId))
 	gids := map[string]int64{}
 	for _, g := range groups {
-		gID := mustGroupID(cd.RegisterGroup(ctx, topicID, g))
+		gID := mustGroupID(cd.RegisterGroup(ctx, topicId, g))
 		gids[g] = gID
 		_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, gID)
 		must(err)
-		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), gID)
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicId), gID)
 		must(err)
 		_, err = cd.DeclareBindings(ctx, gID, nil, time.Now())
 		must(err)
@@ -185,8 +185,8 @@ func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consume
 	return head, gids
 }
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64, groupID int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64, groupId int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
 	must(err)
 	return c
 }

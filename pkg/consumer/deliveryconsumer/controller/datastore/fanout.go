@@ -12,13 +12,13 @@ import (
 // FanOut materializes one delivery row per message this group is bound to
 // receive. Scans only above the group's mark (cursor.committed), so
 // steady-state cost is O(new messages) per tick, not O(whole log).
-func (d *DeliveryConsumerDatastore) FanOut(ctx context.Context, topicID int64, groupID int64, limit int) error {
+func (d *DeliveryConsumerDatastore) FanOut(ctx context.Context, topicId int64, groupId int64, limit int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.fanOut(ctx, topicID, groupID, limit)
+		return d.fanOut(ctx, topicId, groupId, limit)
 	})
 }
 
-func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicID int64, groupID int64, limit int) error {
+func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicId int64, groupId int64, limit int) error {
 	// take the (head, xmax) pair the scan statement's gate below proves
 	// against.
 	snapshotSql := fmt.Sprintf(`
@@ -29,13 +29,13 @@ func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicID int64, g
 			c.pending_head
 		FROM cursor c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicID))
+	`, topic.MessageLogTable(topicId))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
-	if err := d.Datastore.Pool.QueryRow(ctx, snapshotSql, groupID).Scan(&snapshotHead, &snapshotXmax, &committed, &pendingHead); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, snapshotSql, groupId).Scan(&snapshotHead, &snapshotXmax, &committed, &pendingHead); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
+			return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupId, topicId)
 		}
 		return err
 	}
@@ -160,15 +160,15 @@ func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicID int64, g
 			pending_xmax = GREATEST(cursor.pending_xmax, $5::xid8) -- also skips the initial NULL
 		FROM mark
 		WHERE cursor.consumer_group_id = $1;
-	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
+	`, topic.DeliveryTable(topicId), topic.MessageLogTable(topicId))
 
-	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupID, topicID, limit, snapshotHead, snapshotXmax)
+	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, topicId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		// cursor row deleted between the two statements
-		return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupID, topicID)
+		return fmt.Errorf("no cursor for group %d on topic %d -- was Register called?", groupId, topicId)
 	}
 
 	return nil

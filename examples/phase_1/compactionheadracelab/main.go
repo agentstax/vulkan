@@ -153,21 +153,21 @@ func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 // insertStaleRow bypasses the write path (like compactionscalelab's bulk
 // seeding, this cares about query cost at scale, not seeding realism) so
 // its own compaction_head row is set directly alongside it.
-func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) {
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicID))
+func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) {
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicId))
 	must(err)
-	_, err = ds.Pool.Exec(ctx, `INSERT INTO compaction_head (topic_id, compaction_key, head_id) VALUES ($1, 'stale', 1);`, topicID)
+	_, err = ds.Pool.Exec(ctx, `INSERT INTO compaction_head (topic_id, compaction_key, head_id) VALUES ($1, 'stale', 1);`, topicId)
 	must(err)
 }
 
 // createPartitions issues every CREATE TABLE ... PARTITION OF statement for
 // [from, to) as ONE multi-statement Exec -- a network round trip per
 // partition would dominate the lab's own runtime at these checkpoint sizes.
-func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, from, to int64) {
+func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, from, to int64) {
 	if to <= from {
 		return
 	}
-	logTable := fmt.Sprintf("message_log_%d", topicID)
+	logTable := fmt.Sprintf("message_log_%d", topicId)
 	var sql strings.Builder
 	for n := from; n < to; n++ {
 		fmt.Fprintf(&sql, "CREATE TABLE IF NOT EXISTS %s_%d PARTITION OF %s FOR VALUES FROM (%d) TO (%d);\n",
@@ -181,14 +181,14 @@ func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // unkeyed traffic never touches compaction_head, so it's free filler for
 // growing the topic's row count/tail position without affecting what's
 // being measured.
-func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, count int64) {
+func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, count int64) {
 	if count <= 0 {
 		return
 	}
 	sql := fmt.Sprintf(`
 		INSERT INTO message_log_%d (payload, compaction_key)
 		SELECT '{}'::jsonb, NULL FROM generate_series(1, $1);
-	`, topicID)
+	`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql, count)
 	must(err)
 }
@@ -196,8 +196,8 @@ func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // explainCompactionHeadLookup EXPLAIN ANALYZEs the production predicate --
 // counting only message_log partitions the Append node ACTUALLY EXECUTED
 // against (mentions alone don't mean touched, see compactionwidthlab).
-func explainCompactionHeadLookup(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) (int, float64) {
-	logTable := fmt.Sprintf("message_log_%d", topicID)
+func explainCompactionHeadLookup(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) (int, float64) {
+	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m
 		WHERE m.id = 1
@@ -206,7 +206,7 @@ func explainCompactionHeadLookup(ctx context.Context, ds *coredatastore.Postgres
 				OR m.id = (SELECT head_id FROM compaction_head
 					WHERE topic_id = %d AND compaction_key = m.compaction_key)
 			);
-	`, logTable, topicID)
+	`, logTable, topicId)
 
 	rows, err := ds.Pool.Query(ctx, sql)
 	must(err)

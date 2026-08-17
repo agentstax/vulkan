@@ -224,25 +224,25 @@ func publish(ctx context.Context, wp *producer.ProducerInstance[common.Work], ro
 	must(err)
 }
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64, groupID int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64, groupId int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
 	must(err)
 	return c
 }
 
-func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupID, claimed, committed)
+func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64, claimed, committed int64) {
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupId, claimed, committed)
 	must(err)
 }
 
-func head(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
+func head(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicID)).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicId)).Scan(&v))
 	return v
 }
 
-func allIds(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) []int64 {
-	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT id FROM message_log_%d ORDER BY id`, topicID))
+func allIds(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) []int64 {
+	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT id FROM message_log_%d ORDER BY id`, topicId))
 	must(err)
 	defer rows.Close()
 
@@ -256,31 +256,31 @@ func allIds(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID in
 	return out
 }
 
-func assertPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, label string, want []int64) {
-	assertInt64s(label, partitions(ctx, ds, topicID), want)
+func assertPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, label string, want []int64) {
+	assertInt64s(label, partitions(ctx, ds, topicId), want)
 }
 
 // waitForPartition blocks until partition n exists. Create-ahead runs in a
 // background goroutine off the produce that hits its trigger point id, so a
 // publish right behind that one races it: the goroutine reads MAX(id) and
 // builds the partition after whatever it sees.
-func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, n int64) {
+func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		for _, existing := range partitions(ctx, ds, topicID) {
+		for _, existing := range partitions(ctx, ds, topicId) {
 			if existing == n {
 				return
 			}
 		}
 		if time.Now().After(deadline) {
-			die(fmt.Sprintf("partition %d of topic %d never appeared", n, topicID))
+			die(fmt.Sprintf("partition %d of topic %d never appeared", n, topicId))
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-func partitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) []int64 {
-	prefix := fmt.Sprintf("message_log_%d_", topicID)
+func partitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) []int64 {
+	prefix := fmt.Sprintf("message_log_%d_", topicId)
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n
 		FROM pg_inherits i
@@ -288,7 +288,7 @@ func partitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicI
 		WHERE i.inhparent = $1::regclass
 			AND c.relname LIKE $2 || '%'
 		ORDER BY n;
-	`, fmt.Sprintf("message_log_%d", topicID), prefix)
+	`, fmt.Sprintf("message_log_%d", topicId), prefix)
 	must(err)
 	defer rows.Close()
 

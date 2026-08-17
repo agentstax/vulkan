@@ -20,32 +20,32 @@ const ddlLockTimeout = 2 * time.Second
 // lagging group hasn't committed past yet -- both CURSOR and LIFECYCLE groups
 // track that through cursor.committed. deliveryLogMode off skips the
 // delivery_log_<topic_id> half of each drop's orphan cleanup.
-func (d *JanitorDatastore) DropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *JanitorDatastore) DropExpiredPartitions(ctx context.Context, topicId int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.dropExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, deliveryLogMode)
+		return d.dropExpiredPartitions(ctx, topicId, partitionSize, ttl, allowDropPastCommitted, deliveryLogMode)
 	})
 }
 
-func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, deliveryLogMode topic.DeliveryLogMode) error {
 	if ttl <= 0 {
 		return nil // retention disabled - partitions kept forever
 	}
 
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, iTopic.MessageLogTable(topicID))
+	`, iTopic.MessageLogTable(topicId))
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
 		return err
 	}
 	activePartition := head / partitionSize
 
-	partitions, err := d.existingPartitions(ctx, topicID)
+	partitions, err := d.existingPartitions(ctx, topicId)
 	if err != nil {
 		return err
 	}
 
-	floor, err := d.cursorFloor(ctx, topicID)
+	floor, err := d.cursorFloor(ctx, topicId)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID in
 			continue // never touch the active partition, or anything at/after it
 		}
 
-		expired, err := d.partitionExpired(ctx, topicID, n, ttl)
+		expired, err := d.partitionExpired(ctx, topicId, n, ttl)
 		if err != nil {
 			return err
 		}
@@ -68,10 +68,10 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID in
 			continue // a lagging group hasn't resolved this range yet
 		}
 
-		if err := d.dropPartition(ctx, topicID, n, partitionSize, deliveryLogMode); err != nil {
+		if err := d.dropPartition(ctx, topicId, n, partitionSize, deliveryLogMode); err != nil {
 			return err
 		}
-		d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicID, "partition", n)
+		d.Logger.InfoContext(ctx, "partition dropped (retention expired)", "topic_id", topicId, "partition", n)
 	}
 
 	return nil
@@ -79,7 +79,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicID in
 
 // dropPartition removes the partition and its delivery/delivery_log rows in
 // one transaction.
-func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n int64, partitionSize int64, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n int64, partitionSize int64, deliveryLogMode topic.DeliveryLogMode) error {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n i
 		DELETE FROM %s
 		WHERE message_id >= $1
 			AND message_id < $2;
-	`, iTopic.DeliveryTable(topicID))
+	`, iTopic.DeliveryTable(topicId))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n i
 			DELETE FROM %s
 			WHERE message_id >= $1
 				AND message_id < $2;
-		`, iTopic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryLogTable(topicId))
 		if _, err := tx.Exec(ctx, orphanLogSql, low, high); err != nil {
 			return err
 		}
@@ -124,13 +124,13 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicID int64, n i
 			AND head_id >= $2
 			AND head_id < $3;
 	`
-	if _, err := tx.Exec(ctx, orphanKeySql, topicID, low, high); err != nil {
+	if _, err := tx.Exec(ctx, orphanKeySql, topicId, low, high); err != nil {
 		return err
 	}
 
 	dropSql := fmt.Sprintf(`
 		DROP TABLE IF EXISTS %s;
-	`, iTopic.MessageLogPartitionTable(topicID, n))
+	`, iTopic.MessageLogPartitionTable(topicId, n))
 
 	if _, err := tx.Exec(ctx, dropSql); err != nil {
 		return err

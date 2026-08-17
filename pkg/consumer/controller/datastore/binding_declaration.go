@@ -16,17 +16,17 @@ import (
 // DeclareBindings states the group's full binding set in one transaction and
 // reports the end state (see classifyDeclaration). patterns must arrive
 // sorted and deduplicated -- sets are compared element-wise.
-func (d *ConsumerDatastore) DeclareBindings(ctx context.Context, groupID int64, patterns []string, declaredBy string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
+func (d *ConsumerDatastore) DeclareBindings(ctx context.Context, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
 	var outcome binding.DeclarationOutcome
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		outcome, err = d.declareBindings(ctx, groupID, patterns, declaredBy, declaredAt)
+		outcome, err = d.declareBindings(ctx, groupId, patterns, declaredBy, declaredAt)
 		return err
 	})
 	return outcome, err
 }
 
-func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, patterns []string, declaredBy string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
+func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (binding.DeclarationOutcome, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -41,21 +41,21 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, 
 		WHERE id = $1
 		FOR UPDATE;
 	`
-	var lockedGroupID int64
-	if err := tx.QueryRow(ctx, lockSql, groupID).Scan(&lockedGroupID); err != nil {
+	var lockedGroupId int64
+	if err := tx.QueryRow(ctx, lockSql, groupId).Scan(&lockedGroupId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("consumer group %d is not registered", groupID)
+			return "", fmt.Errorf("consumer group %d is not registered", groupId)
 		}
 		return "", err
 	}
 
-	declarations, err := d.listBindingDeclarations(ctx, tx, groupID)
+	declarations, err := d.listBindingDeclarations(ctx, tx, groupId)
 	if err != nil {
 		return "", err
 	}
 	installed, found := newestInstalledDeclaration(declarations)
 
-	live, err := d.groupHasLiveInstance(ctx, tx, groupID)
+	live, err := d.groupHasLiveInstance(ctx, tx, groupId)
 	if err != nil {
 		return "", err
 	}
@@ -69,14 +69,14 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, 
 	case binding.DeclarationJoined:
 		// the stored set already matches -- nothing to write
 	case binding.DeclarationWaiting:
-		if err := d.appendDeclaration(ctx, tx, groupID, BindingDeclarationWaiting, patterns, declaredBy, declaredAt); err != nil {
+		if err := d.appendDeclaration(ctx, tx, groupId, BindingDeclarationWaiting, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
 	case binding.DeclarationInstalled:
-		if err := d.appendDeclaration(ctx, tx, groupID, BindingDeclarationInstalled, patterns, declaredBy, declaredAt); err != nil {
+		if err := d.appendDeclaration(ctx, tx, groupId, BindingDeclarationInstalled, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
-		if err := d.replaceBindings(ctx, tx, groupID, patterns); err != nil {
+		if err := d.replaceBindings(ctx, tx, groupId, patterns); err != nil {
 			return "", err
 		}
 	}
@@ -86,7 +86,7 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupID int64, 
 	}
 
 	if outcome == binding.DeclarationInstalled {
-		d.Logger.InfoContext(ctx, "binding set installed", "group_id", groupID, "patterns", patterns, "previous_patterns", storedPatterns, "declared_by", declaredBy)
+		d.Logger.InfoContext(ctx, "binding set installed", "group_id", groupId, "patterns", patterns, "previous_patterns", storedPatterns, "declared_by", declaredBy)
 	}
 	return outcome, nil
 }
@@ -108,7 +108,7 @@ func classifyDeclaration(found bool, storedPatterns []string, patterns []string,
 
 // groupHasLiveInstance: a fresh heartbeat is a live instance still declaring
 // the stored set.
-func (d *ConsumerDatastore) groupHasLiveInstance(ctx context.Context, tx pgx.Tx, groupID int64) (bool, error) {
+func (d *ConsumerDatastore) groupHasLiveInstance(ctx context.Context, tx pgx.Tx, groupId int64) (bool, error) {
 	sql := `
 		SELECT EXISTS (
 			SELECT 1
@@ -120,27 +120,27 @@ func (d *ConsumerDatastore) groupHasLiveInstance(ctx context.Context, tx pgx.Tx,
 	`
 
 	var live bool
-	err := tx.QueryRow(ctx, sql, groupID).Scan(&live)
+	err := tx.QueryRow(ctx, sql, groupId).Scan(&live)
 	return live, err
 }
 
 // appendDeclaration writes one attempt row; attempt_at is the insert's now().
-func (d *ConsumerDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, groupID int64, status BindingDeclarationStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
+func (d *ConsumerDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, groupId int64, status BindingDeclarationStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
 	sql := `
 		INSERT INTO binding_declaration (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
 	`
 
-	_, err := tx.Exec(ctx, sql, groupID, status, patterns, declaredBy, declaredAt)
+	_, err := tx.Exec(ctx, sql, groupId, status, patterns, declaredBy, declaredAt)
 	return err
 }
 
-func (d *ConsumerDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, groupID int64, patterns []string) error {
+func (d *ConsumerDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, groupId int64, patterns []string) error {
 	deleteSql := `
 		DELETE FROM binding
 		WHERE consumer_group_id = $1;
 	`
-	if _, err := tx.Exec(ctx, deleteSql, groupID); err != nil {
+	if _, err := tx.Exec(ctx, deleteSql, groupId); err != nil {
 		return err
 	}
 
@@ -153,7 +153,7 @@ func (d *ConsumerDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, grou
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, insertSql, groupID, expression, display); err != nil {
+		if _, err := tx.Exec(ctx, insertSql, groupId, expression, display); err != nil {
 			return err
 		}
 	}
@@ -172,7 +172,7 @@ func (d *ConsumerDatastore) ListBindingDeclarations(ctx context.Context) ([]Bind
 	return declarations, err
 }
 
-func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier datastore.Querier, groupID int64) ([]BindingDeclarationData, error) {
+func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier datastore.Querier, groupId int64) ([]BindingDeclarationData, error) {
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller
 	sql := `
@@ -195,7 +195,7 @@ func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier
 		ORDER BY binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by, binding_declaration.id DESC;
 	`
 
-	rows, err := querier.Query(ctx, sql, groupID)
+	rows, err := querier.Query(ctx, sql, groupId)
 	if err != nil {
 		return nil, err
 	}

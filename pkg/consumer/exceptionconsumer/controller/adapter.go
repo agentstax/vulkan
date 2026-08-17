@@ -10,7 +10,7 @@ import (
 func toClaimedException(data datastore.ExceptionData) ClaimedException {
 	return ClaimedException{
 		ConsumerGroupId: data.ConsumerGroupId,
-		TopicId:         data.TopicID,
+		TopicId:         data.TopicId,
 		MessageId:       data.MessageId,
 		Attempts:        data.Attempts,
 		LeaseToken:      uuid.UUID(data.LeaseToken.Bytes),
@@ -27,7 +27,7 @@ func toClaimedException(data datastore.ExceptionData) ClaimedException {
 func toExceptionData(exception *ClaimedException) *datastore.ExceptionData {
 	return &datastore.ExceptionData{
 		ConsumerGroupId: exception.ConsumerGroupId,
-		TopicID:         exception.TopicId,
+		TopicId:         exception.TopicId,
 		MessageId:       exception.MessageId,
 		Attempts:        exception.Attempts,
 		LeaseToken:      toTokenData(exception.LeaseToken),

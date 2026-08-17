@@ -10,13 +10,13 @@ import (
 
 // KillExceptions marks expired 'inflight' rows that are out of
 // attempts 'dead' so nothing else resolves them.
-func (d *ExceptionConsumerDatastore) KillExceptions(ctx context.Context, topicID int64, groupID int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerDatastore) KillExceptions(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.killExceptions(ctx, topicID, groupID, maxRetries, deliveryLogMode)
+		return d.killExceptions(ctx, topicId, groupId, maxRetries, deliveryLogMode)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID int64, groupID int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
 	var killSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		killSql = fmt.Sprintf(`
@@ -31,7 +31,7 @@ func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID
 				AND status = 'inflight'
 				AND lease_until < now()
 				AND attempts >= $2;
-		`, iTopic.DeliveryTable(topicID))
+		`, iTopic.DeliveryTable(topicId))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
 		// atomic in one statement.
@@ -53,14 +53,14 @@ func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicID
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT consumer_group_id, message_id, attempts, 'killed', last_error
 			FROM killed;
-		`, iTopic.DeliveryTable(topicID), iTopic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryTable(topicId), iTopic.DeliveryLogTable(topicId))
 	}
-	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupID, maxRetries)
+	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupId, maxRetries)
 	if err != nil {
 		return err
 	}
 	if killTag.RowsAffected() > 0 {
-		d.Logger.WarnContext(ctx, "crash-loop kill backstop fired, exception(s) marked dead", "group_id", groupID, "topic_id", topicID, "count", killTag.RowsAffected())
+		d.Logger.WarnContext(ctx, "crash-loop kill backstop fired, exception(s) marked dead", "group_id", groupId, "topic_id", topicId, "count", killTag.RowsAffected())
 	}
 	return nil
 }

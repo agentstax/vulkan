@@ -15,7 +15,7 @@ import (
 // head after the lease was won.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (d *KeyLeaseDatastore) ClaimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration) (*KeyLeaseData, error) {
+func (d *KeyLeaseDatastore) ClaimKeyLease(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration) (*KeyLeaseData, error) {
 	// generated once, outside the retry loop -- see the token match in claimSql
 	token, err := uuid.NewV7()
 	if err != nil {
@@ -25,13 +25,13 @@ func (d *KeyLeaseDatastore) ClaimKeyLease(ctx context.Context, topicID int64, gr
 	var claim *KeyLeaseData
 	err = d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claim, err = d.claimKeyLease(ctx, topicID, groupID, key, messageID, duration, pgtype.UUID{Bytes: token, Valid: true})
+		claim, err = d.claimKeyLease(ctx, topicId, groupId, key, messageId, duration, pgtype.UUID{Bytes: token, Valid: true})
 		return err
 	})
 	return claim, err
 }
 
-func (d *KeyLeaseDatastore) claimKeyLease(ctx context.Context, topicID int64, groupID int64, key string, messageID int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
+func (d *KeyLeaseDatastore) claimKeyLease(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
 	// the head check gates the insert -- a superseded message never creates
 	// or locks a lease row.
 	claimSql := `
@@ -78,10 +78,10 @@ func (d *KeyLeaseDatastore) claimKeyLease(ctx context.Context, topicID int64, gr
 
 	// one round trip
 	batch := &pgx.Batch{}
-	batch.Queue(claimSql, topicID, key, groupID, messageID, duration.Seconds(), token)
-	batch.Queue(recheckSql, topicID, key, groupID, messageID, token)
+	batch.Queue(claimSql, topicId, key, groupId, messageId, duration.Seconds(), token)
+	batch.Queue(recheckSql, topicId, key, groupId, messageId, token)
 
-	claim := KeyLeaseData{ConsumerGroupId: groupID, CompactionKey: key}
+	claim := KeyLeaseData{ConsumerGroupId: groupId, CompactionKey: key}
 	var isHead bool
 
 	// claimSql

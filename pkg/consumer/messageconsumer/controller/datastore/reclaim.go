@@ -17,7 +17,7 @@ import (
 // mid-range doesn't strand those offsets. past maxRangeReclaims the range is
 // POISON -- quarantine it into the sparse exception window instead of handing it
 // out again, so one bad message can't crash-loop the whole range forever.
-func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicID int64, groupID int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicId int64, groupId int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 		RETURNING *;
 	`
 
-	leaseRows, err := tx.Query(ctx, reclaimSql, groupID, leaseDuration.Seconds())
+	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -58,16 +58,16 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "lease reclaimed from expired worker", "group_id", groupID, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+	d.Logger.InfoContext(ctx, "lease reclaimed from expired worker", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	if lease.Reclaims >= maxRangeReclaims {
-		if err := d.quarantine(ctx, tx, topicID, groupID, lease, deliveryLogMode); err != nil {
+		if err := d.quarantine(ctx, tx, topicId, groupId, lease, deliveryLogMode); err != nil {
 			return nil, err
 		}
 		return nil, tx.Commit(ctx)
 	}
 
-	messages, err := d.readMessages(ctx, tx, topicID, groupID, lease.Low, lease.High)
+	messages, err := d.readMessages(ctx, tx, topicId, groupId, lease.Low, lease.High)
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +87,8 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 // exact same exception-window machinery as an ordinary consumed-message failure --
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
-func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicID int64, groupID int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
-	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group_id", groupID, "topic_id", topicID, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
+	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var parkSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
@@ -98,7 +98,7 @@ func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, to
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
-		`, iTopic.DeliveryTable(topicID), iTopic.MessageLogTable(topicID))
+		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
 	} else {
 		// parked CTE + INSERT keeps the range-wide park and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message parked, same first-recorded-attempt
@@ -114,9 +114,9 @@ func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, to
 			)
 			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM parked;
-		`, iTopic.DeliveryTable(topicID), iTopic.MessageLogTable(topicID), iTopic.DeliveryLogTable(topicID))
+		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId))
 	}
-	if _, err := tx.Exec(ctx, parkSql, groupID, lease.Low, lease.High); err != nil {
+	if _, err := tx.Exec(ctx, parkSql, groupId, lease.Low, lease.High); err != nil {
 		return err
 	}
 
@@ -125,20 +125,20 @@ func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, to
 		WHERE consumer_group_id = $1
 			AND token = $2;
 	`
-	_, err := tx.Exec(ctx, freeSql, groupID, lease.Token)
+	_, err := tx.Exec(ctx, freeSql, groupId, lease.Token)
 	return err
 }
 
 // ForceReclaimRange surrenders a range nobody ever started -- unlike
 // PartialCommit this expires the WHOLE lease immediately so the next
 // reclaim can pick it straight back up.
-func (d *MessageConsumerDatastore) ForceReclaimRange(ctx context.Context, groupID int64, token pgtype.UUID) error {
+func (d *MessageConsumerDatastore) ForceReclaimRange(ctx context.Context, groupId int64, token pgtype.UUID) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.forceReclaimRange(ctx, groupID, token)
+		return d.forceReclaimRange(ctx, groupId, token)
 	})
 }
 
-func (d *MessageConsumerDatastore) forceReclaimRange(ctx context.Context, groupID int64, token pgtype.UUID) error {
+func (d *MessageConsumerDatastore) forceReclaimRange(ctx context.Context, groupId int64, token pgtype.UUID) error {
 	// reclaims goes negative on purpose: the next reclaimWithCursor's
 	// unconditional +1 nets it back to 0 -- this must not count as a real reclaim.
 	sql := `
@@ -151,7 +151,7 @@ func (d *MessageConsumerDatastore) forceReclaimRange(ctx context.Context, groupI
 			AND token = $2;
 	`
 
-	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupID, token)
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupId, token)
 	if err != nil {
 		return err
 	}

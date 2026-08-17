@@ -14,23 +14,23 @@ import (
 // SweepExpiredPartitions drains the ttl-expired prefix of every surviving
 // partition -- covers the low-volume tail that never fills a partition wide
 // enough to earn a whole-partition drop.
-func (d *JanitorDatastore) SweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *JanitorDatastore) SweepExpiredPartitions(ctx context.Context, topicId int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.sweepExpiredPartitions(ctx, topicID, partitionSize, ttl, allowDropPastCommitted, batchSize, deliveryLogMode)
+		return d.sweepExpiredPartitions(ctx, topicId, partitionSize, ttl, allowDropPastCommitted, batchSize, deliveryLogMode)
 	})
 }
 
-func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicId int64, partitionSize int64, ttl time.Duration, allowDropPastCommitted bool, batchSize int, deliveryLogMode topic.DeliveryLogMode) error {
 	if ttl <= 0 {
 		return nil // retention disabled
 	}
 
-	partitions, err := d.existingPartitions(ctx, topicID)
+	partitions, err := d.existingPartitions(ctx, topicId)
 	if err != nil {
 		return err
 	}
 
-	floor, err := d.cursorFloor(ctx, topicID)
+	floor, err := d.cursorFloor(ctx, topicId)
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID i
 
 	for _, n := range partitions { // every partition, independently -- one backlog can't block the rest
 		for range maxBatches {
-			swept, err := d.sweepBatch(ctx, topicID, n, cutoff, floor, batchSize, deliveryLogMode)
+			swept, err := d.sweepBatch(ctx, topicId, n, cutoff, floor, batchSize, deliveryLogMode)
 			if err != nil {
 				return err
 			}
@@ -60,7 +60,7 @@ func (d *JanitorDatastore) sweepExpiredPartitions(ctx context.Context, topicID i
 
 // sweepBatch deletes up to batchSize expired rows from the front of partition n,
 // plus their orphaned delivery/delivery_log rows, in one transaction.
-func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int64, cutoff time.Time, floor *int64, batchSize int, deliveryLogMode topic.DeliveryLogMode) (int, error) {
+func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int64, cutoff time.Time, floor *int64, batchSize int, deliveryLogMode topic.DeliveryLogMode) (int, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, err
@@ -84,7 +84,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 			LIMIT $2
 		)
 		RETURNING id, compaction_key;
-	`, iTopic.MessageLogPartitionTable(topicID, n), iTopic.MessageLogPartitionTable(topicID, n))
+	`, iTopic.MessageLogPartitionTable(topicId, n), iTopic.MessageLogPartitionTable(topicId, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
 	if err != nil {
@@ -105,7 +105,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 		orphanSql := fmt.Sprintf(`
 			DELETE FROM %s
 			WHERE message_id = ANY($1);
-		`, iTopic.DeliveryTable(topicID))
+		`, iTopic.DeliveryTable(topicId))
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
 			return 0, err
 		}
@@ -114,7 +114,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 			orphanLogSql := fmt.Sprintf(`
 				DELETE FROM %s
 				WHERE message_id = ANY($1);
-			`, iTopic.DeliveryLogTable(topicID))
+			`, iTopic.DeliveryLogTable(topicId))
 			if _, err := tx.Exec(ctx, orphanLogSql, ids); err != nil {
 				return 0, err
 			}
@@ -131,7 +131,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 			WHERE topic_id = $1
 				AND head_id = ANY($2);
 		`
-		if _, err := tx.Exec(ctx, orphanKeySql, topicID, ids); err != nil {
+		if _, err := tx.Exec(ctx, orphanKeySql, topicId, ids); err != nil {
 			return 0, err
 		}
 	}
@@ -141,7 +141,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicID int64, n int6
 	}
 
 	if len(ids) > 0 {
-		d.Logger.DebugContext(ctx, "swept expired rows", "topic_id", topicID, "partition", n, "swept", len(ids), "batch_size", batchSize)
+		d.Logger.DebugContext(ctx, "swept expired rows", "topic_id", topicId, "partition", n, "swept", len(ids), "batch_size", batchSize)
 	}
 
 	return len(ids), nil

@@ -150,18 +150,18 @@ func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key str
 
 // keyId reads back one seeded row's real id -- aggregate is MIN or MAX,
 // picking between the two versions of a twice-published key.
-func keyId(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, compactionKey string, aggregate string) int64 {
+func keyId(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, compactionKey string, aggregate string) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT %s(id) FROM message_log_%d WHERE compaction_key = $1;
-	`, aggregate, topicID), compactionKey)
+	`, aggregate, topicId), compactionKey)
 }
 
-func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
+func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
 		WHERE i.inhparent = 'message_log_%d'::regclass;
-	`, topicID))
+	`, topicId))
 }
 
 // explainCompactionTouches EXPLAIN ANALYZEs just the compaction predicate
@@ -174,8 +174,8 @@ func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, t
 // "(never executed)" when the anti-join's early termination (or runtime
 // partition pruning) meant it was never actually opened. Only lines WITHOUT
 // that tag count as a real touch.
-func explainCompactionTouches(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, id int64, label string) (int, string) {
-	logTable := fmt.Sprintf("message_log_%d", topicID)
+func explainCompactionTouches(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, id int64, label string) (int, string) {
+	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) SELECT 1 FROM %s m
 		WHERE m.id = $1

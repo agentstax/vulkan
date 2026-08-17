@@ -119,7 +119,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
 
 	watcherDone := make(chan struct{})
@@ -134,7 +134,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 				samplesCh <- samples
 				return
 			case <-ticker.C:
-				samples = append(samples, sample{t: time.Now(), val: committedCol(ctx, ds, groupID, tp.Id)})
+				samples = append(samples, sample{t: time.Now(), val: committedCol(ctx, ds, groupId, tp.Id)})
 			}
 		}
 	}()
@@ -148,7 +148,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 			case <-rollerDone:
 				return
 			case <-ticker.C:
-				if _, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID); err != nil {
+				if _, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId); err != nil {
 					fmt.Printf("  (roller tick error, ignored: %v)\n", err)
 				}
 			}
@@ -157,13 +157,13 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 	var events []rangeEvent
 	for i := range numRanges {
-		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, int(batchSize), maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+		must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		events = append(events, rangeEvent{commitTime: time.Now(), high: claim.Lease.High})
 	}
 
@@ -198,21 +198,21 @@ func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
 
 	var stalenesses []float64
 	for i := range numRanges {
-		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, int(batchSize), maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, int(batchSize), maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if claim == nil {
 			break
 		}
 		time.Sleep(jitter(i))
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+		must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 
 		start := time.Now()
-		_, err = waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
+		_, err = waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId)
 		must(err)
 		stalenesses = append(stalenesses, msSince(start))
 	}
@@ -285,19 +285,19 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wpInstance, int(n))
 
 	start := time.Now()
 	for range int(n) {
-		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+		claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if claim == nil {
 			break
 		}
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+		must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		if syncAdvance {
-			_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
+			_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId)
 			must(err)
 		}
 	}
@@ -343,7 +343,7 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wpInstance, total)
 
 	start := time.Now()
@@ -351,14 +351,14 @@ func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 	for range goroutines {
 		wg.Go(func() {
 			for range perGoroutine {
-				claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+				claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 				must(err)
 				if claim == nil {
 					return
 				}
-				must(messageConsumers.Commit(ctx, tp.Id, groupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+				must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 				if syncAdvance {
-					_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupID)
+					_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId)
 					must(err)
 				}
 			}
@@ -379,9 +379,9 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 	}
 }
 
-func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, topicID int64) int64 {
+func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64, topicId int64) int64 {
 	var v int64
-	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupID).Scan(&v))
+	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupId).Scan(&v))
 	return v
 }
 

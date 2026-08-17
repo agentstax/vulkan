@@ -11,13 +11,13 @@ import (
 )
 
 // existingPartitions lists surviving message_log_<topic_id>_<n> partition numbers.
-func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicID int64) ([]int64, error) {
+func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64) ([]int64, error) {
 	sql := fmt.Sprintf(`
 		SELECT REPLACE(c.relname, '%s_', '')::bigint AS n
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
 		WHERE i.inhparent = '%s'::regclass;
-	`, topic.MessageLogTable(topicID), topic.MessageLogTable(topicID))
+	`, topic.MessageLogTable(topicId), topic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -42,7 +42,7 @@ func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicID int64
 // offset within this topic (nil if none exist yet). Scoped through the group
 // registry so a lagging group on another topic can't block this topic's
 // drops/sweeps.
-func (d *JanitorDatastore) cursorFloor(ctx context.Context, topicID int64) (*int64, error) {
+func (d *JanitorDatastore) cursorFloor(ctx context.Context, topicId int64) (*int64, error) {
 	sql := `
 		SELECT MIN(c.committed)
 		FROM cursor c
@@ -51,17 +51,17 @@ func (d *JanitorDatastore) cursorFloor(ctx context.Context, topicID int64) (*int
 	`
 
 	var floor *int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, topicID).Scan(&floor)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, topicId).Scan(&floor)
 	return floor, err
 }
 
 // partitionExpired reports whether a partition's newest row is past ttl.
-func (d *JanitorDatastore) partitionExpired(ctx context.Context, topicID int64, n int64, ttl time.Duration) (bool, error) {
+func (d *JanitorDatastore) partitionExpired(ctx context.Context, topicId int64, n int64, ttl time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
 		SELECT created_at FROM %s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
 		LIMIT 1;
-	`, topic.MessageLogPartitionTable(topicID, n))
+	`, topic.MessageLogPartitionTable(topicId, n))
 
 	var newest time.Time
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&newest)

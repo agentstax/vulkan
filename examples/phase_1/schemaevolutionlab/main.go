@@ -240,10 +240,10 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 // waitForDistinctCount polls v2's compaction_head until it holds want distinct
 // keys, then cancels stop -- a durable, DB-observed stop signal instead of a
 // timer, so the crash point is reproducible run to run.
-func waitForDistinctCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, want int64, timeout time.Duration, stop context.CancelFunc) error {
+func waitForDistinctCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, want int64, timeout time.Duration, stop context.CancelFunc) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if distinctKeyCount(ctx, ds, topicID) >= want {
+		if distinctKeyCount(ctx, ds, topicId) >= want {
 			stop()
 			return nil
 		}
@@ -267,19 +267,19 @@ func versionHealth(all []*admin.VersionHealth, version topic.SchemaVersion) *adm
 	return nil
 }
 
-func distinctKeyCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM compaction_head WHERE topic_id=$1;`, topicID)
+func distinctKeyCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, `SELECT count(*) FROM compaction_head WHERE topic_id=$1;`, topicId)
 }
 
-func rowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicID))
+func rowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
 }
 
-func winner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, key string) *V2Order {
+func winner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, key string) *V2Order {
 	var payload []byte
 	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(
-		`SELECT m.payload FROM compaction_head ch JOIN message_log_%d m ON m.id = ch.head_id WHERE ch.topic_id=$1 AND ch.compaction_key=$2;`, topicID),
-		topicID, key).Scan(&payload)
+		`SELECT m.payload FROM compaction_head ch JOIN message_log_%d m ON m.id = ch.head_id WHERE ch.topic_id=$1 AND ch.compaction_key=$2;`, topicId),
+		topicId, key).Scan(&payload)
 	must(err)
 	var v V2Order
 	must(json.Unmarshal(payload, &v))
@@ -314,8 +314,8 @@ func assertTrue(label string, cond bool) {
 	}
 	fmt.Printf("  ✓ %s\n", label)
 }
-func assertWinner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, key string, wantCents int64, wantCurrency string) {
-	got := winner(ctx, ds, topicID, key)
+func assertWinner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, key string, wantCents int64, wantCurrency string) {
+	got := winner(ctx, ds, topicId, key)
 	if got.Cents != wantCents || got.Currency != wantCurrency {
 		die(fmt.Sprintf("%s winner: got {%d %s}, want {%d %s}", key, got.Cents, got.Currency, wantCents, wantCurrency))
 	}

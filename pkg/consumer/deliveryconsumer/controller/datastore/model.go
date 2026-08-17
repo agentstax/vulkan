@@ -14,7 +14,7 @@ import (
 // recovery there; the exception window is what leases through them.
 type DeliveryData struct {
 	ConsumerGroupId int64                  `db:"consumer_group_id"`
-	TopicID         int64                  `db:"topic_id"`
+	TopicId         int64                  `db:"topic_id"`
 	MessageId       int64                  `db:"message_id"`
 	Payload         json.RawMessage        `db:"payload"`
 	Status          string                 `db:"status"`

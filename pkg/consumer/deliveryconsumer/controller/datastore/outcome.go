@@ -37,7 +37,7 @@ func (d *DeliveryConsumerDatastore) recordSuccess(ctx context.Context, delivery 
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts, 'success', ''
 			FROM updated;
-		`, iTopic.DeliveryTable(delivery.TopicID), iTopic.DeliveryLogTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			UPDATE %s
@@ -47,7 +47,7 @@ func (d *DeliveryConsumerDatastore) recordSuccess(ctx context.Context, delivery 
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, iTopic.DeliveryTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicId))
 	}
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroupId, delivery.MessageId)
@@ -84,7 +84,7 @@ func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttemp
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, iTopic.DeliveryTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			WITH updated AS (
@@ -100,7 +100,7 @@ func (d *DeliveryConsumerDatastore) recordFailure(ctx context.Context, maxAttemp
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.DeliveryTable(delivery.TopicID), iTopic.DeliveryLogTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 		args = append(args, delivery.Attempts)
 	}
 
@@ -129,7 +129,7 @@ func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, iTopic.DeliveryTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			WITH updated AS (
@@ -145,7 +145,7 @@ func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.DeliveryTable(delivery.TopicID), iTopic.DeliveryLogTable(delivery.TopicID))
+		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 		args = append(args, delivery.Attempts)
 	}
 
@@ -153,6 +153,6 @@ func (d *DeliveryConsumerDatastore) recordTerminal(ctx context.Context, delivery
 		return err
 	}
 
-	d.Logger.WarnContext(ctx, "message dead-lettered", "group_id", delivery.ConsumerGroupId, "topic_id", delivery.TopicID, "message_id", delivery.MessageId, "error", terminalErr)
+	d.Logger.WarnContext(ctx, "message dead-lettered", "group_id", delivery.ConsumerGroupId, "topic_id", delivery.TopicId, "message_id", delivery.MessageId, "error", terminalErr)
 	return nil
 }

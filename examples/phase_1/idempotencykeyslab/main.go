@@ -275,19 +275,19 @@ func configRoundTripScenario(ctx context.Context, ds *coredatastore.PostgresData
 
 // ---- helpers ----
 
-func assertMessageLogCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int) {
+func assertMessageLogCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d;`, topicID)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("message_log_%d has %d rows, want %d", topicID, count, want))
+		die(fmt.Sprintf("message_log_%d has %d rows, want %d", topicId, count, want))
 	}
 }
 
-func assertIdempotencyKeysCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int) {
+func assertIdempotencyKeysCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicID)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("idempotency_key_%d has %d rows, want %d", topicID, count, want))
+		die(fmt.Sprintf("idempotency_key_%d has %d rows, want %d", topicId, count, want))
 	}
 }
 

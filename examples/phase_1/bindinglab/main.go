@@ -39,7 +39,7 @@ var (
 	ds        *coredatastore.PostgresDatastore
 	mAdmin    *admin.MessageAdmin
 	topicName string
-	groupID   int64
+	groupId   int64
 )
 
 func main() {
@@ -70,7 +70,7 @@ func main() {
 	incumbent, err := incumbentConsumer.Register(ctx, groupName, topicName, topic.SchemaVersion(1), []string{"orders.*"})
 	must(err)
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`,
-		registered.Id, groupName).Scan(&groupID))
+		registered.Id, groupName).Scan(&groupId))
 	assertInt("one installed row", installedRows(ctx), 1)
 	assertString("binding rows", bindingDisplays(ctx), "orders.*")
 
@@ -187,7 +187,7 @@ func waitLiveInstance(ctx context.Context) {
 				FROM worker_instance
 				JOIN worker ON worker.id = worker_instance.worker_id
 				WHERE worker.consumer_group_id = $1 AND worker_instance.expires_at > now()
-			);`, groupID).Scan(&live))
+			);`, groupId).Scan(&live))
 		if live {
 			return
 		}
@@ -202,7 +202,7 @@ func installedRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM binding_declaration WHERE consumer_group_id = $1 AND status = 'installed';`,
-		groupID).Scan(&count))
+		groupId).Scan(&count))
 	return count
 }
 
@@ -210,7 +210,7 @@ func waitingRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM binding_declaration WHERE consumer_group_id = $1 AND status = 'waiting';`,
-		groupID).Scan(&count))
+		groupId).Scan(&count))
 	return count
 }
 
@@ -218,7 +218,7 @@ func bindingDisplays(ctx context.Context) string {
 	var displays string
 	must(ds.Pool.QueryRow(ctx,
 		`SELECT COALESCE(string_agg(display, ',' ORDER BY display), '') FROM binding WHERE consumer_group_id = $1;`,
-		groupID).Scan(&displays))
+		groupId).Scan(&displays))
 	return displays
 }
 

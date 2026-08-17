@@ -9,13 +9,13 @@ import (
 )
 
 // SweepExpiredIdempotencyKeys drains idempotency_key rows older than ttl for this topic.
-func (d *JanitorDatastore) SweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
+func (d *JanitorDatastore) SweepExpiredIdempotencyKeys(ctx context.Context, topicId int64, ttl time.Duration, batchSize int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.sweepExpiredIdempotencyKeys(ctx, topicID, ttl, batchSize)
+		return d.sweepExpiredIdempotencyKeys(ctx, topicId, ttl, batchSize)
 	})
 }
 
-func (d *JanitorDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topicID int64, ttl time.Duration, batchSize int) error {
+func (d *JanitorDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topicId int64, ttl time.Duration, batchSize int) error {
 	// defensive only, not a keep-forever switch like RetentionTTL:
 	// topic registration defaults an unset IdempotencyKeyTTL to 1h,
 	// and there's no supported way to opt idempotency_key rows out of
@@ -29,7 +29,7 @@ func (d *JanitorDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topi
 	// protect against any potential infinite loops
 	const maxIdempotencyKeySweepBatches = 1000
 	for range maxIdempotencyKeySweepBatches {
-		swept, err := d.sweepIdempotencyKeysBatch(ctx, topicID, cutoff, batchSize)
+		swept, err := d.sweepIdempotencyKeysBatch(ctx, topicId, cutoff, batchSize)
 		if err != nil {
 			return err
 		}
@@ -46,7 +46,7 @@ func (d *JanitorDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topi
 // is the cutoff column -- a caller-supplied key isn't guaranteed to be a
 // time-ordered UUIDv7 the way the auto-generated default is, so only the
 // server-assigned timestamp is trustworthy for this.
-func (d *JanitorDatastore) sweepIdempotencyKeysBatch(ctx context.Context, topicID int64, cutoff time.Time, batchSize int) (int, error) {
+func (d *JanitorDatastore) sweepIdempotencyKeysBatch(ctx context.Context, topicId int64, cutoff time.Time, batchSize int) (int, error) {
 	sql := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE idempotency_key IN (
@@ -54,7 +54,7 @@ func (d *JanitorDatastore) sweepIdempotencyKeysBatch(ctx context.Context, topicI
 			WHERE created_at < $1
 			LIMIT $2
 		);
-	`, topic.IdempotencyKeyTable(topicID), topic.IdempotencyKeyTable(topicID))
+	`, topic.IdempotencyKeyTable(topicId), topic.IdempotencyKeyTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {

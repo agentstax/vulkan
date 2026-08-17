@@ -21,7 +21,7 @@ type KeyLeaseData struct {
 // token guards its resolution: every write against the row matches on it.
 type ExceptionData struct {
 	ConsumerGroupId int64                  `db:"consumer_group_id"`
-	TopicID         int64                  `db:"topic_id"`
+	TopicId         int64                  `db:"topic_id"`
 	MessageId       int64                  `db:"message_id"`
 	Attempts        int                    `db:"attempts"`
 	LeaseToken      pgtype.UUID            `db:"lease_token"`

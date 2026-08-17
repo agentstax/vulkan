@@ -154,9 +154,9 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-func assertLatestExists(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, key string, want bool) {
+func assertLatestExists(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, key string, want bool) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id=$1 AND compaction_key=$2;`, topicID, key).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id=$1 AND compaction_key=$2;`, topicId, key).Scan(&count))
 	got := count > 0
 	if got != want {
 		die(fmt.Sprintf("compaction_head[%s] exists=%v, want %v", key, got, want))

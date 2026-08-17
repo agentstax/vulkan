@@ -35,11 +35,13 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       renamed `Retry` -> `DatastoreRetry` (and the constructor local to
       `datastoreRetry`), matching every sibling datastore; six Wrap call
       sites updated. No references existed outside the package.
-- [ ] **Id casing.** `TopicID` in exceptionconsumer and deliveryconsumer
-      datastore model.go (exceptionconsumer .../model.go:24,
-      deliveryconsumer .../model.go:17) vs the house `Id`; adapters
-      translate the casing today. Also topicID/groupID params in the
-      janitor and waterline datastores.
+- [x] **Id casing.** Resolved 2026-08-17, wider than surveyed: the sweep
+      found the same casing in the messageconsumer / consumer / base
+      datastores, pkg/metrics/routing.go, pkg/migrate, and ~40 labs.
+      Every TopicID/topicID/groupID/messageID renamed to Id casing
+      repo-wide ("fix every occurrence, not just the new one"); zero
+      identifiers ending in ID remain outside UUID. All four modules
+      build; pure rename, no SQL or log keys touched.
 - [ ] **Janitor model.go missing.** sweptRow is declared inside sweepBatch
       (pkg/worker/janitor/datastore/sweep.go:72-75) beside its query; move
       it to a model.go. (Waterline has no row structs — nothing to move.)

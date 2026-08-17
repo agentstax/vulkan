@@ -217,11 +217,11 @@ func destroySection(ctx context.Context, ds *coredatastore.PostgresDatastore, mA
 
 // assertChildren counts the group's cursor row -- it exists and dies
 // together with the registry row (want 1 or 0).
-func assertChildren(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64, want int, when string) {
+func assertChildren(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64, want int, when string) {
 	var cursors int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`, groupID).Scan(&cursors))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`, groupId).Scan(&cursors))
 	if cursors != want {
-		die(fmt.Sprintf("group %d has %d cursors %s, want %d", groupID, cursors, when, want))
+		die(fmt.Sprintf("group %d has %d cursors %s, want %d", groupId, cursors, when, want))
 	}
 }
 

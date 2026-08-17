@@ -62,7 +62,7 @@ const group = "phase9.shutdowntruncationlab"
 const lease = 2 * time.Second
 
 // set by main from RegisterGroup -- helpers are id-keyed
-var groupID int64
+var groupId int64
 
 func main() {
 	ctx := context.Background()
@@ -98,7 +98,7 @@ func main() {
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	seed(ctx, wpInstance, 3)
 
 	cfg := &messageconsumer.MessageConsumerConfig{
@@ -109,7 +109,7 @@ func main() {
 		QueueMargin:        500 * time.Millisecond,
 		AckMargin:          500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
 	}
-	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupID, group)
+	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupId, group)
 	must(err)
 	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
@@ -167,7 +167,7 @@ func main() {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupID, 10, 3, lease, tp.DeliveryLogMode)
+	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupId, 10, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
@@ -180,7 +180,7 @@ func main() {
 	// the narrowed lease's 2s duration already elapsed during the 5.5s backoff
 	// sleep above -- no separate wait needed before reclaiming it.
 	step("reclaim: only the untouched suffix comes back, not the resolved prefix")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 3, 3, lease, topic.DeliveryLogModeFailures)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 3, 3, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -190,7 +190,7 @@ func main() {
 	assert("reclaimed exactly the untouched suffix (1 message)", int64(len(claim2.Messages)), 1)
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed = advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
@@ -213,25 +213,25 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 	}
 }
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
 	must(err)
 	return c
 }
 
 type leaseBounds struct{ low, high int64 }
 
-func onlyLease(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) leaseBounds {
+func onlyLease(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) leaseBounds {
 	var lb leaseBounds
-	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM lease WHERE consumer_group_id=$1`, groupID).Scan(&lb.low, &lb.high))
+	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM lease WHERE consumer_group_id=$1`, groupId).Scan(&lb.low, &lb.high))
 	return lb
 }
 
-func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupID)
+func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupId)
 }
-func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
+func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
@@ -240,13 +240,13 @@ func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, 
 	return v
 }
 
-func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID, messageID int64, want string) {
+func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, messageId int64, want string) {
 	var got string
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group_id=$1 AND message_id=$2`, topicID), groupID, messageID).Scan(&got))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group_id=$1 AND message_id=$2`, topicId), groupId, messageId).Scan(&got))
 	if got != want {
-		die(fmt.Sprintf("message %d status: got %q, want %q", messageID, got, want))
+		die(fmt.Sprintf("message %d status: got %q, want %q", messageId, got, want))
 	}
-	fmt.Printf("  ✓ message %d status = %q\n", messageID, got)
+	fmt.Printf("  ✓ message %d status = %q\n", messageId, got)
 }
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }

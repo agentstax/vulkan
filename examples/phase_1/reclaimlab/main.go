@@ -42,7 +42,7 @@ const (
 )
 
 // set by main from RegisterGroup -- helpers are id-keyed
-var groupID int64
+var groupId int64
 
 func main() {
 	ctx := context.Background()
@@ -76,7 +76,7 @@ func main() {
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	groupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
 	for range seedRows {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
@@ -92,7 +92,7 @@ func main() {
 
 	// ===== WORKER 1: claim a range, tick the roller, then CRASH (never commit) =====
 	step("WORKER 1 claims a range, then crashes mid-range (never Commit)")
-	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -116,7 +116,7 @@ func main() {
 
 	// ===== WORKER 2: Reclaim-before-Claim grabs the EXACT expired range =====
 	step("WORKER 2 polls: Reclaim-before-Claim picks up the expired lease")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -137,7 +137,7 @@ func main() {
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
 	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
-	if err := messageConsumers.Commit(ctx, tp.Id, groupID, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, consumerbase.ErrLeaseLost) {
+	if err := messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, consumerbase.ErrLeaseLost) {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)
@@ -145,7 +145,7 @@ func main() {
 	fmt.Println("  dead worker's stale Commit was rejected with ErrLeaseLost")
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
-	must(messageConsumers.Commit(ctx, tp.Id, groupID, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 	committed = advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
@@ -157,12 +157,12 @@ func main() {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if c == nil {
 			break // caught up
 		}
-		must(messageConsumers.Commit(ctx, tp.Id, groupID, c.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
+		must(messageConsumers.Commit(ctx, tp.Id, groupId, c.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, waterlineDatastore, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
@@ -176,28 +176,28 @@ func main() {
 
 // ---- helpers ----
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicID int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicID, groupID)
+func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64) int64 {
+	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
 	must(err)
 	return c
 }
 
-func snapshot(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, label string) {
+func snapshot(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, label string) {
 	fmt.Printf("  [%s] committed=%d claimed=%d open_leases=%d deliveries=%d\n",
-		label, committedCol(ctx, ds, topicID), claimedCol(ctx, ds, topicID), leases(ctx, ds, topicID), deliveries(ctx, ds, topicID))
+		label, committedCol(ctx, ds, topicId), claimedCol(ctx, ds, topicId), leases(ctx, ds, topicId), deliveries(ctx, ds, topicId))
 }
 
-func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupID)
+func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupId)
 }
-func claimedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1`, groupID)
+func claimedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1`, groupId)
 }
-func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupID)
+func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupId)
 }
-func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
+func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 
 func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {

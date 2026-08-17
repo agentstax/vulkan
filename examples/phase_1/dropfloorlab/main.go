@@ -52,7 +52,7 @@ const (
 )
 
 // set by main from RegisterGroup -- helpers are id-keyed
-var groupID int64
+var groupId int64
 
 func main() {
 	ctx := context.Background()
@@ -152,36 +152,36 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-// createPartition pre-creates message_log_<topicID>_<n> so the lab's ids stay
+// createPartition pre-creates message_log_<topicId>_<n> so the lab's ids stay
 // dense -- production creates partitions on the produce path's self-heal,
 // which burns an id per boundary and would shift every id asserted below.
-func createPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, n int64) {
+func createPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS message_log_%d_%d
 			PARTITION OF message_log_%d
 			FOR VALUES FROM (%d) TO (%d);
-	`, topicID, n, topicID, n*partitionSize, (n+1)*partitionSize))
+	`, topicId, n, topicId, n*partitionSize, (n+1)*partitionSize))
 	must(err)
 }
 
-func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *coredatastore.PostgresDatastore, topicID int64, group string) {
-	groupID = mustGroupID(cd.RegisterGroup(ctx, topicID, group))
-	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupID)
+func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *coredatastore.PostgresDatastore, topicId int64, group string) {
+	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group))
+	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicID), groupID)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, groupID)
+	_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, groupId)
 	must(err)
 }
 
 func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, group string, claimed, committed int64) {
 	_ = group // groups are id-keyed; the name stays in the signature for the call sites' readability
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupID, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupId, claimed, committed)
 	must(err)
 }
 
-func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, topicID int64, group string, limit int) *messageconsumercontroller.ClaimedRange {
-	claim, err := cd.ClaimMessagesWithCursor(ctx, topicID, groupID, limit, 3, 30*time.Second, topic.DeliveryLogModeFailures)
+func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, topicId int64, group string, limit int) *messageconsumercontroller.ClaimedRange {
+	claim, err := cd.ClaimMessagesWithCursor(ctx, topicId, groupId, limit, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die(fmt.Sprintf("%s: expected a claim, got nil (already caught up?)", group))
@@ -189,8 +189,8 @@ func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsum
 	return claim
 }
 
-func partitionNumbers(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64) []int64 {
-	prefix := fmt.Sprintf("message_log_%d_", topicID)
+func partitionNumbers(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) []int64 {
+	prefix := fmt.Sprintf("message_log_%d_", topicId)
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n
 		FROM pg_inherits i
@@ -198,7 +198,7 @@ func partitionNumbers(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 		WHERE i.inhparent = $1::regclass
 			AND c.relname LIKE $2 || '%'
 		ORDER BY n;
-	`, fmt.Sprintf("message_log_%d", topicID), prefix)
+	`, fmt.Sprintf("message_log_%d", topicId), prefix)
 	must(err)
 	defer rows.Close()
 

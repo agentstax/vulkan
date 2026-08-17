@@ -67,8 +67,8 @@ func main() {
 
 	step("seed a row in every topic-scoped table")
 
-	groupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	_, err = cd.DeclareBindings(ctx, groupID, []string{"orders.*"}, time.Now())
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	_, err = cd.DeclareBindings(ctx, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -79,19 +79,19 @@ func main() {
 	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
 	must(err)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupID, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a claim, got nil")
 	}
 	// deliberately never Commit -- leaves the lease open
 
-	must(deliveryConsumers.FanOut(ctx, tp.Id, groupID, 100)) // materializes a 'ready' delivery row, left unclaimed
+	must(deliveryConsumers.FanOut(ctx, tp.Id, groupId, 100)) // materializes a 'ready' delivery row, left unclaimed
 
 	// claim it via the lifecycle path and fail it once -- status flips
 	// ready->inflight->ready in place (still 1 delivery row) while parking one
 	// delivery_log row, without touching cursor/lease (lifecycle path skips both).
-	claimedLifecycle, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, groupID, 10)
+	claimedLifecycle, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, groupId, 10)
 	must(err)
 	if len(claimedLifecycle) != 1 {
 		die(fmt.Sprintf("expected 1 lifecycle claim, got %d", len(claimedLifecycle)))
@@ -99,7 +99,7 @@ func main() {
 	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DeliveryLogMode))
 
 	for _, table := range []string{"cursor", "lease", "binding"} {
-		assertGroupRowCount(ctx, ds, table, groupID, 1, "before Destroy")
+		assertGroupRowCount(ctx, ds, table, groupId, 1, "before Destroy")
 	}
 	assertCompactionHeadCount(ctx, ds, tp.Id, 1, "before Destroy")
 	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), true)
@@ -113,10 +113,10 @@ func main() {
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
 	for _, table := range []string{"cursor", "lease", "binding"} {
-		assertGroupRowCount(ctx, ds, table, groupID, 0, "after Destroy")
+		assertGroupRowCount(ctx, ds, table, groupId, 0, "after Destroy")
 	}
 	assertCompactionHeadCount(ctx, ds, tp.Id, 0, "after Destroy")
-	assertGroupGone(ctx, ds, groupID)
+	assertGroupGone(ctx, ds, groupId)
 	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), false)
 	assertTableExists(ctx, ds, fmt.Sprintf("delivery_%d", tp.Id), false)
 	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), false)
@@ -132,66 +132,66 @@ func main() {
 
 // ---- helpers ----
 
-func assertGroupRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, groupID int64, want int, when string) {
+func assertGroupRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, groupId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE consumer_group_id = $1;`, table), groupID).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE consumer_group_id = $1;`, table), groupId).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("%s[group %d] has %d rows %s, want %d", table, groupID, count, when, want))
+		die(fmt.Sprintf("%s[group %d] has %d rows %s, want %d", table, groupId, count, when, want))
 	}
 	fmt.Printf("  ✓ %s has %d row(s) %s\n", table, count, when)
 }
 
-func assertCompactionHeadCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int, when string) {
+func assertCompactionHeadCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id = $1;`, topicID).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id = $1;`, topicId).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("compaction_head[topic %d] has %d rows %s, want %d", topicID, count, when, want))
+		die(fmt.Sprintf("compaction_head[topic %d] has %d rows %s, want %d", topicId, count, when, want))
 	}
 	fmt.Printf("  ✓ compaction_head has %d row(s) %s\n", count, when)
 }
 
 // the topic's groups are destroyed WITH it, via the topic_id FK cascade.
-func assertGroupGone(ctx context.Context, ds *coredatastore.PostgresDatastore, groupID int64) {
+func assertGroupGone(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64) {
 	var rows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`, groupID).Scan(&rows))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`, groupId).Scan(&rows))
 	if rows != 0 {
-		die(fmt.Sprintf("consumer_group %d survived its topic's Destroy", groupID))
+		die(fmt.Sprintf("consumer_group %d survived its topic's Destroy", groupId))
 	}
 	fmt.Printf("  ✓ the topic's group destroyed with it\n")
 }
 
-// assertDeliveryRowCount counts delivery_<topicID>'s rows directly -- unlike
+// assertDeliveryRowCount counts delivery_<topicId>'s rows directly -- unlike
 // scopedTables, this table has no topic_id column to filter by (it's implicit
 // in the table name), so it can't go through assertRowCount's generic form.
-func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int, when string) {
+func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicID)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("delivery_%d has %d rows %s, want %d", topicID, count, when, want))
+		die(fmt.Sprintf("delivery_%d has %d rows %s, want %d", topicId, count, when, want))
 	}
-	fmt.Printf("  ✓ delivery_%d has %d row(s) %s\n", topicID, count, when)
+	fmt.Printf("  ✓ delivery_%d has %d row(s) %s\n", topicId, count, when)
 }
 
-// assertDeliveryLogRowCount counts delivery_log_<topicID>'s rows directly --
+// assertDeliveryLogRowCount counts delivery_log_<topicId>'s rows directly --
 // same no-topic_id-column reason as assertDeliveryRowCount.
-func assertDeliveryLogRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int, when string) {
+func assertDeliveryLogRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d;`, topicID)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("delivery_log_%d has %d rows %s, want %d", topicID, count, when, want))
+		die(fmt.Sprintf("delivery_log_%d has %d rows %s, want %d", topicId, count, when, want))
 	}
-	fmt.Printf("  ✓ delivery_log_%d has %d row(s) %s\n", topicID, count, when)
+	fmt.Printf("  ✓ delivery_log_%d has %d row(s) %s\n", topicId, count, when)
 }
 
-// assertIdempotencyKeyRowCount counts idempotency_key_<topicID>'s rows
+// assertIdempotencyKeyRowCount counts idempotency_key_<topicId>'s rows
 // directly -- same no-topic_id-column reason as assertDeliveryRowCount.
-func assertIdempotencyKeyRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicID int64, want int, when string) {
+func assertIdempotencyKeyRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicID)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("idempotency_key_%d has %d rows %s, want %d", topicID, count, when, want))
+		die(fmt.Sprintf("idempotency_key_%d has %d rows %s, want %d", topicId, count, when, want))
 	}
-	fmt.Printf("  ✓ idempotency_key_%d has %d row(s) %s\n", topicID, count, when)
+	fmt.Printf("  ✓ idempotency_key_%d has %d row(s) %s\n", topicId, count, when)
 }
 
 func assertTableExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want bool) {

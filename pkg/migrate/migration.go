@@ -9,7 +9,7 @@ import (
 )
 
 // Migration is one schema step, shared by every scope -- a sparse struct, so a
-// step fills only the fields it needs. Its funcs take a topicID: the system
+// step fills only the fields it needs. Its funcs take a topicId: the system
 // scope ignores it (always 0), the topic scope uses it so the SQL can name
 // per-topic tables (message_log_<id> etc).
 //
@@ -22,10 +22,10 @@ import (
 //   - Down is a deliberate rollback, not crash recovery.
 type Migration struct {
 	Version      int64                                                               // version this step moves to (Up) / from (Down)
-	ValidateUp   func(ctx context.Context, q datastore.Querier, topicID int64) error // preconditions; nil = none
-	Up           func(ctx context.Context, q datastore.Querier, topicID int64) error // idempotent -- a retry may re-run it
-	ValidateDown func(ctx context.Context, q datastore.Querier, topicID int64) error
-	Down         func(ctx context.Context, q datastore.Querier, topicID int64) error
+	ValidateUp   func(ctx context.Context, q datastore.Querier, topicId int64) error // preconditions; nil = none
+	Up           func(ctx context.Context, q datastore.Querier, topicId int64) error // idempotent -- a retry may re-run it
+	ValidateDown func(ctx context.Context, q datastore.Querier, topicId int64) error
+	Down         func(ctx context.Context, q datastore.Querier, topicId int64) error
 	NoTxn        bool // e.g. CREATE INDEX CONCURRENTLY -- runs on the pool, not a tx
 }
 

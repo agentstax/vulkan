@@ -8,17 +8,17 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (d *DeliveryConsumerDatastore) ClaimMessagesWithLifecycle(ctx context.Context, topicID int64, groupID int64, limit int) ([]DeliveryData, error) {
+func (d *DeliveryConsumerDatastore) ClaimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]DeliveryData, error) {
 	var deliveries []DeliveryData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		deliveries, err = d.claimMessagesWithLifecycle(ctx, topicID, groupID, limit)
+		deliveries, err = d.claimMessagesWithLifecycle(ctx, topicId, groupId, limit)
 		return err
 	})
 	return deliveries, err
 }
 
-func (d *DeliveryConsumerDatastore) claimMessagesWithLifecycle(ctx context.Context, topicID int64, groupID int64, limit int) ([]DeliveryData, error) {
+func (d *DeliveryConsumerDatastore) claimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]DeliveryData, error) {
 	// Claim this group's own delivery rows and move them 'ready' -> 'processing' in
 	// one statement, per (group, topic, message). SKIP LOCKED keeps competing
 	// workers from grabbing the same row.
@@ -56,9 +56,9 @@ func (d *DeliveryConsumerDatastore) claimMessagesWithLifecycle(ctx context.Conte
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`, topic.DeliveryTable(topicID), topic.MessageLogTable(topicID))
+	`, topic.DeliveryTable(topicId), topic.MessageLogTable(topicId))
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql, groupID, limit, topicID)
+	rows, err := d.Datastore.Pool.Query(ctx, sql, groupId, limit, topicId)
 	if err != nil {
 		return nil, err
 	}
