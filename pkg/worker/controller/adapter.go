@@ -23,11 +23,10 @@ func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
 	}
 
 	return &worker.Worker{
-		Id:              data.Id,
-		Name:            data.Name,
-		Owner:           *owner,
-		Metadata:        data.Metadata,
-		TargetInstances: data.TargetInstances,
+		Id:       data.Id,
+		Name:     data.Name,
+		Owner:    *owner,
+		Metadata: data.Metadata,
 	}, nil
 }
 
@@ -35,20 +34,18 @@ func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
 // columns to resolve it from
 func toOwnedWorker(data *datastore.WorkerData, owner *common.Owner) *worker.Worker {
 	return &worker.Worker{
-		Id:              data.Id,
-		Name:            data.Name,
-		Owner:           *owner,
-		Metadata:        data.Metadata,
-		TargetInstances: data.TargetInstances,
+		Id:       data.Id,
+		Name:     data.Name,
+		Owner:    *owner,
+		Metadata: data.Metadata,
 	}
 }
 
 func toWorkerInstance(data *datastore.WorkerInstanceData) *worker.WorkerInstance {
 	return &worker.WorkerInstance{
-		Id:        data.Id,
-		WorkerId:  data.WorkerId,
-		Token:     uuid.UUID(data.Token.Bytes),
-		ExpiresAt: data.ExpiresAt,
-		Attempts:  data.Attempts,
+		Id:       data.Id,
+		WorkerId: data.WorkerId,
+		Token:    uuid.UUID(data.Token.Bytes),
+		Attempts: data.Attempts,
 	}
 }

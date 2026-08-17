@@ -67,11 +67,12 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       WorkerInstanceData.Token stays pgtype.UUID (table-exact scan target,
       same precedent as metrics' pgtype.Timestamptz). worker-claim-lab
       green.
-- [ ] **Worker vocabulary dead fields.** Worker.TargetInstances
-      (pkg/worker/worker.go:17) and WorkerInstance.ExpiresAt
-      (instance.go:14) are written by adapters and read nowhere;
-      WorkerData.SystemId is scanned but unread (datastore/model.go:12).
-      Delete or find the reader.
+- [x] **Worker vocabulary dead fields.** Resolved 2026-08-17:
+      Worker.TargetInstances and WorkerInstance.ExpiresAt deleted (writers
+      only, zero readers repo-wide; the metrics snapshot pipeline carries
+      its own TargetInstances end to end). WorkerData.SystemId KEPT: the
+      no-reader rule governs the vocabulary layer, while row structs are
+      bound by table-exact — consistent with the db-tags template call.
 - [ ] **Misnamed config file.** worker/controller/runner_config.go declares
       InstanceTickRunnerConfig — rename the file (sibling
       instance_runner_config.go has it right).
