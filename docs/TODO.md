@@ -170,11 +170,16 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       table. Threading the id down callers was rejected (leaks
       metricsTopicId into snapshot public signatures).
       abandoned-routine-snapshot-lab green.
-- [ ] **newestInstalled duplicated across the layer boundary.**
+- [x] **newestInstalled duplicated across the layer boundary.**
       consumer/controller/binding_declaration.go:80-123 re-implements the
       datastore's newestInstalledDeclaration
       (.../datastore/binding_declaration.go:249) over the same rows. One
       derivation.
+    - Resolved 2026-08-17. Datastore's copy exported as
+      NewestInstalledDeclaration (the datastore owns the rows and uses it
+      inside declareBindings' transaction); controller's newestInstalled
+      deleted, ListDeclarations calls the exported one. binding-lab
+      green.
 - [ ] **Cron datastore drift.** Hand-called json.Marshal in replace.go:113
       (rule: any goes straight to pgx); unsuspendCronJob re-derives
       next-scheduled-time inline (cronjob.go:122-142) beside the named

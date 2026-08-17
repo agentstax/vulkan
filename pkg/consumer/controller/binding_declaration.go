@@ -42,7 +42,7 @@ func (c *ConsumerController) ListDeclarations(ctx context.Context) ([]*binding.D
 
 	var declarations []*binding.Declaration
 	for _, rows := range groupByConsumerGroup(data) {
-		effective, found := newestInstalled(rows)
+		effective, found := datastore.NewestInstalledDeclaration(rows)
 		if !found {
 			continue
 		}
@@ -73,21 +73,6 @@ func groupByConsumerGroup(rows []datastore.BindingDeclarationData) map[int64][]d
 		groups[row.ConsumerGroupId] = append(groups[row.ConsumerGroupId], row)
 	}
 	return groups
-}
-
-// newestInstalled picks the group's highest-id installed row -- the effective
-// declaration.
-func newestInstalled(rows []datastore.BindingDeclarationData) (*datastore.BindingDeclarationData, bool) {
-	var newest *datastore.BindingDeclarationData
-	for i := range rows {
-		if rows[i].Status != datastore.BindingDeclarationInstalled {
-			continue
-		}
-		if newest == nil || rows[i].Id > newest.Id {
-			newest = &rows[i]
-		}
-	}
-	return newest, newest != nil
 }
 
 // openWaiters finds the waiting rows whose declarer is still blocked.

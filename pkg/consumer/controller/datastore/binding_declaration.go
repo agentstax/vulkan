@@ -53,7 +53,7 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupId int64, 
 	if err != nil {
 		return "", err
 	}
-	installed, found := newestInstalledDeclaration(declarations)
+	installed, found := NewestInstalledDeclaration(declarations)
 
 	live, err := d.groupHasLiveInstance(ctx, tx, groupId)
 	if err != nil {
@@ -244,9 +244,9 @@ func wildcardToRegex(pattern string) (string, error) {
 	return builder.String(), nil
 }
 
-// newestInstalledDeclaration picks the highest-id installed row -- the
+// NewestInstalledDeclaration picks the highest-id installed row -- the
 // effective set's declaration.
-func newestInstalledDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
+func NewestInstalledDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
 	var newest *BindingDeclarationData
 	for i := range declarations {
 		if declarations[i].Status != BindingDeclarationInstalled {
