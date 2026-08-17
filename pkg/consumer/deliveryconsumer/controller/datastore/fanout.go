@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -29,7 +29,7 @@ func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicId int64, g
 			c.pending_head
 		FROM cursor c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
@@ -160,7 +160,7 @@ func (d *DeliveryConsumerDatastore) fanOut(ctx context.Context, topicId int64, g
 			pending_xmax = GREATEST(cursor.pending_xmax, $5::xid8) -- also skips the initial NULL
 		FROM mark
 		WHERE cursor.consumer_group_id = $1;
-	`, topic.DeliveryTable(topicId), topic.MessageLogTable(topicId))
+	`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, topicId, limit, snapshotHead, snapshotXmax)
 	if err != nil {

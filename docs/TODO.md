@@ -48,11 +48,18 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       outside the package; the convention governs location, and
       RowToStructByName only needs exported fields). Waterline scans into
       scalars — no row structs, so no file created there.
-- [ ] **Dead db: tags + import-alias drift.**
-      compaction/controller/datastore/model.go:10-15 and
-      producer/controller/datastore/model.go:32-37 carry db: tags but all
-      scanning is positional — delete. internal/topic is imported bare in
-      compaction+metrics, aliased iTopic in topic/cron/alert — pick one.
+- [x] **db: tags + import-alias drift.** Resolved 2026-08-17: db: tags
+      KEPT — user rolled back the deletion; tags are part of the Data
+      struct template regardless of scan style, not a per-query contract.
+      internal/topic standardized on the iTopic alias everywhere: 13 bare
+      imports converted (metrics, producer, compaction, messageconsumer,
+      deliveryconsumer, waterline, janitor), matching the 16 files and all
+      template packages that already aliased.
+- [ ] **db: tags on every *Data struct — decide + sweep.** User leans
+      toward requiring db: tags on all datastore row models (the inverse
+      of the dead-tag finding). If adopted: write into CONVENTIONS.md and
+      sweep the untagged models (worker, cron, consumer group/binding,
+      base keylease, janitor sweptRow — audit as part of the sweep).
 - [ ] **pgtype.UUID in worker public signatures.** toTokenData
       (worker/controller/adapter.go:57) hands pgtype.UUID down; four
       datastore publics carry it (worker/controller/datastore/

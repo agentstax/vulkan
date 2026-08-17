@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -56,7 +56,7 @@ func (d *DeliveryConsumerDatastore) claimMessagesWithLifecycle(ctx context.Conte
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`, topic.DeliveryTable(topicId), topic.MessageLogTable(topicId))
+	`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, groupId, limit, topicId)
 	if err != nil {

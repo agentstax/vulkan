@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -142,7 +142,7 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				WHERE (compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
 			)
 			SELECT id FROM inserted;
-		`, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId))
+		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId))
 
 		args = append(args, data.CompactionKey, topicId, data.CompactionRank, data.Options) // $4, $5, $6, $7
 	} else {
@@ -162,7 +162,7 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				$4
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
-		`, topic.IdempotencyKeyTable(topicId), topic.MessageLogTable(topicId))
+		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId))
 
 		args = append(args, data.Options) // $4
 	}

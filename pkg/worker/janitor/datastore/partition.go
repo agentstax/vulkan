@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -17,7 +17,7 @@ func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
 		WHERE i.inhparent = '%s'::regclass;
-	`, topic.MessageLogTable(topicId), topic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -61,7 +61,7 @@ func (d *JanitorDatastore) partitionExpired(ctx context.Context, topicId int64, 
 		SELECT created_at FROM %s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
 		LIMIT 1;
-	`, topic.MessageLogPartitionTable(topicId, n))
+	`, iTopic.MessageLogPartitionTable(topicId, n))
 
 	var newest time.Time
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&newest)

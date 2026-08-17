@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -37,7 +37,7 @@ func isMissingPartition(err error) bool {
 func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
 		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, topic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId))
 
 	var head int64
 	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
@@ -50,7 +50,7 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
-	`, topic.MessageLogPartitionTable(topicId, next), topic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
+	`, iTopic.MessageLogPartitionTable(topicId, next), iTopic.MessageLogTable(topicId), next*partitionSize, (next+1)*partitionSize)
 
 	lockKey := advisoryLockKey(topicId, next)
 

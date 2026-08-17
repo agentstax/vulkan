@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -33,7 +33,7 @@ func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int
 		FROM compaction_head h
 		JOIN %s m ON m.id = h.head_id
 		WHERE h.topic_id = $1 AND h.compaction_key = $2;
-	`, topic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId))
 
 	var head MessageData
 	err := d.Datastore.Pool.QueryRow(ctx, sql, topicId, compactionKey).Scan(
@@ -78,7 +78,7 @@ func (d *CompactionDatastore) listCompactionHeads(ctx context.Context, topicId i
 		JOIN %s m ON m.id = h.head_id
 		WHERE h.topic_id = $1
 		ORDER BY h.compaction_key;
-	`, topic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
 	if err != nil {

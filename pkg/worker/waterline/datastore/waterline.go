@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 )
 
 // committed is the waterline: the mark below which every offset is resolved.
@@ -44,7 +44,7 @@ func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicId int64
 		)
 		FROM cursor
 		WHERE consumer_group_id = $1;
-	`, topic.DeliveryTable(topicId))
+	`, iTopic.DeliveryTable(topicId))
 
 	var target int64
 	if err := d.Datastore.Pool.QueryRow(ctx, targetSql, groupId).Scan(&target); err != nil {

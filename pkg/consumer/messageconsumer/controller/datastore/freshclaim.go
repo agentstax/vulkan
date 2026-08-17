@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/internal/topic"
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -34,7 +34,7 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 			c.pending_head
 		FROM cursor c
 		WHERE c.consumer_group_id = $1;
-	`, topic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
