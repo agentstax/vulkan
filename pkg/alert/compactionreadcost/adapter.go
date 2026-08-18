@@ -1,6 +1,6 @@
 package compactionreadcost
 
-func toCompactionReadCostMetadata(cfg *DefinitionConfig) *compactionReadCostMetadata {
+func toCompactionReadCostMetadata(cfg *CompactionReadCostConfig) *compactionReadCostMetadata {
 	return &compactionReadCostMetadata{
 		RepeatInterval: cfg.RepeatInterval,
 	}

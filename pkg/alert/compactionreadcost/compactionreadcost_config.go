@@ -9,7 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/retry"
 )
 
-type DefinitionConfig struct {
+type CompactionReadCostConfig struct {
 	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
 	Retry  *retry.Policy // transient-error retry policy for the definition's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
 
@@ -24,7 +24,7 @@ type DefinitionConfig struct {
 	RepeatInterval time.Duration
 }
 
-func (c *DefinitionConfig) WithDefaults() *DefinitionConfig {
+func (c *CompactionReadCostConfig) WithDefaults() *CompactionReadCostConfig {
 	if c.Logger == nil {
 		c.Logger = logger.NewDefaultLogger(os.Stdout)
 	}
@@ -40,7 +40,7 @@ func (c *DefinitionConfig) WithDefaults() *DefinitionConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *DefinitionConfig) Validate() error {
+func (c *CompactionReadCostConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}

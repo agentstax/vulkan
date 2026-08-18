@@ -20,7 +20,7 @@ import (
 // PartitionCountDefinition is the alert's worker kind: one row owning the
 // alert's consumer group on the job_requests topic.
 type PartitionCountDefinition struct {
-	Config *DefinitionConfig
+	Config *PartitionCountConfig
 	Logger logger.Logger
 
 	ds                  *coredatastore.PostgresDatastore
@@ -36,12 +36,12 @@ type PartitionCountDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *DefinitionConfig) (*PartitionCountDefinition, error) {
+func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *PartitionCountConfig) (*PartitionCountDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &DefinitionConfig{}
+		cfg = &PartitionCountConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {

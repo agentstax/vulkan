@@ -213,7 +213,7 @@ func classifySection(ctx context.Context) {
 	heads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, nil)
 	must(err)
 	capture := newCaptureLogger()
-	alerts, err := alertcontroller.NewAlertController(ctx, instance, heads, classifyRepeat, capture)
+	alerts, err := alertcontroller.NewAlertController(ctx, instance, heads, classifyRepeat, &alertcontroller.ControllerConfig{Logger: capture})
 	must(err)
 
 	key, err := alert.CompactionKey(labCheckName, labTopicOwner)
@@ -221,7 +221,7 @@ func classifySection(ctx context.Context) {
 	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.StatusActive, alert.SeverityWarn, "labcheck condition holds", nil)
 	must(err)
 
-	record := func(found *alert.Alert, want alertcontroller.RecordOutcome, arm string) {
+	record := func(found *alert.Alert, want alert.RecordOutcome, arm string) {
 		outcome, err := alerts.Record(ctx, labCheckName, labTopicOwner, found)
 		must(err)
 		if outcome != want {
@@ -230,7 +230,7 @@ func classifySection(ctx context.Context) {
 	}
 
 	// active edge: first publish moves the head and WARNs once
-	record(found, alertcontroller.RecordOutcomeActive, "active edge")
+	record(found, alert.RecordOutcomeActive, "active edge")
 	if got := alertMessageCount(ctx, key); got != 1 {
 		die(fmt.Sprintf("active edge: want 1 published message, got %d", got))
 	}
@@ -243,7 +243,7 @@ func classifySection(ctx context.Context) {
 	fmt.Println("  ✓ active edge published the head and WARNed once")
 
 	// unchanged condition inside the repeat interval: nothing publishes
-	record(found, alertcontroller.RecordOutcomeNothing, "quiet hold")
+	record(found, alert.RecordOutcomeNothing, "quiet hold")
 	if got := alertMessageCount(ctx, key); got != 1 {
 		die(fmt.Sprintf("quiet hold: want no republish inside the repeat interval, got %d messages", got))
 	}
@@ -254,7 +254,7 @@ func classifySection(ctx context.Context) {
 	// live alert
 	firstHead := headId(ctx, key)
 	time.Sleep(classifyRepeat + 500*time.Millisecond)
-	record(found, alertcontroller.RecordOutcomeActive, "repeat")
+	record(found, alert.RecordOutcomeActive, "repeat")
 	if got := alertMessageCount(ctx, key); got != 2 {
 		die(fmt.Sprintf("repeat: want a republish past the interval, got %d messages", got))
 	}
@@ -271,7 +271,7 @@ func classifySection(ctx context.Context) {
 	exec(ctx, fmt.Sprintf(
 		`UPDATE message_log_%d SET payload = jsonb_set(payload, '{Severity}', '"lab-critical"') WHERE id = $1;`,
 		alertsTopic.Id), headId(ctx, key))
-	record(found, alertcontroller.RecordOutcomeActive, "severity change")
+	record(found, alert.RecordOutcomeActive, "severity change")
 	if got := alertMessageCount(ctx, key); got != 3 {
 		die(fmt.Sprintf("severity change: want an immediate republish, got %d messages", got))
 	}
@@ -281,7 +281,7 @@ func classifySection(ctx context.Context) {
 	fmt.Println("  ✓ severity change republished immediately and silently")
 
 	// resolve edge: a nil finding resolves the head with one INFO
-	record(nil, alertcontroller.RecordOutcomeResolved, "resolve edge")
+	record(nil, alert.RecordOutcomeResolved, "resolve edge")
 	if got := alertMessageCount(ctx, key); got != 4 {
 		die(fmt.Sprintf("resolve edge: want a resolve publish, got %d messages", got))
 	}
@@ -293,7 +293,7 @@ func classifySection(ctx context.Context) {
 	}
 
 	// resolved head + nil finding: nothing
-	record(nil, alertcontroller.RecordOutcomeNothing, "resolved + nothing found")
+	record(nil, alert.RecordOutcomeNothing, "resolved + nothing found")
 	if got := alertMessageCount(ctx, key); got != 4 {
 		die(fmt.Sprintf("resolved + nothing found must publish nothing, got %d messages", got))
 	}
@@ -470,7 +470,7 @@ func isolationSection(ctx context.Context) {
 // startExecutor claims the partition_count worker row and runs its execution
 // until the returned stop is called.
 func startExecutor(ctx context.Context) func() {
-	definition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
+	definition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.PartitionCountConfig{
 		Logger: executorCapture,
 	})
 	must(err)

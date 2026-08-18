@@ -19,6 +19,15 @@ type Severity string
 
 const SeverityWarn Severity = "warn"
 
+// RecordOutcome is what one AlertController.Record call published.
+type RecordOutcome string
+
+const (
+	RecordOutcomeActive   RecordOutcome = "active"   // published a new active alert
+	RecordOutcomeResolved RecordOutcome = "resolved" // published the head resolved
+	RecordOutcomeNothing  RecordOutcome = "nothing"  // classify chose not to publish
+)
+
 // Alert is what one run found for one owner, published to the
 // __system.alerts topic as an ordinary message.
 type Alert struct {

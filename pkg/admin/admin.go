@@ -156,14 +156,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 
 	// declarers here, never run -- RegisterSystem creates the alerts' consumer
 	// groups and worker rows, the system manager claims them
-	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
+	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.PartitionCountConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.DefinitionConfig{
+	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.CompactionReadCostConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

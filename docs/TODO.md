@@ -307,19 +307,28 @@ One chunk = one review; work top to bottom within a section, reorder freely.
         before schemas are trustworthy (it owns the 42P01 handling).
       - Checkpoint: invariant-lab + schema-gate-lab, CLI migrate
         status/up/down paths, fresh-DB suite.
-- [ ] **alert/controller conformance.** The one controller shaped like no
-      sibling: add controller_config.go; NewAlertController(ctx, alerts,
-      heads, repeat, log) (controller.go:28) → (deps, cfg) with the
-      nil-default logger (:38-40) and retention clamp (:44-50) moved into
-      WithDefaults/Validate; RecordOutcome + consts (record.go:14-20) move
-      to the pkg/alert vocabulary beside Status/Severity; classify names
-      its param *producer.MessageRow through a two-alias chain
-      (classify.go:12) — say common.MessageRow. Kind nits ride along: the
-      definitions store Config as a pointer on the long-lived struct
-      (partitioncount/definition.go:23,109; same in compactionreadcost) —
-      value copy; the alert-name consts live in the kind controllers
-      (controller.go:11) and get imported back up by job.go — consider the
-      kind root.
+- [x] **alert/controller conformance.** Done 2026-08-17: controller_config.go
+      added (ControllerConfig{Logger} with WithDefaults/Validate);
+      NewAlertController(ctx, alerts, heads, repeat, cfg) — the nil-default
+      logger moved into WithDefaults; the retention clamp stays in the
+      constructor body (user-settled: it crosses the required repeat param
+      with alerts.Topic.RetentionTTL and warns, so neither WithDefaults nor
+      Validate can see both sides; ctx stays solely for the clamp's
+      WarnContext). RecordOutcome + consts moved to pkg/alert beside
+      Status/Severity (ripples: both kind executions, alertlab). classify /
+      statusChanged say common.MessageRow directly. DefinitionConfig renamed
+      to the kind-named PartitionCountConfig / CompactionReadCostConfig in
+      partitioncount_config.go / compactionreadcost_config.go (janitor
+      template: JanitorConfig in janitor_config.go); Config stays a
+      *<Kind>Config pointer field like every sibling (a value-copy attempt
+      was rolled back — the codebase-wide pattern is the pointer, though
+      CONVENTIONS' "long-lived instance stores a value copy" line reads
+      otherwise; flagged, not resolved). Alert-name consts stay in the kind
+      controllers
+      (user-settled: moving them to the kind root cycles — the controller's
+      own alert builder is the deepest user, and the kind root already
+      imports its controller; don't re-suggest). Verified: build+vet, alert
+      lab green.
 - [ ] **compaction vocabulary layer.** The only two-layer domain: no
       pkg/compaction package exists; the read-model is common.MessageRow.
       Decide deliberate exception (write it down) vs add the layer.

@@ -1,6 +1,6 @@
 package partitioncount
 
-func toPartitionCountMetadata(cfg *DefinitionConfig) *partitionCountMetadata {
+func toPartitionCountMetadata(cfg *PartitionCountConfig) *partitionCountMetadata {
 	return &partitionCountMetadata{
 		RepeatInterval: cfg.RepeatInterval,
 	}

@@ -67,7 +67,7 @@ func (e *PartitionCountExecution) consume(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	alerts, err := alertcontroller.NewAlertController(ctx, registered, e.definition.alertHeads, e.repeatInterval, e.Logger)
+	alerts, err := alertcontroller.NewAlertController(ctx, registered, e.definition.alertHeads, e.repeatInterval, &alertcontroller.ControllerConfig{Logger: e.Logger})
 	if err != nil {
 		return err
 	}
@@ -123,9 +123,9 @@ func (e *PartitionCountExecution) evaluateTopics(ctx context.Context, request *c
 			continue
 		}
 		switch outcome {
-		case alertcontroller.RecordOutcomeActive:
+		case alert.RecordOutcomeActive:
 			published++
-		case alertcontroller.RecordOutcomeResolved:
+		case alert.RecordOutcomeResolved:
 			resolved++
 		}
 	}

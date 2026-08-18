@@ -20,7 +20,7 @@ import (
 // CompactionReadCostDefinition is the alert's worker kind: one row owning the
 // alert's consumer group on the job_requests topic.
 type CompactionReadCostDefinition struct {
-	Config *DefinitionConfig
+	Config *CompactionReadCostConfig
 	Logger logger.Logger
 
 	ds                  *coredatastore.PostgresDatastore
@@ -36,12 +36,12 @@ type CompactionReadCostDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCompactionReadCostDefinition(ds *coredatastore.PostgresDatastore, cfg *DefinitionConfig) (*CompactionReadCostDefinition, error) {
+func NewCompactionReadCostDefinition(ds *coredatastore.PostgresDatastore, cfg *CompactionReadCostConfig) (*CompactionReadCostDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &DefinitionConfig{}
+		cfg = &CompactionReadCostConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {

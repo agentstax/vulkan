@@ -78,14 +78,14 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.DefinitionConfig{
+	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.PartitionCountConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.DefinitionConfig{
+	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.CompactionReadCostConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
