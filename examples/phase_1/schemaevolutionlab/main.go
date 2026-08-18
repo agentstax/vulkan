@@ -45,7 +45,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumermessage "github.com/agentstax/vulkan/pkg/consumer/message"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -77,7 +77,7 @@ type V2Order struct {
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -219,7 +219,7 @@ func bridgeIdempotencyKey(sourceID int64) uuid.UUID {
 // (ascending v1 id), so this lab's stop points are reproducible. Short
 // margins and a short ExceptionInitialBackoff keep the crash/retry path fast
 // instead of waiting out the library's production-sized defaults.
-func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore, name string) *consumer.ConsumerInstance[V1Order] {
+func newBridgeConsumer(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) *consumer.ConsumerInstance[V1Order] {
 	c, err := consumer.NewConsumer[V1Order](ds, &consumer.ConsumerConfig{
 		BatchLimit:              1,
 		QueueSize:               4,
@@ -240,7 +240,7 @@ func newBridgeConsumer(ctx context.Context, ds *coredatastore.PostgresDatastore,
 // waitForDistinctCount polls v2's compaction_head until it holds want distinct
 // keys, then cancels stop -- a durable, DB-observed stop signal instead of a
 // timer, so the crash point is reproducible run to run.
-func waitForDistinctCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, want int64, timeout time.Duration, stop context.CancelFunc) error {
+func waitForDistinctCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, want int64, timeout time.Duration, stop context.CancelFunc) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if distinctKeyCount(ctx, ds, topicId) >= want {
@@ -267,15 +267,15 @@ func versionHealth(all []*admin.VersionHealth, version topic.SchemaVersion) *adm
 	return nil
 }
 
-func distinctKeyCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func distinctKeyCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, `SELECT count(*) FROM compaction_head WHERE topic_id=$1;`, topicId)
 }
 
-func rowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
 }
 
-func winner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, key string) *V2Order {
+func winner(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string) *V2Order {
 	var payload []byte
 	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(
 		`SELECT m.payload FROM compaction_head ch JOIN message_log_%d m ON m.id = ch.head_id WHERE ch.topic_id=$1 AND ch.compaction_key=$2;`, topicId),
@@ -286,7 +286,7 @@ func winner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId in
 	return &v
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v
@@ -314,7 +314,7 @@ func assertTrue(label string, cond bool) {
 	}
 	fmt.Printf("  ✓ %s\n", label)
 }
-func assertWinner(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, key string, wantCents int64, wantCurrency string) {
+func assertWinner(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string, wantCents int64, wantCurrency string) {
 	got := winner(ctx, ds, topicId, key)
 	if got.Cents != wantCents || got.Currency != wantCurrency {
 		die(fmt.Sprintf("%s winner: got {%d %s}, want {%d %s}", key, got.Cents, got.Currency, wantCents, wantCurrency))

@@ -28,7 +28,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -40,7 +40,7 @@ const largePartitionSize = int64(1000000) // never rolls -- partition churn isn'
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 		MaxConns: 60, // headroom above the hot-key scenario's 50 concurrent goroutines
@@ -58,7 +58,7 @@ func main() {
 // fixedCostScenario: N sequential, single-threaded publishes per case --
 // zero contention, so the only thing the timing difference can reflect is
 // the extra statement itself (and INSERT vs. UPDATE within it).
-func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("fixed cost: sequential publishes, no contention -- unkeyed vs. fresh-key INSERT vs. same-key UPDATE")
 
 	const n = 500
@@ -90,7 +90,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 // hotKeyContentionScenario: the design's own flagged-but-unmeasured tradeoff
 // -- concurrent publishes to the SAME key now serialize on that key's
 // compaction_head row, where plain message_log appends never contended before.
-func hotKeyContentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("hot-key contention: G concurrent publishers, each to its OWN key vs. all G to ONE key")
 
 	const goroutines = 50
@@ -148,7 +148,7 @@ func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[c
 // timeConcurrent registers its own topic, fires goroutines*perGoroutine
 // publishes across `goroutines` concurrent workers, and returns total
 // elapsed time plus the topic name (caller destroys it once done reading it).
-func timeConcurrent(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
+func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, goroutines, perGoroutine int, keyFn func(g, i int) string) (float64, string) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
@@ -185,7 +185,7 @@ type tableStats struct {
 	tupUpd  int64
 }
 
-func dumpTableStats(ctx context.Context, ds *coredatastore.PostgresDatastore, table string) tableStats {
+func dumpTableStats(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) tableStats {
 	var s tableStats
 	sql := `
 		SELECT n_live_tup, n_dead_tup, n_tup_upd

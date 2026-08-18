@@ -27,13 +27,13 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermessage "github.com/agentstax/vulkan/pkg/consumer/message"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -47,7 +47,7 @@ func main() {
 	ctx := context.Background()
 	run := time.Now().UnixNano()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -87,7 +87,7 @@ func main() {
 		BatchLimit:         2,
 		QueueSize:          10,
 		MessageConcurrency: 2,
-		Message:            &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
+		Message:            &iCommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace:       100 * time.Millisecond,
 		QueueMargin:        200 * time.Millisecond,
 		AckMargin:          200 * time.Millisecond,
@@ -100,7 +100,7 @@ func main() {
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
 	must(err)
-	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
+	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
 	must(err)
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
@@ -198,11 +198,11 @@ func (g *releaseGates) release(id int64)              { close(g.gate(id)) }
 
 // ---- helpers ----
 
-func topicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) (*vulkanmetrics.TopicSnapshot, error) {
+func topicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) (*iMetrics.TopicSnapshot, error) {
 	return mAdmin.TopicMetrics(ctx, name, topic.SchemaVersion(1))
 }
 
-func mustTopicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) *vulkanmetrics.TopicSnapshot {
+func mustTopicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) *iMetrics.TopicSnapshot {
 	snap, err := topicMetrics(ctx, mAdmin, name)
 	must(err)
 	if len(snap.Groups) == 0 {

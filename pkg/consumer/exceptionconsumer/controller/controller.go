@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller/datastore"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type ExceptionConsumerController struct {
@@ -16,7 +16,7 @@ type ExceptionConsumerController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExceptionConsumerController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*ExceptionConsumerController, error) {
+func NewExceptionConsumerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ExceptionConsumerController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

@@ -32,7 +32,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -48,7 +48,7 @@ var checkpoints = []int64{10, 50, 200, 500, 1000}
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -64,7 +64,7 @@ func main() {
 // concurrentRaceScenario: N goroutines publish to the SAME key at once --
 // compaction_head must land on the true max id, not whichever transaction
 // happened to commit last in wall-clock time.
-func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("concurrent same-key publishes converge to the true max id")
 
 	const n = 50
@@ -104,7 +104,7 @@ func concurrentRaceScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // scaleCurveScenario: identical seeding shape to compactionscalelab, but
 // EXPLAINs the NEW lookup instead of the old scan at each checkpoint.
-func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("O(1) rerun: the same never-superseded row, re-measured against compaction_head as history grows")
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -153,7 +153,7 @@ func scaleCurveScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 // insertStaleRow bypasses the write path (like compactionscalelab's bulk
 // seeding, this cares about query cost at scale, not seeding realism) so
 // its own compaction_head row is set directly alongside it.
-func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) {
+func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicId))
 	must(err)
 	_, err = ds.Pool.Exec(ctx, `INSERT INTO compaction_head (topic_id, compaction_key, head_id) VALUES ($1, 'stale', 1);`, topicId)
@@ -163,7 +163,7 @@ func insertStaleRow(ctx context.Context, ds *coredatastore.PostgresDatastore, to
 // createPartitions issues every CREATE TABLE ... PARTITION OF statement for
 // [from, to) as ONE multi-statement Exec -- a network round trip per
 // partition would dominate the lab's own runtime at these checkpoint sizes.
-func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, from, to int64) {
+func createPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, from, to int64) {
 	if to <= from {
 		return
 	}
@@ -181,7 +181,7 @@ func createPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // unkeyed traffic never touches compaction_head, so it's free filler for
 // growing the topic's row count/tail position without affecting what's
 // being measured.
-func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, count int64) {
+func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, count int64) {
 	if count <= 0 {
 		return
 	}
@@ -196,7 +196,7 @@ func bulkInsertFiller(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // explainCompactionHeadLookup EXPLAIN ANALYZEs the production predicate --
 // counting only message_log partitions the Append node ACTUALLY EXECUTED
 // against (mentions alone don't mean touched, see compactionwidthlab).
-func explainCompactionHeadLookup(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) (int, float64) {
+func explainCompactionHeadLookup(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) (int, float64) {
 	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m

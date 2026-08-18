@@ -12,9 +12,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -37,12 +37,12 @@ func main() {
 	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
 	// SETUP
-	ctx, stop := vulkancommon.LifecycleContext(nil)
+	ctx, stop := iCommon.LifecycleContext(nil)
 	defer stop()
 
 	const concurrencyLimit = 5
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User:     "example_user",
 		Pass:     "example_password",
 		Host:     "localhost",
@@ -80,7 +80,7 @@ func main() {
 		BatchLimit:         10,
 		QueueSize:          concurrencyLimit * 10,
 		MessageConcurrency: concurrencyLimit,
-		Message:            &vulkancommon.MessageOptions{Timeout: 5 * time.Second, Retry: &vulkancommon.RetryPolicy{MaxRetries: 3}},
+		Message:            &iCommon.MessageOptions{Timeout: 5 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 3}},
 		ClaimPollRate:      1 * time.Second,
 		QueueMargin:        2 * time.Second,
 		AckMargin:          1 * time.Second,

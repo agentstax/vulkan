@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -21,7 +21,7 @@ type MetricsProducer struct {
 
 // cfg may be nil or a sparse struct -- the underlying producer defaults and
 // validates it.
-func NewMetricsProducer(ds *coredatastore.PostgresDatastore, cfg *producer.ProducerConfig) (*MetricsProducer, error) {
+func NewMetricsProducer(ds *iDatastore.PostgresDatastore, cfg *producer.ProducerConfig) (*MetricsProducer, error) {
 	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, cfg)
 	if err != nil {
 		return nil, err

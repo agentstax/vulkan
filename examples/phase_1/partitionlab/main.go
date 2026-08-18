@@ -25,7 +25,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -37,7 +37,7 @@ const partitionSize = int64(5)
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -98,7 +98,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
+func waitForPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, n int64) {
 	table := fmt.Sprintf("message_log_%d_%d", topicId, n)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -112,7 +112,7 @@ func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 	die(fmt.Sprintf("%s was not created ahead within 10s", table))
 }
 
-func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
@@ -123,7 +123,7 @@ func countPartitions(ctx context.Context, ds *coredatastore.PostgresDatastore, t
 // explainReadMessages EXPLAINs the exact query readMessages runs on a claim
 // (WHERE m.id > low AND m.id <= high) and counts distinct message_log_<id>_N
 // partitions named anywhere in the plan -- pruned partitions never appear.
-func explainReadMessages(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, low, high int64, want int) {
+func explainReadMessages(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64, want int) {
 	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN SELECT m.id, m.payload, m.created_at FROM %s m
@@ -160,7 +160,7 @@ func explainReadMessages(ctx context.Context, ds *coredatastore.PostgresDatastor
 	assertInt(fmt.Sprintf("(%d,%d] touches exactly %d partition(s)", low, high, want), int64(len(names)), int64(want))
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

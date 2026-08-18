@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/worker/controller/datastore"
 )
@@ -18,7 +18,7 @@ type WorkerController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWorkerController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*WorkerController, error) {
+func NewWorkerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*WorkerController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

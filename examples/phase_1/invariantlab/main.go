@@ -22,7 +22,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,7 +37,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -110,8 +110,8 @@ func fixture() []migrate.Migration {
 	}
 }
 
-func exec(sql string) func(context.Context, coredatastore.Querier, int64) error {
-	return func(ctx context.Context, q coredatastore.Querier, _ int64) error {
+func exec(sql string) func(context.Context, iDatastore.Querier, int64) error {
+	return func(ctx context.Context, q iDatastore.Querier, _ int64) error {
 		_, err := q.Exec(ctx, sql)
 		return err
 	}

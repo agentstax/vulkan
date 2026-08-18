@@ -32,7 +32,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -45,7 +45,7 @@ const largePartitionSize = int64(1_000_000) // never rolls -- partition churn is
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 		MaxConns: 50, // headroom above the keep-up scenario's 30 concurrent publishers + sweeper
@@ -64,7 +64,7 @@ func main() {
 // idempotency_key_<id>'s size against message_log's own size at the same
 // checkpoints -- isolates "how much extra storage does the claim gate cost"
 // from the separate question (next scenario) of whether the sweep keeps up.
-func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func accumulationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("accumulation: idempotency_key_<id> size vs. message_log size, no sweep running")
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -107,7 +107,7 @@ func accumulationScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 // SweepExpiredIdempotencyKeys, batched) -- proves whether steady-state size
 // stays bounded near rate * ttl (Little's Law) or the sweep falls behind and
 // the table grows toward the full published count instead.
-func sweepKeepUpScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func sweepKeepUpScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("sweep keep-up: sustained publish load concurrent with the real janitor cadence")
 
 	const ttl = 200 * time.Millisecond
@@ -241,13 +241,13 @@ func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstanc
 	wg.Wait()
 }
 
-func tableByteSize(ctx context.Context, ds *coredatastore.PostgresDatastore, table string) int64 {
+func tableByteSize(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) int64 {
 	var size int64
 	must(ds.Pool.QueryRow(ctx, `SELECT pg_total_relation_size($1::regclass);`, table).Scan(&size))
 	return size
 }
 
-func tableRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, table string) int64 {
+func tableRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) int64 {
 	var count int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s;`, table)).Scan(&count))
 	return count

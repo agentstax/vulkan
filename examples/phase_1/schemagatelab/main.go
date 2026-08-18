@@ -20,7 +20,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -33,7 +33,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -84,7 +84,7 @@ func main() {
 	fmt.Println("   Register fails fast and legibly when the schema is outside the supported range.")
 }
 
-func newProducer(ds *coredatastore.PostgresDatastore) *producer.Producer[event] {
+func newProducer(ds *iDatastore.PostgresDatastore) *producer.Producer[event] {
 	p, err := producer.NewProducer[event](ds, nil)
 	must(err)
 	return p

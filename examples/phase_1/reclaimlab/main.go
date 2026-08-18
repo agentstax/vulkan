@@ -25,10 +25,10 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -47,7 +47,7 @@ var groupId int64
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -137,7 +137,7 @@ func main() {
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
 	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
-	if err := messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, vulkancommon.ErrLeaseLost) {
+	if err := messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, iCommon.ErrLeaseLost) {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)
@@ -182,25 +182,25 @@ func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.Waterli
 	return c
 }
 
-func snapshot(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, label string) {
+func snapshot(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, label string) {
 	fmt.Printf("  [%s] committed=%d claimed=%d open_leases=%d deliveries=%d\n",
 		label, committedCol(ctx, ds, topicId), claimedCol(ctx, ds, topicId), leases(ctx, ds, topicId), deliveries(ctx, ds, topicId))
 }
 
-func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func committedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupId)
 }
-func claimedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func claimedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1`, groupId)
 }
-func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func leases(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupId)
 }
-func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func deliveries(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

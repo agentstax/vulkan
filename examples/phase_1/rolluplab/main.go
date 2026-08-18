@@ -29,7 +29,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -46,7 +46,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 		MaxConns: 40, // headroom above the contention scenario's 20 concurrent goroutines
@@ -81,7 +81,7 @@ type sample struct {
 	val int64
 }
 
-func stalenessScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func stalenessScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("staleness: time from Commit to `committed` reflecting it -- lazy ticker vs. synchronous")
 
 	lazyEvents, lazySamples := runLazyStaleness(ctx, ds)
@@ -97,7 +97,7 @@ func stalenessScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 // runLazyStaleness commits numRanges ranges while a background ticker plays
 // the role of RollWaterline, and a fast poller independently samples
 // `committed` so staleness is measured from the outside, not self-reported.
-func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) ([]rangeEvent, []sample) {
+func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]rangeEvent, []sample) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
@@ -177,7 +177,7 @@ func runLazyStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) 
 
 // runSyncStaleness commits numRanges ranges, calling AdvanceWaterline
 // immediately after each Commit -- staleness is just that call's own latency.
-func runSyncStaleness(ctx context.Context, ds *coredatastore.PostgresDatastore) []float64 {
+func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []float64 {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
@@ -252,7 +252,7 @@ func jitter(i int) time.Duration {
 
 // ---- scenario 2: fixed cost, uncontended ----
 
-func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("fixed cost: sequential claim+commit, no contention -- commit-only vs. commit+synchronous-advance")
 
 	const n = 200
@@ -264,7 +264,7 @@ func fixedCostScenario(ctx context.Context, ds *coredatastore.PostgresDatastore)
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op  (+%.1f%% vs. baseline)\n", "commit + synchronous advance", syncMs, syncMs/n, pctOver(syncMs, baselineMs))
 }
 
-func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, n float64, syncAdvance bool) float64 {
+func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, n float64, syncAdvance bool) float64 {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 
@@ -306,7 +306,7 @@ func timeSequentialCommits(ctx context.Context, ds *coredatastore.PostgresDatast
 
 // ---- scenario 3: concurrent contention ----
 
-func contentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func contentionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("concurrent contention: G goroutines committing against the SAME cursor row")
 
 	const goroutines = 20
@@ -321,7 +321,7 @@ func contentionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 	fmt.Printf("  -> %.2fx slower with a synchronous rollup chained onto every commit\n", syncMs/baseMs)
 }
 
-func timeConcurrentCommits(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, goroutines, perGoroutine int, syncAdvance bool) float64 {
+func timeConcurrentCommits(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, goroutines, perGoroutine int, syncAdvance bool) float64 {
 	total := goroutines * perGoroutine
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -379,7 +379,7 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 	}
 }
 
-func committedCol(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64, topicId int64) int64 {
+func committedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64, topicId int64) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupId).Scan(&v))
 	return v

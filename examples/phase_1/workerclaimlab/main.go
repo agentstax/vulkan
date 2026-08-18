@@ -25,7 +25,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -47,7 +47,7 @@ var exclusive = []string{"janitor", "waterline"}
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -139,7 +139,7 @@ func (rc *runningConsumer) stop() {
 	must(<-rc.done)
 }
 
-func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName string, i int) *runningConsumer {
+func start(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string, i int) *runningConsumer {
 	c, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		BatchLimit:         50,
 		QueueSize:          64,
@@ -168,7 +168,7 @@ func start(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName s
 // sampleLive polls the chain's worker rows for dur and tracks live instance
 // counts per row: the last count seen and the highest ever seen -- the max
 // is what proves the claim gate held while processes fought over it.
-func sampleLive(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, groupId int64, dur time.Duration) (map[string]int, map[string]int) {
+func sampleLive(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, dur time.Duration) (map[string]int, map[string]int) {
 	maxLive := map[string]int{}
 	live := map[string]int{}
 	deadline := time.Now().Add(dur)
@@ -199,7 +199,7 @@ func sampleLive(ctx context.Context, ds *coredatastore.PostgresDatastore, topicI
 
 // ---- helpers ----
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

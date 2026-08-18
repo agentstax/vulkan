@@ -16,7 +16,7 @@ package main
 //     between the two ProduceInTx calls.
 //   - ambiguousCommitScenario: a Commit-time failure (a deferred FK
 //     violation, so it surfaces at Commit, not at any INSERT) comes back
-//     from InTransaction completely unclassified -- no vulkancommon.PermanentError
+//     from InTransaction completely unclassified -- no iCommon.PermanentError
 //     wrapping, no special-casing. InTransaction never retries; whether a
 //     rerun is safe is the caller's call, so the raw error must reach them.
 //   - callerKeyRetryScenario: the sanctioned way to make that rerun safe --
@@ -33,8 +33,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -49,7 +49,7 @@ var fn = func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, e
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -70,7 +70,7 @@ func main() {
 	fmt.Println("   closure under caller-supplied keys dedups instead of double-publishing.")
 }
 
-func atomicPublishScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func atomicPublishScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("atomic publish: two targets in one InTransaction closure both land together")
 
 	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
@@ -92,7 +92,7 @@ func atomicPublishScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	fmt.Println("  ✓ both targets committed together")
 }
 
-func rollbackOnFailureScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func rollbackOnFailureScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("rollback on failure: second target's producerFunc erroring rolls back BOTH, not just itself")
 
 	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
@@ -119,7 +119,7 @@ func rollbackOnFailureScenario(ctx context.Context, ds *coredatastore.PostgresDa
 	fmt.Println("  ✓ target A's insert never lands either -- one shared tx, not two independent publishes")
 }
 
-func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func partitionSelfHealIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("partition self-heal isolation: B's internal retry must not touch A's work or rerun a side effect between them")
 
 	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
@@ -152,7 +152,7 @@ func partitionSelfHealIsolationScenario(ctx context.Context, ds *coredatastore.P
 	fmt.Println("  ✓ A's insert survives untouched, the side effect between calls fired exactly once, B self-healed and landed")
 }
 
-func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func ambiguousCommitScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("ambiguous commit: a Commit-time failure surfaces unclassified -- retrying is the caller's decision")
 
 	setupDeferredFKFixture(ctx, ds)
@@ -179,8 +179,8 @@ func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresData
 	if !ok || pgErr.Code != "23503" {
 		die(fmt.Sprintf("expected the raw foreign_key_violation (23503) from tx.Commit, got %v", err))
 	}
-	if _, ok := errors.AsType[*vulkancommon.PermanentError](err); ok {
-		die("InTransaction wrapped the commit error in vulkancommon.PermanentError -- it must never classify, only surface as-is")
+	if _, ok := errors.AsType[*iCommon.PermanentError](err); ok {
+		die("InTransaction wrapped the commit error in iCommon.PermanentError -- it must never classify, only surface as-is")
 	}
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 0)
@@ -193,7 +193,7 @@ func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresData
 // keys -- what a caller does after losing a Commit ack. Auto-minted keys
 // resolve fresh per call, so THIS dedup guarantee belongs to caller keys
 // alone: without them a closure rerun double-publishes every target.
-func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("caller-key retry: rerunning the closure under the same keys dedups every target")
 
 	topicA, wpA, cleanupA := newTarget(ctx, ds, "a", 1000)
@@ -222,7 +222,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // ---- fixtures ----
 
-func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.ProducerInstance[common.Work], func()) {
+func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.ProducerInstance[common.Work], func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
@@ -243,7 +243,7 @@ func newTarget(ctx context.Context, ds *coredatastore.PostgresDatastore, label s
 // setupDeferredFKFixture builds a scratch FK relationship whose violation is
 // only checked at COMMIT, not at INSERT -- the only way to force a genuine
 // Commit-time failure on demand.
-func setupDeferredFKFixture(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func setupDeferredFKFixture(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	must(exec(ctx, ds, `CREATE TABLE IF NOT EXISTS multitargetlab_deferred_parent (id BIGINT PRIMARY KEY);`))
 	must(exec(ctx, ds, `
 		CREATE TABLE IF NOT EXISTS multitargetlab_deferred_child (
@@ -255,19 +255,19 @@ func setupDeferredFKFixture(ctx context.Context, ds *coredatastore.PostgresDatas
 	`))
 }
 
-func teardownDeferredFKFixture(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func teardownDeferredFKFixture(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	must(exec(ctx, ds, `DROP TABLE IF EXISTS multitargetlab_deferred_child;`))
 	must(exec(ctx, ds, `DROP TABLE IF EXISTS multitargetlab_deferred_parent;`))
 }
 
-func exec(ctx context.Context, ds *coredatastore.PostgresDatastore, sql string) error {
+func exec(ctx context.Context, ds *iDatastore.PostgresDatastore, sql string) error {
 	_, err := ds.Pool.Exec(ctx, sql)
 	return err
 }
 
 // ---- helpers ----
 
-func assertMessageLogCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int) {
+func assertMessageLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d;`, topicId)).Scan(&count))
 	if count != want {

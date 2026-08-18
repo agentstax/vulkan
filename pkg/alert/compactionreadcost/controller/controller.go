@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 const AlertCompactionReadCost = "compaction_read_cost"
@@ -18,7 +18,7 @@ type CompactionReadCostController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCompactionReadCostController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*CompactionReadCostController, error) {
+func NewCompactionReadCostController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*CompactionReadCostController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

@@ -26,7 +26,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -44,7 +44,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -110,15 +110,15 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-func head(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func head(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(MAX(id), 0) FROM message_log_%d`, topicId))
 }
 
-func countInRange(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, low, high int64) int64 {
+func countInRange(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id > $1 AND id <= $2`, topicId), low, high)
 }
 
-func partitionCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func partitionCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
 		SELECT count(*) FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
@@ -126,7 +126,7 @@ func partitionCount(ctx context.Context, ds *coredatastore.PostgresDatastore, to
 	`, topicId))
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

@@ -6,7 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -29,7 +29,7 @@ type MetricsCollectorDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMetricsCollectorDefinition(ds *coredatastore.PostgresDatastore, cfg *MetricsCollectorConfig) (*MetricsCollectorDefinition, error) {
+func NewMetricsCollectorDefinition(ds *iDatastore.PostgresDatastore, cfg *MetricsCollectorConfig) (*MetricsCollectorDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

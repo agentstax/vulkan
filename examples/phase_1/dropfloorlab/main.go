@@ -34,7 +34,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -57,7 +57,7 @@ var groupId int64
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -155,7 +155,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 // createPartition pre-creates message_log_<topicId>_<n> so the lab's ids stay
 // dense -- production creates partitions on the produce path's self-heal,
 // which burns an id per boundary and would shift every id asserted below.
-func createPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
+func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, n int64) {
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS message_log_%d_%d
 			PARTITION OF message_log_%d
@@ -164,7 +164,7 @@ func createPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, t
 	must(err)
 }
 
-func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *coredatastore.PostgresDatastore, topicId int64, group string) {
+func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
 	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group))
 	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupId)
 	must(err)
@@ -174,7 +174,7 @@ func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *c
 	must(err)
 }
 
-func setCursor(ctx context.Context, ds *coredatastore.PostgresDatastore, group string, claimed, committed int64) {
+func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, group string, claimed, committed int64) {
 	_ = group // groups are id-keyed; the name stays in the signature for the call sites' readability
 	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupId, claimed, committed)
 	must(err)
@@ -189,7 +189,7 @@ func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsum
 	return claim
 }
 
-func partitionNumbers(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) []int64 {
+func partitionNumbers(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) []int64 {
 	prefix := fmt.Sprintf("message_log_%d_", topicId)
 	rows, err := ds.Pool.Query(ctx, `
 		SELECT REPLACE(c.relname, $2, '')::bigint AS n

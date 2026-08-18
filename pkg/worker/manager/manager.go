@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -26,7 +26,7 @@ type ManagerDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewManagerDefinition(ds *coredatastore.PostgresDatastore, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerDefinition, error) {
+func NewManagerDefinition(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

@@ -34,11 +34,11 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -55,7 +55,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -82,7 +82,7 @@ func main() {
 
 // ---- scenario 1: fresh failure logs one row, success logs none ----
 
-func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 1: a fresh failure logs one delivery_log row, a success logs none")
 
 	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario1", topiccontroller.TopicConfig{})
@@ -111,7 +111,7 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *coredatastore.Postg
 
 // ---- scenario 2: two retries append two more distinct rows ----
 
-func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 2: retrying the same message twice appends attempt=1 then attempt=2, never overwrites")
 
 	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario2", topiccontroller.TopicConfig{})
@@ -144,7 +144,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
-		must(exceptionConsumers.RecordExceptionFailure(ctx, (&vulkancommon.RetryPolicy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DeliveryLogMode, nil))
+		must(exceptionConsumers.RecordExceptionFailure(ctx, (&iCommon.RetryPolicy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DeliveryLogMode, nil))
 		assertDeliveryLogRow(ctx, ds, tp.Id, groupId, failingId, attempt, errText, true)
 	}
 
@@ -154,7 +154,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 
 // ---- scenario 3: DeliveryLogModeOff skips every write ----
 
-func scenarioDeliveryLogOff(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 3: DeliveryLogModeOff skips every write (the table itself always exists)")
 
 	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario3", topiccontroller.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeOff})
@@ -185,7 +185,7 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // ---- scenario 4: DeliveryLogModeAll logs successes in the success's own txn ----
 
-func scenarioDeliveryLogAll(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 4: DeliveryLogModeAll logs a 'success' row per success, same txn as the success")
 
 	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario4all", topiccontroller.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
@@ -234,7 +234,7 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // ---- scenario 5: retention drains old delivery_log rows ----
 
-func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scenarioRetentionDropPartition(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 5a: dropPartition reaps a dormant message's delivery_log row")
 
 	const partitionSize = int64(4)
@@ -261,7 +261,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *coredatastore.Postg
 	fmt.Println("PASS: dropPartition reaped the dormant message's delivery_log row, left the alive one")
 }
 
-func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("SCENARIO 5b: sweepBatch reaps a dormant message's delivery_log row individually")
 
 	const partitionSize = int64(1000000) // never rolls -- exercises the sweep path instead of the drop
@@ -290,7 +290,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *coredatastore.Postgres
 
 // ---- helpers ----
 
-func newTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumercontroller.MessageConsumerController, *producer.ProducerInstance[common.Work], int64) {
+func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumercontroller.MessageConsumerController, *producer.ProducerInstance[common.Work], int64) {
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
@@ -334,7 +334,7 @@ func failOne(ctx context.Context, cd *messageconsumercontroller.MessageConsumerC
 	return failingId
 }
 
-func assertDeliveryLogRow(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, wantErr string, wantExists bool) {
+func assertDeliveryLogRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, wantErr string, wantExists bool) {
 	var gotErr string
 	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT error FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, topicId), groupId, messageId, attempt).Scan(&gotErr)
 	exists := err == nil
@@ -354,7 +354,7 @@ func errSuffix(wantExists bool, gotErr string) string {
 	return fmt.Sprintf(" error=%q", gotErr)
 }
 
-func assertDeliveryLogStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, wantStatus string) {
+func assertDeliveryLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, wantStatus string) {
 	var gotStatus string
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3;`, topicId), groupId, messageId, attempt).Scan(&gotStatus))
 	if gotStatus != wantStatus {
@@ -363,7 +363,7 @@ func assertDeliveryLogStatus(ctx context.Context, ds *coredatastore.PostgresData
 	fmt.Printf("  ✓ delivery_log_%d[message=%d attempt=%d] status=%q\n", topicId, messageId, attempt, gotStatus)
 }
 
-func assertDeliveryLogCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, want int) {
+func assertDeliveryLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, want int) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2;`, topicId), groupId, messageId).Scan(&count))
 	if count != want {
@@ -372,7 +372,7 @@ func assertDeliveryLogCount(ctx context.Context, ds *coredatastore.PostgresDatas
 	fmt.Printf("  ✓ delivery_log_%d[message=%d] has %d row(s)\n", topicId, messageId, count)
 }
 
-func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int) {
+func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicId)).Scan(&count))
 	if count != want {
@@ -381,7 +381,7 @@ func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatas
 	fmt.Printf("  ✓ delivery_%d has %d row(s)\n", topicId, count)
 }
 
-func assertTableExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want bool) {
+func assertTableExists(ctx context.Context, ds *iDatastore.PostgresDatastore, table string, want bool) {
 	var exists *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, table).Scan(&exists))
 	got := exists != nil

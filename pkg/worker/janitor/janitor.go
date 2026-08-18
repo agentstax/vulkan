@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
@@ -23,7 +23,7 @@ type JanitorDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJanitorDefinition(ds *coredatastore.PostgresDatastore, cfg *JanitorConfig) (*JanitorDefinition, error) {
+func NewJanitorDefinition(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) (*JanitorDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

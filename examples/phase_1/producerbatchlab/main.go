@@ -38,7 +38,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -51,7 +51,7 @@ const largePartitionSize = int64(1_000_000) // never rolls -- partition churn is
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 		MaxConns: 60, // headroom above the per-call arms' 50 concurrent publishers -- batched callers wait on a channel, not a connection, so even the 800-caller saturated arm needs no more
@@ -76,7 +76,7 @@ func main() {
 // batchedExactlyOnceScenario: 50 goroutines x 20 payload-only Produce calls
 // -- every one must land exactly once (message + claim row), and xmin
 // grouping must show multi-row transactions, or "batching" never happened.
-func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("batched exactly-once: concurrent Produce calls share txns, land once each")
 
 	const producers, msgs = 50, 20
@@ -127,7 +127,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *coredatastore.PostgresD
 // produceBatchScenario: the explicit batch verb -- unlike the batcher's
 // collapsed singles, the caller hands over the whole batch and gets
 // all-or-nothing back.
-func produceBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("ProduceBatch: one transaction, argument order, all-or-nothing")
 
 	const total = 30
@@ -203,7 +203,7 @@ func produceBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatasto
 // server-side (jsonb refuses \u0000 -- poisons every rerun, evicted by
 // statement index) and payload 13 fails client-side before anything is sent
 // (batch splits to singles) -- each error reaches ONLY its own caller.
-func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("fault isolation: a bad payload fails its caller, never its batchmates")
 
 	const total = 20
@@ -253,7 +253,7 @@ func faultIsolationScenario(ctx context.Context, ds *coredatastore.PostgresDatas
 // real cross-batch compaction_head contention. A deadlock would surface as an
 // evicted operation's error; zero errors + every compaction_head row at its key's
 // max id is the pass.
-func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func hotCompactionKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("hot compaction keys: concurrent batches contend on compaction_head without deadlock")
 
 	const producers, msgs, keys = 20, 20, 3
@@ -295,7 +295,7 @@ func hotCompactionKeysScenario(ctx context.Context, ds *coredatastore.PostgresDa
 // partitionHealScenario: PartitionSize 10 and no janitor, so produces past
 // partition 0 MUST self-heal -- first sequentially (head advances one heal at
 // a time), then as a concurrent burst.
-func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("partition heal: a burst past the create-ahead self-heals, no janitor running")
 
 	tp, cleanup := registerTopic(ctx, ds, "heal", 10)
@@ -328,7 +328,7 @@ func partitionHealScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 // throughputScenario: the same workload down both paths -- how much the
 // shared-transaction fsync amortization buys over per-call commits, at equal
 // concurrency and then saturated.
-func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func throughputScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("throughput: batched Produce vs per-call ProduceFunc, then saturated")
 
 	const producers, msgs = 50, 400 // ~2s per arm -- sub-second runs are all warmup noise
@@ -367,7 +367,7 @@ func throughputScenario(ctx context.Context, ds *coredatastore.PostgresDatastore
 // timeArm registers its own topic, warms the pool untimed, then times the
 // full concurrent run -- asserting afterward that every publish landed
 // exactly once (throughput that loses messages doesn't count).
-func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, producers, msgs int, produce func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error) time.Duration {
+func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, producers, msgs int, produce func(wpInstance *producer.ProducerInstance[common.Work], work *common.Work) error) time.Duration {
 	tp, cleanup := registerTopic(ctx, ds, "throughput."+label, largePartitionSize)
 	defer cleanup()
 
@@ -403,7 +403,7 @@ func timeArm(ctx context.Context, ds *coredatastore.PostgresDatastore, label str
 // ---- helpers ----
 
 // registerTopic registers a lab-unique topic and returns it with its cleanup.
-func registerTopic(ctx context.Context, ds *coredatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
+func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
@@ -437,7 +437,7 @@ func produceConcurrently(producers, msgs int, produce func(p, s int) error) {
 	}
 }
 
-func assertCount(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want int, label string) {
+func assertCount(ctx context.Context, ds *iDatastore.PostgresDatastore, table string, want int, label string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s;`, table)).Scan(&count))
 	if count != want {

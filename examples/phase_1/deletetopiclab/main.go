@@ -27,7 +27,7 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -39,7 +39,7 @@ const group = "phase9.deletetopiclab.group"
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -132,7 +132,7 @@ func main() {
 
 // ---- helpers ----
 
-func assertGroupRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, groupId int64, want int, when string) {
+func assertGroupRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, table string, groupId int64, want int, when string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE consumer_group_id = $1;`, table), groupId).Scan(&count))
 	if count != want {
@@ -141,7 +141,7 @@ func assertGroupRowCount(ctx context.Context, ds *coredatastore.PostgresDatastor
 	fmt.Printf("  ✓ %s has %d row(s) %s\n", table, count, when)
 }
 
-func assertCompactionHeadCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
+func assertCompactionHeadCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id = $1;`, topicId).Scan(&count))
 	if count != want {
@@ -151,7 +151,7 @@ func assertCompactionHeadCount(ctx context.Context, ds *coredatastore.PostgresDa
 }
 
 // the topic's groups are destroyed WITH it, via the topic_id FK cascade.
-func assertGroupGone(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64) {
+func assertGroupGone(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64) {
 	var rows int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`, groupId).Scan(&rows))
 	if rows != 0 {
@@ -163,7 +163,7 @@ func assertGroupGone(ctx context.Context, ds *coredatastore.PostgresDatastore, g
 // assertDeliveryRowCount counts delivery_<topicId>'s rows directly -- unlike
 // scopedTables, this table has no topic_id column to filter by (it's implicit
 // in the table name), so it can't go through assertRowCount's generic form.
-func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
+func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicId)).Scan(&count))
 	if count != want {
@@ -174,7 +174,7 @@ func assertDeliveryRowCount(ctx context.Context, ds *coredatastore.PostgresDatas
 
 // assertDeliveryLogRowCount counts delivery_log_<topicId>'s rows directly --
 // same no-topic_id-column reason as assertDeliveryRowCount.
-func assertDeliveryLogRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
+func assertDeliveryLogRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d;`, topicId)).Scan(&count))
 	if count != want {
@@ -185,7 +185,7 @@ func assertDeliveryLogRowCount(ctx context.Context, ds *coredatastore.PostgresDa
 
 // assertIdempotencyKeyRowCount counts idempotency_key_<topicId>'s rows
 // directly -- same no-topic_id-column reason as assertDeliveryRowCount.
-func assertIdempotencyKeyRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, want int, when string) {
+func assertIdempotencyKeyRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM idempotency_key_%d;`, topicId)).Scan(&count))
 	if count != want {
@@ -194,7 +194,7 @@ func assertIdempotencyKeyRowCount(ctx context.Context, ds *coredatastore.Postgre
 	fmt.Printf("  ✓ idempotency_key_%d has %d row(s) %s\n", topicId, count, when)
 }
 
-func assertTableExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want bool) {
+func assertTableExists(ctx context.Context, ds *iDatastore.PostgresDatastore, table string, want bool) {
 	var exists *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, table).Scan(&exists))
 	got := exists != nil

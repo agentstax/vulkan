@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	topicId := run // no real topic needs to exist -- the events just carry this id as data
 	group := fmt.Sprintf("abandonedroutinesnapshotlab.%d", run)
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/consumer"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -18,7 +18,7 @@ type MetricsConsumer struct {
 
 // cfg may be nil or a sparse struct -- the underlying consumer defaults and
 // validates it.
-func NewMetricsConsumer(ds *coredatastore.PostgresDatastore, cfg *consumer.ConsumerConfig) (*MetricsConsumer, error) {
+func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.ConsumerConfig) (*MetricsConsumer, error) {
 	measurementConsumer, err := consumer.NewConsumer[metrics.Measurement](ds, cfg)
 	if err != nil {
 		return nil, err

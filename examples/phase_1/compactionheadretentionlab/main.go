@@ -26,7 +26,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -43,7 +43,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -59,7 +59,7 @@ func main() {
 	fmt.Println("   inside the ttl window survives every pass untouched, either path.")
 }
 
-func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func dropPartitionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("dropPartition: a whole-partition rollover reaps a dormant key's last row")
 
 	const partitionSize = int64(4)
@@ -103,7 +103,7 @@ func dropPartitionScenario(ctx context.Context, ds *coredatastore.PostgresDatast
 	assertLatestExists(ctx, ds, tp.Id, "alive-key", true)
 }
 
-func sweepBatchScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("sweepBatch: a low-volume tail reaps a dormant key's last row individually")
 
 	const partitionSize = int64(1000000) // matches migration 001's original width -- never rolls
@@ -154,7 +154,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 	must(err)
 }
 
-func assertLatestExists(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, key string, want bool) {
+func assertLatestExists(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string, want bool) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id=$1 AND compaction_key=$2;`, topicId, key).Scan(&count))
 	got := count > 0

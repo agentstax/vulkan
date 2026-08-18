@@ -31,7 +31,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -39,7 +39,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -139,7 +139,7 @@ func main() {
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
 }
 
-func destroySection(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumercontroller.ConsumerController, topicA *topic.Topic, suffix int64) {
+func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumercontroller.ConsumerController, topicA *topic.Topic, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
@@ -217,7 +217,7 @@ func destroySection(ctx context.Context, ds *coredatastore.PostgresDatastore, mA
 
 // assertChildren counts the group's cursor row -- it exists and dies
 // together with the registry row (want 1 or 0).
-func assertChildren(ctx context.Context, ds *coredatastore.PostgresDatastore, groupId int64, want int, when string) {
+func assertChildren(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64, want int, when string) {
 	var cursors int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM cursor WHERE consumer_group_id = $1;`, groupId).Scan(&cursors))
 	if cursors != want {

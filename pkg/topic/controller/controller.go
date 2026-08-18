@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -23,7 +23,7 @@ type TopicController struct {
 // unset, Validate rejects what's out of range. declarers run on every
 // RegisterTopic to create the registered topic's worker rows -- pass them
 // only from a registrar; a controller built for reads needs none.
-func NewTopicController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*TopicController, error) {
+func NewTopicController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*TopicController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

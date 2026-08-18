@@ -31,7 +31,7 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -48,7 +48,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -164,7 +164,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.W
 // resets all three groups to a clean slate and fast-forwards their cursors to
 // the current log head, so a fresh CURSOR claim only ever sees messages this
 // lab itself publishes.
-func reset(ctx context.Context, ds *coredatastore.PostgresDatastore, cd *consumercontroller.ConsumerController, topicId int64, groups ...string) (int64, map[string]int64) {
+func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumercontroller.ConsumerController, topicId int64, groups ...string) (int64, map[string]int64) {
 	head := scalar(ctx, ds, fmt.Sprintf(`SELECT COALESCE(max(id),0) FROM message_log_%d`, topicId))
 	gids := map[string]int64{}
 	for _, g := range groups {
@@ -191,7 +191,7 @@ func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.Waterli
 	return c
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

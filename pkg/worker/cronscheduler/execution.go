@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
@@ -24,7 +24,7 @@ type CronSchedulerExecution struct {
 	Logger common.Logger
 
 	runner           *controller.InstanceTickRunner
-	ds               *coredatastore.PostgresDatastore
+	ds               *iDatastore.PostgresDatastore
 	datastore        *datastore.CronSchedulerDatastore
 	metadata         *cronSchedulerMetadata
 	producerInstance *producer.ProducerInstance[cron.JobRequest]

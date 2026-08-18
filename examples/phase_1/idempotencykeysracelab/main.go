@@ -26,7 +26,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -36,7 +36,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 		MaxConns: 60, // headroom above both scenarios' 50 concurrent publishers
@@ -56,7 +56,7 @@ func main() {
 // sameKeyConcurrentScenario: N goroutines share ONE idempotency key and
 // publish at the exact same time -- exactly 1 message and 1 claim row must
 // land, however the goroutines' claim inserts happen to interleave/commit.
-func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func sameKeyConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("same key, concurrent: N goroutines sharing one idempotency key must land exactly once")
 
 	const n = 50
@@ -111,7 +111,7 @@ func sameKeyConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDa
 // distinctKeysConcurrentScenario: N goroutines each publish under their OWN
 // distinct key, all at once -- concurrency alone must never drop a write or
 // cause a false collision across unrelated keys.
-func distinctKeysConcurrentScenario(ctx context.Context, ds *coredatastore.PostgresDatastore) {
+func distinctKeysConcurrentScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	step("distinct keys, concurrent: N goroutines each with their own key must all land")
 
 	const n = 50
@@ -148,7 +148,7 @@ func distinctKeysConcurrentScenario(ctx context.Context, ds *coredatastore.Postg
 
 // ---- helpers ----
 
-func assertCount(ctx context.Context, ds *coredatastore.PostgresDatastore, table string, want int, label string) {
+func assertCount(ctx context.Context, ds *iDatastore.PostgresDatastore, table string, want int, label string) {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s;`, table)).Scan(&count))
 	if count != want {

@@ -33,9 +33,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -47,7 +47,7 @@ const slowMs = 1000
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db", MaxConns: 20,
 	})
@@ -81,7 +81,7 @@ func main() {
 
 // ---- scenario 1: ordering ----
 
-func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
+func runOrdering(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
 	step("ORDERING -- one slow message, three fast ones, same batch")
 	seedSleep(ctx, wpInstance, []int{slowMs, 0, 0, 0})
 
@@ -107,13 +107,13 @@ func runOrdering(ctx context.Context, ds *coredatastore.PostgresDatastore, wpIns
 // drain runs group over topicName's full backlog (assumed to fit in one
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
-func drain(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
+func drain(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
 	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		QueueSize:               batchLimit + poolSize,
 		MessageConcurrency:      poolSize,
-		Message:                 &vulkancommon.MessageOptions{Timeout: 10 * time.Second},
+		Message:                 &iCommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})
@@ -160,7 +160,7 @@ const (
 	minSpeedup      = 3.0 // conservative vs pool=8's 8x theoretical ceiling -- avoids flaking on a loaded machine
 )
 
-func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
+func runThroughput(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstance *producer.ProducerInstance[common.Work], topicName string) {
 	step("THROUGHPUT -- 40 fixed-cost messages, pool=1 (serial) vs pool=8 (parallel)")
 
 	sleeps := make([]int, throughputCount)
@@ -184,13 +184,13 @@ func runThroughput(ctx context.Context, ds *coredatastore.PostgresDatastore, wpI
 	}
 }
 
-func drainTimed(ctx context.Context, ds *coredatastore.PostgresDatastore, topicName, group string, poolSize, target int) time.Duration {
+func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, group string, poolSize, target int) time.Duration {
 	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		QueueSize:               target + poolSize,
 		MessageConcurrency:      poolSize,
-		Message:                 &vulkancommon.MessageOptions{Timeout: 10 * time.Second},
+		Message:                 &iCommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
 		AckMargin:               2 * time.Second,
 	})

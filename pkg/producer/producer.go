@@ -9,7 +9,7 @@ import (
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -31,7 +31,7 @@ type Producer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducer[Message any](ds *coredatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
+func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

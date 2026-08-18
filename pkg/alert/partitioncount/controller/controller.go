@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 const AlertPartitionCount = "partition_count"
@@ -18,7 +18,7 @@ type PartitionCountController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewPartitionCountController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*PartitionCountController, error) {
+func NewPartitionCountController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*PartitionCountController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

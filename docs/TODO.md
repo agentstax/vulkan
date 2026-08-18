@@ -428,8 +428,14 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       re-suggest); the audit's heal-in-public/three-value note is dropped
       as an open item unless the user reopens it. Verified: build+vet all
       modules; cron, producer-batch, multi-target, defer, alert labs
-      green. Chunk 3 remaining (user-added 2026-08-17): rename every
-      coredatastore import alias to iDatastore for consistency.
+      green. Chunk 3 done 2026-08-17: alias survey found three
+      "the-vulkan-machinery-one" aliases and shifted them to the i*
+      pattern (iTopic template) — coredatastore → iDatastore (82 files),
+      vulkancommon → iCommon (13 lab files, vs the lab-helper common),
+      vulkanmetrics → iMetrics (3 lab files). The <domain><layer> aliases
+      (topiccontroller, janitordatastore, ...) are a different,
+      informative convention and stay. Build+vet all modules, topic +
+      cron labs green.
       Producer datastore: pgx.Tx in the publics AppendMessageInTx
       (append.go:88) and GetCompactionHeadInTx (compaction.go:15); the Tx
       interface's Raw() pgx.Tx re-exports the driver to the door

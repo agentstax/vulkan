@@ -38,7 +38,7 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -48,7 +48,7 @@ import (
 const schedulerPollRate = 100 * time.Millisecond
 
 var (
-	ds          *coredatastore.PostgresDatastore
+	ds          *iDatastore.PostgresDatastore
 	mAdmin      *admin.MessageAdmin
 	jobRequests *topic.Topic
 	prefix      string
@@ -58,7 +58,7 @@ func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})

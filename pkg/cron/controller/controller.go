@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron/controller/datastore"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type CronJobController struct {
@@ -16,7 +16,7 @@ type CronJobController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCronJobController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*CronJobController, error) {
+func NewCronJobController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*CronJobController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

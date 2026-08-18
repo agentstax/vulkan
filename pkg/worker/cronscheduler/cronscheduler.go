@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler/datastore"
@@ -17,7 +17,7 @@ type CronSchedulerDefinition struct {
 	Config *CronSchedulerConfig
 	Logger common.Logger
 
-	ds        *coredatastore.PostgresDatastore
+	ds        *iDatastore.PostgresDatastore
 	workers   *controller.WorkerController
 	datastore *datastore.CronSchedulerDatastore
 	producer  *producer.Producer[cron.JobRequest] // each Provision registers its own instance from it
@@ -25,7 +25,7 @@ type CronSchedulerDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCronSchedulerDefinition(ds *coredatastore.PostgresDatastore, cfg *CronSchedulerConfig) (*CronSchedulerDefinition, error) {
+func NewCronSchedulerDefinition(ds *iDatastore.PostgresDatastore, cfg *CronSchedulerConfig) (*CronSchedulerDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

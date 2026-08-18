@@ -27,9 +27,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -61,7 +61,7 @@ func main() {
 	defer stop()
 	time.AfterFunc(180*time.Second, stop) // watchdog
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password", Host: "localhost", Port: 5432, Database: "example_db", MaxConns: *maxConnsPtr,
 	})
 	if err != nil {
@@ -97,7 +97,7 @@ func main() {
 		BatchLimit:         100,
 		QueueSize:          100 + conc,
 		MessageConcurrency: conc,
-		Message:            &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &vulkancommon.RetryPolicy{MaxRetries: 100}},
+		Message:            &iCommon.MessageOptions{Timeout: 2 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 100}},
 		ClaimPollRate:      200 * time.Millisecond,
 		QueueMargin:        1 * time.Second,
 		AckMargin:          1 * time.Second,

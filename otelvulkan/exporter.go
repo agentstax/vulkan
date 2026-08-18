@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
@@ -28,7 +28,7 @@ type Exporter struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExporter(ds *coredatastore.PostgresDatastore, cfg *ExporterConfig) (*Exporter, error) {
+func NewExporter(ds *iDatastore.PostgresDatastore, cfg *ExporterConfig) (*Exporter, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

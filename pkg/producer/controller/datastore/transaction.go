@@ -3,7 +3,7 @@ package datastore
 import (
 	"context"
 
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -11,7 +11,7 @@ import (
 // statement pool, conn, and tx share (datastore.Querier), never transaction
 // control -- the closure runs inside a transaction the producer owns.
 type Tx interface {
-	coredatastore.Querier
+	iDatastore.Querier
 
 	// Raw returns the underlying pgx.Tx, for anything outside this
 	// interface's surface (LargeObjects, Prepare, a nested Begin).
@@ -36,7 +36,7 @@ func (t *vulkanTx) Raw() pgx.Tx {
 // InTransaction opens one transaction, runs transactionFunc against it, and
 // commits. No retry: only the caller knows what's safe to rerun in its
 // closure.
-func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
+func InTransaction(ctx context.Context, ds *iDatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
 	tx, err := ds.Pool.Begin(ctx)
 	if err != nil {
 		return err

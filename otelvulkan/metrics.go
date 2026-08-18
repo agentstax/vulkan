@@ -14,7 +14,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -47,7 +47,7 @@ type Metrics struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMetrics(ds *coredatastore.PostgresDatastore, cfg *MetricsConfig) (*Metrics, error) {
+func NewMetrics(ds *iDatastore.PostgresDatastore, cfg *MetricsConfig) (*Metrics, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

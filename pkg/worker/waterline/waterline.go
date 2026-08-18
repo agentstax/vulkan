@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 )
@@ -21,7 +21,7 @@ type WaterlineDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWaterlineDefinition(ds *coredatastore.PostgresDatastore, cfg *WaterlineConfig) (*WaterlineDefinition, error) {
+func NewWaterlineDefinition(ds *iDatastore.PostgresDatastore, cfg *WaterlineConfig) (*WaterlineDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

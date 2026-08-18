@@ -16,7 +16,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -33,7 +33,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -163,12 +163,12 @@ func main() {
 	fmt.Println("\n✅ DUTY BACKOFF LAB PASSED")
 }
 
-func exec(ctx context.Context, ds *coredatastore.PostgresDatastore, sql string) {
+func exec(ctx context.Context, ds *iDatastore.PostgresDatastore, sql string) {
 	_, err := ds.Pool.Exec(ctx, sql)
 	must(err)
 }
 
-func scalarInt(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int {
+func scalarInt(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int {
 	var v int
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

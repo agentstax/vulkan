@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/system/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
@@ -21,7 +21,7 @@ type SystemController struct {
 // unset, Validate rejects what's out of range. declarers run on every
 // RegisterSystem to create the system's worker rows -- pass them only from a
 // registrar; a controller built for reads needs none.
-func NewSystemController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*SystemController, error) {
+func NewSystemController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*SystemController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

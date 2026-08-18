@@ -10,7 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -23,7 +23,7 @@ type CompactionReadCostDefinition struct {
 	Config *CompactionReadCostConfig
 	Logger common.Logger
 
-	ds                  *coredatastore.PostgresDatastore
+	ds                  *iDatastore.PostgresDatastore
 	workers             *workercontroller.WorkerController
 	topics              *topiccontroller.TopicController
 	consumers           *consumercontroller.ConsumerController
@@ -36,7 +36,7 @@ type CompactionReadCostDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCompactionReadCostDefinition(ds *coredatastore.PostgresDatastore, cfg *CompactionReadCostConfig) (*CompactionReadCostDefinition, error) {
+func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *CompactionReadCostConfig) (*CompactionReadCostDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

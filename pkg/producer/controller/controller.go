@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 )
 
@@ -16,7 +16,7 @@ type ProducerController[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducerController[Message any](ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*ProducerController[Message], error) {
+func NewProducerController[Message any](ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ProducerController[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

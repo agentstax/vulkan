@@ -50,7 +50,7 @@ import (
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -65,7 +65,7 @@ type Rec struct {
 }
 
 var (
-	ds      *coredatastore.PostgresDatastore
+	ds      *iDatastore.PostgresDatastore
 	topicId int64
 
 	runsMu sync.Mutex
@@ -76,7 +76,7 @@ func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})

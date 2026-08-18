@@ -24,7 +24,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumer/binding"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -36,7 +36,7 @@ type labMessage struct {
 const groupName = "bindinglab.group"
 
 var (
-	ds        *coredatastore.PostgresDatastore
+	ds        *iDatastore.PostgresDatastore
 	mAdmin    *admin.MessageAdmin
 	topicName string
 	groupId   int64
@@ -46,7 +46,7 @@ func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})

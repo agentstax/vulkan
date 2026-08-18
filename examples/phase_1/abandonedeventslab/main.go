@@ -11,12 +11,12 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -31,7 +31,7 @@ func main() {
 	ctx := context.Background()
 	run := time.Now().UnixNano()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -42,7 +42,7 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	metricsTopic, err := mAdmin.GetTopic(ctx, vulkanmetrics.TopicName, topic.SchemaVersion(1))
+	metricsTopic, err := mAdmin.GetTopic(ctx, iMetrics.TopicName, topic.SchemaVersion(1))
 	must(err)
 	if metricsTopic == nil {
 		die("expected __system.metrics to exist after RegisterSystem")
@@ -68,14 +68,14 @@ func main() {
 		BatchLimit:         3,
 		QueueSize:          10,
 		MessageConcurrency: 3,
-		Message:            &vulkancommon.MessageOptions{Timeout: 300 * time.Millisecond},
+		Message:            &iCommon.MessageOptions{Timeout: 300 * time.Millisecond},
 		TimeoutGrace:       50 * time.Millisecond,
 	}
 	consumerDatastore, err := consumercontroller.NewConsumerController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
 	must(err)
-	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
+	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
 	must(err)
 
 	// the abandoned-event producer outlives any one claim -- the events it
@@ -116,8 +116,8 @@ func main() {
 	}
 
 	abandoned, cleared := rows[0], rows[1]
-	assertEqual("first event type", string(abandoned.Event.EventType), string(vulkanmetrics.EventAbandoned))
-	assertEqual("second event type", string(cleared.Event.EventType), string(vulkanmetrics.EventCleared))
+	assertEqual("first event type", string(abandoned.Event.EventType), string(iMetrics.EventAbandoned))
+	assertEqual("second event type", string(cleared.Event.EventType), string(iMetrics.EventCleared))
 	assertEqual("abandoned event group", abandoned.Event.Group, group)
 	assertEqual("abandoned event topic id", fmt.Sprint(abandoned.Event.TopicId), fmt.Sprint(tp.Id))
 	assertEqual("abandoned/cleared share the same message id", fmt.Sprint(abandoned.Event.MessageId), fmt.Sprint(cleared.Event.MessageId))
@@ -135,13 +135,13 @@ type metricsRow struct {
 	Event      consumermetrics.GoRoutineEvent
 }
 
-func metricsRowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int {
+func metricsRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d`, topicId)).Scan(&count))
 	return count
 }
 
-func metricsRowsSince(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, sinceCount int) []metricsRow {
+func metricsRowsSince(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, sinceCount int) []metricsRow {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, routing_key, payload FROM message_log_%d
 		ORDER BY id
@@ -181,7 +181,7 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 
 // no manager, so nothing respawns the execution and the lab sees exactly one
 // consuming life
-func runProcessUntil(ctx context.Context, ds *coredatastore.PostgresDatastore, provisioner worker.Provisioner, owner *vulkancommon.Owner, timeout time.Duration, done func() bool) {
+func runProcessUntil(ctx context.Context, ds *iDatastore.PostgresDatastore, provisioner worker.Provisioner, owner *iCommon.Owner, timeout time.Duration, done func() bool) {
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
 	row, err := workers.GetWorker(ctx, provisioner.Name(), owner)

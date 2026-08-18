@@ -39,13 +39,13 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -67,7 +67,7 @@ var groupId int64
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -105,11 +105,11 @@ func main() {
 		BatchLimit:         3,
 		QueueSize:          10,
 		MessageConcurrency: 1,
-		Message:            &vulkancommon.MessageOptions{Timeout: 1 * time.Second},
+		Message:            &iCommon.MessageOptions{Timeout: 1 * time.Second},
 		QueueMargin:        500 * time.Millisecond,
 		AckMargin:          500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
 	}
-	owner, err := vulkancommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupId, group)
+	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupId, group)
 	must(err)
 	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, nil)
 	must(err)
@@ -221,26 +221,26 @@ func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.Waterli
 
 type leaseBounds struct{ low, high int64 }
 
-func onlyLease(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) leaseBounds {
+func onlyLease(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) leaseBounds {
 	var lb leaseBounds
 	must(ds.Pool.QueryRow(ctx, `SELECT low, high FROM lease WHERE consumer_group_id=$1`, groupId).Scan(&lb.low, &lb.high))
 	return lb
 }
 
-func leases(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func leases(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupId)
 }
-func deliveries(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func deliveries(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v
 }
 
-func assertStatus(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, messageId int64, want string) {
+func assertStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, messageId int64, want string) {
 	var got string
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group_id=$1 AND message_id=$2`, topicId), groupId, messageId).Scan(&got))
 	if got != want {

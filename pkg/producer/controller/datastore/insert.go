@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -57,12 +57,12 @@ func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx 
 	return &AppendedData[Message]{Message: payload, Id: id, Duplicate: duplicate}, nil
 }
 
-func commitToSavepoint(ctx context.Context, q coredatastore.Querier, savepointName string) error {
+func commitToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) error {
 	_, err := q.Exec(ctx, "SAVEPOINT "+savepointName+";")
 	return err
 }
 
-func attemptRollbackToSavepoint(ctx context.Context, q coredatastore.Querier, savepointName string) {
+func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) {
 	_, _ = q.Exec(ctx, "ROLLBACK TO SAVEPOINT "+savepointName+";")
 }
 
@@ -70,7 +70,7 @@ func attemptRollbackToSavepoint(ctx context.Context, q coredatastore.Querier, sa
 // SAVEPOINT as one round trip -- always a single statement regardless of
 // CompactionKey, so it always fully batches. duplicate=true means the claim
 // already existed.
-func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, q coredatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
 
 	batch := &pgx.Batch{}
@@ -99,7 +99,7 @@ func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Contex
 // insertProtected runs the idempotency claim + message insert (+ compaction_head
 // upsert when keyed) in one round trip. duplicate=true means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
-func (d *ProducerDatastore[Message]) insertProtected(ctx context.Context, q coredatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+func (d *ProducerDatastore[Message]) insertProtected(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
 
 	err = q.QueryRow(ctx, sql, args...).Scan(&id)

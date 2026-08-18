@@ -10,7 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -23,7 +23,7 @@ type PartitionCountDefinition struct {
 	Config *PartitionCountConfig
 	Logger common.Logger
 
-	ds                  *coredatastore.PostgresDatastore
+	ds                  *iDatastore.PostgresDatastore
 	workers             *workercontroller.WorkerController
 	topics              *topiccontroller.TopicController
 	consumers           *consumercontroller.ConsumerController
@@ -36,7 +36,7 @@ type PartitionCountDefinition struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewPartitionCountDefinition(ds *coredatastore.PostgresDatastore, cfg *PartitionCountConfig) (*PartitionCountDefinition, error) {
+func NewPartitionCountDefinition(ds *iDatastore.PostgresDatastore, cfg *PartitionCountConfig) (*PartitionCountDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

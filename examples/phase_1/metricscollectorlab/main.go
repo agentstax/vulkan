@@ -23,9 +23,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -65,7 +65,7 @@ func main() {
 	ctx := context.Background()
 	run := time.Now().UnixNano()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -114,7 +114,7 @@ func main() {
 	step("claim the real metrics_collector worker at a fast poll rate")
 	system, err := mAdmin.GetSystem(ctx)
 	must(err)
-	systemOwner, err := vulkancommon.NewSystemOwner(system.Id)
+	systemOwner, err := iCommon.NewSystemOwner(system.Id)
 	must(err)
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)

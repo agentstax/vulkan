@@ -36,8 +36,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	vulkanmetrics "github.com/agentstax/vulkan/pkg/metrics"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -56,7 +56,7 @@ type labMessage struct {
 }
 
 var (
-	ds     *coredatastore.PostgresDatastore
+	ds     *iDatastore.PostgresDatastore
 	mAdmin *admin.MessageAdmin
 
 	jobRequests *topic.Topic
@@ -74,7 +74,7 @@ func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -352,9 +352,9 @@ func executorSection(ctx context.Context) {
 	fmt.Println("  ✓ threshold-1 run published active heads with WARN edges")
 
 	summary := readCheckSummary(ctx)
-	if summary[vulkanmetrics.MetricCheckTopicsEvaluated] < 2 ||
-		summary[vulkanmetrics.MetricCheckTopicsFailed] != 0 ||
-		summary[vulkanmetrics.MetricCheckPublishedAlerts] != summary[vulkanmetrics.MetricCheckTopicsEvaluated] {
+	if summary[iMetrics.MetricCheckTopicsEvaluated] < 2 ||
+		summary[iMetrics.MetricCheckTopicsFailed] != 0 ||
+		summary[iMetrics.MetricCheckPublishedAlerts] != summary[iMetrics.MetricCheckTopicsEvaluated] {
 		die(fmt.Sprintf("threshold-1 run: want every evaluated topic published and none failed, got %v", summary))
 	}
 	fmt.Println("  ✓ check summary: every evaluated topic published, none failed")
@@ -373,8 +373,8 @@ func executorSection(ctx context.Context) {
 	fmt.Println("  ✓ a second run inside the repeat interval published nothing")
 
 	summary = readCheckSummary(ctx)
-	if summary[vulkanmetrics.MetricCheckPublishedAlerts] != 0 ||
-		summary[vulkanmetrics.MetricCheckTopicsFailed] != 0 {
+	if summary[iMetrics.MetricCheckPublishedAlerts] != 0 ||
+		summary[iMetrics.MetricCheckTopicsFailed] != 0 {
 		die(fmt.Sprintf("repeat-interval run: want a quiet summary, got %v", summary))
 	}
 	fmt.Println("  ✓ check summary: the quiet run counted zero publishes")
@@ -439,8 +439,8 @@ func isolationSection(ctx context.Context) {
 	// resolved is left unasserted here: an automatic retry may already have
 	// overwritten the summary, and only its failed/published counts repeat
 	summary := readCheckSummary(ctx)
-	if summary[vulkanmetrics.MetricCheckTopicsFailed] != 1 ||
-		summary[vulkanmetrics.MetricCheckPublishedAlerts] != 0 {
+	if summary[iMetrics.MetricCheckTopicsFailed] != 1 ||
+		summary[iMetrics.MetricCheckPublishedAlerts] != 0 {
 		die(fmt.Sprintf("isolation: the failed run must still produce its summary, got %v", summary))
 	}
 	fmt.Println("  ✓ check summary went out on the failed run: exactly 1 topic failed")
@@ -458,8 +458,8 @@ func isolationSection(ctx context.Context) {
 	fmt.Println("  ✓ retry resolved the fixed owner; healthy topics resolved exactly once")
 
 	summary = readCheckSummary(ctx)
-	if summary[vulkanmetrics.MetricCheckTopicsFailed] != 0 ||
-		summary[vulkanmetrics.MetricCheckResolvedAlerts] != 1 {
+	if summary[iMetrics.MetricCheckTopicsFailed] != 0 ||
+		summary[iMetrics.MetricCheckResolvedAlerts] != 1 {
 		die(fmt.Sprintf("isolation retry: want 0 failed and only the fixed owner resolved, got %v", summary))
 	}
 	fmt.Println("  ✓ retry summary: zero failed, only the fixed owner resolved")
@@ -619,12 +619,12 @@ func readCheckSummary(ctx context.Context) map[string]float64 {
 	}
 	summary := make(map[string]float64, 4)
 	for _, name := range []string{
-		vulkanmetrics.MetricCheckTopicsEvaluated,
-		vulkanmetrics.MetricCheckTopicsFailed,
-		vulkanmetrics.MetricCheckPublishedAlerts,
-		vulkanmetrics.MetricCheckResolvedAlerts,
+		iMetrics.MetricCheckTopicsEvaluated,
+		iMetrics.MetricCheckTopicsFailed,
+		iMetrics.MetricCheckPublishedAlerts,
+		iMetrics.MetricCheckResolvedAlerts,
 	} {
-		value, ok := byKey[vulkanmetrics.MeasurementKey(name, attributes)]
+		value, ok := byKey[iMetrics.MeasurementKey(name, attributes)]
 		if !ok {
 			die(fmt.Sprintf("no check summary head for %s", name))
 		}

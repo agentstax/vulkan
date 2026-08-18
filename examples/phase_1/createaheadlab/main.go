@@ -21,8 +21,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	vulkancommon "github.com/agentstax/vulkan/pkg/common"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iCommon "github.com/agentstax/vulkan/pkg/common"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -38,7 +38,7 @@ const totalPublishes = int64(105)
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -60,7 +60,7 @@ func main() {
 
 // perCallScenario: ProduceFunc publishes one at a time -- the single-id
 // trigger path (shouldTriggerWithId inside AppendMessage).
-func perCallScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+func perCallScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
 	step("per-call ProduceFunc: partition 1 exists before the boundary")
 	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "percall")
 	defer cleanup()
@@ -78,7 +78,7 @@ func perCallScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, m
 
 // batchedScenario: payload-only Produce calls ride the batcher -- the id-range
 // trigger path (shouldTriggerWithRange inside AppendMessageBatch).
-func batchedScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+func batchedScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
 	step("batched Produce: a batch's id range fires the trigger before the boundary")
 	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "batched")
 	defer cleanup()
@@ -94,7 +94,7 @@ func batchedScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, m
 
 // inTxScenario: the trigger id lands via ProduceInTx -- it fires pre-commit,
 // and the create backs off until this tx's commit releases the parent lock.
-func inTxScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
+func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin) {
 	step("ProduceInTx: pre-commit trigger, create lands after the caller commits")
 	tp, wpInstance, warns, cleanup := register(ctx, ds, mAdmin, "intx")
 	defer cleanup()
@@ -116,12 +116,12 @@ func inTxScenario(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdm
 
 // ---- helpers ----
 
-func register(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.Topic, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
+func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.Topic, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
 	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	warns, err := NewWarnCounter(vulkancommon.NewDefaultLogger(os.Stdout))
+	warns, err := NewWarnCounter(iCommon.NewDefaultLogger(os.Stdout))
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Logger: warns})
 	must(err)
@@ -163,7 +163,7 @@ func publishConcurrent(ctx context.Context, wpInstance *producer.ProducerInstanc
 // waitForPartition polls for message_log_<topicId>_<n> -- the creation is a
 // detached goroutine, so "before the boundary" is proven by seeing the table
 // while publishes are still below it.
-func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, n int64) {
+func waitForPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, n int64) {
 	table := fmt.Sprintf("message_log_%d_%d", topicId, n)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -179,7 +179,7 @@ func waitForPartition(ctx context.Context, ds *coredatastore.PostgresDatastore, 
 // assertCreateAheadWon: no heal warn, no drop warn, ids contiguous (a heal
 // burns the boundary id on its rolled-back insert), and only partition 1 was
 // created ahead.
-func assertCreateAheadWon(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64, warns *WarnCounter) {
+func assertCreateAheadWon(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, warns *WarnCounter) {
 	assertInt("zero boundary-heal warns", warns.HealWarns.Load(), 0)
 	assertInt("zero create-ahead drop warns", warns.DropWarns.Load(), 0)
 
@@ -201,7 +201,7 @@ func assertCreateAheadWon(ctx context.Context, ds *coredatastore.PostgresDatasto
 	fmt.Println("  ✓ no runaway creation past the triggers' reach")
 }
 
-func regclassExists(ctx context.Context, ds *coredatastore.PostgresDatastore, table string) bool {
+func regclassExists(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) bool {
 	var exists bool
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL;`, table).Scan(&exists))
 	return exists
@@ -213,10 +213,10 @@ type WarnCounter struct {
 	HealWarns atomic.Int64
 	DropWarns atomic.Int64
 
-	inner vulkancommon.Logger
+	inner iCommon.Logger
 }
 
-func NewWarnCounter(inner vulkancommon.Logger) (*WarnCounter, error) {
+func NewWarnCounter(inner iCommon.Logger) (*WarnCounter, error) {
 	if inner == nil {
 		return nil, fmt.Errorf("inner logger must not be nil")
 	}

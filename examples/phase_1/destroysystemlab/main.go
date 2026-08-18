@@ -23,7 +23,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/system"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -47,13 +47,13 @@ var controlPlaneTables = []string{
 	"migration_log",
 }
 
-var ds *coredatastore.PostgresDatastore
+var ds *iDatastore.PostgresDatastore
 
 func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})

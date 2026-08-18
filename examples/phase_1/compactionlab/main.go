@@ -36,7 +36,7 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -64,7 +64,7 @@ var cursorGroupID int64
 func main() {
 	ctx := context.Background()
 
-	ds, err := coredatastore.NewPostgresDatastore(ctx, &coredatastore.PostgresConnectionConfig{
+	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
 		User: "example_user", Pass: "example_password",
 		Host: "localhost", Port: 5432, Database: "example_db",
 	})
@@ -251,7 +251,7 @@ func decode(payload json.RawMessage) KeyedRecord {
 // over an id range that only contains unkeyed rows, then checks the plan for
 // the compaction_head lookup being marked never executed -- proof the OR's left
 // disjunct (compaction_key IS NULL) short-circuited it for every row.
-func explainNoCompactionSubplan(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, low, high int64) {
+func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64) {
 	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF) SELECT m.id, m.payload, m.created_at FROM %s m
@@ -288,15 +288,15 @@ func explainNoCompactionSubplan(ctx context.Context, ds *coredatastore.PostgresD
 	assertTrue("the compaction_head lookup never executed against unkeyed-only rows", matched)
 }
 
-func rowCount(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId int64) int64 {
+func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
 }
 
-func rowExists(ctx context.Context, ds *coredatastore.PostgresDatastore, topicId, id int64) bool {
+func rowExists(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, id int64) bool {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE id=$1`, topicId), id) == 1
 }
 
-func scalar(ctx context.Context, ds *coredatastore.PostgresDatastore, q string, args ...any) int64 {
+func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
 	var v int64
 	must(ds.Pool.QueryRow(ctx, q, args...).Scan(&v))
 	return v

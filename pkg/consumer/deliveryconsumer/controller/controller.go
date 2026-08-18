@@ -5,7 +5,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller/datastore"
-	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type DeliveryConsumerController struct {
@@ -16,7 +16,7 @@ type DeliveryConsumerController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewDeliveryConsumerController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*DeliveryConsumerController, error) {
+func NewDeliveryConsumerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*DeliveryConsumerController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
