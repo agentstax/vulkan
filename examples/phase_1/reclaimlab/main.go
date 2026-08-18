@@ -25,10 +25,10 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -137,7 +137,7 @@ func main() {
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
 	// the dead WORKER 1 "resurrects" and tries to commit with its STALE token: rejected
-	if err := messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, vulkanerrors.ErrLeaseLost) {
+	if err := messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures); !errors.Is(err, vulkancommon.ErrLeaseLost) {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)

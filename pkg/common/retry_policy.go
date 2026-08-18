@@ -1,4 +1,4 @@
-package retry
+package common
 
 import (
 	"fmt"
@@ -6,16 +6,16 @@ import (
 	"time"
 )
 
-// Policy is the tunable retry config
-type Policy struct {
+// RetryPolicy is the tunable retry config
+type RetryPolicy struct {
 	MaxRetries int           `json:"max_retries,omitempty"`
 	BaseDelay  time.Duration `json:"base_delay,omitempty"`
 	MaxDelay   time.Duration `json:"max_delay,omitempty"`
 	Exponent   int           `json:"exponent,omitempty"`
 }
 
-func NewDefaultRetryPolicy() *Policy {
-	return &Policy{
+func NewDefaultRetryPolicy() *RetryPolicy {
+	return &RetryPolicy{
 		MaxRetries: 6,
 		BaseDelay:  time.Second,
 		MaxDelay:   5 * time.Minute,
@@ -25,14 +25,14 @@ func NewDefaultRetryPolicy() *Policy {
 
 // CalculateDelay returns the clamped exponential backoff
 // Algo: BaseDelay * Exponent^attempt, floored at 0 and ceiled at MaxDelay.
-func (p *Policy) CalculateDelay(attempt int) time.Duration {
+func (p *RetryPolicy) CalculateDelay(attempt int) time.Duration {
 	d := time.Duration(float64(p.BaseDelay) * math.Pow(float64(p.Exponent), float64(attempt)))
 	return max(MIN_DELAY, min(d, p.MaxDelay))
 }
 
 // CalculateTotalDelay returns the schedule's total sleep time. Wrap never
 // sleeps after the last attempt, so the sum stops at MaxRetries-2.
-func (p *Policy) CalculateTotalDelay() time.Duration {
+func (p *RetryPolicy) CalculateTotalDelay() time.Duration {
 	var total time.Duration
 	for attempt := range p.MaxRetries - 1 {
 		total += p.CalculateDelay(attempt)
@@ -40,14 +40,14 @@ func (p *Policy) CalculateTotalDelay() time.Duration {
 	return total
 }
 
-func (p *Policy) Equal(other *Policy) bool {
+func (p *RetryPolicy) Equal(other *RetryPolicy) bool {
 	if p == nil || other == nil {
 		return p == other
 	}
 	return *p == *other
 }
 
-func (p *Policy) WithDefaults() *Policy {
+func (p *RetryPolicy) WithDefaults() *RetryPolicy {
 	if p == nil {
 		return NewDefaultRetryPolicy()
 	}
@@ -71,7 +71,7 @@ func (p *Policy) WithDefaults() *Policy {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (p *Policy) Validate() error {
+func (p *RetryPolicy) Validate() error {
 	if p == nil {
 		return nil // nil is valid -- it resolves to the default policy at use
 	}

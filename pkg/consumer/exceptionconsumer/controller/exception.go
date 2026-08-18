@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumer/base/controller"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
@@ -106,7 +105,7 @@ func (c *ExceptionConsumerController) RecordExceptionSuccess(ctx context.Context
 // RecordExceptionFailure resets the row so it can be retried, or marks it
 // 'dead' once retryPolicy's budget is spent.
 // A non-nil keyClaim frees the key in the same transaction.
-func (c *ExceptionConsumerController) RecordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ClaimedException, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
+func (c *ExceptionConsumerController) RecordExceptionFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ClaimedException, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
 	if retryPolicy == nil {
 		return errors.New("retryPolicy must not be nil")
 	}

@@ -14,7 +14,6 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
@@ -27,7 +26,7 @@ type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
 // alongside consumption.
 type Consumer[Message any] struct {
 	Config *ConsumerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	ds *datastore.PostgresDatastore
 

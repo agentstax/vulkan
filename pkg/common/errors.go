@@ -1,6 +1,4 @@
-// Package errors holds the sentinel errors vulkan's producers and consumers
-// share, for callers to errors.Is against.
-package errors
+package common
 
 import "errors"
 

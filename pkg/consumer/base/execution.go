@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -36,7 +35,7 @@ func NewBaseExecution[Message any](baseDefinition *BaseDefinition[Message], owne
 
 	instanceRunner, err := workercontroller.NewInstanceRunner(baseDefinition.workers, claimed, &workercontroller.InstanceRunnerConfig{
 		InstanceTTL: instanceTTL,
-		Logger:      logger.With(baseDefinition.Logger, "worker", baseDefinition.workerName, "owner", owner.Name),
+		Logger:      common.LoggerWith(baseDefinition.Logger, "worker", baseDefinition.workerName, "owner", owner.Name),
 	})
 	if err != nil {
 		return nil, err

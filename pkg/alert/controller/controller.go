@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
+	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 )
 
@@ -18,7 +18,7 @@ type AlertController struct {
 	alerts *producer.ProducerInstance[alert.Alert]
 	heads  *compactioncontroller.CompactionController[alert.Alert]
 	repeat time.Duration
-	logger logger.Logger
+	logger common.Logger
 }
 
 // alerts is a registered producer instance on the __system.alerts topic;

@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type InstanceRunnerConfig struct {
@@ -15,7 +15,7 @@ type InstanceRunnerConfig struct {
 	// Default: 30s.
 	InstanceTTL time.Duration
 
-	Logger logger.Logger // enrich with the worker's identity via logger.With. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // enrich with the worker's identity via common.LoggerWith. Default: text logger to stdout, warn level and up.
 }
 
 func (c *InstanceRunnerConfig) WithDefaults() *InstanceRunnerConfig {
@@ -23,7 +23,7 @@ func (c *InstanceRunnerConfig) WithDefaults() *InstanceRunnerConfig {
 		c.InstanceTTL = 30 * time.Second
 	}
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	return c
 }

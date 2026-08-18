@@ -4,14 +4,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/system/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 type SystemController struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	declarers []worker.Declarer
 	datastore *datastore.SystemDatastore

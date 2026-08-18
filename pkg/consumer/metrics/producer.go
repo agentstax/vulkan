@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -17,7 +17,7 @@ const abandonedEventsBufferSize = 256
 type MetricEventProducer struct {
 	producer *producer.Producer[GoRoutineEvent]
 	events   chan *GoRoutineEvent
-	logger   logger.Logger
+	logger   common.Logger
 }
 
 func NewMetricEventProducer(ds *datastore.PostgresDatastore, cfg *MetricEventConfig) (*MetricEventProducer, error) {

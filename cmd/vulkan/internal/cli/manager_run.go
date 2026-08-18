@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/otelvulkan"
-	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -46,7 +46,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 
 			// unlike the one-shot commands, the daemon's log stream IS its
 			// output -- full info level, still on stderr by convention
-			runLogger := logger.NewDefaultLogger(os.Stderr, slog.LevelInfo)
+			runLogger := common.NewDefaultLogger(os.Stderr, slog.LevelInfo)
 
 			systemManager, err := systemmanager.NewSystemManager(ds, &systemmanager.SystemManagerConfig{
 				Logger: runLogger,

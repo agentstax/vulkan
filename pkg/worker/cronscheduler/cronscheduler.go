@@ -3,9 +3,9 @@ package cronscheduler
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler/datastore"
@@ -15,7 +15,7 @@ const WorkerCronScheduler = "cron_scheduler"
 
 type CronSchedulerDefinition struct {
 	Config *CronSchedulerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	workers   *controller.WorkerController
 	datastore *datastore.CronSchedulerDatastore

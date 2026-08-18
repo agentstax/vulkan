@@ -6,7 +6,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
@@ -89,7 +88,7 @@ func decodeMessageOptions(value any) (*common.MessageOptions, error) {
 	}
 	// Retry may be absent from the document; field reads assume it isn't
 	if options.Retry == nil {
-		options.Retry = &retry.Policy{}
+		options.Retry = &common.RetryPolicy{}
 	}
 	return &options, nil
 }

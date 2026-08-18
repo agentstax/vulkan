@@ -1,37 +1,36 @@
-package retry
+package common
 
 import (
 	"context"
 	"errors"
 	"net"
 
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// DatastoreRetry is Retry specialized for Postgres, shared by producer/consumer/topic:
+// RetryDatastore is Retry specialized for Postgres, shared by producer/consumer/topic:
 // same backoff/attempt machinery, but the error returned from retryableFunc is
 // classified automatically instead of every call site wrapping it by hand.
-type DatastoreRetry struct {
+type RetryDatastore struct {
 	*Retry
 }
 
 // policy may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewDatastoreRetry(policy *Policy, log logger.Logger) (*DatastoreRetry, error) {
+func NewRetryDatastore(policy *RetryPolicy, log Logger) (*RetryDatastore, error) {
 	r, err := NewRetry(policy, log)
 	if err != nil {
 		return nil, err
 	}
-	return &DatastoreRetry{
+	return &RetryDatastore{
 		Retry: r,
 	}, nil
 }
 
 // Wrap shadows the embedded Retry.Wrap -- same signature, so call sites keep
 // writing the real DB call with no manual classification.
-func (d *DatastoreRetry) Wrap(ctx context.Context, retryableFunc RetryableFunc) error {
-	return d.Retry.Wrap(ctx, func() error {
+func (r *RetryDatastore) Wrap(ctx context.Context, retryableFunc RetryableFunc) error {
+	return r.Retry.Wrap(ctx, func() error {
 		return classify(retryableFunc())
 	})
 }
@@ -55,7 +54,7 @@ func classify(err error) error {
 }
 
 // IsTransientPgError reports whether a retry is safe -- never a
-// deterministic rejection (a business-logic *pgconn.PgError, errors.ErrLeaseLost).
+// deterministic rejection (a business-logic *pgconn.PgError, ErrLeaseLost).
 func IsTransientPgError(err error) bool {
 	if err == nil {
 		return false
@@ -81,7 +80,7 @@ func IsTransientPgError(err error) bool {
 			return true
 
 		// connection died after a statement may have shipped, so the outcome
-		// is genuinely ambiguous -- every DatastoreRetry.Wrap call site is
+		// is genuinely ambiguous -- every RetryDatastore.Wrap call site is
 		// audited for this; an ungated write added to one reopens it.
 		case "08000", "08006", "08007", "40003":
 			return true

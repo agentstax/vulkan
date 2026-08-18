@@ -1,5 +1,4 @@
-// Package context holds lifecycle-context glue shared by producers and consumers.
-package context
+package common
 
 import (
 	"context"
@@ -7,8 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 // LifecycleContext returns the application-lifetime context to pass to
@@ -19,12 +16,12 @@ import (
 // log may be nil -- the warn-level default logger is used, which keeps the
 // two graceful-shutdown info lines quiet and still surfaces a forced exit.
 //
-//	ctx, stop := context.LifecycleContext(nil)
+//	ctx, stop := common.LifecycleContext(nil)
 //	defer stop()
-func LifecycleContext(log logger.Logger) (context.Context, context.CancelFunc) {
+func LifecycleContext(log Logger) (context.Context, context.CancelFunc) {
 	if log == nil {
 		// specifically INFO here so lifecycle events are logged to user for clarity and understanding
-		log = logger.NewDefaultLogger(os.Stdout, slog.LevelInfo)
+		log = NewDefaultLogger(os.Stdout, slog.LevelInfo)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, 2)

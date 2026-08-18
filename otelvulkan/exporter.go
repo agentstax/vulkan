@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
@@ -19,7 +19,7 @@ import (
 // serves values read at scrape time, never a cache.
 type Exporter struct {
 	Config *ExporterConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	metrics  *Metrics
 	provider *sdkmetric.MeterProvider

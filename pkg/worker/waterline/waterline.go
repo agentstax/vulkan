@@ -3,8 +3,8 @@ package waterline
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
 )
@@ -13,7 +13,7 @@ const WorkerWaterline = "waterline"
 
 type WaterlineDefinition struct {
 	Config *WaterlineConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	workers   *controller.WorkerController
 	datastore *datastore.WaterlineDatastore

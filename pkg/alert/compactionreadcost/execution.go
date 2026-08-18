@@ -10,7 +10,6 @@ import (
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -22,7 +21,7 @@ import (
 // heartbeat holds the claim.
 type CompactionReadCostExecution struct {
 	Owner  *common.Owner
-	Logger logger.Logger
+	Logger common.Logger
 
 	definition     *CompactionReadCostDefinition
 	runner         *workercontroller.InstanceRunner
@@ -38,7 +37,7 @@ func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, ow
 
 	runner, err := workercontroller.NewInstanceRunner(definition.workers, claimed, &workercontroller.InstanceRunnerConfig{
 		InstanceTTL: definition.Config.InstanceTTL,
-		Logger:      logger.With(definition.Logger, "worker", JobName, "group", owner.Name),
+		Logger:      common.LoggerWith(definition.Logger, "worker", JobName, "group", owner.Name),
 	})
 	if err != nil {
 		return nil, err

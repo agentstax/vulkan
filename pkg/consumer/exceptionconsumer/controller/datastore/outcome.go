@@ -5,8 +5,7 @@ import (
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
-	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -53,13 +52,13 @@ func (d *ExceptionConsumerDatastore) recordExceptionSuccess(ctx context.Context,
 
 // RecordExceptionFailure resets delivery so it can be retried or marked 'dead'.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordExceptionFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.recordExceptionFailure(ctx, retryPolicy, exception, failureErr, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context, retryPolicy *retry.Policy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	if exception.Attempts >= retryPolicy.MaxRetries {
 		return d.recordExceptionTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
 	}
@@ -265,7 +264,7 @@ func (d *ExceptionConsumerDatastore) recordAndReleaseKey(ctx context.Context, ke
 		d.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group_id", keyClaim.ConsumerGroupId, "compaction_key", keyClaim.CompactionKey)
 	}
 	if tag.RowsAffected() == 0 {
-		return vulkanerrors.ErrLeaseLost
+		return common.ErrLeaseLost
 	}
 	return nil
 }
@@ -276,7 +275,7 @@ func (d *ExceptionConsumerDatastore) record(ctx context.Context, sql string, arg
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return vulkanerrors.ErrLeaseLost
+		return common.ErrLeaseLost
 	}
 	return nil
 }

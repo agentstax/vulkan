@@ -1,12 +1,11 @@
 package metrics
 
 import (
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type MetricEventConfig struct {
 	Noop   bool
-	Logger logger.Logger
-	Retry  *retry.Policy
+	Logger common.Logger
+	Retry  *common.RetryPolicy
 }

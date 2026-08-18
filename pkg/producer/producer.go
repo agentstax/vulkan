@@ -8,8 +8,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -25,7 +25,7 @@ type Producer[Message any] struct {
 	controller      *controller.ProducerController[Message]
 	topicController *topiccontroller.TopicController
 	evaluators      []alert.Evaluator
-	logger          logger.Logger
+	logger          common.Logger
 	cfg             ProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 

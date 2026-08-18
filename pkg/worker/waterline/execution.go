@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
@@ -16,7 +15,7 @@ import (
 type WaterlineExecution struct {
 	Owner  *common.Owner
 	Config *WaterlineConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	runner    *controller.InstanceTickRunner
 	datastore *datastore.WaterlineDatastore
@@ -34,7 +33,7 @@ func newWaterlineExecution(waterline *WaterlineDefinition, owner *common.Owner, 
 	runner, err := controller.NewInstanceTickRunner(waterline.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    waterline.Config.InstanceTTL,
 		JitterFraction: waterline.Config.JitterFraction,
-		Logger:         logger.With(waterline.Logger, "worker", WorkerWaterline, "topic", owner.TopicId, "group", owner.Name),
+		Logger:         common.LoggerWith(waterline.Logger, "worker", WorkerWaterline, "topic", owner.TopicId, "group", owner.Name),
 		TickRetry:      waterline.Config.RollRetry,
 	})
 	if err != nil {

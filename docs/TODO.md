@@ -425,6 +425,19 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (topic/controller/schema.go:22, worker/controller/schema.go:17,
       systemmanager.go:113) and the seam chunk removes cronscheduler's
       i.datastore.Datastore grab.
-- [ ] **pkg/context + pkg/logger → pkg/common.** Probably move until the
-      final public surface is settled (carried from the original roadmap
-      sub-bullet).
+- [x] **pkg/context + pkg/logger → pkg/common.** Done 2026-08-17, expanded
+      to the full flat merge (user-settled; record [0528]): logger, retry,
+      errors, context all merged into a flat pkg/common — renames
+      retry.Policy → common.RetryPolicy, DatastoreRetry →
+      common.RetryDatastore (+NewRetryDatastore), logger.With →
+      common.LoggerWith; files named for their declarations
+      (retry_policy.go, retry_datastore.go, lifecycle.go, ...);
+      messageoptions.go → message_options.go with ConcurrencyPolicy split
+      to concurrency_policy.go; concurrency EXCLUDED (destined internal/
+      per the public-surface trim — don't fold it into common). 140 caller
+      files re-pathed across all three modules (labs importing
+      examples/phase_1/common alias the pkg as vulkancommon); the
+      vulkanerrors/vulkanctx aliases are gone; CONVENTIONS.md wording
+      updated (common.Logger, sentinels shared across stacks live in
+      pkg/common). Verified: build+vet+tests all modules, fresh-DB full
+      lab suite at checkpoint.

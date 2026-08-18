@@ -9,7 +9,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/base/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -19,7 +18,7 @@ type BaseConsumer[Message any] struct {
 	Owner     *common.Owner
 	Topic     *topic.Topic
 	KeyLeases *controller.KeyLeaseController
-	Logger    logger.Logger
+	Logger    common.Logger
 
 	abandonedEvents *consumermetrics.MetricEventProducer
 	consumerFunc    func(ctx context.Context, message *Message) error

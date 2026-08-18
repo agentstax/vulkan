@@ -3,17 +3,16 @@ package datastore
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 // WaterlineDatastore owns the waterline's roll. Every op is group-scoped,
 // idempotent, and concurrent-safe.
 type WaterlineDatastore struct {
 	Datastore      *datastore.PostgresDatastore
-	DatastoreRetry *retry.DatastoreRetry
-	Logger         logger.Logger
+	DatastoreRetry *common.RetryDatastore
+	Logger         common.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -30,7 +29,7 @@ func NewWaterlineDatastore(ds *datastore.PostgresDatastore, cfg *WaterlineDatast
 		return nil, err
 	}
 
-	datastoreRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	datastoreRetry, err := common.NewRetryDatastore(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}

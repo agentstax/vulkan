@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type RunnerConfig struct {
@@ -20,7 +20,7 @@ type RunnerConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
 }
 
 func (c *RunnerConfig) WithDefaults() *RunnerConfig {
@@ -31,7 +31,7 @@ func (c *RunnerConfig) WithDefaults() *RunnerConfig {
 		c.JitterFraction = 0.1
 	}
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	return c
 }

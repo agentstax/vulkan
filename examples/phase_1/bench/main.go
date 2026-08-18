@@ -21,7 +21,6 @@ import (
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -83,7 +82,7 @@ func main() {
 		// buffer stays shallow but must be >= batch (validate) and big enough to keep the pool fed
 		QueueSize:          batch + conc,
 		MessageConcurrency: conc,
-		Message:            &vulkancommon.MessageOptions{Timeout: 30 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
+		Message:            &vulkancommon.MessageOptions{Timeout: 30 * time.Second, Retry: &vulkancommon.RetryPolicy{MaxRetries: 3}},
 		ClaimPollRate:      500 * time.Millisecond,
 		QueueMargin:        10 * time.Second,
 		AckMargin:          5 * time.Second,

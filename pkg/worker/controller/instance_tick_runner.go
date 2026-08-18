@@ -7,17 +7,17 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // paces a worker's pass at the row's poll_rate while an InstanceRunner holds
 // the claim, recording the success/failure streak. Every tick-paced execution
-// composes one. Pass a logger.With-enriched Logger so its lines carry the
+// composes one. Pass a common.LoggerWith-enriched Logger so its lines carry the
 // worker's identity.
 type InstanceTickRunner struct {
 	Config *InstanceTickRunnerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	runner   *InstanceRunner
 	workers  *WorkerController

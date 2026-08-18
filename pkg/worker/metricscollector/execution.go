@@ -9,7 +9,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -25,7 +24,7 @@ import (
 type MetricsCollectorExecution struct {
 	Owner  *common.Owner
 	Config *MetricsCollectorConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	runner           *controller.InstanceTickRunner
 	metrics          *metricscontroller.MetricsController
@@ -49,7 +48,7 @@ func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *
 	runner, err := controller.NewInstanceTickRunner(collector.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    collector.Config.InstanceTTL,
 		JitterFraction: collector.Config.JitterFraction,
-		Logger:         logger.With(collector.Logger, "worker", WorkerMetricsCollector, "system", owner.SystemId),
+		Logger:         common.LoggerWith(collector.Logger, "worker", WorkerMetricsCollector, "system", owner.SystemId),
 		TickRetry:      collector.Config.CollectRetry,
 	})
 	if err != nil {

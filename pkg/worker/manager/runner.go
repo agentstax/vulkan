@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
@@ -18,7 +17,7 @@ import (
 type Runner struct {
 	Owner  *common.Owner
 	Config *RunnerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	definition *ManagerDefinition
 }

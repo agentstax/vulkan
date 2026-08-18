@@ -14,9 +14,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	vulkanctx "github.com/agentstax/vulkan/pkg/context"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -39,7 +37,7 @@ func main() {
 	fmt.Printf("crash after: %f\n", *crashAfterPtr)
 
 	// SETUP
-	ctx, stop := vulkanctx.LifecycleContext(nil)
+	ctx, stop := vulkancommon.LifecycleContext(nil)
 	defer stop()
 
 	const concurrencyLimit = 5
@@ -82,7 +80,7 @@ func main() {
 		BatchLimit:         10,
 		QueueSize:          concurrencyLimit * 10,
 		MessageConcurrency: concurrencyLimit,
-		Message:            &vulkancommon.MessageOptions{Timeout: 5 * time.Second, Retry: &retry.Policy{MaxRetries: 3}},
+		Message:            &vulkancommon.MessageOptions{Timeout: 5 * time.Second, Retry: &vulkancommon.RetryPolicy{MaxRetries: 3}},
 		ClaimPollRate:      1 * time.Second,
 		QueueMargin:        2 * time.Second,
 		AckMargin:          1 * time.Second,

@@ -278,3 +278,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0525 2026-08-16 accepted (phase 14) — ProduceBatch: one call, N messages, one transaction (explicit batch verb beside the batcher)
 - 0526 2026-08-17 accepted (phase 14b) — migrate.Controller is the package's only door; the schema gate reads by id; Owner names are never empty
 - 0527 2026-08-17 accepted (phase 14b) — pkg/migrate adopts the three-layer template (vocabulary root, controller, controller/datastore; ToStep becomes a controller adapter, ErrNotRegistered rehomed to vocabulary)
+- 0528 2026-08-17 accepted (phase 14b) — pkg/logger, pkg/retry, pkg/errors, pkg/context merge into a flat pkg/common (RetryPolicy/RetryDatastore/LoggerWith renames; concurrency excluded, destined internal/)

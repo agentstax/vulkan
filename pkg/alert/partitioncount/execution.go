@@ -10,7 +10,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -22,7 +21,7 @@ import (
 // holds the claim.
 type PartitionCountExecution struct {
 	Owner  *common.Owner
-	Logger logger.Logger
+	Logger common.Logger
 
 	definition     *PartitionCountDefinition
 	runner         *workercontroller.InstanceRunner
@@ -38,7 +37,7 @@ func newPartitionCountExecution(definition *PartitionCountDefinition, owner *com
 
 	runner, err := workercontroller.NewInstanceRunner(definition.workers, claimed, &workercontroller.InstanceRunnerConfig{
 		InstanceTTL: definition.Config.InstanceTTL,
-		Logger:      logger.With(definition.Logger, "worker", JobName, "group", owner.Name),
+		Logger:      common.LoggerWith(definition.Logger, "worker", JobName, "group", owner.Name),
 	})
 	if err != nil {
 		return nil, err

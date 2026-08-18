@@ -21,8 +21,8 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -121,7 +121,7 @@ func register(ctx context.Context, ds *coredatastore.PostgresDatastore, mAdmin *
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	warns, err := NewWarnCounter(logger.NewDefaultLogger(os.Stdout))
+	warns, err := NewWarnCounter(vulkancommon.NewDefaultLogger(os.Stdout))
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Logger: warns})
 	must(err)
@@ -208,15 +208,15 @@ func regclassExists(ctx context.Context, ds *coredatastore.PostgresDatastore, ta
 }
 
 // WarnCounter counts the two warns this lab must prove absent, delegating
-// every record to the wrapped logger.
+// every record to the wrapped common.
 type WarnCounter struct {
 	HealWarns atomic.Int64
 	DropWarns atomic.Int64
 
-	inner logger.Logger
+	inner vulkancommon.Logger
 }
 
-func NewWarnCounter(inner logger.Logger) (*WarnCounter, error) {
+func NewWarnCounter(inner vulkancommon.Logger) (*WarnCounter, error) {
 	if inner == nil {
 		return nil, fmt.Errorf("inner logger must not be nil")
 	}

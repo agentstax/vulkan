@@ -4,18 +4,17 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type ControllerConfig struct {
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for this controller's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
+	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *common.RetryPolicy // transient-error retry policy for this controller's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *ControllerConfig) WithDefaults() *ControllerConfig {
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
 	return c

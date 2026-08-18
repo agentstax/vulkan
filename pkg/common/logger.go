@@ -1,7 +1,4 @@
-// Package logger holds the logging seam every pkg/* type accepts: the Logger
-// interface, plus NewDefaultLogger, the default implementation used when a
-// caller doesn't supply one.
-package logger
+package common
 
 import (
 	"context"
@@ -20,10 +17,10 @@ type Logger interface {
 	ErrorContext(ctx context.Context, msg string, args ...any)
 }
 
-// With returns a Logger that puts args onto every line. A *slog.Logger
+// LoggerWith returns a Logger that puts args onto every line. A *slog.Logger
 // keeps its own With -- attrs pre-resolve into the handler; anything else
 // is wrapped.
-func With(l Logger, args ...any) Logger {
+func LoggerWith(l Logger, args ...any) Logger {
 	if sl, ok := l.(*slog.Logger); ok {
 		return sl.With(args...)
 	}

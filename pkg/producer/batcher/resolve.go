@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -24,7 +24,7 @@ const (
 func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
 	// checked FIRST -- these can carry a statement index that is a retry
 	// artifact, NOT poison to evict
-	if retry.IsRetryable(err) || errors.Is(err, context.DeadlineExceeded) {
+	if common.IsRetryable(err) || errors.Is(err, context.DeadlineExceeded) {
 		return failBatch
 	}
 

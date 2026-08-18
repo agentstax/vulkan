@@ -3,14 +3,14 @@ package controller
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics/controller/datastore"
 )
 
 // MetricsController is the single read surface for the DB-snapshot metrics.
 type MetricsController struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore *datastore.MetricsDatastore
 }

@@ -4,9 +4,9 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/alert"
+	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -18,7 +18,7 @@ const WorkerMetricsCollector = "metrics_collector"
 
 type MetricsCollectorDefinition struct {
 	Config *MetricsCollectorConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	workers    *controller.WorkerController
 	metrics    *metricscontroller.MetricsController

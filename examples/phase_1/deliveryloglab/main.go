@@ -34,12 +34,12 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
@@ -144,7 +144,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *coredatastore.Postgr
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
-		must(exceptionConsumers.RecordExceptionFailure(ctx, (&retry.Policy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DeliveryLogMode, nil))
+		must(exceptionConsumers.RecordExceptionFailure(ctx, (&vulkancommon.RetryPolicy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DeliveryLogMode, nil))
 		assertDeliveryLogRow(ctx, ds, tp.Id, groupId, failingId, attempt, errText, true)
 	}
 

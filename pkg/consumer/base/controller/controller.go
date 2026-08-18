@@ -3,13 +3,13 @@ package controller
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/base/controller/datastore"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 type KeyLeaseController struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore *datastore.KeyLeaseDatastore
 }

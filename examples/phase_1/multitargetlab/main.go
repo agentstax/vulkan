@@ -16,7 +16,7 @@ package main
 //     between the two ProduceInTx calls.
 //   - ambiguousCommitScenario: a Commit-time failure (a deferred FK
 //     violation, so it surfaces at Commit, not at any INSERT) comes back
-//     from InTransaction completely unclassified -- no retry.PermanentError
+//     from InTransaction completely unclassified -- no vulkancommon.PermanentError
 //     wrapping, no special-casing. InTransaction never retries; whether a
 //     rerun is safe is the caller's call, so the raw error must reach them.
 //   - callerKeyRetryScenario: the sanctioned way to make that rerun safe --
@@ -33,9 +33,9 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
+	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
@@ -179,8 +179,8 @@ func ambiguousCommitScenario(ctx context.Context, ds *coredatastore.PostgresData
 	if !ok || pgErr.Code != "23503" {
 		die(fmt.Sprintf("expected the raw foreign_key_violation (23503) from tx.Commit, got %v", err))
 	}
-	if _, ok := errors.AsType[*retry.PermanentError](err); ok {
-		die("InTransaction wrapped the commit error in retry.PermanentError -- it must never classify, only surface as-is")
+	if _, ok := errors.AsType[*vulkancommon.PermanentError](err); ok {
+		die("InTransaction wrapped the commit error in vulkancommon.PermanentError -- it must never classify, only surface as-is")
 	}
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 0)

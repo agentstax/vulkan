@@ -3,13 +3,13 @@ package controller
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 )
 
 type ProducerController[Message any] struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore *datastore.ProducerDatastore[Message]
 }

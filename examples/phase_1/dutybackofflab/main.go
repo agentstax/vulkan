@@ -18,7 +18,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -55,7 +54,7 @@ func main() {
 	}()
 
 	janitorDefinition, err := janitor.NewJanitorDefinition(ds, &janitor.JanitorConfig{
-		SweepRetry: &retry.Policy{BaseDelay: backoffBase, MaxDelay: backoffMax},
+		SweepRetry: &common.RetryPolicy{BaseDelay: backoffBase, MaxDelay: backoffMax},
 	})
 	must(err)
 	workers, err := workercontroller.NewWorkerController(ds, nil)

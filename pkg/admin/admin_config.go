@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type MessageAdminConfig struct {
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // Default: retry.NewDefaultRetryPolicy().
+	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *common.RetryPolicy // Default: common.NewDefaultRetryPolicy().
 
 	// AllowDestroy - whether this admin may destroy topics at all.
 	// Default: false.
@@ -22,7 +21,7 @@ type MessageAdminConfig struct {
 
 func (c *MessageAdminConfig) WithDefaults() *MessageAdminConfig {
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
 	return c

@@ -12,9 +12,9 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -30,7 +30,7 @@ const meterScopeName = "github.com/agentstax/vulkan/otelvulkan"
 // MetricsConfig.Meter to feed your own pipeline.
 type Metrics struct {
 	Config *MetricsConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	topics *topiccontroller.TopicController
 	heads  *compactioncontroller.CompactionController[metrics.Measurement]

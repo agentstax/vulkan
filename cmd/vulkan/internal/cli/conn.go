@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 const databaseURLEnv = "VULKAN_ADMIN_DATABASE_URL"
@@ -125,7 +125,7 @@ func openAdmin(ctx context.Context, databaseURL string) (*admin.MessageAdmin, *d
 	// own ✓/error output is the interface.
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{
 		AllowDestroy: true,
-		Logger:       logger.NewDefaultLogger(os.Stderr, slog.LevelError),
+		Logger:       common.NewDefaultLogger(os.Stderr, slog.LevelError),
 	})
 	if err != nil {
 		closeDS()

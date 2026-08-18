@@ -12,8 +12,6 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -22,7 +20,7 @@ import (
 type ConsumerInstance[Message any] struct {
 	Owner  *common.Owner
 	Config *ConsumerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	ds              *datastore.PostgresDatastore
 	abandonedEvents *consumermetrics.MetricEventProducer
@@ -84,12 +82,12 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	// Done() == nil -> Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase would silently not exist
 	if ctx.Done() == nil && !i.Config.DisableGracefulShutdown {
-		return fmt.Errorf("%w: consumer group %q\n%s", vulkanerrors.ErrLifecycleContextNotCancellable, i.Owner.Name, lifecycleContextHelp)
+		return fmt.Errorf("%w: consumer group %q\n%s", common.ErrLifecycleContextNotCancellable, i.Owner.Name, lifecycleContextHelp)
 	}
 
 	release, ok := i.permit.Acquire()
 	if !ok {
-		return fmt.Errorf("%w: consumer group %q on topic %d", vulkanerrors.ErrAlreadyConsuming, i.Owner.Name, i.Owner.TopicId)
+		return fmt.Errorf("%w: consumer group %q on topic %d", common.ErrAlreadyConsuming, i.Owner.Name, i.Owner.TopicId)
 	}
 	defer release()
 

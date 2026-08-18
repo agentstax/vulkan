@@ -12,7 +12,6 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumer/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/message"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
 )
 
 type exceptionRunner[Message any] struct {
@@ -167,7 +166,7 @@ func (r *exceptionRunner[Message]) recordContext(ctx context.Context, keyClaim *
 // a lost lease means another worker re-claimed the row -- it owns the outcome
 // now, so this side has nothing left to record.
 func (r *exceptionRunner[Message]) absorbLostLease(ctx context.Context, exception *controller.ClaimedException, err error) error {
-	if errors.Is(err, vulkanerrors.ErrLeaseLost) {
+	if errors.Is(err, common.ErrLeaseLost) {
 		r.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "message_id", exception.MessageId)
 		return nil
 	}

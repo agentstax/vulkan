@@ -1,11 +1,9 @@
-package retry
+package common
 
 import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 // there are plenty of retry go libs out there however b/c it is relatively basic functionality to implement I'd rather
@@ -16,13 +14,13 @@ const MIN_DELAY = 0
 type RetryableFunc func() error
 
 type Retry struct {
-	*Policy
-	Logger logger.Logger
+	*RetryPolicy
+	Logger Logger
 }
 
 // policy may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewRetry(policy *Policy, log logger.Logger) (*Retry, error) {
+func NewRetry(policy *RetryPolicy, log Logger) (*Retry, error) {
 	if log == nil {
 		return nil, errors.New("logger must not be nil")
 	}
@@ -31,8 +29,8 @@ func NewRetry(policy *Policy, log logger.Logger) (*Retry, error) {
 		return nil, err
 	}
 	return &Retry{
-		Policy: policy,
-		Logger: log,
+		RetryPolicy: policy,
+		Logger:      log,
 	}, nil
 }
 

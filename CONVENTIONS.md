@@ -81,7 +81,7 @@ Three layers per domain (template: worker, topic):
 - Import arrows point strictly downward.
 - Error sentinels are declared in the owning domain's `pkg/<x>` vocabulary
   (`errors.go`); a sentinel shared across different stacks lives in
-  `pkg/errors`. Whichever layer detects the condition raises it -- admin
+  `pkg/common`. Whichever layer detects the condition raises it -- admin
   for guards it composes, a datastore for facts its own query discovers.
 - A config file is named for the struct it declares, never bare `config.go` --
   `<x>_config.go`, `controller_config.go`, `datastore_config.go`. A package
@@ -129,7 +129,7 @@ Three layers per domain (template: worker, topic):
   Config struct. Never pass a whole data struct for a couple of fields.
 - Param order is primary collaborator first, ambient last: the dep the struct
   is *about* leads, then its remaining deps, then `cfg`, and a bare
-  `log logger.Logger` always trails (prefer `cfg.Logger` over a bare param).
+  `log common.Logger` always trails (prefer `cfg.Logger` over a bare param).
   A logger in the first position is the tell that a signature was copied from
   somewhere else -- readers scan position 1 for what the thing operates on.
 - No functional-options pattern. Every config struct: exported
@@ -167,7 +167,7 @@ Three layers per domain (template: worker, topic):
 - A value copy is not isolation: any slice, map, or pointer field inside it
   still aliases the original's backing memory, so mutating a copy can break
   the original's invariants.
-- Accept interfaces only at real seams (`logger.Logger`; `Querier` stays
+- Accept interfaces only at real seams (`common.Logger`; `Querier` stays
   private); return concrete `(*Struct, error)`. Never return a concrete
   pointer through an interface-typed return -- a typed nil stored in an
   interface compares non-nil, so every downstream nil guard lies.

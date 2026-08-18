@@ -3,16 +3,15 @@ package datastore
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 // CronSchedulerDatastore owns the cron scheduler's cron_job reads and advances.
 type CronSchedulerDatastore struct {
 	Datastore      *datastore.PostgresDatastore
-	DatastoreRetry *retry.DatastoreRetry
-	Logger         logger.Logger
+	DatastoreRetry *common.RetryDatastore
+	Logger         common.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -29,7 +28,7 @@ func NewCronSchedulerDatastore(ds *datastore.PostgresDatastore, cfg *CronSchedul
 		return nil, err
 	}
 
-	datastoreRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	datastoreRetry, err := common.NewRetryDatastore(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}

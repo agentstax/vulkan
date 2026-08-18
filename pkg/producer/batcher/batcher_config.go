@@ -5,11 +5,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type BatcherConfig struct {
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
 
 	// MaxSize - messages sharing one batched-Produce transaction. Caps
 	// lock-hold, latency tail, and the rerun cost of evicting poison.
@@ -33,7 +33,7 @@ type BatcherConfig struct {
 
 func (c *BatcherConfig) WithDefaults() *BatcherConfig {
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	if c.MaxSize == 0 {
 		c.MaxSize = 100

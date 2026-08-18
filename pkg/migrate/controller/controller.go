@@ -7,14 +7,13 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/migrate/controller/datastore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Controller struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore *datastore.MigrateDatastore
 }

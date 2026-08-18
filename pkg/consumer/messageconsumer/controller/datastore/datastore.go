@@ -3,15 +3,14 @@ package datastore
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 type MessageConsumerDatastore struct {
 	Datastore      *datastore.PostgresDatastore
-	DatastoreRetry *retry.DatastoreRetry // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
-	Logger         logger.Logger
+	DatastoreRetry *common.RetryDatastore // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
+	Logger         common.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -28,7 +27,7 @@ func NewMessageConsumerDatastore(ds *datastore.PostgresDatastore, cfg *MessageCo
 		return nil, err
 	}
 
-	datastoreRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
+	datastoreRetry, err := common.NewRetryDatastore(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}

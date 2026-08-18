@@ -5,12 +5,12 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
+	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -21,7 +21,7 @@ import (
 // alert's consumer group on the job_requests topic.
 type CompactionReadCostDefinition struct {
 	Config *CompactionReadCostConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	ds                  *coredatastore.PostgresDatastore
 	workers             *workercontroller.WorkerController

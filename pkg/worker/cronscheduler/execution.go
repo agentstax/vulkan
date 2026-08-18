@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
@@ -21,7 +20,7 @@ import (
 type CronSchedulerExecution struct {
 	Owner  *common.Owner
 	Config *CronSchedulerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	runner           *controller.InstanceTickRunner
 	datastore        *datastore.CronSchedulerDatastore
@@ -43,7 +42,7 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 	runner, err := controller.NewInstanceTickRunner(cronScheduler.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    cronScheduler.Config.InstanceTTL,
 		JitterFraction: cronScheduler.Config.JitterFraction,
-		Logger:         logger.With(cronScheduler.Logger, "worker", WorkerCronScheduler, "system", owner.SystemId),
+		Logger:         common.LoggerWith(cronScheduler.Logger, "worker", WorkerCronScheduler, "system", owner.SystemId),
 		TickRetry:      cronScheduler.Config.ScanRetry,
 	})
 	if err != nil {

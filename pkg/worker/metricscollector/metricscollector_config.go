@@ -5,8 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 type MetricsCollectorConfig struct {
@@ -29,9 +28,9 @@ type MetricsCollectorConfig struct {
 	// Default: 4.
 	TopicConcurrency int
 
-	Logger       logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry        *retry.Policy // transient-error retry policy for the collector's own Postgres calls. Default: retry.NewDefaultRetryPolicy().
-	CollectRetry *retry.Policy // failed-collection backoff curve, unrelated to Retry above. Default: retry.NewDefaultRetryPolicy().
+	Logger       common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry        *common.RetryPolicy // transient-error retry policy for the collector's own Postgres calls. Default: common.NewDefaultRetryPolicy().
+	CollectRetry *common.RetryPolicy // failed-collection backoff curve, unrelated to Retry above. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *MetricsCollectorConfig) WithDefaults() *MetricsCollectorConfig {
@@ -45,7 +44,7 @@ func (c *MetricsCollectorConfig) WithDefaults() *MetricsCollectorConfig {
 		c.TopicConcurrency = 4
 	}
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
 	c.CollectRetry = c.CollectRetry.WithDefaults()

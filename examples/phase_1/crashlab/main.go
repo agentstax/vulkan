@@ -30,7 +30,6 @@ import (
 	vulkancommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/retry"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -98,7 +97,7 @@ func main() {
 		BatchLimit:         100,
 		QueueSize:          100 + conc,
 		MessageConcurrency: conc,
-		Message:            &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &retry.Policy{MaxRetries: 100}},
+		Message:            &vulkancommon.MessageOptions{Timeout: 2 * time.Second, Retry: &vulkancommon.RetryPolicy{MaxRetries: 100}},
 		ClaimPollRate:      200 * time.Millisecond,
 		QueueMargin:        1 * time.Second,
 		AckMargin:          1 * time.Second,

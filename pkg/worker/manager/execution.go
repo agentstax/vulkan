@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"golang.org/x/sync/errgroup"
@@ -16,7 +15,7 @@ import (
 type ManagerExecution struct {
 	Owner  *common.Owner // the reconcile scope
 	Config *ManagerConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	runner       *controller.InstanceTickRunner
 	workers      *controller.WorkerController
@@ -33,7 +32,7 @@ func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claime
 	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    manager.Config.InstanceTTL,
 		JitterFraction: manager.Config.JitterFraction,
-		Logger:         logger.With(manager.Logger, "worker", WorkerManager, "scope", owner.Name),
+		Logger:         common.LoggerWith(manager.Logger, "worker", WorkerManager, "scope", owner.Name),
 		TickRetry:      manager.Config.RefreshRetry,
 	})
 	if err != nil {

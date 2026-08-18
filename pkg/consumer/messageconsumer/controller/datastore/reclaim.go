@@ -7,7 +7,7 @@ import (
 	"time"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
-	vulkanerrors "github.com/agentstax/vulkan/pkg/errors"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -156,7 +156,7 @@ func (d *MessageConsumerDatastore) forceReclaimRange(ctx context.Context, groupI
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return vulkanerrors.ErrLeaseLost
+		return common.ErrLeaseLost
 	}
 	return nil
 }

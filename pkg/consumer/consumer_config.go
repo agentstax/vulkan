@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 type ConsumerType string
@@ -41,12 +39,12 @@ type ConsumerConfig struct {
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
 	TimeoutGrace            time.Duration
-	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
-	InstanceTTL             time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
-	BindingRetryInterval    time.Duration // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
-	Retry                   *retry.Policy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: retry.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
-	Logger                  logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
+	ExceptionInitialBackoff time.Duration       // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
+	InstanceTTL             time.Duration       // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
+	BindingRetryInterval    time.Duration       // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
+	Retry                   *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
+	ShutdownTimeout         time.Duration       // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + AckMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
+	Logger                  common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
 
 	// Message - default MessageOptions: fills any option the produced message left unset.
 	// Default: Timeout 30s; Retry MaxRetries 3 with the default curve.
@@ -140,12 +138,12 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	}
 
 	if c.Retry == nil {
-		c.Retry = &retry.Policy{}
+		c.Retry = &common.RetryPolicy{}
 	}
 	c.Retry = c.Retry.WithDefaults()
 
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 
 	return c

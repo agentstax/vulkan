@@ -3,16 +3,16 @@ package controller
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/compaction/controller/datastore"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 // CompactionController is the read door to compaction heads -- the write side
 // (the head upsert and the FOR UPDATE read inside a produce transaction)
 // belongs to the producer.
 type CompactionController[Message any] struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore *datastore.CompactionDatastore
 }

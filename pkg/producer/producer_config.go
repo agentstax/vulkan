@@ -5,14 +5,12 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/logger"
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
-	"github.com/agentstax/vulkan/pkg/retry"
 )
 
 type ProducerConfig struct {
-	Logger logger.Logger // pass your own *slog.Logger (own Handler) or anything satisfying logger.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *retry.Policy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: retry.NewDefaultRetryPolicy().
+	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *common.RetryPolicy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: common.NewDefaultRetryPolicy().
 
 	// Message - this producer's default MessageOptions, merged UNDER every
 	// produce: a field the per-produce ProduceOptions.Message leaves unset
@@ -28,7 +26,7 @@ type ProducerConfig struct {
 
 func (c *ProducerConfig) WithDefaults() *ProducerConfig {
 	if c.Logger == nil {
-		c.Logger = logger.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
 	if c.Batch.Logger == nil {

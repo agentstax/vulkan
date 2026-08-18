@@ -3,26 +3,7 @@ package common
 import (
 	"fmt"
 	"time"
-
-	"github.com/agentstax/vulkan/pkg/retry"
 )
-
-// ConcurrencyPolicy is a message's concurrency policy.
-type ConcurrencyPolicy string
-
-const (
-	ConcurrencyAllow ConcurrencyPolicy = "allow" // current key busy -> new same-keyed message runs concurrently
-	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message waits; when the key frees, only the key's most recent head runs
-)
-
-func (p ConcurrencyPolicy) Validate() error {
-	switch p {
-	case "", ConcurrencyAllow, ConcurrencyDefer:
-		return nil
-	default:
-		return fmt.Errorf("must be one of %q, %q, got %q", ConcurrencyAllow, ConcurrencyDefer, p)
-	}
-}
 
 // MessageOptions are the per-message knobs a producer may REQUEST and a
 // consumer may CLAMP. Any unset field means "the consumer decides".
@@ -43,7 +24,7 @@ type MessageOptions struct {
 	// Retry - redelivery policy for this message. Unset fields fall
 	// to the consumer's policy per-field.
 	// Default: nil (the consumer's policy applies whole).
-	Retry *retry.Policy `json:"retry,omitempty"`
+	Retry *RetryPolicy `json:"retry,omitempty"`
 }
 
 // returns new copy not modified pointer
@@ -121,7 +102,7 @@ func (o *MessageOptions) WithDefaults() *MessageOptions {
 		o.Timeout = 30 * time.Second
 	}
 	if o.Retry == nil {
-		o.Retry = &retry.Policy{}
+		o.Retry = &RetryPolicy{}
 	}
 	if o.Retry.MaxRetries == 0 {
 		o.Retry.MaxRetries = 3 // redelivery caps at 3 attempts by default -- the Policy default of 6 is tuned for internal retries
@@ -148,7 +129,7 @@ func (o *MessageOptions) Validate() error {
 	return nil
 }
 
-func validateSparsePolicy(p *retry.Policy) error {
+func validateSparsePolicy(p *RetryPolicy) error {
 	if p.MaxRetries < 0 {
 		return fmt.Errorf("MaxRetries must be >= 0, got %d", p.MaxRetries)
 	}
@@ -168,12 +149,12 @@ func validateSparsePolicy(p *retry.Policy) error {
 }
 
 // returns new copy not modified pointer
-func fillPolicy(p, defaults *retry.Policy) *retry.Policy {
+func fillPolicy(p, defaults *RetryPolicy) *RetryPolicy {
 	if p == nil && defaults == nil {
 		return nil
 	}
 
-	var merged, d retry.Policy
+	var merged, d RetryPolicy
 	if p != nil {
 		merged = *p
 	}
@@ -196,12 +177,12 @@ func fillPolicy(p, defaults *retry.Policy) *retry.Policy {
 }
 
 // returns new copy not modified pointer
-func clampPolicy(p, min, max *retry.Policy) *retry.Policy {
+func clampPolicy(p, min, max *RetryPolicy) *RetryPolicy {
 	if p == nil {
 		return nil
 	}
 
-	var lo, hi retry.Policy
+	var lo, hi RetryPolicy
 	if min != nil {
 		lo = *min
 	}

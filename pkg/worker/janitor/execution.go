@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
@@ -15,7 +15,7 @@ import (
 type JanitorExecution struct {
 	Topic  *topic.Topic
 	Config *JanitorConfig
-	Logger logger.Logger
+	Logger common.Logger
 
 	runner    *controller.InstanceTickRunner
 	datastore *datastore.JanitorDatastore
@@ -33,7 +33,7 @@ func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claim
 	runner, err := controller.NewInstanceTickRunner(janitor.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    janitor.Config.InstanceTTL,
 		JitterFraction: janitor.Config.JitterFraction,
-		Logger:         logger.With(janitor.Logger, "worker", WorkerJanitor, "topic", current.Id),
+		Logger:         common.LoggerWith(janitor.Logger, "worker", WorkerJanitor, "topic", current.Id),
 		TickRetry:      janitor.Config.SweepRetry,
 	})
 	if err != nil {

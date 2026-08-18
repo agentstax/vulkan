@@ -4,14 +4,14 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount/controller/datastore"
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 )
 
 const AlertPartitionCount = "partition_count"
 
 type PartitionCountController struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore *datastore.PartitionCountDatastore
 }

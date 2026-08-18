@@ -119,8 +119,10 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     admin.MigrateTopic(s)/MigrateSystem are the only user migration entry;
     CLI keeps access via the import-path prefix rule. MigrateTopic +
     MigrateTopics both stay — distinct ops.
-  - Also demoted: retry.NewDefaultRetryPolicy/IsRetryable/RetryableFunc
-    (config Retry fields stay nil, WithDefaults fills them) and
+  - Also demoted: common.NewDefaultRetryPolicy/IsRetryable/RetryableFunc
+    (retry merged into pkg/common 2026-08-17, [0528] — demotion is now an
+    unexport inside common; config Retry fields stay nil, WithDefaults
+    fills them) and
     consumer.ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
     (NewConsumer defaults to cursor; LIFECYCLE reached via
     NewDeliveryConsumer directly).

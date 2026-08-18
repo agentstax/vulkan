@@ -3,14 +3,14 @@ package controller
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/logger"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/worker/controller/datastore"
 )
 
 type WorkerController struct {
-	Logger logger.Logger
+	Logger common.Logger
 
 	datastore         *datastore.WorkerDatastore
 	migrateController *migratecontroller.Controller
