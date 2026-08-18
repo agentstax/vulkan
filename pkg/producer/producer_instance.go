@@ -15,15 +15,15 @@ import (
 // Register resolved. Shutdown is per call -- a cancelled ctx refuses that
 // call's message, the instance itself never stops accepting work.
 type ProducerInstance[Message any] struct {
-	Topic *topic.Topic
+	Topic  *topic.Topic
+	Config *ProducerConfig
 
 	controller *controller.ProducerController[Message]
 	batcher    *batcher.Batcher[Message]
-	cfg        ProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 
 // cfg is already resolved (WithDefaults + Validate) by NewProducer.
-func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerController *controller.ProducerController[Message], cfg ProducerConfig) (*ProducerInstance[Message], error) {
+func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerController *controller.ProducerController[Message], cfg *ProducerConfig) (*ProducerInstance[Message], error) {
 	if resolvedTopic == nil {
 		return nil, errors.New("topic must not be nil")
 	}
@@ -38,9 +38,9 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 
 	return &ProducerInstance[Message]{
 		Topic:      resolvedTopic,
+		Config:     cfg,
 		controller: producerController,
 		batcher:    topicBatcher,
-		cfg:        cfg,
 	}, nil
 }
 
@@ -54,7 +54,7 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 // the rerun dedups against whatever actually landed, reported as
 // ProduceResult.Duplicate == true.
 func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.cfg.Message)
+	opts.Message = opts.Message.Fill(p.Config.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 		appends = append(appends, appendItem)
 	}
 
-	appendedRows, failedIdx, err := p.controller.AppendMessageBatch(ctx, p.Topic.Id, p.Topic.PartitionSize, p.cfg.Batch.AttemptTimeout, appends)
+	appendedRows, failedIdx, err := p.controller.AppendMessageBatch(ctx, p.Topic.Id, p.Topic.PartitionSize, p.Config.Batch.AttemptTimeout, appends)
 	if err != nil {
 		if failedIdx >= 0 {
 			return nil, fmt.Errorf("item %d: %w", failedIdx, err)
@@ -121,7 +121,7 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
 func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.cfg.Message)
+	opts.Message = opts.Message.Fill(p.Config.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
 func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.cfg.Message)
+	opts.Message = opts.Message.Fill(p.Config.Message)
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (p *ProducerInstance[Message]) toAppend(item *ProduceItem[Message]) (*contr
 		return nil, errors.New("IdempotencyKey is not supported in a batch -- produce keyed messages individually")
 	}
 	options := item.Options
-	options.Message = options.Message.Fill(p.cfg.Message)
+	options.Message = options.Message.Fill(p.Config.Message)
 	idempotencyKey, err := uuid.NewV7()
 	if err != nil {
 		return nil, err

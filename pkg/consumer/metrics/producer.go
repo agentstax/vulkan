@@ -15,9 +15,10 @@ const abandonedEventsBufferSize = 256
 
 // uses queue / drain logic to be non-blocking on consumer claim path
 type MetricEventProducer struct {
+	Logger common.Logger
+
 	producer *producer.Producer[GoRoutineEvent]
 	events   chan *GoRoutineEvent
-	logger   common.Logger
 }
 
 func NewMetricEventProducer(ds *datastore.PostgresDatastore, cfg *MetricEventConfig) (*MetricEventProducer, error) {
@@ -34,9 +35,9 @@ func NewMetricEventProducer(ds *datastore.PostgresDatastore, cfg *MetricEventCon
 	}
 
 	return &MetricEventProducer{
+		Logger:   cfg.Logger,
 		producer: p,
 		events:   make(chan *GoRoutineEvent, abandonedEventsBufferSize),
-		logger:   cfg.Logger,
 	}, nil
 }
 
@@ -83,6 +84,6 @@ func (e *MetricEventProducer) produce(ctx context.Context, instance *producer.Pr
 	routingKey := metrics.AbandonedRoutineKey(event.TopicId, event.Group)
 
 	if _, err := instance.Produce(ctx, event, producer.ProduceOptions{RoutingKey: routingKey}); err != nil {
-		e.logger.WarnContext(ctx, "abandoned event produce failed", "group", event.Group, "topic_id", event.TopicId, "type", event.EventType, "err", err)
+		e.Logger.WarnContext(ctx, "abandoned event produce failed", "group", event.Group, "topic_id", event.TopicId, "type", event.EventType, "err", err)
 	}
 }

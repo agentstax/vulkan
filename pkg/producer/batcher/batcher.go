@@ -13,10 +13,11 @@ import (
 // Batcher groups concurrent payload-only produces for one topic into shared
 // transactions, amortizing the per-commit fsync in the database.
 type Batcher[Message any] struct {
+	Config *BatcherConfig
+
 	controller    *controller.ProducerController[Message]
 	topicId       int64
 	partitionSize int64
-	cfg           BatcherConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 
 	queue workQueue[batchOperation[Message]]
 }
@@ -39,10 +40,10 @@ func NewBatcher[Message any](producerController *controller.ProducerController[M
 	}
 
 	return &Batcher[Message]{
+		Config:        cfg,
 		controller:    producerController,
 		topicId:       topicId,
 		partitionSize: partitionSize,
-		cfg:           *cfg,
 	}, nil
 }
 
@@ -64,7 +65,7 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 	operation := newBatchOperation(message, options)
 
 	b.queue.enqueue(operation)
-	if b.queue.needsWorker(b.cfg.MaxSize, b.cfg.ConcurrencyLimit) {
+	if b.queue.needsWorker(b.Config.MaxSize, b.Config.ConcurrencyLimit) {
 		go b.work()
 	}
 
@@ -73,24 +74,24 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 		// continue past select
 	case <-ctx.Done():
 		// exit early with no shutdownGrace
-		if b.cfg.ShutdownGrace < 0 {
+		if b.Config.ShutdownGrace < 0 {
 			return nil, fmt.Errorf("produce abandoned for topic %d, batch outcome ambiguous (ShutdownGrace < 0): %w", b.topicId, ctx.Err())
 		}
 
 		// enqueued work cannot be recalled -- wait up to the grace for the
 		// real outcome before abandoning as ambiguous
-		grace := time.NewTimer(b.cfg.ShutdownGrace)
+		grace := time.NewTimer(b.Config.ShutdownGrace)
 		defer grace.Stop()
 
 		select {
 		case <-operation.response.Done():
 			// ideally this completes -> graceful shutdown
-			b.cfg.Logger.DebugContext(ctx, "cancelled produce resolved within shutdown grace", "topic_id", b.topicId)
+			b.Config.Logger.DebugContext(ctx, "cancelled produce resolved within shutdown grace", "topic_id", b.topicId)
 		case <-grace.C:
 			// if shutdownGrace times out -> exit early
 			// work commit status is ambiguous and should be retried if possible when supplying external idempotency key
-			b.cfg.Logger.WarnContext(ctx, "produce abandoned after shutdown grace, batch outcome ambiguous", "topic_id", b.topicId, "grace", b.cfg.ShutdownGrace)
-			return nil, fmt.Errorf("produce abandoned after ShutdownGrace (%s) for topic %d, batch outcome ambiguous: %w", b.cfg.ShutdownGrace, b.topicId, ctx.Err())
+			b.Config.Logger.WarnContext(ctx, "produce abandoned after shutdown grace, batch outcome ambiguous", "topic_id", b.topicId, "grace", b.Config.ShutdownGrace)
+			return nil, fmt.Errorf("produce abandoned after ShutdownGrace (%s) for topic %d, batch outcome ambiguous: %w", b.Config.ShutdownGrace, b.topicId, ctx.Err())
 		}
 	}
 
@@ -107,7 +108,7 @@ func (b *Batcher[Message]) work() {
 	// waiting, it must not abort a transaction other operations share
 	ctx := context.Background()
 	for {
-		operations := b.queue.dequeue(b.cfg.MaxSize)
+		operations := b.queue.dequeue(b.Config.MaxSize)
 		if operations == nil {
 			return
 		}

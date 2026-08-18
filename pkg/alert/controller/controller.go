@@ -15,10 +15,11 @@ import (
 // AlertController is the alert domain's write door: it records what a run
 // found to the __system.alerts topic and logs status changes.
 type AlertController struct {
+	Logger common.Logger
+
 	alerts *producer.ProducerInstance[alert.Alert]
 	heads  *compactioncontroller.CompactionController[alert.Alert]
 	repeat time.Duration
-	logger common.Logger
 }
 
 // alerts is a registered producer instance on the __system.alerts topic;
@@ -54,5 +55,5 @@ func NewAlertController(ctx context.Context, alerts *producer.ProducerInstance[a
 			"repeat", repeat, "retention", retention, "clamped", clamped)
 		repeat = clamped
 	}
-	return &AlertController{alerts: alerts, heads: heads, repeat: repeat, logger: cfg.Logger}, nil
+	return &AlertController{Logger: cfg.Logger, alerts: alerts, heads: heads, repeat: repeat}, nil
 }

@@ -22,11 +22,12 @@ import (
 type ProducerFunc[Message any] = controller.ProduceFunc[Message]
 
 type Producer[Message any] struct {
+	Config *ProducerConfig
+	Logger common.Logger
+
 	controller      *controller.ProducerController[Message]
 	topicController *topiccontroller.TopicController
 	evaluators      []alert.Evaluator
-	logger          common.Logger
-	cfg             ProducerConfig // value copy, resolved+validated -- caller mutations after construction change nothing
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -74,11 +75,11 @@ func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerCon
 	}
 
 	return &Producer[Message]{
+		Config:          cfg,
+		Logger:          cfg.Logger,
 		controller:      producerController,
 		topicController: topicController,
 		evaluators:      []alert.Evaluator{partitionCountController, compactionReadCostController},
-		logger:          cfg.Logger,
-		cfg:             *cfg,
 	}, nil
 }
 
@@ -108,5 +109,5 @@ func (p *Producer[Message]) Register(ctx context.Context, topicName string, vers
 
 	p.logAlerts(ctx, current)
 
-	return NewProducerInstance(current, p.controller, p.cfg)
+	return NewProducerInstance(current, p.controller, p.Config)
 }

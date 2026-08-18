@@ -451,16 +451,17 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       publics are bare pass-throughs, not Wraps; unchecked
       common.ConcurrencyPolicy cast (execution.go:134) because model.go
       types the column string.
-- [ ] **Unexport controller/datastore fields.** Exported Datastore /
-      DatastoreRetry / Logger on all 18 datastores plus exported Logger /
-      Config on controllers, instances, and executions repo-wide
-      (alert/controller is the lone unexported-logger case; Consumer /
-      ConsumerInstance align with producer's unexported shape here). One
-      repo-wide sweep, deliberately LAST: the migrate chunk removes the
-      c.datastore.Datastore.Pool schema-gate reach-through
-      (topic/controller/schema.go:22, worker/controller/schema.go:17,
-      systemmanager.go:113) and the seam chunk removes cronscheduler's
-      i.datastore.Datastore grab.
+- [x] **Unexport controller/datastore fields.** Done 2026-08-17, resolved
+      the OTHER way (user-settled): exported is the standard, so the
+      outliers were exported instead of the majority unexported. Fixed:
+      producer.Producer + ProducerInstance + batcher.Batcher (cfg value
+      copies → `Config *<X>Config` pointer per house pattern,
+      NewProducerInstance now takes `*ProducerConfig`), AlertController
+      logger → Logger, MetricEventProducer logger → Logger — all reshaped
+      to the exported-header-block style (Config/Logger first, unexported
+      collaborators below). Unexported TYPES (messageRunner, executionPool,
+      ...) keep lowercase fields — not part of the surface. Verified:
+      build+vet all modules, topic + alert + abandoned-events labs green.
 - [x] **pkg/context + pkg/logger → pkg/common.** Done 2026-08-17, expanded
       to the full flat merge (user-settled; record [0528]): logger, retry,
       errors, context all merged into a flat pkg/common — renames

@@ -88,5 +88,5 @@ func (b *Batcher[Message]) attemptBatch(ctx context.Context, batch *batch[Messag
 		}
 		appends = append(appends, itemAppend)
 	}
-	return b.controller.AppendMessageBatch(ctx, b.topicId, b.partitionSize, b.cfg.AttemptTimeout, appends)
+	return b.controller.AppendMessageBatch(ctx, b.topicId, b.partitionSize, b.Config.AttemptTimeout, appends)
 }
