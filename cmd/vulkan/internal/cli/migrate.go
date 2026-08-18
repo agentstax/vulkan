@@ -90,7 +90,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, controller *
 			}
 			return nil, translateAdminError(err)
 		}
-		current, err := controller.Version(ctx, owner)
+		current, err := controller.SystemVersion(ctx, owner.SystemId)
 		if err != nil {
 			if errors.Is(err, migrate.ErrNotRegistered) {
 				return nil, errSystemNotRegistered()
@@ -111,7 +111,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, controller *
 		if err != nil {
 			return nil, err
 		}
-		current, err := controller.Version(ctx, owner)
+		current, err := controller.TopicVersion(ctx, found.Id)
 		if err != nil {
 			return nil, translateAdminError(err)
 		}
@@ -128,7 +128,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, controller *
 			if err != nil {
 				return nil, err
 			}
-			current, err := controller.Version(ctx, owner)
+			current, err := controller.TopicVersion(ctx, t.Id)
 			if err != nil {
 				return nil, translateAdminError(err)
 			}

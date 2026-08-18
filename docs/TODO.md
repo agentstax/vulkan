@@ -239,9 +239,32 @@ One chunk = one review; work top to bottom within a section, reorder freely.
 
 ### Package restructures
 
-- [ ] **pkg/migrate comb-through** (surveyed 2026-08-16; shape approved
-      2026-08-17, landing in two chunks — chunk A done, chunk B = the gate
-      split below):
+- [x] **pkg/migrate comb-through** (surveyed 2026-08-16; shape approved
+      2026-08-17, landed in two chunks; decision record [0526]):
+    - Follow-up done 2026-08-17 (user-requested consistency pass): the
+      whole pool-read surface is by id — Controller.SystemVersion(ctx,
+      systemId) + TopicVersion(ctx, topicId); the owner-taking
+      Version(ctx, owner) controller method and datastore pair deleted
+      (owner form survives only as the conn-taking free func for the
+      locked run flow, which is owner-generic end to end). No
+      GroupVersion — nothing writes group rows to migration_log yet. CLI
+      status/gatherTargets read by id; status's topic loop no longer
+      builds owners. Verified: build+vet both modules, migrate/common
+      tests, schema-gate-lab, invariant-lab, `vulkan migrate status`
+      against dev DB.
+    - Chunk B done 2026-08-17: gate split into
+      AssertSystemSchemaSupported(ctx, systemId) /
+      AssertTopicSchemaSupported(ctx, systemId, topicId) on
+      migrate.Controller; new datastore TopicVersion(ctx, topicId) reads
+      by id (migration_log stores one owner column per row, so the topic
+      row is system_id IS NULL AND topic_id = $1); the shared
+      42P01/no-rows → ErrNotRegistered mapping deduplicated into
+      registrationError. Both NewTopicOwner("") fabrication sites gone →
+      NewTopicOwner/NewConsumerGroupOwner reject empty names,
+      Owner.Name's "diagnostics only" caveat deleted. Worker gate
+      branches on owner.Kind(); topic gate passes ids through.
+      Checkpoint: 41/41 labs on a drop+recreate fresh DB, CLI migrate
+      status + up no-op path, migrate/common tests green.
     - Chunk A done 2026-08-17: Version/SystemOwner/IsLocked/
       AssertSchemaSupported are methods on migrate.Controller — the
       Runner→Controller rename is user-settled: Controller is the house

@@ -16,7 +16,7 @@ type Owner struct {
 	SystemId        int64
 	TopicId         int64
 	ConsumerGroupId int64
-	Name            string // diagnostics only, "" = unnamed
+	Name            string
 }
 
 func NewSystemOwner(systemId int64) (*Owner, error) {
@@ -33,6 +33,9 @@ func NewTopicOwner(systemId int64, topicId int64, name string) (*Owner, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
 	return &Owner{SystemId: systemId, TopicId: topicId, Name: name}, nil
 }
 
@@ -45,6 +48,9 @@ func NewConsumerGroupOwner(systemId int64, topicId int64, consumerGroupId int64,
 	}
 	if consumerGroupId <= 0 {
 		return nil, fmt.Errorf("consumerGroupId must be > 0, got %d", consumerGroupId)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
 	}
 	return &Owner{SystemId: systemId, TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil
 }

@@ -13,5 +13,8 @@ func (c *WorkerController) AssertSchemaSupported(ctx context.Context, owner *com
 	if owner == nil {
 		return errors.New("owner must not be nil")
 	}
-	return c.migrateController.AssertSchemaSupported(ctx, owner)
+	if owner.Kind() == common.OwnerSystem {
+		return c.migrateController.AssertSystemSchemaSupported(ctx, owner.SystemId)
+	}
+	return c.migrateController.AssertTopicSchemaSupported(ctx, owner.SystemId, owner.TopicId)
 }

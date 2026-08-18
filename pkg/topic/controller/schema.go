@@ -3,8 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-
-	"github.com/agentstax/vulkan/pkg/common"
 )
 
 func (c *TopicController) AssertSchemaSupported(ctx context.Context, systemId int64, topicId int64) error {
@@ -14,9 +12,5 @@ func (c *TopicController) AssertSchemaSupported(ctx context.Context, systemId in
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
-	owner, err := common.NewTopicOwner(systemId, topicId, "")
-	if err != nil {
-		return err
-	}
-	return c.migrateController.AssertSchemaSupported(ctx, owner)
+	return c.migrateController.AssertTopicSchemaSupported(ctx, systemId, topicId)
 }

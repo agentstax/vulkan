@@ -2,18 +2,27 @@ package migrate
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// Version reads an owner's current schema version from migration_log.
+// SystemVersion reads the system's current schema version from migration_log.
 // Returns ErrNotRegistered if there is no baseline record.
-func (c *Controller) Version(ctx context.Context, owner *common.Owner) (int64, error) {
-	if owner == nil {
-		return 0, errors.New("owner must not be nil")
+func (c *Controller) SystemVersion(ctx context.Context, systemId int64) (int64, error) {
+	if systemId <= 0 {
+		return 0, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
-	return c.datastore.Version(ctx, owner)
+	return c.datastore.SystemVersion(ctx, systemId)
+}
+
+// TopicVersion reads a topic's current schema version from migration_log.
+// Returns ErrNotRegistered if there is no baseline record.
+func (c *Controller) TopicVersion(ctx context.Context, topicId int64) (int64, error) {
+	if topicId <= 0 {
+		return 0, fmt.Errorf("topicId must be > 0, got %d", topicId)
+	}
+	return c.datastore.TopicVersion(ctx, topicId)
 }
 
 // SystemOwner resolves the singleton system row to its owner.

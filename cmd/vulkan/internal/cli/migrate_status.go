@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/spf13/cobra"
 )
@@ -38,7 +37,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				}
 				return translateAdminError(err)
 			}
-			sysCurrent, err := controller.Version(ctx, sysOwner)
+			sysCurrent, err := controller.SystemVersion(ctx, sysOwner.SystemId)
 			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
@@ -65,11 +64,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			rows := []row{{name: "system", current: sysCurrent, available: sysAvail}}
 			for _, t := range topics {
-				owner, err := common.NewTopicOwner(t.SystemId, t.Id, t.Name)
-				if err != nil {
-					return err
-				}
-				current, err := controller.Version(ctx, owner)
+				current, err := controller.TopicVersion(ctx, t.Id)
 				if err != nil {
 					return translateAdminError(err)
 				}

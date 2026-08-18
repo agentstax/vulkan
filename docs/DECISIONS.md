@@ -276,3 +276,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0523 2026-08-16 accepted (phase 14) — The metric point type is Measurement, not Sample (amends 0522)
 - 0524 2026-08-16 accepted (phase 14) — Alert pipeline instrumentation: state gauges pulled by the collector, run outcomes pushed by the handler (follows 0522)
 - 0525 2026-08-16 accepted (phase 14) — ProduceBatch: one call, N messages, one transaction (explicit batch verb beside the batcher)
+- 0526 2026-08-17 accepted (phase 14b) — migrate.Controller is the package's only door; the schema gate reads by id; Owner names are never empty
