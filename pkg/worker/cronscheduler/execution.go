@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
@@ -23,6 +24,7 @@ type CronSchedulerExecution struct {
 	Logger common.Logger
 
 	runner           *controller.InstanceTickRunner
+	ds               *coredatastore.PostgresDatastore
 	datastore        *datastore.CronSchedulerDatastore
 	metadata         *cronSchedulerMetadata
 	producerInstance *producer.ProducerInstance[cron.JobRequest]
@@ -54,6 +56,7 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 		Config:           cronScheduler.Config,
 		Logger:           cronScheduler.Logger,
 		runner:           runner,
+		ds:               cronScheduler.ds,
 		datastore:        cronScheduler.datastore,
 		metadata:         metadata,
 		producerInstance: producerInstance,
@@ -98,7 +101,7 @@ func (i *CronSchedulerExecution) scan(ctx context.Context) error {
 // replay rolls all three back together and the cron.IdempotencyKey dedupe
 // covers exactly that replay.
 func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64) error {
-	return producer.InTransaction(ctx, i.datastore.Datastore, func(ctx context.Context, tx producer.Tx) error {
+	return producer.InTransaction(ctx, i.ds, func(ctx context.Context, tx producer.Tx) error {
 		row, err := i.datastore.ClaimDueCronJob(ctx, tx, id)
 		if err != nil || row == nil {
 			return err
@@ -130,7 +133,7 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 			CompactionKey:  strconv.FormatInt(row.Id, 10), // id not name -- a destroyed name's reuse must not share a key
 			IdempotencyKey: cron.IdempotencyKey(scheduledTime, row.Id),
 			Message: &common.MessageOptions{
-				Concurrency: common.ConcurrencyPolicy(row.Concurrency),
+				Concurrency: row.Concurrency,
 				Timeout:     row.Timeout,
 			},
 		})

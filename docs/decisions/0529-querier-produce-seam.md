@@ -37,7 +37,11 @@ an i.datastore.Datastore reach-through.
 
 ## Consequences
 
-- Chunk 1 (producer + Querier) built 2026-08-17; chunk 2 (cronscheduler
-  conversion) unblocks the unexport-fields sweep.
+- Both chunks built 2026-08-17; the unexport-fields sweep is unblocked.
+- Datastore methods running inside the produce transaction keep their
+  public → same-named-private pairs even without a Wrap — the pair pattern
+  is uniform across every datastore, pass-through or not (user-settled).
+- AppendMessageBatch keeps its (results, failedIdx, error) shape — a
+  BatchItemError type was built and rejected in review.
 - CopyFrom has no internal caller — it stays because Tx is a user surface
   (bulk-load atomically with a produce is a deliberate API promise).

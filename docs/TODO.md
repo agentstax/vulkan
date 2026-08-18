@@ -414,11 +414,22 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (pgx-import claim) rewritten; Querier contract + produce-seam
       carve-out landed in CONVENTIONS.md (Datastores). Verified: build+vet
       all modules; multi-target, producer-batch, partition, cron,
-      compaction-head-race labs green. Chunk 2 remaining: cronscheduler —
-      cronjob datastore methods narrow producer.Tx → q datastore.Querier,
-      pass-through public/private pairs collapse, execution holds its own
-      *PostgresDatastore (kills i.datastore.Datastore), unchecked
-      ConcurrencyPolicy cast, AppendMessageBatch heal+gate+trigger shape.
+      compaction-head-race labs green. Chunk 2 done 2026-08-17:
+      cronscheduler's cronjob datastore methods take q datastore.Querier
+      (producer import gone from the datastore), keeping their public →
+      same-named-private pairs (USER-SETTLED HARD RULE: the pair pattern
+      holds even when the public is a bare pass-through — consistency
+      over ceremony, never collapse them); definition + execution hold
+      their own *coredatastore.PostgresDatastore, i.datastore.Datastore
+      grab deleted repo-wide; DueCronJobData.Concurrency typed
+      common.ConcurrencyPolicy (unchecked cast gone). AppendMessageBatch
+      stays in its original shape — a BatchItemError error type replacing
+      failedIdx was built and USER-REJECTED 2026-08-17 (reverted; do not
+      re-suggest); the audit's heal-in-public/three-value note is dropped
+      as an open item unless the user reopens it. Verified: build+vet all
+      modules; cron, producer-batch, multi-target, defer, alert labs
+      green. Chunk 3 remaining (user-added 2026-08-17): rename every
+      coredatastore import alias to iDatastore for consistency.
       Producer datastore: pgx.Tx in the publics AppendMessageInTx
       (append.go:88) and GetCompactionHeadInTx (compaction.go:15); the Tx
       interface's Raw() pgx.Tx re-exports the driver to the door

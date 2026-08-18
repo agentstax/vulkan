@@ -17,6 +17,7 @@ type CronSchedulerDefinition struct {
 	Config *CronSchedulerConfig
 	Logger common.Logger
 
+	ds        *coredatastore.PostgresDatastore
 	workers   *controller.WorkerController
 	datastore *datastore.CronSchedulerDatastore
 	producer  *producer.Producer[cron.JobRequest] // each Provision registers its own instance from it
@@ -63,6 +64,7 @@ func NewCronSchedulerDefinition(ds *coredatastore.PostgresDatastore, cfg *CronSc
 	return &CronSchedulerDefinition{
 		Config:    cfg,
 		Logger:    cfg.Logger,
+		ds:        ds,
 		workers:   workers,
 		datastore: schedulerDatastore,
 		producer:  jobProducer,
