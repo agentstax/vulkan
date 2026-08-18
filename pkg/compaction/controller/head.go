@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 )
@@ -11,7 +12,7 @@ import (
 // or nil if nothing has been published under it.
 func (c *CompactionController[Message]) GetCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*common.MessageRow[Message], error) {
 	if topicId <= 0 {
-		return nil, errors.New("topicId must be > 0")
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if compactionKey == "" {
 		return nil, errors.New("compaction key is required")
@@ -28,7 +29,7 @@ func (c *CompactionController[Message]) GetCompactionHead(ctx context.Context, t
 // by compaction key.
 func (c *CompactionController[Message]) ListCompactionHeads(ctx context.Context, topicId int64) ([]*common.MessageRow[Message], error) {
 	if topicId <= 0 {
-		return nil, errors.New("topicId must be > 0")
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 
 	data, err := c.datastore.ListCompactionHeads(ctx, topicId)

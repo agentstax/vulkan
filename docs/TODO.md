@@ -340,12 +340,14 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       own alert builder is the deepest user, and the kind root already
       imports its controller; don't re-suggest). Verified: build+vet, alert
       lab green.
-- [ ] **compaction vocabulary layer.** The only two-layer domain: no
-      pkg/compaction package exists; the read-model is common.MessageRow.
-      Decide deliberate exception (write it down) vs add the layer.
-      Ride-along: errors.New validation messages drop the offending value
-      (controller/head.go:14,31, message.go:15) where every sibling uses
-      fmt.Errorf with the got-value.
+- [x] **compaction vocabulary layer.** Done 2026-08-18, deliberate
+      exception (user-settled A): compaction stays two-layer because it owns
+      no vocabulary — MessageRow is shared across the producer and
+      compaction stacks, and common is the sanctioned home for cross-stack
+      shared vocabulary (sentinel rule's analog). Recorded as [0530].
+      Ride-along fixed: the three topicId errors.New checks now fmt.Errorf
+      with got-value (head.go x2, message.go). Verified: build+vet,
+      compaction-lab green.
 - [ ] **Vocabulary importing controllers.** cron/jobrequest.go:11,22,
       metrics/topic.go:8,14, and alert/topic.go:8,14 declare
       TopicConfig() *topiccontroller.TopicConfig; alert/job.go:7,15 stores
