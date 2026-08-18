@@ -423,7 +423,9 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       datastores directly — they assert on internals). cronscheduler
       rides the produce-transaction-seam chunk. Verified: build+vet all
       modules, sweep + topic + exception + delivery-log labs green.
-- [ ] **Produce-transaction seam.** One design, two packages; overlaps
+- [x] **Produce-transaction seam.** DONE 2026-08-18 (all 4 chunks; the
+      ROADMAP Querier-interface item closed with it — HISTORY entry cites
+      [0529]/[0537]). One design, two packages; overlaps
       ROADMAP's Querier-interface item — settle the two together.
       Design settled 2026-08-17 (option a: cronscheduler is a user of the
       producer's public InTransaction seam). Chunk 1 done 2026-08-17:
@@ -461,21 +463,20 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (topiccontroller, janitordatastore, ...) are a different,
       informative convention and stay. Build+vet all modules, topic +
       cron labs green.
-      Producer datastore: pgx.Tx in the publics AppendMessageInTx
-      (append.go:88) and GetCompactionHeadInTx (compaction.go:15); the Tx
-      interface's Raw() pgx.Tx re-exports the driver to the door
-      (transaction.go:22, producer_instance.go:153); NewTx returns a
-      concrete pointer through an interface-typed return
-      (transaction.go:29); AppendMessageBatch does heal + gate + trigger
-      in the public with a nested Wrap (batch.go:16-36) and returns three
-      values; controller InTransaction opens the transaction itself
-      (controller/transaction.go:24-36). Cronscheduler: exported
-      tx-taking datastore methods with producer.Tx in their signatures
-      (datastore/cronjob.go:49,76,88); the transaction is opened in the
-      worker layer via producer.InTransaction (execution.go:102); those
-      publics are bare pass-throughs, not Wraps; unchecked
-      common.ConcurrencyPolicy cast (execution.go:134) because model.go
-      types the column string.
+      Chunk 4 done 2026-08-18: cronscheduler adopted the worker-kind
+      controller shape per [0537] — kind root → controller →
+      controller/datastore; CronSchedulerController owns validation
+      (id/next/produced checks) and adapts DueCronJobData →
+      controller.DueCronJob (adapter.go, no constructor: controller-built
+      read-model); its in-transaction verbs take q iDatastore.Querier
+      under the produce-seam carve-out; execution/definition hold the
+      controller (cronschedulercontroller alias, field named controller).
+      The original audit findings are all resolved or user-dropped:
+      pgx.Tx publics + Raw internals + NewTx typed-nil + controller-owned
+      Begin (chunk 1), cronjob Querier conversion + ConcurrencyPolicy
+      typing (chunk 2), AppendMessageBatch stays composed (user-rejected
+      BatchItemError; sanctioned in [0535]). Verified: build+vet all
+      modules, cron + alert labs green.
 - [x] **Unexport controller/datastore fields.** Done 2026-08-17, resolved
       the OTHER way (user-settled): exported is the standard, so the
       outliers were exported instead of the majority unexported. Fixed:

@@ -40,38 +40,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   - A blank-line convention inside function bodies: when a statement gets a
     blank line before/after it and when it doesn't -- decide the rule, write
     it into CONVENTIONS.md, and sweep for consistency.
-- **Querier interface** — see if it can make stronger contracts with internal
-  or public code. Coupled to TODO.md's produce-transaction seam chunk
-  (pgx.Tx in producer datastore publics, cronscheduler's tx-taking datastore
-  methods) — settle the two together.
-  Audited 2026-08-17 (every non-test pgx symbol in pkg/); proposal reviewed
-  and BUILT 2026-08-17 as the seam chunk 1 — see TODO.md for the as-built
-  note; cronscheduler conversion (chunk 2) still open:
-  - The codebase draws exactly one line worth typing: owns the transaction
-    boundary vs runs statements inside someone else's. Pool, conn, and tx
-    share identical Exec/Query/QueryRow/SendBatch/CopyFrom signatures;
-    savepoints are plain Exec strings; nothing else pgx does is a seam.
-    No interface hierarchy — one interface protects the one invariant.
-  - producer datastore.Tx (transaction.go:13) is already a second copy of
-    Querier — the same three methods + CopyFrom + Raw() under another name.
-  - Proposal: widen Querier to Exec/Query/QueryRow/SendBatch/CopyFrom
-    ("what pool, conn, and tx can all do, minus Begin/Commit/Rollback" —
-    decision 0342's contract, unchanged); redefine producer Tx as
-    { datastore.Querier; Raw() pgx.Tx }; every datastore private running
-    inside a boundary it doesn't own takes q datastore.Querier (~15
-    signatures narrow from tx pgx.Tx). pgx.Tx then appears only as a local
-    in the Begin-owning private and in the producer adapter seam that
-    builds the user's Tx via NewTx (runInsert / runInsertSavepoint /
-    AppendMessageInTx / InTransaction). Rule lands in CONVENTIONS.md.
-  - Non-goals, so the pattern stays closed: no Beginner/pool interface and
-    no wrapping of Rows/Row/CommandTag ([0023] accepted pgx coupling; a
-    wrapper enforces nothing); *pgxpool.Conn stays concrete in migrate —
-    the advisory lock pins a session, and the concrete type is that
-    contract.
-  - Precedent: sqlc's generated DBTX draws the same line
-    (Exec/Query/QueryRow/CopyFrom, no transaction control).
-  - Ride-along for the seam chunk: Tx's comment claims callers avoid
-    importing pgx — false, Query returns pgx.Rows.
 - **Worker-tier surface review** — everything the worker tier exports
   postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
   and its kind subpackages (janitor, waterline, manager, cronscheduler),

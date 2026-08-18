@@ -5,6 +5,20 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-18 — Querier contract + produce-transaction seam [0529] [0537]
+
+- datastore.Querier widened to the one statement contract
+  (Exec/Query/QueryRow/SendBatch/CopyFrom — what pool, conn, and tx can all
+  do minus transaction control); producer Tx = { Querier; Raw() pgx.Tx };
+  the produce transaction is the one sanctioned package crossing, and
+  cronscheduler produces through the producer's public InTransaction seam.
+  pgx.Tx survives only in Begin-owning privates and the Tx adapter [0529].
+- Every worker kind now carries a controller layer over its datastore:
+  janitor, waterline, and cronscheduler grew controllers matching the alert
+  kinds; executions call them; AdvanceWaterline's two-statement
+  non-transactional advance reconfirmed and stated [0537].
+- The Querier-interface ROADMAP item closed with this work.
+
 ## 2026-08-16 — Multi-message Produce [0525]
 
 - ProducerInstance gained ProduceBatch(ctx, items...): every item in one

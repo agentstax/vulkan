@@ -8,7 +8,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler/datastore"
+	cronschedulercontroller "github.com/agentstax/vulkan/pkg/worker/cronscheduler/controller"
 )
 
 const WorkerCronScheduler = "cron_scheduler"
@@ -17,10 +17,10 @@ type CronSchedulerDefinition struct {
 	Config *CronSchedulerConfig
 	Logger common.Logger
 
-	ds        *iDatastore.PostgresDatastore
-	workers   *controller.WorkerController
-	datastore *datastore.CronSchedulerDatastore
-	producer  *producer.Producer[cron.JobRequest] // each Provision registers its own instance from it
+	ds         *iDatastore.PostgresDatastore
+	workers    *controller.WorkerController
+	controller *cronschedulercontroller.CronSchedulerController
+	producer   *producer.Producer[cron.JobRequest] // each Provision registers its own instance from it
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -45,7 +45,7 @@ func NewCronSchedulerDefinition(ds *iDatastore.PostgresDatastore, cfg *CronSched
 		return nil, err
 	}
 
-	schedulerDatastore, err := datastore.NewCronSchedulerDatastore(ds, &datastore.CronSchedulerDatastoreConfig{
+	schedulerController, err := cronschedulercontroller.NewCronSchedulerController(ds, &cronschedulercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -62,12 +62,12 @@ func NewCronSchedulerDefinition(ds *iDatastore.PostgresDatastore, cfg *CronSched
 	}
 
 	return &CronSchedulerDefinition{
-		Config:    cfg,
-		Logger:    cfg.Logger,
-		ds:        ds,
-		workers:   workers,
-		datastore: schedulerDatastore,
-		producer:  jobProducer,
+		Config:     cfg,
+		Logger:     cfg.Logger,
+		ds:         ds,
+		workers:    workers,
+		controller: schedulerController,
+		producer:   jobProducer,
 	}, nil
 }
 

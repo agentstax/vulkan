@@ -11,7 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler/datastore"
+	cronschedulercontroller "github.com/agentstax/vulkan/pkg/worker/cronscheduler/controller"
 	"github.com/google/uuid"
 )
 
@@ -25,7 +25,7 @@ type CronSchedulerExecution struct {
 
 	runner           *controller.InstanceTickRunner
 	ds               *iDatastore.PostgresDatastore
-	datastore        *datastore.CronSchedulerDatastore
+	controller       *cronschedulercontroller.CronSchedulerController
 	metadata         *cronSchedulerMetadata
 	producerInstance *producer.ProducerInstance[cron.JobRequest]
 }
@@ -57,7 +57,7 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 		Logger:           cronScheduler.Logger,
 		runner:           runner,
 		ds:               cronScheduler.ds,
-		datastore:        cronScheduler.datastore,
+		controller:       cronScheduler.controller,
 		metadata:         metadata,
 		producerInstance: producerInstance,
 	}, nil
@@ -80,7 +80,7 @@ func (i *CronSchedulerExecution) Run(ctx context.Context) error {
 // every job's produce, and would hold ProduceInTx's whole-topic
 // consumer-progress lock from the first produce to the end of the pass.
 func (i *CronSchedulerExecution) scan(ctx context.Context) error {
-	ids, err := i.datastore.DueCronJobs(ctx)
+	ids, err := i.controller.DueCronJobs(ctx)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (i *CronSchedulerExecution) scan(ctx context.Context) error {
 // covers exactly that replay.
 func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64) error {
 	return producer.InTransaction(ctx, i.ds, func(ctx context.Context, tx producer.Tx) error {
-		row, err := i.datastore.ClaimDueCronJob(ctx, tx, id)
+		row, err := i.controller.ClaimDueCronJob(ctx, tx, id)
 		if err != nil || row == nil {
 			return err
 		}
@@ -153,8 +153,8 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 			// schedule went unsatisfiable (tzdata drift): keep the produce,
 			// suspend the row -- it has no honest next_scheduled_time
 			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job", row.Id, "name", row.Name, "schedule", row.Schedule)
-			return i.datastore.SuspendCronJob(ctx, tx, row.Id, scheduledTime)
+			return i.controller.SuspendCronJob(ctx, tx, row.Id, scheduledTime)
 		}
-		return i.datastore.AdvanceCronJob(ctx, tx, row.Id, next, scheduledTime)
+		return i.controller.AdvanceCronJob(ctx, tx, row.Id, next, scheduledTime)
 	})
 }
