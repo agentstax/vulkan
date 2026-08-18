@@ -22,15 +22,11 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
-- **Refactor remaining packages into the worker/topic layered pattern** —
-  pkg-wide audit done 2026-08-17; expanded into TODO.md as a chunk queue,
-  one chunk per review (the 2026-08-16 pkg/migrate survey moved there with
-  it).
 - **Internal file-structure cleanup:**
   - Internal-only readability debt sweep. (The pkg/producer/datastore.go
     split already happened — it lives as nine files under
     pkg/producer/controller/datastore; stale mention removed 2026-08-17.)
-  - The parked LIFECYCLE surface and its cursor counterparts move to an
+  - The on-hold LIFECYCLE surface and its cursor counterparts move to an
     internal package (still exported there, private by convention), true
     public APIs living in pkg — this is also when the removed
     datastore-interfaces question gets its "re-add if desired" revisit.
@@ -101,12 +97,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     AlterSystem / `vulkan system alter`) stays in the v1 public surface or
     gets deleted until a real system-wide knob exists ([0516]).
 - **Naming pass:**
-  - "parked" (banned word) still lives in messageconsumer comment/log prose
-    and reclaim.go's `WITH parked AS` CTE name, plus prose in
-    exceptionlab/deliveryloglab/shutdowntruncationlab — sweep to the
-    codebase's own words (insert/record an exception row).
-    GroupLag.ParkedExceptions and the CLI PARKED column were already renamed
-    UNRESOLVED at the 14a gate (2026-08-13).
   - Rename consumer waterline terms to something like cursor.committed —
     waterline is useful for understanding but should not dictate code naming.
   - Controllers have redundant verbage: topicController.GetTopic should just

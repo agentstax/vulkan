@@ -5,7 +5,28 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
-## 2026-08-18 — Querier contract + produce-transaction seam [0529] [0537]
+## 2026-08-18 — Layered-pattern chunk queue swept (pre-v1 cleanup) [0526]-[0537]
+
+- The pkg-wide CONVENTIONS audit's chunk queue (expanded 2026-08-17 from
+  ROADMAP) ran to empty over two days; 41/41 fresh-DB labs at close.
+- Structure: migrate became a doored three-layer domain [0526][0527];
+  logger/retry/errors/context merged into flat pkg/common [0528];
+  compaction recorded as the deliberate two-layer exception (MessageRow is
+  cross-stack vocabulary in common) [0530]; system-topic and cron-job
+  declarations moved to their domains' controllers (topic_config.go)
+  [0531]; consumer read-models live with the controller whose verbs return
+  them [0532]; the metrics write door became pkg/metrics/producer
+  (MetricsProducer, consumer/metrics deleted) [0534];
+  consumer/base got pure constructors, BaseConsumerConfig /
+  BaseDefinitionConfig, and symmetric ClaimKeyedRun/ReleaseKeyedRun
+  [0535]; every worker kind carries a controller [0537].
+- Rules settled: field absence is the zero value, never a nil pointer
+  [0533], with MessageOptions the sanctioned nilable sparse sub-document
+  [0536]; exported header-block fields (Config/Logger) are the standard;
+  i* aliases for machinery-name collisions.
+- Terminology sweeps: "park" family (~50 sites incl. parkStatement/parked
+  CTE) and "ack" (AckMargin -> RecordMargin) replaced with the codebase's
+  literal actions.
 
 - datastore.Querier widened to the one statement contract
   (Exec/Query/QueryRow/SendBatch/CopyFrom — what pool, conn, and tx can all
