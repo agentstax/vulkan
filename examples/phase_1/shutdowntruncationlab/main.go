@@ -44,8 +44,8 @@ import (
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -111,7 +111,7 @@ func main() {
 	}
 	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupId, group)
 	must(err)
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, nil)
+	abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() { must(abandonedEvents.Run(ctx)) }()
 

@@ -31,9 +31,9 @@ import (
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	consumermessage "github.com/agentstax/vulkan/pkg/consumer/message"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -110,7 +110,7 @@ func main() {
 	// consumer rows carry no instance target, so both "processes" claim a life
 	// of the same row
 	startConsumer := func(label string) {
-		abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, &consumermetrics.MetricEventConfig{})
+		abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{})
 		must(err)
 		go func() { must(abandonedEvents.Run(runCtx)) }()
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/base/controller"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -20,7 +20,7 @@ type BaseConsumer[Message any] struct {
 	KeyLeases *controller.KeyLeaseController
 	Logger    common.Logger
 
-	abandonedEvents *consumermetrics.MetricEventProducer
+	abandonedEvents *metricsproducer.MetricsProducer
 	consumerFunc    func(ctx context.Context, message *Message) error
 
 	// the two knobs every row's shared machinery paces from -- the runner's
@@ -91,13 +91,13 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 	// consumerFunc got Timeout to notice ctx and return; past Timeout + grace it
 	// is written off and its goroutine is left running, unreachable
 	case <-time.After(timeout + b.timeoutGrace):
-		b.abandonedEvents.Add(ctx, b.Topic.Id, b.Owner.Name, messageId, attempt)
+		b.abandonedEvents.Add(b.Topic.Id, b.Owner.Name, messageId, attempt)
 		// done is buffered(1) and nothing else reads it past this point, so this
 		// receive fires exactly when the abandoned goroutine finally returns.
 		// Started after Add, so Remove can never precede it.
 		go func() {
 			<-done
-			b.abandonedEvents.Remove(ctx, b.Topic.Id, b.Owner.Name, messageId, attempt)
+			b.abandonedEvents.Remove(b.Topic.Id, b.Owner.Name, messageId, attempt)
 		}()
 
 		// never log the message itself -- it may hold sensitive values

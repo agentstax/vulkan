@@ -175,6 +175,14 @@ Three layers per domain (template: worker, topic):
 - Outside the error path a pointer is never nil (`*common.Owner` is the
   template): no nil-safe receivers, no nil-means-unset params. Expected
   absence is comma-ok; a param nothing populates yet gets deleted.
+- A field's absence is its zero value, and only where zero can never be real
+  data -- mark it with a `// "" if unset` comment. A zero that could be real
+  data means the design needs a named state or a widened domain (Batcher's
+  `ShutdownGrace < 0`), never a nil pointer; a bool whose default would be
+  true gets the inverted `Disable*` name so zero stays the default under
+  `WithDefaults`. Absence of a whole entity is a nil struct return from its
+  Get (the `(nil, nil)` comma-ok); pointers keep their one meaning --
+  mutation/sharing -- and never encode optionality.
 - A struct holding a mutex, atomic, or connection pool is pointer-only:
   copying it copies the lock, which is a data race, not a style slip.
 - A value copy is not isolation: any slice, map, or pointer field inside it

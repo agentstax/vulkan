@@ -12,8 +12,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/binding"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
@@ -138,7 +138,7 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 	}
 
 	// built per instance -- two instances must never share one event queue
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(c.ds, &consumermetrics.MetricEventConfig{
+	abandonedEvents, err := metricsproducer.NewMetricsProducer(c.ds, &metricsproducer.ProducerConfig{
 		Logger: c.Config.Logger,
 		Retry:  c.Config.Retry,
 	})

@@ -369,15 +369,28 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       Delivery.Status typed, delivery table status column got its value-set
       comment. Verified: build+vet all modules, topic + routing + exception
       labs green.
-- [ ] **consumer/metrics restructure.** Not vocabulary — it owns a
-      goroutine and a producer.Producer. metrics_config.go →
-      metric_event_config.go with WithDefaults/Validate added (the only
-      config in the tree missing both); NewMetricEventProducer nil-checks
-      ds and defaults/validates cfg (producer.go:23-41); delete the
-      nil-safe receiver (producer.go:71-74), the reader-less Noop field
-      (metrics_config.go:9), the unused ctx params (producer.go:63,67);
-      decide the sideways pkg/consumer/metrics → pkg/producer arrow (base
-      transitively depends on all of producer through it).
+- [x] **consumer/metrics restructure.** Done 2026-08-18, recorded as
+      [0534] (user-settled B): rehomed to the metrics domain — the alert
+      pattern, the domain's write door owns the producer.
+      pkg/consumer/metrics deleted; GoRoutineEvent → pkg/metrics
+      vocabulary (goroutineevent.go); the producer → pkg/metrics/producer
+      by the domain-layer naming pattern (user-settled): MetricsProducer
+      in producer.go ∥ MetricsController in controller.go, ProducerConfig
+      in producer_config.go ∥ ControllerConfig; iProducer alias inside,
+      metricsproducer alias at callers. ProducerConfig gained
+      WithDefaults/Validate, ds nil-check added, nil-safe enqueue
+      receiver + Noop field + Add/Remove ctx params deleted. Callers
+      (consumer tree, base, 3 consumer_definitions, 5 labs) updated.
+      Verified: build+vet all modules, abandoned-events +
+      abandoned-routine-snapshot + metrics labs green.
+- [ ] **MessageOptions never-nil.** 0533's audit: the options JSONB column
+      is nullable and Fill/Clamp are nil-safe receivers, but the zero
+      MessageOptions already means "all unset" (Fill treats nil and zero
+      identically), so nil carries nothing. Make *common.MessageOptions
+      never-nil end to end: COALESCE(options, '{}') at the consumer scan
+      sites (or NULLIF on write, pick one representation), delete the
+      nil-handling in Fill/Clamp, audit read-model Options fields to the
+      Owner never-nil template.
 - [ ] **consumer/base cleanup.** NewBaseConsumer does a DB read with ctx
       first (base/consumer.go:33); loose timeoutGrace/ackMargin params →
       slim config (deliveryconsumer/provision.go:34 passes a bare 0 with a

@@ -5,8 +5,8 @@ import (
 
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 )
 
 // setting this row's target_instances to 0 suspends just this kind's new
@@ -23,7 +23,7 @@ type ExceptionConsumerDefinition[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *consumermetrics.MetricEventProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerDefinition[Message], error) {
+func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerDefinition[Message], error) {
 	if cfg == nil {
 		cfg = &ExceptionConsumerConfig{}
 	}

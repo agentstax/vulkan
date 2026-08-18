@@ -7,8 +7,8 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/base/controller"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -24,11 +24,11 @@ type BaseDefinition[Message any] struct {
 	workers         *workercontroller.WorkerController
 	topics          *topiccontroller.TopicController
 	keyLeases       *controller.KeyLeaseController
-	abandonedEvents *consumermetrics.MetricEventProducer
+	abandonedEvents *metricsproducer.MetricsProducer
 	consumerFunc    func(ctx context.Context, message *Message) error
 }
 
-func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName string, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *consumermetrics.MetricEventProducer, retryPolicy *common.RetryPolicy, log common.Logger) (*BaseDefinition[Message], error) {
+func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName string, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, retryPolicy *common.RetryPolicy, log common.Logger) (*BaseDefinition[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 )
 
 func main() {
@@ -40,19 +40,19 @@ func main() {
 	assertDuration("SelfClearLatencyAvg", snapshot.SelfClearLatencyAvg, 0)
 
 	step("two producers (simulating two processes) interleave abandoned/cleared for the same group")
-	producerA, err := consumermetrics.NewMetricEventProducer(ds, nil)
+	producerA, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() { must(producerA.Run(ctx)) }()
-	producerB, err := consumermetrics.NewMetricEventProducer(ds, nil)
+	producerB, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() { must(producerB.Run(ctx)) }()
 
-	producerA.Add(ctx, topicId, group, 1, 1) // matched pair, cleared by A
-	producerB.Add(ctx, topicId, group, 2, 1) // matched pair, cleared by B
-	time.Sleep(20 * time.Millisecond)        // let the self-clear latency be non-zero and measurable
-	producerA.Remove(ctx, topicId, group, 1, 1)
-	producerB.Remove(ctx, topicId, group, 2, 1)
-	producerA.Add(ctx, topicId, group, 3, 1) // never cleared -- outstanding
+	producerA.Add(topicId, group, 1, 1) // matched pair, cleared by A
+	producerB.Add(topicId, group, 2, 1) // matched pair, cleared by B
+	time.Sleep(20 * time.Millisecond)   // let the self-clear latency be non-zero and measurable
+	producerA.Remove(topicId, group, 1, 1)
+	producerB.Remove(topicId, group, 2, 1)
+	producerA.Add(topicId, group, 3, 1) // never cleared -- outstanding
 
 	// events are produced off the hot path via a buffered channel drained by
 	// a background goroutine -- give it a moment to actually land

@@ -49,8 +49,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
 	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -648,8 +648,8 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 	return owner
 }
 
-func abandonedEventProducer(ctx context.Context) *consumermetrics.MetricEventProducer {
-	events, err := consumermetrics.NewMetricEventProducer(ds, nil)
+func abandonedEventProducer(ctx context.Context) *metricsproducer.MetricsProducer {
+	events, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() { must(events.Run(ctx)) }()
 	return events

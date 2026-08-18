@@ -14,9 +14,9 @@ import (
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
-	consumermetrics "github.com/agentstax/vulkan/pkg/consumer/metrics"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
+	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -80,7 +80,7 @@ func main() {
 
 	// the abandoned-event producer outlives any one claim -- the events it
 	// carries are generated as the consumer shuts down
-	abandonedEvents, err := consumermetrics.NewMetricEventProducer(ds, nil)
+	abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
 	go func() { must(abandonedEvents.Run(ctx)) }()
 
@@ -132,7 +132,7 @@ func main() {
 type metricsRow struct {
 	Id         int64
 	RoutingKey string
-	Event      consumermetrics.GoRoutineEvent
+	Event      iMetrics.GoRoutineEvent
 }
 
 func metricsRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int {
@@ -157,7 +157,7 @@ func metricsRowsSince(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		var payload []byte
 		must(rows.Scan(&id, &routingKey, &payload))
 
-		var event consumermetrics.GoRoutineEvent
+		var event iMetrics.GoRoutineEvent
 		must(json.Unmarshal(payload, &event))
 
 		rk := ""
