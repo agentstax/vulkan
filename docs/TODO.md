@@ -400,6 +400,25 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       reconfirm and state it, or make it one transaction.
 - [ ] **Produce-transaction seam.** One design, two packages; overlaps
       ROADMAP's Querier-interface item — settle the two together.
+      Design settled 2026-08-17 (option a: cronscheduler is a user of the
+      producer's public InTransaction seam). Chunk 1 done 2026-08-17:
+      datastore.Querier widened to Exec/Query/QueryRow/SendBatch/CopyFrom;
+      producer Tx = { datastore.Querier; Raw() pgx.Tx }; InTransaction's
+      Begin/Commit moved into the producer datastore (controller
+      delegates), NewTx unexported (newTx returns the concrete *vulkanTx);
+      datastore publics AppendMessageInTx/GetCompactionHeadInTx take
+      Tx / q datastore.Querier — both internal .Raw() calls gone, Raw is
+      user-escape-hatch only; runInsert/runInsertSavepoint take Tx,
+      insertProtected*/savepoint helpers take q Querier; pgx.Tx survives
+      only as Begin-owning locals + the Tx adapter; stale Tx doc comment
+      (pgx-import claim) rewritten; Querier contract + produce-seam
+      carve-out landed in CONVENTIONS.md (Datastores). Verified: build+vet
+      all modules; multi-target, producer-batch, partition, cron,
+      compaction-head-race labs green. Chunk 2 remaining: cronscheduler —
+      cronjob datastore methods narrow producer.Tx → q datastore.Querier,
+      pass-through public/private pairs collapse, execution holds its own
+      *PostgresDatastore (kills i.datastore.Datastore), unchecked
+      ConcurrencyPolicy cast, AppendMessageBatch heal+gate+trigger shape.
       Producer datastore: pgx.Tx in the publics AppendMessageInTx
       (append.go:88) and GetCompactionHeadInTx (compaction.go:15); the Tx
       interface's Raw() pgx.Tx re-exports the driver to the door

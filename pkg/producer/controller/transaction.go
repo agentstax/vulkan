@@ -11,7 +11,7 @@ import (
 // interface and its docs live with the datastore.
 type Tx = datastore.Tx
 
-type TransactionFunc func(ctx context.Context, tx Tx) error
+type TransactionFunc = datastore.TransactionFunc
 
 // InTransaction opens one transaction, runs transactionFunc against it, and
 // commits -- the way to publish to multiple targets atomically via ProduceInTx.
@@ -22,15 +22,5 @@ type TransactionFunc func(ctx context.Context, tx Tx) error
 // closure is dedup-safe ONLY under caller-supplied IdempotencyKeys -- unset
 // keys mint fresh per call, so a rerun double-publishes.
 func InTransaction(ctx context.Context, ds *coredatastore.PostgresDatastore, transactionFunc TransactionFunc) error {
-	tx, err := ds.Pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	if err := transactionFunc(ctx, datastore.NewTx(tx)); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	return datastore.InTransaction(ctx, ds, transactionFunc)
 }

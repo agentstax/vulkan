@@ -19,7 +19,7 @@ func (c *ProducerController[Message]) GetCompactionHeadInTx(ctx context.Context,
 		return nil, errors.New("compaction key is required")
 	}
 
-	data, err := c.datastore.GetCompactionHeadInTx(ctx, tx.Raw(), topicId, compactionKey)
+	data, err := c.datastore.GetCompactionHeadInTx(ctx, tx, topicId, compactionKey)
 	if err != nil || data == nil {
 		return nil, err
 	}

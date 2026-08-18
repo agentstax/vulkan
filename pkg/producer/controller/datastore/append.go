@@ -2,8 +2,6 @@ package datastore
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // AppendMessage commits one message in its own transaction, self-healing a
@@ -54,7 +52,7 @@ func (d *ProducerDatastore[Message]) appendMessageTransaction(ctx context.Contex
 	// If Commit() is called successfully, Rollback() becomes a no-op and returns pgx.ErrTxClosed.
 	defer tx.Rollback(ctx)
 
-	appended, err := d.runInsert(ctx, tx, topicId, produceFunc, data)
+	appended, err := d.runInsert(ctx, newTx(tx), topicId, produceFunc, data)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +83,7 @@ func (d *ProducerDatastore[Message]) appendMessageTransaction(ctx context.Contex
 // (runInsertSavepoint), so retrying here can't undo an earlier target's
 // insert or rerun a caller side effect between calls. No retry: the tx owns
 // its own error handling.
-func (d *ProducerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx pgx.Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
 	if isMissingPartition(err) {
 		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)

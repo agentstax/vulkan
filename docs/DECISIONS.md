@@ -279,3 +279,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0526 2026-08-17 accepted (phase 14b) — migrate.Controller is the package's only door; the schema gate reads by id; Owner names are never empty
 - 0527 2026-08-17 accepted (phase 14b) — pkg/migrate adopts the three-layer template (vocabulary root, controller, controller/datastore; ToStep becomes a controller adapter, ErrNotRegistered rehomed to vocabulary)
 - 0528 2026-08-17 accepted (phase 14b) — pkg/logger, pkg/retry, pkg/errors, pkg/context merge into a flat pkg/common (RetryPolicy/RetryDatastore/LoggerWith renames; concurrency excluded, destined internal/)
+- 0529 2026-08-17 accepted (phase 14b) — one Querier contract (Exec/Query/QueryRow/SendBatch/CopyFrom); producer Tx embeds it; the produce transaction is the one sanctioned package crossing, cronscheduler a user of the public seam

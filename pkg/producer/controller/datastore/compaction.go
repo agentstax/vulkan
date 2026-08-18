@@ -6,17 +6,18 @@ import (
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 )
 
 // GetCompactionHeadInTx reads the head against the caller's tx, locking it
 // FOR UPDATE so a following produce on the same key is a race-free
 // compare-and-set. No retry: the tx owns its own error handling.
-func (d *ProducerDatastore[Message]) GetCompactionHeadInTx(ctx context.Context, tx pgx.Tx, topicId int64, compactionKey string) (*HeadData, error) {
-	return d.getCompactionHead(ctx, tx, topicId, compactionKey)
+func (d *ProducerDatastore[Message]) GetCompactionHeadInTx(ctx context.Context, q coredatastore.Querier, topicId int64, compactionKey string) (*HeadData, error) {
+	return d.getCompactionHead(ctx, q, topicId, compactionKey)
 }
 
-func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, tx pgx.Tx, topicId int64, compactionKey string) (*HeadData, error) {
+func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q coredatastore.Querier, topicId int64, compactionKey string) (*HeadData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			m.id,
@@ -32,7 +33,7 @@ func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, tx p
 	`, iTopic.MessageLogTable(topicId))
 
 	var head HeadData
-	err := tx.QueryRow(ctx, sql, topicId, compactionKey).Scan(
+	err := q.QueryRow(ctx, sql, topicId, compactionKey).Scan(
 		&head.Id,
 		&head.Payload,
 		&head.CreatedAt,

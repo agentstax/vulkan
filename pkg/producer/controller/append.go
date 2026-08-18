@@ -77,7 +77,7 @@ func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx 
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessageInTx(ctx, tx.Raw(), topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
+	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
 		return nil, err
 	}

@@ -44,8 +44,9 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   or public code. Coupled to TODO.md's produce-transaction seam chunk
   (pgx.Tx in producer datastore publics, cronscheduler's tx-taking datastore
   methods) — settle the two together.
-  Audited 2026-08-17 (every non-test pgx symbol in pkg/; proposal not yet
-  reviewed):
+  Audited 2026-08-17 (every non-test pgx symbol in pkg/); proposal reviewed
+  and BUILT 2026-08-17 as the seam chunk 1 — see TODO.md for the as-built
+  note; cronscheduler conversion (chunk 2) still open:
   - The codebase draws exactly one line worth typing: owns the transaction
     boundary vs runs statements inside someone else's. Pool, conn, and tx
     share identical Exec/Query/QueryRow/SendBatch/CopyFrom signatures;

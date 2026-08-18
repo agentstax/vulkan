@@ -119,6 +119,19 @@ Three layers per domain (template: worker, topic):
   methods, no `Querier`/`pgx.Tx` in any public signature. If an operation
   seems to need two controllers, it is one operation with a wrong home: pick
   the owner whose invariant the transaction protects.
+  The ONE sanctioned crossing is the produce-transaction seam:
+  `producer.InTransaction` hands its closure the producer `Tx`, and a method
+  built to run inside that closure takes the `Tx` (when it runs a
+  ProduceFunc) or `q datastore.Querier` (when it only runs statements).
+- `datastore.Querier` is the one statement seam: Exec / Query / QueryRow /
+  SendBatch / CopyFrom -- what pool, conn, and tx can all do, minus
+  transaction control. A private that runs inside a boundary it doesn't own
+  takes `q datastore.Querier`; `pgx.Tx` appears only as a local in the
+  private that owns Begin/Commit and in the adapter that builds the producer
+  `Tx`. No Beginner/pool interface, no wrapping of Rows/Row/CommandTag --
+  pgx's own result types pass through. `*pgxpool.Conn` stays concrete in
+  migrate: the advisory lock pins a session, and the concrete type is that
+  contract.
 
 ## Constructors & configs
 
