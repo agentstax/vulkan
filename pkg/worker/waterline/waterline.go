@@ -6,7 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
+	waterlinecontroller "github.com/agentstax/vulkan/pkg/worker/waterline/controller"
 )
 
 const WorkerWaterline = "waterline"
@@ -15,8 +15,8 @@ type WaterlineDefinition struct {
 	Config *WaterlineConfig
 	Logger common.Logger
 
-	workers   *controller.WorkerController
-	datastore *datastore.WaterlineDatastore
+	workers    *controller.WorkerController
+	controller *waterlinecontroller.WaterlineController
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -41,7 +41,7 @@ func NewWaterlineDefinition(ds *iDatastore.PostgresDatastore, cfg *WaterlineConf
 		return nil, err
 	}
 
-	waterlineDatastore, err := datastore.NewWaterlineDatastore(ds, &datastore.WaterlineDatastoreConfig{
+	waterlineController, err := waterlinecontroller.NewWaterlineController(ds, &waterlinecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -50,10 +50,10 @@ func NewWaterlineDefinition(ds *iDatastore.PostgresDatastore, cfg *WaterlineConf
 	}
 
 	return &WaterlineDefinition{
-		Config:    cfg,
-		Logger:    cfg.Logger,
-		workers:   workers,
-		datastore: waterlineDatastore,
+		Config:     cfg,
+		Logger:     cfg.Logger,
+		workers:    workers,
+		controller: waterlineController,
 	}, nil
 }
 

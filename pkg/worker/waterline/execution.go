@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
+	waterlinecontroller "github.com/agentstax/vulkan/pkg/worker/waterline/controller"
 )
 
 // rolls cursor.committed up behind the group's resolved work at the row's
@@ -17,9 +17,9 @@ type WaterlineExecution struct {
 	Config *WaterlineConfig
 	Logger common.Logger
 
-	runner    *controller.InstanceTickRunner
-	datastore *datastore.WaterlineDatastore
-	metadata  *waterlineMetadata
+	runner     *controller.InstanceTickRunner
+	controller *waterlinecontroller.WaterlineController
+	metadata   *waterlineMetadata
 }
 
 func newWaterlineExecution(waterline *WaterlineDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *waterlineMetadata) (*WaterlineExecution, error) {
@@ -41,12 +41,12 @@ func newWaterlineExecution(waterline *WaterlineDefinition, owner *common.Owner, 
 	}
 
 	return &WaterlineExecution{
-		Owner:     owner,
-		Config:    waterline.Config,
-		Logger:    waterline.Logger,
-		runner:    runner,
-		datastore: waterline.datastore,
-		metadata:  metadata,
+		Owner:      owner,
+		Config:     waterline.Config,
+		Logger:     waterline.Logger,
+		runner:     runner,
+		controller: waterline.controller,
+		metadata:   metadata,
 	}, nil
 }
 
@@ -64,6 +64,6 @@ func (i *WaterlineExecution) Run(ctx context.Context) error {
 
 // roll is one waterline pass.
 func (i *WaterlineExecution) roll(ctx context.Context) error {
-	_, err := i.datastore.AdvanceWaterline(ctx, i.Owner.TopicId, i.Owner.ConsumerGroupId)
+	_, err := i.controller.AdvanceWaterline(ctx, i.Owner.TopicId, i.Owner.ConsumerGroupId)
 	return err
 }

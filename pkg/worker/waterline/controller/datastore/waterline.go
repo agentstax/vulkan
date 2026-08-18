@@ -30,6 +30,9 @@ func (d *WaterlineDatastore) AdvanceWaterline(ctx context.Context, topicId int64
 	return committed, err
 }
 
+// advanceWaterline needs no transaction across its two statements: a target
+// gone stale after the SELECT is only ever too low, and GREATEST makes a
+// too-low target a no-op.
 func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicId int64, groupId int64) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease

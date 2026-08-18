@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
+	janitorcontroller "github.com/agentstax/vulkan/pkg/worker/janitor/controller"
 )
 
 // sweeps the topic at the row's poll_rate while a heartbeat holds the claim
@@ -17,9 +17,9 @@ type JanitorExecution struct {
 	Config *JanitorConfig
 	Logger common.Logger
 
-	runner    *controller.InstanceTickRunner
-	datastore *datastore.JanitorDatastore
-	metadata  *janitorMetadata
+	runner     *controller.InstanceTickRunner
+	controller *janitorcontroller.JanitorController
+	metadata   *janitorMetadata
 }
 
 func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorExecution, error) {
@@ -41,12 +41,12 @@ func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claim
 	}
 
 	return &JanitorExecution{
-		Topic:     current,
-		Config:    janitor.Config,
-		Logger:    janitor.Logger,
-		runner:    runner,
-		datastore: janitor.datastore,
-		metadata:  metadata,
+		Topic:      current,
+		Config:     janitor.Config,
+		Logger:     janitor.Logger,
+		runner:     runner,
+		controller: janitor.controller,
+		metadata:   metadata,
 	}, nil
 }
 
@@ -65,14 +65,14 @@ func (i *JanitorExecution) Run(ctx context.Context) error {
 // sweep is one janitor pass.
 func (i *JanitorExecution) sweep(ctx context.Context) error {
 	t := i.Topic
-	if err := i.datastore.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DeliveryLogMode); err != nil {
+	if err := i.controller.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DeliveryLogMode); err != nil {
 		return err
 	}
-	if err := i.datastore.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, i.metadata.SweepBatchSize, t.DeliveryLogMode); err != nil {
+	if err := i.controller.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, i.metadata.SweepBatchSize, t.DeliveryLogMode); err != nil {
 		return err
 	}
-	if err := i.datastore.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, i.metadata.SweepBatchSize); err != nil {
+	if err := i.controller.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, i.metadata.SweepBatchSize); err != nil {
 		return err
 	}
-	return i.datastore.SweepExpiredKeyLeases(ctx, t.Id, i.metadata.SweepBatchSize)
+	return i.controller.SweepExpiredKeyLeases(ctx, t.Id, i.metadata.SweepBatchSize)
 }

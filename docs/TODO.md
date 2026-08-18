@@ -383,14 +383,14 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (consumer tree, base, 3 consumer_definitions, 5 labs) updated.
       Verified: build+vet all modules, abandoned-events +
       abandoned-routine-snapshot + metrics labs green.
-- [ ] **MessageOptions never-nil.** 0533's audit: the options JSONB column
-      is nullable and Fill/Clamp are nil-safe receivers, but the zero
-      MessageOptions already means "all unset" (Fill treats nil and zero
-      identically), so nil carries nothing. Make *common.MessageOptions
-      never-nil end to end: COALESCE(options, '{}') at the consumer scan
-      sites (or NULLIF on write, pick one representation), delete the
-      nil-handling in Fill/Clamp, audit read-model Options fields to the
-      Owner never-nil template.
+- [x] **MessageOptions never-nil.** DECIDED AGAINST 2026-08-18
+      (user-settled, implementation built then rolled back; recorded as
+      [0536]): NULLIF-on-write + COALESCE-on-read across every options
+      SQL site is a worse trade than the nil checks it deletes.
+      MessageOptions stays the sanctioned nilable sparse sub-document —
+      nil = "no options document, consumer decides everything" — with
+      nil-tolerant Fill/Clamp as its resolution boundary. Narrows 0533's
+      consequence line; don't re-suggest the never-nil reshape.
 - [x] **consumer/base cleanup.** Done 2026-08-18, recorded as [0535]:
       BaseDefinition.GetTopic resolves the topic (NewProducerInstance
       precedent), NewBaseConsumer is pure wiring taking resolvedTopic +
@@ -406,18 +406,23 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       (banned "ack"), lost-ack comments → "commit confirmation".
       Verified: build+vet all modules, key-lease + defer + topic +
       schema-gate labs green.
-- [ ] **Worker kind controller decision → janitor/waterline.** The worker
-      kinds are pkg/worker/<kind>/datastore with no controller, so no
-      layer owns validation (janitor's DropExpiredPartitions /
-      SweepExpiredPartitions take 6 unvalidated params each, fed from
-      execution.go:68,71; waterline publics likewise); the alert kinds
-      carry controller/datastore and are the template. Decide
-      grow-controllers vs sanction datastore-only in CONVENTIONS.md, then
-      restructure janitor + waterline to match (cronscheduler rides the
-      next chunk). Waterline ride-alongs: AdvanceWaterline's discarded
-      return (datastore/waterline.go:23, execution.go:68); the deliberate
-      two-round-trip non-transactional advance (waterline.go:50,63) —
-      reconfirm and state it, or make it one transaction.
+- [x] **Worker kind controller decision → janitor/waterline.** Done
+      2026-08-18, recorded as [0537] (user-settled B: grow controllers):
+      janitor + waterline now kind root → controller →
+      controller/datastore matching the alert kinds. JanitorController
+      (drop/sweep/idempotencykey/keylease verb files) and
+      WaterlineController (AdvanceWaterline) own validation; executions
+      call them; kind roots alias their own controller as
+      janitorcontroller/waterlinecontroller (bare controller = worker
+      machinery there). Ride-alongs: AdvanceWaterline keeps its (int64,
+      error) return — 7 labs assert on the committed position, production
+      roll's discard is the lazy roller not caring; the two-statement
+      non-transactional advance reconfirmed correct and stated at the
+      private (snapshot SELECT + GREATEST makes a stale target a no-op).
+      14 labs' import paths moved to controller/datastore (still driving
+      datastores directly — they assert on internals). cronscheduler
+      rides the produce-transaction-seam chunk. Verified: build+vet all
+      modules, sweep + topic + exception + delivery-log labs green.
 - [ ] **Produce-transaction seam.** One design, two packages; overlaps
       ROADMAP's Querier-interface item — settle the two together.
       Design settled 2026-08-17 (option a: cronscheduler is a user of the

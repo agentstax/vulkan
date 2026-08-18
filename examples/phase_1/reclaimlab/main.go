@@ -32,7 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
 	"github.com/google/uuid"
 )
 

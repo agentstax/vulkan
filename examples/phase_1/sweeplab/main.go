@@ -30,7 +30,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/controller/datastore"
 	"github.com/google/uuid"
 )
 

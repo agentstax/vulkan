@@ -50,7 +50,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
 	"github.com/google/uuid"
 )
 

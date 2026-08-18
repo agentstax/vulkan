@@ -39,8 +39,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/datastore"
+	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/controller/datastore"
+	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )

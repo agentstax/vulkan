@@ -7,7 +7,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/janitor/datastore"
+	janitorcontroller "github.com/agentstax/vulkan/pkg/worker/janitor/controller"
 )
 
 const WorkerJanitor = "janitor"
@@ -16,9 +16,9 @@ type JanitorDefinition struct {
 	Config *JanitorConfig
 	Logger common.Logger
 
-	workers   *controller.WorkerController
-	topics    *topiccontroller.TopicController
-	datastore *datastore.JanitorDatastore
+	workers    *controller.WorkerController
+	topics     *topiccontroller.TopicController
+	controller *janitorcontroller.JanitorController
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -51,7 +51,7 @@ func NewJanitorDefinition(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) 
 		return nil, err
 	}
 
-	janitorDatastore, err := datastore.NewJanitorDatastore(ds, &datastore.JanitorDatastoreConfig{
+	janitorController, err := janitorcontroller.NewJanitorController(ds, &janitorcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -60,11 +60,11 @@ func NewJanitorDefinition(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) 
 	}
 
 	return &JanitorDefinition{
-		Config:    cfg,
-		Logger:    cfg.Logger,
-		workers:   workers,
-		topics:    topics,
-		datastore: janitorDatastore,
+		Config:     cfg,
+		Logger:     cfg.Logger,
+		workers:    workers,
+		topics:     topics,
+		controller: janitorController,
 	}, nil
 }
 
