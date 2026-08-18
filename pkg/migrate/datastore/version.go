@@ -10,8 +10,24 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// Version is an owner's latest-by-id success row, read on the pool.
+func (d *MigrateDatastore) Version(ctx context.Context, owner *common.Owner) (int64, error) {
+	var version int64
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		version, err = d.version(ctx, owner)
+		return err
+	})
+	return version, err
+}
+
+func (d *MigrateDatastore) version(ctx context.Context, owner *common.Owner) (int64, error) {
+	return Version(ctx, d.Datastore.Pool, owner)
+}
+
 // Version is an owner's latest-by-id success row -- latest-by-id, NOT MAX, so
-// a downgrade (which records a LOWER version) reads back correctly.
+// a downgrade (which records a LOWER version) reads back correctly. The free
+// form exists for reads on the lock-holding connection.
 //
 // There is no implied baseline but every owner is recorded at creation.
 func Version(ctx context.Context, q datastore.Querier, owner *common.Owner) (int64, error) {

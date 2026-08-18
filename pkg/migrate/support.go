@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/datastore"
-	mDatastore "github.com/agentstax/vulkan/pkg/migrate/datastore"
 )
 
 // Supported schema version ranges -- the versions of each owner kind's schema
@@ -23,7 +21,7 @@ const (
 // the shared system schema, plus the owner topic's schema for topic- and
 // group-owned callers -- must sit within the range this build understands.
 // Too new -> upgrade the binary; too old -> migrate the database.
-func AssertSchemaSupported(ctx context.Context, q datastore.Querier, owner *common.Owner) error {
+func (c *Controller) AssertSchemaSupported(ctx context.Context, owner *common.Owner) error {
 	if owner == nil {
 		return errors.New("owner must not be nil")
 	}
@@ -32,7 +30,7 @@ func AssertSchemaSupported(ctx context.Context, q datastore.Querier, owner *comm
 	if err != nil {
 		return err
 	}
-	if err := assertOwner(ctx, q, systemOwner, MinSystemVersion, MaxSystemVersion); err != nil {
+	if err := c.assertOwner(ctx, systemOwner, MinSystemVersion, MaxSystemVersion); err != nil {
 		return err
 	}
 
@@ -43,11 +41,11 @@ func AssertSchemaSupported(ctx context.Context, q datastore.Querier, owner *comm
 	if err != nil {
 		return err
 	}
-	return assertOwner(ctx, q, topicOwner, MinTopicVersion, MaxTopicVersion)
+	return c.assertOwner(ctx, topicOwner, MinTopicVersion, MaxTopicVersion)
 }
 
-func assertOwner(ctx context.Context, q datastore.Querier, owner *common.Owner, minV, maxV int64) error {
-	v, err := mDatastore.Version(ctx, q, owner)
+func (c *Controller) assertOwner(ctx context.Context, owner *common.Owner, minV, maxV int64) error {
+	v, err := c.datastore.Version(ctx, owner)
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}

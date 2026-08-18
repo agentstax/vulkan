@@ -4,16 +4,25 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // IsLocked reports whether any session currently holds the migration advisory
 // lock -- a snapshot from pg_locks, not an acquisition. Another session can take
 // the lock in the gap between this check and a subsequent AcquireLock.
-func IsLocked(ctx context.Context, q datastore.Querier) (bool, error) {
+func (d *MigrateDatastore) IsLocked(ctx context.Context) (bool, error) {
 	var locked bool
-	err := q.QueryRow(ctx, `
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
+		var err error
+		locked, err = d.isLocked(ctx)
+		return err
+	})
+	return locked, err
+}
+
+func (d *MigrateDatastore) isLocked(ctx context.Context) (bool, error) {
+	var locked bool
+	err := d.Datastore.Pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM pg_locks
 			WHERE locktype = 'advisory' AND classid = 0 AND objid = $1 AND granted

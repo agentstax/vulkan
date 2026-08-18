@@ -36,11 +36,11 @@ func NewStep(
 // must be idempotent.
 func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
 	if step.NoTxn {
-		return d.Retry.Wrap(ctx, func() error {
+		return d.DatastoreRetry.Wrap(ctx, func() error {
 			return d.runStepWithoutTx(ctx, conn, owner, step)
 		})
 	}
-	return d.Retry.Wrap(ctx, func() error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.runStepWithTx(ctx, conn, owner, step)
 	})
 }
@@ -61,7 +61,7 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 	if err := step.Apply(ctx, tx, owner.TopicId); err != nil {
 		return err
 	}
-	if err := d.RecordSuccess(ctx, tx, owner, step.Version); err != nil {
+	if err := d.recordSuccess(ctx, tx, owner, step.Version); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -77,5 +77,5 @@ func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.C
 	if err := step.Apply(ctx, conn, owner.TopicId); err != nil {
 		return err
 	}
-	return d.RecordSuccess(ctx, conn, owner, step.Version)
+	return d.recordSuccess(ctx, conn, owner, step.Version)
 }

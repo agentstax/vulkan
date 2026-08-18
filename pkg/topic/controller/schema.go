@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
 func (c *TopicController) AssertSchemaSupported(ctx context.Context, systemId int64, topicId int64) error {
@@ -19,5 +18,5 @@ func (c *TopicController) AssertSchemaSupported(ctx context.Context, systemId in
 	if err != nil {
 		return err
 	}
-	return migrate.AssertSchemaSupported(ctx, c.datastore.Datastore.Pool, owner)
+	return c.migrateController.AssertSchemaSupported(ctx, owner)
 }

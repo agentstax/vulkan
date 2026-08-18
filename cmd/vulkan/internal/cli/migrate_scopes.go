@@ -85,7 +85,12 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			targets, err := gatherTargets(ctx, mAdmin, ds.Pool, s, name, topic.SchemaVersion(schemaVersion))
+			controller, err := migrate.NewController(ds, nil)
+			if err != nil {
+				return err
+			}
+
+			targets, err := gatherTargets(ctx, mAdmin, controller, s, name, topic.SchemaVersion(schemaVersion))
 			if err != nil {
 				return err
 			}
@@ -103,10 +108,10 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				return nil
 			}
 
-			// Fast pre-flight, not a guarantee -- see migrate.IsLocked. Catches the
+			// Fast pre-flight, not a guarantee -- see Controller.IsLocked. Catches the
 			// common case (another migrate already running) before committing to a
 			// call that would otherwise block silently until that one finishes.
-			locked, err := migrate.IsLocked(ctx, ds.Pool)
+			locked, err := controller.IsLocked(ctx)
 			if err != nil {
 				return translateAdminError(err)
 			}

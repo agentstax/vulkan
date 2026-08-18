@@ -48,11 +48,11 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	runner, err := migrate.NewRunner(ds, nil, logger.NewDefaultLogger(os.Stderr, slog.LevelError))
+	controller, err := migrate.NewController(ds, &migrate.ControllerConfig{Logger: logger.NewDefaultLogger(os.Stderr, slog.LevelError)})
 	must(err)
 	reg := fixture()
 
-	sysOwner, err := migrate.SystemOwner(ctx, pool)
+	sysOwner, err := controller.SystemOwner(ctx)
 	must(err)
 	sysId := sysOwner.SystemId
 
@@ -61,31 +61,31 @@ func main() {
 
 	// 1. fresh == migrate ------------------------------------------------------
 	section("migrate v1 -> v4 builds the same schema as a fresh create-at-4")
-	must(runner.RunOnce(ctx, maxV, sysOwner, reg))
+	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
 	must(createFresh(ctx, pool))
 	check(sameColumns(ctx, pool), "stepwise migration == fresh-create-at-4 (information_schema)")
 
 	// 2. up -> down -> up ------------------------------------------------------
 	section("Down inverts Up, and re-up reproduces the schema")
-	must(runner.RunOnce(ctx, 1, sysOwner, reg))
+	must(controller.RunOnce(ctx, 1, sysOwner, reg))
 	check(!tableExists(ctx, pool, stepwise), "full down dropped the table")
-	must(runner.RunOnce(ctx, maxV, sysOwner, reg))
+	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
 	check(sameColumns(ctx, pool), "re-up reproduced the identical schema")
 
 	// 3. Up idempotency: version says v3 but the DDL is already at v4, so the
 	// re-run re-applies step 4's Up against an object that already exists.
 	section("Up is idempotent under an ambiguous-commit re-run")
 	forgetVersion(ctx, pool, sysId, maxV)
-	must(runner.RunOnce(ctx, maxV, sysOwner, reg))
+	must(controller.RunOnce(ctx, maxV, sysOwner, reg))
 	check(currentVersion(ctx, pool, sysId) == maxV && sameColumns(ctx, pool),
 		"re-applied Up over existing schema -> no-op, schema unchanged")
 
 	// 4. Down idempotency: drop c3 (now at v3), then claim v4 again so the
 	// re-run re-applies step 4's Down against a column that's already gone.
 	section("Down is idempotent under an ambiguous-commit re-run")
-	must(runner.RunOnce(ctx, maxV-1, sysOwner, reg))
+	must(controller.RunOnce(ctx, maxV-1, sysOwner, reg))
 	claimVersion(ctx, pool, sysId, maxV)
-	must(runner.RunOnce(ctx, maxV-1, sysOwner, reg))
+	must(controller.RunOnce(ctx, maxV-1, sysOwner, reg))
 	check(currentVersion(ctx, pool, sysId) == maxV-1 && !hasColumn(ctx, pool, stepwise, "c3"),
 		"re-applied Down over absent column -> no-op")
 

@@ -25,7 +25,12 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			sysOwner, err := migrate.SystemOwner(ctx, ds.Pool)
+			controller, err := migrate.NewController(ds, nil)
+			if err != nil {
+				return err
+			}
+
+			sysOwner, err := controller.SystemOwner(ctx)
 			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
@@ -33,7 +38,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				}
 				return translateAdminError(err)
 			}
-			sysCurrent, err := migrate.Version(ctx, ds.Pool, sysOwner)
+			sysCurrent, err := controller.Version(ctx, sysOwner)
 			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
 					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
@@ -64,7 +69,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				current, err := migrate.Version(ctx, ds.Pool, owner)
+				current, err := controller.Version(ctx, owner)
 				if err != nil {
 					return translateAdminError(err)
 				}

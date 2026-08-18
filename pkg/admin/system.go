@@ -102,7 +102,7 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 	if err != nil {
 		return err
 	}
-	return a.migrateRunner.RunOnce(ctx, targetVersion, owner, systemMigrations.Registry)
+	return a.migrateController.RunOnce(ctx, targetVersion, owner, systemMigrations.Registry)
 }
 
 // DestroySystem permanently deletes:

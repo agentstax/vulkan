@@ -10,7 +10,6 @@ import (
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +46,7 @@ const (
 )
 
 // direction is the guardrail the operator committed to on the command line.
-// It's not passed to the runner (which infers up/down from target vs current);
+// It's not passed to the controller (which infers up/down from target vs current);
 // it's enforced CLI-side so `down` can never silently roll a schema forward.
 type direction int
 
@@ -81,17 +80,17 @@ type migrateTarget struct {
 // gatherTargets resolves the targets a scope covers and reads each one's current
 // schema version. Registration gaps surface here as teaching errors, before the
 // migrate call, so the operator never sees a raw undefined-table or ErrNotRegistered.
-func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpool.Pool, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
+func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, controller *migrate.Controller, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
 	switch s {
 	case scopeSystem:
-		owner, err := migrate.SystemOwner(ctx, pool)
+		owner, err := controller.SystemOwner(ctx)
 		if err != nil {
 			if errors.Is(err, migrate.ErrNotRegistered) {
 				return nil, errSystemNotRegistered()
 			}
 			return nil, translateAdminError(err)
 		}
-		current, err := migrate.Version(ctx, pool, owner)
+		current, err := controller.Version(ctx, owner)
 		if err != nil {
 			if errors.Is(err, migrate.ErrNotRegistered) {
 				return nil, errSystemNotRegistered()
@@ -112,7 +111,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 		if err != nil {
 			return nil, err
 		}
-		current, err := migrate.Version(ctx, pool, owner)
+		current, err := controller.Version(ctx, owner)
 		if err != nil {
 			return nil, translateAdminError(err)
 		}
@@ -129,7 +128,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 			if err != nil {
 				return nil, err
 			}
-			current, err := migrate.Version(ctx, pool, owner)
+			current, err := controller.Version(ctx, owner)
 			if err != nil {
 				return nil, translateAdminError(err)
 			}
@@ -141,7 +140,7 @@ func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, pool *pgxpoo
 
 // guardDirection rejects a target that sits on the wrong side of the operator's
 // chosen direction: `up` must never roll a schema back, `down` must always. The
-// runner would happily do either from a bare target -- this is what makes the
+// controller would happily do either from a bare target -- this is what makes the
 // explicit up/down split mean something. Returns the count of targets that will
 // actually move (target != current) so the caller can no-op cleanly.
 func guardDirection(targets []migrateTarget, dir direction, to int64) (moving int, err error) {

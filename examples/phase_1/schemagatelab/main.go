@@ -49,7 +49,9 @@ func main() {
 	topicRow, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)
 	must(err)
 
-	sysOwner, err := migrate.SystemOwner(ctx, pool)
+	controller, err := migrate.NewController(ds, nil)
+	must(err)
+	sysOwner, err := controller.SystemOwner(ctx)
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))

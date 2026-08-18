@@ -239,8 +239,26 @@ One chunk = one review; work top to bottom within a section, reorder freely.
 
 ### Package restructures
 
-- [ ] **pkg/migrate comb-through** (surveyed 2026-08-16, all 670 lines +
-      callers; proposed shape below, not yet reviewed):
+- [ ] **pkg/migrate comb-through** (surveyed 2026-08-16; shape approved
+      2026-08-17, landing in two chunks — chunk A done, chunk B = the gate
+      split below):
+    - Chunk A done 2026-08-17: Version/SystemOwner/IsLocked/
+      AssertSchemaSupported are methods on migrate.Controller — the
+      Runner→Controller rename is user-settled: Controller is the house
+      word for a domain's door, and Runner stays reserved for run-loops
+      (manager.Runner, InstanceRunner). NewController(ds,
+      *ControllerConfig) + MigrateDatastoreConfig with
+      WithDefaults/Validate; datastore field unexported; Retry field →
+      DatastoreRetry; RecordSuccess → recordSuccess (TryRecordFailure
+      stays public — the controller calls it); datastore gained Wrap-only
+      pool-read pairs, conn-under-lock free funcs Version/SystemOwner
+      stay for the locked flow. Callers rebuilt: topic/worker controllers
+      + systemmanager hold a migrateController; admin passes
+      ControllerConfig; CLI builds a Controller in
+      migrate_status/migrate_scopes (gatherTargets takes
+      *migrate.Controller); invariantlab + schemagatelab updated. migrate
+      tests + invariant-lab + schema-gate-lab + `vulkan migrate status`
+      against dev DB green.
       - Version / SystemOwner / IsLocked / AssertSchemaSupported are free
         funcs taking a raw Querier — the banned public-signature shape; the
         topic and worker controllers feed them by reaching through two

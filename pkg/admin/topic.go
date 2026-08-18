@@ -88,13 +88,13 @@ func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, version to
 	if err != nil {
 		return err
 	}
-	return a.migrateRunner.RunOnce(ctx, targetVersion, owner, topicMigrations.Registry)
+	return a.migrateController.RunOnce(ctx, targetVersion, owner, topicMigrations.Registry)
 }
 
 // MigrateTopics moves every registered topic's schema to targetVersion.
 // A no-op, not an error, if no topics are registered.
 func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) error {
-	return a.migrateRunner.RunAll(ctx, targetVersion, common.OwnerTopic, topicMigrations.Registry)
+	return a.migrateController.RunAll(ctx, targetVersion, common.OwnerTopic, topicMigrations.Registry)
 }
 
 // RenameTopic changes the name of every version registered under name.

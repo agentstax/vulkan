@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
 // AssertSchemaSupported gates a worker's Register: the schemas the owner
@@ -14,5 +13,5 @@ func (c *WorkerController) AssertSchemaSupported(ctx context.Context, owner *com
 	if owner == nil {
 		return errors.New("owner must not be nil")
 	}
-	return migrate.AssertSchemaSupported(ctx, c.datastore.Datastore.Pool, owner)
+	return c.migrateController.AssertSchemaSupported(ctx, owner)
 }

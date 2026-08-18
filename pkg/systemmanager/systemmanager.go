@@ -26,9 +26,10 @@ type SystemManager struct {
 	Config *SystemManagerConfig
 	Logger logger.Logger
 
-	ds      *datastore.PostgresDatastore
-	manager *manager.ManagerDefinition
-	permit  *concurrency.Permit // held for the length of a Run call
+	ds                *datastore.PostgresDatastore
+	manager           *manager.ManagerDefinition
+	migrateController *migrate.Controller
+	permit            *concurrency.Permit // held for the length of a Run call
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -101,17 +102,26 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
+	migrateController, err := migrate.NewController(ds, &migrate.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	permit, err := concurrency.NewPermit()
 	if err != nil {
 		return nil, err
 	}
 
 	return &SystemManager{
-		Config:  cfg,
-		Logger:  cfg.Logger,
-		ds:      ds,
-		manager: managerDefinition,
-		permit:  permit,
+		Config:            cfg,
+		Logger:            cfg.Logger,
+		ds:                ds,
+		manager:           managerDefinition,
+		migrateController: migrateController,
+		permit:            permit,
 	}, nil
 }
 
@@ -127,7 +137,7 @@ func (s *SystemManager) Run(ctx context.Context) error {
 	}
 	defer release()
 
-	owner, err := migrate.SystemOwner(ctx, s.ds.Pool)
+	owner, err := s.migrateController.SystemOwner(ctx)
 	if err != nil {
 		return err
 	}

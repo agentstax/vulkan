@@ -5,13 +5,15 @@ import (
 
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/worker/controller/datastore"
 )
 
 type WorkerController struct {
 	Logger logger.Logger
 
-	datastore *datastore.WorkerDatastore
+	datastore         *datastore.WorkerDatastore
+	migrateController *migrate.Controller
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
@@ -36,8 +38,17 @@ func NewWorkerController(ds *coredatastore.PostgresDatastore, cfg *ControllerCon
 		return nil, err
 	}
 
+	migrateController, err := migrate.NewController(ds, &migrate.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &WorkerController{
-		Logger:    cfg.Logger,
-		datastore: workerDatastore,
+		Logger:            cfg.Logger,
+		datastore:         workerDatastore,
+		migrateController: migrateController,
 	}, nil
 }

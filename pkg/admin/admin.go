@@ -35,7 +35,7 @@ type MessageAdmin struct {
 	measurementHeads  *compactioncontroller.CompactionController[metrics.Measurement]
 	metricsController *metricscontroller.MetricsController
 	workerController  *workercontroller.WorkerController
-	migrateRunner     *migrate.Runner
+	migrateController *migrate.Controller
 	alertDeclarers    []worker.Declarer
 	allowDestroy      bool
 }
@@ -171,7 +171,10 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	migrateRunner, err := migrate.NewRunner(ds, cfg.Retry, cfg.Logger)
+	migrateController, err := migrate.NewController(ds, &migrate.ControllerConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +189,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		measurementHeads:   measurementHeads,
 		metricsController:  metricsController,
 		workerController:   workerController,
-		migrateRunner:      migrateRunner,
+		migrateController:  migrateController,
 		alertDeclarers:     []worker.Declarer{partitionCountDefinition, compactionReadCostDefinition},
 		allowDestroy:       cfg.AllowDestroy,
 	}, nil

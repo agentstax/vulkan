@@ -1,7 +1,7 @@
 package datastore
 
 import (
-	"os"
+	"errors"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
@@ -9,24 +9,33 @@ import (
 )
 
 type MigrateDatastore struct {
-	Datastore *datastore.PostgresDatastore
-	Retry     *retry.DatastoreRetry
-	Logger    logger.Logger
+	Datastore      *datastore.PostgresDatastore
+	DatastoreRetry *retry.DatastoreRetry
+	Logger         logger.Logger
 }
 
-func NewMigrateDatastore(ds *datastore.PostgresDatastore, retryPolicy *retry.Policy, log logger.Logger) (*MigrateDatastore, error) {
-	if log == nil {
-		log = logger.NewDefaultLogger(os.Stdout)
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewMigrateDatastore(ds *datastore.PostgresDatastore, cfg *MigrateDatastoreConfig) (*MigrateDatastore, error) {
+	if ds == nil {
+		return nil, errors.New("datastore must not be nil")
+	}
+	if cfg == nil {
+		cfg = &MigrateDatastoreConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
-	dsRetry, err := retry.NewDatastoreRetry(retryPolicy, log)
+	datastoreRetry, err := retry.NewDatastoreRetry(cfg.Retry, cfg.Logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MigrateDatastore{
-		Datastore: ds,
-		Retry:     dsRetry,
-		Logger:    log,
+		Datastore:      ds,
+		DatastoreRetry: datastoreRetry,
+		Logger:         cfg.Logger,
 	}, nil
 }
