@@ -1,8 +1,9 @@
-package alert
+package controller
 
 import (
 	"errors"
 
+	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 )
@@ -11,13 +12,13 @@ import (
 type Job struct {
 	Name     string
 	Schedule *cron.Schedule
-	Data     *JobData
+	Data     *alert.JobData
 	Config   *croncontroller.CronJobConfig
 }
 
 // NewJob parses schedule so a bad expression fails here, not at register.
 // cfg may be nil.
-func NewJob(name string, schedule string, data *JobData, cfg *croncontroller.CronJobConfig) (*Job, error) {
+func NewJob(name string, schedule string, data *alert.JobData, cfg *croncontroller.CronJobConfig) (*Job, error) {
 	if name == "" {
 		return nil, errors.New("job name is required")
 	}

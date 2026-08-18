@@ -7,10 +7,13 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
+	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
@@ -37,13 +40,13 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 	}
 
 	// registerTopic, not RegisterTopic -- the latter guards the __system. prefix
-	if _, err := a.registerTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), metrics.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), metricscontroller.TopicConfig()); err != nil {
 		return err
 	}
-	if _, err := a.registerTopic(ctx, alert.TopicName, topic.SchemaVersion(1), alert.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, alert.TopicName, topic.SchemaVersion(1), alertcontroller.TopicConfig()); err != nil {
 		return err
 	}
-	if _, err := a.registerTopic(ctx, cron.TopicName, topic.SchemaVersion(1), cron.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, cron.TopicName, topic.SchemaVersion(1), croncontroller.TopicConfig()); err != nil {
 		return err
 	}
 
@@ -55,7 +58,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 	if err != nil {
 		return err
 	}
-	for _, job := range []*alert.Job{partitionCountJob, compactionReadCostJob} {
+	for _, job := range []*alertcontroller.Job{partitionCountJob, compactionReadCostJob} {
 		if _, err := a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Data, job.Config); err != nil {
 			return err
 		}

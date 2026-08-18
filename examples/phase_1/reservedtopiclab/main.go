@@ -11,6 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -61,7 +62,7 @@ func main() {
 	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)
-	assertDuration("declared retention across re-run", afterRerun.RetentionTTL, metrics.TopicConfig().RetentionTTL)
+	assertDuration("declared retention across re-run", afterRerun.RetentionTTL, metricscontroller.TopicConfig().RetentionTTL)
 
 	fmt.Println("\n✅ RESERVED TOPIC LAB PASSED")
 }

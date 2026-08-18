@@ -281,3 +281,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0528 2026-08-17 accepted (phase 14b) — pkg/logger, pkg/retry, pkg/errors, pkg/context merge into a flat pkg/common (RetryPolicy/RetryDatastore/LoggerWith renames; concurrency excluded, destined internal/)
 - 0529 2026-08-17 accepted (phase 14b) — one Querier contract (Exec/Query/QueryRow/SendBatch/CopyFrom); producer Tx embeds it; the produce transaction is the one sanctioned package crossing, cronscheduler a user of the public seam
 - 0530 2026-08-18 accepted (phase 14b) — pkg/compaction stays two-layer (owns no vocabulary); MessageRow stays in common as cross-stack shared vocabulary
+- 0531 2026-08-18 accepted (phase 14b) — system-topic and cron-job declarations live in the domain's controller (TopicConfig to system_topic.go; alert Job/NewJob/ToJobData to alert/controller; TopicName consts stay vocabulary)

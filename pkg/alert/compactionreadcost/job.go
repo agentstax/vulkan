@@ -3,6 +3,7 @@ package compactionreadcost
 import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
+	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 )
@@ -12,7 +13,7 @@ const JobName = "alert." + controller.AlertCompactionReadCost
 // NewJob builds the cron job the compaction_read_cost alert is evaluated on.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJob(cfg *JobConfig) (*alert.Job, error) {
+func NewJob(cfg *JobConfig) (*alertcontroller.Job, error) {
 	if cfg == nil {
 		cfg = &JobConfig{}
 	}
@@ -26,5 +27,5 @@ func NewJob(cfg *JobConfig) (*alert.Job, error) {
 		return nil, err
 	}
 	// concurrency defers so runs never overlap
-	return alert.NewJob(JobName, cfg.Schedule, data, &croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
+	return alertcontroller.NewJob(JobName, cfg.Schedule, data, &croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
 }

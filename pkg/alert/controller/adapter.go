@@ -1,12 +1,14 @@
-package alert
+package controller
 
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/agentstax/vulkan/pkg/alert"
 )
 
-func ToJobData(data json.RawMessage) (*JobData, error) {
-	var decoded JobData
+func ToJobData(data json.RawMessage) (*alert.JobData, error) {
+	var decoded alert.JobData
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return nil, fmt.Errorf("job data payload: %w", err)
 	}

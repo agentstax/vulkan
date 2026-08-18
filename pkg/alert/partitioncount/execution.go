@@ -86,7 +86,7 @@ func (e *PartitionCountExecution) consume(ctx context.Context) error {
 }
 
 func (e *PartitionCountExecution) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
-	jobData, err := alert.ToJobData(request.Data)
+	jobData, err := alertcontroller.ToJobData(request.Data)
 	if err != nil {
 		return err
 	}

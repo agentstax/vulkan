@@ -348,13 +348,15 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       Ride-along fixed: the three topicId errors.New checks now fmt.Errorf
       with got-value (head.go x2, message.go). Verified: build+vet,
       compaction-lab green.
-- [ ] **Vocabulary importing controllers.** cron/jobrequest.go:11,22,
-      metrics/topic.go:8,14, and alert/topic.go:8,14 declare
-      TopicConfig() *topiccontroller.TopicConfig; alert/job.go:7,15 stores
-      *croncontroller.CronJobConfig in a vocabulary struct; alert/
-      adapter.go:8 exports ToJobData from the vocabulary. One design
-      question: where do a domain's system-topic and cron-job declarations
-      live so arrows stay downward (topic and system manage without).
+- [x] **Vocabulary importing controllers.** Done 2026-08-18, recorded as
+      [0531]: declarations live in the domain's controller. TopicConfig()
+      moved to system_topic.go in cron/metrics/alert controllers; alert
+      Job/NewJob → alert/controller/job.go, ToJobData →
+      alert/controller/adapter.go; TopicName consts + JobData stay
+      vocabulary. Callers updated: admin/system.go, kind job.go +
+      execution.go x2, alertlab, reservedtopiclab. cron/metrics/alert
+      vocabularies now import ~common only. Verified: build+vet all
+      modules, reserved-topic + cron + alert labs green.
 - [ ] **Consumer read-model homes.** The row-stack vocabularies hold runner
       machinery, so read-models sit in controllers: Message / ClaimedRange
       / RangeLease / MessageOutcome / OutcomeKind in
