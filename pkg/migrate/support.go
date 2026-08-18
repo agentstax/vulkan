@@ -1,12 +1,5 @@
 package migrate
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/agentstax/vulkan/pkg/common"
-)
-
 // Supported schema version ranges -- the versions of each owner kind's schema
 // this build understands.
 const (
@@ -15,44 +8,3 @@ const (
 	MinTopicVersion  int64 = 1
 	MaxTopicVersion  int64 = 1
 )
-
-// AssertSystemSchemaSupported gates startup for a system-owned caller: the
-// shared system schema must sit within the range this build understands.
-// Too new -> upgrade the binary; too old -> migrate the database.
-func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId int64) error {
-	if systemId <= 0 {
-		return fmt.Errorf("systemId must be > 0, got %d", systemId)
-	}
-	version, err := c.datastore.SystemVersion(ctx, systemId)
-	if err != nil {
-		return err // ErrNotRegistered, or a real db error
-	}
-	return assertVersionInRange(common.OwnerSystem, version, MinSystemVersion, MaxSystemVersion)
-}
-
-// AssertTopicSchemaSupported gates startup for a topic- or group-owned
-// caller: the shared system schema plus the topic's own schema must both sit
-// within the range this build understands.
-func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId int64, topicId int64) error {
-	if err := c.AssertSystemSchemaSupported(ctx, systemId); err != nil {
-		return err
-	}
-	if topicId <= 0 {
-		return fmt.Errorf("topicId must be > 0, got %d", topicId)
-	}
-	version, err := c.datastore.TopicVersion(ctx, topicId)
-	if err != nil {
-		return err // ErrNotRegistered, or a real db error
-	}
-	return assertVersionInRange(common.OwnerTopic, version, MinTopicVersion, MaxTopicVersion)
-}
-
-func assertVersionInRange(kind common.OwnerKind, version int64, minVersion int64, maxVersion int64) error {
-	switch {
-	case version < minVersion:
-		return fmt.Errorf("%s schema is version %d but this build needs at least %d -- migrate the database up first", kind, version, minVersion)
-	case version > maxVersion:
-		return fmt.Errorf("%s schema is version %d but this build only understands up to %d -- upgrade the binary", kind, version, maxVersion)
-	}
-	return nil
-}

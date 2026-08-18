@@ -7,6 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
@@ -80,7 +81,7 @@ type migrateTarget struct {
 // gatherTargets resolves the targets a scope covers and reads each one's current
 // schema version. Registration gaps surface here as teaching errors, before the
 // migrate call, so the operator never sees a raw undefined-table or ErrNotRegistered.
-func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, controller *migrate.Controller, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
+func gatherTargets(ctx context.Context, mAdmin *admin.MessageAdmin, controller *migratecontroller.Controller, s scope, name string, version topic.SchemaVersion) ([]migrateTarget, error) {
 	switch s {
 	case scopeSystem:
 		owner, err := controller.SystemOwner(ctx)

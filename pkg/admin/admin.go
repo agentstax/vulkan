@@ -11,7 +11,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
-	"github.com/agentstax/vulkan/pkg/migrate"
+	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -35,7 +35,7 @@ type MessageAdmin struct {
 	measurementHeads  *compactioncontroller.CompactionController[metrics.Measurement]
 	metricsController *metricscontroller.MetricsController
 	workerController  *workercontroller.WorkerController
-	migrateController *migrate.Controller
+	migrateController *migratecontroller.Controller
 	alertDeclarers    []worker.Declarer
 	allowDestroy      bool
 }
@@ -171,7 +171,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	migrateController, err := migrate.NewController(ds, &migrate.ControllerConfig{
+	migrateController, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

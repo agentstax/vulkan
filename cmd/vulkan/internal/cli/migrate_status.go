@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/migrate"
+	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			controller, err := migrate.NewController(ds, nil)
+			controller, err := migratecontroller.NewController(ds, nil)
 			if err != nil {
 				return err
 			}

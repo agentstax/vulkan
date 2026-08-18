@@ -9,7 +9,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
-	"github.com/agentstax/vulkan/pkg/migrate"
+	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
@@ -28,7 +28,7 @@ type SystemManager struct {
 
 	ds                *datastore.PostgresDatastore
 	manager           *manager.ManagerDefinition
-	migrateController *migrate.Controller
+	migrateController *migratecontroller.Controller
 	permit            *concurrency.Permit // held for the length of a Run call
 }
 
@@ -102,7 +102,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	migrateController, err := migrate.NewController(ds, &migrate.ControllerConfig{
+	migrateController, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/migrate"
+	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
@@ -85,7 +85,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			controller, err := migrate.NewController(ds, nil)
+			controller, err := migratecontroller.NewController(ds, nil)
 			if err != nil {
 				return err
 			}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
-	mDatastore "github.com/agentstax/vulkan/pkg/migrate/datastore"
 )
 
 // Migration is one schema step, shared by every scope -- a sparse struct, so a
@@ -27,23 +26,6 @@ type Migration struct {
 	ValidateDown func(ctx context.Context, q datastore.Querier, topicId int64) error
 	Down         func(ctx context.Context, q datastore.Querier, topicId int64) error
 	NoTxn        bool // e.g. CREATE INDEX CONCURRENTLY -- runs on the pool, not a tx
-}
-
-func (m *Migration) ToStep(stepType mDatastore.StepType, targetVersion int64) (*mDatastore.Step, error) {
-	switch stepType {
-	case mDatastore.StepUp:
-		if m.Up == nil {
-			return nil, fmt.Errorf("version %d has no Up defined", m.Version)
-		}
-		return mDatastore.NewStep(targetVersion, m.ValidateUp, m.Up, m.NoTxn)
-	case mDatastore.StepDown:
-		if m.Down == nil {
-			return nil, fmt.Errorf("version %d has no Down defined -- migration is irreversible", m.Version)
-		}
-		return mDatastore.NewStep(targetVersion, m.ValidateDown, m.Down, m.NoTxn)
-	default:
-		return nil, fmt.Errorf("invalid stepType %s defined", stepType)
-	}
 }
 
 // Validate requires versions to be contiguous in slice order starting at 2 (v1

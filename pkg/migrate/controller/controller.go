@@ -1,4 +1,4 @@
-package migrate
+package controller
 
 import (
 	"context"
@@ -6,25 +6,22 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/datastore"
+	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/logger"
-	mDatastore "github.com/agentstax/vulkan/pkg/migrate/datastore"
+	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/migrate/controller/datastore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// ErrNotRegistered re-exports the datastore sentinel so callers can errors.Is
-// against it without importing the datastore subpackage.
-var ErrNotRegistered = mDatastore.ErrNotRegistered
 
 type Controller struct {
 	Logger logger.Logger
 
-	datastore *mDatastore.MigrateDatastore
+	datastore *datastore.MigrateDatastore
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewController(ds *datastore.PostgresDatastore, cfg *ControllerConfig) (*Controller, error) {
+func NewController(ds *coredatastore.PostgresDatastore, cfg *ControllerConfig) (*Controller, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -36,7 +33,7 @@ func NewController(ds *datastore.PostgresDatastore, cfg *ControllerConfig) (*Con
 		return nil, err
 	}
 
-	migrateDatastore, err := mDatastore.NewMigrateDatastore(ds, &mDatastore.MigrateDatastoreConfig{
+	migrateDatastore, err := datastore.NewMigrateDatastore(ds, &datastore.MigrateDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -51,8 +48,8 @@ func NewController(ds *datastore.PostgresDatastore, cfg *ControllerConfig) (*Con
 }
 
 // RunOnce migrates a single owner's schema to targetVersion using registry.
-func (c *Controller) RunOnce(ctx context.Context, targetVersion int64, owner *common.Owner, registry []Migration) error {
-	if err := Validate(registry); err != nil {
+func (c *Controller) RunOnce(ctx context.Context, targetVersion int64, owner *common.Owner, registry []migrate.Migration) error {
+	if err := migrate.Validate(registry); err != nil {
 		return err
 	}
 	// Version 1 is the baseline (Register); the registry supplies 2..max.
@@ -73,8 +70,8 @@ func (c *Controller) RunOnce(ctx context.Context, targetVersion int64, owner *co
 // RunAll migrates every owner of kind to targetVersion using registry.
 // CONTINUES past any owner that fails, joining every error. Topic only --
 // system is a singleton, migrated through RunOnce.
-func (c *Controller) RunAll(ctx context.Context, targetVersion int64, kind common.OwnerKind, registry []Migration) error {
-	if err := Validate(registry); err != nil {
+func (c *Controller) RunAll(ctx context.Context, targetVersion int64, kind common.OwnerKind, registry []migrate.Migration) error {
+	if err := migrate.Validate(registry); err != nil {
 		return err
 	}
 	// Version 1 is the baseline (Register); the registry supplies 2..max.
@@ -115,8 +112,8 @@ func (c *Controller) owners(ctx context.Context, conn *pgxpool.Conn, kind common
 }
 
 // migrateOwner walks one owner between its current version and targetVersion.
-func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, targetVersion, maxVersion int64, registry []Migration) error {
-	current, err := mDatastore.Version(ctx, conn, owner)
+func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, targetVersion, maxVersion int64, registry []migrate.Migration) error {
+	current, err := datastore.Version(ctx, conn, owner)
 	if err != nil {
 		return err
 	}

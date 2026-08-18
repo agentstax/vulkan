@@ -21,7 +21,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	coredatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/migrate"
+	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,7 +49,7 @@ func main() {
 	topicRow, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)
 	must(err)
 
-	controller, err := migrate.NewController(ds, nil)
+	controller, err := migratecontroller.NewController(ds, nil)
 	must(err)
 	sysOwner, err := controller.SystemOwner(ctx)
 	must(err)

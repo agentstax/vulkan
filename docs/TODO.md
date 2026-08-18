@@ -241,6 +241,17 @@ One chunk = one review; work top to bottom within a section, reorder freely.
 
 - [x] **pkg/migrate comb-through** (surveyed 2026-08-16; shape approved
       2026-08-17, landed in two chunks; decision record [0526]):
+    - Three-layer layout done 2026-08-17 (user-requested; record [0527]):
+      pkg/migrate is vocabulary only (Migration + Validate, ErrNotRegistered
+      rehomed from the datastore, Min/Max version consts); Controller +
+      configs + gates + reads moved to pkg/migrate/controller, datastore to
+      pkg/migrate/controller/datastore; Migration.ToStep became the
+      controller-side toStep adapter; the ErrNotRegistered re-export var
+      deleted. Importers re-pathed (topic/worker controllers, admin,
+      systemmanager, CLI, invariantlab, schemagatelab) — errors.Is /
+      registry users keep importing pkg/migrate. Verified: build+vet all
+      modules, migrate+registry tests, invariant-lab, schema-gate-lab,
+      `vulkan migrate status` against dev DB.
     - Follow-up done 2026-08-17 (user-requested consistency pass): the
       whole pool-read surface is by id — Controller.SystemVersion(ctx,
       systemId) + TopicVersion(ctx, topicId); the owner-taking
