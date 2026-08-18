@@ -80,19 +80,19 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 }
 
 // quarantine gives up on retrying a poisoned range as one unit: every message in
-// it parks as an independent 'ready' exception (attempts starts fresh at 0 -- a
+// it is written as an independent 'ready' exception (attempts starts fresh at 0 -- a
 // separate retry budget from the range's now-exhausted reclaim count), each
-// logging its own delivery_log_<topic_id> row same as any other park, and the
+// logging its own delivery_log_<topic_id> row same as any other exception write, and the
 // lease frees for good. From here each message lives or dies on its own via the
 // exact same exception-window machinery as an ordinary consumed-message failure --
 // AdvanceWaterline's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
-	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages parked as exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages written as 'ready' exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
-	var parkSql string
+	var deliverySql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
-		parkSql = fmt.Sprintf(`
+		deliverySql = fmt.Sprintf(`
 			INSERT INTO %s (consumer_group_id, message_id, status, attempts, last_error)
 			SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
 			FROM %s
@@ -100,11 +100,11 @@ func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, to
 				AND id <= $3;
 		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
 	} else {
-		// parked CTE + INSERT keeps the range-wide park and its delivery_log_<topic_id>
-		// rows atomic -- one log row per message parked, same first-recorded-attempt
+		// inserted CTE + INSERT keeps the range-wide write and its delivery_log_<topic_id>
+		// rows atomic -- one log row per message written, same first-recorded-attempt
 		// convention (attempt=0) as commit's own log statement.
-		parkSql = fmt.Sprintf(`
-			WITH parked AS (
+		deliverySql = fmt.Sprintf(`
+			WITH inserted AS (
 				INSERT INTO %[1]s (consumer_group_id, message_id, status, attempts, last_error)
 				SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
 				FROM %[2]s
@@ -113,10 +113,10 @@ func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, to
 				RETURNING message_id, last_error
 			)
 			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
-			SELECT $1, message_id, 0, last_error FROM parked;
+			SELECT $1, message_id, 0, last_error FROM inserted;
 		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId))
 	}
-	if _, err := tx.Exec(ctx, parkSql, groupId, lease.Low, lease.High); err != nil {
+	if _, err := tx.Exec(ctx, deliverySql, groupId, lease.Low, lease.High); err != nil {
 		return err
 	}
 

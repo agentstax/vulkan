@@ -13,12 +13,12 @@ import (
 )
 
 // Commit frees the range's lease, then records failures and deferred messages
-// as sparse delivery rows -- initialBackoff sets how long a freshly parked row
+// as sparse delivery rows -- initialBackoff sets how long a freshly written 'ready' row
 // waits before it's first eligible for ClaimExceptions
 // (RecordExceptionFailure's own retry policy takes over on later retries).
 // deliveryLogMode gates the parallel delivery_log_<topic_id> audit writes.
 // The lease is freed FIRST, token-guarded -- so a reclaimed worker's stale
-// commit bails before parking any phantom exception rows.
+// commit bails before writing any phantom exception rows.
 func (d *MessageConsumerDatastore) Commit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
 		return d.commit(ctx, topicId, groupId, token, outcomes, initialBackoff, deliveryLogMode)
@@ -48,9 +48,9 @@ func (d *MessageConsumerDatastore) commit(ctx context.Context, topicId int64, gr
 
 	// no ON CONFLICT needed: only the worker whose token still matches the lease
 	// reaches this INSERT -- a stale worker's DELETE above matches 0 rows and
-	// returns before ever running parkSql.
+	// returns before ever running deliverySql.
 	batch := &pgx.Batch{}
-	terminals := queueOutcomes(batch, parkStatement(topicId), logStatement(topicId), groupId, outcomes, initialBackoff, deliveryLogMode)
+	terminals := queueOutcomes(batch, deliveryStatement(topicId), logStatement(topicId), groupId, outcomes, initialBackoff, deliveryLogMode)
 	if err := execBatch(ctx, tx, batch); err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (d *MessageConsumerDatastore) commit(ctx context.Context, topicId int64, gr
 	return nil
 }
 
-// PartialCommit narrows a still-open lease to lastProcessed and parks whatever
+// PartialCommit narrows a still-open lease to lastProcessed and records whatever
 // resolved before an interruption. The lease token isn't freed, it
 // naturally expires and gets reclaimed.
 func (d *MessageConsumerDatastore) PartialCommit(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID, lastProcessed int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
@@ -84,7 +84,7 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 	// narrow lease range -- the untouched suffix (lastProcessed, high] stays
 	// leased under the same token until it expires and is reclaimed. Unlike
 	// commit's DELETE, this UPDATE doesn't consume the row -- a retry's own
-	// UPDATE still matches it, so it reaches the park statement again. See the
+	// UPDATE still matches it, so it reaches the delivery insert again. See the
 	// recorded-anything guard below.
 	truncateSql := `
 		UPDATE lease
@@ -101,16 +101,16 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 		return common.ErrLeaseLost
 	}
 
-	// same parking shape as commit -- only the lease-side effect differs.
+	// same delivery-insert shape as commit -- only the lease-side effect differs.
 	batch := &pgx.Batch{}
-	terminals := queueOutcomes(batch, parkStatement(topicId), logStatement(topicId), groupId, outcomes, initialBackoff, deliveryLogMode)
+	terminals := queueOutcomes(batch, deliveryStatement(topicId), logStatement(topicId), groupId, outcomes, initialBackoff, deliveryLogMode)
 	if err := execBatch(ctx, tx, batch); err != nil {
 		return err
 	}
 
 	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
 	// ack, not whether it landed. Unlike commit, truncateSql's UPDATE isn't
-	// self-consuming, so a retry that already landed would reach the park
+	// self-consuming, so a retry that already landed would reach the delivery
 	// statement (or the log row's PK) again -- only safe to retry when nothing
 	// was recorded.
 	if err := tx.Commit(ctx); err != nil {
@@ -126,7 +126,7 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 	return nil
 }
 
-func parkStatement(topicId int64) string {
+func deliveryStatement(topicId int64) string {
 	return fmt.Sprintf(`
 		INSERT INTO %s (consumer_group_id, message_id, status, attempts, can_run_after, last_error)
 		VALUES (
@@ -140,7 +140,7 @@ func parkStatement(topicId int64) string {
 	`, iTopic.DeliveryTable(topicId))
 }
 
-// freshly parked rows are always the first recorded attempt (0)
+// a freshly written delivery row is always the first recorded attempt (0)
 func logStatement(topicId int64) string {
 	return fmt.Sprintf(`
 		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
@@ -148,20 +148,20 @@ func logStatement(topicId int64) string {
 	`, iTopic.DeliveryLogTable(topicId))
 }
 
-// queueOutcomes queues one park + one log statement per resolved message, sent
-// as a single pipelined round trip. Returns how many parked 'dead'.
-// OutcomeSuperseded and OutcomeSuccess park nothing -- they record a log row only.
-func queueOutcomes(batch *pgx.Batch, parkSql string, logSql string, groupId int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) int {
+// queueOutcomes queues one delivery insert + one log statement per resolved message, sent
+// as a single pipelined round trip. Returns how many rows were written 'dead'.
+// OutcomeSuperseded and OutcomeSuccess write no delivery row -- they record a log row only.
+func queueOutcomes(batch *pgx.Batch, deliverySql string, logSql string, groupId int64, outcomes []OutcomeData, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) int {
 	terminals := 0
 	for _, outcome := range outcomes {
 		switch outcome.Kind {
 		case OutcomeException:
-			batch.Queue(parkSql, groupId, outcome.MessageId, "ready", outcome.Err, initialBackoff.Seconds())
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, initialBackoff.Seconds())
 		case OutcomeTerminal:
-			batch.Queue(parkSql, groupId, outcome.MessageId, "dead", outcome.Err, initialBackoff.Seconds())
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "dead", outcome.Err, initialBackoff.Seconds())
 			terminals++
 		case OutcomeDeferred:
-			batch.Queue(parkSql, groupId, outcome.MessageId, "deferred", nil, 0.0)
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "deferred", nil, 0.0)
 		}
 		if deliveryLogMode != topic.DeliveryLogModeOff {
 			batch.Queue(logSql, groupId, outcome.MessageId, outcomeLogStatus(outcome.Kind), outcome.Err)
@@ -170,7 +170,7 @@ func queueOutcomes(batch *pgx.Batch, parkSql string, logSql string, groupId int6
 	return terminals
 }
 
-// a park's delivery_log status: both failure kinds log as 'failure', the other
+// an outcome's delivery_log status: both failure kinds log as 'failure', the other
 // two log under their own name.
 func outcomeLogStatus(kind OutcomeKind) string {
 	switch kind {

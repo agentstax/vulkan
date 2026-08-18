@@ -13,7 +13,7 @@ type ConsumerType string
 const (
 	CURSOR ConsumerType = "CURSOR"
 
-	// LIFECYCLE is PARKED -- prefer CURSOR. At the current feature set it is a
+	// LIFECYCLE is ON HOLD -- prefer CURSOR. At the current feature set it is a
 	// strictly more expensive CURSOR; it re-earns its place only with the
 	// non-FIFO queue work (priority/delay/fairness).
 	LIFECYCLE ConsumerType = "LIFECYCLE"
@@ -39,7 +39,7 @@ type ConsumerConfig struct {
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
 	TimeoutGrace            time.Duration
-	ExceptionInitialBackoff time.Duration       // can_run_after delay when an exception/terminal is first parked (Commit/PartialCommit) -- Message.Retry takes over on later retries
+	ExceptionInitialBackoff time.Duration       // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
 	InstanceTTL             time.Duration       // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
 	BindingRetryInterval    time.Duration       // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
 	Retry                   *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().

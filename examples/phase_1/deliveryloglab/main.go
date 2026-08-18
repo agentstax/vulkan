@@ -16,7 +16,7 @@ package main
 //     attempt), so a retry can never collide with or overwrite a prior one.
 //  3. a topic registered with DeliveryLogModeOff silently skips every write
 //     path (the table itself always exists, so re-enabling needs no DDL) --
-//     a failure still parks normally in delivery_<id>, just with no shadow
+//     a failure still writes its delivery row normally in delivery_<id>, just with no shadow
 //     row.
 //  4. a topic registered with DeliveryLogModeAll logs a 'success' row per
 //     success, in the same txn as the success itself: Commit logs its
@@ -179,8 +179,8 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 	must(cd.Commit(ctx, tp.Id, groupId, claim.Lease.Token, exceptions, 300*time.Millisecond, tp.DeliveryLogMode))
 
 	assertDeliveryLogCount(ctx, ds, tp.Id, groupId, failingId, 0) // the failure was never logged
-	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                     // the real park still happened
-	fmt.Println("PASS: no delivery_log row written, failure still parked normally in delivery_<id>, no error")
+	assertDeliveryRowCount(ctx, ds, tp.Id, 1)                     // the delivery row was still written
+	fmt.Println("PASS: no delivery_log row written, failure delivery row still written normally in delivery_<id>, no error")
 }
 
 // ---- scenario 4: DeliveryLogModeAll logs successes in the success's own txn ----
@@ -217,7 +217,7 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastor
 	assertDeliveryLogStatus(ctx, ds, tp.Id, groupId, successId, 0, "success")
 	assertDeliveryLogStatus(ctx, ds, tp.Id, groupId, failingId, 0, "failure")
 
-	// the parked exception now succeeds on its retry -- the delivery row's
+	// the unresolved exception now succeeds on its retry -- the delivery row's
 	// deletion and its 'success' log row are one statement
 	time.Sleep(1500 * time.Millisecond) // outlives the 300ms initial can_run_after
 	claimed, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupId, 10, 5, 5*time.Second, tp.DeliveryLogMode)

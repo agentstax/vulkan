@@ -86,7 +86,7 @@ func (d *CronSchedulerDatastore) advanceCronJob(ctx context.Context, q datastore
 	return err
 }
 
-// SuspendCronJob parks the produced row, in the caller's producing transaction
+// SuspendCronJob sets the row suspended, in the caller's producing transaction
 // -- next_scheduled_time is NOT NULL and an unsatisfiable schedule has no
 // honest value for it. No retry, the transaction owns its own error handling.
 func (d *CronSchedulerDatastore) SuspendCronJob(ctx context.Context, q datastore.Querier, id int64, produced time.Time) error {

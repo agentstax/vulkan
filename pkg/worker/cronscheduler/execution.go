@@ -151,7 +151,7 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 		next := schedule.Next(row.DbNow)
 		if next.IsZero() {
 			// schedule went unsatisfiable (tzdata drift): keep the produce,
-			// park the row -- it has no honest next_scheduled_time
+			// suspend the row -- it has no honest next_scheduled_time
 			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job", row.Id, "name", row.Name, "schedule", row.Schedule)
 			return i.datastore.SuspendCronJob(ctx, tx, row.Id, scheduledTime)
 		}

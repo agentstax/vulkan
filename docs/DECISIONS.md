@@ -282,3 +282,4 @@ only the records you need. Bodies live in `docs/decisions/NNNN-<slug>.md`.
 - 0529 2026-08-17 accepted (phase 14b) — one Querier contract (Exec/Query/QueryRow/SendBatch/CopyFrom); producer Tx embeds it; the produce transaction is the one sanctioned package crossing, cronscheduler a user of the public seam
 - 0530 2026-08-18 accepted (phase 14b) — pkg/compaction stays two-layer (owns no vocabulary); MessageRow stays in common as cross-stack shared vocabulary
 - 0531 2026-08-18 accepted (phase 14b) — system-topic and cron-job declarations live in the domain's controller (TopicConfig to system_topic.go; alert Job/NewJob/ToJobData to alert/controller; TopicName consts stay vocabulary)
+- 0532 2026-08-18 accepted (phase 14b) — consumer read-models live with the controller whose verbs return them; vocabulary homes are earned by cross-domain consumers (binding.Declaration the model); cursor.go split, typed DeliveryStatus

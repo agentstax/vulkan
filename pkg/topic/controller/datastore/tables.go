@@ -86,9 +86,9 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 
 	createDeliverySql := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			consumer_group_id BIGINT NOT NULL, -- PK
-			message_id BIGINT NOT NULL,        -- PK
-			status TEXT NOT NULL,
+			consumer_group_id BIGINT NOT NULL,                -- PK
+			message_id BIGINT NOT NULL,                       -- PK
+			status TEXT NOT NULL,                             -- 'ready' | 'processing' | 'inflight' | 'deferred' | 'done' | 'dead'
 			attempts INT NOT NULL default 0,
 			lease_until TIMESTAMPTZ,
 			lease_token UUID,

@@ -286,7 +286,7 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 
 func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
 	// range always frees -- the lazy waterline roller advances committed
-	// past it; failures ride along as parked exceptions, not a blocked range.
+	// past it; failures become unresolved exceptions, not a blocked range.
 	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode)
 	switch {
 	case err == nil:

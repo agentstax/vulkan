@@ -20,7 +20,7 @@ type MessageConsumerConfig struct {
 	QueueMargin             time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
 	AckMargin               time.Duration // lease padding for recording success/failure after consumerFunc returns
 	TimeoutGrace            time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
-	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception is first parked
+	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception row is first written
 	ShutdownTimeout         time.Duration // bounds how long drain waits for in-flight work before open ranges are settled
 	InstanceTTL             time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
 

@@ -4,7 +4,7 @@ package main
 //
 // A shutdown signal mid-range must not force the WHOLE range to sit out a
 // full lease-expiry reclaim: everything already resolved (successes + a
-// parked exception) has to survive via closeOpenRanges' PartialCommit path,
+// unresolved exception) has to survive via closeOpenRanges' PartialCommit path,
 // and only the untouched suffix should remain leased for a future reclaim.
 //
 // Claims one life straight off MessageConsumerDefinition (no manager) with pool
@@ -17,7 +17,7 @@ package main
 //
 // Confirms:
 //   - messages before the interruption point resolve normally (one success, one
-//     parked exception) and are never re-attempted
+//     unresolved exception) and are never re-attempted
 //   - the message after the interruption point is never even attempted
 //   - the lease survives, narrowed to (lastProcessed, high] -- not deleted, not
 //     left spanning the whole original range
@@ -156,14 +156,14 @@ func main() {
 	assert("lease survives (not deleted)", leases(ctx, ds, tp.Id), 1)
 	assert("lease high unchanged", lb.high, 3)
 	assert("lease low narrowed to message 2", lb.low, 2)
-	assert("exactly 1 parked exception (message 2)", deliveries(ctx, ds, tp.Id), 1)
+	assert("exactly 1 unresolved exception (message 2)", deliveries(ctx, ds, tp.Id), 1)
 	assertStatus(ctx, ds, tp.Id, 2, "ready")
 
 	step("waterline stays pinned behind the unresolved exception, even though the lease is already narrowed past it")
 	committed := advance(ctx, waterlineDatastore, tp.Id)
 	assert("committed blocked at message 1 (exception at 2 still unresolved)", committed, 1)
 
-	step("sleep 5.5s — let the parked exception's initial backoff pass")
+	step("sleep 5.5s — let the unresolved exception's initial backoff pass")
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
@@ -196,7 +196,7 @@ func main() {
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
 
 	fmt.Println("\n✅ SHUTDOWN LEASE TRUNCATION LAB PASSED")
-	fmt.Println("   an interruption mid-range parks what resolved and narrows the lease to the")
+	fmt.Println("   an interruption mid-range records what resolved and narrows the lease to the")
 	fmt.Println("   untouched suffix -- the resolved prefix is never redelivered, the waterline's")
 	fmt.Println("   exception-blocker and lease-narrowing terms combine correctly via LEAST, and")
 	fmt.Println("   the untouched suffix reclaims on its own once its (now-shorter) lease expires.")

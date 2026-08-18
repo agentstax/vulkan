@@ -94,7 +94,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	}
 
 	if len(ids) > 0 {
-		// otherwise these delivery rows (mostly 'dead' DLQ) would join to nothing and park forever.
+		// otherwise these delivery rows (mostly 'dead' DLQ) would join to nothing and sit there forever.
 		orphanSql := fmt.Sprintf(`
 			DELETE FROM %s
 			WHERE message_id = ANY($1);

@@ -100,7 +100,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	}
 
 	// otherwise these delivery rows (mostly 'dead' DLQ, since live ones are
-	// already floor-protected) would join to nothing and park forever.
+	// already floor-protected) would join to nothing and sit there forever.
 	orphanSql := fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE message_id >= $1

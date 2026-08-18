@@ -1,6 +1,6 @@
 package controller
 
-// The LIFECYCLE path's controller half, PARKED -- see the deliveryconsumer
+// The LIFECYCLE path's controller half, ON HOLD -- see the deliveryconsumer
 // package header for why and what would revive it.
 
 import (
@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -22,7 +23,7 @@ type Delivery struct {
 	TopicId         int64
 	MessageId       int64
 	Payload         json.RawMessage
-	Status          string
+	Status          datastore.DeliveryStatus
 	Attempts        int
 	Options         *common.MessageOptions
 }
@@ -45,7 +46,7 @@ func (c *DeliveryConsumerController) FanOut(ctx context.Context, topicId int64, 
 }
 
 // ClaimMessagesWithLifecycle moves this group's own 'ready' delivery rows to
-// 'processing'. No lease: the parked lifecycle path never grew crash recovery.
+// 'processing'. No lease: the lifecycle path never grew crash recovery.
 func (c *DeliveryConsumerController) ClaimMessagesWithLifecycle(ctx context.Context, topicId int64, groupId int64, limit int) ([]Delivery, error) {
 	if topicId <= 0 {
 		return nil, errors.New("topicId must be > 0")

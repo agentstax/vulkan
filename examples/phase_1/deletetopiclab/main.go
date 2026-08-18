@@ -89,7 +89,7 @@ func main() {
 	must(deliveryConsumers.FanOut(ctx, tp.Id, groupId, 100)) // materializes a 'ready' delivery row, left unclaimed
 
 	// claim it via the lifecycle path and fail it once -- status flips
-	// ready->inflight->ready in place (still 1 delivery row) while parking one
+	// ready->inflight->ready in place (still 1 delivery row) while writing one
 	// delivery_log row, without touching cursor/lease (lifecycle path skips both).
 	claimedLifecycle, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, groupId, 10)
 	must(err)

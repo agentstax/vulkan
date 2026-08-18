@@ -39,10 +39,10 @@ type ClaimedRangeData struct {
 type OutcomeKind string
 
 const (
-	OutcomeException  OutcomeKind = "exception"  // retryable -- parks as 'ready' instead of failing the whole range
-	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- parks straight to 'dead'
+	OutcomeException  OutcomeKind = "exception"  // retryable -- writes a 'ready' delivery row instead of failing the whole range
+	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- writes the delivery row straight to 'dead'
 	OutcomeSuperseded OutcomeKind = "superseded" // a newer message on its compaction key exists -- log row only, never a delivery row
-	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- parks 'deferred' for the exception window
+	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- writes a 'deferred' delivery row for the exception window
 	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
 )
 

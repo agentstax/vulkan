@@ -26,7 +26,7 @@ func (d *DeliveryConsumerDatastore) claimMessagesWithLifecycle(ctx context.Conte
 	// delivery only stores message_id, not the payload, so we join this topic's
 	// message_log back in -- the log stays immutable, all mutation lives in delivery.
 	//
-	// No lease here: the parked lifecycle path never grew crash recovery, so a
+	// No lease here: the lifecycle path never grew crash recovery, so a
 	// 'processing' row that never gets resolved (consumer crash) just sits there.
 	sql := fmt.Sprintf(`
 		WITH claimed AS (

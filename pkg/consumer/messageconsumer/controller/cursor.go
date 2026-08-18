@@ -2,73 +2,13 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
-
-// Message is one message_log row handed to a consumer, payload included.
-type Message struct {
-	Id             int64
-	Payload        json.RawMessage
-	CreatedAt      time.Time
-	RoutingKey     string // "" if unset
-	CompactionKey  string // "" if unset
-	CompactionRank int64
-	Options        *common.MessageOptions
-}
-
-// a leased window of work -- the messages to process plus the lease that guards
-// them. the worker frees the lease (Commit) once the whole range is done; the
-// lazy roller then advances committed past it.
-type ClaimedRange struct {
-	Lease    RangeLease
-	Messages []Message
-}
-
-// RangeLease guards a claimed (Low, High] window. Token is what every write
-// against the range matches on -- a reclaim rotates it, so a stale worker's
-// commit matches nothing.
-type RangeLease struct {
-	Token           uuid.UUID
-	ConsumerGroupId int64
-	Low             int64
-	High            int64
-	Until           time.Time
-	Reclaims        int
-}
-
-// MessageOutcome is one resolved message of a claimed range, written by
-// Commit or PartialCommit.
-type MessageOutcome struct {
-	MessageId int64
-	Kind      OutcomeKind
-	Err       string
-}
-
-// OutcomeKind is how one message of a claimed range resolved.
-type OutcomeKind string
-
-const (
-	OutcomeException  OutcomeKind = "exception"  // retryable -- parks as 'ready' instead of failing the whole range
-	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- parks straight to 'dead'
-	OutcomeSuperseded OutcomeKind = "superseded" // a newer message on its compaction key exists -- log row only, never a delivery row
-	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- parks 'deferred' for the exception window
-	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
-)
-
-func (k OutcomeKind) Validate() error {
-	switch k {
-	case OutcomeException, OutcomeTerminal, OutcomeSuperseded, OutcomeDeferred, OutcomeSuccess:
-		return nil
-	}
-	return fmt.Errorf("invalid outcome kind %q", k)
-}
 
 // ClaimMessagesWithCursor picks up a crashed range (an expired lease) first and
 // only claims fresh work from the frontier when there is nothing to reclaim, so
@@ -98,7 +38,7 @@ func (c *MessageConsumerController) ClaimMessagesWithCursor(ctx context.Context,
 }
 
 // Commit frees the range's lease, then records every outcome as a sparse
-// delivery row. initialBackoff is how long a freshly parked row waits before
+// delivery row. initialBackoff is how long a freshly written 'ready' row waits before
 // ClaimExceptions can pick it up; RecordExceptionFailure's own retry policy
 // takes over from there. Returns ErrLeaseLost if the range was reclaimed.
 func (c *MessageConsumerController) Commit(ctx context.Context, topicId int64, groupId int64, token uuid.UUID, outcomes []MessageOutcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {
@@ -109,7 +49,7 @@ func (c *MessageConsumerController) Commit(ctx context.Context, topicId int64, g
 	return c.datastore.Commit(ctx, topicId, groupId, toTokenData(token), toOutcomeData(outcomes), initialBackoff, deliveryLogMode)
 }
 
-// PartialCommit narrows a still-open lease to lastProcessed and parks whatever
+// PartialCommit narrows a still-open lease to lastProcessed and records whatever
 // resolved before an interruption. The lease is not freed -- it expires and is
 // reclaimed, handing the untouched suffix to whoever picks it up next.
 func (c *MessageConsumerController) PartialCommit(ctx context.Context, topicId int64, groupId int64, token uuid.UUID, lastProcessed int64, outcomes []MessageOutcome, initialBackoff time.Duration, deliveryLogMode topic.DeliveryLogMode) error {

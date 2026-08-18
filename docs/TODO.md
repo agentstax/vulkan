@@ -357,18 +357,18 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       execution.go x2, alertlab, reservedtopiclab. cron/metrics/alert
       vocabularies now import ~common only. Verified: build+vet all
       modules, reserved-topic + cron + alert labs green.
-- [ ] **Consumer read-model homes.** The row-stack vocabularies hold runner
-      machinery, so read-models sit in controllers: Message / ClaimedRange
-      / RangeLease / MessageOutcome / OutcomeKind in
-      messageconsumer/controller/cursor.go:16-71 (a file named for none of
-      them); ClaimedException (exceptionconsumer/controller/
-      exception.go:19); Delivery plus its untyped Status string
-      (deliveryconsumer/controller/delivery.go:20-28, datastore
-      model.go:20 — every other status column has a typed enum); Group
-      (consumer/controller/group.go:13) while sibling Declaration lives in
-      pkg/consumer/binding; KeyLeaseVerdict / KeyLeaseClaim
-      (base/controller/keylease.go:13-28). One shape decision, then
-      per-stack moves.
+- [x] **Consumer read-model homes.** Done 2026-08-18, recorded as [0532]:
+      read-models live with the controller whose verbs return them; a
+      vocabulary home is earned by cross-domain consumers
+      (binding.Declaration the model, Group has none — stays). The row
+      stacks are worker-kind-shaped (machinery root → controller →
+      datastore), so a stack-root vocabulary would cycle with the runners.
+      Ride-alongs: cursor.go read-models split into message.go /
+      claimedrange.go / outcome.go; DeliveryStatus typed enum in
+      deliveryconsumer datastore model (BindingDeclarationStatus pattern),
+      Delivery.Status typed, delivery table status column got its value-set
+      comment. Verified: build+vet all modules, topic + routing + exception
+      labs green.
 - [ ] **consumer/metrics restructure.** Not vocabulary — it owns a
       goroutine and a producer.Producer. metrics_config.go →
       metric_event_config.go with WithDefaults/Validate added (the only

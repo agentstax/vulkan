@@ -10,7 +10,7 @@ package main
 // ClaimExceptions, RecordExceptionSuccess) so the pin/jump is deterministic and
 // asserted on exact cursor state, not inferred from timing.
 //
-// Confirms: a parked exception pins committed below it even while LATER ranges
+// Confirms: an unresolved exception pins committed below it even while LATER ranges
 // keep claiming and committing fine (the exception window never blocks fresh
 // range claims), and once the exception resolves, committed jumps straight past
 // it to catch up with claimed.
@@ -102,7 +102,7 @@ func main() {
 	const failingId = int64(3)
 	exceptions := []messageconsumercontroller.MessageOutcome{{MessageId: failingId, Kind: messageconsumercontroller.OutcomeException, Err: "simulated processing failure"}}
 	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, exceptions, 5*time.Second, topic.DeliveryLogModeFailures))
-	assert("one parked exception", deliveries(ctx, ds, tp.Id), 1)
+	assert("one unresolved exception", deliveries(ctx, ds, tp.Id), 1)
 
 	committed := advance(ctx, waterlineDatastore, tp.Id)
 	fmt.Printf("  roller tick -> committed = %d\n", committed)
@@ -120,11 +120,11 @@ func main() {
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
 	assert("committed still pinned on the unresolved exception", committedCol(ctx, ds, tp.Id), failingId-1)
-	fmt.Println("  -> a parked exception never blocks fresh ranges from claiming/committing, only the waterline")
+	fmt.Println("  -> an unresolved exception never blocks fresh ranges from claiming/committing, only the waterline")
 
-	// Commit's park always sets an initial 5s can_run_after -- the exception isn't
+	// Commit's exception write always sets an initial 5s can_run_after -- the exception isn't
 	// claimable until that backoff passes, same as reclaimlab's lease-expiry wait.
-	step("sleep 5.5s — let the parked exception's initial backoff pass")
+	step("sleep 5.5s — let the unresolved exception's initial backoff pass")
 	time.Sleep(5500 * time.Millisecond)
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
@@ -159,7 +159,7 @@ func main() {
 	assert("no deliveries left behind", deliveries(ctx, ds, tp.Id), 0)
 
 	fmt.Println("\n✅ PHASE 6.5c LAB PASSED")
-	fmt.Println("   failure parked as an exception -> waterline pinned below it while later ranges")
+	fmt.Println("   failure recorded as an unresolved exception -> waterline pinned below it while later ranges")
 	fmt.Println("   kept committing -> exception resolved -> waterline jumped straight past it.")
 }
 
