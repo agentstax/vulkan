@@ -391,18 +391,21 @@ One chunk = one review; work top to bottom within a section, reorder freely.
       sites (or NULLIF on write, pick one representation), delete the
       nil-handling in Fill/Clamp, audit read-model Options fields to the
       Owner never-nil template.
-- [ ] **consumer/base cleanup.** NewBaseConsumer does a DB read with ctx
-      first (base/consumer.go:33); loose timeoutGrace/ackMargin params →
-      slim config (deliveryconsumer/provision.go:34 passes a bare 0 with a
-      comment — the tell); NewBaseDefinition's 6 positional params with
-      trailing retryPolicy+log → (dep, cfg) (definition.go:33); exported
-      KeyLeases field lets rows release directly
-      (messageconsumer/consumer_runner.go:275) while claiming through the
-      base's own verb (:236) — make claim/release symmetric on
-      BaseConsumer; drop the inference-noise type param on NewBaseExecution
-      (execution.go:23). Ride-along: sanction-or-reshape ClaimKeyLease's
-      documented non-Wrap shape (token minted before the Wrap so it
-      survives retries, base/controller/datastore/keylease.go:18-32).
+- [x] **consumer/base cleanup.** Done 2026-08-18, recorded as [0535]:
+      BaseDefinition.GetTopic resolves the topic (NewProducerInstance
+      precedent), NewBaseConsumer is pure wiring taking resolvedTopic +
+      BaseConsumerConfig{TimeoutGrace, RecordMargin} (deliveryconsumer
+      omits the field instead of passing 0); NewBaseDefinition →
+      (ds, name, consumerFunc, abandonedEvents, BaseDefinitionConfig);
+      ReleaseKeyedRun added, KeyLeases unexported; NewBaseExecution keeps
+      its inferred type param (user-settled a). Ride-alongs: keylease
+      token now minted in the CONTROLLER so the datastore public is
+      exactly Wrap(private); migrate RunStep's NoTxn branch moved inside
+      a same-named private; AppendMessageBatch sanctioned as the one
+      composed non-Wrap public; AckMargin → RecordMargin repo-wide
+      (banned "ack"), lost-ack comments → "commit confirmation".
+      Verified: build+vet all modules, key-lease + defer + topic +
+      schema-gate labs green.
 - [ ] **Worker kind controller decision → janitor/waterline.** The worker
       kinds are pkg/worker/<kind>/datastore with no controller, so no
       layer owns validation (janitor's DropExpiredPartitions /

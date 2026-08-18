@@ -15,7 +15,7 @@ type ExceptionConsumerConfig struct {
 	BatchLimit    int // exceptions claimed per poll
 	ClaimPollRate time.Duration
 	QueueMargin   time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
-	AckMargin     time.Duration // lease padding for recording success/failure after consumerFunc returns
+	RecordMargin  time.Duration // lease padding for recording success/failure after consumerFunc returns
 	TimeoutGrace  time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
 	InstanceTTL   time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
 
@@ -40,8 +40,8 @@ func (c *ExceptionConsumerConfig) WithDefaults() *ExceptionConsumerConfig {
 	if c.QueueMargin == 0 {
 		c.QueueMargin = 5 * time.Second
 	}
-	if c.AckMargin == 0 {
-		c.AckMargin = 2 * time.Second
+	if c.RecordMargin == 0 {
+		c.RecordMargin = 2 * time.Second
 	}
 	if c.TimeoutGrace == 0 {
 		c.TimeoutGrace = 100 * time.Millisecond
@@ -76,8 +76,8 @@ func (c *ExceptionConsumerConfig) Validate() error {
 	if c.QueueMargin <= 0 {
 		return fmt.Errorf("QueueMargin must be > 0, got %v", c.QueueMargin)
 	}
-	if c.AckMargin <= 0 {
-		return fmt.Errorf("AckMargin must be > 0, got %v", c.AckMargin)
+	if c.RecordMargin <= 0 {
+		return fmt.Errorf("RecordMargin must be > 0, got %v", c.RecordMargin)
 	}
 	if c.TimeoutGrace <= 0 {
 		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)

@@ -38,7 +38,7 @@ func NewDeliveryConsumerDefinition[Message any](ds *datastore.PostgresDatastore,
 		return nil, err
 	}
 
-	baseDefinition, err := consumerbase.NewBaseDefinition(ds, WorkerDeliveryConsumer, consumerFunc, abandonedEvents, cfg.Retry, cfg.Logger)
+	baseDefinition, err := consumerbase.NewBaseDefinition(ds, WorkerDeliveryConsumer, consumerFunc, abandonedEvents, &consumerbase.BaseDefinitionConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}

@@ -35,14 +35,16 @@ func NewStep(
 // version as a success. The whole unit retried on a transient blip, so steps
 // must be idempotent.
 func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
-	if step.NoTxn {
-		return d.DatastoreRetry.Wrap(ctx, func() error {
-			return d.runStepWithoutTx(ctx, conn, owner, step)
-		})
-	}
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.runStepWithTx(ctx, conn, owner, step)
+		return d.runStep(ctx, conn, owner, step)
 	})
+}
+
+func (d *MigrateDatastore) runStep(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
+	if step.NoTxn {
+		return d.runStepWithoutTx(ctx, conn, owner, step)
+	}
+	return d.runStepWithTx(ctx, conn, owner, step)
 }
 
 // txn step does all three atomically

@@ -3,12 +3,14 @@ package base
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer/base/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -28,7 +30,9 @@ type BaseDefinition[Message any] struct {
 	consumerFunc    func(ctx context.Context, message *Message) error
 }
 
-func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName string, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, retryPolicy *common.RetryPolicy, log common.Logger) (*BaseDefinition[Message], error) {
+// cfg may be nil or a sparse struct -- WithDefaults fills every field left
+// unset, Validate rejects what's out of range.
+func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName string, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *BaseDefinitionConfig) (*BaseDefinition[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -41,24 +45,31 @@ func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName 
 	if abandonedEvents == nil {
 		return nil, errors.New("abandonedEvents producer must not be nil")
 	}
+	if cfg == nil {
+		cfg = &BaseDefinitionConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	workers, err := workercontroller.NewWorkerController(ds, &workercontroller.ControllerConfig{
-		Logger: log,
-		Retry:  retryPolicy,
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
 	topics, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
-		Logger: log,
-		Retry:  retryPolicy,
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
 	keyLeases, err := controller.NewKeyLeaseController(ds, &controller.ControllerConfig{
-		Logger: log,
-		Retry:  retryPolicy,
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
@@ -66,7 +77,7 @@ func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName 
 
 	return &BaseDefinition[Message]{
 		workerName:      workerName,
-		Logger:          log,
+		Logger:          cfg.Logger,
 		workers:         workers,
 		topics:          topics,
 		keyLeases:       keyLeases,
@@ -77,6 +88,19 @@ func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName 
 
 func (c *BaseDefinition[Message]) Name() string {
 	return c.workerName
+}
+
+// GetTopic resolves the topic a consumer's owner points at; a missing topic
+// is an error, not an expected absence -- nothing can consume from it.
+func (c *BaseDefinition[Message]) GetTopic(ctx context.Context, topicId int64) (*topic.Topic, error) {
+	current, err := c.topics.GetTopicById(ctx, topicId)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, fmt.Errorf("%w: topic %d", topic.ErrTopicNotFound, topicId)
+	}
+	return current, nil
 }
 
 // DeclareWorker creates the group's worker row and writes metadata onto it --

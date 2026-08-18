@@ -86,7 +86,7 @@ func main() {
 		Message:            &iCommon.MessageOptions{Timeout: 10 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 3}}, // Timeout must exceed the slowest payload sleep
 		ClaimPollRate:      500 * time.Millisecond,
 		QueueMargin:        3 * time.Second,
-		AckMargin:          2 * time.Second,
+		RecordMargin:       2 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

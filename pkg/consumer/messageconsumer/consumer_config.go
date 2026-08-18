@@ -18,7 +18,7 @@ type MessageConsumerConfig struct {
 	MaxRangeReclaims        int // past this many reclaims a range is POISON -- quarantined into the exception window
 	ClaimPollRate           time.Duration
 	QueueMargin             time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
-	AckMargin               time.Duration // lease padding for recording success/failure after consumerFunc returns
+	RecordMargin            time.Duration // lease padding for recording success/failure after consumerFunc returns
 	TimeoutGrace            time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception row is first written
 	ShutdownTimeout         time.Duration // bounds how long drain waits for in-flight work before open ranges are settled
@@ -54,8 +54,8 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	if c.QueueMargin == 0 {
 		c.QueueMargin = 5 * time.Second
 	}
-	if c.AckMargin == 0 {
-		c.AckMargin = 2 * time.Second
+	if c.RecordMargin == 0 {
+		c.RecordMargin = 2 * time.Second
 	}
 	if c.TimeoutGrace == 0 {
 		c.TimeoutGrace = 100 * time.Millisecond
@@ -75,7 +75,7 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	c.MessageMax = c.MessageMax.Fill(&bounds)
 
 	if c.ShutdownTimeout == 0 {
-		c.ShutdownTimeout = c.MessageMax.Timeout + c.TimeoutGrace + c.AckMargin
+		c.ShutdownTimeout = c.MessageMax.Timeout + c.TimeoutGrace + c.RecordMargin
 	}
 	c.Retry = c.Retry.WithDefaults()
 	if c.Logger == nil {
@@ -105,8 +105,8 @@ func (c *MessageConsumerConfig) Validate() error {
 	if c.QueueMargin <= 0 {
 		return fmt.Errorf("QueueMargin must be > 0, got %v", c.QueueMargin)
 	}
-	if c.AckMargin <= 0 {
-		return fmt.Errorf("AckMargin must be > 0, got %v", c.AckMargin)
+	if c.RecordMargin <= 0 {
+		return fmt.Errorf("RecordMargin must be > 0, got %v", c.RecordMargin)
 	}
 	if c.TimeoutGrace <= 0 {
 		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)

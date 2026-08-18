@@ -2,6 +2,7 @@ package base
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -15,38 +16,45 @@ import (
 // BaseConsumer is built fresh per claimed life, so a respawned runner never
 // shares state with a predecessor still draining.
 type BaseConsumer[Message any] struct {
-	Owner     *common.Owner
-	Topic     *topic.Topic
-	KeyLeases *controller.KeyLeaseController
-	Logger    common.Logger
+	Owner  *common.Owner
+	Topic  *topic.Topic
+	Config *BaseConsumerConfig
+	Logger common.Logger
 
+	keyLeases       *controller.KeyLeaseController
 	abandonedEvents *metricsproducer.MetricsProducer
 	consumerFunc    func(ctx context.Context, message *Message) error
-
-	// the two knobs every row's shared machinery paces from -- the runner's
-	// own config keeps the rest
-	timeoutGrace time.Duration
-	ackMargin    time.Duration
 }
 
-func NewBaseConsumer[Message any](ctx context.Context, baseDefinition *BaseDefinition[Message], owner *common.Owner, timeoutGrace time.Duration, ackMargin time.Duration) (*BaseConsumer[Message], error) {
-	current, err := baseDefinition.topics.GetTopicById(ctx, owner.TopicId)
-	if err != nil {
-		return nil, err
+// resolvedTopic comes from BaseDefinition.GetTopic. cfg may be nil or a
+// sparse struct -- WithDefaults fills every field left unset, Validate
+// rejects what's out of range.
+func NewBaseConsumer[Message any](baseDefinition *BaseDefinition[Message], owner *common.Owner, resolvedTopic *topic.Topic, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
+	if baseDefinition == nil {
+		return nil, errors.New("definition base must not be nil")
 	}
-	if current == nil {
-		return nil, fmt.Errorf("%w: topic %d", topic.ErrTopicNotFound, owner.TopicId)
+	if owner == nil {
+		return nil, errors.New("owner must not be nil")
+	}
+	if resolvedTopic == nil {
+		return nil, errors.New("topic must not be nil")
+	}
+	if cfg == nil {
+		cfg = &BaseConsumerConfig{}
+	}
+	cfg.WithDefaults()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
 	return &BaseConsumer[Message]{
 		Owner:           owner,
-		Topic:           current,
-		KeyLeases:       baseDefinition.keyLeases,
+		Topic:           resolvedTopic,
+		Config:          cfg,
 		Logger:          baseDefinition.Logger,
+		keyLeases:       baseDefinition.keyLeases,
 		abandonedEvents: baseDefinition.abandonedEvents,
 		consumerFunc:    baseDefinition.consumerFunc,
-		timeoutGrace:    timeoutGrace,
-		ackMargin:       ackMargin,
 	}, nil
 }
 
@@ -55,8 +63,15 @@ func NewBaseConsumer[Message any](ctx context.Context, baseDefinition *BaseDefin
 // everything the delivery's own lease also covers: the run itself, ctx-cancel
 // unwinding, and recording the outcome.
 func (b *BaseConsumer[Message]) ClaimKeyedRun(ctx context.Context, key string, messageId int64, resolved *common.MessageOptions) (*controller.KeyLeaseClaim, error) {
-	duration := resolved.Timeout + b.timeoutGrace + b.ackMargin
-	return b.KeyLeases.ClaimKeyLease(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, duration)
+	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.RecordMargin
+	return b.keyLeases.ClaimKeyLease(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, duration)
+}
+
+// ReleaseKeyedRun frees a claim ClaimKeyedRun acquired.
+// false -> no row matched the claim's Token: the lease expired and another
+// claim took the key over.
+func (b *BaseConsumer[Message]) ReleaseKeyedRun(ctx context.Context, claim *controller.KeyLeaseClaim) (bool, error) {
+	return b.keyLeases.ReleaseKeyLease(ctx, claim)
 }
 
 // Handles: nil map write, index out of range, bad type assertion
@@ -90,7 +105,7 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 		return err
 	// consumerFunc got Timeout to notice ctx and return; past Timeout + grace it
 	// is written off and its goroutine is left running, unreachable
-	case <-time.After(timeout + b.timeoutGrace):
+	case <-time.After(timeout + b.Config.TimeoutGrace):
 		b.abandonedEvents.Add(b.Topic.Id, b.Owner.Name, messageId, attempt)
 		// done is buffered(1) and nothing else reads it past this point, so this
 		// receive fires exactly when the abandoned goroutine finally returns.
@@ -101,7 +116,7 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 		}()
 
 		// never log the message itself -- it may hold sensitive values
-		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.Owner.Name, "message_id", messageId, "attempt", attempt, "timeout", timeout+b.timeoutGrace)
-		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", timeout+b.timeoutGrace, messageId)
+		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.Owner.Name, "message_id", messageId, "attempt", attempt, "timeout", timeout+b.Config.TimeoutGrace)
+		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", timeout+b.Config.TimeoutGrace, messageId)
 	}
 }

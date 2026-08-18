@@ -67,8 +67,8 @@ func (d *ProducerDatastore[Message]) appendMessageTransaction(ctx context.Contex
 		return appended, nil
 	}
 
-	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
-	// ack, not whether it landed. idempotency_key's ON CONFLICT DO NOTHING
+	// the one genuinely ambiguous point -- a blip AT Commit loses the commit
+	// confirmation, not whether it landed. idempotency_key's ON CONFLICT DO NOTHING
 	// makes a retry safe.
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err

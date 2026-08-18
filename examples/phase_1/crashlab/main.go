@@ -90,7 +90,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Short lease (= Timeout+QueueMargin+AckMargin = 4s) so in-flight rows
+	// Short lease (= Timeout+QueueMargin+RecordMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
 	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
@@ -100,7 +100,7 @@ func main() {
 		Message:            &iCommon.MessageOptions{Timeout: 2 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 100}},
 		ClaimPollRate:      200 * time.Millisecond,
 		QueueMargin:        1 * time.Second,
-		AckMargin:          1 * time.Second,
+		RecordMargin:       1 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

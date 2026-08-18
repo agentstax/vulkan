@@ -49,7 +49,14 @@ func (c *KeyLeaseController) ClaimKeyLease(ctx context.Context, topicId int64, g
 		return nil, fmt.Errorf("duration must be > 0, got %v", duration)
 	}
 
-	data, err := c.datastore.ClaimKeyLease(ctx, topicId, groupId, key, messageId, duration)
+	// minted once, before the datastore's retry loop -- claimSql's token match
+	// lets a retry after an ambiguous commit re-take its own lease
+	token, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := c.datastore.ClaimKeyLease(ctx, topicId, groupId, key, messageId, duration, toTokenData(token))
 	if err != nil || data == nil {
 		return nil, err
 	}

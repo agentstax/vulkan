@@ -227,7 +227,7 @@ func newBridgeConsumer(ctx context.Context, ds *iDatastore.PostgresDatastore, na
 		ClaimPollRate:           50 * time.Millisecond,
 		Message:                 &common.MessageOptions{Timeout: 2 * time.Second},
 		QueueMargin:             500 * time.Millisecond,
-		AckMargin:               500 * time.Millisecond,
+		RecordMargin:            500 * time.Millisecond,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
 		DisableGracefulShutdown: true,
 	})

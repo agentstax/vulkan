@@ -115,7 +115,7 @@ func drain(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, gro
 		MessageConcurrency:      poolSize,
 		Message:                 &iCommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
-		AckMargin:               2 * time.Second,
+		RecordMargin:            2 * time.Second,
 	})
 	must(err)
 	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1), nil)
@@ -192,7 +192,7 @@ func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName
 		MessageConcurrency:      poolSize,
 		Message:                 &iCommon.MessageOptions{Timeout: 10 * time.Second},
 		QueueMargin:             3 * time.Second,
-		AckMargin:               2 * time.Second,
+		RecordMargin:            2 * time.Second,
 	})
 	must(err)
 	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1), nil)

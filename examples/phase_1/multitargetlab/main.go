@@ -21,7 +21,7 @@ package main
 //     rerun is safe is the caller's call, so the raw error must reach them.
 //   - callerKeyRetryScenario: the sanctioned way to make that rerun safe --
 //     caller-supplied IdempotencyKeys per target. Rerunning the whole
-//     closure under the same keys (a retry after a lost Commit ack) dedups
+//     closure under the same keys (a retry after a lost commit confirmation) dedups
 //     every target instead of double-publishing.
 
 import (
@@ -190,7 +190,7 @@ func ambiguousCommitScenario(ctx context.Context, ds *iDatastore.PostgresDatasto
 }
 
 // callerKeyRetryScenario: reruns the whole closure under the SAME caller
-// keys -- what a caller does after losing a Commit ack. Auto-minted keys
+// keys -- what a caller does after losing the commit confirmation. Auto-minted keys
 // resolve fresh per call, so THIS dedup guarantee belongs to caller keys
 // alone: without them a closure rerun double-publishes every target.
 func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
@@ -212,7 +212,7 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 		return err
 	}
 
-	must(producer.InTransaction(ctx, ds, closure)) // the publish whose ack was "lost"
+	must(producer.InTransaction(ctx, ds, closure)) // the publish whose confirmation was "lost"
 	must(producer.InTransaction(ctx, ds, closure)) // the caller's retry
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 1)

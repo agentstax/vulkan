@@ -51,7 +51,7 @@ func (r *exceptionRunner[Message]) run(ctx context.Context) error {
 }
 
 func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
-	leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.AckMargin
+	leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.RecordMargin
 
 	// kill first, so an exhausted expired row is dead-lettered
 	if err := r.consumers.KillExceptions(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.MessageMax.Retry.MaxRetries, r.Topic.DeliveryLogMode); err != nil {
@@ -77,7 +77,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 
 	// sat behind the batch too long for the lease to cover a full run
 	// try to renew it rather than start a run the lease can't protect
-	leaseDuration := resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.AckMargin
+	leaseDuration := resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin
 	if exception.LeaseUntil.Before(time.Now().Add(leaseDuration)) {
 		renewed, err := r.consumers.RenewExceptionLease(ctx, exception, leaseDuration)
 		if err != nil {
@@ -159,8 +159,8 @@ func (r *exceptionRunner[Message]) recordContext(ctx context.Context, keyClaim *
 	if keyClaim == nil {
 		return ctx, func() {}
 	}
-	return context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.AckMargin,
-		fmt.Errorf("outcome recording exceeded AckMargin (%s) for group %q topic %d", r.cfg.AckMargin, r.Owner.Name, r.Topic.Id))
+	return context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
+		fmt.Errorf("outcome recording exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
 }
 
 // a lost lease means another worker re-claimed the row -- it owns the outcome

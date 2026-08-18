@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -15,17 +14,11 @@ import (
 // head after the lease was won.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (d *KeyLeaseDatastore) ClaimKeyLease(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration) (*KeyLeaseData, error) {
-	// generated once, outside the retry loop -- see the token match in claimSql
-	token, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
-
+func (d *KeyLeaseDatastore) ClaimKeyLease(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
 	var claim *KeyLeaseData
-	err = d.DatastoreRetry.Wrap(ctx, func() error {
+	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claim, err = d.claimKeyLease(ctx, topicId, groupId, key, messageId, duration, pgtype.UUID{Bytes: token, Valid: true})
+		claim, err = d.claimKeyLease(ctx, topicId, groupId, key, messageId, duration, token)
 		return err
 	})
 	return claim, err

@@ -30,7 +30,14 @@ func (f *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, wo
 	}
 
 	cfg := f.Config.withMetadata(ctx, parsed)
-	base, err := consumerbase.NewBaseConsumer(ctx, f.BaseDefinition, owner, cfg.TimeoutGrace, cfg.AckMargin)
+	resolvedTopic, err := f.GetTopic(ctx, owner.TopicId)
+	if err != nil {
+		return nil, err
+	}
+	base, err := consumerbase.NewBaseConsumer(f.BaseDefinition, owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
+		TimeoutGrace: cfg.TimeoutGrace,
+		RecordMargin: cfg.RecordMargin,
+	})
 	if err != nil {
 		return nil, err
 	}

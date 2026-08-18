@@ -85,7 +85,7 @@ func main() {
 		Message:            &iCommon.MessageOptions{Timeout: 30 * time.Second, Retry: &iCommon.RetryPolicy{MaxRetries: 3}},
 		ClaimPollRate:      500 * time.Millisecond,
 		QueueMargin:        10 * time.Second,
-		AckMargin:          5 * time.Second,
+		RecordMargin:       5 * time.Second,
 	})
 	if err != nil {
 		fmt.Println(err)

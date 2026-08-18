@@ -30,8 +30,13 @@ func (f *DeliveryConsumerDefinition[Message]) Provision(ctx context.Context, wor
 	}
 
 	cfg := f.Config.withMetadata(ctx, parsed)
-	// ackMargin 0: it only feeds claimKeyedRun, and this path never claims keys
-	base, err := consumerbase.NewBaseConsumer(ctx, f.BaseDefinition, owner, cfg.TimeoutGrace, 0)
+	resolvedTopic, err := f.GetTopic(ctx, owner.TopicId)
+	if err != nil {
+		return nil, err
+	}
+	base, err := consumerbase.NewBaseConsumer(f.BaseDefinition, owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
+		TimeoutGrace: cfg.TimeoutGrace,
+	})
 	if err != nil {
 		return nil, err
 	}

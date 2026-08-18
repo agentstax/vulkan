@@ -56,7 +56,7 @@ import (
 
 const group = "phase9.shutdowntruncationlab"
 
-// Timeout + QueueMargin + AckMargin below sums to this -- kept equal to the
+// Timeout + QueueMargin + RecordMargin below sums to this -- kept equal to the
 // leaseDuration used for the manual reclaim call later, so both claims behave
 // the same way.
 const lease = 2 * time.Second
@@ -107,7 +107,7 @@ func main() {
 		MessageConcurrency: 1,
 		Message:            &iCommon.MessageOptions{Timeout: 1 * time.Second},
 		QueueMargin:        500 * time.Millisecond,
-		AckMargin:          500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
+		RecordMargin:       500 * time.Millisecond, // also PartialCommit's/ForceReclaimRange's own detached-ctx budget
 	}
 	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, groupId, group)
 	must(err)

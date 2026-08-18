@@ -108,8 +108,8 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 		return err
 	}
 
-	// the one genuinely ambiguous point -- a blip AT Commit means we lost the
-	// ack, not whether it landed. Unlike commit, truncateSql's UPDATE isn't
+	// the one genuinely ambiguous point -- a blip AT Commit loses the commit
+	// confirmation, not whether it landed. Unlike commit, truncateSql's UPDATE isn't
 	// self-consuming, so a retry that already landed would reach the delivery
 	// statement (or the log row's PK) again -- only safe to retry when nothing
 	// was recorded.

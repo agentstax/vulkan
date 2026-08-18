@@ -117,8 +117,8 @@ func (r *messageRunner[Message]) closeRange(ctx context.Context, state *rangeSta
 		// surrendering beats making another worker wait out the whole lease for a
 		// range nobody started. ctx is already Done by now, so this needs an
 		// uncancelled one of its own to reach the database at all
-		reclaimCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.AckMargin,
-			fmt.Errorf("force reclaim exceeded AckMargin (%s) for group %q topic %d", r.cfg.AckMargin, r.Owner.Name, r.Topic.Id))
+		reclaimCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
+			fmt.Errorf("force reclaim exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
 		defer cancel()
 
 		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, common.ErrLeaseLost) {
@@ -147,7 +147,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 
 		// worst-case -- a freshly claimed range always passes processClaim's
 		// staleness check with the full QueueMargin left for queue wait.
-		leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.AckMargin
+		leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.RecordMargin
 		limit := min(room, r.cfg.BatchLimit)
 
 		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, limit, r.cfg.MaxRangeReclaims, leaseDuration, r.Topic.DeliveryLogMode)
@@ -212,7 +212,7 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.Until.Before(time.Now().Add(resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.AckMargin)) {
+	if item.lease.Until.Before(time.Now().Add(resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
 		r.buffer.MarkStale(item.lease.Token)
 		return
 	}
@@ -268,11 +268,11 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 
 func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keyleasecontroller.KeyLeaseClaim) {
 	// runs after consumerFunc, when a shutdown may already have cancelled ctx
-	releaseCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.AckMargin,
-		fmt.Errorf("key lease release exceeded AckMargin (%s) for group %q topic %d", r.cfg.AckMargin, r.Owner.Name, r.Topic.Id))
+	releaseCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
+		fmt.Errorf("key lease release exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
 	defer cancel()
 
-	released, err := r.KeyLeases.ReleaseKeyLease(releaseCtx, claim)
+	released, err := r.ReleaseKeyedRun(releaseCtx, claim)
 	if err != nil {
 		r.Logger.WarnContext(ctx, "key lease release failed, key frees on expiry instead", "group", r.Owner.Name, "topic", r.Topic.Id, "compaction_key", claim.CompactionKey, "err", err)
 		return
@@ -307,8 +307,8 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 
 	// the ctx that got us here is already Done -- the commit needs its own
 	// bounded, uncancelled window to actually reach the DB, same as Shutdown
-	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.AckMargin,
-		fmt.Errorf("partial commit exceeded AckMargin (%s) for group %q topic %d", r.cfg.AckMargin, r.Owner.Name, r.Topic.Id))
+	commitCtx, cancel := context.WithTimeoutCause(context.WithoutCancel(ctx), r.cfg.RecordMargin,
+		fmt.Errorf("partial commit exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
 	defer cancel()
 
 	// narrow the lease to the untouched suffix instead of leaving the WHOLE
