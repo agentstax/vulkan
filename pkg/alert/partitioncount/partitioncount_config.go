@@ -20,7 +20,7 @@ type PartitionCountConfig struct {
 	RepeatInterval time.Duration
 
 	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *common.RetryPolicy // transient-error retry policy for the definition's own Postgres calls. Default: common.NewDefaultRetryPolicy().
+	Retry  *common.RetryPolicy // transient-error retry policy for the provisioner's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *PartitionCountConfig) WithDefaults() *PartitionCountConfig {

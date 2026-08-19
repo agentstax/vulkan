@@ -7,7 +7,7 @@ package main
 // unresolved exception) has to survive via closeOpenRanges' PartialCommit path,
 // and only the untouched suffix should remain leased for a future reclaim.
 //
-// Claims one life straight off MessageConsumerDefinition (no manager) with pool
+// Claims one life straight off MessageConsumerProvisioner (no manager) with pool
 // N=1 so message dispatch is strictly serialized: consumerFunc cancels the
 // shared context after message 2 finishes, simulating a shutdown signal
 // arriving mid-range. Message 3 is already sitting in the buffer (prefetch
@@ -127,17 +127,17 @@ func main() {
 			return nil
 		}
 	}
-	// claimed straight off the definition -- no manager, so nothing respawns the
+	// claimed straight off the provisioner -- no manager, so nothing respawns the
 	// execution and the truncation the lab asserts on is the only one
-	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+	provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
 	must(err)
-	must(definition.Declare(ctx, owner))
+	must(provisioner.Declare(ctx, owner))
 
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
-	row, err := workers.GetWorker(ctx, definition.Name(), owner)
+	row, err := workers.GetWorker(ctx, provisioner.Definition().Name, owner)
 	must(err)
-	execution, err := definition.Provision(runCtx, row.Id, row.Owner, row.Metadata)
+	execution, err := provisioner.Provision(runCtx, row)
 	must(err)
 
 	// Run blocks until runCtx cancels (cancel() fires synchronously inside

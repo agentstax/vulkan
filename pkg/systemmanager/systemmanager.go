@@ -27,7 +27,7 @@ type SystemManager struct {
 	Logger common.Logger
 
 	ds                *datastore.PostgresDatastore
-	manager           *manager.ManagerDefinition
+	manager           *manager.ManagerProvisioner
 	migrateController *migratecontroller.Controller
 	permit            *concurrency.Permit // held for the length of a Run call
 }
@@ -46,7 +46,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	janitorDefinition, err := janitor.NewJanitorDefinition(ds, &janitor.JanitorConfig{
+	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -54,7 +54,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	cronSchedulerDefinition, err := cronscheduler.NewCronSchedulerDefinition(ds, &cronscheduler.CronSchedulerConfig{
+	cronSchedulerProvisioner, err := cronscheduler.NewCronSchedulerProvisioner(ds, &cronscheduler.CronSchedulerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -64,7 +64,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 
 	// committed keeps advancing -- and retention keeps moving -- for groups
 	// whose consumers are offline
-	cursorAdvancerDefinition, err := cursoradvancer.NewCursorAdvancerDefinition(ds, &cursoradvancer.CursorAdvancerConfig{
+	cursorAdvancerProvisioner, err := cursoradvancer.NewCursorAdvancerProvisioner(ds, &cursoradvancer.CursorAdvancerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -72,7 +72,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	metricsCollectorDefinition, err := metricscollector.NewMetricsCollectorDefinition(ds, &metricscollector.MetricsCollectorConfig{
+	metricsCollectorProvisioner, err := metricscollector.NewMetricsCollectorProvisioner(ds, &metricscollector.MetricsCollectorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -80,14 +80,14 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.PartitionCountConfig{
+	partitionCountProvisioner, err := partitioncount.NewPartitionCountProvisioner(ds, &partitioncount.PartitionCountConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.CompactionReadCostConfig{
+	compactionReadCostProvisioner, err := compactionreadcost.NewCompactionReadCostProvisioner(ds, &compactionreadcost.CompactionReadCostConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -95,8 +95,8 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	provisioners := []worker.Provisioner{janitorDefinition, cronSchedulerDefinition, metricsCollectorDefinition, cursorAdvancerDefinition, partitionCountDefinition, compactionReadCostDefinition}
-	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
+	provisioners := []worker.Provisioner{janitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner, cursorAdvancerProvisioner, partitionCountProvisioner, compactionReadCostProvisioner}
+	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	}, provisioners...)
@@ -121,7 +121,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		Config:            cfg,
 		Logger:            cfg.Logger,
 		ds:                ds,
-		manager:           managerDefinition,
+		manager:           managerProvisioner,
 		migrateController: migrateController,
 		permit:            permit,
 	}, nil

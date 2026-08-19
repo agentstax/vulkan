@@ -23,21 +23,21 @@ type CompactionReadCostInstance struct {
 	Owner  *common.Owner
 	Logger common.Logger
 
-	definition     *CompactionReadCostDefinition
+	provisioner    *CompactionReadCostProvisioner
 	runner         *workercontroller.InstanceRunner
 	repeatInterval time.Duration
 	alerts         *alertcontroller.AlertController // built per claimed life in consume
 	measurements   *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newCompactionReadCostInstance(definition *CompactionReadCostDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*CompactionReadCostInstance, error) {
+func newCompactionReadCostInstance(provisioner *CompactionReadCostProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*CompactionReadCostInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
 
-	runner, err := workercontroller.NewInstanceRunner(definition.workers, claimed, &workercontroller.InstanceRunnerConfig{
-		InstanceTTL: definition.Config.InstanceTTL,
-		Logger:      common.LoggerWith(definition.Logger, "worker", JobName, "group", owner.Name),
+	runner, err := workercontroller.NewInstanceRunner(provisioner.workers, claimed, &workercontroller.InstanceRunnerConfig{
+		InstanceTTL: provisioner.Config.InstanceTTL,
+		Logger:      common.LoggerWith(provisioner.Logger, "worker", JobName, "group", owner.Name),
 	})
 	if err != nil {
 		return nil, err
@@ -45,8 +45,8 @@ func newCompactionReadCostInstance(definition *CompactionReadCostDefinition, own
 
 	return &CompactionReadCostInstance{
 		Owner:          owner,
-		Logger:         definition.Logger,
-		definition:     definition,
+		Logger:         provisioner.Logger,
+		provisioner:    provisioner,
 		runner:         runner,
 		repeatInterval: repeatInterval,
 	}, nil
@@ -62,23 +62,23 @@ func (i *CompactionReadCostInstance) Run(ctx context.Context) error {
 // claim applies the claimed row's repeat_interval against the alerts topic's
 // live retention.
 func (i *CompactionReadCostInstance) consume(ctx context.Context) error {
-	registered, err := i.definition.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
+	registered, err := i.provisioner.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	alerts, err := alertcontroller.NewAlertController(ctx, registered, i.definition.alertHeads, i.repeatInterval, &alertcontroller.ControllerConfig{Logger: i.Logger})
+	alerts, err := alertcontroller.NewAlertController(ctx, registered, i.provisioner.alertHeads, i.repeatInterval, &alertcontroller.ControllerConfig{Logger: i.Logger})
 	if err != nil {
 		return err
 	}
 	i.alerts = alerts
 
-	measurements, err := i.definition.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	measurements, err := i.provisioner.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
 	i.measurements = measurements
 
-	instance, err := i.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
+	instance, err := i.provisioner.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, request
 		return err
 	}
 
-	topics, err := i.definition.topics.List(ctx)
+	topics, err := i.provisioner.topics.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, request
 			continue
 		}
 
-		found, err := i.definition.controller.Evaluate(ctx, owner, jobData.Threshold)
+		found, err := i.provisioner.controller.Evaluate(ctx, owner, jobData.Threshold)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)

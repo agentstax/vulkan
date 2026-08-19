@@ -30,7 +30,7 @@ type CronSchedulerInstance struct {
 	producerInstance *producer.ProducerInstance[cron.JobRequest]
 }
 
-func newCronSchedulerInstance(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata, producerInstance *producer.ProducerInstance[cron.JobRequest]) (*CronSchedulerInstance, error) {
+func newCronSchedulerInstance(cronScheduler *CronSchedulerProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata, producerInstance *producer.ProducerInstance[cron.JobRequest]) (*CronSchedulerInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}

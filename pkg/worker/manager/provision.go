@@ -9,40 +9,31 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Declare creates owner's manager worker row and writes the default config
-// onto it -- the newest declaration wins. Registers run it every time, so a
-// declaration lost to a crash heals on the next one. Any owner kind declares
-// one, and no instance target -- every process reconciling owner's chain
-// claims its own.
-func (d *ManagerDefinition) Declare(ctx context.Context, owner *common.Owner) error {
-	if owner == nil {
-		return errors.New("owner must not be nil")
-	}
-
-	return d.workers.RegisterWorker(ctx, WorkerManager, owner, &controller.WorkerConfig{
-		Metadata:        defaultManagerMetadata(),
-		TargetInstances: worker.NoInstanceTarget,
-	})
+// Declare writes the definition as the owner's worker row -- the newest
+// declaration wins. Registers run it every time, so a declaration lost to a
+// crash heals on the next one.
+func (d *ManagerProvisioner) Declare(ctx context.Context, owner *common.Owner) error {
+	return d.workers.DeclareWorker(ctx, d.definition, owner)
 }
 
-// Provision claims one live instance. owner is the row's own owner and the
-// instance's reconcile scope -- the deeper the owner, the shorter the chain.
+// Provision claims one live instance. declared.Owner is the row's own declared.Owner and the
+// instance's reconcile scope -- the deeper the declared.Owner, the shorter the chain.
 // nil = declined, which for a manager row means target_instances was set away
 // from worker.NoInstanceTarget.
-func (d *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	if owner == nil {
-		return nil, errors.New("owner must not be nil")
+func (d *ManagerProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
+	if declared.Owner == nil {
+		return nil, errors.New("declared.Owner must not be nil")
 	}
-	parsed, err := controller.ParseMetadata[managerMetadata](metadata)
+	parsed, err := controller.ParseMetadata[managerMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err
 	}
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := d.workers.RegisterInstance(ctx, workerId, owner, owner.Kind(), WorkerManager, d.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, declared.Owner.Kind(), WorkerManager, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newManagerInstance(d, owner, claimed, parsed)
+	return newManagerInstance(d, declared.Owner, claimed, parsed)
 }

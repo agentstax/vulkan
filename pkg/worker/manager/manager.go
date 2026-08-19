@@ -16,17 +16,19 @@ const WorkerManager = "manager"
 // owner's chain, spawned through the provisioners it was given. Manager rows
 // carry no instance target -- the spawned workers' own claims arbitrate who
 // runs what, so any number of processes reconcile the same chain safely.
-type ManagerDefinition struct {
+type ManagerProvisioner struct {
 	Config *ManagerConfig
 	Logger common.Logger
 
 	workers      *controller.WorkerController
 	provisioners map[string]worker.Provisioner // keyed by Name; every discovered worker row spawns through the provisioner whose Name matches
+
+	definition *worker.Definition
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewManagerDefinition(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerDefinition, error) {
+func NewManagerProvisioner(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, provisioners ...worker.Provisioner) (*ManagerProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -46,10 +48,10 @@ func NewManagerDefinition(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, 
 		if provisioner == nil {
 			return nil, fmt.Errorf("provisioner %d must not be nil", i)
 		}
-		if _, taken := byName[provisioner.Name()]; taken {
-			return nil, fmt.Errorf("two provisioners run worker %q", provisioner.Name())
+		if _, taken := byName[provisioner.Definition().Name]; taken {
+			return nil, fmt.Errorf("two provisioners run worker %q", provisioner.Definition().Name)
 		}
-		byName[provisioner.Name()] = provisioner
+		byName[provisioner.Definition().Name] = provisioner
 	}
 
 	workers, err := controller.NewWorkerController(ds, &controller.ControllerConfig{
@@ -60,14 +62,21 @@ func NewManagerDefinition(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, 
 		return nil, err
 	}
 
-	return &ManagerDefinition{
+	definition, err := worker.NewDefinition(WorkerManager, common.OwnerAny, defaultManagerMetadata())
+	if err != nil {
+		return nil, err
+	}
+	definition.TargetInstances = worker.NoInstanceTarget
+
+	return &ManagerProvisioner{
 		Config:       cfg,
 		Logger:       cfg.Logger,
 		workers:      workers,
 		provisioners: byName,
+		definition:   definition,
 	}, nil
 }
 
-func (d *ManagerDefinition) Name() string {
-	return WorkerManager
+func (d *ManagerProvisioner) Definition() *worker.Definition {
+	return d.definition
 }

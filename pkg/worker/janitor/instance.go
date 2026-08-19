@@ -22,7 +22,7 @@ type JanitorInstance struct {
 	metadata   *janitorMetadata
 }
 
-func newJanitorInstance(janitor *JanitorDefinition, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorInstance, error) {
+func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorInstance, error) {
 	if current == nil {
 		return nil, errors.New("topic must not be nil")
 	}

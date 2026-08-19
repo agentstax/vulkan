@@ -8,6 +8,28 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
+// DeclareWorker writes a definition as owner's worker row -- the newest
+// declaration wins. Every kind's Declare ends here; the definition's
+// OwnerKind is enforced against the owner, common.OwnerAny admits every kind.
+func (c *WorkerController) DeclareWorker(ctx context.Context, definition *worker.Definition, owner *common.Owner) error {
+	if definition == nil {
+		return errors.New("definition must not be nil")
+	}
+	if owner == nil {
+		return errors.New("owner must not be nil")
+	}
+	if definition.OwnerKind != common.OwnerAny {
+		if err := ValidateOwner(owner, definition.OwnerKind, definition.Name); err != nil {
+			return err
+		}
+	}
+
+	return c.RegisterWorker(ctx, definition.Name, owner, &WorkerConfig{
+		Metadata:        definition.Metadata,
+		TargetInstances: definition.TargetInstances,
+	})
+}
+
 // RegisterWorker creates the (name, owner) worker row, or writes cfg.Metadata
 // onto the existing one -- the newest declaration wins. cfg.TargetInstances
 // applies at creation only.

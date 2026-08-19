@@ -34,7 +34,7 @@ type MetricsCollectorInstance struct {
 	producerInstance *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newMetricsCollectorInstance(collector *MetricsCollectorDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *metricsCollectorMetadata, producerInstance *producer.ProducerInstance[metrics.Measurement]) (*MetricsCollectorInstance, error) {
+func newMetricsCollectorInstance(collector *MetricsCollectorProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, metadata *metricsCollectorMetadata, producerInstance *producer.ProducerInstance[metrics.Measurement]) (*MetricsCollectorInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}

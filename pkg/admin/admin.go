@@ -49,7 +49,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	cronSchedulerDefinition, err := cronscheduler.NewCronSchedulerDefinition(ds, &cronscheduler.CronSchedulerConfig{
+	cronSchedulerProvisioner, err := cronscheduler.NewCronSchedulerProvisioner(ds, &cronscheduler.CronSchedulerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -57,7 +57,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	janitorDefinition, err := janitor.NewJanitorDefinition(ds, &janitor.JanitorConfig{
+	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -65,7 +65,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	metricsCollectorDefinition, err := metricscollector.NewMetricsCollectorDefinition(ds, &metricscollector.MetricsCollectorConfig{
+	metricsCollectorProvisioner, err := metricscollector.NewMetricsCollectorProvisioner(ds, &metricscollector.MetricsCollectorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -74,10 +74,10 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	// a declarer here, never run -- admin creates manager rows, it doesn't claim them
-	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
+	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorDefinition, cronSchedulerDefinition, metricsCollectorDefinition)
+	}, janitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, cronSchedulerDefinition, metricsCollectorDefinition, managerDefinition)
+	}, cronSchedulerProvisioner, metricsCollectorProvisioner, managerProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorDefinition)
+	}, janitorProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -156,14 +156,14 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 
 	// declarers here, never run -- RegisterSystem creates the alerts' consumer
 	// groups and worker rows, the system manager claims them
-	partitionCountDefinition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.PartitionCountConfig{
+	partitionCountProvisioner, err := partitioncount.NewPartitionCountProvisioner(ds, &partitioncount.PartitionCountConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
 	if err != nil {
 		return nil, err
 	}
-	compactionReadCostDefinition, err := compactionreadcost.NewCompactionReadCostDefinition(ds, &compactionreadcost.CompactionReadCostConfig{
+	compactionReadCostProvisioner, err := compactionreadcost.NewCompactionReadCostProvisioner(ds, &compactionreadcost.CompactionReadCostConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -190,7 +190,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		metricsController:  metricsController,
 		workerController:   workerController,
 		migrateController:  migrateController,
-		alertDeclarers:     []worker.Declarer{partitionCountDefinition, compactionReadCostDefinition},
+		alertDeclarers:     []worker.Declarer{partitionCountProvisioner, compactionReadCostProvisioner},
 		allowDestroy:       cfg.AllowDestroy,
 	}, nil
 }

@@ -170,7 +170,7 @@ func (p *instancePool) start(ctx context.Context, desiredWorker *worker.Worker) 
 		return
 	}
 
-	execution, err := provisioner.Provision(ctx, desiredWorker.Id, desiredWorker.Owner, desiredWorker.Metadata)
+	execution, err := provisioner.Provision(ctx, desiredWorker)
 	if err != nil {
 		if ctx.Err() == nil {
 			p.logger.WarnContext(ctx, "manager could not spawn worker -- retrying next reconcile", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name, "error", err)

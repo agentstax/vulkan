@@ -50,7 +50,7 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	janitorDefinition, err := janitor.NewJanitorDefinition(ds, &janitor.JanitorConfig{
+	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{
 		SweepRetry: &common.RetryPolicy{BaseDelay: backoffBase, MaxDelay: backoffMax},
 	})
 	must(err)
@@ -63,10 +63,11 @@ func main() {
 	must(err)
 	row, err := workers.GetWorker(ctx, janitor.WorkerJanitor, owner)
 	must(err)
-	execution, err := janitorDefinition.Provision(ctx, row.Id, owner, map[string]any{
+	row.Metadata = map[string]any{
 		"poll_rate":        int64(pollRate),
 		"sweep_batch_size": 1000,
-	})
+	}
+	execution, err := janitorProvisioner.Provision(ctx, row)
 	must(err)
 	if execution == nil {
 		die("janitor declined the instance -- is another claimant running?")

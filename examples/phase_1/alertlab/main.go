@@ -467,7 +467,7 @@ func isolationSection(ctx context.Context) {
 // startExecutor claims the partition_count worker row and runs its execution
 // until the returned stop is called.
 func startExecutor(ctx context.Context) func() {
-	definition, err := partitioncount.NewPartitionCountDefinition(ds, &partitioncount.PartitionCountConfig{
+	provisioner, err := partitioncount.NewPartitionCountProvisioner(ds, &partitioncount.PartitionCountConfig{
 		Logger: executorCapture,
 	})
 	must(err)
@@ -484,7 +484,7 @@ func startExecutor(ctx context.Context) func() {
 	var execution worker.Execution
 	deadline := time.Now().Add(60 * time.Second)
 	for {
-		execution, err = definition.Provision(ctx, row.Id, groupOwner, row.Metadata)
+		execution, err = provisioner.Provision(ctx, row)
 		must(err)
 		if execution != nil {
 			break

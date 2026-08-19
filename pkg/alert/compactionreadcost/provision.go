@@ -15,7 +15,7 @@ import (
 // Declare creates the alert's consumer group on the job_requests topic and its
 // job-name binding declaration, then writes the alert's config onto the group's
 // worker row -- the newest declaration wins. RegisterSystem runs it every time.
-func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *common.Owner) error {
+func (d *CompactionReadCostProvisioner) Declare(ctx context.Context, owner *common.Owner) error {
 	if err := workercontroller.ValidateOwner(owner, common.OwnerSystem, JobName); err != nil {
 		return err
 	}
@@ -42,24 +42,22 @@ func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *commo
 	if err != nil {
 		return err
 	}
-	return d.workers.RegisterWorker(ctx, JobName, groupOwner, &workercontroller.WorkerConfig{
-		Metadata: toCompactionReadCostMetadata(d.Config),
-	})
+	return d.workers.DeclareWorker(ctx, d.definition, groupOwner)
 }
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	parsed, err := workercontroller.ParseMetadata[compactionReadCostMetadata](metadata)
+func (d *CompactionReadCostProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
+	parsed, err := workercontroller.ParseMetadata[compactionReadCostMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err
 	}
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := d.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newCompactionReadCostInstance(d, owner, claimed, parsed.RepeatInterval)
+	return newCompactionReadCostInstance(d, declared.Owner, claimed, parsed.RepeatInterval)
 }

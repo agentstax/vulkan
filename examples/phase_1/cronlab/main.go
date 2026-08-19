@@ -630,17 +630,17 @@ func startScheduler(ctx context.Context) func() {
 	row, err := workers.GetWorker(ctx, cronscheduler.WorkerCronScheduler, owner)
 	must(err)
 
-	definition, err := cronscheduler.NewCronSchedulerDefinition(ds, nil)
+	provisioner, err := cronscheduler.NewCronSchedulerProvisioner(ds, nil)
 	must(err)
 
 	// a crashed earlier run's claim lingers until its InstanceTTL expires --
 	// retry past it instead of dying
+	row.Metadata = map[string]any{"poll_rate": int64(schedulerPollRate)}
+
 	var execution worker.Execution
 	deadline := time.Now().Add(60 * time.Second)
 	for {
-		execution, err = definition.Provision(ctx, row.Id, owner, map[string]any{
-			"poll_rate": int64(schedulerPollRate),
-		})
+		execution, err = provisioner.Provision(ctx, row)
 		must(err)
 		if execution != nil {
 			break

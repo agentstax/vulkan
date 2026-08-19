@@ -7,33 +7,35 @@ package deliveryconsumer
 //   - re-earns its place only with non-FIFO queue work
 //     (priority/delay/fairness)
 //   - not wired into consumer.NewConsumer -- reachable only by building a
-//     DeliveryConsumerDefinition directly
+//     DeliveryConsumerProvisioner directly
 //   - keep its labs green; don't invest new work here
 
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
 	"github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // setting this row's target_instances to 0 suspends just this kind's new
 // claims, leaving the group's other consumer rows running
 const WorkerDeliveryConsumer = "delivery_consumer"
 
-type DeliveryConsumerDefinition[Message any] struct {
+type DeliveryConsumerProvisioner[Message any] struct {
 	Config *DeliveryConsumerConfig
 
-	*consumerbase.BaseDefinition[Message]
+	*consumerbase.BaseProvisioner[Message]
 
 	consumers *controller.DeliveryConsumerController
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewDeliveryConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *DeliveryConsumerConfig) (*DeliveryConsumerDefinition[Message], error) {
+func NewDeliveryConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *DeliveryConsumerConfig) (*DeliveryConsumerProvisioner[Message], error) {
 	if cfg == nil {
 		cfg = &DeliveryConsumerConfig{}
 	}
@@ -42,7 +44,11 @@ func NewDeliveryConsumerDefinition[Message any](ds *datastore.PostgresDatastore,
 		return nil, err
 	}
 
-	baseDefinition, err := consumerbase.NewBaseDefinition(ds, WorkerDeliveryConsumer, consumerFunc, abandonedEvents, &consumerbase.BaseDefinitionConfig{Logger: cfg.Logger, Retry: cfg.Retry})
+	definition, err := worker.NewDefinition(WorkerDeliveryConsumer, common.OwnerConsumerGroup, toDeliveryConsumerMetadata(cfg))
+	if err != nil {
+		return nil, err
+	}
+	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, abandonedEvents, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}
@@ -54,9 +60,9 @@ func NewDeliveryConsumerDefinition[Message any](ds *datastore.PostgresDatastore,
 		return nil, err
 	}
 
-	return &DeliveryConsumerDefinition[Message]{
-		Config:         cfg,
-		BaseDefinition: baseDefinition,
-		consumers:      consumers,
+	return &DeliveryConsumerProvisioner[Message]{
+		Config:          cfg,
+		BaseProvisioner: baseProvisioner,
+		consumers:       consumers,
 	}, nil
 }

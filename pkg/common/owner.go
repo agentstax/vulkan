@@ -5,10 +5,23 @@ import "fmt"
 type OwnerKind string
 
 const (
+	// OwnerAny lifts an owner-kind guard -- any kind is admitted, like the
+	// manager worker every owner declares.
+	OwnerAny OwnerKind = ""
+
 	OwnerSystem        OwnerKind = "system"
 	OwnerTopic         OwnerKind = "topic"
 	OwnerConsumerGroup OwnerKind = "consumer_group"
 )
+
+func (k OwnerKind) Validate() error {
+	switch k {
+	case OwnerSystem, OwnerTopic, OwnerConsumerGroup:
+		return nil
+	default:
+		return fmt.Errorf("unknown owner kind %q", k)
+	}
+}
 
 // Owner is which resource owns a row in a polymorphic table (worker,
 // cron_job, migration_log).

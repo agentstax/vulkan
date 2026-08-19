@@ -89,7 +89,7 @@ func main() {
 		return nil
 	}
 
-	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
 	must(err)
 	must(definition.Declare(ctx, owner))
 
@@ -181,11 +181,11 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 func runProcessUntil(ctx context.Context, ds *iDatastore.PostgresDatastore, provisioner worker.Provisioner, owner *iCommon.Owner, timeout time.Duration, done func() bool) {
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
-	row, err := workers.GetWorker(ctx, provisioner.Name(), owner)
+	row, err := workers.GetWorker(ctx, provisioner.Definition().Name, owner)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
-	execution, err := provisioner.Provision(runCtx, row.Id, row.Owner, row.Metadata)
+	execution, err := provisioner.Provision(runCtx, row)
 	must(err)
 
 	errCh := make(chan error, 1)

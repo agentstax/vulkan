@@ -19,9 +19,9 @@ type BaseInstance struct {
 	permit         *concurrency.Permit // never released -- Run is one-shot
 }
 
-func NewBaseInstance[Message any](baseDefinition *BaseDefinition[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseInstance, error) {
-	if baseDefinition == nil {
-		return nil, errors.New("definition base must not be nil")
+func NewBaseInstance[Message any](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseInstance, error) {
+	if baseProvisioner == nil {
+		return nil, errors.New("provisioner base must not be nil")
 	}
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
@@ -33,9 +33,9 @@ func NewBaseInstance[Message any](baseDefinition *BaseDefinition[Message], owner
 		return nil, errors.New("run must not be nil")
 	}
 
-	instanceRunner, err := workercontroller.NewInstanceRunner(baseDefinition.workers, claimed, &workercontroller.InstanceRunnerConfig{
+	instanceRunner, err := workercontroller.NewInstanceRunner(baseProvisioner.workers, claimed, &workercontroller.InstanceRunnerConfig{
 		InstanceTTL: instanceTTL,
-		Logger:      common.LoggerWith(baseDefinition.Logger, "worker", baseDefinition.workerName, "owner", owner.Name),
+		Logger:      common.LoggerWith(baseProvisioner.Logger, "worker", baseProvisioner.definition.Name, "owner", owner.Name),
 	})
 	if err != nil {
 		return nil, err

@@ -7,13 +7,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	cronschedulercontroller "github.com/agentstax/vulkan/pkg/worker/cronscheduler/controller"
 )
 
 const WorkerCronScheduler = "cron_scheduler"
 
-type CronSchedulerDefinition struct {
+type CronSchedulerProvisioner struct {
 	Config *CronSchedulerConfig
 	Logger common.Logger
 
@@ -21,11 +22,13 @@ type CronSchedulerDefinition struct {
 	workers    *controller.WorkerController
 	controller *cronschedulercontroller.CronSchedulerController
 	producer   *producer.Producer[cron.JobRequest] // each Provision registers its own instance from it
+
+	definition *worker.Definition
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCronSchedulerDefinition(ds *iDatastore.PostgresDatastore, cfg *CronSchedulerConfig) (*CronSchedulerDefinition, error) {
+func NewCronSchedulerProvisioner(ds *iDatastore.PostgresDatastore, cfg *CronSchedulerConfig) (*CronSchedulerProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -61,16 +64,22 @@ func NewCronSchedulerDefinition(ds *iDatastore.PostgresDatastore, cfg *CronSched
 		return nil, err
 	}
 
-	return &CronSchedulerDefinition{
+	definition, err := worker.NewDefinition(WorkerCronScheduler, common.OwnerSystem, defaultCronSchedulerMetadata())
+	if err != nil {
+		return nil, err
+	}
+
+	return &CronSchedulerProvisioner{
 		Config:     cfg,
 		Logger:     cfg.Logger,
 		ds:         ds,
 		workers:    workers,
 		controller: schedulerController,
 		producer:   jobProducer,
+		definition: definition,
 	}, nil
 }
 
-func (d *CronSchedulerDefinition) Name() string {
-	return WorkerCronScheduler
+func (d *CronSchedulerProvisioner) Definition() *worker.Definition {
+	return d.definition
 }

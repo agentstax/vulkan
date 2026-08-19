@@ -15,7 +15,7 @@ import (
 // Declare creates the alert's consumer group on the job_requests topic and its
 // job-name binding declaration, then writes the alert's config onto the group's
 // worker row -- the newest declaration wins. RegisterSystem runs it every time.
-func (d *PartitionCountDefinition) Declare(ctx context.Context, owner *common.Owner) error {
+func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.Owner) error {
 	if err := workercontroller.ValidateOwner(owner, common.OwnerSystem, JobName); err != nil {
 		return err
 	}
@@ -42,24 +42,22 @@ func (d *PartitionCountDefinition) Declare(ctx context.Context, owner *common.Ow
 	if err != nil {
 		return err
 	}
-	return d.workers.RegisterWorker(ctx, JobName, groupOwner, &workercontroller.WorkerConfig{
-		Metadata: toPartitionCountMetadata(d.Config),
-	})
+	return d.workers.DeclareWorker(ctx, d.definition, groupOwner)
 }
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *PartitionCountDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	parsed, err := workercontroller.ParseMetadata[partitionCountMetadata](metadata)
+func (d *PartitionCountProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
+	parsed, err := workercontroller.ParseMetadata[partitionCountMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err
 	}
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := d.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newPartitionCountInstance(d, owner, claimed, parsed.RepeatInterval)
+	return newPartitionCountInstance(d, declared.Owner, claimed, parsed.RepeatInterval)
 }

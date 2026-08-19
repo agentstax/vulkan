@@ -12,29 +12,31 @@ package messageconsumer
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // setting this row's target_instances to 0 suspends just this kind's new
 // claims, leaving the group's other consumer rows running
 const WorkerMessageConsumer = "message_consumer"
 
-type MessageConsumerDefinition[Message any] struct {
+type MessageConsumerProvisioner[Message any] struct {
 	Config *MessageConsumerConfig
 
-	*consumerbase.BaseDefinition[Message]
+	*consumerbase.BaseProvisioner[Message]
 
 	consumers *controller.MessageConsumerController
 }
 
-// NewMessageConsumerDefinition builds one worker row of the group, not the
+// NewMessageConsumerProvisioner builds one worker row of the group, not the
 // assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMessageConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *MessageConsumerConfig) (*MessageConsumerDefinition[Message], error) {
+func NewMessageConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *MessageConsumerConfig) (*MessageConsumerProvisioner[Message], error) {
 	if cfg == nil {
 		cfg = &MessageConsumerConfig{}
 	}
@@ -43,7 +45,11 @@ func NewMessageConsumerDefinition[Message any](ds *datastore.PostgresDatastore, 
 		return nil, err
 	}
 
-	baseDefinition, err := consumerbase.NewBaseDefinition(ds, WorkerMessageConsumer, consumerFunc, abandonedEvents, &consumerbase.BaseDefinitionConfig{Logger: cfg.Logger, Retry: cfg.Retry})
+	definition, err := worker.NewDefinition(WorkerMessageConsumer, common.OwnerConsumerGroup, toMessageConsumerMetadata(cfg))
+	if err != nil {
+		return nil, err
+	}
+	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, abandonedEvents, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}
@@ -55,9 +61,9 @@ func NewMessageConsumerDefinition[Message any](ds *datastore.PostgresDatastore, 
 		return nil, err
 	}
 
-	return &MessageConsumerDefinition[Message]{
-		Config:         cfg,
-		BaseDefinition: baseDefinition,
-		consumers:      consumers,
+	return &MessageConsumerProvisioner[Message]{
+		Config:          cfg,
+		BaseProvisioner: baseProvisioner,
+		consumers:       consumers,
 	}, nil
 }

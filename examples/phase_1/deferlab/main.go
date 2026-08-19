@@ -554,7 +554,7 @@ func consume(ctx context.Context, topicName, group string, cfg *messageconsumer.
 	cfg.MessageConcurrency = pool
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -588,7 +588,7 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *messagecon
 	cfg.MessageConcurrency = pool
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -614,7 +614,7 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *e
 	cfg.ClaimPollRate = 50 * time.Millisecond
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := exceptionconsumer.NewExceptionConsumerDefinition(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := exceptionconsumer.NewExceptionConsumerProvisioner(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -654,17 +654,23 @@ func abandonedEventProducer(ctx context.Context) *metricsproducer.MetricsProduce
 
 // no manager, so nothing respawns the execution -- the lab decides exactly how
 // many run
-func claimOne(ctx context.Context, definition worker.Definition, owner *common.Owner) worker.Execution {
-	must(definition.Declare(ctx, owner))
+func claimOne(ctx context.Context, provisioner declaringProvisioner, owner *common.Owner) worker.Execution {
+	must(provisioner.Declare(ctx, owner))
 
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
-	row, err := workers.GetWorker(ctx, definition.Name(), owner)
+	row, err := workers.GetWorker(ctx, provisioner.Definition().Name, owner)
 	must(err)
 
-	execution, err := definition.Provision(ctx, row.Id, row.Owner, row.Metadata)
+	execution, err := provisioner.Provision(ctx, row)
 	must(err)
 	return execution
+}
+
+// every consumer provisioner both declares its row and provisions it
+type declaringProvisioner interface {
+	worker.Declarer
+	worker.Provisioner
 }
 
 func record(message *Rec) {

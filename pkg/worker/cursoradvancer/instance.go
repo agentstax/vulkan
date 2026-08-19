@@ -22,7 +22,7 @@ type CursorAdvancerInstance struct {
 	metadata   *cursorAdvancerMetadata
 }
 
-func newCursorAdvancerInstance(definition *CursorAdvancerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cursorAdvancerMetadata) (*CursorAdvancerInstance, error) {
+func newCursorAdvancerInstance(provisioner *CursorAdvancerProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cursorAdvancerMetadata) (*CursorAdvancerInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -30,11 +30,11 @@ func newCursorAdvancerInstance(definition *CursorAdvancerDefinition, owner *comm
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	runner, err := controller.NewInstanceTickRunner(definition.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
-		InstanceTTL:    definition.Config.InstanceTTL,
-		JitterFraction: definition.Config.JitterFraction,
-		Logger:         common.LoggerWith(definition.Logger, "worker", WorkerCursorAdvancer, "topic", owner.TopicId, "group", owner.Name),
-		TickRetry:      definition.Config.AdvanceRetry,
+	runner, err := controller.NewInstanceTickRunner(provisioner.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
+		InstanceTTL:    provisioner.Config.InstanceTTL,
+		JitterFraction: provisioner.Config.JitterFraction,
+		Logger:         common.LoggerWith(provisioner.Logger, "worker", WorkerCursorAdvancer, "topic", owner.TopicId, "group", owner.Name),
+		TickRetry:      provisioner.Config.AdvanceRetry,
 	})
 	if err != nil {
 		return nil, err
@@ -42,10 +42,10 @@ func newCursorAdvancerInstance(definition *CursorAdvancerDefinition, owner *comm
 
 	return &CursorAdvancerInstance{
 		Owner:      owner,
-		Config:     definition.Config,
-		Logger:     definition.Logger,
+		Config:     provisioner.Config,
+		Logger:     provisioner.Logger,
 		runner:     runner,
-		controller: definition.controller,
+		controller: provisioner.controller,
 		metadata:   metadata,
 	}, nil
 }

@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — Definition/Provisioner split [0549]
+
+- worker.Definition became a data struct (Name, Metadata, OwnerKind with
+  "" = any kind, TargetInstances with 0 -> 1); the concrete machines are
+  *XProvisioner, each building and storing its Definition at construction.
+- Provisioner interface: Definition() replaces Name();
+  Provision(ctx, declared *worker.Worker) replaces the id/owner/metadata
+  triple -- the worker row is the declared form of the definition.
+- One WorkerController.DeclareWorker(definition, owner) verb ends every
+  Declare: 8 kinds' Declare collapsed to one-liners (consumers inherit it
+  from BaseProvisioner, which stamps NoInstanceTarget as a base invariant);
+  the alerts keep their group/binding preamble; the Declarer+Provisioner
+  bundle interface is deleted. Declare returns only error -- provisioning
+  re-reads the row so the newest declaration wins.
+- 41/41 fresh-DB labs green; all five modules build, vet and -race clean.
+
 ## 2026-08-19 — Naming pass [0545][0546][0547][0548]
 
 - Waterline retired [0545]: pkg/worker/waterline -> pkg/worker/cursoradvancer

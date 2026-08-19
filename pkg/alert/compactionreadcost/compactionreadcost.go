@@ -14,12 +14,13 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// CompactionReadCostDefinition is the alert's worker kind: one row owning the
+// CompactionReadCostProvisioner is the alert's worker kind: one row owning the
 // alert's consumer group on the job_requests topic.
-type CompactionReadCostDefinition struct {
+type CompactionReadCostProvisioner struct {
 	Config *CompactionReadCostConfig
 	Logger common.Logger
 
@@ -32,11 +33,13 @@ type CompactionReadCostDefinition struct {
 	alertHeads          *compactioncontroller.CompactionController[alert.Alert]
 	measurementProducer *producer.Producer[metrics.Measurement]
 	jobRequestConsumer  *consumer.Consumer[cron.JobRequest]
+
+	definition *worker.Definition
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *CompactionReadCostConfig) (*CompactionReadCostDefinition, error) {
+func NewCompactionReadCostProvisioner(ds *iDatastore.PostgresDatastore, cfg *CompactionReadCostConfig) (*CompactionReadCostProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -112,7 +115,12 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 		return nil, err
 	}
 
-	return &CompactionReadCostDefinition{
+	definition, err := worker.NewDefinition(JobName, common.OwnerConsumerGroup, toCompactionReadCostMetadata(cfg))
+	if err != nil {
+		return nil, err
+	}
+
+	return &CompactionReadCostProvisioner{
 		Config:              cfg,
 		Logger:              cfg.Logger,
 		ds:                  ds,
@@ -124,9 +132,10 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 		alertHeads:          alertHeads,
 		measurementProducer: measurementProducer,
 		jobRequestConsumer:  jobRequestConsumer,
+		definition:          definition,
 	}, nil
 }
 
-func (d *CompactionReadCostDefinition) Name() string {
-	return JobName
+func (d *CompactionReadCostProvisioner) Definition() *worker.Definition {
+	return d.definition
 }

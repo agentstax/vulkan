@@ -24,7 +24,7 @@ type ManagerInstance struct {
 	metadata     *managerMetadata
 }
 
-func newManagerInstance(manager *ManagerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
+func newManagerInstance(manager *ManagerProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
 	}

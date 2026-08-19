@@ -5,23 +5,26 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	cursoradvancercontroller "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller"
 )
 
 const WorkerCursorAdvancer = "cursor_advancer"
 
-type CursorAdvancerDefinition struct {
+type CursorAdvancerProvisioner struct {
 	Config *CursorAdvancerConfig
 	Logger common.Logger
 
 	workers    *controller.WorkerController
 	controller *cursoradvancercontroller.CursorAdvancerController
+
+	definition *worker.Definition
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCursorAdvancerDefinition(ds *iDatastore.PostgresDatastore, cfg *CursorAdvancerConfig) (*CursorAdvancerDefinition, error) {
+func NewCursorAdvancerProvisioner(ds *iDatastore.PostgresDatastore, cfg *CursorAdvancerConfig) (*CursorAdvancerProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -49,14 +52,20 @@ func NewCursorAdvancerDefinition(ds *iDatastore.PostgresDatastore, cfg *CursorAd
 		return nil, err
 	}
 
-	return &CursorAdvancerDefinition{
+	definition, err := worker.NewDefinition(WorkerCursorAdvancer, common.OwnerConsumerGroup, defaultCursorAdvancerMetadata())
+	if err != nil {
+		return nil, err
+	}
+
+	return &CursorAdvancerProvisioner{
 		Config:     cfg,
 		Logger:     cfg.Logger,
 		workers:    workers,
 		controller: advanceController,
+		definition: definition,
 	}, nil
 }
 
-func (d *CursorAdvancerDefinition) Name() string {
-	return WorkerCursorAdvancer
+func (d *CursorAdvancerProvisioner) Definition() *worker.Definition {
+	return d.definition
 }

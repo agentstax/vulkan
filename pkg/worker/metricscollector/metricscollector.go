@@ -11,12 +11,13 @@ import (
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
 const WorkerMetricsCollector = "metrics_collector"
 
-type MetricsCollectorDefinition struct {
+type MetricsCollectorProvisioner struct {
 	Config *MetricsCollectorConfig
 	Logger common.Logger
 
@@ -25,11 +26,13 @@ type MetricsCollectorDefinition struct {
 	topics     *topiccontroller.TopicController
 	alertHeads *compactioncontroller.CompactionController[alert.Alert]
 	producer   *producer.Producer[metrics.Measurement] // each Provision registers its own instance from it
+
+	definition *worker.Definition
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewMetricsCollectorDefinition(ds *iDatastore.PostgresDatastore, cfg *MetricsCollectorConfig) (*MetricsCollectorDefinition, error) {
+func NewMetricsCollectorProvisioner(ds *iDatastore.PostgresDatastore, cfg *MetricsCollectorConfig) (*MetricsCollectorProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -81,7 +84,12 @@ func NewMetricsCollectorDefinition(ds *iDatastore.PostgresDatastore, cfg *Metric
 		return nil, err
 	}
 
-	return &MetricsCollectorDefinition{
+	definition, err := worker.NewDefinition(WorkerMetricsCollector, common.OwnerSystem, defaultMetricsCollectorMetadata())
+	if err != nil {
+		return nil, err
+	}
+
+	return &MetricsCollectorProvisioner{
 		Config:     cfg,
 		Logger:     cfg.Logger,
 		workers:    workers,
@@ -89,9 +97,10 @@ func NewMetricsCollectorDefinition(ds *iDatastore.PostgresDatastore, cfg *Metric
 		topics:     topics,
 		alertHeads: alertHeads,
 		producer:   measurementProducer,
+		definition: definition,
 	}, nil
 }
 
-func (d *MetricsCollectorDefinition) Name() string {
-	return WorkerMetricsCollector
+func (d *MetricsCollectorProvisioner) Definition() *worker.Definition {
+	return d.definition
 }

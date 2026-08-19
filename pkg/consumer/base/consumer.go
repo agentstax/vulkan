@@ -26,12 +26,12 @@ type BaseConsumer[Message any] struct {
 	consumerFunc    func(ctx context.Context, message *Message) error
 }
 
-// resolvedTopic comes from BaseDefinition.GetTopic. cfg may be nil or a
+// resolvedTopic comes from BaseProvisioner.GetTopic. cfg may be nil or a
 // sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func NewBaseConsumer[Message any](baseDefinition *BaseDefinition[Message], owner *common.Owner, resolvedTopic *topic.Topic, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
-	if baseDefinition == nil {
-		return nil, errors.New("definition base must not be nil")
+func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], owner *common.Owner, resolvedTopic *topic.Topic, cfg *BaseConsumerConfig) (*BaseConsumer[Message], error) {
+	if baseProvisioner == nil {
+		return nil, errors.New("provisioner base must not be nil")
 	}
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
@@ -51,10 +51,10 @@ func NewBaseConsumer[Message any](baseDefinition *BaseDefinition[Message], owner
 		Owner:           owner,
 		Topic:           resolvedTopic,
 		Config:          cfg,
-		Logger:          baseDefinition.Logger,
-		keyLeases:       baseDefinition.keyLeases,
-		abandonedEvents: baseDefinition.abandonedEvents,
-		consumerFunc:    baseDefinition.consumerFunc,
+		Logger:          baseProvisioner.Logger,
+		keyLeases:       baseProvisioner.keyLeases,
+		abandonedEvents: baseProvisioner.abandonedEvents,
+		consumerFunc:    baseProvisioner.consumerFunc,
 	}, nil
 }
 

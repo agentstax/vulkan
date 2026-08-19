@@ -19,12 +19,12 @@ type Runner struct {
 	Config *RunnerConfig
 	Logger common.Logger
 
-	definition *ManagerDefinition
+	provisioner *ManagerProvisioner
 }
 
-func NewRunner(definition *ManagerDefinition, owner *common.Owner, cfg *RunnerConfig) (*Runner, error) {
-	if definition == nil {
-		return nil, errors.New("definition must not be nil")
+func NewRunner(provisioner *ManagerProvisioner, owner *common.Owner, cfg *RunnerConfig) (*Runner, error) {
+	if provisioner == nil {
+		return nil, errors.New("provisioner must not be nil")
 	}
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
@@ -38,10 +38,10 @@ func NewRunner(definition *ManagerDefinition, owner *common.Owner, cfg *RunnerCo
 	}
 
 	return &Runner{
-		Owner:      owner,
-		Config:     cfg,
-		Logger:     cfg.Logger,
-		definition: definition,
+		Owner:       owner,
+		Config:      cfg,
+		Logger:      cfg.Logger,
+		provisioner: provisioner,
 	}, nil
 }
 
@@ -87,9 +87,9 @@ func (r *Runner) Run(ctx context.Context) error {
 // claim re-reads the row every life, so a metadata edit lands on the next
 // one. nil = suspended.
 func (r *Runner) claim(ctx context.Context) (worker.Execution, error) {
-	row, err := r.definition.workers.GetWorker(ctx, WorkerManager, r.Owner)
+	row, err := r.provisioner.workers.GetWorker(ctx, WorkerManager, r.Owner)
 	if err != nil {
 		return nil, err
 	}
-	return r.definition.Provision(ctx, row.Id, row.Owner, row.Metadata)
+	return r.provisioner.Provision(ctx, row)
 }

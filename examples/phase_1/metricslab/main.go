@@ -111,13 +111,13 @@ func main() {
 		must(err)
 		go func() { must(abandonedEvents.Run(runCtx)) }()
 
-		definition, err := messageconsumer.NewMessageConsumerDefinition(ds, consumerFunc, abandonedEvents, cfg)
+		provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
 		must(err)
-		must(definition.Declare(runCtx, owner))
+		must(provisioner.Declare(runCtx, owner))
 
-		row, err := workers.GetWorker(runCtx, definition.Name(), owner)
+		row, err := workers.GetWorker(runCtx, provisioner.Definition().Name, owner)
 		must(err)
-		execution, err := definition.Provision(runCtx, row.Id, row.Owner, row.Metadata)
+		execution, err := provisioner.Provision(runCtx, row)
 		must(err)
 
 		wg.Add(1)

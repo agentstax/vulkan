@@ -6,24 +6,27 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	janitorcontroller "github.com/agentstax/vulkan/pkg/worker/janitor/controller"
 )
 
 const WorkerJanitor = "janitor"
 
-type JanitorDefinition struct {
+type JanitorProvisioner struct {
 	Config *JanitorConfig
 	Logger common.Logger
 
 	workers    *controller.WorkerController
 	topics     *topiccontroller.TopicController
 	controller *janitorcontroller.JanitorController
+
+	definition *worker.Definition
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewJanitorDefinition(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) (*JanitorDefinition, error) {
+func NewJanitorProvisioner(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) (*JanitorProvisioner, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -59,15 +62,21 @@ func NewJanitorDefinition(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) 
 		return nil, err
 	}
 
-	return &JanitorDefinition{
+	definition, err := worker.NewDefinition(WorkerJanitor, common.OwnerTopic, defaultJanitorMetadata())
+	if err != nil {
+		return nil, err
+	}
+
+	return &JanitorProvisioner{
 		Config:     cfg,
 		Logger:     cfg.Logger,
 		workers:    workers,
 		topics:     topics,
 		controller: janitorController,
+		definition: definition,
 	}, nil
 }
 
-func (d *JanitorDefinition) Name() string {
-	return WorkerJanitor
+func (d *JanitorProvisioner) Definition() *worker.Definition {
+	return d.definition
 }

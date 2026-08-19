@@ -12,29 +12,31 @@ package exceptionconsumer
 import (
 	"context"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	consumerbase "github.com/agentstax/vulkan/pkg/consumer/base"
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // setting this row's target_instances to 0 suspends just this kind's new
 // claims, leaving the group's other consumer rows running
 const WorkerExceptionConsumer = "exception_consumer"
 
-type ExceptionConsumerDefinition[Message any] struct {
+type ExceptionConsumerProvisioner[Message any] struct {
 	Config *ExceptionConsumerConfig
 
-	*consumerbase.BaseDefinition[Message]
+	*consumerbase.BaseProvisioner[Message]
 
 	consumers *controller.ExceptionConsumerController
 }
 
-// NewExceptionConsumerDefinition builds one worker row of the group, not
+// NewExceptionConsumerProvisioner builds one worker row of the group, not
 // the assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerDefinition[Message], error) {
+func NewExceptionConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerProvisioner[Message], error) {
 	if cfg == nil {
 		cfg = &ExceptionConsumerConfig{}
 	}
@@ -43,7 +45,11 @@ func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore
 		return nil, err
 	}
 
-	baseDefinition, err := consumerbase.NewBaseDefinition(ds, WorkerExceptionConsumer, consumerFunc, abandonedEvents, &consumerbase.BaseDefinitionConfig{Logger: cfg.Logger, Retry: cfg.Retry})
+	definition, err := worker.NewDefinition(WorkerExceptionConsumer, common.OwnerConsumerGroup, toExceptionConsumerMetadata(cfg))
+	if err != nil {
+		return nil, err
+	}
+	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, abandonedEvents, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}
@@ -55,9 +61,9 @@ func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore
 		return nil, err
 	}
 
-	return &ExceptionConsumerDefinition[Message]{
-		Config:         cfg,
-		BaseDefinition: baseDefinition,
-		consumers:      consumers,
+	return &ExceptionConsumerProvisioner[Message]{
+		Config:          cfg,
+		BaseProvisioner: baseProvisioner,
+		consumers:       consumers,
 	}, nil
 }

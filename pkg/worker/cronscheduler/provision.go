@@ -10,23 +10,17 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Declare creates the system's cron scheduler worker row and writes the default
-// config onto it -- the newest declaration wins. Registers run it every time,
-// so a declaration lost to a crash heals on the next one.
-func (d *CronSchedulerDefinition) Declare(ctx context.Context, owner *common.Owner) error {
-	if err := controller.ValidateOwner(owner, common.OwnerSystem, WorkerCronScheduler); err != nil {
-		return err
-	}
-
-	return d.workers.RegisterWorker(ctx, WorkerCronScheduler, owner, &controller.WorkerConfig{
-		Metadata: defaultCronSchedulerMetadata(),
-	})
+// Declare writes the definition as the owner's worker row -- the newest
+// declaration wins. Registers run it every time, so a declaration lost to a
+// crash heals on the next one.
+func (d *CronSchedulerProvisioner) Declare(ctx context.Context, owner *common.Owner) error {
+	return d.workers.DeclareWorker(ctx, d.definition, owner)
 }
 
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
-func (d *CronSchedulerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
-	parsed, err := controller.ParseMetadata[cronSchedulerMetadata](metadata)
+func (d *CronSchedulerProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
+	parsed, err := controller.ParseMetadata[cronSchedulerMetadata](declared.Metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -40,9 +34,9 @@ func (d *CronSchedulerDefinition) Provision(ctx context.Context, workerId int64,
 	if err != nil {
 		return nil, err
 	}
-	claimed, err := d.workers.RegisterInstance(ctx, workerId, owner, common.OwnerSystem, WorkerCronScheduler, d.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerSystem, WorkerCronScheduler, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newCronSchedulerInstance(d, owner, claimed, parsed, producerInstance)
+	return newCronSchedulerInstance(d, declared.Owner, claimed, parsed, producerInstance)
 }
