@@ -155,9 +155,13 @@ func (e *CompactionReadCostExecution) produceCheckSummary(ctx context.Context, e
 		if err != nil {
 			return err
 		}
+		compaction, err := producer.NewCompactionOptions(metrics.MeasurementKey(measurement.Name, measurement.Attributes), 0)
+		if err != nil {
+			return err
+		}
 		item, err := producer.NewProduceItem(measurement, producer.ProduceOptions{
-			RoutingKey:    measurement.Name,
-			CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
+			RoutingKey: measurement.Name,
+			Compaction: compaction,
 		})
 		if err != nil {
 			return err

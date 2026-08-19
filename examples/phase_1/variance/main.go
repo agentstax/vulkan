@@ -50,8 +50,8 @@ func main() {
 	defer stop()
 	time.AfterFunc(180*time.Second, stop) // watchdog
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password", Host: "localhost", Port: 5432, Database: "example_db", MaxConns: 20,
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
+		Pass: "example_password", MaxConns: 20,
 	})
 	if err != nil {
 		fmt.Println(err)

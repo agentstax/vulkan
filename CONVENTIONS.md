@@ -187,6 +187,10 @@ Three layers per domain (template: worker, topic):
   built only by controller adapters get no constructor.
 - Required params inline in the signature; optional ones in a slim sparse
   Config struct. Never pass a whole data struct for a couple of fields.
+- A Config struct holds ONLY optional fields: every field is either filled
+  by WithDefaults or meaningful at zero. A Validate error on a field
+  WithDefaults never fills is a required value hiding in the config -- move
+  it into the constructor's params.
 - Param order is primary collaborator first, ambient last: the dep the struct
   is *about* leads, then its remaining deps, then `cfg`, and a bare
   `log common.Logger` always trails (prefer `cfg.Logger` over a bare param).

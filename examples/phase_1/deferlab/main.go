@@ -76,10 +76,7 @@ func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err = iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -689,11 +686,13 @@ func ran(key string, version int) bool {
 }
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int, policy common.ConcurrencyPolicy) {
-	opts := producer.ProduceOptions{CompactionKey: key}
+	compaction, err := producer.NewCompactionOptions(key, 0)
+	must(err)
+	opts := producer.ProduceOptions{Compaction: compaction}
 	if policy != "" {
 		opts.Message = &common.MessageOptions{Concurrency: policy}
 	}
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, opts)
 	must(err)

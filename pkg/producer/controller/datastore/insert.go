@@ -59,7 +59,7 @@ func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx 
 
 // insertProtectedSavepoint pipelines the claim+insert CTE with RELEASE
 // SAVEPOINT as one round trip -- always a single statement regardless of
-// CompactionKey, so it always fully batches. duplicate=true means the claim
+// compaction key, so it always fully batches. duplicate=true means the claim
 // already existed.
 func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)

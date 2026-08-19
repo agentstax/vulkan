@@ -43,12 +43,8 @@ func main() {
 	// safety watchdog: never let a stalled run hang the sweep
 	time.AfterFunc(180*time.Second, stop)
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User:     "example_user",
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
 		Pass:     "example_password",
-		Host:     "localhost",
-		Port:     5432,
-		Database: "example_db",
 		MaxConns: *maxConnsPtr,
 	})
 	if err != nil {

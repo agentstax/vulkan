@@ -39,10 +39,7 @@ const group = "phase9.deletetopiclab.group"
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -74,9 +71,11 @@ func main() {
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
 	}
-	// CompactionKey seeds compaction_head; the default (protected) idempotency
+	// Compaction seeds compaction_head; the default (protected) idempotency
 	// claim seeds idempotency_key -- one Produce call, two tables.
-	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", CompactionKey: "seed-key"})
+	compaction, err := producer.NewCompactionOptions("seed-key", 0)
+	must(err)
+	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", Compaction: compaction})
 	must(err)
 
 	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)

@@ -45,9 +45,8 @@ const largePartitionSize = int64(1_000_000) // never rolls -- partition churn is
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
+		Pass: "example_password",
 		MaxConns: 50, // headroom above the keep-up scenario's 30 concurrent publishers + sweeper
 	})
 	must(err)

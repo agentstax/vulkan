@@ -40,9 +40,8 @@ const largePartitionSize = int64(1000000) // never rolls -- partition churn isn'
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
+		Pass: "example_password",
 		MaxConns: 60, // headroom above the hot-key scenario's 50 concurrent goroutines
 	})
 	must(err)
@@ -137,9 +136,15 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], n int, keyFn func(i int) string) float64 {
 	start := time.Now()
 	for i := range n {
+		opts := producer.ProduceOptions{}
+		if key := keyFn(i); key != "" {
+			compaction, err := producer.NewCompactionOptions(key, 0)
+			must(err)
+			opts.Compaction = compaction
+		}
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
-		}, producer.ProduceOptions{CompactionKey: keyFn(i)})
+		}, opts)
 		must(err)
 	}
 	return float64(time.Since(start).Microseconds()) / 1000.0
@@ -166,9 +171,11 @@ func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label
 	for g := range goroutines {
 		wg.Go(func() {
 			for i := range perGoroutine {
-				_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+				compaction, err := producer.NewCompactionOptions(keyFn(g, i), 0)
+				must(err)
+				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
-				}, producer.ProduceOptions{CompactionKey: keyFn(g, i)})
+				}, producer.ProduceOptions{Compaction: compaction})
 				must(err)
 			}
 		})

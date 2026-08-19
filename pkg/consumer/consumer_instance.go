@@ -33,7 +33,7 @@ type ConsumerInstance[Message any] struct {
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
 // so there is nothing left to default or validate here.
 // bindings and declaredAt are Register's declaration, re-attempted by Consume.
-func NewConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, abandonedEvents *metricsproducer.MetricsProducer, consumers *consumercontroller.ConsumerController, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, abandonedEvents *metricsproducer.MetricsProducer, consumers *consumercontroller.ConsumerController, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}

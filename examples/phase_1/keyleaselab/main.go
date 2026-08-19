@@ -58,10 +58,7 @@ func main() {
 	ctx := context.Background()
 
 	var err error
-	ds, err = iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err = iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -291,9 +288,11 @@ func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key s
 }
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+	compaction, err := producer.NewCompactionOptions(key, 0)
+	must(err)
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
-	}, producer.ProduceOptions{CompactionKey: key})
+	}, producer.ProduceOptions{Compaction: compaction})
 	must(err)
 }
 

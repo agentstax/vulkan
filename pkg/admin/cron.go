@@ -123,11 +123,16 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, err
 	}
 
+	compaction, err := producer.NewCompactionOptions(strconv.FormatInt(job.Id, 10), 0)
+	if err != nil {
+		return nil, err
+	}
+
 	// no IdempotencyKey: Produce creates a fresh v7 per call, so every produced
 	// run is its own unique job.
 	return instance.Produce(ctx, request, producer.ProduceOptions{
-		RoutingKey:    job.Name,
-		CompactionKey: strconv.FormatInt(job.Id, 10),
+		RoutingKey: job.Name,
+		Compaction: compaction,
 		Message: &common.MessageOptions{
 			Concurrency: cfg.Concurrency,
 			Timeout:     job.Timeout,

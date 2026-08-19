@@ -45,10 +45,7 @@ type RankedRecord struct {
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -127,9 +124,11 @@ func main() {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[RankedRecord], key, label string, rank int64) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*RankedRecord, error) {
+	compaction, err := producer.NewCompactionOptions(key, rank)
+	must(err)
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*RankedRecord, error) {
 		return &RankedRecord{Key: key, Label: label}, nil
-	}, producer.ProduceOptions{CompactionKey: key, CompactionRank: rank})
+	}, producer.ProduceOptions{Compaction: compaction})
 	must(err)
 }
 

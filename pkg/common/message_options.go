@@ -13,7 +13,7 @@ import (
 // Messages REQUEST, consumers PROTECT THEMSELVES.
 type MessageOptions struct {
 	// Concurrency - concurrency policy for this message's compaction key.
-	// Requires a CompactionKey -- Defer without one errors at produce time.
+	// Requires a compaction key -- Defer without one errors at produce time.
 	// Default: ConcurrencyAllow (same-key deliveries may overlap).
 	Concurrency ConcurrencyPolicy `json:"concurrency,omitempty"`
 

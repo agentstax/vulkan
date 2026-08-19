@@ -307,9 +307,13 @@ func (i *MetricsCollectorExecution) collectConsumerGroup(ctx context.Context, sn
 		if err != nil {
 			return err
 		}
+		compaction, err := producer.NewCompactionOptions(metrics.MeasurementKey(measurement.Name, measurement.Attributes), 0)
+		if err != nil {
+			return err
+		}
 		item, err := producer.NewProduceItem(measurement, producer.ProduceOptions{
-			RoutingKey:    measurement.Name,
-			CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
+			RoutingKey: measurement.Name,
+			Compaction: compaction,
 		})
 		if err != nil {
 			return err
@@ -322,9 +326,14 @@ func (i *MetricsCollectorExecution) collectConsumerGroup(ctx context.Context, sn
 }
 
 func (i *MetricsCollectorExecution) produceMeasurement(ctx context.Context, measurement *metrics.Measurement) error {
-	_, err := i.producerInstance.Produce(ctx, measurement, producer.ProduceOptions{
-		RoutingKey:    measurement.Name,
-		CompactionKey: metrics.MeasurementKey(measurement.Name, measurement.Attributes),
+	compaction, err := producer.NewCompactionOptions(metrics.MeasurementKey(measurement.Name, measurement.Attributes), 0)
+	if err != nil {
+		return err
+	}
+
+	_, err = i.producerInstance.Produce(ctx, measurement, producer.ProduceOptions{
+		RoutingKey: measurement.Name,
+		Compaction: compaction,
 	})
 	return err
 }

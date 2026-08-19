@@ -49,10 +49,7 @@ type Record struct {
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -142,9 +139,11 @@ func seed(ctx context.Context, wp *producer.ProducerInstance[Record]) {
 }
 
 func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key string) {
-	_, err := wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
+	compaction, err := producer.NewCompactionOptions(key, 0)
+	must(err)
+	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
-	}, producer.ProduceOptions{CompactionKey: key})
+	}, producer.ProduceOptions{Compaction: compaction})
 	must(err)
 }
 

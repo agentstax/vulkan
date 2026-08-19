@@ -43,10 +43,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -148,9 +145,11 @@ func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], key string) {
-	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	compaction, err := producer.NewCompactionOptions(key, 0)
+	must(err)
+	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, producer.ProduceOptions{CompactionKey: key})
+	}, producer.ProduceOptions{Compaction: compaction})
 	must(err)
 }
 

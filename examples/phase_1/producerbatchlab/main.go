@@ -51,9 +51,8 @@ const largePartitionSize = int64(1_000_000) // never rolls -- partition churn is
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
+		Pass: "example_password",
 		MaxConns: 60, // headroom above the per-call arms' 50 concurrent publishers -- batched callers wait on a channel, not a connection, so even the 800-caller saturated arm needs no more
 	})
 	must(err)
@@ -271,7 +270,11 @@ func hotCompactionKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{CompactionKey: fmt.Sprintf("hot:%d", (p+s)%keys)})
+		compaction, err := producer.NewCompactionOptions(fmt.Sprintf("hot:%d", (p+s)%keys), 0)
+		if err != nil {
+			return err
+		}
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{Compaction: compaction})
 		return err
 	})
 

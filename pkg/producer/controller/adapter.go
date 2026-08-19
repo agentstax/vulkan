@@ -8,14 +8,17 @@ import (
 )
 
 func toAppendData[Message any](idempotencyKey uuid.UUID, payload *Message, options ProduceOptions) *datastore.AppendData[Message] {
-	return &datastore.AppendData[Message]{
+	data := &datastore.AppendData[Message]{
 		IdempotencyKey: idempotencyKey,
 		Payload:        payload,
 		RoutingKey:     options.RoutingKey,
-		CompactionKey:  options.CompactionKey,
-		CompactionRank: options.CompactionRank,
 		Options:        options.Message,
 	}
+	if options.Compaction != nil {
+		data.CompactionKey = options.Compaction.Key
+		data.CompactionRank = options.Compaction.Rank
+	}
+	return data
 }
 
 func toAppended[Message any](data *datastore.AppendedData[Message]) *Appended[Message] {

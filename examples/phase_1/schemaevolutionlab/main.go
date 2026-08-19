@@ -77,10 +77,7 @@ type V2Order struct {
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -100,7 +97,9 @@ func main() {
 	step("v1 holds live keyed traffic for 5 users")
 	for i, key := range keys {
 		cents := int64(i+1) * 100
-		_, err := wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{CompactionKey: key})
+		compaction, err := producer.NewCompactionOptions(key, 0)
+		must(err)
+		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{Compaction: compaction})
 		must(err)
 		fmt.Printf("  wrote %s cents=%d to v1\n", key, cents)
 	}
@@ -139,9 +138,12 @@ func main() {
 		if !ok {
 			return fmt.Errorf("no MessageMeta in context for key %q", work.Key)
 		}
-		_, err := wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, producer.ProduceOptions{
-			CompactionKey:  work.Key,
-			CompactionRank: -1,
+		compaction, err := producer.NewCompactionOptions(work.Key, -1)
+		if err != nil {
+			return err
+		}
+		_, err = wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, producer.ProduceOptions{
+			Compaction:     compaction,
 			IdempotencyKey: bridgeIdempotencyKey(meta.Id),
 		})
 		if err == nil {
@@ -205,7 +207,11 @@ func main() {
 // ---- helpers ----
 
 func liveWrite(ctx context.Context, wp *producer.ProducerInstance[V2Order], key string, cents int64, currency string) error {
-	_, err := wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, producer.ProduceOptions{CompactionKey: key})
+	compaction, err := producer.NewCompactionOptions(key, 0)
+	if err != nil {
+		return err
+	}
+	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, producer.ProduceOptions{Compaction: compaction})
 	return err
 }
 

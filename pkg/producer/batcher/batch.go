@@ -11,10 +11,10 @@ type batch[Message any] struct {
 }
 
 func newBatch[Message any](operations []*batchOperation[Message]) *batch[Message] {
-	// ascending CompactionKey -> every batch txn takes its compaction_head row
+	// ascending compaction key -> every batch txn takes its compaction_head row
 	// locks in one global order: hot keys queue batch-to-batch, never deadlock
 	slices.SortStableFunc(operations, func(a, b *batchOperation[Message]) int {
-		return cmp.Compare(a.request.options.CompactionKey, b.request.options.CompactionKey)
+		return cmp.Compare(compactionSortKey(a), compactionSortKey(b))
 	})
 	return &batch[Message]{operations: operations}
 }
@@ -46,4 +46,17 @@ func (b *batch[Message]) recordAll(err error) {
 	for _, op := range b.operations {
 		op.response.record(err)
 	}
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// compactionSortKey reads an operation's compaction key; "" for a message
+// that isn't compacted.
+func compactionSortKey[Message any](operation *batchOperation[Message]) string {
+	if operation.request.options.Compaction == nil {
+		return ""
+	}
+	return operation.request.options.Compaction.Key
 }

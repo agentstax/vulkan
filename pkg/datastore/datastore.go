@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -14,7 +15,17 @@ type PostgresDatastore struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewPostgresDatastore(ctx context.Context, cfg *PostgresConnectionConfig) (*PostgresDatastore, error) {
+func NewPostgresDatastore(ctx context.Context, user string, host string, database string, cfg *PostgresConnectionConfig) (*PostgresDatastore, error) {
+	if user == "" {
+		return nil, errors.New("user is required")
+	}
+	if host == "" {
+		return nil, errors.New("host is required")
+	}
+	if database == "" {
+		return nil, errors.New("database is required")
+	}
+
 	if cfg == nil {
 		cfg = &PostgresConnectionConfig{}
 	}
@@ -24,7 +35,7 @@ func NewPostgresDatastore(ctx context.Context, cfg *PostgresConnectionConfig) (*
 	}
 
 	connectionString := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
-		cfg.User, cfg.Pass, cfg.Host, strconv.Itoa(cfg.Port), cfg.Database,
+		user, cfg.Pass, host, strconv.Itoa(cfg.Port), database,
 	)
 
 	poolConfig, err := pgxpool.ParseConfig(connectionString)

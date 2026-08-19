@@ -36,9 +36,13 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 		return alert.RecordOutcomeNothing, nil
 	}
 
+	compaction, err := producer.NewCompactionOptions(compactionKey, 0)
+	if err != nil {
+		return "", err
+	}
 	if _, err := c.alerts.Produce(ctx, published, producer.ProduceOptions{
-		RoutingKey:    published.RoutingKey(),
-		CompactionKey: compactionKey,
+		RoutingKey: published.RoutingKey(),
+		Compaction: compaction,
 	}); err != nil {
 		return "", err
 	}

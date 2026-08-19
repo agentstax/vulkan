@@ -20,24 +20,14 @@ type ProduceOptions struct {
 	// Ex: "orders.created", "billing.invoice.paid"
 	RoutingKey string
 
-	// CompactionKey - identifies this message as one version of a key whose
-	// claims should only ever return the latest version, not every version ever written.
-	// Default: "" (not part of a compacted stream; delivered independently, never superseded).
+	// Compaction - opts this message into log compaction: it becomes one
+	// version of a key whose claims only ever return the latest version, not
+	// every version ever written. Build with NewCompactionOptions.
+	// Default: nil (not part of a compacted stream; delivered independently,
+	// never superseded).
 	//
-	// Set it to opt this message into log compaction under that key.
 	// A hot key caps batched throughput: same-key batches commit one after another.
-	// Ex: "user:123", "session:abc-def"
-	CompactionKey string
-
-	// CompactionRank - overrides arrival order when picking a CompactionKey's
-	// winner: higher rank wins, equal ranks fall to the id tiebreak.
-	// Default: 0 (arrival order decides).
-	//
-	// Rank is a COMMITMENT, not a hint: a high-rank write pins its key --
-	// lower ranks lose silently until something >= it arrives.
-	// Requires CompactionKey.
-	// Ex: a source system's row version, a priority tier, epoch micros.
-	CompactionRank int64
+	Compaction *CompactionOptions
 
 	// IdempotencyKey - protects a retried AppendMessage (after a blip) from double-publishing.
 	// Default: uuid.Nil (a fresh key is generated per call, protecting only
@@ -58,16 +48,53 @@ type ProduceOptions struct {
 }
 
 // Validate rejects nonsensical option combinations.
-// Mus be called after Fill().
+// Must be called after Fill().
 func (o ProduceOptions) Validate() error {
-	if o.CompactionRank != 0 && o.CompactionKey == "" {
-		return fmt.Errorf("CompactionRank %d set without CompactionKey -- rank has nothing to rank, set CompactionKey too", o.CompactionRank)
+	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyDefer && o.Compaction == nil {
+		return errors.New("Concurrency 'defer' set without Compaction -- defer has nothing to defer on, set Compaction too")
 	}
-	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyDefer && o.CompactionKey == "" {
-		return errors.New("Concurrency 'defer' set without CompactionKey -- defer has nothing to defer on, set CompactionKey too")
+	if err := o.Compaction.Validate(); err != nil {
+		return fmt.Errorf("Compaction: %w", err)
 	}
 	if err := o.Message.Validate(); err != nil {
 		return fmt.Errorf("Message: %w", err)
+	}
+	return nil
+}
+
+// CompactionOptions is ProduceOptions.Compaction: the key a message compacts
+// under, and the rank that decides the key's winner.
+type CompactionOptions struct {
+	// Key - the compaction key claims resolve to the latest version of.
+	// Ex: "user:123", "session:abc-def"
+	Key string
+
+	// Rank - overrides arrival order when picking the Key's winner: higher
+	// rank wins, equal ranks fall to the id tiebreak. 0 means arrival order
+	// decides.
+	//
+	// Rank is a COMMITMENT, not a hint: a high-rank write pins its key --
+	// lower ranks lose silently until something >= it arrives.
+	// Ex: a source system's row version, a priority tier, epoch micros.
+	Rank int64
+}
+
+// NewCompactionOptions builds the Compaction option for a produce. Pass rank
+// 0 to let arrival order pick the key's winner.
+func NewCompactionOptions(key string, rank int64) (*CompactionOptions, error) {
+	if key == "" {
+		return nil, errors.New("compaction key is required")
+	}
+	return &CompactionOptions{Key: key, Rank: rank}, nil
+}
+
+// Validate tolerates a nil receiver -- nil means not compacted.
+func (o *CompactionOptions) Validate() error {
+	if o == nil {
+		return nil
+	}
+	if o.Key == "" {
+		return fmt.Errorf("Key is required -- Rank %d has nothing to rank; build with NewCompactionOptions", o.Rank)
 	}
 	return nil
 }

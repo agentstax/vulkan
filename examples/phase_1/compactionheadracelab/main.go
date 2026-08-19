@@ -48,10 +48,7 @@ var checkpoints = []int64{10, 50, 200, 500, 1000}
 func main() {
 	ctx := context.Background()
 
-	ds, err := iDatastore.NewPostgresDatastore(ctx, &iDatastore.PostgresConnectionConfig{
-		User: "example_user", Pass: "example_password",
-		Host: "localhost", Port: 5432, Database: "example_db",
-	})
+	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
 
@@ -84,12 +81,15 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
+	compaction, err := producer.NewCompactionOptions("hot-key", 0)
+	must(err)
+
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
 			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
-			}, producer.ProduceOptions{CompactionKey: "hot-key"})
+			}, producer.ProduceOptions{Compaction: compaction})
 			must(err)
 		})
 	}
