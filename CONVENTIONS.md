@@ -125,10 +125,11 @@ Three layers per domain (template: worker, topic):
   Table-exact `*Data` structs live in `model.go`, never beside the query that
   returns them. An enum type travels with its const block.
 - Import arrows point strictly downward.
-- Error sentinels are declared in the owning domain's `pkg/<x>` vocabulary
-  (`errors.go`); a sentinel shared across different stacks lives in
-  `pkg/common`. Whichever layer detects the condition raises it -- admin
-  for guards it composes, a datastore for facts its own query discovers.
+- Named error variables are declared in the owning domain's `pkg/<x>`
+  vocabulary (`errors.go`); an error value shared across different stacks
+  lives in `pkg/common`. Whichever layer detects the condition raises it --
+  admin for guards it composes, a datastore for facts its own query
+  discovers.
 - A config file is named for the struct it declares, never bare `config.go` --
   `<x>_config.go`, `controller_config.go`, `datastore_config.go`. A package
   that grows a second config gets a second file rather than a shared one.
@@ -279,6 +280,83 @@ Three layers per domain (template: worker, topic):
   migration. An enum-shaped TEXT column lists its values in an inline comment
   (`-- 'installed' | 'waiting'`); Go typing and validation are the only
   enforcement. Structural constraints (NOT NULL, FKs, uniqueness) stay in SQL.
+
+## Errors
+
+Every error is five parts plus a recovery classification, carried by one
+struct (common.Error) and rendered by one renderer per surface -- raise
+sites never format anything. Renderer mechanics live in pkg/common/error.go
+and the CLI errorHandler; the rules here are the choices the mechanism
+cannot make.
+
+The whole shape, one example:
+
+    // pkg/topic/errors.go -- the declaration owns everything but the values
+    var ErrTopicNotFound = common.NewError("VK0104", common.Permanent,
+    	"topic not found",
+    	"register it with MessageAdmin.RegisterTopic first")
+
+    // raise site -- attach values, nothing else
+    return topic.ErrTopicNotFound.With("topic", topicName, "version", version)
+
+    // Error() one-liner (logs, wrapped chains) -- the code is the docs link
+    topic not found: topic "orders", version 3 -- register it with
+    MessageAdmin.RegisterTopic first [VK0104]
+
+The CLI block, slog output, and --output json render these same parts as
+fields; only the fix wording differs per surface (Go API in the library, a
+vulkan command in the CLI).
+
+### When declaring a new error condition
+
+- Declare a named Err* variable in the owning pkg/<x>/errors.go via
+  common.NewError -- code, recovery, problem, and fix fixed at declaration.
+- Code = "VK" + the next four-digit serial after the current max (same
+  scheme as decision records). Never reuse or renumber; a deleted
+  condition retires its number.
+- Classify recovery by one question -- can an unchanged retry succeed?
+  Transient = yes; Permanent = no. Retry machinery stops immediately on
+  Permanent, so a wrong Transient burns a backoff curve on a lost cause.
+- Land the docs page (…/errors/VK0104, headed by the verbatim problem
+  text) in the same change -- readers and agents find it by pasting the
+  message into search.
+
+### When writing the problem line
+
+- One lowercase clause, fact only -- what is wrong and why. The fix is
+  advice and lives in its own part, never blended into the fact.
+- Use the template the condition kind already has: nil dep `<param> must
+  not be nil` · required `<Field> is required` · empty `<param> must not
+  be empty` · constraint `<Field> must be <constraint>` · absence
+  `<noun> not found` · conflict `<noun> already <state>`.
+- Tense follows recovery (test-enforced): Transient reads "could not
+  <verb>"; Permanent reads "cannot" / "is" / "must".
+- Never write: "failed", "invalid", "bad", "illegal", "unable", "unknown",
+  "error", "please", "sorry", exclamation points, the raising function's
+  name, or blame ("you passed"). "unrecognized <thing>: %q" replaces
+  "unknown <thing>".
+- When the outcome could be unclear, state what did or did not happen
+  ("nothing was published").
+
+### When writing the fix
+
+- One imperative action naming the exact field, method, or command with
+  the caller's real values interpolated; a CLI fix runs verbatim as
+  pasted -- one that doesn't is a bug.
+- A closed set names every legal value, so the caller fixes the input
+  without opening docs; a near-miss gets offered ("a topic with a similar
+  name exists: \"order\"").
+- Leave the fix empty only when the code cannot know it -- never guess a
+  cause or remedy.
+
+### When raising and wrapping
+
+- Attach values only through With, as named pairs -- identifiers quoted,
+  durations and sizes with units. Never fmt.Errorf a part the struct owns.
+- Branch with errors.Is against the Err* variable, never by matching
+  message text -- wording stays free to improve everywhere at once.
+- A wrapping layer adds only the fact it owns (`item %d: %w`); an error
+  is returned or logged, never both.
 
 ## Comments
 

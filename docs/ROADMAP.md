@@ -68,10 +68,13 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   (why/what), Action (how to resolve), Link (future docs).
   - Named/defined errors for users to errors.Is on — decide the taxonomy
     (coordinates with the circuit breaker's error_class enum).
+  - Design SETTLED 2026-08-19 in [0550]; rule sheet lives in CONVENTIONS.md
+    ## Errors. Remaining work = implementation: common.Error + renderers +
+    tense test, recovery folded into RetryDatastore classify (marker types
+    retired), sweep of errors.New/fmt.Errorf raise sites, CLI errorHandler
+    branch, docs page per code.
 - **Logging consistency and obsession.** Informative, actionable,
   filterable/queryable, consistently structured.
-- **DefaultProducer / DefaultConsumer** for easier quickstarts, with comments
-  and maybe a log statement recommending not to use in prod.
 - **Comment conventions for public surfaces** — a standard: description,
   defaults, errors, doc links. Plus standardized SQL formatting.
 - **Comment sweeps:**
@@ -172,6 +175,13 @@ surface that has stopped moving.
     prevent it — handle ctx.Done() inside consumerFunc or raise
     TimeoutGrace; rare, but the abandoned goroutine is a real side effect.
   - Quick Start documentation — might require CLI work.
+  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
+    comments and maybe a log statement recommending not to use in prod.
+    Sequenced after the quickstart docs on purpose: writing them surfaces
+    the real startup friction (today ~6 constructor/register steps —
+    datastore, admin, system, topic, producer/consumer + Register), and the
+    Default constructors get built against that observed pattern rather
+    than guessed.
   - DDL table design diagram.
 - **Circuit breaker implementation** (Phase 16, post-v1; two-tier design
   settled in Phase 13 — per-instance trip unit, quorum globalization,
@@ -216,6 +226,15 @@ dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
 
+- **Mechanical enforcement of checkable conventions** — a `just vet`
+  analyzer (or lab-suite test) that fails on the CONVENTIONS.md rules a
+  machine can check: `SELECT *` anywhere incl. CTEs, banned words in error
+  problem lines, tense-follows-recovery, receiver-letter rule, `db:` tags
+  on scan structs, Wrap-pair shape, config file naming. Rationale: prose
+  rules are followed probabilistically by agents (~70-80% ceiling,
+  rule-count decay); every rule the vet layer owns stops taxing adherence
+  to the rest. Revisit splitting/scoping CONVENTIONS.md only if violations
+  persist after this ships ([0550] context).
 - **FIFO partitions** (Phase 12) — ordering on demand, paid only where opted
   in. `partition_key` on message rows (nullable = no ordering; a second key
   beside compaction_key on purpose: compaction_key is a read-time "what's
