@@ -30,6 +30,9 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 	if producerController == nil {
 		return nil, errors.New("controller must not be nil")
 	}
+	if cfg == nil {
+		return nil, errors.New("config must not be nil")
+	}
 
 	topicBatcher, err := batcher.NewBatcher(producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &cfg.Batch)
 	if err != nil {

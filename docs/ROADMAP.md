@@ -22,19 +22,6 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
-- **Worker-tier surface review** — everything the worker tier exports
-  postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
-  and its kind subpackages (janitor, waterline, manager, cronscheduler),
-  pkg/worker/controller (WorkerController and the configs),
-  pkg/systemmanager, the consumer split
-  (Consumer/MessageConsumer/ExceptionConsumer/DeliveryConsumer, one shared
-  ConsumerConfig), the renamed Producer/ProducerConfig, and the
-  `vulkan manager` commands. Same rigor as Phase 13. The review's reading
-  doubles as the internal readability-debt sweep (long funcs, shaping
-  wads) — file both kinds of findings.
-  One deliberate trap to re-examine: NewMessageConsumer KEPT its signature
-  while changing meaning (bundle -> bare work loop) — decide whether the
-  bare piece constructors should be harder to reach by accident.
 - **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
   decide and document. Weigh Go 1.27's new generics/type-inference features
   before finalizing.

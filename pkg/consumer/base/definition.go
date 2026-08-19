@@ -1,5 +1,9 @@
 package base
 
+// Package base holds the pieces every consumer worker row shares. It
+// assembles nothing: consumer.NewConsumer is the assembled group, a
+// sub-consumer definition is one worker row.
+
 import (
 	"context"
 	"errors"

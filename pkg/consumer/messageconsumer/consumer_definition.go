@@ -1,5 +1,14 @@
 package messageconsumer
 
+// Package messageconsumer is ONE worker row of a consumer group: the loop
+// that claims and processes fresh messages. consumer.NewConsumer assembles
+// the full group; applications consume through it.
+//
+// Run alone:
+//   - exception rows are written but never retried
+//   - the waterline never advances, pinning retention
+//   - the unresolved-exceptions alert eventually surfaces both
+
 import (
 	"context"
 
@@ -21,6 +30,8 @@ type MessageConsumerDefinition[Message any] struct {
 	consumers *controller.MessageConsumerController
 }
 
+// NewMessageConsumerDefinition builds one worker row of the group, not the
+// assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
 func NewMessageConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *MessageConsumerConfig) (*MessageConsumerDefinition[Message], error) {

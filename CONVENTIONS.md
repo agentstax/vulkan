@@ -67,6 +67,9 @@ each func param has explicit type, never combined
 
 ## File layout
 
+- A package comment sits below the `package` clause, above the imports.
+  Deliberate trade: godoc/pkg.go.dev only surface a comment placed above
+  the clause -- these are for readers of the file, not the doc site.
 - Top of file: only the file's free vars/consts. A const or var block owned
   by a type (an enum's values, a type's sentinels) stays glued to its type,
   never hoisted.

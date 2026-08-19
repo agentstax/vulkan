@@ -5,6 +5,28 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — Worker-tier surface review (Phase-13 rigor) [0540]
+
+- Every surface the worker tier exports reviewed: pkg/worker vocabulary,
+  pkg/worker/controller, the five worker kinds + manager Runner,
+  pkg/systemmanager, the consumer split + consumer/base, pkg/producer, and
+  the `vulkan manager` CLI. Verified by build/vet/race tests +
+  metrics-lab + routing-lab.
+- Shape fixes: Worker.Owner became *common.Owner (the lone by-value Owner);
+  RegisterInstance's free-func-taking-the-controller became a
+  WorkerController method (9 call sites); janitor's Provision validates
+  owner before its pre-claim topic resolution (nil-owner panic);
+  NewProducerInstance nil-checks cfg.
+- The planted trap settled [0540]: bare sub-consumer constructors fenced
+  by package/constructor docs (one worker row, not the assembled group;
+  consumer.NewConsumer is the path), no signature change. Package comments
+  sit below the package clause -- now a CONVENTIONS.md File layout rule.
+- Text fixes: stale "first tick is uniform" comment deleted from all four
+  kind configs; stale "pass" param name in InstanceTickRunner; in-code
+  struct{}-vs-generics TODO deleted (ROADMAP owns it); stale MetadataValue
+  mentions removed. No major readability debt surfaced beyond the
+  convention sweep's fixes.
+
 ## 2026-08-19 — File-layout + blank-line conventions written and swept; LIFECYCLE demoted [0538][0539]
 
 - LIFECYCLE left the public door: ConsumerType/CURSOR/LIFECYCLE,

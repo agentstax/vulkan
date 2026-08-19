@@ -15,8 +15,6 @@ import (
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
-// TODO - Consider using struct {} instead of generics
-
 // ProducerFunc runs inside the append's transaction; the type and its docs
 // live with the datastore.
 type ProducerFunc[Message any] = controller.ProduceFunc[Message]
@@ -51,6 +49,7 @@ func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerCon
 	if err != nil {
 		return nil, err
 	}
+
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

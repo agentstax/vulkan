@@ -1,5 +1,14 @@
 package exceptionconsumer
 
+// Package exceptionconsumer is ONE worker row of a consumer group: the
+// loop that retries the exception rows the message consumer wrote.
+// consumer.NewConsumer assembles the full group; applications consume
+// through it.
+//
+// Run alone:
+//   - no fresh messages are claimed
+//   - the waterline never advances
+
 import (
 	"context"
 
@@ -21,6 +30,8 @@ type ExceptionConsumerDefinition[Message any] struct {
 	consumers *controller.ExceptionConsumerController
 }
 
+// NewExceptionConsumerDefinition builds one worker row of the group, not
+// the assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
 func NewExceptionConsumerDefinition[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerDefinition[Message], error) {
