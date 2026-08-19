@@ -5,6 +5,18 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — examples/bench/reference split into dev-only nested modules [0541]
+
+- Each tree got its own go.mod on the cmd/vulkan / otelvulkan pattern (no
+  parent require; go.work resolves) but is never tagged or published — the
+  release story stays three modules.
+- Published module zip now carries the library only; root `go test ./...`
+  dropped reference/waterline's tests. justfile lab recipes unchanged —
+  `go run examples/phase_1/...` resolves through the workspace.
+- The premise behind the roadmap's go.mod-cleanup follow-up was measured
+  empty (root tidy is a no-op — pkg/ needs all three direct deps), so that
+  item was dropped rather than carried.
+
 ## 2026-08-19 — Worker-tier surface review (Phase-13 rigor) [0540]
 
 - Every surface the worker tier exports reviewed: pkg/worker vocabulary,

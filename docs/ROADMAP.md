@@ -107,9 +107,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   filterable/queryable, consistently structured.
 - **DefaultProducer / DefaultConsumer** for easier quickstarts, with comments
   and maybe a log statement recommending not to use in prod.
-- **go.mod cleanup after factoring examples into a separate module** —
-  blocked until examples are a separate module; either do that split now or
-  decide the go.mod weight isn't worth it pre-v1 and drop this.
 - **Comment conventions for public surfaces** — a standard: description,
   defaults, errors, doc links. Plus standardized SQL formatting.
 - **Comment sweeps:**
