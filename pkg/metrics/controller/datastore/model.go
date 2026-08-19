@@ -14,11 +14,10 @@ type WorkerSnapshotData struct {
 	TopicName       string `db:"topic_name"`
 	GroupName       string `db:"group_name"`
 
-	TargetInstances       int     `db:"target_instances"`
-	LiveInstances         int     `db:"live_instances"`
-	MaxAttempts           int     `db:"max_attempts"`
-	OldestInstanceAgeSecs float64 `db:"oldest_instance_age_secs"`
-	UnclaimedForSecs      float64 `db:"unclaimed_for_secs"`
+	TargetInstances  int     `db:"target_instances"`
+	LiveInstances    int     `db:"live_instances"`
+	MaxAttempts      int     `db:"max_attempts"`
+	UnclaimedForSecs float64 `db:"unclaimed_for_secs"`
 }
 
 // CronJobSnapshotData is one row of CronJobSnapshots' query: the cron_job

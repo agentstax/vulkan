@@ -5,6 +5,28 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — Config & options refinement [0542][0543][0544]
+
+- Shape decisions [0542]: Config keeps its name, backed by a new
+  CONVENTIONS.md rule (Config = only optional fields; required values are
+  constructor params — PostgresConnectionConfig's User/Host/Database moved
+  into NewPostgresDatastore's signature); ProduceOptions compaction nested
+  as Compaction *CompactionOptions{Key, Rank} built via
+  NewCompactionOptions (nil = not compacted, rank-without-key
+  unrepresentable); Consumer.Register keeps its five params and
+  NewConsumerInstance unexported.
+- Field grouping [0543]: config field order standardized domain-first with
+  the ambient tail (Logger, Retry, per-loop retry curves) and codified;
+  six drifted configs reordered (ConsumerConfig worst); cron_job.suspended
+  and delivery's outcome-state/lease DDL columns regrouped; the two lease
+  `RETURNING *` statements now name their columns.
+- Dead-field pass [0544]: WorkerSnapshot.OldestInstanceAge chain and
+  WorkerInstanceData.ExpiresAt deleted; JobRequest.CronJobId exempted as
+  wire-payload contract; staticcheck + unparam clean across all three
+  code modules.
+- Verified by build/vet/race tests per change, targeted labs per chunk,
+  and the full fresh-DB suite at close: 41/41.
+
 ## 2026-08-19 — examples/bench/reference split into dev-only nested modules [0541]
 
 - Each tree got its own go.mod on the cmd/vulkan / otelvulkan pattern (no

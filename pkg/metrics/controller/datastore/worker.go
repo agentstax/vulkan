@@ -26,7 +26,6 @@ func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapsho
 			w.target_instances,
 			COUNT(i.id) FILTER (WHERE i.expires_at > now()) AS live_instances,
 			COALESCE(MAX(i.attempts) FILTER (WHERE i.expires_at > now()), 0) AS max_attempts,
-			COALESCE(EXTRACT(EPOCH FROM (now() - MIN(i.created_at) FILTER (WHERE i.expires_at > now()))), 0) AS oldest_instance_age_secs,
 			COALESCE(EXTRACT(EPOCH FROM (now() - MAX(i.expires_at))), 0) AS unclaimed_for_secs  -- dead rows feed this until something deletes them
 		FROM worker w
 		LEFT JOIN consumer_group g ON g.id = w.consumer_group_id
@@ -45,7 +44,7 @@ func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapsho
 	for rows.Next() {
 		var data WorkerSnapshotData
 		if err := rows.Scan(&data.Name, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.TopicName, &data.GroupName,
-			&data.TargetInstances, &data.LiveInstances, &data.MaxAttempts, &data.OldestInstanceAgeSecs, &data.UnclaimedForSecs); err != nil {
+			&data.TargetInstances, &data.LiveInstances, &data.MaxAttempts, &data.UnclaimedForSecs); err != nil {
 			return nil, err
 		}
 		workers = append(workers, data)

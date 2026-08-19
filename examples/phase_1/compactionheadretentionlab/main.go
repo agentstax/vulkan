@@ -145,11 +145,15 @@ func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work], key string) {
-	compaction, err := producer.NewCompactionOptions(key, 0)
-	must(err)
-	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
+	opts := producer.ProduceOptions{}
+	if key != "" {
+		compaction, err := producer.NewCompactionOptions(key, 0)
+		must(err)
+		opts.Compaction = compaction
+	}
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 		return common.NewWork(30, "admin@example.com")
-	}, producer.ProduceOptions{Compaction: compaction})
+	}, opts)
 	must(err)
 }
 

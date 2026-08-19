@@ -1,8 +1,6 @@
 package datastore
 
 import (
-	"time"
-
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -28,9 +26,8 @@ type ListWorkersData struct {
 }
 
 type WorkerInstanceData struct {
-	Id        int64       `db:"id"`
-	WorkerId  int64       `db:"worker_id"`
-	Token     pgtype.UUID `db:"token"`
-	ExpiresAt time.Time   `db:"expires_at"`
-	Attempts  int         `db:"attempts"`
+	Id       int64       `db:"id"`
+	WorkerId int64       `db:"worker_id"`
+	Token    pgtype.UUID `db:"token"`
+	Attempts int         `db:"attempts"`
 }

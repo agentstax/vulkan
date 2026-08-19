@@ -30,13 +30,12 @@ func toWorkerSnapshot(data datastore.WorkerSnapshotData) (metrics.WorkerSnapshot
 	}
 
 	snapshot := metrics.WorkerSnapshot{
-		Owner:             owner,
-		Name:              data.Name,
-		Status:            classifyWorker(data.TargetInstances, data.LiveInstances),
-		TargetInstances:   data.TargetInstances,
-		LiveInstances:     data.LiveInstances,
-		Attempts:          data.MaxAttempts,
-		OldestInstanceAge: time.Duration(data.OldestInstanceAgeSecs * float64(time.Second)),
+		Owner:           owner,
+		Name:            data.Name,
+		Status:          classifyWorker(data.TargetInstances, data.LiveInstances),
+		TargetInstances: data.TargetInstances,
+		LiveInstances:   data.LiveInstances,
+		Attempts:        data.MaxAttempts,
 	}
 	if data.LiveInstances == 0 && data.UnclaimedForSecs > 0 {
 		snapshot.UnclaimedFor = time.Duration(data.UnclaimedForSecs * float64(time.Second))

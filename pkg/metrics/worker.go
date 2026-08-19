@@ -26,7 +26,6 @@ type WorkerSnapshot struct {
 	TargetInstances int
 	LiveInstances   int
 
-	Attempts          int           // largest consecutive-failure streak across live instances
-	OldestInstanceAge time.Duration // now() - the oldest live instance's created_at; 0 with none live
-	UnclaimedFor      time.Duration // now() - the newest expires_at, while nothing is live; 0 while claimed, and 0 if expired rows were already deleted
+	Attempts     int           // largest consecutive-failure streak across live instances
+	UnclaimedFor time.Duration // now() - the newest expires_at, while nothing is live; 0 while claimed, and 0 if expired rows were already deleted
 }

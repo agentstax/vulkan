@@ -47,11 +47,11 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 		SELECT $1, now() + make_interval(secs => $2)
 		WHERE $3 = -1 -- '-1' means unbound (can always claim)
 			OR (SELECT count(*) FROM worker_instance WHERE worker_id = $1 AND expires_at > now()) < $3
-		RETURNING id, worker_id, token, expires_at, attempts;
+		RETURNING id, worker_id, token, attempts;
 	`
 	var claimed WorkerInstanceData
 	err = tx.QueryRow(ctx, insertSql, workerId, ttl.Seconds(), target).
-		Scan(&claimed.Id, &claimed.WorkerId, &claimed.Token, &claimed.ExpiresAt, &claimed.Attempts)
+		Scan(&claimed.Id, &claimed.WorkerId, &claimed.Token, &claimed.Attempts)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

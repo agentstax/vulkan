@@ -35,10 +35,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     payload-arg + context MessageMeta — the typed row moved to pkg/common
     2026-08-13, so both sides could share it; the consumer's raw internal
     row (payload + options columns) stays its own struct either way.
-- **Config & options refinement** — the three shape decisions settled and
-  built 2026-08-19 [0542]; in TODO.md's working window. Remaining:
-  - Group/order config options and table fields by likeness.
-  - Pass through config/options/vars/params and delete dead fields.
 - **Public surface trim** (decisions settled 2026-08-01, recorded in
   _public-surface.md; build pending — deliberately late so the decisions get
   re-confirmed after living with the surface through the passes above):
