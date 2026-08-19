@@ -188,7 +188,7 @@ func runProcessUntil(ctx context.Context, ds *iDatastore.PostgresDatastore, prov
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
-	execution, err := provisioner.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+	execution, err := provisioner.Provision(runCtx, row.Id, row.Owner, row.Metadata)
 	must(err)
 
 	errCh := make(chan error, 1)

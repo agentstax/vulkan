@@ -12,6 +12,6 @@ const NoInstanceTarget = -1
 type Worker struct {
 	Id       int64
 	Name     string
-	Owner    common.Owner
+	Owner    *common.Owner
 	Metadata any // JSONB; each caller owns its shape
 }

@@ -91,5 +91,5 @@ func (r *Runner) claim(ctx context.Context) (worker.Execution, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.definition.Provision(ctx, row.Id, &row.Owner, row.Metadata)
+	return r.definition.Provision(ctx, row.Id, row.Owner, row.Metadata)
 }

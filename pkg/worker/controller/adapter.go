@@ -25,7 +25,7 @@ func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {
 	return &worker.Worker{
 		Id:       data.Id,
 		Name:     data.Name,
-		Owner:    *owner,
+		Owner:    owner,
 		Metadata: data.Metadata,
 	}, nil
 }
@@ -36,7 +36,7 @@ func toOwnedWorker(data *datastore.WorkerData, owner *common.Owner) *worker.Work
 	return &worker.Worker{
 		Id:       data.Id,
 		Name:     data.Name,
-		Owner:    *owner,
+		Owner:    owner,
 		Metadata: data.Metadata,
 	}
 }

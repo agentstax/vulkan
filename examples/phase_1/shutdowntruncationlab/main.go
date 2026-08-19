@@ -140,7 +140,7 @@ func main() {
 	must(err)
 	row, err := workers.GetWorker(ctx, definition.Name(), owner)
 	must(err)
-	execution, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+	execution, err := definition.Provision(runCtx, row.Id, row.Owner, row.Metadata)
 	must(err)
 
 	// Run blocks until runCtx cancels (cancel() fires synchronously inside

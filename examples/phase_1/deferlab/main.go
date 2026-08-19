@@ -665,7 +665,7 @@ func claimOne(ctx context.Context, definition worker.Definition, owner *common.O
 	row, err := workers.GetWorker(ctx, definition.Name(), owner)
 	must(err)
 
-	execution, err := definition.Provision(ctx, row.Id, &row.Owner, row.Metadata)
+	execution, err := definition.Provision(ctx, row.Id, row.Owner, row.Metadata)
 	must(err)
 	return execution
 }

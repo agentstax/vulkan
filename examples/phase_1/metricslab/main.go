@@ -120,7 +120,7 @@ func main() {
 
 		row, err := workers.GetWorker(runCtx, definition.Name(), owner)
 		must(err)
-		execution, err := definition.Provision(runCtx, row.Id, &row.Owner, row.Metadata)
+		execution, err := definition.Provision(runCtx, row.Id, row.Owner, row.Metadata)
 		must(err)
 
 		wg.Add(1)

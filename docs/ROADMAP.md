@@ -22,23 +22,16 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
-- **Internal file-structure cleanup** (conventions written + swept
-  2026-08-19, [0538][0539] — see HISTORY; remaining below):
-  - Internal-only readability debt sweep beyond layout/blank-line rules
-    (long funcs, shaping wads). (The pkg/producer/datastore.go split
-    already happened — it lives as nine files under
-    pkg/producer/controller/datastore; stale mention removed 2026-08-17.)
-  - internal/ moves deferred (LIFECYCLE demotion shipped instead) —
-    revisit alongside the removed datastore-interfaces question's "re-add
-    if desired" pass.
 - **Worker-tier surface review** — everything the worker tier exports
   postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
   and its kind subpackages (janitor, waterline, manager, cronscheduler),
-  pkg/worker/controller (WorkerController, MetadataValue, the configs),
+  pkg/worker/controller (WorkerController and the configs),
   pkg/systemmanager, the consumer split
   (Consumer/MessageConsumer/ExceptionConsumer/DeliveryConsumer, one shared
   ConsumerConfig), the renamed Producer/ProducerConfig, and the
-  `vulkan manager` commands. Same rigor as Phase 13.
+  `vulkan manager` commands. Same rigor as Phase 13. The review's reading
+  doubles as the internal readability-debt sweep (long funcs, shaping
+  wads) — file both kinds of findings.
   One deliberate trap to re-examine: NewMessageConsumer KEPT its signature
   while changing meaning (bundle -> bare work loop) — decide whether the
   bare piece constructors should be harder to reach by accident.
@@ -79,6 +72,9 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     admin.MigrateTopic(s)/MigrateSystem are the only user migration entry;
     CLI keeps access via the import-path prefix rule. MigrateTopic +
     MigrateTopics both stay — distinct ops.
+  - Broader internal/ moves were deferred 2026-08-19 (LIFECYCLE demotion
+    shipped instead) — re-decide here, alongside the removed
+    datastore-interfaces question's "re-add if desired" revisit.
   - Also demoted: common.NewDefaultRetryPolicy/IsRetryable/RetryableFunc
     (retry merged into pkg/common 2026-08-17, [0528] — demotion is now an
     unexport inside common; config Retry fields stay nil, WithDefaults
