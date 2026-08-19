@@ -62,6 +62,7 @@ func NewAlert(name string, owner *common.Owner, status Status, severity Severity
 	if owner == nil {
 		return nil, fmt.Errorf("alert %q: owner is required", name)
 	}
+
 	// the routing key embeds the owner name
 	if owner.Name == "" {
 		return nil, fmt.Errorf("alert %q: owner name is required", name)

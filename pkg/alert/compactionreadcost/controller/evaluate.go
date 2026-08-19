@@ -30,6 +30,7 @@ func (c *CompactionReadCostController) Evaluate(ctx context.Context, owner *comm
 	if err != nil {
 		return nil, err
 	}
+
 	// only compacted topics carry a read cost
 	if !compacted {
 		return nil, nil

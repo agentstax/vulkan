@@ -174,6 +174,7 @@ func (p *ProducerInstance[Message]) toAppend(item *ProduceItem[Message]) (*contr
 	if item.Options.IdempotencyKey != uuid.Nil {
 		return nil, errors.New("IdempotencyKey is not supported in a batch -- produce keyed messages individually")
 	}
+
 	options := item.Options
 	options.Message = options.Message.Fill(p.Config.Message)
 	idempotencyKey, err := uuid.NewV7()

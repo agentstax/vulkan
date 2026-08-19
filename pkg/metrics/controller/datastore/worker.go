@@ -35,7 +35,6 @@ func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapsho
 		GROUP BY w.id, w.name, w.system_id, w.topic_id, w.consumer_group_id, w.target_instances, t.system_id, t.name, g.topic_id, g.name
 		ORDER BY t.name, w.name, g.name;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err

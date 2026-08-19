@@ -22,6 +22,7 @@ func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, version t
 	if err != nil {
 		return nil, err
 	}
+
 	// ListWorkers walks the whole owner chain -- keep only the group's own rows
 	var workers []*worker.Worker
 	for _, row := range listed {

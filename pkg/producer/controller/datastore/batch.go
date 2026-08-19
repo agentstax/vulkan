@@ -23,6 +23,7 @@ func (d *ProducerDatastore[Message]) AppendMessageBatch(ctx context.Context, top
 		if healErr != nil {
 			return nil, -1, healErr
 		}
+
 		// a partition miss persisting past the heal is terminal
 		appended, failedIdx, err = d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
 	}
@@ -89,6 +90,7 @@ func (d *ProducerDatastore[Message]) appendMessageBatchTransaction(ctx context.C
 		}
 		if err != nil {
 			br.Close()
+
 			// results past the first failure carry no information
 			return nil, i, err
 		}
@@ -105,6 +107,10 @@ func (d *ProducerDatastore[Message]) appendMessageBatchTransaction(ctx context.C
 	}
 	return appended, -1, nil
 }
+
+// ***************
+// *** HELPERS ***
+// ***************
 
 // appendedIdRange returns the first and last inserted ids, skipping the zero
 // ids of duplicates; (0, 0) when nothing new was inserted.

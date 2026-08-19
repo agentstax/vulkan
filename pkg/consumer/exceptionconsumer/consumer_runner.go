@@ -31,6 +31,7 @@ func newExceptionRunner[Message any](base *consumerbase.BaseConsumer[Message], c
 	if cfg == nil {
 		return nil, errors.New("config must not be nil")
 	}
+
 	return &exceptionRunner[Message]{BaseConsumer: base, consumers: consumers, cfg: cfg}, nil
 }
 

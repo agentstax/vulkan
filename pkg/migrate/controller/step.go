@@ -26,6 +26,10 @@ func (c *Controller) stepDown(ctx context.Context, conn *pgxpool.Conn, owner *co
 	return c.datastore.RunStep(ctx, conn, owner, step)
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func toStep(migration *migrate.Migration, stepType datastore.StepType, targetVersion int64) (*datastore.Step, error) {
 	switch stepType {
 	case datastore.StepUp:

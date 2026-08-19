@@ -129,6 +129,10 @@ func (o *MessageOptions) Validate() error {
 	return nil
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func validateSparsePolicy(p *RetryPolicy) error {
 	if p.MaxRetries < 0 {
 		return fmt.Errorf("MaxRetries must be >= 0, got %d", p.MaxRetries)

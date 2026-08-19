@@ -65,6 +65,48 @@ each func param has explicit type, never combined
   a named result struct (with its New<Struct> constructor). The comma-ok
   bool for expected absence is the exception.
 
+## File layout
+
+- Top of file: only the file's free vars/consts. A const or var block owned
+  by a type (an enum's values, a type's sentinels) stays glued to its type,
+  never hoisted.
+- Then each type's block: struct, New<Struct>, WithDefaults/Validate.
+- Then methods. Files with exported methods: pair-by-pair -- each public
+  immediately followed by its same-named private, then the next pair. Files
+  with no exported funcs: lifecycle order -- the entry point first, then
+  each step in the order the running code reaches it.
+- A helper is an unexported non-receiver func -- excluding a type's
+  new<Struct> constructor, which stays in its type's block -- in a file that
+  otherwise holds methods. Exported free funcs are API verbs and order with
+  the other publics. Helpers go at the bottom of the file, behind one
+  banner:
+
+      // ***************
+      // *** HELPERS ***
+      // ***************
+
+  Methods are never helpers -- a private method stays in the flow above the
+  banner. A file of only free funcs (an adapter.go) has no banner.
+
+## Blank lines
+
+Function bodies read as paragraphs: one blank line between steps, none
+inside a step.
+
+- A step is the group of statements one comment could name. Two groups you
+  would caption separately get a blank line between them.
+- Glue -- never a blank line between a statement and what consumes its
+  result: the `if err != nil` check, a nil/comma-ok branch on the returned
+  value, the `defer` that releases what it acquired, the Exec/QueryRow that
+  runs a SQL literal declared above it.
+- A mid-body comment binds downward: blank line before the comment, never
+  between the comment and its statement. Exception: switch/select arms are
+  table rows -- a comment captioning a case stays glued on both sides.
+- A validation preamble is one step: the input guards glued, one blank line
+  after the last.
+- At most one consecutive blank line inside a body; none directly after `{`
+  or before `}`.
+
 ## Package layout
 
 Three layers per domain (template: worker, topic):
@@ -104,8 +146,10 @@ Three layers per domain (template: worker, topic):
   mechanism's fact -- or reaches another domain's tables outside a
   transaction -- is a second read path, not a convenience.
 - File content order is pair-by-pair: each public immediately followed by its
-  same-named private, then the next pair; deeper helpers a private calls
-  follow the pair that uses them. Never all publics then all privates.
+  same-named private, then the next pair; deeper helper methods a private
+  calls follow the pair that uses them, while free (non-receiver) funcs go in
+  the file's bottom helper block (see File layout). Never all publics then
+  all privates.
 - Method bodies are a linear sequence of named calls -- no inline shaping
   wads. `any` values go straight to pgx as query args (driver encodes JSONB;
   never hand-call json.Marshal); nil/empty shaping happens SQL-side

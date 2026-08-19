@@ -64,7 +64,6 @@ func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicI
 		  )
 		ORDER BY cg.name;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql, jobRequestsTopicId, name)
 	if err != nil {
 		return nil, err
@@ -169,6 +168,10 @@ func (d *CronJobDatastore) requestOutcomes(ctx context.Context, jobRequestsTopic
 	}
 	return outcomes, nil
 }
+
+// ***************
+// *** HELPERS ***
+// ***************
 
 // 'superseded' and still-pending 'deferred' requests never
 // ran, so ran = succeeded + failed always holds

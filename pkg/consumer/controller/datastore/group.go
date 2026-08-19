@@ -73,6 +73,7 @@ func (d *ConsumerDatastore) registerGroup(ctx context.Context, topicId int64, na
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint, $2::text)));`, topicId, name); err != nil {
 		return nil, err
 	}
+
 	// re-check under the lock -- a racing registration may have committed while we waited
 	found, err = d.getGroup(ctx, tx, topicId, name)
 	if err != nil {
@@ -131,20 +132,24 @@ func (d *ConsumerDatastore) deleteGroup(ctx context.Context, topicId int64, grou
 	if _, err := tx.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id = $1;`, groupId); err != nil {
 		return err
 	}
+
 	// no cascade -- nothing references key_lease
 	if _, err := tx.Exec(ctx, `DELETE FROM key_lease WHERE consumer_group_id = $1;`, groupId); err != nil {
 		return err
 	}
+
 	// no cascade -- nothing references the per-topic delivery table
 	deliverySql := fmt.Sprintf(`DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryTable(topicId))
 	if _, err := tx.Exec(ctx, deliverySql, groupId); err != nil {
 		return err
 	}
+
 	// no cascade -- nothing references the per-topic delivery_log table
 	deliveryLogSql := fmt.Sprintf(`DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryLogTable(topicId))
 	if _, err := tx.Exec(ctx, deliveryLogSql, groupId); err != nil {
 		return err
 	}
+
 	// cascades: cursor, binding, migration_log, group-owned worker and
 	// cron_job rows; worker_instance follows its worker
 	if _, err := tx.Exec(ctx, `DELETE FROM consumer_group WHERE id = $1;`, groupId); err != nil {

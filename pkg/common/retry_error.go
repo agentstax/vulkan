@@ -7,6 +7,10 @@ type RetryableError struct {
 	Err error
 }
 
+func NewRetryableError(err error) *RetryableError {
+	return &RetryableError{Err: err}
+}
+
 func (e *RetryableError) Error() string {
 	return e.Err.Error()
 }
@@ -15,13 +19,13 @@ func (e *RetryableError) Unwrap() error {
 	return e.Err
 }
 
-func NewRetryableError(err error) *RetryableError {
-	return &RetryableError{Err: err}
-}
-
 // PermanentError wraps an error that should not be retried
 type PermanentError struct {
 	Err error
+}
+
+func NewPermanentError(err error) *PermanentError {
+	return &PermanentError{Err: err}
 }
 
 func (e *PermanentError) Error() string {
@@ -30,10 +34,6 @@ func (e *PermanentError) Error() string {
 
 func (e *PermanentError) Unwrap() error {
 	return e.Err
-}
-
-func NewPermanentError(err error) *PermanentError {
-	return &PermanentError{Err: err}
 }
 
 // IsRetryable checks if an error should trigger a retry

@@ -57,15 +57,6 @@ func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx 
 	return &AppendedData[Message]{Message: payload, Id: id, Duplicate: duplicate}, nil
 }
 
-func commitToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) error {
-	_, err := q.Exec(ctx, "SAVEPOINT "+savepointName+";")
-	return err
-}
-
-func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) {
-	_, _ = q.Exec(ctx, "ROLLBACK TO SAVEPOINT "+savepointName+";")
-}
-
 // insertProtectedSavepoint pipelines the claim+insert CTE with RELEASE
 // SAVEPOINT as one round trip -- always a single statement regardless of
 // CompactionKey, so it always fully batches. duplicate=true means the claim
@@ -111,6 +102,19 @@ func (d *ProducerDatastore[Message]) insertProtected(ctx context.Context, q iDat
 		return 0, false, err
 	}
 	return id, false, nil
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+func commitToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) error {
+	_, err := q.Exec(ctx, "SAVEPOINT "+savepointName+";")
+	return err
+}
+
+func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savepointName string) {
+	_, _ = q.Exec(ctx, "ROLLBACK TO SAVEPOINT "+savepointName+";")
 }
 
 // protectedInsertSQL builds the claim+insert(+compaction_head upsert when keyed)

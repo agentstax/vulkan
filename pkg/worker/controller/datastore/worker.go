@@ -82,16 +82,11 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 		d.Logger.InfoContext(ctx, "worker declared (already existed)", "worker", name, "owner", owner.Name)
 		return nil
 	}
+
 	// the only signal that two services declare this worker differently
 	d.Logger.InfoContext(ctx, "worker declared (config replaced)", "worker", name, "owner", owner.Name,
 		"metadata", replaced(string(storedMetadata), string(declaredMetadata)))
 	return nil
-}
-
-// replaced renders the change as the log line carries it: old -> new. Both
-// sides come back from the same statement, so jsonb has normalized both.
-func replaced(stored string, declared string) string {
-	return fmt.Sprintf("%v -> %v", stored, declared)
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a
@@ -131,7 +126,6 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 			-- if owner is system we want every worker
 			OR ($2 = 0 AND $3 = 0 AND t.system_id = $1);
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql, owner.SystemId, owner.TopicId, owner.ConsumerGroupId)
 	if err != nil {
 		return nil, err
@@ -188,4 +182,14 @@ func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *com
 		return nil, err
 	}
 	return &data, nil
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// replaced renders the change as the log line carries it: old -> new. Both
+// sides come back from the same statement, so jsonb has normalized both.
+func replaced(stored string, declared string) string {
+	return fmt.Sprintf("%v -> %v", stored, declared)
 }

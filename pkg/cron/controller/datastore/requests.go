@@ -57,35 +57,6 @@ func (d *CronJobDatastore) cronJobRequests(ctx context.Context, jobRequestsTopic
 	return statuses, nil
 }
 
-// groupJobRequestStatuses is one consumer group's row per request, newest
-// request first.
-func groupJobRequestStatuses(group matchingGroupData, messages []jobMessageData, headId int64, outcomes map[int64]requestOutcomeData) []JobRequestStatusData {
-	var statuses []JobRequestStatusData
-	for i, message := range messages {
-
-		outcome := outcomes[message.Id]
-		status := JobRequestStatusData{
-			ConsumerGroup: group.Name,
-			MessageId:     message.Id,
-			Payload:       message.Payload,
-			ProducedAt:    message.CreatedAt,
-			Head:          message.Id == headId,
-			Succeeded:     outcome.Succeeded,
-			Raised:        outcome.Raised,
-			Deferred:      outcome.Deferred,
-		}
-
-		// a request that never ran and is not the head was superseded;
-		// messages is newest first, so messages[i-1] is what replaced it
-		if !outcome.Succeeded && !outcome.Raised && message.Id != headId && i > 0 {
-			status.SupersededBy = &messages[i-1].Id
-			status.SupersededAt = &messages[i-1].CreatedAt
-		}
-		statuses = append(statuses, status)
-	}
-	return statuses
-}
-
 // jobMessages is the newest limit message-log rows on the job's compaction
 // key, newest first.
 func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId int64, compactionKey string, limit int) ([]jobMessageData, error) {
@@ -115,6 +86,38 @@ func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId i
 		return nil, err
 	}
 	return messages, nil
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// groupJobRequestStatuses is one consumer group's row per request, newest
+// request first.
+func groupJobRequestStatuses(group matchingGroupData, messages []jobMessageData, headId int64, outcomes map[int64]requestOutcomeData) []JobRequestStatusData {
+	var statuses []JobRequestStatusData
+	for i, message := range messages {
+		outcome := outcomes[message.Id]
+		status := JobRequestStatusData{
+			ConsumerGroup: group.Name,
+			MessageId:     message.Id,
+			Payload:       message.Payload,
+			ProducedAt:    message.CreatedAt,
+			Head:          message.Id == headId,
+			Succeeded:     outcome.Succeeded,
+			Raised:        outcome.Raised,
+			Deferred:      outcome.Deferred,
+		}
+
+		// a request that never ran and is not the head was superseded;
+		// messages is newest first, so messages[i-1] is what replaced it
+		if !outcome.Succeeded && !outcome.Raised && message.Id != headId && i > 0 {
+			status.SupersededBy = &messages[i-1].Id
+			status.SupersededAt = &messages[i-1].CreatedAt
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
 }
 
 func messageIds(messages []jobMessageData) []int64 {

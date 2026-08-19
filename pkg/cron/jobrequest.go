@@ -34,6 +34,7 @@ func NewJobRequest(cronJobId int64, name string, scheduledTime time.Time, data, 
 	if scheduledTime.IsZero() {
 		return nil, errors.New("scheduledTime is required")
 	}
+
 	return &JobRequest{
 		CronJobId:     cronJobId,
 		Name:          name,

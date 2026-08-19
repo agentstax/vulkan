@@ -74,14 +74,6 @@ func (g *CreateAheadGate) isTriggerPointRange(partitionSize int64, firstId int64
 	return -1
 }
 
-// percentages are validated by NewCreateAheadGate, so this cannot fail
-func getTriggerPointId(id int64, partitionSize int64, triggerPointPercentage float64) int64 {
-	partition := id / partitionSize
-	start := partition * partitionSize
-	offset := int64(float64(partitionSize) * triggerPointPercentage)
-	return start + offset
-}
-
 // monotonic, never reset -- a failed create stays claimed, the boundary heal
 // covers it
 func (g *CreateAheadGate) tryToGetClaim(topicId int64, partition int64, triggerPointPercentage float64) bool {
@@ -102,6 +94,18 @@ func (g *CreateAheadGate) tryToGetClaim(topicId int64, partition int64, triggerP
 			return true
 		}
 	}
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// percentages are validated by NewCreateAheadGate, so this cannot fail
+func getTriggerPointId(id int64, partitionSize int64, triggerPointPercentage float64) int64 {
+	partition := id / partitionSize
+	start := partition * partitionSize
+	offset := int64(float64(partitionSize) * triggerPointPercentage)
+	return start + offset
 }
 
 // generates unique ordered (partition, triggerPointPercentage) id

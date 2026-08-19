@@ -67,6 +67,10 @@ func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *Cron
 	return updated, nil
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 // configChanges is every mutable config field the declaration changed, as log
 // args. Empty means the declaration matched what was stored.
 func configChanges(found *CronJobData, updated *CronJobData) []any {
@@ -80,6 +84,7 @@ func configChanges(found *CronJobData, updated *CronJobData) []any {
 	if found.TimeoutNs != updated.TimeoutNs {
 		changes = append(changes, "timeout", replaced(time.Duration(found.TimeoutNs), time.Duration(updated.TimeoutNs)))
 	}
+
 	// both sides are jsonb-normalized by the database, so equal values print
 	// identical text
 	if string(found.Data) != string(updated.Data) {

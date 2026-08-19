@@ -22,22 +22,15 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
-- **Internal file-structure cleanup:**
-  - Internal-only readability debt sweep. (The pkg/producer/datastore.go
-    split already happened — it lives as nine files under
+- **Internal file-structure cleanup** (conventions written + swept
+  2026-08-19, [0538][0539] — see HISTORY; remaining below):
+  - Internal-only readability debt sweep beyond layout/blank-line rules
+    (long funcs, shaping wads). (The pkg/producer/datastore.go split
+    already happened — it lives as nine files under
     pkg/producer/controller/datastore; stale mention removed 2026-08-17.)
-  - LIFECYCLE demoted out of the pkg/consumer door (shipped 2026-08-19:
-    ConsumerType/CURSOR/LIFECYCLE, ConsumerConfig.Type and FanOutBatchLimit
-    deleted; NewConsumer always builds cursor; deliveryconsumer reachable
-    only by direct import, ON HOLD package doc added; labs untouched).
-    internal/ moves deferred for now — revisit alongside the removed
-    datastore-interfaces question's "re-add if desired" pass.
-  - A file content ordering convention: vars/const at top; struct, New,
-    validates; public->private pairs; helper funcs at bottom behind a helper
-    block comment.
-  - A blank-line convention inside function bodies: when a statement gets a
-    blank line before/after it and when it doesn't -- decide the rule, write
-    it into CONVENTIONS.md, and sweep for consistency.
+  - internal/ moves deferred (LIFECYCLE demotion shipped instead) —
+    revisit alongside the removed datastore-interfaces question's "re-add
+    if desired" pass.
 - **Worker-tier surface review** — everything the worker tier exports
   postdates Phase 13's painstaking pass, so it hasn't had one: pkg/worker
   and its kind subpackages (janitor, waterline, manager, cronscheduler),

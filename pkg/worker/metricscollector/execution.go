@@ -123,6 +123,7 @@ func (i *MetricsCollectorExecution) collectWorkers(ctx context.Context) error {
 	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
+
 	measurement, err = metrics.NewMeasurement(metrics.MetricOldestUnclaimedAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
 	if err != nil {
 		return err
@@ -130,6 +131,7 @@ func (i *MetricsCollectorExecution) collectWorkers(ctx context.Context) error {
 	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
+
 	measurement, err = metrics.NewMeasurement(metrics.MetricFailingWorkers, metrics.KindGauge, float64(failing), metrics.UnitCount("worker"), nil, at)
 	if err != nil {
 		return err
@@ -166,6 +168,7 @@ func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
 	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
+
 	measurement, err = metrics.NewMeasurement(metrics.MetricOldestDueAge, metrics.KindGauge, float64(oldest.Milliseconds()), metrics.UnitMilliseconds, nil, at)
 	if err != nil {
 		return err
@@ -173,6 +176,7 @@ func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
 	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
+
 	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedJobs, metrics.KindGauge, float64(suspended), metrics.UnitCount("job"), nil, at)
 	if err != nil {
 		return err
@@ -208,6 +212,7 @@ func (i *MetricsCollectorExecution) collectAlerts(ctx context.Context) error {
 	if err := i.produceMeasurement(ctx, measurement); err != nil {
 		return err
 	}
+
 	measurement, err = metrics.NewMeasurement(metrics.MetricResolvedAlerts, metrics.KindGauge, float64(resolved), metrics.UnitCount("alert"), nil, at)
 	if err != nil {
 		return err

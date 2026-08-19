@@ -162,7 +162,6 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 		--
 		SELECT u.low, u.high FROM updated u;
 	`
-
 	cursorRows, err := tx.Query(ctx, cursorSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
@@ -205,7 +204,6 @@ func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx,
 		)
 		RETURNING *;
 	`
-
 	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err

@@ -37,7 +37,6 @@ func (d *MessageConsumerDatastore) commit(ctx context.Context, topicId int64, gr
 		WHERE consumer_group_id = $1
 			AND token = $2;
 	`
-
 	tag, err := tx.Exec(ctx, freeSql, groupId, token)
 	if err != nil {
 		return err
@@ -92,7 +91,6 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 		WHERE consumer_group_id = $1
 			AND token = $2;
 	`
-
 	tag, err := tx.Exec(ctx, truncateSql, groupId, token, lastProcessed)
 	if err != nil {
 		return err
@@ -125,6 +123,10 @@ func (d *MessageConsumerDatastore) partialCommit(ctx context.Context, topicId in
 	}
 	return nil
 }
+
+// ***************
+// *** HELPERS ***
+// ***************
 
 func deliveryStatement(topicId int64) string {
 	return fmt.Sprintf(`

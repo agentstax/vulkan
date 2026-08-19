@@ -51,6 +51,7 @@ func (c *Controller) RunOnce(ctx context.Context, targetVersion int64, owner *co
 	if err := migrate.Validate(registry); err != nil {
 		return err
 	}
+
 	// Version 1 is the baseline (Register); the registry supplies 2..max.
 	maxVersion := int64(len(registry)) + 1
 	if targetVersion < 1 || targetVersion > maxVersion {
@@ -73,6 +74,7 @@ func (c *Controller) RunAll(ctx context.Context, targetVersion int64, kind commo
 	if err := migrate.Validate(registry); err != nil {
 		return err
 	}
+
 	// Version 1 is the baseline (Register); the registry supplies 2..max.
 	maxVersion := int64(len(registry)) + 1
 	if targetVersion < 1 || targetVersion > maxVersion {

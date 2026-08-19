@@ -39,7 +39,6 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
-
 	if cfg == nil {
 		cfg = &ConsumerConfig{}
 	}
@@ -55,6 +54,7 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 	if err != nil {
 		return nil, err
 	}
+
 	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -62,6 +62,7 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 	if err != nil {
 		return nil, err
 	}
+
 	partitionCountController, err := partitioncountcontroller.NewPartitionCountController(ds, &partitioncountcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -76,6 +77,7 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 	if err != nil {
 		return nil, err
 	}
+
 	return &Consumer[Message]{
 		Config:          cfg,
 		Logger:          cfg.Logger,

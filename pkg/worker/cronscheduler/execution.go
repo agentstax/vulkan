@@ -125,6 +125,7 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 		if err != nil {
 			return err
 		}
+
 		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*cron.JobRequest, error) {
 			return request, nil
 		}

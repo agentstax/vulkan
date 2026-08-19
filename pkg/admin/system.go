@@ -132,6 +132,7 @@ func (a *MessageAdmin) DestroySystem(ctx context.Context, opts DestroyOptions) e
 	if err != nil {
 		return err
 	}
+
 	// already destroyed -- the end state this call exists to produce holds
 	if sys == nil {
 		return nil

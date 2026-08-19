@@ -104,6 +104,10 @@ func (c *TopicConfig) ToTopic(id int64, systemId int64, name string, version top
 	}
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func validateDeliveryLogMode(deliveryLogMode topic.DeliveryLogMode) error {
 	switch deliveryLogMode {
 	case topic.DeliveryLogModeOff, topic.DeliveryLogModeFailures, topic.DeliveryLogModeAll:

@@ -33,6 +33,7 @@ func (s *CronSchedulerDefinition) Provision(ctx context.Context, workerId int64,
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
+
 	// producer registration before the claim: a failure here leaves no
 	// claimed instance behind to block reconciles until its TTL lapses
 	producerInstance, err := s.producer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))

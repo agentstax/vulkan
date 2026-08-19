@@ -42,7 +42,6 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 		)
 		RETURNING *;
 	`
-
 	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
@@ -150,7 +149,6 @@ func (d *MessageConsumerDatastore) forceReclaimRange(ctx context.Context, groupI
 		WHERE consumer_group_id = $1
 			AND token = $2;
 	`
-
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupId, token)
 	if err != nil {
 		return err

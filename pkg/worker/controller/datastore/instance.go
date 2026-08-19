@@ -191,6 +191,10 @@ func (d *WorkerDatastore) sweepExpiredInstances(ctx context.Context) (int64, err
 	return tag.RowsAffected(), nil
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func toTokenData(token uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: token, Valid: true}
 }

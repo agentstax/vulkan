@@ -28,6 +28,7 @@ func newDeliveryRunner[Message any](base *consumerbase.BaseConsumer[Message], co
 	if cfg == nil {
 		return nil, errors.New("config must not be nil")
 	}
+
 	return &deliveryRunner[Message]{BaseConsumer: base, consumers: consumers, cfg: cfg}, nil
 }
 

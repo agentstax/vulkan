@@ -57,6 +57,10 @@ func (s *Schedule) MinRate() time.Duration {
 	return s.minRate
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func minRate(sched robfig.Schedule) (time.Duration, error) {
 	start := time.Now().UTC()
 	prev := sched.Next(start)

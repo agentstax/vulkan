@@ -33,6 +33,7 @@ func (c *MetricsCollectorDefinition) Provision(ctx context.Context, workerId int
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
+
 	// producer registration before the claim: a failure here leaves no
 	// claimed instance behind to block reconciles until its TTL lapses
 	producerInstance, err := c.producer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))

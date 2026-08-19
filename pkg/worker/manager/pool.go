@@ -29,6 +29,7 @@ func newExecutionPool(provisioners map[string]worker.Provisioner, group *errgrou
 	if log == nil {
 		return nil, errors.New("logger must not be nil")
 	}
+
 	return &executionPool{
 		logger:       log,
 		provisioners: provisioners,
@@ -92,6 +93,7 @@ func newWorkerChange(change changeType, id int64, desiredWorker *worker.Worker) 
 	if (change == workerRemoved) != (desiredWorker == nil) {
 		return workerChange{}, errors.New("desiredWorker must be nil exactly when the change is workerRemoved")
 	}
+
 	return workerChange{change: change, id: id, worker: desiredWorker}, nil
 }
 

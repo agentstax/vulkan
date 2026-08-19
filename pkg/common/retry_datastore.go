@@ -35,24 +35,6 @@ func (r *RetryDatastore) Wrap(ctx context.Context, retryableFunc RetryableFunc) 
 	})
 }
 
-// classify wraps IsTransientPgError into the RetryableError/PermanentError shape
-func classify(err error) error {
-	if err == nil {
-		return nil
-	}
-	if _, ok := errors.AsType[*RetryableError](err); ok {
-		return err
-	}
-	if _, ok := errors.AsType[*PermanentError](err); ok {
-		return err
-	}
-	if IsTransientPgError(err) {
-		return NewRetryableError(err)
-	}
-	// dont retry if not classify-able
-	return NewPermanentError(err)
-}
-
 // IsTransientPgError reports whether a retry is safe -- never a
 // deterministic rejection (a business-logic *pgconn.PgError, ErrLeaseLost).
 func IsTransientPgError(err error) bool {
@@ -98,4 +80,27 @@ func IsTransientPgError(err error) bool {
 
 	_, ok := errors.AsType[net.Error](err)
 	return ok
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// classify wraps IsTransientPgError into the RetryableError/PermanentError shape
+func classify(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := errors.AsType[*RetryableError](err); ok {
+		return err
+	}
+	if _, ok := errors.AsType[*PermanentError](err); ok {
+		return err
+	}
+	if IsTransientPgError(err) {
+		return NewRetryableError(err)
+	}
+
+	// dont retry if not classify-able
+	return NewPermanentError(err)
 }

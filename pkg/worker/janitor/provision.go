@@ -32,6 +32,7 @@ func (j *JanitorDefinition) Provision(ctx context.Context, workerId int64, owner
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
+
 	// topic resolution before the claim: a failure here leaves no claimed
 	// instance behind to block reconciles until its TTL lapses
 	current, err := j.topics.GetTopicById(ctx, owner.TopicId)

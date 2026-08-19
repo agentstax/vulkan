@@ -32,12 +32,17 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
+
 	version, err := c.datastore.TopicVersion(ctx, topicId)
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
 	return assertVersionInRange(common.OwnerTopic, version, migrate.MinTopicVersion, migrate.MaxTopicVersion)
 }
+
+// ***************
+// *** HELPERS ***
+// ***************
 
 func assertVersionInRange(kind common.OwnerKind, version int64, minVersion int64, maxVersion int64) error {
 	switch {

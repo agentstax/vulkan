@@ -34,6 +34,7 @@ func (f *MessageConsumerDefinition[Message]) Provision(ctx context.Context, work
 	if err != nil {
 		return nil, err
 	}
+
 	base, err := consumerbase.NewBaseConsumer(f.BaseDefinition, owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
 		TimeoutGrace: cfg.TimeoutGrace,
 		RecordMargin: cfg.RecordMargin,
@@ -41,9 +42,11 @@ func (f *MessageConsumerDefinition[Message]) Provision(ctx context.Context, work
 	if err != nil {
 		return nil, err
 	}
+
 	runner, err := newMessageRunner(base, f.consumers, cfg)
 	if err != nil {
 		return nil, err
 	}
+
 	return consumerbase.NewBaseExecution(f.BaseDefinition, owner, claimed, cfg.InstanceTTL, runner.run)
 }

@@ -199,5 +199,6 @@ func (a *MessageAdmin) DestroyCronJob(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("cron job name is required")
 	}
+
 	return a.cronJobController.DeleteCronJob(ctx, name)
 }

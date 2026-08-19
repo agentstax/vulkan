@@ -34,15 +34,18 @@ func (f *DeliveryConsumerDefinition[Message]) Provision(ctx context.Context, wor
 	if err != nil {
 		return nil, err
 	}
+
 	base, err := consumerbase.NewBaseConsumer(f.BaseDefinition, owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
 		TimeoutGrace: cfg.TimeoutGrace,
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	runner, err := newDeliveryRunner(base, f.consumers, cfg)
 	if err != nil {
 		return nil, err
 	}
+
 	return consumerbase.NewBaseExecution(f.BaseDefinition, owner, claimed, cfg.InstanceTTL, runner.run)
 }

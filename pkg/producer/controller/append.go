@@ -116,6 +116,10 @@ func (c *ProducerController[Message]) AppendMessageBatch(ctx context.Context, to
 	return appended, -1, nil
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 // resolveIdempotencyKey generates a fresh UUIDv7 unless the caller supplied
 // one
 func resolveIdempotencyKey(options ProduceOptions) (uuid.UUID, error) {

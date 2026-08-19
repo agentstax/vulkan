@@ -41,7 +41,6 @@ func (d *JanitorDatastore) sweepKeyLeasesBatch(ctx context.Context, topicId int6
 			LIMIT $2
 		);
 	`
-
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, topicId, batchSize)
 	if err != nil {
 		return 0, err

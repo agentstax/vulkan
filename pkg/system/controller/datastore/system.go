@@ -124,6 +124,7 @@ func (d *SystemDatastore) scanSystemData(row pgx.Row) (*SystemData, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
+
 		// 42P01 = table does not exist
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {

@@ -57,6 +57,10 @@ func (c *ConsumerController) ListDeclarations(ctx context.Context) ([]*binding.D
 	return declarations, nil
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 // normalizePatterns sorts and deduplicates -- the datastore compares sets
 // element-wise. Always returns a non-nil slice; an empty set is a stored
 // value, not NULL.

@@ -33,6 +33,7 @@ func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName st
 	if err := d.Datastore.Pool.QueryRow(ctx, countSql, parentTableName).Scan(&partitionCount); err != nil {
 		return err
 	}
+
 	// nothing to drain (or the parent doesn't exist at all)
 	if partitionCount == 0 {
 		return nil
@@ -47,6 +48,7 @@ func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName st
 		if err != nil {
 			return err
 		}
+
 		// successfully deleted all partitions -> exit
 		if len(partitions) == 0 {
 			return nil
@@ -55,6 +57,7 @@ func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName st
 			return err
 		}
 	}
+
 	// went past passLimit
 	return fmt.Errorf("%w: %s after %d drop passes", errPartitionsRemain, parentTableName, passLimit)
 }
@@ -68,7 +71,6 @@ func (d *TopicDatastore) listPartitions(ctx context.Context, parentTableName str
 		WHERE i.inhparent = to_regclass($1)
 		LIMIT $2;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql, parentTableName, dropPartitionBatchSize)
 	if err != nil {
 		return nil, err

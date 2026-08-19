@@ -62,6 +62,7 @@ func (c *BatcherConfig) Validate() error {
 	if c.AttemptTimeout <= 0 {
 		return fmt.Errorf("AttemptTimeout must be > 0, got %v", c.AttemptTimeout)
 	}
+
 	// negative grace is meaningful (abandon immediately) -- but a positive grace
 	// at or below the attempt timeout gives up right before the outcome arrives
 	if c.ShutdownGrace > 0 && c.ShutdownGrace <= c.AttemptTimeout {

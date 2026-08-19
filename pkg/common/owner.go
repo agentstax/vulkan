@@ -36,6 +36,7 @@ func NewTopicOwner(systemId int64, topicId int64, name string) (*Owner, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+
 	return &Owner{SystemId: systemId, TopicId: topicId, Name: name}, nil
 }
 
@@ -52,6 +53,7 @@ func NewConsumerGroupOwner(systemId int64, topicId int64, consumerGroupId int64,
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+
 	return &Owner{SystemId: systemId, TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil
 }
 

@@ -62,6 +62,7 @@ func (c *WorkerController) GetWorker(ctx context.Context, name string, owner *co
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
+
 	data, err := c.datastore.GetWorker(ctx, name, owner)
 	if err != nil {
 		return nil, err

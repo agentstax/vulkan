@@ -27,6 +27,7 @@ func (d *ProducerDatastore[Message]) appendMessage(ctx context.Context, topicId 
 		if healErr := d.ensureCoveringPartition(ctx, topicId, partitionSize); healErr != nil {
 			return nil, healErr
 		}
+
 		// Rerunning produceFunc is safe because its
 		// writes all go through the tx that just rolled back
 		appended, err = d.appendMessageTransaction(ctx, topicId, produceFunc, data)

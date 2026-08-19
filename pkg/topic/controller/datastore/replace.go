@@ -45,7 +45,6 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 			created_at,
 			updated_at;
 	`
-
 	row := d.Datastore.Pool.QueryRow(ctx, sql,
 		found.Id,
 		declared.RetentionTTLNs,
@@ -67,6 +66,10 @@ func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicDat
 		append([]any{"topic", updated.Name, "topic_id", updated.Id, "schema_version", updated.SchemaVersion}, changes...)...)
 	return updated, nil
 }
+
+// ***************
+// *** HELPERS ***
+// ***************
 
 // configChanges is every mutable config field the declaration would change,
 // as log args. Empty means the declaration matches what is stored.

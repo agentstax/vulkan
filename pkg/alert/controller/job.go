@@ -25,6 +25,7 @@ func NewJob(name string, schedule string, data *alert.JobData, cfg *croncontroll
 	if data == nil {
 		return nil, errors.New("job data is required")
 	}
+
 	parsed, err := cron.ParseSchedule(schedule)
 	if err != nil {
 		return nil, err

@@ -49,6 +49,7 @@ func (c *PostgresConnectionConfig) Validate() error {
 	if c.ConnectTimeout < 0 {
 		return fmt.Errorf("ConnectTimeout must be >= 0, got %s", c.ConnectTimeout)
 	}
+
 	// Pass is deliberately not required -- trust/peer auth setups run with no password
 	return nil
 }

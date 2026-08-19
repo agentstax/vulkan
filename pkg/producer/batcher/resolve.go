@@ -18,30 +18,6 @@ const (
 	splitBatch                               // deterministic but unattributable -- isolate each request alone
 )
 
-// classifyBatchFailure maps every terminal attempt failure to exactly one
-// action. Transients and the first missing partition never reach here --
-// the controller's batch append absorbs them.
-func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
-	// checked FIRST -- these can carry a statement index that is a retry
-	// artifact, NOT poison to evict
-	if common.IsRetryable(err) || errors.Is(err, context.DeadlineExceeded) {
-		return failBatch
-	}
-
-	// a PgError WITH a statement index is the server rejecting that one
-	// statement. Only the FIRST failure carries a trustworthy index --
-	// statements after it never executed (the aborted txn ignores them), so
-	// multiple poisons surface one per rerun
-	var pgErr *pgconn.PgError
-	if failedIdx >= 0 && errors.As(err, &pgErr) {
-		return evictStatement
-	}
-
-	// EX: pgx failing to encode ONE payload fails the whole SendBatch
-	// client-side -- deterministic, but no statement index to pin it on
-	return splitBatch
-}
-
 // resolveBatch records an outcome on every operation in the batch: attempt,
 // then apply the rulebook, until nothing is left unresolved.
 func (b *Batcher[Message]) resolveBatch(ctx context.Context, batch *batch[Message]) {
@@ -89,4 +65,32 @@ func (b *Batcher[Message]) attemptBatch(ctx context.Context, batch *batch[Messag
 		appends = append(appends, itemAppend)
 	}
 	return b.controller.AppendMessageBatch(ctx, b.topicId, b.partitionSize, b.Config.AttemptTimeout, appends)
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// classifyBatchFailure maps every terminal attempt failure to exactly one
+// action. Transients and the first missing partition never reach here --
+// the controller's batch append absorbs them.
+func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
+	// checked FIRST -- these can carry a statement index that is a retry
+	// artifact, NOT poison to evict
+	if common.IsRetryable(err) || errors.Is(err, context.DeadlineExceeded) {
+		return failBatch
+	}
+
+	// a PgError WITH a statement index is the server rejecting that one
+	// statement. Only the FIRST failure carries a trustworthy index --
+	// statements after it never executed (the aborted txn ignores them), so
+	// multiple poisons surface one per rerun
+	var pgErr *pgconn.PgError
+	if failedIdx >= 0 && errors.As(err, &pgErr) {
+		return evictStatement
+	}
+
+	// EX: pgx failing to encode ONE payload fails the whole SendBatch
+	// client-side -- deterministic, but no statement index to pin it on
+	return splitBatch
 }

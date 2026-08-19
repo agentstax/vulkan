@@ -60,6 +60,7 @@ func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName 
 	if err != nil {
 		return nil, err
 	}
+
 	topics, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -67,6 +68,7 @@ func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName 
 	if err != nil {
 		return nil, err
 	}
+
 	keyLeases, err := controller.NewKeyLeaseController(ds, &controller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

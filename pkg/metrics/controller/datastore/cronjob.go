@@ -33,7 +33,6 @@ func (d *MetricsDatastore) cronJobSnapshots(ctx context.Context) ([]CronJobSnaps
 		LEFT JOIN topic t ON t.id = COALESCE(j.topic_id, g.topic_id)     -- group rows reach their topic through the group
 		ORDER BY j.name;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err

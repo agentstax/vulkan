@@ -55,6 +55,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	topics, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -62,6 +63,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -69,6 +71,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	compactionReadCostController, err := controller.NewCompactionReadCostController(ds, &controller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -76,6 +79,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	alertProducer, err := producer.NewProducer[alert.Alert](ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -83,6 +87,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	alertHeads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -90,6 +95,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
@@ -97,6 +103,7 @@ func NewCompactionReadCostDefinition(ds *iDatastore.PostgresDatastore, cfg *Comp
 	if err != nil {
 		return nil, err
 	}
+
 	jobRequestConsumer, err := consumer.NewConsumer[cron.JobRequest](ds, &consumer.ConsumerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

@@ -74,6 +74,10 @@ func (c *MessageConsumerController) ForceReclaimRange(ctx context.Context, group
 	return c.datastore.ForceReclaimRange(ctx, groupId, toTokenData(token))
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func validateCommit(topicId int64, groupId int64, outcomes []MessageOutcome, initialBackoff time.Duration) error {
 	if topicId <= 0 {
 		return errors.New("topicId must be > 0")

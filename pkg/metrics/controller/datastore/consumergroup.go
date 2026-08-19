@@ -104,7 +104,6 @@ func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64
 		FROM consumer_group
 		WHERE topic_id = $1 ORDER BY name;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
 	if err != nil {
 		return nil, err

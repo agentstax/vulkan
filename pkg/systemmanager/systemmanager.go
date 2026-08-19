@@ -60,6 +60,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 	if err != nil {
 		return nil, err
 	}
+
 	// waterlines keep rolling -- and retention keeps moving -- for groups
 	// whose consumers are offline
 	waterlineDefinition, err := waterline.NewWaterlineDefinition(ds, &waterline.WaterlineConfig{

@@ -101,7 +101,6 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]TopicData, error) {
 		FROM topic
 		ORDER BY name, schema_version;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
@@ -231,7 +230,6 @@ func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newNam
 			created_at,
 			updated_at;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql, oldName, newName)
 	if err != nil {
 		return nil, err

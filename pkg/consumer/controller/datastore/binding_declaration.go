@@ -91,21 +91,6 @@ func (d *ConsumerDatastore) declareBindings(ctx context.Context, groupId int64, 
 	return outcome, nil
 }
 
-func classifyDeclaration(found bool, storedPatterns []string, patterns []string, live bool) binding.DeclarationOutcome {
-	switch {
-	case !found:
-		return binding.DeclarationInstalled // first declarer wins
-	case equalPatterns(storedPatterns, patterns):
-		return binding.DeclarationJoined
-	case !live:
-		return binding.DeclarationInstalled // nothing live declares the stored set
-	default:
-		// waiting never changes the effective set -- a missed case blocks
-		// loudly instead of installing silently
-		return binding.DeclarationWaiting
-	}
-}
-
 // groupHasLiveInstance: a fresh heartbeat is a live instance still declaring
 // the stored set.
 func (d *ConsumerDatastore) groupHasLiveInstance(ctx context.Context, tx pgx.Tx, groupId int64) (bool, error) {
@@ -130,7 +115,6 @@ func (d *ConsumerDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, gr
 		INSERT INTO binding_declaration (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
 	`
-
 	_, err := tx.Exec(ctx, sql, groupId, status, patterns, declaredBy, declaredAt)
 	return err
 }
@@ -191,7 +175,6 @@ func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier
 		WHERE ($1 = 0 OR binding_declaration.consumer_group_id = $1)
 		ORDER BY binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by, binding_declaration.id DESC;
 	`
-
 	rows, err := querier.Query(ctx, sql, groupId)
 	if err != nil {
 		return nil, err
@@ -220,6 +203,40 @@ func (d *ConsumerDatastore) listBindingDeclarations(ctx context.Context, querier
 	return declarations, rows.Err()
 }
 
+// NewestInstalledDeclaration picks the highest-id installed row -- the
+// effective set's declaration.
+func NewestInstalledDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
+	var newest *BindingDeclarationData
+	for i := range declarations {
+		if declarations[i].Status != BindingDeclarationInstalled {
+			continue
+		}
+		if newest == nil || declarations[i].Id > newest.Id {
+			newest = &declarations[i]
+		}
+	}
+	return newest, newest != nil
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+func classifyDeclaration(found bool, storedPatterns []string, patterns []string, live bool) binding.DeclarationOutcome {
+	switch {
+	case !found:
+		return binding.DeclarationInstalled // first declarer wins
+	case equalPatterns(storedPatterns, patterns):
+		return binding.DeclarationJoined
+	case !live:
+		return binding.DeclarationInstalled // nothing live declares the stored set
+	default:
+		// waiting never changes the effective set -- a missed case blocks
+		// loudly instead of installing silently
+		return binding.DeclarationWaiting
+	}
+}
+
 // translates a '*'-wildcard pattern into an anchored POSIX regex suitable for
 // the `~` operator: '*' -> `.*` (any characters, unbounded), literal segments
 // regex-escaped.
@@ -235,21 +252,6 @@ func wildcardToRegex(pattern string) string {
 	}
 	builder.WriteByte('$')
 	return builder.String()
-}
-
-// NewestInstalledDeclaration picks the highest-id installed row -- the
-// effective set's declaration.
-func NewestInstalledDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
-	var newest *BindingDeclarationData
-	for i := range declarations {
-		if declarations[i].Status != BindingDeclarationInstalled {
-			continue
-		}
-		if newest == nil || declarations[i].Id > newest.Id {
-			newest = &declarations[i]
-		}
-	}
-	return newest, newest != nil
 }
 
 // equalPatterns compares two sorted, deduplicated sets element-wise.

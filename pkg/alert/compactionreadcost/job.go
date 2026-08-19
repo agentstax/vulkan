@@ -26,6 +26,7 @@ func NewJob(cfg *JobConfig) (*alertcontroller.Job, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// concurrency defers so runs never overlap
 	return alertcontroller.NewJob(JobName, cfg.Schedule, data, &croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
 }

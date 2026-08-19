@@ -58,10 +58,12 @@ func (i *ConsumerInstance[Message]) newGroupDefinitions(consumerFunc ConsumerFun
 	if err != nil {
 		return nil, err
 	}
+
 	exception, err := exceptionconsumer.NewExceptionConsumerDefinition(i.ds, consumerFunc, i.abandonedEvents, toExceptionConsumerConfig(i.Config))
 	if err != nil {
 		return nil, err
 	}
+
 	waterlineDefinition, err := waterline.NewWaterlineDefinition(i.ds, &waterline.WaterlineConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
@@ -69,6 +71,7 @@ func (i *ConsumerInstance[Message]) newGroupDefinitions(consumerFunc ConsumerFun
 	if err != nil {
 		return nil, err
 	}
+
 	return []worker.Definition{message, exception, waterlineDefinition}, nil
 }
 
@@ -80,6 +83,7 @@ func (i *ConsumerInstance[Message]) newTopicDefinitions() ([]worker.Provisioner,
 	if err != nil {
 		return nil, err
 	}
+
 	cronSchedulerDefinition, err := cronscheduler.NewCronSchedulerDefinition(i.ds, &cronscheduler.CronSchedulerConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
@@ -87,6 +91,7 @@ func (i *ConsumerInstance[Message]) newTopicDefinitions() ([]worker.Provisioner,
 	if err != nil {
 		return nil, err
 	}
+
 	metricsCollectorDefinition, err := metricscollector.NewMetricsCollectorDefinition(i.ds, &metricscollector.MetricsCollectorConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,

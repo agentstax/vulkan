@@ -176,6 +176,10 @@ func (a *MessageAdmin) assertTopicIdle(ctx context.Context, topicId int64, name 
 	return nil
 }
 
+// ***************
+// *** HELPERS ***
+// ***************
+
 func isReservedTopicName(name string) bool {
 	return strings.HasPrefix(name, common.SystemTopicPrefix)
 }

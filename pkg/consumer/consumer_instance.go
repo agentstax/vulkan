@@ -79,6 +79,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	if consumerFunc == nil {
 		return errors.New("consumerFunc must not be nil")
 	}
+
 	// Done() == nil -> Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase would silently not exist
 	if ctx.Done() == nil && !i.Config.DisableGracefulShutdown {
@@ -108,6 +109,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic", i.Owner.TopicId)
 
 	group, runCtx := errgroup.WithContext(ctx)
+
 	// abandonedEvents.Run goes beside the manager, abandonedEvents
 	// arrive as consumers shut down, after claim work is done
 	group.Go(func() error {

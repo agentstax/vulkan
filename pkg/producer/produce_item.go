@@ -21,6 +21,7 @@ func NewProduceItem[Message any](message *Message, options ProduceOptions) (*Pro
 	if options.IdempotencyKey != uuid.Nil {
 		return nil, errors.New("IdempotencyKey is not supported in a batch -- produce keyed messages individually")
 	}
+
 	return &ProduceItem[Message]{
 		Message: message,
 		Options: options,

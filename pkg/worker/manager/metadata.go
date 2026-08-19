@@ -14,14 +14,18 @@ type managerMetadata struct {
 	PollRate time.Duration `json:"poll_rate"`
 }
 
-// defaultManagerMetadata is the config the declaration starts with.
-func defaultManagerMetadata() *managerMetadata {
-	return &managerMetadata{PollRate: time.Second}
-}
-
 func (m *managerMetadata) Validate() error {
 	if m.PollRate <= 0 {
 		return fmt.Errorf("poll_rate must be > 0, got %v", m.PollRate)
 	}
 	return nil
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// defaultManagerMetadata is the config the declaration starts with.
+func defaultManagerMetadata() *managerMetadata {
+	return &managerMetadata{PollRate: time.Second}
 }

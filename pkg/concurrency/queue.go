@@ -26,6 +26,7 @@ func NewPressureQueue[WorkType any](limit int) (*PressureQueue[WorkType], error)
 
 	return &PressureQueue[WorkType]{
 		queue: make(chan *WorkType, limit),
+
 		// consumed by prefetcher, limit of 1, should never be blocking
 		dequeuedSignal: make(chan *WorkType, 1),
 	}, nil

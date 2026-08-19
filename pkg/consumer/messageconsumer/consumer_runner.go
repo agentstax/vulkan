@@ -47,6 +47,7 @@ func newMessageRunner[Message any](base *consumerbase.BaseConsumer[Message], con
 	if err != nil {
 		return nil, err
 	}
+
 	// only DeliveryLogModeAll wants success outcomes collected at commit
 	buffer, err := newClaimBuffer(queue, base.Topic.DeliveryLogMode == topic.DeliveryLogModeAll)
 	if err != nil {
@@ -156,6 +157,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
+
 			// potential db blip -- back off instead of hot-looping the claim
 			if err := sleepWithContext(ctx, r.cfg.ClaimPollRate); err != nil {
 				return err
@@ -318,6 +320,7 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 			r.Logger.DebugContext(ctx, "lease lost at partial commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
+
 		// commitCtx expiring mid-call and PartialCommit's own DB error are
 		// otherwise indistinguishable from the wire error alone
 		if commitCtx.Err() != nil {

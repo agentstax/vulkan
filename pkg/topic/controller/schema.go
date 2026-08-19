@@ -12,5 +12,6 @@ func (c *TopicController) AssertSchemaSupported(ctx context.Context, systemId in
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
+
 	return c.migrateController.AssertTopicSchemaSupported(ctx, systemId, topicId)
 }

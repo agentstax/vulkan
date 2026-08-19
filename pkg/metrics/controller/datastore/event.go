@@ -35,7 +35,6 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 		WHERE routing_key = $1 AND payload->>'type' = $2
 		GROUP BY (payload->>'message_id')::bigint, (payload->>'attempt')::int;
 	`
-
 	rows, err := d.Datastore.Pool.Query(ctx, sql, routingKey, eventType)
 	if err != nil {
 		return nil, err

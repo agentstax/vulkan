@@ -107,6 +107,7 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 	// is written off and its goroutine is left running, unreachable
 	case <-time.After(timeout + b.Config.TimeoutGrace):
 		b.abandonedEvents.Add(b.Topic.Id, b.Owner.Name, messageId, attempt)
+
 		// done is buffered(1) and nothing else reads it past this point, so this
 		// receive fires exactly when the abandoned goroutine finally returns.
 		// Started after Add, so Remove can never precede it.

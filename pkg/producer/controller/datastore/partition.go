@@ -24,14 +24,6 @@ const ddlLockTimeout = 2 * time.Second
 // round-trip slack.
 const createAheadAttemptAllowance = 3 * ddlLockTimeout
 
-// isMissingPartition matches an insert routed to a partition that doesn't exist yet.
-func isMissingPartition(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) &&
-		pgErr.Code == "23514" && // check_violation doubles as partition-routing failure
-		strings.Contains(pgErr.Message, "no partition of relation")
-}
-
 // ensureCoveringPartition creates the partition after head's, so the retry's
 // fresh id has somewhere to land.
 func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64) error {
@@ -88,21 +80,6 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 	return closeErr
 }
 
-// advisoryLockKey packs the (topic, partition) pair into one bigint key,
-// the two numbers sitting side by side in the int64's bits:
-//
-//	topicId<<20  slides topicId's bits 20 places left, leaving the low 20
-//	             bits all zero -- same value as topicId * 2^20 (1048576)
-//	| partition  bitwise OR copies partition's bits into those zeroed low
-//	             bits -- same value as + partition, since the bits don't overlap
-//
-// e.g. topic 83, partition 4 -> 83*1048576 + 4 = 87031812, and no other
-// (topic, partition) pair produces that number while partition stays under
-// 2^20 (~1M). A partition past 2^20 bleeds into the next topic's key range.
-func advisoryLockKey(topicId int64, partition int64) int64 {
-	return topicId<<20 | partition
-}
-
 // createPartitionAhead creates the next partition early, in the background.
 // Best-effort: a failure warns and drops.
 func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partitionSize int64) {
@@ -113,6 +90,7 @@ func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partiti
 
 		err := d.DatastoreRetry.Wrap(ctx, func() error {
 			err := d.ensureCoveringPartition(ctx, topicId, partitionSize)
+
 			// lock_timeout classifies permanent -- right for the heal's
 			// fail-fast, wrong here: lock contention is exactly the case this
 			// run's backoff schedule exists to ride out
@@ -131,6 +109,33 @@ func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partiti
 			d.Logger.WarnContext(ctx, "partition create-ahead failed -- the first insert past the boundary will create it", "topic_id", topicId, "error", err)
 		}
 	}()
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+// isMissingPartition matches an insert routed to a partition that doesn't exist yet.
+func isMissingPartition(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "23514" && // check_violation doubles as partition-routing failure
+		strings.Contains(pgErr.Message, "no partition of relation")
+}
+
+// advisoryLockKey packs the (topic, partition) pair into one bigint key,
+// the two numbers sitting side by side in the int64's bits:
+//
+//	topicId<<20  slides topicId's bits 20 places left, leaving the low 20
+//	             bits all zero -- same value as topicId * 2^20 (1048576)
+//	| partition  bitwise OR copies partition's bits into those zeroed low
+//	             bits -- same value as + partition, since the bits don't overlap
+//
+// e.g. topic 83, partition 4 -> 83*1048576 + 4 = 87031812, and no other
+// (topic, partition) pair produces that number while partition stays under
+// 2^20 (~1M). A partition past 2^20 bleeds into the next topic's key range.
+func advisoryLockKey(topicId int64, partition int64) int64 {
+	return topicId<<20 | partition
 }
 
 // isMissingTable matches a statement against a table that no longer exists.

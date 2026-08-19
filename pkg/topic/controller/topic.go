@@ -131,6 +131,7 @@ func (c *TopicController) DeleteTopic(ctx context.Context, topicId int64, name s
 	if name == "" {
 		return errors.New("name is required")
 	}
+
 	return c.datastore.DeleteTopic(ctx, topicId, name)
 }
 

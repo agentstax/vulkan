@@ -5,6 +5,24 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — File-layout + blank-line conventions written and swept; LIFECYCLE demoted [0538][0539]
+
+- LIFECYCLE left the public door: ConsumerType/CURSOR/LIFECYCLE,
+  ConsumerConfig.Type and FanOutBatchLimit deleted, NewConsumer always
+  builds the cursor path; deliveryconsumer is reachable only by direct
+  import and carries an ON HOLD package doc. internal/ moves deferred.
+- CONVENTIONS.md gained File layout [0538] (free vars/consts top, type
+  block struct/New/validates, pair-by-pair or lifecycle order, unexported
+  non-constructor free funcs at bottom behind the HELPERS banner) and
+  Blank lines [0539] (bodies read as paragraphs: one blank between steps,
+  glue rules, comments bind downward, switch/select arms stay dense).
+- Rule-by-rule project-wide sweep (user-settled cadence): hygiene blanks,
+  SQL-literal/exec glue (19), comment binding (45), validation preambles
+  (17), paragraph steps (39), helpers moved behind banners in 29 files,
+  constructor-before-methods fix; pair adjacency scanned clean. Verified
+  by build/vet/race tests plus routing-lab; vendored cron and labs
+  excluded by scope.
+
 ## 2026-08-18 — Layered-pattern chunk queue swept (pre-v1 cleanup) [0526]-[0537]
 
 - The pkg-wide CONVENTIONS audit's chunk queue (expanded 2026-08-17 from
