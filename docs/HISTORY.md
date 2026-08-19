@@ -5,6 +5,32 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — Naming pass [0545][0546][0547][0548]
+
+- Waterline retired [0545]: pkg/worker/waterline -> pkg/worker/cursoradvancer
+  (worker name 'cursor_advancer'), AdvanceWaterline -> AdvanceCommitted,
+  RollRetry -> AdvanceRetry; comments, labs, CLI help, and the justfile
+  describe cursor.committed directly. reference/, bench/, and doc history
+  keep the old word.
+- Controller + datastore verbs dropped their own noun [0546] across Topic,
+  CronJob, System, Compaction, KeyLease, CronScheduler, and
+  ExceptionConsumer (now symmetric with DeliveryConsumer's bare Record*
+  verbs); multi-noun controllers and the MessageAdmin facade keep theirs,
+  each for a recorded reason.
+- Run-side worker structs renamed *Instance [0547] (execution.go ->
+  instance.go, manager pool -> instancePool/spawnedInstance);
+  worker.Execution survives only as the interface name; the concrete
+  Definition/Provisioner split was rejected -- a data-only definition has
+  no consumer.
+- Receiver letter codified as the type's final-word initial [0548]
+  (CONVENTIONS.md amended); mechanical sweep: truncated names spelled out
+  (sched, op, n, g, prev, idx, opts, msg; min/max builtin shadowing fixed),
+  withMetadata moved into consumer_config.go x3, claimBuffer/rangeState/
+  batchResponse/createAheadGate members unexported, cronscheduler's
+  nine-column SELECT wrapped one per line.
+- 41/41 fresh-DB labs green; root, cmd/vulkan, otelvulkan, examples, and
+  bench modules all build; vet and -race clean.
+
 ## 2026-08-19 — Config & options refinement [0542][0543][0544]
 
 - Shape decisions [0542]: Config keeps its name, backed by a new

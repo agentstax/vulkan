@@ -12,10 +12,10 @@ import (
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
+	"github.com/agentstax/vulkan/pkg/worker/cursoradvancer"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
 	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
-	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
 // SystemManager keeps the deployment's upkeep running with no user process
@@ -62,9 +62,9 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	// waterlines keep rolling -- and retention keeps moving -- for groups
+	// committed keeps advancing -- and retention keeps moving -- for groups
 	// whose consumers are offline
-	waterlineDefinition, err := waterline.NewWaterlineDefinition(ds, &waterline.WaterlineConfig{
+	cursorAdvancerDefinition, err := cursoradvancer.NewCursorAdvancerDefinition(ds, &cursoradvancer.CursorAdvancerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -95,7 +95,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	provisioners := []worker.Provisioner{janitorDefinition, cronSchedulerDefinition, metricsCollectorDefinition, waterlineDefinition, partitionCountDefinition, compactionReadCostDefinition}
+	provisioners := []worker.Provisioner{janitorDefinition, cronSchedulerDefinition, metricsCollectorDefinition, cursorAdvancerDefinition, partitionCountDefinition, compactionReadCostDefinition}
 	managerDefinition, err := manager.NewManagerDefinition(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

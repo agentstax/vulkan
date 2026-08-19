@@ -7,18 +7,18 @@ import (
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 )
 
-// ListCompactionKeyMessages reads compactionKey's retained messages, newest first.
-func (d *CompactionDatastore) ListCompactionKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]MessageData, error) {
+// ListKeyMessages reads compactionKey's retained messages, newest first.
+func (d *CompactionDatastore) ListKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]MessageData, error) {
 	var messages []MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		messages, err = d.listCompactionKeyMessages(ctx, topicId, compactionKey, limit)
+		messages, err = d.listKeyMessages(ctx, topicId, compactionKey, limit)
 		return err
 	})
 	return messages, err
 }
 
-func (d *CompactionDatastore) listCompactionKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]MessageData, error) {
+func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			id,

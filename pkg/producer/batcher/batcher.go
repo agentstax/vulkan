@@ -70,7 +70,7 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 	}
 
 	select {
-	case <-operation.response.Done():
+	case <-operation.response.done:
 		// continue past select
 	case <-ctx.Done():
 		// exit early with no shutdownGrace
@@ -84,7 +84,7 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 		defer grace.Stop()
 
 		select {
-		case <-operation.response.Done():
+		case <-operation.response.done:
 			// ideally this completes -> graceful shutdown
 			b.Config.Logger.DebugContext(ctx, "cancelled produce resolved within shutdown grace", "topic_id", b.topicId)
 		case <-grace.C:
@@ -95,7 +95,7 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 		}
 	}
 
-	if err := operation.response.Err(); err != nil {
+	if err := operation.response.err; err != nil {
 		return nil, err
 	}
 	appended := operation.response.appended

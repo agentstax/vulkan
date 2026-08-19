@@ -17,9 +17,9 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// PartitionCountExecution consumes the alert's job requests while a heartbeat
+// PartitionCountInstance consumes the alert's job requests while a heartbeat
 // holds the claim.
-type PartitionCountExecution struct {
+type PartitionCountInstance struct {
 	Owner  *common.Owner
 	Logger common.Logger
 
@@ -30,7 +30,7 @@ type PartitionCountExecution struct {
 	measurements   *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newPartitionCountExecution(definition *PartitionCountDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*PartitionCountExecution, error) {
+func newPartitionCountInstance(definition *PartitionCountDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*PartitionCountInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -43,7 +43,7 @@ func newPartitionCountExecution(definition *PartitionCountDefinition, owner *com
 		return nil, err
 	}
 
-	return &PartitionCountExecution{
+	return &PartitionCountInstance{
 		Owner:          owner,
 		Logger:         definition.Logger,
 		definition:     definition,
@@ -54,44 +54,44 @@ func newPartitionCountExecution(definition *PartitionCountDefinition, owner *com
 
 // Run consumes until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (e *PartitionCountExecution) Run(ctx context.Context) error {
-	return e.runner.Run(ctx, e.consume)
+func (i *PartitionCountInstance) Run(ctx context.Context) error {
+	return i.runner.Run(ctx, i.consume)
 }
 
 // consume is one claimed life: the alert controller is built here so every
 // claim applies the claimed row's repeat_interval against the alerts topic's
 // live retention.
-func (e *PartitionCountExecution) consume(ctx context.Context) error {
-	registered, err := e.definition.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
+func (i *PartitionCountInstance) consume(ctx context.Context) error {
+	registered, err := i.definition.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	alerts, err := alertcontroller.NewAlertController(ctx, registered, e.definition.alertHeads, e.repeatInterval, &alertcontroller.ControllerConfig{Logger: e.Logger})
+	alerts, err := alertcontroller.NewAlertController(ctx, registered, i.definition.alertHeads, i.repeatInterval, &alertcontroller.ControllerConfig{Logger: i.Logger})
 	if err != nil {
 		return err
 	}
-	e.alerts = alerts
+	i.alerts = alerts
 
-	measurements, err := e.definition.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	measurements, err := i.definition.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	e.measurements = measurements
+	i.measurements = measurements
 
-	instance, err := e.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
+	instance, err := i.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
 	if err != nil {
 		return err
 	}
-	return instance.Consume(ctx, e.evaluateTopics)
+	return instance.Consume(ctx, i.evaluateTopics)
 }
 
-func (e *PartitionCountExecution) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
+func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
 	jobData, err := alertcontroller.ToJobData(request.Data)
 	if err != nil {
 		return err
 	}
 
-	topics, err := e.definition.topics.ListTopics(ctx)
+	topics, err := i.definition.topics.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -108,14 +108,14 @@ func (e *PartitionCountExecution) evaluateTopics(ctx context.Context, request *c
 			continue
 		}
 
-		found, err := e.definition.controller.Evaluate(ctx, owner, jobData.Threshold)
+		found, err := i.definition.controller.Evaluate(ctx, owner, jobData.Threshold)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
 			continue
 		}
 
-		outcome, err := e.alerts.Record(ctx, controller.AlertPartitionCount, owner, found)
+		outcome, err := i.alerts.Record(ctx, controller.AlertPartitionCount, owner, found)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
@@ -130,11 +130,11 @@ func (e *PartitionCountExecution) evaluateTopics(ctx context.Context, request *c
 	}
 
 	// the summary goes out even on a failed run
-	err = e.produceCheckSummary(ctx, evaluated, failed, published, resolved)
+	err = i.produceCheckSummary(ctx, evaluated, failed, published, resolved)
 	return errors.Join(errs, err)
 }
 
-func (e *PartitionCountExecution) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
+func (i *PartitionCountInstance) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
 	attributes := map[string]string{"alert": controller.AlertPartitionCount}
 	at := time.Now()
 
@@ -169,6 +169,6 @@ func (e *PartitionCountExecution) produceCheckSummary(ctx context.Context, evalu
 		items = append(items, item)
 	}
 
-	_, err := e.measurements.ProduceBatch(ctx, items...)
+	_, err := i.measurements.ProduceBatch(ctx, items...)
 	return err
 }

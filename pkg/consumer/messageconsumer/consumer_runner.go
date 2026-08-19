@@ -108,7 +108,7 @@ func (r *messageRunner[Message]) drain(ctx context.Context, wg *sync.WaitGroup) 
 // RemoveAll fences any straggler that resolves past this point, so this loop
 // has sole ownership of every range it settles
 func (r *messageRunner[Message]) closeOpenRanges(ctx context.Context) {
-	for _, state := range r.buffer.RemoveAll() {
+	for _, state := range r.buffer.removeAll() {
 		r.closeRange(ctx, state)
 	}
 }
@@ -138,7 +138,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 	for {
 		// blocks until there's room for a full batch, or the debounce timeout
 		// elapses -- either way returns whatever room currently exists.
-		room, err := r.buffer.WaitForRoom(ctx, r.cfg.ClaimPollRate, r.cfg.BatchLimit)
+		room, err := r.buffer.waitForRoom(ctx, r.cfg.ClaimPollRate, r.cfg.BatchLimit)
 		if err != nil {
 			return err
 		}
@@ -178,7 +178,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 			r.commitRange(ctx, newRangeSnapshot(claimed.Lease, nil))
 			continue
 		}
-		if err := r.buffer.Add(ctx, claimed); err != nil {
+		if err := r.buffer.add(ctx, claimed); err != nil {
 			return err
 		}
 	}
@@ -195,7 +195,7 @@ func (r *messageRunner[Message]) dispatch(ctx context.Context, wg *sync.WaitGrou
 			return err // ctx cancelled -- shutdown
 		}
 
-		item, err := r.buffer.WaitForNext(ctx)
+		item, err := r.buffer.waitForNext(ctx)
 		if err != nil {
 			r.poolLimiter.ReleasePermit(ctx, permitOwner.String()) // best effort
 			return err                                             // ctx cancelled -- shutdown
@@ -215,16 +215,16 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
 	if item.lease.Until.Before(time.Now().Add(resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
-		r.buffer.MarkStale(item.lease.Token)
+		r.buffer.markStale(item.lease.Token)
 		return
 	}
 
 	r.runItem(ctx, item, resolvedOptions)
 
-	if !r.buffer.IsRangeResolved(item.lease.Token) {
+	if !r.buffer.isRangeResolved(item.lease.Token) {
 		return
 	}
-	snapshot, err := r.buffer.TryGetRangeSnapshot(item.lease.Token)
+	snapshot, err := r.buffer.tryGetRangeSnapshot(item.lease.Token)
 	if err != nil {
 		return // another resolver or shutdown owns the commit
 	}
@@ -239,15 +239,15 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 		switch {
 		case err != nil:
 			// record as an exception so it still runs later
-			r.buffer.ResolveException(item, err)
+			r.buffer.resolveException(item, err)
 			return
 		case claim.Verdict == keyleasecontroller.KeyLeaseSuperseded:
-			r.buffer.ResolveSuperseded(item)
+			r.buffer.resolveSuperseded(item)
 			return
 		case claim.Verdict == keyleasecontroller.KeyLeaseBusy:
 			// another delivery holds the key -- the range commit writes its
 			// 'deferred' row
-			r.buffer.ResolveDeferred(item)
+			r.buffer.resolveDeferred(item)
 			return
 		}
 		defer r.releaseKey(ctx, claim)
@@ -256,15 +256,15 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 	var payload Message
 	if err := json.Unmarshal(item.row.Payload, &payload); err != nil {
 		// bad payload will never deserialize -- no point retrying it
-		r.buffer.ResolveTerminal(item, err)
+		r.buffer.resolveTerminal(item, err)
 		return
 	}
 
 	runCtx := message.WithMeta(ctx, toMessageMeta(item.row, resolvedOptions))
 	if err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, resolvedOptions.Timeout); err != nil {
-		r.buffer.ResolveException(item, err)
+		r.buffer.resolveException(item, err)
 	} else {
-		r.buffer.ResolveSuccess(item)
+		r.buffer.resolveSuccess(item)
 	}
 }
 
@@ -287,15 +287,15 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 }
 
 func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeSnapshot) {
-	// range always frees -- the lazy waterline roller advances committed
+	// range always frees -- the cursor advancer advances committed
 	// past it; failures become unresolved exceptions, not a blocked range.
 	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode)
 	switch {
 	case err == nil:
-		r.buffer.Remove(commit.Lease.Token)
+		r.buffer.remove(commit.Lease.Token)
 	case errors.Is(err, common.ErrLeaseLost):
 		r.Logger.DebugContext(ctx, "lease lost at commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
-		r.buffer.Remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
+		r.buffer.remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
 	default:
 		// stays tracked -- closeOpenRanges retries it on the way out
 		r.Logger.WarnContext(ctx, "commit failed, range stays open for a retry at shutdown", "group", r.Owner.Name, "topic", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High, "err", err)

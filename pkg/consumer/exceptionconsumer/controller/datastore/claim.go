@@ -10,19 +10,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ClaimExceptions claims 'ready', expired 'inflight', and 'deferred' rows up
+// Claim claims 'ready', expired 'inflight', and 'deferred' rows up
 // to maxRetries attempts. A leased compaction key excludes its rows.
-func (d *ExceptionConsumerDatastore) ClaimExceptions(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
+func (d *ExceptionConsumerDatastore) Claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimed []ExceptionData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claimExceptions(ctx, topicId, groupId, limit, maxRetries, leaseDuration, deliveryLogMode)
+		claimed, err = d.claim(ctx, topicId, groupId, limit, maxRetries, leaseDuration, deliveryLogMode)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *ExceptionConsumerDatastore) claimExceptions(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
+func (d *ExceptionConsumerDatastore) claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		claimSql = fmt.Sprintf(`
@@ -151,19 +151,19 @@ func (d *ExceptionConsumerDatastore) claimExceptions(ctx context.Context, topicI
 	return pgx.CollectRows(rows, pgx.RowToStructByName[ExceptionData])
 }
 
-// RenewExceptionLease extends a claim the caller already won.
+// RenewLease extends a claim the caller already won.
 // false -> the lease was taken over by another claim.
-func (d *ExceptionConsumerDatastore) RenewExceptionLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
+func (d *ExceptionConsumerDatastore) RenewLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
 	var renewed bool
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		renewed, err = d.renewExceptionLease(ctx, exception, duration)
+		renewed, err = d.renewLease(ctx, exception, duration)
 		return err
 	})
 	return renewed, err
 }
 
-func (d *ExceptionConsumerDatastore) renewExceptionLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
+func (d *ExceptionConsumerDatastore) renewLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
 		UPDATE %s
 		SET

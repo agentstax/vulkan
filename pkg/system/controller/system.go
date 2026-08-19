@@ -7,11 +7,11 @@ import (
 	"github.com/agentstax/vulkan/pkg/system"
 )
 
-// RegisterSystem creates the shared control-plane schema and resolves the
+// Register creates the shared control-plane schema and resolves the
 // singleton system row, returning it. Idempotent. cfg may be nil or a sparse
 // struct -- WithDefaults fills every field left unset, Validate rejects
 // what's out of range.
-func (c *SystemController) RegisterSystem(ctx context.Context, cfg *SystemConfig) (*system.System, error) {
+func (c *SystemController) Register(ctx context.Context, cfg *SystemConfig) (*system.System, error) {
 	if cfg == nil {
 		cfg = &SystemConfig{}
 	}
@@ -20,7 +20,7 @@ func (c *SystemController) RegisterSystem(ctx context.Context, cfg *SystemConfig
 		return nil, err
 	}
 
-	registered, err := c.datastore.RegisterSystem(ctx)
+	registered, err := c.datastore.Register(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -37,19 +37,19 @@ func (c *SystemController) RegisterSystem(ctx context.Context, cfg *SystemConfig
 	return toSystem(registered), nil
 }
 
-// GetSystem returns the singleton system config, or (nil, nil) if the system
+// Get returns the singleton system config, or (nil, nil) if the system
 // hasn't been registered.
-func (c *SystemController) GetSystem(ctx context.Context) (*system.System, error) {
-	found, err := c.datastore.GetSystem(ctx)
+func (c *SystemController) Get(ctx context.Context) (*system.System, error) {
+	found, err := c.datastore.Get(ctx)
 	if err != nil || found == nil {
 		return nil, err
 	}
 	return toSystem(found), nil
 }
 
-// DeleteSystem drops the shared control-plane schema -- every table
-// RegisterSystem creates. Callers drop the per-topic tables first; a topic
+// Delete drops the shared control-plane schema -- every table
+// Register creates. Callers drop the per-topic tables first; a topic
 // still registered when this runs leaves its physical tables orphaned.
-func (c *SystemController) DeleteSystem(ctx context.Context) error {
-	return c.datastore.DeleteSystem(ctx)
+func (c *SystemController) Delete(ctx context.Context) error {
+	return c.datastore.Delete(ctx)
 }

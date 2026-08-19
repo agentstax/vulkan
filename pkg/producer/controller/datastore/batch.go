@@ -11,10 +11,10 @@ import (
 
 // AppendMessageBatch commits every append in ONE transaction, absorbing the
 // two recoverable failures: transient errors (retried, each attempt bounded
-// by attemptTimeout) and a missing partition (healed). failedIdx is the FIRST
+// by attemptTimeout) and a missing partition (healed). failedIndex is the FIRST
 // failure in pipeline order, -1 when the failure carries no index.
 func (d *ProducerDatastore[Message]) AppendMessageBatch(ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
-	appended, failedIdx, err := d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
+	appended, failedIndex, err := d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
 	if isMissingPartition(err) {
 		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
 		healErr := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -25,38 +25,38 @@ func (d *ProducerDatastore[Message]) AppendMessageBatch(ctx context.Context, top
 		}
 
 		// a partition miss persisting past the heal is terminal
-		appended, failedIdx, err = d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
+		appended, failedIndex, err = d.appendMessageBatch(ctx, topicId, attemptTimeout, appends)
 	}
 	if err != nil {
-		return appended, failedIdx, err
+		return appended, failedIndex, err
 	}
 
 	firstId, lastId := appendedIdRange(appended)
 	if d.createAheadGate.shouldTriggerWithRange(topicId, partitionSize, firstId, lastId) {
 		d.createPartitionAhead(topicId, partitionSize)
 	}
-	return appended, failedIdx, nil
+	return appended, failedIndex, nil
 }
 
 // appendMessageBatch reruns one-attempt transactions under the transient-retry
-// policy; the last attempt wins failedIdx.
-func (d *ProducerDatastore[Message]) appendMessageBatch(ctx context.Context, topicId int64, attemptTimeout time.Duration, appends []*AppendData[Message]) (appended []AppendedData[Message], failedIdx int, err error) {
-	failedIdx = -1
+// policy; the last attempt wins failedIndex.
+func (d *ProducerDatastore[Message]) appendMessageBatch(ctx context.Context, topicId int64, attemptTimeout time.Duration, appends []*AppendData[Message]) (appended []AppendedData[Message], failedIndex int, err error) {
+	failedIndex = -1
 	err = d.DatastoreRetry.Wrap(ctx, func() error {
 		// bound each attempt -- a hung database must not hold the batch forever
 		attemptCtx, cancel := context.WithTimeoutCause(ctx, attemptTimeout,
 			fmt.Errorf("batch attempt exceeded Batch.AttemptTimeout (%s) for topic %d", attemptTimeout, topicId))
 		defer cancel()
 
-		results, idx, err := d.appendMessageBatchTransaction(attemptCtx, topicId, appends)
+		results, index, err := d.appendMessageBatchTransaction(attemptCtx, topicId, appends)
 		if err != nil && attemptCtx.Err() != nil {
 			// the wire error alone doesn't say WHOSE deadline expired
 			err = fmt.Errorf("%w: %w", err, context.Cause(attemptCtx))
 		}
-		appended, failedIdx = results, idx
+		appended, failedIndex = results, index
 		return err
 	})
-	return appended, failedIdx, err
+	return appended, failedIndex, err
 }
 
 // appendMessageBatchTransaction is one attempt: ONE plain transaction, every

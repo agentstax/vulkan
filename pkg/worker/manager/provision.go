@@ -14,12 +14,12 @@ import (
 // declaration lost to a crash heals on the next one. Any owner kind declares
 // one, and no instance target -- every process reconciling owner's chain
 // claims its own.
-func (m *ManagerDefinition) Declare(ctx context.Context, owner *common.Owner) error {
+func (d *ManagerDefinition) Declare(ctx context.Context, owner *common.Owner) error {
 	if owner == nil {
 		return errors.New("owner must not be nil")
 	}
 
-	return m.workers.RegisterWorker(ctx, WorkerManager, owner, &controller.WorkerConfig{
+	return d.workers.RegisterWorker(ctx, WorkerManager, owner, &controller.WorkerConfig{
 		Metadata:        defaultManagerMetadata(),
 		TargetInstances: worker.NoInstanceTarget,
 	})
@@ -29,7 +29,7 @@ func (m *ManagerDefinition) Declare(ctx context.Context, owner *common.Owner) er
 // instance's reconcile scope -- the deeper the owner, the shorter the chain.
 // nil = declined, which for a manager row means target_instances was set away
 // from worker.NoInstanceTarget.
-func (m *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+func (d *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -40,9 +40,9 @@ func (m *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := m.workers.RegisterInstance(ctx, workerId, owner, owner.Kind(), WorkerManager, m.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, workerId, owner, owner.Kind(), WorkerManager, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newManagerExecution(m, owner, claimed, parsed)
+	return newManagerInstance(d, owner, claimed, parsed)
 }

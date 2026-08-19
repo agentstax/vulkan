@@ -10,19 +10,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// CronJobStatus is one GroupStatusData per consumer group that receives the
+// Status is one GroupStatusData per consumer group that receives the
 // job's requests. Counts cover the topic's retention window.
-func (d *CronJobDatastore) CronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
+func (d *CronJobDatastore) Status(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
 	var statuses []GroupStatusData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		statuses, err = d.cronJobStatus(ctx, jobRequestsTopicId, cronJobId, name)
+		statuses, err = d.status(ctx, jobRequestsTopicId, cronJobId, name)
 		return err
 	})
 	return statuses, err
 }
 
-func (d *CronJobDatastore) cronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
+func (d *CronJobDatastore) status(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
 	compactionKey := strconv.FormatInt(cronJobId, 10)
 
 	groups, err := d.matchingGroups(ctx, jobRequestsTopicId, name)

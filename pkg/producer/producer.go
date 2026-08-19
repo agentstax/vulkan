@@ -93,7 +93,7 @@ func (p *Producer[Message]) Register(ctx context.Context, topicName string, vers
 		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 
-	current, err := p.topicController.GetTopic(ctx, topicName, version)
+	current, err := p.topicController.Get(ctx, topicName, version)
 	if err != nil {
 		return nil, err
 	}

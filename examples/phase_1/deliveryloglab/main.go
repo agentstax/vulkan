@@ -135,13 +135,13 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresD
 	const maxAttempts = 5 // stays well below dead-letter for both retries below
 	for _, attempt := range []int{1, 2} {
 		time.Sleep(1500 * time.Millisecond) // outlives both the 300ms initial and CalculateDelay(0)=1s can_run_after
-		claimed, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupId, 10, maxAttempts, 5*time.Second, tp.DeliveryLogMode)
+		claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, maxAttempts, 5*time.Second, tp.DeliveryLogMode)
 		must(err)
 		if len(claimed) != 1 || claimed[0].MessageId != failingId {
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 		}
 		errText := fmt.Sprintf("attempt %d failure", attempt)
-		must(exceptionConsumers.RecordExceptionFailure(ctx, (&iCommon.RetryPolicy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DeliveryLogMode, nil))
+		must(exceptionConsumers.RecordFailure(ctx, (&iCommon.RetryPolicy{MaxRetries: maxAttempts}).WithDefaults(), &claimed[0], fmt.Errorf("%s", errText), tp.DeliveryLogMode, nil))
 		assertDeliveryLogRow(ctx, ds, tp.Id, groupId, failingId, attempt, errText, true)
 	}
 
@@ -217,12 +217,12 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastor
 	// the unresolved exception now succeeds on its retry -- the delivery row's
 	// deletion and its 'success' log row are one statement
 	time.Sleep(1500 * time.Millisecond) // outlives the 300ms initial can_run_after
-	claimed, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupId, 10, 5, 5*time.Second, tp.DeliveryLogMode)
+	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 5, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if len(claimed) != 1 || claimed[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
 	}
-	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimed[0], tp.DeliveryLogMode, nil))
+	must(exceptionConsumers.RecordSuccess(ctx, &claimed[0], tp.DeliveryLogMode, nil))
 
 	assertDeliveryLogStatus(ctx, ds, tp.Id, groupId, failingId, claimed[0].Attempts, "success")
 	assertDeliveryRowCount(ctx, ds, tp.Id, 0) // the success-deletion still happened

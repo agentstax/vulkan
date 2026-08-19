@@ -8,15 +8,15 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// KillExceptions marks expired 'inflight' rows that are out of
+// Kill marks expired 'inflight' rows that are out of
 // attempts 'dead' so nothing else resolves them.
-func (d *ExceptionConsumerDatastore) KillExceptions(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerDatastore) Kill(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.killExceptions(ctx, topicId, groupId, maxRetries, deliveryLogMode)
+		return d.kill(ctx, topicId, groupId, maxRetries, deliveryLogMode)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) killExceptions(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerDatastore) kill(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
 	var killSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		killSql = fmt.Sprintf(`

@@ -90,7 +90,7 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 // logging its own delivery_log_<topic_id> row same as any other exception write, and the
 // lease frees for good. From here each message lives or dies on its own via the
 // exact same exception-window machinery as an ordinary consumed-message failure --
-// AdvanceWaterline's exception-blocker term pins committed on whichever
+// AdvanceCommitted's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *MessageConsumerDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
 	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages written as 'ready' exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)

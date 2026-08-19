@@ -64,14 +64,14 @@ func NewBaseConsumer[Message any](baseDefinition *BaseDefinition[Message], owner
 // unwinding, and recording the outcome.
 func (b *BaseConsumer[Message]) ClaimKeyedRun(ctx context.Context, key string, messageId int64, resolved *common.MessageOptions) (*controller.KeyLeaseClaim, error) {
 	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.RecordMargin
-	return b.keyLeases.ClaimKeyLease(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, duration)
+	return b.keyLeases.Claim(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, duration)
 }
 
 // ReleaseKeyedRun frees a claim ClaimKeyedRun acquired.
 // false -> no row matched the claim's Token: the lease expired and another
 // claim took the key over.
 func (b *BaseConsumer[Message]) ReleaseKeyedRun(ctx context.Context, claim *controller.KeyLeaseClaim) (bool, error) {
-	return b.keyLeases.ReleaseKeyLease(ctx, claim)
+	return b.keyLeases.Release(ctx, claim)
 }
 
 // Handles: nil map write, index out of range, bad type assertion

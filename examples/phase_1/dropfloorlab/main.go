@@ -1,7 +1,7 @@
 package main
 
-// Phase 8a lab (b): partition-drop is a hole in the log, and the waterline
-// floor decides whether a lagging group is allowed to fall into it.
+// Phase 8a lab (b): partition-drop is a hole in the log, and the cursor
+// committed floor decides whether a lagging group is allowed to fall into it.
 //
 // Registers its own topic with a lab-scale PartitionSize (5 rows), destroyed on
 // exit -- under 8b, partition width is a per-topic Register() param, so this lab

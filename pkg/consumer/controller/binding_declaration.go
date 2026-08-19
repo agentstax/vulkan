@@ -111,12 +111,12 @@ func declarerInstalledAfter(waiting *datastore.BindingDeclarationData, rows []da
 	return false
 }
 
-func compareDeclarations(a *binding.Declaration, b *binding.Declaration) int {
-	if c := strings.Compare(a.TopicName, b.TopicName); c != 0 {
+func compareDeclarations(left *binding.Declaration, right *binding.Declaration) int {
+	if c := strings.Compare(left.TopicName, right.TopicName); c != 0 {
 		return c
 	}
-	if c := cmp.Compare(a.SchemaVersion, b.SchemaVersion); c != 0 {
+	if c := cmp.Compare(left.SchemaVersion, right.SchemaVersion); c != 0 {
 		return c
 	}
-	return strings.Compare(a.GroupName, b.GroupName)
+	return strings.Compare(left.GroupName, right.GroupName)
 }

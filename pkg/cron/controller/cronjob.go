@@ -9,11 +9,11 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 )
 
-// RegisterCronJob resolves name to its job, creating it owned by owner if it
+// Register resolves name to its job, creating it owned by owner if it
 // doesn't exist; an existing job takes schedule, data and cfg -- the newest
 // declaration wins. cfg may be nil or a sparse struct -- WithDefaults fills
 // every field left unset, Validate rejects what's out of range.
-func (c *CronJobController) RegisterCronJob(ctx context.Context, owner *common.Owner, name string, schedule *cron.Schedule, data any, cfg *CronJobConfig) (*cron.CronJob, error) {
+func (c *CronJobController) Register(ctx context.Context, owner *common.Owner, name string, schedule *cron.Schedule, data any, cfg *CronJobConfig) (*cron.CronJob, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -34,29 +34,29 @@ func (c *CronJobController) RegisterCronJob(ctx context.Context, owner *common.O
 		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min rate %v", cfg.Timeout, schedule, schedule.MinRate())
 	}
 
-	registered, err := c.datastore.RegisterCronJob(ctx, owner, toRegisterCronJobData(name, schedule, data, cfg))
+	registered, err := c.datastore.Register(ctx, owner, toRegisterCronJobData(name, schedule, data, cfg))
 	if err != nil {
 		return nil, err
 	}
 	return toCronJob(registered)
 }
 
-// GetCronJob returns (nil, nil) if name isn't registered.
-func (c *CronJobController) GetCronJob(ctx context.Context, name string) (*cron.CronJob, error) {
+// Get returns (nil, nil) if name isn't registered.
+func (c *CronJobController) Get(ctx context.Context, name string) (*cron.CronJob, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
 
-	found, err := c.datastore.GetCronJob(ctx, name)
+	found, err := c.datastore.Get(ctx, name)
 	if err != nil || found == nil {
 		return nil, err
 	}
 	return toCronJob(found)
 }
 
-// ListCronJobs returns every cron job, ordered by name.
-func (c *CronJobController) ListCronJobs(ctx context.Context) ([]*cron.CronJob, error) {
-	listed, err := c.datastore.ListCronJobs(ctx)
+// List returns every cron job, ordered by name.
+func (c *CronJobController) List(ctx context.Context) ([]*cron.CronJob, error) {
+	listed, err := c.datastore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -72,38 +72,38 @@ func (c *CronJobController) ListCronJobs(ctx context.Context) ([]*cron.CronJob, 
 	return jobs, nil
 }
 
-// SuspendCronJob stops the scheduler producing the job until unsuspended.
+// Suspend stops the scheduler producing the job until unsuspended.
 // Returns cron.ErrCronJobNotFound if name isn't registered.
-func (c *CronJobController) SuspendCronJob(ctx context.Context, name string) error {
+func (c *CronJobController) Suspend(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("name is required")
 	}
-	return c.datastore.SuspendCronJob(ctx, name)
+	return c.datastore.Suspend(ctx, name)
 }
 
-// UnsuspendCronJob resumes at the schedule's next scheduled time -- one that
+// Unsuspend resumes at the schedule's next scheduled time -- one that
 // came due while suspended is dropped, not produced late.
 // Returns cron.ErrCronJobNotFound if name isn't registered.
-func (c *CronJobController) UnsuspendCronJob(ctx context.Context, name string) error {
+func (c *CronJobController) Unsuspend(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("name is required")
 	}
-	return c.datastore.UnsuspendCronJob(ctx, name)
+	return c.datastore.Unsuspend(ctx, name)
 }
 
-// DeleteCronJob permanently deletes the job.
+// Delete permanently deletes the job.
 // Returns cron.ErrCronJobNotFound if name isn't registered.
-func (c *CronJobController) DeleteCronJob(ctx context.Context, name string) error {
+func (c *CronJobController) Delete(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("name is required")
 	}
-	return c.datastore.DeleteCronJob(ctx, name)
+	return c.datastore.Delete(ctx, name)
 }
 
-// CronJobRequests is the job's requests, one JobRequestStatus
+// ListRequests is the job's requests, one JobRequestStatus
 // per (request, consumer group that receives it), newest request first.
 // Requests older than the topic's retention window are gone.
-func (c *CronJobController) CronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]*cron.JobRequestStatus, error) {
+func (c *CronJobController) ListRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]*cron.JobRequestStatus, error) {
 	if jobRequestsTopicId <= 0 {
 		return nil, fmt.Errorf("jobRequestsTopicId must be > 0, got %d", jobRequestsTopicId)
 	}
@@ -117,7 +117,7 @@ func (c *CronJobController) CronJobRequests(ctx context.Context, jobRequestsTopi
 		return nil, fmt.Errorf("limit must be > 0, got %d", limit)
 	}
 
-	listed, err := c.datastore.CronJobRequests(ctx, jobRequestsTopicId, cronJobId, name, limit)
+	listed, err := c.datastore.ListRequests(ctx, jobRequestsTopicId, cronJobId, name, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -133,9 +133,9 @@ func (c *CronJobController) CronJobRequests(ctx context.Context, jobRequestsTopi
 	return requests, nil
 }
 
-// CronJobStatus is one GroupStatus per consumer group that receives the
+// Status is one GroupStatus per consumer group that receives the
 // job's requests. Counts cover the topic's retention window.
-func (c *CronJobController) CronJobStatus(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*cron.GroupStatus, error) {
+func (c *CronJobController) Status(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]*cron.GroupStatus, error) {
 	if jobRequestsTopicId <= 0 {
 		return nil, fmt.Errorf("jobRequestsTopicId must be > 0, got %d", jobRequestsTopicId)
 	}
@@ -146,7 +146,7 @@ func (c *CronJobController) CronJobStatus(ctx context.Context, jobRequestsTopicI
 		return nil, errors.New("name is required")
 	}
 
-	listed, err := c.datastore.CronJobStatus(ctx, jobRequestsTopicId, cronJobId, name)
+	listed, err := c.datastore.Status(ctx, jobRequestsTopicId, cronJobId, name)
 	if err != nil {
 		return nil, err
 	}

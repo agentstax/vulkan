@@ -12,7 +12,7 @@ import (
 
 // reconciles the running set against the worker rows on the owner's chain at
 // the row's poll_rate while a heartbeat holds the claim
-type ManagerExecution struct {
+type ManagerInstance struct {
 	Owner  *common.Owner // the reconcile scope
 	Config *ManagerConfig
 	Logger common.Logger
@@ -20,11 +20,11 @@ type ManagerExecution struct {
 	runner       *controller.InstanceTickRunner
 	workers      *controller.WorkerController
 	provisioners map[string]worker.Provisioner
-	pool         *executionPool // built in Run
+	pool         *instancePool // built in Run
 	metadata     *managerMetadata
 }
 
-func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerExecution, error) {
+func newManagerInstance(manager *ManagerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *managerMetadata) (*ManagerInstance, error) {
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
 	}
@@ -39,7 +39,7 @@ func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claime
 		return nil, err
 	}
 
-	return &ManagerExecution{
+	return &ManagerInstance{
 		Owner:        owner,
 		Config:       manager.Config,
 		Logger:       manager.Logger,
@@ -53,12 +53,12 @@ func newManagerExecution(manager *ManagerDefinition, owner *common.Owner, claime
 // Run reconciles until ctx cancels or a spawned instance fails fatally; a
 // requested stop returns nil. The claimed instance releases on the way out
 // however Run exits.
-func (i *ManagerExecution) Run(ctx context.Context) error {
+func (i *ManagerInstance) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate)
 
 	// a fatal spawned-instance error cancels runCtx through the group
 	group, runCtx := errgroup.WithContext(ctx)
-	pool, err := newExecutionPool(i.provisioners, group, i.Logger)
+	pool, err := newInstancePool(i.provisioners, group, i.Logger)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (i *ManagerExecution) Run(ctx context.Context) error {
 }
 
 // refresh is one discovery pass.
-func (i *ManagerExecution) refresh(ctx context.Context) error {
+func (i *ManagerInstance) refresh(ctx context.Context) error {
 	workers, err := i.workers.ListWorkers(ctx, i.Owner)
 	if err != nil {
 		return err

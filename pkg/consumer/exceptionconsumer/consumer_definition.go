@@ -7,7 +7,7 @@ package exceptionconsumer
 //
 // Run alone:
 //   - no fresh messages are claimed
-//   - the waterline never advances
+//   - committed never advances
 
 import (
 	"context"

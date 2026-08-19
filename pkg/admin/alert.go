@@ -14,12 +14,12 @@ import (
 // window.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (a *MessageAdmin) ListAlerts(ctx context.Context) ([]*producer.MessageRow[alert.Alert], error) {
-	found, err := a.topicController.GetTopic(ctx, alert.TopicName, topic.SchemaVersion(1))
+	found, err := a.topicController.Get(ctx, alert.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return nil, err
 	}
 	if found == nil {
 		return nil, fmt.Errorf("%w: topic %q -- run RegisterSystem first", topic.ErrTopicNotFound, alert.TopicName)
 	}
-	return a.alertHeads.ListCompactionHeads(ctx, found.Id)
+	return a.alertHeads.ListHeads(ctx, found.Id)
 }

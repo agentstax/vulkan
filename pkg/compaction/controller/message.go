@@ -8,9 +8,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// ListCompactionKeyMessages returns compactionKey's retained messages, newest
+// ListKeyMessages returns compactionKey's retained messages, newest
 // first. limit is required: an unbounded read spans the whole retention window.
-func (c *CompactionController[Message]) ListCompactionKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]*common.MessageRow[Message], error) {
+func (c *CompactionController[Message]) ListKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]*common.MessageRow[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -21,7 +21,7 @@ func (c *CompactionController[Message]) ListCompactionKeyMessages(ctx context.Co
 		return nil, fmt.Errorf("limit must be > 0, got %d", limit)
 	}
 
-	data, err := c.datastore.ListCompactionKeyMessages(ctx, topicId, compactionKey, limit)
+	data, err := c.datastore.ListKeyMessages(ctx, topicId, compactionKey, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -9,16 +9,16 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RecordExceptionSuccess deletes the row.
+// RecordSuccess deletes the row.
 // DeliveryLogModeAll also writes the 'success' log row in the same statement.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionSuccess(ctx, exception, deliveryLogMode, keyClaim)
+		return d.recordSuccess(ctx, exception, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) recordSuccess(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeAll {
 		// deleted CTE + INSERT keeps the success-deletion and its
@@ -50,17 +50,17 @@ func (d *ExceptionConsumerDatastore) recordExceptionSuccess(ctx context.Context,
 	return d.recordAndReleaseKey(ctx, keyClaim, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken)
 }
 
-// RecordExceptionFailure resets delivery so it can be retried or marked 'dead'.
+// RecordFailure resets delivery so it can be retried or marked 'dead'.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionFailure(ctx, retryPolicy, exception, failureErr, deliveryLogMode, keyClaim)
+		return d.recordFailure(ctx, retryPolicy, exception, failureErr, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) recordFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	if exception.Attempts >= retryPolicy.MaxRetries {
-		return d.recordExceptionTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
+		return d.recordTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
 	}
 
 	// clears the lease so it's claimable as a fresh 'ready' retry once can_run_after passes.
@@ -112,15 +112,15 @@ func (d *ExceptionConsumerDatastore) recordExceptionFailure(ctx context.Context,
 	return d.recordAndReleaseKey(ctx, keyClaim, sql, args...)
 }
 
-// RecordExceptionTerminal marks the row 'dead' -- no retry could succeed.
+// RecordTerminal marks the row 'dead' -- no retry could succeed.
 // A non-nil keyClaim frees the key in the same transaction.
-func (d *ExceptionConsumerDatastore) RecordExceptionTerminal(ctx context.Context, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) RecordTerminal(ctx context.Context, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
+		return d.recordTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+func (d *ExceptionConsumerDatastore) recordTerminal(ctx context.Context, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
@@ -177,15 +177,15 @@ func (d *ExceptionConsumerDatastore) recordExceptionTerminal(ctx context.Context
 	return nil
 }
 
-// RecordExceptionSuperseded never runs the row again: the claim's attempts
+// RecordSuperseded never runs the row again: the claim's attempts
 // increment is decremented back and the log row lands at that attempt.
-func (d *ExceptionConsumerDatastore) RecordExceptionSuperseded(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerDatastore) RecordSuperseded(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordExceptionSuperseded(ctx, exception, deliveryLogMode)
+		return d.recordSuperseded(ctx, exception, deliveryLogMode)
 	})
 }
 
-func (d *ExceptionConsumerDatastore) recordExceptionSuperseded(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerDatastore) recordSuperseded(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`

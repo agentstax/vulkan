@@ -36,7 +36,7 @@ type RegisterCronJobData struct {
 	Metadata    any
 }
 
-// GroupStatusData is one consumer group's CronJobStatus counts.
+// GroupStatusData is one consumer group's Status counts.
 type GroupStatusData struct {
 	ConsumerGroup string
 	Ran           int64
@@ -45,7 +45,7 @@ type GroupStatusData struct {
 	Failed        int64
 }
 
-// JobRequestStatusData is one (consumer group, job request) CronJobRequests row.
+// JobRequestStatusData is one (consumer group, job request) ListRequests row.
 type JobRequestStatusData struct {
 	ConsumerGroup string
 	MessageId     int64

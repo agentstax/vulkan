@@ -117,7 +117,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
-			name TEXT NOT NULL,                      -- 'janitor' | 'waterline' | 'scheduler' | user-defined
+			name TEXT NOT NULL,                      -- 'janitor' | 'cursor_advancer' | 'cron_scheduler' | user-defined
 			metadata JSONB NOT NULL DEFAULT '{}',    -- per-worker config, written by the declaration that creates the row
 			target_instances INT NOT NULL DEFAULT 1, -- 0 = suspended, -1 = unbounded
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),

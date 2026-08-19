@@ -20,7 +20,7 @@ func (a *MessageAdmin) GetTopic(ctx context.Context, name string, version topic.
 		return nil, errors.New("topic name is required")
 	}
 
-	foundTopic, err := a.topicController.GetTopic(ctx, name, version)
+	foundTopic, err := a.topicController.Get(ctx, name, version)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func (a *MessageAdmin) GetTopic(ctx context.Context, name string, version topic.
 
 // ListTopics returns every registered topic version, ordered by name.
 func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
-	return a.topicController.ListTopics(ctx)
+	return a.topicController.List(ctx)
 }
 
 // RegisterTopic creates topic (name, version) if it doesn't exist and returns
@@ -62,7 +62,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version topic.SchemaVersion, cfg *topiccontroller.TopicConfig) (*topic.Topic, error) {
 	// gate -- a topic can't exist without the control-plane schema it rides on;
 	// otherwise RegisterTopic dies with a raw undefined-table error.
-	sys, err := a.systemController.GetSystem(ctx)
+	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 		return nil, fmt.Errorf("register the system with RegisterSystem before registering topic %q: %w", name, migrate.ErrNotRegistered)
 	}
 
-	return a.topicController.RegisterTopic(ctx, sys.Id, name, version, cfg)
+	return a.topicController.Register(ctx, sys.Id, name, version, cfg)
 }
 
 // MigrateTopic moves topic (name, version) to targetVersion.
@@ -114,7 +114,7 @@ func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName str
 		return nil, fmt.Errorf("%w: %s -> %s", ErrReservedTopicName, name, newName)
 	}
 
-	renamed, err := a.topicController.RenameTopic(ctx, name, newName)
+	renamed, err := a.topicController.Rename(ctx, name, newName)
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +135,8 @@ type DestroyOptions struct {
 // message it holds. Returns ErrDestroyDisabled unless
 // MessageAdminConfig.AllowDestroy is set, ErrTopicNotFound if that version
 // isn't registered under name, and ErrTopicNotEmpty if the topic still holds
-// messages and opts.Force isn't set.
-func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version topic.SchemaVersion, opts DestroyOptions) error {
+// messages and options.Force isn't set.
+func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version topic.SchemaVersion, options DestroyOptions) error {
 	if !a.allowDestroy {
 		return ErrDestroyDisabled
 	}
@@ -147,7 +147,7 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 		return fmt.Errorf("%w: %s", ErrReservedTopicName, name)
 	}
 
-	found, err := a.topicController.GetTopic(ctx, name, version)
+	found, err := a.topicController.Get(ctx, name, version)
 	if err != nil {
 		return err
 	}
@@ -155,13 +155,13 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
 	}
 
-	if !opts.Force {
+	if !options.Force {
 		if err := a.assertTopicIdle(ctx, found.Id, found.Name); err != nil {
 			return err
 		}
 	}
 
-	return a.topicController.DeleteTopic(ctx, found.Id, found.Name)
+	return a.topicController.Delete(ctx, found.Id, found.Name)
 }
 
 // assertTopicIdle is DestroyTopic's guard: no message would be discarded.

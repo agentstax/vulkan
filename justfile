@@ -35,7 +35,7 @@ build-lab lab:
 reclaim-lab:
   go run examples/phase_1/reclaimlab/main.go
 
-# Phase 6.5c lab: waterline pins on a failing message, jumps past it once resolved.
+# Phase 6.5c lab: committed pins on a failing message, jumps past it once resolved.
 # Deterministic, self-verifying, self-seeding -- registers its own topic and
 # publishes its own backlog.
 exception-lab:
@@ -244,14 +244,14 @@ delivery-log-lab:
 # stops CursorClaim from taking on new messages, but everything already
 # resolved (successes + a parked exception) survives and the lease narrows to
 # just the untouched suffix -- confirms the resolved prefix is never
-# redelivered, the waterline's exception-blocker and lease-narrowing terms
+# redelivered, committed's exception-blocker and lease-narrowing terms
 # combine correctly via LEAST, and the untouched suffix reclaims on its own.
 shutdown-truncation-lab:
   go run examples/phase_1/shutdowntruncationlab/main.go
 
-# Phase 10 lab: measures the lazy-vs-synchronous AdvanceWaterline tradeoff.
+# Phase 10 lab: measures the lazy-vs-synchronous AdvanceCommitted tradeoff.
 # Staleness (time from Commit to `committed` reflecting it: periodic roller
-# tick vs. calling AdvanceWaterline synchronously right after Commit), fixed
+# tick vs. calling AdvanceCommitted synchronously right after Commit), fixed
 # per-op cost of the extra round trip uncontended, and the contention cost of
 # a synchronous call hammering the same (group, topic) cursors row Commit
 # itself never touches today.
@@ -302,7 +302,7 @@ create-ahead-lab:
   go run examples/phase_1/createaheadlab/main.go
 
 # worker claim lab: N consumers on one topic coordinate through worker claims --
-# target-1 rows (janitor, waterline) hold exactly one live instance (not N),
+# target-1 rows (janitor, cursor advancer) hold exactly one live instance (not N),
 # failover to a survivor within a reconcile tick when consumers die, and full
 # release when the last exits.
 worker-claim-lab:

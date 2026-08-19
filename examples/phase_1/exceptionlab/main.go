@@ -1,12 +1,12 @@
 package main
 
-// Phase 6.5c lab: watch the waterline pin on a failing message, then jump past it.
+// Phase 6.5c lab: watch committed pin on a failing message, then jump past it.
 //
 // Registers its own topic (destroyed on exit) and seeds it with 20 messages,
 // so the lab is fully self-contained -- no dependency on a pre-seeded shared
 // message_log the way the pre-8b version needed (`just produce 20` first).
 //
-// Drives the real datastore methods directly (Commit, AdvanceWaterline,
+// Drives the real datastore methods directly (Commit, AdvanceCommitted,
 // ClaimExceptions, RecordExceptionSuccess) so the pin/jump is deterministic and
 // asserted on exact cursor state, not inferred from timing.
 //
@@ -30,7 +30,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -66,7 +66,7 @@ func main() {
 	must(err)
 	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -101,7 +101,7 @@ func main() {
 	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim1.Lease.Token, exceptions, 5*time.Second, topic.DeliveryLogModeFailures))
 	assert("one unresolved exception", deliveries(ctx, ds, tp.Id), 1)
 
-	committed := advance(ctx, waterlineDatastore, tp.Id)
+	committed := advance(ctx, cursorAdvancerDatastore, tp.Id)
 	fmt.Printf("  roller tick -> committed = %d\n", committed)
 	assert("committed pins below the failing message", committedCol(ctx, ds, tp.Id), failingId-1)
 
@@ -113,11 +113,11 @@ func main() {
 		die("expected a fresh claim, got nil")
 	}
 	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	fmt.Printf("  claimed (%d,%d], committed after roller tick = %d\n", claim2.Lease.Low, claim2.Lease.High, committed)
 	assert("claimed moved past the pin", claimedCol(ctx, ds, tp.Id), claim2.Lease.High)
 	assert("committed still pinned on the unresolved exception", committedCol(ctx, ds, tp.Id), failingId-1)
-	fmt.Println("  -> an unresolved exception never blocks fresh ranges from claiming/committing, only the waterline")
+	fmt.Println("  -> an unresolved exception never blocks fresh ranges from claiming/committing, only committed")
 
 	// Commit's exception write always sets an initial 5s can_run_after -- the exception isn't
 	// claimable until that backoff passes, same as reclaimlab's lease-expiry wait.
@@ -126,18 +126,18 @@ func main() {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupId, batch, 3, lease, tp.DeliveryLogMode)
+	claimedExceptions, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, batch, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))
 	}
 	fmt.Printf("  claimed exception message_id=%d attempts=%d\n", claimedExceptions[0].MessageId, claimedExceptions[0].Attempts)
-	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], tp.DeliveryLogMode, nil))
+	must(exceptionConsumers.RecordSuccess(ctx, &claimedExceptions[0], tp.DeliveryLogMode, nil))
 	assert("exception pop-deleted on success", deliveries(ctx, ds, tp.Id), 0)
 
 	// ===== committed jumps straight past the resolved exception =====
 	step("roller tick — committed jumps past the resolved exception")
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	fmt.Printf("  committed = %d\n", committed)
 	assert("committed jumped to claimed", committedCol(ctx, ds, tp.Id), claimedCol(ctx, ds, tp.Id))
 
@@ -150,20 +150,20 @@ func main() {
 			break // caught up
 		}
 		must(messageConsumers.Commit(ctx, tp.Id, groupId, c.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, waterlineDatastore, tp.Id))
+		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, cursorAdvancerDatastore, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
 	assert("no deliveries left behind", deliveries(ctx, ds, tp.Id), 0)
 
 	fmt.Println("\n✅ PHASE 6.5c LAB PASSED")
-	fmt.Println("   failure recorded as an unresolved exception -> waterline pinned below it while later ranges")
-	fmt.Println("   kept committing -> exception resolved -> waterline jumped straight past it.")
+	fmt.Println("   failure recorded as an unresolved exception -> committed pinned below it while later ranges")
+	fmt.Println("   kept committing -> exception resolved -> committed jumped straight past it.")
 }
 
 // ---- helpers ----
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
+func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatastore.CursorAdvancerDatastore, topicId int64) int64 {
+	c, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, topicId, groupId)
 	must(err)
 	return c
 }

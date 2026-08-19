@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// replaceCronJobConfig overwrites an already-registered cron job's mutable
+// replaceConfig overwrites an already-registered cron job's mutable
 // config with declared's: the newest declaration wins.
-func (d *CronJobDatastore) replaceCronJobConfig(ctx context.Context, found *CronJobData, declared *RegisterCronJobData) (*CronJobData, error) {
+func (d *CronJobDatastore) replaceConfig(ctx context.Context, found *CronJobData, declared *RegisterCronJobData) (*CronJobData, error) {
 	// a scheduled time already due under the old schedule is dropped, not
 	// produced late -- the new schedule decides when the job next runs
 	var next *time.Time

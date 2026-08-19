@@ -1,6 +1,7 @@
 package exceptionconsumer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -100,4 +101,21 @@ func (c *ExceptionConsumerConfig) Validate() error {
 
 func (c *ExceptionConsumerConfig) resolveMessageOptions(requested *common.MessageOptions) *common.MessageOptions {
 	return requested.Fill(c.Message).Clamp(c.MessageMin, c.MessageMax).ResolveConcurrency(c.ConcurrencyOverride)
+}
+
+// withMetadata resolves what this run uses: the stored config, with its message
+// options clamped. The stored options are whatever declared the group last, so
+// the clamp is what keeps this process inside the MessageMin/MessageMax its own
+// code sets.
+func (c *ExceptionConsumerConfig) withMetadata(ctx context.Context, metadata *exceptionConsumerMetadata) *ExceptionConsumerConfig {
+	applied := *c
+	applied.ClaimPollRate = metadata.ClaimPollRate
+	applied.ConcurrencyOverride = metadata.ConcurrencyOverride
+
+	message := metadata.Message
+	applied.Message = message.Clamp(c.MessageMin, c.MessageMax)
+	if !applied.Message.Equal(&message) {
+		c.Logger.WarnContext(ctx, "stored message options outside this consumer's bounds -- clamped", "stored", message, "clamped", applied.Message)
+	}
+	return &applied
 }

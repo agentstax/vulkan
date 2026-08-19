@@ -11,19 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// GetTopic resolves topic (name, schemaVersion).
+// Get resolves topic (name, schemaVersion).
 // Returns (nil, nil) if (name, schemaVersion) is not found.
-func (d *TopicDatastore) GetTopic(ctx context.Context, name string, schemaVersion int64) (*TopicData, error) {
+func (d *TopicDatastore) Get(ctx context.Context, name string, schemaVersion int64) (*TopicData, error) {
 	var topicData *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topicData, err = d.getTopic(ctx, d.Datastore.Pool, name, schemaVersion)
+		topicData, err = d.get(ctx, d.Datastore.Pool, name, schemaVersion)
 		return err
 	})
 	return topicData, err
 }
 
-func (d *TopicDatastore) getTopic(ctx context.Context, q datastore.Querier, name string, schemaVersion int64) (*TopicData, error) {
+func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string, schemaVersion int64) (*TopicData, error) {
 	sql := `
 		SELECT
 			id,
@@ -43,18 +43,18 @@ func (d *TopicDatastore) getTopic(ctx context.Context, q datastore.Querier, name
 	return d.scanTopicData(q.QueryRow(ctx, sql, name, schemaVersion))
 }
 
-// GetTopicById resolves a topic by its id. Returns (nil, nil) if no topic has it.
-func (d *TopicDatastore) GetTopicById(ctx context.Context, id int64) (*TopicData, error) {
+// GetById resolves a topic by its id. Returns (nil, nil) if no topic has it.
+func (d *TopicDatastore) GetById(ctx context.Context, id int64) (*TopicData, error) {
 	var topicData *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topicData, err = d.getTopicById(ctx, id)
+		topicData, err = d.getById(ctx, id)
 		return err
 	})
 	return topicData, err
 }
 
-func (d *TopicDatastore) getTopicById(ctx context.Context, id int64) (*TopicData, error) {
+func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicData, error) {
 	sql := `
 		SELECT
 			id,
@@ -74,17 +74,17 @@ func (d *TopicDatastore) getTopicById(ctx context.Context, id int64) (*TopicData
 	return d.scanTopicData(d.Datastore.Pool.QueryRow(ctx, sql, id))
 }
 
-func (d *TopicDatastore) ListTopics(ctx context.Context) ([]TopicData, error) {
+func (d *TopicDatastore) List(ctx context.Context) ([]TopicData, error) {
 	var topics []TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topics, err = d.listTopics(ctx)
+		topics, err = d.list(ctx)
 		return err
 	})
 	return topics, err
 }
 
-func (d *TopicDatastore) listTopics(ctx context.Context) ([]TopicData, error) {
+func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 	sql := `
 		SELECT
 			id,
@@ -122,29 +122,29 @@ func (d *TopicDatastore) listTopics(ctx context.Context) ([]TopicData, error) {
 	return topics, nil
 }
 
-// RegisterTopic resolves declared's (name, schema_version) to its row, creating
+// Register resolves declared's (name, schema_version) to its row, creating
 // it (and its per-topic tables) if it doesn't exist. An existing row takes
 // declared's mutable config; its partition_size must match.
-func (d *TopicDatastore) RegisterTopic(ctx context.Context, declared *TopicData) (*TopicData, error) {
+func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData) (*TopicData, error) {
 	var registered *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		registered, err = d.registerTopic(ctx, declared)
+		registered, err = d.register(ctx, declared)
 		return err
 	})
 	return registered, err
 }
 
-// registerTopic registers behind a per-name advisory lock, NOT ON CONFLICT.
+// register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *TopicDatastore) registerTopic(ctx context.Context, declared *TopicData) (*TopicData, error) {
-	// private getTopic, not GetTopic -- otherwise would have nested retries.
-	found, err := d.getTopic(ctx, d.Datastore.Pool, declared.Name, declared.SchemaVersion)
+func (d *TopicDatastore) register(ctx context.Context, declared *TopicData) (*TopicData, error) {
+	// private get, not Get -- otherwise would have nested retries.
+	found, err := d.get(ctx, d.Datastore.Pool, declared.Name, declared.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceTopicConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, declared)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -159,12 +159,12 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, declared *TopicData)
 	}
 
 	// re-check under the lock -- a racing register may have committed while we waited
-	found, err = d.getTopic(ctx, tx, declared.Name, declared.SchemaVersion)
+	found, err = d.get(ctx, tx, declared.Name, declared.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceTopicConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, declared)
 	}
 
 	insertSql := `
@@ -199,20 +199,20 @@ func (d *TopicDatastore) registerTopic(ctx context.Context, declared *TopicData)
 	return &created, nil
 }
 
-// RenameTopic moves every version under oldName to newName in one statement.
+// Rename moves every version under oldName to newName in one statement.
 // Returns (nil, nil) if no version is registered under oldName
 // ErrTopicNameTaken if newName already has any (name, version) registered.
-func (d *TopicDatastore) RenameTopic(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
+func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
 	var topics []TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topics, err = d.renameTopic(ctx, oldName, newName)
+		topics, err = d.rename(ctx, oldName, newName)
 		return err
 	})
 	return topics, err
 }
 
-func (d *TopicDatastore) renameTopic(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
+func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
 	sql := `
 		UPDATE topic
 		SET name = $2, updated_at = NOW()

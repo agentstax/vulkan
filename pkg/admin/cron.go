@@ -34,7 +34,7 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 	}
 
 	// gate -- a cron job can't exist without the control-plane schema it rides on
-	sys, err := a.systemController.GetSystem(ctx)
+	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 		return nil, err
 	}
 
-	return a.cronJobController.RegisterCronJob(ctx, owner, name, schedule, data, cfg)
+	return a.cronJobController.Register(ctx, owner, name, schedule, data, cfg)
 }
 
 // GetCronJob returns (nil, nil), not an error, if name isn't registered.
@@ -57,12 +57,12 @@ func (a *MessageAdmin) GetCronJob(ctx context.Context, name string) (*cron.CronJ
 	if name == "" {
 		return nil, errors.New("cron job name is required")
 	}
-	return a.cronJobController.GetCronJob(ctx, name)
+	return a.cronJobController.Get(ctx, name)
 }
 
 // ListCronJobs returns every cron job, ordered by name.
 func (a *MessageAdmin) ListCronJobs(ctx context.Context) ([]*cron.CronJob, error) {
-	return a.cronJobController.ListCronJobs(ctx)
+	return a.cronJobController.List(ctx)
 }
 
 // SuspendCronJob stops the scheduler producing the job until unsuspended.
@@ -70,7 +70,7 @@ func (a *MessageAdmin) SuspendCronJob(ctx context.Context, name string) error {
 	if name == "" {
 		return errors.New("cron job name is required")
 	}
-	return a.cronJobController.SuspendCronJob(ctx, name)
+	return a.cronJobController.Suspend(ctx, name)
 }
 
 // UnsuspendCronJob resumes at the schedule's next scheduled time -- one that
@@ -79,7 +79,7 @@ func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error 
 	if name == "" {
 		return errors.New("cron job name is required")
 	}
-	return a.cronJobController.UnsuspendCronJob(ctx, name)
+	return a.cronJobController.Unsuspend(ctx, name)
 }
 
 // RunCronJob produces one JobRequest for the named job immediately, outside
@@ -105,7 +105,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, err
 	}
 
-	job, err := a.cronJobController.GetCronJob(ctx, name)
+	job, err := a.cronJobController.Get(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, errors.New("cron job name is required")
 	}
 
-	job, err := a.cronJobController.GetCronJob(ctx, name)
+	job, err := a.cronJobController.Get(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
 	}
 
-	jobRequests, err := a.topicController.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	jobRequests, err := a.topicController.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
 	}
 
-	return a.cronJobController.CronJobStatus(ctx, jobRequests.Id, job.Id, job.Name)
+	return a.cronJobController.Status(ctx, jobRequests.Id, job.Id, job.Name)
 }
 
 // CronJobRequests is the job's newest requests, one JobRequestStatus
@@ -176,7 +176,7 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 		return nil, errors.New("cron job name is required")
 	}
 
-	job, err := a.cronJobController.GetCronJob(ctx, name)
+	job, err := a.cronJobController.Get(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
 	}
 
-	jobRequests, err := a.topicController.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	jobRequests, err := a.topicController.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,7 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
 	}
 
-	return a.cronJobController.CronJobRequests(ctx, jobRequests.Id, job.Id, job.Name, limit)
+	return a.cronJobController.ListRequests(ctx, jobRequests.Id, job.Id, job.Name, limit)
 }
 
 // DestroyCronJob permanently deletes the job. Returns ErrDestroyDisabled
@@ -205,5 +205,5 @@ func (a *MessageAdmin) DestroyCronJob(ctx context.Context, name string) error {
 		return errors.New("cron job name is required")
 	}
 
-	return a.cronJobController.DeleteCronJob(ctx, name)
+	return a.cronJobController.Delete(ctx, name)
 }

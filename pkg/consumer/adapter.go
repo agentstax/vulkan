@@ -9,41 +9,41 @@ import (
 // Validate have already run by the time these are built, so the row configs
 // carry resolved values and their own WithDefaults is a no-op.
 
-func toMessageConsumerConfig(c *ConsumerConfig) *messageconsumer.MessageConsumerConfig {
+func toMessageConsumerConfig(cfg *ConsumerConfig) *messageconsumer.MessageConsumerConfig {
 	return &messageconsumer.MessageConsumerConfig{
-		BatchLimit:              c.BatchLimit,
-		QueueSize:               c.QueueSize,
-		MessageConcurrency:      c.MessageConcurrency,
-		MaxRangeReclaims:        c.MaxRangeReclaims,
-		ClaimPollRate:           c.ClaimPollRate,
-		QueueMargin:             c.QueueMargin,
-		RecordMargin:            c.RecordMargin,
-		TimeoutGrace:            c.TimeoutGrace,
-		ExceptionInitialBackoff: c.ExceptionInitialBackoff,
-		ShutdownTimeout:         c.ShutdownTimeout,
-		InstanceTTL:             c.InstanceTTL,
-		Message:                 c.Message,
-		MessageMin:              c.MessageMin,
-		MessageMax:              c.MessageMax,
-		ConcurrencyOverride:     c.ConcurrencyOverride,
-		Logger:                  c.Logger,
-		Retry:                   c.Retry,
+		BatchLimit:              cfg.BatchLimit,
+		QueueSize:               cfg.QueueSize,
+		MessageConcurrency:      cfg.MessageConcurrency,
+		MaxRangeReclaims:        cfg.MaxRangeReclaims,
+		ClaimPollRate:           cfg.ClaimPollRate,
+		QueueMargin:             cfg.QueueMargin,
+		RecordMargin:            cfg.RecordMargin,
+		TimeoutGrace:            cfg.TimeoutGrace,
+		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
+		ShutdownTimeout:         cfg.ShutdownTimeout,
+		InstanceTTL:             cfg.InstanceTTL,
+		Message:                 cfg.Message,
+		MessageMin:              cfg.MessageMin,
+		MessageMax:              cfg.MessageMax,
+		ConcurrencyOverride:     cfg.ConcurrencyOverride,
+		Logger:                  cfg.Logger,
+		Retry:                   cfg.Retry,
 	}
 }
 
-func toExceptionConsumerConfig(c *ConsumerConfig) *exceptionconsumer.ExceptionConsumerConfig {
+func toExceptionConsumerConfig(cfg *ConsumerConfig) *exceptionconsumer.ExceptionConsumerConfig {
 	return &exceptionconsumer.ExceptionConsumerConfig{
-		BatchLimit:          c.BatchLimit,
-		ClaimPollRate:       c.ClaimPollRate,
-		QueueMargin:         c.QueueMargin,
-		RecordMargin:        c.RecordMargin,
-		TimeoutGrace:        c.TimeoutGrace,
-		InstanceTTL:         c.InstanceTTL,
-		Message:             c.Message,
-		MessageMin:          c.MessageMin,
-		MessageMax:          c.MessageMax,
-		ConcurrencyOverride: c.ConcurrencyOverride,
-		Logger:              c.Logger,
-		Retry:               c.Retry,
+		BatchLimit:          cfg.BatchLimit,
+		ClaimPollRate:       cfg.ClaimPollRate,
+		QueueMargin:         cfg.QueueMargin,
+		RecordMargin:        cfg.RecordMargin,
+		TimeoutGrace:        cfg.TimeoutGrace,
+		InstanceTTL:         cfg.InstanceTTL,
+		Message:             cfg.Message,
+		MessageMin:          cfg.MessageMin,
+		MessageMax:          cfg.MessageMax,
+		ConcurrencyOverride: cfg.ConcurrencyOverride,
+		Logger:              cfg.Logger,
+		Retry:               cfg.Retry,
 	}
 }

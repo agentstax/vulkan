@@ -12,7 +12,7 @@ import (
 
 const WorkerManager = "manager"
 
-// A manager execution keeps one running execution per worker row on the
+// A manager instance keeps one running execution per worker row on the
 // owner's chain, spawned through the provisioners it was given. Manager rows
 // carry no instance target -- the spawned workers' own claims arbitrate who
 // runs what, so any number of processes reconcile the same chain safely.
@@ -68,6 +68,6 @@ func NewManagerDefinition(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig, 
 	}, nil
 }
 
-func (m *ManagerDefinition) Name() string {
+func (d *ManagerDefinition) Name() string {
 	return WorkerManager
 }

@@ -168,7 +168,7 @@ func ownershipSection(ctx context.Context) {
 	must(err)
 	topicOwner, err := common.NewTopicOwner(tp.SystemId, tp.Id, tp.Name)
 	must(err)
-	_, err = cronJobs.RegisterCronJob(ctx, topicOwner, prefix+".cascade", parse("@hourly"), nil, nil)
+	_, err = cronJobs.Register(ctx, topicOwner, prefix+".cascade", parse("@hourly"), nil, nil)
 	must(err)
 	_, err = mAdmin.RegisterCronJob(ctx, prefix+".standalone", parse("@hourly"), nil, nil)
 	must(err)

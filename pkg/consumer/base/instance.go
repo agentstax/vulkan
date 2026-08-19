@@ -11,15 +11,15 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// BaseExecution runs a row's loop while the instance's heartbeat holds
+// BaseInstance runs a row's loop while the instance's heartbeat holds
 // the claim; the claimed instance releases on the way out however Run exits.
-type BaseExecution struct {
+type BaseInstance struct {
 	instanceRunner *workercontroller.InstanceRunner
 	run            func(ctx context.Context) error
 	permit         *concurrency.Permit // never released -- Run is one-shot
 }
 
-func NewBaseExecution[Message any](baseDefinition *BaseDefinition[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseExecution, error) {
+func NewBaseInstance[Message any](baseDefinition *BaseDefinition[Message], owner *common.Owner, claimed *worker.WorkerInstance, instanceTTL time.Duration, run func(ctx context.Context) error) (*BaseInstance, error) {
 	if baseDefinition == nil {
 		return nil, errors.New("definition base must not be nil")
 	}
@@ -46,19 +46,19 @@ func NewBaseExecution[Message any](baseDefinition *BaseDefinition[Message], owne
 		return nil, err
 	}
 
-	return &BaseExecution{
+	return &BaseInstance{
 		instanceRunner: instanceRunner,
 		run:            run,
 		permit:         permit,
 	}, nil
 }
 
-// a BaseExecution wraps one claimed worker instance -- once Run returns that
-// instance is released, so the execution is spent and can never run again.
-func (e *BaseExecution) Run(ctx context.Context) error {
-	if _, ok := e.permit.Acquire(); !ok {
-		return errors.New("execution already ran -- its claimed worker instance is released")
+// a BaseInstance wraps one claimed worker instance -- once Run returns that
+// instance is released, so a BaseInstance never runs twice.
+func (i *BaseInstance) Run(ctx context.Context) error {
+	if _, ok := i.permit.Acquire(); !ok {
+		return errors.New("Run already completed -- the claimed worker instance is released")
 	}
 
-	return e.instanceRunner.Run(ctx, e.run)
+	return i.instanceRunner.Run(ctx, i.run)
 }

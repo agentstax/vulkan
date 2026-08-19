@@ -145,7 +145,7 @@ func main() {
 	fmt.Println("  ✓ rollback kept the lease")
 
 	step("release frees the key for immediate reacquire")
-	released, err := keyLeases.ReleaseKeyLease(ctx, held)
+	released, err := keyLeases.Release(ctx, held)
 	must(err)
 	if !released {
 		die("release of the live holder should match its row")
@@ -168,7 +168,7 @@ func main() {
 	if taker.Token == short.Token {
 		die("takeover must mint a fresh token")
 	}
-	staleReleased, err := keyLeases.ReleaseKeyLease(ctx, short)
+	staleReleased, err := keyLeases.Release(ctx, short)
 	must(err)
 	if staleReleased {
 		die("the expired holder's release matched a row -- it must not delete the new holder's row")
@@ -176,7 +176,7 @@ func main() {
 	if n := leaseCount(ctx); n != 1 {
 		die(fmt.Sprintf("the expired holder's release must not remove the new holder's row, count=%d", n))
 	}
-	takerReleased, err := keyLeases.ReleaseKeyLease(ctx, taker)
+	takerReleased, err := keyLeases.Release(ctx, taker)
 	must(err)
 	if !takerReleased {
 		die("the new holder's release should match its row")
@@ -211,7 +211,7 @@ func main() {
 	if acquired != 1 || busy != workers-1 {
 		die(fmt.Sprintf("want exactly 1 winner, got acquired=%d busy=%d", acquired, busy))
 	}
-	released, err = keyLeases.ReleaseKeyLease(ctx, winner)
+	released, err = keyLeases.Release(ctx, winner)
 	must(err)
 	if !released {
 		die("race winner's release should match its row")
@@ -233,7 +233,7 @@ func main() {
 	if c := claim(ctx, keyLeases, "user:3", old3, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseSuperseded {
 		die(fmt.Sprintf("want superseded for the held message now that the head moved, got %s", c.Verdict))
 	}
-	released, err = keyLeases.ReleaseKeyLease(ctx, holding)
+	released, err = keyLeases.Release(ctx, holding)
 	must(err)
 	if !released {
 		die("the old holder's release should match its row")
@@ -242,7 +242,7 @@ func main() {
 	if after.Verdict != keyleasecontroller.KeyLeaseAcquired {
 		die(fmt.Sprintf("want the new head to acquire after the release, got %s", after.Verdict))
 	}
-	released, err = keyLeases.ReleaseKeyLease(ctx, after)
+	released, err = keyLeases.Release(ctx, after)
 	must(err)
 	if !released {
 		die("the new head's release should match its row")
@@ -282,7 +282,7 @@ func main() {
 }
 
 func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key string, msgID int64, d time.Duration) *keyleasecontroller.KeyLeaseClaim {
-	c, err := cd.ClaimKeyLease(ctx, topicId, groupId, key, msgID, d)
+	c, err := cd.Claim(ctx, topicId, groupId, key, msgID, d)
 	must(err)
 	return c
 }

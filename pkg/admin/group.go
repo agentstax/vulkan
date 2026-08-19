@@ -44,7 +44,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 		return nil, errors.New("group name is required")
 	}
 
-	found, err := a.topicController.GetTopic(ctx, topicName, version)
+	found, err := a.topicController.Get(ctx, topicName, version)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +70,10 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 //
 // Returns ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set,
 // and ErrTopicNotFound / ErrGroupNotFound when either side is missing.
-// Unless opts.Force is set:
+// Unless options.Force is set:
 //   - a consumer still runs on the group     -> ErrGroupLive
 //   - the group still holds delivery rows    -> ErrGroupDeliveriesPending
-func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string, opts DestroyOptions) error {
+func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string, options DestroyOptions) error {
 	if !a.allowDestroy {
 		return ErrDestroyDisabled
 	}
@@ -84,7 +84,7 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, versi
 		return errors.New("group name is required")
 	}
 
-	found, err := a.topicController.GetTopic(ctx, topicName, version)
+	found, err := a.topicController.Get(ctx, topicName, version)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, versi
 		return fmt.Errorf("%w: %s on topic %s", consumercontroller.ErrGroupNotFound, groupName, topicName)
 	}
 
-	if !opts.Force {
+	if !options.Force {
 		if err := a.assertGroupIdle(ctx, found.Id, group.Id, group.Name); err != nil {
 			return err
 		}

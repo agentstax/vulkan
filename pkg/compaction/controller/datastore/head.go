@@ -9,19 +9,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// GetCompactionHead reads the current compaction head under compactionKey,
+// GetHead reads the current compaction head under compactionKey,
 // nil if the key has no head.
-func (d *CompactionDatastore) GetCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
+func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
 	var head *MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		head, err = d.getCompactionHead(ctx, topicId, compactionKey)
+		head, err = d.getHead(ctx, topicId, compactionKey)
 		return err
 	})
 	return head, err
 }
 
-func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
+func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			m.id,
@@ -53,19 +53,19 @@ func (d *CompactionDatastore) getCompactionHead(ctx context.Context, topicId int
 	return &head, nil
 }
 
-// ListCompactionHeads reads every key's current head on the topic, ordered by
+// ListHeads reads every key's current head on the topic, ordered by
 // compaction key.
-func (d *CompactionDatastore) ListCompactionHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
+func (d *CompactionDatastore) ListHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
 	var heads []MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		heads, err = d.listCompactionHeads(ctx, topicId)
+		heads, err = d.listHeads(ctx, topicId)
 		return err
 	})
 	return heads, err
 }
 
-func (d *CompactionDatastore) listCompactionHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
+func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
 		SELECT
 			m.id,

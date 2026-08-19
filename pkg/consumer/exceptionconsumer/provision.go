@@ -11,12 +11,12 @@ import (
 
 // Declare creates this kind's worker row and writes the config onto it --
 // the newest declaration wins.
-func (f *ExceptionConsumerDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
-	return f.DeclareWorker(ctx, owner, toExceptionConsumerMetadata(f.Config))
+func (d *ExceptionConsumerDefinition[Message]) Declare(ctx context.Context, owner *common.Owner) error {
+	return d.DeclareWorker(ctx, owner, toExceptionConsumerMetadata(d.Config))
 }
 
 // a nil Execution is a declined claim, not an error -- try again later.
-func (f *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+func (d *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
 	parsed, err := workercontroller.ParseMetadata[exceptionConsumerMetadata](metadata)
 	if err != nil {
 		return nil, err
@@ -24,18 +24,18 @@ func (f *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, wo
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := f.RegisterInstance(ctx, workerId, owner, f.Config.InstanceTTL)
+	claimed, err := d.RegisterInstance(ctx, workerId, owner, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
 
-	cfg := f.Config.withMetadata(ctx, parsed)
-	resolvedTopic, err := f.GetTopic(ctx, owner.TopicId)
+	cfg := d.Config.withMetadata(ctx, parsed)
+	resolvedTopic, err := d.GetTopic(ctx, owner.TopicId)
 	if err != nil {
 		return nil, err
 	}
 
-	base, err := consumerbase.NewBaseConsumer(f.BaseDefinition, owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
+	base, err := consumerbase.NewBaseConsumer(d.BaseDefinition, owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
 		TimeoutGrace: cfg.TimeoutGrace,
 		RecordMargin: cfg.RecordMargin,
 	})
@@ -43,10 +43,10 @@ func (f *ExceptionConsumerDefinition[Message]) Provision(ctx context.Context, wo
 		return nil, err
 	}
 
-	runner, err := newExceptionRunner(base, f.consumers, cfg)
+	runner, err := newExceptionRunner(base, d.consumers, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return consumerbase.NewBaseExecution(f.BaseDefinition, owner, claimed, cfg.InstanceTTL, runner.run)
+	return consumerbase.NewBaseInstance(d.BaseDefinition, owner, claimed, cfg.InstanceTTL, runner.run)
 }

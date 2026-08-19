@@ -102,7 +102,7 @@ func (m *Metrics) RegisterMetricInstruments(ctx context.Context) error {
 		return err
 	}
 
-	rows, err := m.heads.ListCompactionHeads(ctx, topicId)
+	rows, err := m.heads.ListHeads(ctx, topicId)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (m *Metrics) observe(ctx context.Context, observer metric.Observer) error {
 	maps.Copy(instruments, m.instruments)
 	m.mutex.Unlock()
 
-	rows, err := m.heads.ListCompactionHeads(ctx, topicId)
+	rows, err := m.heads.ListHeads(ctx, topicId)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func (m *Metrics) resolveTopicId(ctx context.Context) (int64, error) {
 	if m.topicId != 0 {
 		return m.topicId, nil
 	}
-	found, err := m.topics.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	found, err := m.topics.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return 0, err
 	}

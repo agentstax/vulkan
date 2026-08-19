@@ -17,9 +17,9 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// CompactionReadCostExecution consumes the alert's job requests while a
+// CompactionReadCostInstance consumes the alert's job requests while a
 // heartbeat holds the claim.
-type CompactionReadCostExecution struct {
+type CompactionReadCostInstance struct {
 	Owner  *common.Owner
 	Logger common.Logger
 
@@ -30,7 +30,7 @@ type CompactionReadCostExecution struct {
 	measurements   *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*CompactionReadCostExecution, error) {
+func newCompactionReadCostInstance(definition *CompactionReadCostDefinition, owner *common.Owner, claimed *worker.WorkerInstance, repeatInterval time.Duration) (*CompactionReadCostInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -43,7 +43,7 @@ func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, ow
 		return nil, err
 	}
 
-	return &CompactionReadCostExecution{
+	return &CompactionReadCostInstance{
 		Owner:          owner,
 		Logger:         definition.Logger,
 		definition:     definition,
@@ -54,44 +54,44 @@ func newCompactionReadCostExecution(definition *CompactionReadCostDefinition, ow
 
 // Run consumes until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (e *CompactionReadCostExecution) Run(ctx context.Context) error {
-	return e.runner.Run(ctx, e.consume)
+func (i *CompactionReadCostInstance) Run(ctx context.Context) error {
+	return i.runner.Run(ctx, i.consume)
 }
 
 // consume is one claimed life: the alert controller is built here so every
 // claim applies the claimed row's repeat_interval against the alerts topic's
 // live retention.
-func (e *CompactionReadCostExecution) consume(ctx context.Context) error {
-	registered, err := e.definition.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
+func (i *CompactionReadCostInstance) consume(ctx context.Context) error {
+	registered, err := i.definition.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	alerts, err := alertcontroller.NewAlertController(ctx, registered, e.definition.alertHeads, e.repeatInterval, &alertcontroller.ControllerConfig{Logger: e.Logger})
+	alerts, err := alertcontroller.NewAlertController(ctx, registered, i.definition.alertHeads, i.repeatInterval, &alertcontroller.ControllerConfig{Logger: i.Logger})
 	if err != nil {
 		return err
 	}
-	e.alerts = alerts
+	i.alerts = alerts
 
-	measurements, err := e.definition.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	measurements, err := i.definition.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	e.measurements = measurements
+	i.measurements = measurements
 
-	instance, err := e.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
+	instance, err := i.definition.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
 	if err != nil {
 		return err
 	}
-	return instance.Consume(ctx, e.evaluateTopics)
+	return instance.Consume(ctx, i.evaluateTopics)
 }
 
-func (e *CompactionReadCostExecution) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
+func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
 	jobData, err := alertcontroller.ToJobData(request.Data)
 	if err != nil {
 		return err
 	}
 
-	topics, err := e.definition.topics.ListTopics(ctx)
+	topics, err := i.definition.topics.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -108,14 +108,14 @@ func (e *CompactionReadCostExecution) evaluateTopics(ctx context.Context, reques
 			continue
 		}
 
-		found, err := e.definition.controller.Evaluate(ctx, owner, jobData.Threshold)
+		found, err := i.definition.controller.Evaluate(ctx, owner, jobData.Threshold)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
 			continue
 		}
 
-		outcome, err := e.alerts.Record(ctx, controller.AlertCompactionReadCost, owner, found)
+		outcome, err := i.alerts.Record(ctx, controller.AlertCompactionReadCost, owner, found)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)
@@ -130,11 +130,11 @@ func (e *CompactionReadCostExecution) evaluateTopics(ctx context.Context, reques
 	}
 
 	// the summary goes out even on a failed run
-	err = e.produceCheckSummary(ctx, evaluated, failed, published, resolved)
+	err = i.produceCheckSummary(ctx, evaluated, failed, published, resolved)
 	return errors.Join(errs, err)
 }
 
-func (e *CompactionReadCostExecution) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
+func (i *CompactionReadCostInstance) produceCheckSummary(ctx context.Context, evaluated int64, failed int64, published int64, resolved int64) error {
 	attributes := map[string]string{"alert": controller.AlertCompactionReadCost}
 	at := time.Now()
 
@@ -169,6 +169,6 @@ func (e *CompactionReadCostExecution) produceCheckSummary(ctx context.Context, e
 		items = append(items, item)
 	}
 
-	_, err := e.measurements.ProduceBatch(ctx, items...)
+	_, err := i.measurements.ProduceBatch(ctx, items...)
 	return err
 }

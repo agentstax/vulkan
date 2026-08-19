@@ -11,18 +11,18 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// GetCronJob returns (nil, nil) if not found.
-func (d *CronJobDatastore) GetCronJob(ctx context.Context, name string) (*CronJobData, error) {
+// Get returns (nil, nil) if not found.
+func (d *CronJobDatastore) Get(ctx context.Context, name string) (*CronJobData, error) {
 	var job *CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		job, err = d.getCronJob(ctx, d.Datastore.Pool, name)
+		job, err = d.get(ctx, d.Datastore.Pool, name)
 		return err
 	})
 	return job, err
 }
 
-func (d *CronJobDatastore) getCronJob(ctx context.Context, q datastore.Querier, name string) (*CronJobData, error) {
+func (d *CronJobDatastore) get(ctx context.Context, q datastore.Querier, name string) (*CronJobData, error) {
 	sql := `
 		SELECT
 			id,
@@ -44,17 +44,17 @@ func (d *CronJobDatastore) getCronJob(ctx context.Context, q datastore.Querier, 
 	return d.scanCronJobData(q.QueryRow(ctx, sql, name))
 }
 
-func (d *CronJobDatastore) ListCronJobs(ctx context.Context) ([]CronJobData, error) {
+func (d *CronJobDatastore) List(ctx context.Context) ([]CronJobData, error) {
 	var jobs []CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		jobs, err = d.listCronJobs(ctx)
+		jobs, err = d.list(ctx)
 		return err
 	})
 	return jobs, err
 }
 
-func (d *CronJobDatastore) listCronJobs(ctx context.Context) ([]CronJobData, error) {
+func (d *CronJobDatastore) list(ctx context.Context) ([]CronJobData, error) {
 	sql := `
 		SELECT
 			id,
@@ -93,13 +93,13 @@ func (d *CronJobDatastore) listCronJobs(ctx context.Context) ([]CronJobData, err
 	return jobs, nil
 }
 
-func (d *CronJobDatastore) SuspendCronJob(ctx context.Context, name string) error {
+func (d *CronJobDatastore) Suspend(ctx context.Context, name string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.suspendCronJob(ctx, name)
+		return d.suspend(ctx, name)
 	})
 }
 
-func (d *CronJobDatastore) suspendCronJob(ctx context.Context, name string) error {
+func (d *CronJobDatastore) suspend(ctx context.Context, name string) error {
 	tag, err := d.Datastore.Pool.Exec(ctx, `UPDATE cron_job SET suspended = true WHERE name = $1;`, name)
 	if err != nil {
 		return err
@@ -111,16 +111,16 @@ func (d *CronJobDatastore) suspendCronJob(ctx context.Context, name string) erro
 	return nil
 }
 
-// UnsuspendCronJob resumes at Next(now()) -- a scheduled time that came due while
+// Unsuspend resumes at Next(now()) -- a scheduled time that came due while
 // suspended is dropped, not produced late.
-func (d *CronJobDatastore) UnsuspendCronJob(ctx context.Context, name string) error {
+func (d *CronJobDatastore) Unsuspend(ctx context.Context, name string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.unsuspendCronJob(ctx, name)
+		return d.unsuspend(ctx, name)
 	})
 }
 
-func (d *CronJobDatastore) unsuspendCronJob(ctx context.Context, name string) error {
-	job, err := d.getCronJob(ctx, d.Datastore.Pool, name)
+func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
+	job, err := d.get(ctx, d.Datastore.Pool, name)
 	if err != nil {
 		return err
 	}
@@ -171,13 +171,13 @@ func (d *CronJobDatastore) nextScheduledTime(ctx context.Context, q datastore.Qu
 	return next, nil
 }
 
-func (d *CronJobDatastore) DeleteCronJob(ctx context.Context, name string) error {
+func (d *CronJobDatastore) Delete(ctx context.Context, name string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.deleteCronJob(ctx, name)
+		return d.delete(ctx, name)
 	})
 }
 
-func (d *CronJobDatastore) deleteCronJob(ctx context.Context, name string) error {
+func (d *CronJobDatastore) delete(ctx context.Context, name string) error {
 	tag, err := d.Datastore.Pool.Exec(ctx, `DELETE FROM cron_job WHERE name = $1;`, name)
 	if err != nil {
 		return err

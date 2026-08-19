@@ -7,7 +7,7 @@ import (
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 )
 
-// committed is the waterline: the mark below which every offset is resolved.
+// committed is the mark below which every offset is resolved.
 //
 // Race Condition:
 //
@@ -20,23 +20,23 @@ import (
 //	This is due to READ COMMITTED: an UPDATE re-reads the row it modifies at its
 //	newest version, but its subqueries keep the snapshot from when the statement
 //	began -- so cursor comes back fresh, lease stale.
-func (d *WaterlineDatastore) AdvanceWaterline(ctx context.Context, topicId int64, groupId int64) (int64, error) {
+func (d *CursorAdvancerDatastore) AdvanceCommitted(ctx context.Context, topicId int64, groupId int64) (int64, error) {
 	var committed int64
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		committed, err = d.advanceWaterline(ctx, topicId, groupId)
+		committed, err = d.advanceCommitted(ctx, topicId, groupId)
 		return err
 	})
 	return committed, err
 }
 
-// advanceWaterline needs no transaction across its two statements: a target
+// advanceCommitted needs no transaction across its two statements: a target
 // gone stale after the SELECT is only ever too low, and GREATEST makes a
 // too-low target a no-op.
-func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicId int64, groupId int64) (int64, error) {
+func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId int64, groupId int64) (int64, error) {
 	// 1. compute the advance target, LEAST of:
 	// 		earliest open lease
-	// 		earliest unresolved delivery -- 'dead' be definition does not count
+	// 		earliest unresolved delivery -- 'dead' by definition does not count
 	// 		claimed (its caught up to head of log)
 	// LEAST ignores NULLs so any/all of those can be absent.
 	targetSql := fmt.Sprintf(`
@@ -55,7 +55,7 @@ func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicId int64
 	}
 
 	// 2. apply it. GREATEST -> committed only ever moves forward.
-	const rollSql = `
+	const advanceSql = `
 		UPDATE cursor
 		SET committed = GREATEST(committed, $2)
 		WHERE consumer_group_id = $1
@@ -63,6 +63,6 @@ func (d *WaterlineDatastore) advanceWaterline(ctx context.Context, topicId int64
 	`
 
 	var committed int64
-	err := d.Datastore.Pool.QueryRow(ctx, rollSql, groupId, target).Scan(&committed)
+	err := d.Datastore.Pool.QueryRow(ctx, advanceSql, groupId, target).Scan(&committed)
 	return committed, err
 }

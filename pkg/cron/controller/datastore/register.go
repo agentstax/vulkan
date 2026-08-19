@@ -6,27 +6,27 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// RegisterCronJob resolves declared.Name to its row, creating it owned by
+// Register resolves declared.Name to its row, creating it owned by
 // owner if it doesn't exist. An existing row takes declared's config.
-func (d *CronJobDatastore) RegisterCronJob(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
+func (d *CronJobDatastore) Register(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
 	var job *CronJobData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		job, err = d.registerCronJob(ctx, owner, declared)
+		job, err = d.register(ctx, owner, declared)
 		return err
 	})
 	return job, err
 }
 
-// registerCronJob registers behind a per-name advisory lock, NOT ON CONFLICT.
+// register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
-	found, err := d.getCronJob(ctx, d.Datastore.Pool, declared.Name)
+func (d *CronJobDatastore) register(ctx context.Context, owner *common.Owner, declared *RegisterCronJobData) (*CronJobData, error) {
+	found, err := d.get(ctx, d.Datastore.Pool, declared.Name)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceCronJobConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, declared)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -41,12 +41,12 @@ func (d *CronJobDatastore) registerCronJob(ctx context.Context, owner *common.Ow
 	}
 
 	// re-check under the lock -- a racing register may have committed while we waited
-	found, err = d.getCronJob(ctx, tx, declared.Name)
+	found, err = d.get(ctx, tx, declared.Name)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceCronJobConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, declared)
 	}
 
 	next, err := d.nextScheduledTime(ctx, tx, declared.Schedule)

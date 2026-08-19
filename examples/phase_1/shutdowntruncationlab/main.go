@@ -21,10 +21,10 @@ package main
 //   - the message after the interruption point is never even attempted
 //   - the lease survives, narrowed to (lastProcessed, high] -- not deleted, not
 //     left spanning the whole original range
-//   - AdvanceWaterline stays correctly pinned behind the unresolved exception even
+//   - AdvanceCommitted stays correctly pinned behind the unresolved exception even
 //     though the lease is already narrowed past it (the two blockers combine via
 //     LEAST, neither overrides the other)
-//   - once the exception resolves, the waterline advances to the narrowed low --
+//   - once the exception resolves, committed advances to the narrowed low --
 //     it does NOT need the untouched suffix's lease to expire first
 //   - once that narrowed lease naturally expires, ONLY the untouched suffix is
 //     reclaimed -- the resolved prefix is never redelivered
@@ -50,7 +50,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -88,7 +88,7 @@ func main() {
 	must(err)
 	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -156,21 +156,21 @@ func main() {
 	assert("exactly 1 unresolved exception (message 2)", deliveries(ctx, ds, tp.Id), 1)
 	assertStatus(ctx, ds, tp.Id, 2, "ready")
 
-	step("waterline stays pinned behind the unresolved exception, even though the lease is already narrowed past it")
-	committed := advance(ctx, waterlineDatastore, tp.Id)
+	step("committed stays pinned behind the unresolved exception, even though the lease is already narrowed past it")
+	committed := advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assert("committed blocked at message 1 (exception at 2 still unresolved)", committed, 1)
 
 	step("sleep 5.5s — let the unresolved exception's initial backoff pass")
 	time.Sleep(5500 * time.Millisecond)
 
-	step("resolve the exception -- waterline jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, groupId, 10, 3, lease, tp.DeliveryLogMode)
+	step("resolve the exception -- committed jumps to the narrowed low, no need to wait on the untouched suffix's lease")
+	claimedExceptions, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
 	}
-	must(exceptionConsumers.RecordExceptionSuccess(ctx, &claimedExceptions[0], tp.DeliveryLogMode, nil))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	must(exceptionConsumers.RecordSuccess(ctx, &claimedExceptions[0], tp.DeliveryLogMode, nil))
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assert("committed advances to the narrowed low", committed, 2)
 	assert("deliveries drained (exception pop-deleted)", deliveries(ctx, ds, tp.Id), 0)
 
@@ -188,13 +188,13 @@ func main() {
 	assert("reclaimed message is the one never attempted", claim2.Messages[0].Id, 3)
 
 	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assert("committed reaches head", committed, 3)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
 
 	fmt.Println("\n✅ SHUTDOWN LEASE TRUNCATION LAB PASSED")
 	fmt.Println("   an interruption mid-range records what resolved and narrows the lease to the")
-	fmt.Println("   untouched suffix -- the resolved prefix is never redelivered, the waterline's")
+	fmt.Println("   untouched suffix -- the resolved prefix is never redelivered, committed's")
 	fmt.Println("   exception-blocker and lease-narrowing terms combine correctly via LEAST, and")
 	fmt.Println("   the untouched suffix reclaims on its own once its (now-shorter) lease expires.")
 }
@@ -210,8 +210,8 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 	}
 }
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
+func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatastore.CursorAdvancerDatastore, topicId int64) int64 {
+	c, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, topicId, groupId)
 	must(err)
 	return c
 }

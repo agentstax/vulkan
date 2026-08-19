@@ -10,16 +10,16 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// executionPool supervises the goroutine behind every execution the manager
+// instancePool supervises the goroutine behind every execution the manager
 // has spawned.
-type executionPool struct {
+type instancePool struct {
 	logger       common.Logger
 	provisioners map[string]worker.Provisioner // keyed by Name, copied from the manager at construction
-	running      map[int64]*spawnedExecution   // keyed by worker row id
+	running      map[int64]*spawnedInstance    // keyed by worker row id
 	group        *errgroup.Group               // every spawned Run goroutine; its first fatal error cancels the manager's run
 }
 
-func newExecutionPool(provisioners map[string]worker.Provisioner, group *errgroup.Group, log common.Logger) (*executionPool, error) {
+func newInstancePool(provisioners map[string]worker.Provisioner, group *errgroup.Group, log common.Logger) (*instancePool, error) {
 	if provisioners == nil {
 		return nil, errors.New("provisioners must not be nil")
 	}
@@ -30,15 +30,15 @@ func newExecutionPool(provisioners map[string]worker.Provisioner, group *errgrou
 		return nil, errors.New("logger must not be nil")
 	}
 
-	return &executionPool{
+	return &instancePool{
 		logger:       log,
 		provisioners: provisioners,
-		running:      make(map[int64]*spawnedExecution),
+		running:      make(map[int64]*spawnedInstance),
 		group:        group,
 	}, nil
 }
 
-type spawnedExecution struct {
+type spawnedInstance struct {
 	stop context.CancelFunc
 	done chan struct{} // closed when the execution's Run returns
 
@@ -46,11 +46,11 @@ type spawnedExecution struct {
 	owner  string
 }
 
-func newSpawnedExecution(stop context.CancelFunc, workerName string, ownerName string) (*spawnedExecution, error) {
+func newSpawnedInstance(stop context.CancelFunc, workerName string, ownerName string) (*spawnedInstance, error) {
 	if stop == nil {
 		return nil, errors.New("stop must not be nil")
 	}
-	return &spawnedExecution{
+	return &spawnedInstance{
 		stop:   stop,
 		done:   make(chan struct{}),
 		worker: workerName,
@@ -59,7 +59,7 @@ func newSpawnedExecution(stop context.CancelFunc, workerName string, ownerName s
 }
 
 // finished reports whether the execution's Run has returned.
-func (s *spawnedExecution) finished() bool {
+func (s *spawnedInstance) finished() bool {
 	select {
 	case <-s.done:
 		return true
@@ -98,7 +98,7 @@ func newWorkerChange(change changeType, id int64, desiredWorker *worker.Worker) 
 }
 
 // reconcile makes the running set match desired -- one action per diffed change.
-func (p *executionPool) reconcile(ctx context.Context, desiredWorkers []*worker.Worker) error {
+func (p *instancePool) reconcile(ctx context.Context, desiredWorkers []*worker.Worker) error {
 	changes, err := p.diff(desiredWorkers)
 	if err != nil {
 		return err
@@ -122,7 +122,7 @@ func (p *executionPool) reconcile(ctx context.Context, desiredWorkers []*worker.
 
 // diff compares desired against running and returns what reconcile must act
 // on; workers running as desired produce no change.
-func (p *executionPool) diff(desiredWorkers []*worker.Worker) ([]workerChange, error) {
+func (p *instancePool) diff(desiredWorkers []*worker.Worker) ([]workerChange, error) {
 	want := make(map[int64]bool, len(desiredWorkers))
 	var changes []workerChange
 
@@ -161,7 +161,7 @@ func (p *executionPool) diff(desiredWorkers []*worker.Worker) ([]workerChange, e
 
 // start spawns one worker row through its provisioner under its own child ctx.
 // Errors warn -- the next reconcile retries.
-func (p *executionPool) start(ctx context.Context, desiredWorker *worker.Worker) {
+func (p *instancePool) start(ctx context.Context, desiredWorker *worker.Worker) {
 	provisioner, ok := p.provisioners[desiredWorker.Name]
 	if !ok {
 		// expected every pass, not a misconfiguration -- a chain carries rows
@@ -185,7 +185,7 @@ func (p *executionPool) start(ctx context.Context, desiredWorker *worker.Worker)
 	}
 
 	executionCtx, stop := context.WithCancel(ctx)
-	spawned, err := newSpawnedExecution(stop, desiredWorker.Name, desiredWorker.Owner.Name)
+	spawned, err := newSpawnedInstance(stop, desiredWorker.Name, desiredWorker.Owner.Name)
 	if err != nil {
 		stop()
 		p.logger.WarnContext(ctx, "manager could not track spawned worker -- retrying next reconcile", "worker", desiredWorker.Name, "owner", desiredWorker.Owner.Name, "error", err)
@@ -213,7 +213,7 @@ func (p *executionPool) start(ctx context.Context, desiredWorker *worker.Worker)
 
 // stop cancels one execution and forgets it. The goroutine drains on its own
 // time -- the group keeps tracking it, so Wait still covers it.
-func (p *executionPool) stop(ctx context.Context, id int64) {
+func (p *instancePool) stop(ctx context.Context, id int64) {
 	spawned, ok := p.running[id]
 	if !ok {
 		p.logger.WarnContext(ctx, "manager has no running execution for worker row -- nothing to stop", "worker_id", id)

@@ -39,8 +39,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/controller/datastore"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -84,7 +84,7 @@ func main() {
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
@@ -152,7 +152,7 @@ func main() {
 	assertInt64s("retroactive binding applies to the pre-existing message, CURSOR path filters out the non-match",
 		ids(claim.Messages), []int64{headBefore + 1, headBefore + 2})
 	must(messageConsumers.Commit(ctx, topicC.Id, groupRouteID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed := advance(ctx, waterlineDatastore, topicC.Id, groupRouteID)
+	committed := advance(ctx, cursorAdvancerDatastore, topicC.Id, groupRouteID)
 	assertInt("committed still advances over the WHOLE range, not just the matches", committed, claim.Lease.High)
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
@@ -183,7 +183,7 @@ func main() {
 		die("expected groupX to claim a fresh range")
 	}
 	must(messageConsumers.Commit(ctx, topicD.Id, groupXID, claimX.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	advance(ctx, waterlineDatastore, topicD.Id, groupXID)
+	advance(ctx, cursorAdvancerDatastore, topicD.Id, groupXID)
 	fmt.Println("  groupX (sliceX reader) is now fully caught up on the only traffic that exists")
 	// groupY never published to or claimed anything -- its cursor sits at claimed=committed=0,
 	// simulating a slice consumer that's stuck or never started.
@@ -221,8 +221,8 @@ func publish(ctx context.Context, wp *producer.ProducerInstance[common.Work], ro
 	must(err)
 }
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64, groupId int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
+func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatastore.CursorAdvancerDatastore, topicId int64, groupId int64) int64 {
+	c, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, topicId, groupId)
 	must(err)
 	return c
 }

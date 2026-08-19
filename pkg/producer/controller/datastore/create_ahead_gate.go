@@ -6,29 +6,29 @@ import (
 	"sync/atomic"
 )
 
-// CreateAheadGate decides when an append should create the next partition
+// createAheadGate decides when an append should create the next partition
 // early. Ids come from one sequence, so exactly one append fleet-wide sees
 // each trigger point id -- no coordination.
-type CreateAheadGate struct {
+type createAheadGate struct {
 	triggerPointPercentages []float64
 	data                    sync.Map // topicId -> *atomic.Int64
 }
 
 // triggerPointPercentages are positions within a partition, e.g. .80 & .95
-func NewCreateAheadGate(triggerPointPercentages []float64) (*CreateAheadGate, error) {
+func newCreateAheadGate(triggerPointPercentages []float64) (*createAheadGate, error) {
 	for _, triggerPointPercentage := range triggerPointPercentages {
 		if !(triggerPointPercentage > 0.0 && triggerPointPercentage < 1.0) {
 			return nil, fmt.Errorf("trigger point percentage must be > 0.0 and < 1.0, got %v", triggerPointPercentage)
 		}
 	}
 
-	return &CreateAheadGate{
+	return &createAheadGate{
 		triggerPointPercentages: triggerPointPercentages,
 	}, nil
 }
 
 // a duplicate's zero id never lands on a trigger point
-func (g *CreateAheadGate) shouldTriggerWithId(topicId int64, partitionSize int64, id int64) bool {
+func (g *createAheadGate) shouldTriggerWithId(topicId int64, partitionSize int64, id int64) bool {
 	atTriggerPoint := g.isTriggerPointId(partitionSize, id)
 	if atTriggerPoint == -1 {
 		return false
@@ -38,7 +38,7 @@ func (g *CreateAheadGate) shouldTriggerWithId(topicId int64, partitionSize int64
 }
 
 // an all-duplicates (0, 0) range never contains a trigger point
-func (g *CreateAheadGate) shouldTriggerWithRange(topicId int64, partitionSize int64, firstId int64, lastId int64) bool {
+func (g *createAheadGate) shouldTriggerWithRange(topicId int64, partitionSize int64, firstId int64, lastId int64) bool {
 	atTriggerPoint := g.isTriggerPointRange(partitionSize, firstId, lastId)
 	if atTriggerPoint == -1 {
 		return false
@@ -48,11 +48,11 @@ func (g *CreateAheadGate) shouldTriggerWithRange(topicId int64, partitionSize in
 }
 
 // Delete drops topicId's claim entry, keeping the map bounded by live topics.
-func (g *CreateAheadGate) Delete(topicId int64) {
+func (g *createAheadGate) delete(topicId int64) {
 	g.data.Delete(topicId)
 }
 
-func (g *CreateAheadGate) isTriggerPointId(partitionSize int64, id int64) float64 {
+func (g *createAheadGate) isTriggerPointId(partitionSize int64, id int64) float64 {
 	for _, triggerPointPercentage := range g.triggerPointPercentages {
 		triggerPointId := getTriggerPointId(id, partitionSize, triggerPointPercentage)
 		if id == triggerPointId {
@@ -63,7 +63,7 @@ func (g *CreateAheadGate) isTriggerPointId(partitionSize int64, id int64) float6
 	return -1
 }
 
-func (g *CreateAheadGate) isTriggerPointRange(partitionSize int64, firstId int64, lastId int64) float64 {
+func (g *createAheadGate) isTriggerPointRange(partitionSize int64, firstId int64, lastId int64) float64 {
 	for _, triggerPointPercentage := range g.triggerPointPercentages {
 		triggerPointId := getTriggerPointId(lastId, partitionSize, triggerPointPercentage)
 		if triggerPointId >= firstId && triggerPointId <= lastId {
@@ -76,7 +76,7 @@ func (g *CreateAheadGate) isTriggerPointRange(partitionSize int64, firstId int64
 
 // monotonic, never reset -- a failed create stays claimed, the boundary heal
 // covers it
-func (g *CreateAheadGate) tryToGetClaim(topicId int64, partition int64, triggerPointPercentage float64) bool {
+func (g *createAheadGate) tryToGetClaim(topicId int64, partition int64, triggerPointPercentage float64) bool {
 	claimId := createClaimId(partition, triggerPointPercentage)
 
 	fresh := &atomic.Int64{}
@@ -100,7 +100,7 @@ func (g *CreateAheadGate) tryToGetClaim(topicId int64, partition int64, triggerP
 // *** HELPERS ***
 // ***************
 
-// percentages are validated by NewCreateAheadGate, so this cannot fail
+// percentages are validated by newCreateAheadGate, so this cannot fail
 func getTriggerPointId(id int64, partitionSize int64, triggerPointPercentage float64) int64 {
 	partition := id / partitionSize
 	start := partition * partitionSize

@@ -50,12 +50,12 @@ func newClaimBuffer(queue concurrency.Queue[buffered], includeSuccesses bool) (*
 	}, nil
 }
 
-func (b *claimBuffer) WaitForRoom(ctx context.Context, timeout time.Duration, threshold int) (int, error) {
+func (b *claimBuffer) waitForRoom(ctx context.Context, timeout time.Duration, threshold int) (int, error) {
 	return b.queue.WaitForRoom(ctx, timeout, threshold)
 }
 
-// Add tracks claimed and enqueues its messages for dispatch.
-func (b *claimBuffer) Add(ctx context.Context, claimed *controller.ClaimedRange) error {
+// add tracks claimed and enqueues its messages for dispatch.
+func (b *claimBuffer) add(ctx context.Context, claimed *controller.ClaimedRange) error {
 	if claimed == nil {
 		return errors.New("claimed must not be nil")
 	}
@@ -89,7 +89,7 @@ func (b *claimBuffer) lookup(token uuid.UUID) *rangeState {
 	return b.ranges[token]
 }
 
-func (b *claimBuffer) WaitForNext(ctx context.Context) (*buffered, error) {
+func (b *claimBuffer) waitForNext(ctx context.Context) (*buffered, error) {
 	item, err := b.queue.DeQueue(ctx) // DeQueue is blocking
 	if err != nil {
 		return nil, err
@@ -102,23 +102,23 @@ func (b *claimBuffer) WaitForNext(ctx context.Context) (*buffered, error) {
 	return item, nil
 }
 
-func (b *claimBuffer) ResolveSuccess(item *buffered) {
+func (b *claimBuffer) resolveSuccess(item *buffered) {
 	b.resolve(item, kindSuccess, "")
 }
 
-func (b *claimBuffer) ResolveException(item *buffered, err error) {
+func (b *claimBuffer) resolveException(item *buffered, err error) {
 	b.resolve(item, kindException, err.Error())
 }
 
-func (b *claimBuffer) ResolveTerminal(item *buffered, err error) {
+func (b *claimBuffer) resolveTerminal(item *buffered, err error) {
 	b.resolve(item, kindTerminal, err.Error())
 }
 
-func (b *claimBuffer) ResolveSuperseded(item *buffered) {
+func (b *claimBuffer) resolveSuperseded(item *buffered) {
 	b.resolve(item, kindSuperseded, "a newer message on the same compaction key superseded this delivery")
 }
 
-func (b *claimBuffer) ResolveDeferred(item *buffered) {
+func (b *claimBuffer) resolveDeferred(item *buffered) {
 	b.resolve(item, kindDeferred, "another delivery held the compaction key at dispatch")
 }
 
@@ -130,28 +130,28 @@ func (b *claimBuffer) resolve(item *buffered, kind outcomeKind, err string) {
 	state.resolve(item.index, kind, err)
 }
 
-func (b *claimBuffer) IsRangeResolved(token uuid.UUID) bool {
+func (b *claimBuffer) isRangeResolved(token uuid.UUID) bool {
 	state := b.lookup(token)
 	return state != nil && state.isResolved()
 }
 
 // errors are normal flow -- several resolvers can see IsRangeResolved true,
-// only TryGetSnapshot's CompareAndSwap winner gets the snapshot.
-func (b *claimBuffer) TryGetRangeSnapshot(token uuid.UUID) (*rangeSnapshot, error) {
+// only tryGetSnapshot's CompareAndSwap winner gets the snapshot.
+func (b *claimBuffer) tryGetRangeSnapshot(token uuid.UUID) (*rangeSnapshot, error) {
 	state := b.lookup(token)
 	if state == nil {
 		return nil, errRangeNotTracked
 	}
-	return state.TryGetSnapshot()
+	return state.tryGetSnapshot()
 }
 
-func (b *claimBuffer) MarkStale(token uuid.UUID) {
+func (b *claimBuffer) markStale(token uuid.UUID) {
 	if state := b.lookup(token); state != nil {
 		state.stale.Store(true)
 	}
 }
 
-func (b *claimBuffer) Remove(token uuid.UUID) {
+func (b *claimBuffer) remove(token uuid.UUID) {
 	b.rangesMu.Lock()
 	defer b.rangesMu.Unlock()
 	delete(b.ranges, token)
@@ -159,7 +159,7 @@ func (b *claimBuffer) Remove(token uuid.UUID) {
 
 // empties the map atomically so shutdown owns every open range in one step --
 // a straggler resolving after this hits the fence instead of racing it.
-func (b *claimBuffer) RemoveAll() []*rangeState {
+func (b *claimBuffer) removeAll() []*rangeState {
 	b.rangesMu.Lock()
 	defer b.rangesMu.Unlock()
 

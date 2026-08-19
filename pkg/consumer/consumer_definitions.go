@@ -7,10 +7,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
+	"github.com/agentstax/vulkan/pkg/worker/cursoradvancer"
 	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
 	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
-	"github.com/agentstax/vulkan/pkg/worker/waterline"
 )
 
 // every group-owned row is declared here rather than at Register, so the
@@ -52,7 +52,7 @@ func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consum
 	})
 }
 
-// one frontier per group, with a waterline rolling behind it
+// one frontier per group, with committed advancing behind it
 func (i *ConsumerInstance[Message]) newGroupDefinitions(consumerFunc ConsumerFunc[Message]) ([]worker.Definition, error) {
 	message, err := messageconsumer.NewMessageConsumerDefinition(i.ds, consumerFunc, i.abandonedEvents, toMessageConsumerConfig(i.Config))
 	if err != nil {
@@ -64,7 +64,7 @@ func (i *ConsumerInstance[Message]) newGroupDefinitions(consumerFunc ConsumerFun
 		return nil, err
 	}
 
-	waterlineDefinition, err := waterline.NewWaterlineDefinition(i.ds, &waterline.WaterlineConfig{
+	cursorAdvancerDefinition, err := cursoradvancer.NewCursorAdvancerDefinition(i.ds, &cursoradvancer.CursorAdvancerConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
 	})
@@ -72,7 +72,7 @@ func (i *ConsumerInstance[Message]) newGroupDefinitions(consumerFunc ConsumerFun
 		return nil, err
 	}
 
-	return []worker.Definition{message, exception, waterlineDefinition}, nil
+	return []worker.Definition{message, exception, cursorAdvancerDefinition}, nil
 }
 
 func (i *ConsumerInstance[Message]) newTopicDefinitions() ([]worker.Provisioner, error) {

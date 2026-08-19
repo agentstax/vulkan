@@ -1,4 +1,4 @@
-package waterline
+package cursoradvancer
 
 import (
 	"errors"
@@ -6,27 +6,27 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
-	waterlinecontroller "github.com/agentstax/vulkan/pkg/worker/waterline/controller"
+	cursoradvancercontroller "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller"
 )
 
-const WorkerWaterline = "waterline"
+const WorkerCursorAdvancer = "cursor_advancer"
 
-type WaterlineDefinition struct {
-	Config *WaterlineConfig
+type CursorAdvancerDefinition struct {
+	Config *CursorAdvancerConfig
 	Logger common.Logger
 
 	workers    *controller.WorkerController
-	controller *waterlinecontroller.WaterlineController
+	controller *cursoradvancercontroller.CursorAdvancerController
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWaterlineDefinition(ds *iDatastore.PostgresDatastore, cfg *WaterlineConfig) (*WaterlineDefinition, error) {
+func NewCursorAdvancerDefinition(ds *iDatastore.PostgresDatastore, cfg *CursorAdvancerConfig) (*CursorAdvancerDefinition, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &WaterlineConfig{}
+		cfg = &CursorAdvancerConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -41,7 +41,7 @@ func NewWaterlineDefinition(ds *iDatastore.PostgresDatastore, cfg *WaterlineConf
 		return nil, err
 	}
 
-	waterlineController, err := waterlinecontroller.NewWaterlineController(ds, &waterlinecontroller.ControllerConfig{
+	advanceController, err := cursoradvancercontroller.NewCursorAdvancerController(ds, &cursoradvancercontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -49,14 +49,14 @@ func NewWaterlineDefinition(ds *iDatastore.PostgresDatastore, cfg *WaterlineConf
 		return nil, err
 	}
 
-	return &WaterlineDefinition{
+	return &CursorAdvancerDefinition{
 		Config:     cfg,
 		Logger:     cfg.Logger,
 		workers:    workers,
-		controller: waterlineController,
+		controller: advanceController,
 	}, nil
 }
 
-func (w *WaterlineDefinition) Name() string {
-	return WorkerWaterline
+func (d *CursorAdvancerDefinition) Name() string {
+	return WorkerCursorAdvancer
 }

@@ -43,8 +43,8 @@ func (b *batch[Message]) single(i int) *batch[Message] {
 }
 
 func (b *batch[Message]) recordAll(err error) {
-	for _, op := range b.operations {
-		op.response.record(err)
+	for _, operation := range b.operations {
+		operation.response.record(err)
 	}
 }
 

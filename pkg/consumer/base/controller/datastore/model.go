@@ -2,7 +2,7 @@ package datastore
 
 import "github.com/jackc/pgx/v5/pgtype"
 
-// KeyLeaseVerdict classifies a ClaimKeyLease attempt.
+// KeyLeaseVerdict classifies a Claim attempt.
 type KeyLeaseVerdict string
 
 const (
@@ -11,8 +11,8 @@ const (
 	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the message is no longer its key's compaction head -- never run it
 )
 
-// KeyLeaseData is one ClaimKeyLease outcome. Token is set only when
-// acquired; ReleaseKeyLease matches on it.
+// KeyLeaseData is one Claim outcome. Token is set only when
+// acquired; Release matches on it.
 type KeyLeaseData struct {
 	Verdict         KeyLeaseVerdict
 	ConsumerGroupId int64

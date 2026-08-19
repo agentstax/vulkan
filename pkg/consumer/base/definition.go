@@ -92,14 +92,14 @@ func NewBaseDefinition[Message any](ds *datastore.PostgresDatastore, workerName 
 	}, nil
 }
 
-func (c *BaseDefinition[Message]) Name() string {
-	return c.workerName
+func (d *BaseDefinition[Message]) Name() string {
+	return d.workerName
 }
 
 // GetTopic resolves the topic a consumer's owner points at; a missing topic
 // is an error, not an expected absence -- nothing can consume from it.
-func (c *BaseDefinition[Message]) GetTopic(ctx context.Context, topicId int64) (*topic.Topic, error) {
-	current, err := c.topics.GetTopicById(ctx, topicId)
+func (d *BaseDefinition[Message]) GetTopic(ctx context.Context, topicId int64) (*topic.Topic, error) {
+	current, err := d.topics.GetById(ctx, topicId)
 	if err != nil {
 		return nil, err
 	}
@@ -113,12 +113,12 @@ func (c *BaseDefinition[Message]) GetTopic(ctx context.Context, topicId int64) (
 // the newest declaration wins.
 // NoInstanceTarget: a consumer's claim gate is the caller asking to consume,
 // not a count on the row.
-func (c *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *common.Owner, metadata any) error {
-	if err := workercontroller.ValidateOwner(owner, common.OwnerConsumerGroup, c.workerName); err != nil {
+func (d *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *common.Owner, metadata any) error {
+	if err := workercontroller.ValidateOwner(owner, common.OwnerConsumerGroup, d.workerName); err != nil {
 		return err
 	}
 
-	return c.workers.RegisterWorker(ctx, c.workerName, owner, &workercontroller.WorkerConfig{
+	return d.workers.RegisterWorker(ctx, d.workerName, owner, &workercontroller.WorkerConfig{
 		Metadata:        metadata,
 		TargetInstances: worker.NoInstanceTarget,
 	})
@@ -126,6 +126,6 @@ func (c *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *comm
 
 // RegisterInstance claims one live instance under the worker row; a nil
 // instance is a declined claim, not an error.
-func (c *BaseDefinition[Message]) RegisterInstance(ctx context.Context, workerId int64, owner *common.Owner, instanceTTL time.Duration) (*worker.WorkerInstance, error) {
-	return c.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, c.workerName, instanceTTL)
+func (d *BaseDefinition[Message]) RegisterInstance(ctx context.Context, workerId int64, owner *common.Owner, instanceTTL time.Duration) (*worker.WorkerInstance, error) {
+	return d.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, d.workerName, instanceTTL)
 }

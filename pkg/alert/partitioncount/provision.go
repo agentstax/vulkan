@@ -20,7 +20,7 @@ func (d *PartitionCountDefinition) Declare(ctx context.Context, owner *common.Ow
 		return err
 	}
 
-	cronTopic, err := d.topics.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	cronTopic, err := d.topics.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
@@ -61,5 +61,5 @@ func (d *PartitionCountDefinition) Provision(ctx context.Context, workerId int64
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newPartitionCountExecution(d, owner, claimed, parsed.RepeatInterval)
+	return newPartitionCountInstance(d, owner, claimed, parsed.RepeatInterval)
 }

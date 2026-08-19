@@ -103,7 +103,7 @@ func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partiti
 			// a missing parent table means the topic was destroyed while this
 			// goroutine was in flight -- drop its claim entry
 			if isMissingTable(err) {
-				d.createAheadGate.Delete(topicId)
+				d.createAheadGate.delete(topicId)
 				return
 			}
 			d.Logger.WarnContext(ctx, "partition create-ahead failed -- the first insert past the boundary will create it", "topic_id", topicId, "error", err)

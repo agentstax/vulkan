@@ -7,20 +7,20 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-func (d *SystemDatastore) DeleteSystem(ctx context.Context) error {
+func (d *SystemDatastore) Delete(ctx context.Context) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.deleteSystem(ctx)
+		return d.delete(ctx)
 	})
 }
 
-func (d *SystemDatastore) deleteSystem(ctx context.Context) error {
+func (d *SystemDatastore) delete(ctx context.Context) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	// txn-scoped, same lock RegisterSystem takes -- a concurrent register
+	// txn-scoped, same lock Register takes -- a concurrent register
 	// waits here and recreates the schema after the drop commits.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		return err

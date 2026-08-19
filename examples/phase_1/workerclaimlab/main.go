@@ -3,17 +3,17 @@
 //
 // Registers its own topic (destroyed on exit), then runs three Consumers in
 // one group and watches live worker_instance rows. The maintenance workers
-// on the group's chain (janitor, waterline) are target-1 rows: EXACTLY one
+// on the group's chain (janitor, cursor advancer) are target-1 rows: EXACTLY one
 // live instance each no matter how many processes reconcile them -- the
 // claim gate arbitrates, not leader election. The message_consumer row is
 // the deliberate contrast: its target is unbounded, so every process runs
 // its own consume loop.
 //
-// Confirms: three consumers -> one live janitor/waterline instance (never
+// Confirms: three consumers -> one live janitor/cursor-advancer instance (never
 // three) beside three consume loops; killing two, the survivor's manager
 // re-claims whatever they held within a reconcile tick; killing the last,
 // every claim releases and nothing stays live -- and the workers actually
-// did their jobs (waterline reached head).
+// did their jobs (committed reached head).
 package main
 
 import (
@@ -42,7 +42,7 @@ const (
 // the target-1 rows on the group's chain; the manager rows are unbounded by
 // design, and the system's cron_scheduler is shared state outside this
 // lab's topic
-var exclusive = []string{"janitor", "waterline"}
+var exclusive = []string{"janitor", "cursor_advancer"}
 
 func main() {
 	ctx := context.Background()
@@ -82,7 +82,7 @@ func main() {
 	groupId := scalar(ctx, ds, `SELECT id FROM consumer_group WHERE topic_id=$1 AND name=$2`, tp.Id, group)
 
 	// ===== phase 1: N consumers, one live instance per target-1 row =====
-	step("PHASE 1: 3 consumers for 8s -- janitor/waterline hold exactly 1 live instance, never 3")
+	step("PHASE 1: 3 consumers for 8s -- janitor/cursor-advancer hold exactly 1 live instance, never 3")
 	maxLive, live := sampleLive(ctx, ds, tp.Id, groupId, 8*time.Second)
 	for _, name := range exclusive {
 		fmt.Printf("  %-18s live=%d max seen=%d\n", name, live[name], maxLive[name])
@@ -117,7 +117,7 @@ func main() {
 
 	// ===== the workers actually did their jobs =====
 	step("END STATE: the coordinated workers did real work")
-	assertInt("waterline reached head", scalar(ctx, ds, `SELECT c.committed FROM cursor c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1 AND g.topic_id=$2`, group, tp.Id), head)
+	assertInt("committed reached head", scalar(ctx, ds, `SELECT c.committed FROM cursor c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1 AND g.topic_id=$2`, group, tp.Id), head)
 
 	fmt.Println("\n✅ WORKER CLAIM LAB PASSED")
 	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")

@@ -1,18 +1,18 @@
 package main
 
 // Rollup lab: measures the numbers behind the lazy-vs-synchronous
-// AdvanceWaterline decision (record [0301] in docs/decisions/: the rollup
+// AdvanceCommitted decision (record [0301] in docs/decisions/: the rollup
 // stays lazy). Three scenarios:
 //
 //   - Staleness: how long after a range's Commit does `committed` actually
-//     reflect it -- the lazy roller's own ticker (RollWaterline) vs. calling
-//     AdvanceWaterline synchronously right after Commit. This is the gain.
+//     reflect it -- the cursor advancer's own ticker (AdvanceCommitted) vs. calling
+//     AdvanceCommitted synchronously right after Commit. This is the gain.
 //   - Fixed cost: sequential, uncontended -- the extra SELECT+UPDATE round
 //     trip a synchronous call chains onto every Commit, isolated from any
 //     lock contention.
 //   - Concurrent contention: G goroutines committing against the SAME
 //     (group, topic) cursor row -- Commit itself never touches that row
-//     today (only lease + delivery), so a synchronous AdvanceWaterline
+//     today (only lease + delivery), so a synchronous AdvanceCommitted
 //     call is new contention on it, not a cost that already existed. Same
 //     shape as compactionheadwritelab's hot-key scenario, applied to cursor.
 //
@@ -33,7 +33,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -94,7 +94,7 @@ func stalenessScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 }
 
 // runLazyStaleness commits numRanges ranges while a background ticker plays
-// the role of RollWaterline, and a fast poller independently samples
+// the role of AdvanceCommitted, and a fast poller independently samples
 // `committed` so staleness is measured from the outside, not self-reported.
 func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]rangeEvent, []sample) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -112,7 +112,7 @@ func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -147,7 +147,7 @@ func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]
 			case <-rollerDone:
 				return
 			case <-ticker.C:
-				if _, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId); err != nil {
+				if _, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, tp.Id, groupId); err != nil {
 					fmt.Printf("  (roller tick error, ignored: %v)\n", err)
 				}
 			}
@@ -174,7 +174,7 @@ func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]
 	return events, samples
 }
 
-// runSyncStaleness commits numRanges ranges, calling AdvanceWaterline
+// runSyncStaleness commits numRanges ranges, calling AdvanceCommitted
 // immediately after each Commit -- staleness is just that call's own latency.
 func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []float64 {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
@@ -191,7 +191,7 @@ func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []f
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -211,7 +211,7 @@ func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []f
 		must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 
 		start := time.Now()
-		_, err = waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId)
+		_, err = cursorAdvancerDatastore.AdvanceCommitted(ctx, tp.Id, groupId)
 		must(err)
 		stalenesses = append(stalenesses, msSince(start))
 	}
@@ -278,7 +278,7 @@ func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -296,7 +296,7 @@ func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 		}
 		must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 		if syncAdvance {
-			_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId)
+			_, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, tp.Id, groupId)
 			must(err)
 		}
 	}
@@ -336,7 +336,7 @@ func timeConcurrentCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -357,7 +357,7 @@ func timeConcurrentCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 				}
 				must(messageConsumers.Commit(ctx, tp.Id, groupId, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
 				if syncAdvance {
-					_, err := waterlineDatastore.AdvanceWaterline(ctx, tp.Id, groupId)
+					_, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, tp.Id, groupId)
 					must(err)
 				}
 			}

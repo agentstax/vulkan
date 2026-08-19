@@ -9,19 +9,19 @@ import (
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 )
 
-// CronJobRequests is the job's newest limit requests, one row per
+// ListRequests is the job's newest limit requests, one row per
 // (request, consumer group that receives it), newest request first.
-func (d *CronJobDatastore) CronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
+func (d *CronJobDatastore) ListRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
 	var requests []JobRequestStatusData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		requests, err = d.cronJobRequests(ctx, jobRequestsTopicId, cronJobId, name, limit)
+		requests, err = d.listRequests(ctx, jobRequestsTopicId, cronJobId, name, limit)
 		return err
 	})
 	return requests, err
 }
 
-func (d *CronJobDatastore) cronJobRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
+func (d *CronJobDatastore) listRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
 	compactionKey := strconv.FormatInt(cronJobId, 10)
 
 	groups, err := d.matchingGroups(ctx, jobRequestsTopicId, name)

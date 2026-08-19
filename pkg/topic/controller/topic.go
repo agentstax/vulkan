@@ -9,9 +9,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// GetTopic resolves topic (name, version).
+// Get resolves topic (name, version).
 // Returns (nil, nil) if (name, version) is not found.
-func (c *TopicController) GetTopic(ctx context.Context, name string, version topic.SchemaVersion) (*topic.Topic, error) {
+func (c *TopicController) Get(ctx context.Context, name string, version topic.SchemaVersion) (*topic.Topic, error) {
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
@@ -19,28 +19,28 @@ func (c *TopicController) GetTopic(ctx context.Context, name string, version top
 		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 
-	found, err := c.datastore.GetTopic(ctx, name, int64(version))
+	found, err := c.datastore.Get(ctx, name, int64(version))
 	if err != nil || found == nil {
 		return nil, err
 	}
 	return toTopic(found)
 }
 
-// GetTopicById resolves a topic by its id. Returns (nil, nil) if no topic has it.
-func (c *TopicController) GetTopicById(ctx context.Context, id int64) (*topic.Topic, error) {
+// GetById resolves a topic by its id. Returns (nil, nil) if no topic has it.
+func (c *TopicController) GetById(ctx context.Context, id int64) (*topic.Topic, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("id must be > 0, got %d", id)
 	}
 
-	found, err := c.datastore.GetTopicById(ctx, id)
+	found, err := c.datastore.GetById(ctx, id)
 	if err != nil || found == nil {
 		return nil, err
 	}
 	return toTopic(found)
 }
 
-func (c *TopicController) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
-	listed, err := c.datastore.ListTopics(ctx)
+func (c *TopicController) List(ctx context.Context) ([]*topic.Topic, error) {
+	listed, err := c.datastore.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -56,11 +56,11 @@ func (c *TopicController) ListTopics(ctx context.Context) ([]*topic.Topic, error
 	return topics, nil
 }
 
-// RegisterTopic resolves (name, version) to its db identity, creating the
+// Register resolves (name, version) to its db identity, creating the
 // topic if it doesn't exist, and returns the registered topic. cfg may be nil
 // or a sparse struct -- WithDefaults fills every field left unset, Validate
 // rejects what's out of range.
-func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) (*topic.Topic, error) {
+func (c *TopicController) Register(ctx context.Context, systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) (*topic.Topic, error) {
 	if systemId <= 0 {
 		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
@@ -78,7 +78,7 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 		return nil, err
 	}
 
-	registered, err := c.datastore.RegisterTopic(ctx, toTopicData(systemId, name, version, cfg))
+	registered, err := c.datastore.Register(ctx, toTopicData(systemId, name, version, cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -95,10 +95,10 @@ func (c *TopicController) RegisterTopic(ctx context.Context, systemId int64, nam
 	return toTopic(registered)
 }
 
-// RenameTopic moves every version under oldName to newName in one statement.
+// Rename moves every version under oldName to newName in one statement.
 // Returns (nil, nil) if no version is registered under oldName
 // ErrTopicNameTaken if newName already has any (name, version) registered.
-func (c *TopicController) RenameTopic(ctx context.Context, oldName string, newName string) ([]*topic.Topic, error) {
+func (c *TopicController) Rename(ctx context.Context, oldName string, newName string) ([]*topic.Topic, error) {
 	if oldName == "" {
 		return nil, errors.New("oldName is required")
 	}
@@ -106,7 +106,7 @@ func (c *TopicController) RenameTopic(ctx context.Context, oldName string, newNa
 		return nil, fmt.Errorf("new name must match %s, got %q", topic.SlugPattern, newName)
 	}
 
-	renamed, err := c.datastore.RenameTopic(ctx, oldName, newName)
+	renamed, err := c.datastore.Rename(ctx, oldName, newName)
 	if err != nil || renamed == nil {
 		return nil, err
 	}
@@ -122,9 +122,9 @@ func (c *TopicController) RenameTopic(ctx context.Context, oldName string, newNa
 	return topics, nil
 }
 
-// DeleteTopic drains and drops the topic's tables, then removes its rows.
+// Delete drains and drops the topic's tables, then removes its rows.
 // name is only for error and log text.
-func (c *TopicController) DeleteTopic(ctx context.Context, topicId int64, name string) error {
+func (c *TopicController) Delete(ctx context.Context, topicId int64, name string) error {
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -132,7 +132,7 @@ func (c *TopicController) DeleteTopic(ctx context.Context, topicId int64, name s
 		return errors.New("name is required")
 	}
 
-	return c.datastore.DeleteTopic(ctx, topicId, name)
+	return c.datastore.Delete(ctx, topicId, name)
 }
 
 // IsEmpty reports whether the topic's log holds any row at all.

@@ -51,7 +51,7 @@ const (
 	MetricCursorHead                   = "vulkan.consumer.cursor.head"                               // highest message id ever appended -- the log frontier
 	MetricCursorClaimed                = "vulkan.consumer.cursor.claimed"                            // the group's read frontier
 	MetricCursorCommitted              = "vulkan.consumer.cursor.committed"                          // everything at or below this id is done or dead
-	MetricCursorBacklog                = "vulkan.consumer.cursor.backlog"                            // head - committed -- the waterline gap
+	MetricCursorBacklog                = "vulkan.consumer.cursor.backlog"                            // head - committed
 	MetricCursorInflight               = "vulkan.consumer.cursor.inflight"                           // claimed - committed -- claimed but not yet resolved
 	MetricReadyExceptions              = "vulkan.consumer.exceptions.ready"                          // delivery rows waiting to be retried
 	MetricInflightExceptions           = "vulkan.consumer.exceptions.inflight"                       // delivery rows leased out to a retry attempt

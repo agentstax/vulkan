@@ -11,10 +11,10 @@ import (
 // *slog.Logger with whatever slog.Handler you want (zap/zerolog/logr all
 // ship one), or anything else that implements these four methods.
 type Logger interface {
-	DebugContext(ctx context.Context, msg string, args ...any)
-	InfoContext(ctx context.Context, msg string, args ...any)
-	WarnContext(ctx context.Context, msg string, args ...any)
-	ErrorContext(ctx context.Context, msg string, args ...any)
+	DebugContext(ctx context.Context, message string, args ...any)
+	InfoContext(ctx context.Context, message string, args ...any)
+	WarnContext(ctx context.Context, message string, args ...any)
+	ErrorContext(ctx context.Context, message string, args ...any)
 }
 
 // LoggerWith returns a Logger that puts args onto every line. A *slog.Logger
@@ -34,20 +34,20 @@ type withLogger struct {
 
 // Concat, not append -- a fresh slice per call, so concurrent callers never
 // share w.args' backing array.
-func (w *withLogger) DebugContext(ctx context.Context, msg string, args ...any) {
-	w.inner.DebugContext(ctx, msg, slices.Concat(w.args, args)...)
+func (w *withLogger) DebugContext(ctx context.Context, message string, args ...any) {
+	w.inner.DebugContext(ctx, message, slices.Concat(w.args, args)...)
 }
 
-func (w *withLogger) InfoContext(ctx context.Context, msg string, args ...any) {
-	w.inner.InfoContext(ctx, msg, slices.Concat(w.args, args)...)
+func (w *withLogger) InfoContext(ctx context.Context, message string, args ...any) {
+	w.inner.InfoContext(ctx, message, slices.Concat(w.args, args)...)
 }
 
-func (w *withLogger) WarnContext(ctx context.Context, msg string, args ...any) {
-	w.inner.WarnContext(ctx, msg, slices.Concat(w.args, args)...)
+func (w *withLogger) WarnContext(ctx context.Context, message string, args ...any) {
+	w.inner.WarnContext(ctx, message, slices.Concat(w.args, args)...)
 }
 
-func (w *withLogger) ErrorContext(ctx context.Context, msg string, args ...any) {
-	w.inner.ErrorContext(ctx, msg, slices.Concat(w.args, args)...)
+func (w *withLogger) ErrorContext(ctx context.Context, message string, args ...any) {
+	w.inner.ErrorContext(ctx, message, slices.Concat(w.args, args)...)
 }
 
 // NewDefaultLogger is the slog default: text lines to w, WARN and up.

@@ -60,31 +60,8 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   - Decide whether the field-less system config stub (RegisterSystem cfg /
     AlterSystem / `vulkan system alter`) stays in the v1 public surface or
     gets deleted until a real system-wide knob exists ([0516]).
-- **Naming pass:**
-  - Rename consumer waterline terms to something like cursor.committed —
-    waterline is useful for understanding but should not dictate code naming.
-  - Controllers have redundant verbage: topicController.GetTopic should just
-    be Get.
-  - Consider the Definition / Declarer / Provisioner / Instance split:
-    `*Definition` Name(); `*Declarer` Declare(*Definition) error;
-    `*Provisioner` Provision(*Definition) (*Instance, error); `*Instance`
-    Run() error. Right now Definition and Provisioner are mixed, which
-    doesn't hold together logically.
-    - Settled preference (2026-08-16): the Run-side structs are named
-      `*Instance`, not `*Execution` — Instance is the noun the mind
-      reaches for, and it matches the worker_instance row the struct
-      holds. `Execution` may survive only as the interface name the
-      Instance structs implement.
-  - Mechanical nits from the 2026-08-17 layered-pattern audit: receiver
-    letters not matching the type initial (`i` on the *Execution types,
-    `c` on *BaseDefinition, `f` on the definitions' provision methods);
-    truncated/single-letter domain names (`sched`, `op`, `n`, `g`, `min`
-    shadowing the builtin); withMetadata config methods living outside
-    their *_config.go files; exported methods on unexported types
-    (claimBuffer, rangeState, batchResponse, createAheadGate.Delete);
-    cronscheduler's nine-column single-line SELECT.
 - **Named-return-params house style** — decide and apply consistently across
-  the reviewed surface (same sweep as the naming pass).
+  the reviewed surface.
 - **Error message consistency and obsession.** Standardize every error
   message to be understandable and actionable — enrich context, eventually
   add doc links. Consider a standard shape: Handler (where), Description

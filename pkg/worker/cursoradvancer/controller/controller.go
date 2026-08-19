@@ -5,20 +5,20 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
+	"github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 )
 
-// WaterlineController is the waterline kind's door: the execution advances
+// CursorAdvancerController is the cursor advancer kind's door: the instance advances
 // committed through it.
-type WaterlineController struct {
+type CursorAdvancerController struct {
 	Logger common.Logger
 
-	datastore *datastore.WaterlineDatastore
+	datastore *datastore.CursorAdvancerDatastore
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWaterlineController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*WaterlineController, error) {
+func NewCursorAdvancerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*CursorAdvancerController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -30,7 +30,7 @@ func NewWaterlineController(ds *iDatastore.PostgresDatastore, cfg *ControllerCon
 		return nil, err
 	}
 
-	waterlineDatastore, err := datastore.NewWaterlineDatastore(ds, &datastore.WaterlineDatastoreConfig{
+	cursorAdvancerDatastore, err := datastore.NewCursorAdvancerDatastore(ds, &datastore.CursorAdvancerDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -38,8 +38,8 @@ func NewWaterlineController(ds *iDatastore.PostgresDatastore, cfg *ControllerCon
 		return nil, err
 	}
 
-	return &WaterlineController{
+	return &CursorAdvancerController{
 		Logger:    cfg.Logger,
-		datastore: waterlineDatastore,
+		datastore: cursorAdvancerDatastore,
 	}, nil
 }

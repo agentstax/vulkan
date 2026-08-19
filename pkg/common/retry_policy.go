@@ -26,8 +26,8 @@ func NewDefaultRetryPolicy() *RetryPolicy {
 // CalculateDelay returns the clamped exponential backoff
 // Algo: BaseDelay * Exponent^attempt, floored at 0 and ceiled at MaxDelay.
 func (p *RetryPolicy) CalculateDelay(attempt int) time.Duration {
-	d := time.Duration(float64(p.BaseDelay) * math.Pow(float64(p.Exponent), float64(attempt)))
-	return max(MIN_DELAY, min(d, p.MaxDelay))
+	delay := time.Duration(float64(p.BaseDelay) * math.Pow(float64(p.Exponent), float64(attempt)))
+	return max(MIN_DELAY, min(delay, p.MaxDelay))
 }
 
 // CalculateTotalDelay returns the schedule's total sleep time. Wrap never

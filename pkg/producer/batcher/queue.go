@@ -38,8 +38,8 @@ func (q *workQueue[Work]) dequeue(max int) []*Work {
 		q.workers--
 		return nil
 	}
-	n := min(len(q.work), max)
-	work := q.work[:n:n]
-	q.work = q.work[n:]
+	count := min(len(q.work), max)
+	work := q.work[:count:count]
+	q.work = q.work[count:]
 	return work
 }

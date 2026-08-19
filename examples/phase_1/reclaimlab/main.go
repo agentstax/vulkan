@@ -32,7 +32,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -66,7 +66,7 @@ func main() {
 	must(err)
 	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -96,7 +96,7 @@ func main() {
 	}
 	fmt.Printf("  claimed (%d,%d]  ids=%v  lease=%s\n",
 		claim1.Lease.Low, claim1.Lease.High, ids(claim1.Messages), shortTok(claim1.Lease.Token))
-	committed := advance(ctx, waterlineDatastore, tp.Id) // the lazy roller ticks while the range is in-flight
+	committed := advance(ctx, cursorAdvancerDatastore, tp.Id) // the lazy roller ticks while the range is in-flight
 	fmt.Printf("  roller tick -> committed = %d\n", committed)
 	// *** CRASH: control never reaches Commit(claim1) ***
 	oldTok := shortTok(claim1.Lease.Token)
@@ -129,7 +129,7 @@ func main() {
 	fmt.Println("  token rotated -> the dead worker's stale commit will now no-op")
 
 	// committed is still pinned at lo while the reclaimed range is in-flight again
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	fmt.Printf("  roller tick (mid-reclaim) -> committed = %d\n", committed)
 	assert("committed still pinned during reclaim", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 
@@ -138,12 +138,12 @@ func main() {
 		die(fmt.Sprintf("stale commit: want ErrLeaseLost, got %v", err))
 	}
 	assert("stale commit freed nothing (live lease survives)", leases(ctx, ds, tp.Id), 1)
-	assert("stale commit did not move the waterline", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
+	assert("stale commit did not move committed", committedCol(ctx, ds, tp.Id), claim1.Lease.Low)
 	fmt.Println("  dead worker's stale Commit was rejected with ErrLeaseLost")
 
 	// WORKER 2 finishes the range for real -> free lease, roller advances
 	must(messageConsumers.Commit(ctx, tp.Id, groupId, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	fmt.Printf("  reclaim committed -> roller tick -> committed = %d\n", committed)
 
 	snapshot(ctx, ds, tp.Id, "AFTER RECLAIM COMMITTED")
@@ -160,7 +160,7 @@ func main() {
 			break // caught up
 		}
 		must(messageConsumers.Commit(ctx, tp.Id, groupId, c.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, waterlineDatastore, tp.Id))
+		fmt.Printf("  drained (%d,%d] -> committed = %d\n", c.Lease.Low, c.Lease.High, advance(ctx, cursorAdvancerDatastore, tp.Id))
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
@@ -168,13 +168,13 @@ func main() {
 
 	fmt.Println("\n✅ PHASE 6.5b LAB PASSED")
 	fmt.Println("   crash mid-range -> lease expired -> exact range reclaimed (token rotated) ->")
-	fmt.Println("   reprocessed -> waterline pinned at lo then jumped to head -> delivery table empty.")
+	fmt.Println("   reprocessed -> committed pinned at lo then jumped to head -> delivery table empty.")
 }
 
 // ---- helpers ----
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, groupId)
+func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatastore.CursorAdvancerDatastore, topicId int64) int64 {
+	c, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, topicId, groupId)
 	must(err)
 	return c
 }

@@ -39,7 +39,7 @@ func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64
 	return partitions, rows.Err()
 }
 
-// cursorFloor is the waterline floor: the most-lagging group's committed
+// cursorFloor is the most-lagging group's committed
 // offset within this topic (nil if none exist yet). Scoped through the group
 // registry so a lagging group on another topic can't block this topic's
 // drops/sweeps.

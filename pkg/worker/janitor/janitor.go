@@ -68,6 +68,6 @@ func NewJanitorDefinition(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig) 
 	}, nil
 }
 
-func (j *JanitorDefinition) Name() string {
+func (d *JanitorDefinition) Name() string {
 	return WorkerJanitor
 }

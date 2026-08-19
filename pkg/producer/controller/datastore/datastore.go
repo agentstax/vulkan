@@ -13,7 +13,7 @@ type ProducerDatastore[Message any] struct {
 	DatastoreRetry *common.RetryDatastore // default Wrap classification covers everything except Commit -- classified inline at that call site
 	Logger         common.Logger
 
-	createAheadGate    *CreateAheadGate
+	createAheadGate    *createAheadGate
 	createAheadTimeout time.Duration
 }
 
@@ -37,7 +37,7 @@ func NewProducerDatastore[Message any](ds *datastore.PostgresDatastore, cfg *Pro
 	}
 
 	// trigger create-ahead at 80% or 95% full partition
-	createAheadGate, err := NewCreateAheadGate([]float64{0.80, 0.95})
+	createAheadGate, err := newCreateAheadGate([]float64{0.80, 0.95})
 	if err != nil {
 		return nil, err
 	}

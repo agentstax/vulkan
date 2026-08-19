@@ -7,9 +7,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
-// WaterlineDatastore owns the waterline's roll. Every op is group-scoped,
+// CursorAdvancerDatastore owns the committed advance. Every operation is group-scoped,
 // idempotent, and concurrent-safe.
-type WaterlineDatastore struct {
+type CursorAdvancerDatastore struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *common.RetryDatastore
 	Logger         common.Logger
@@ -17,12 +17,12 @@ type WaterlineDatastore struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewWaterlineDatastore(ds *datastore.PostgresDatastore, cfg *WaterlineDatastoreConfig) (*WaterlineDatastore, error) {
+func NewCursorAdvancerDatastore(ds *datastore.PostgresDatastore, cfg *CursorAdvancerDatastoreConfig) (*CursorAdvancerDatastore, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
 	if cfg == nil {
-		cfg = &WaterlineDatastoreConfig{}
+		cfg = &CursorAdvancerDatastoreConfig{}
 	}
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -34,7 +34,7 @@ func NewWaterlineDatastore(ds *datastore.PostgresDatastore, cfg *WaterlineDatast
 		return nil, err
 	}
 
-	return &WaterlineDatastore{
+	return &CursorAdvancerDatastore{
 		Datastore:      ds,
 		DatastoreRetry: datastoreRetry,
 		Logger:         cfg.Logger,

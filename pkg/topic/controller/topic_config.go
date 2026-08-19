@@ -7,7 +7,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// TopicConfig is RegisterTopic's spec -- separate from Topic so Register can grow
+// TopicConfig is Register's spec -- separate from Topic so Register can grow
 // (retention, etc.) without a signature change.
 type TopicConfig struct {
 	// PartitionSize - rows per partition.

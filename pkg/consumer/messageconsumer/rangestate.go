@@ -53,10 +53,10 @@ func newResult() result {
 
 // resolve writes kind/err THEN done -- done gates their visibility via
 // atomics release/acquire, so the Store must come last.
-func (s *result) resolve(kind outcomeKind, err string) {
-	s.kind = kind
-	s.err = err
-	s.done.Store(true)
+func (r *result) resolve(kind outcomeKind, err string) {
+	r.kind = kind
+	r.err = err
+	r.done.Store(true)
 }
 
 // a copy, not a live *rangeState -- holding it past a later Remove() can't race.
@@ -71,8 +71,8 @@ func newRangeSnapshot(lease controller.RangeLease, outcomes []controller.Message
 
 // mutable bookkeeping for one claimed range, lives only inside
 // claimBuffer.ranges. lock-free: results[i] is written by exactly one
-// goroutine -- whichever one dequeued message i via WaitForNext and later
-// calls Resolve* on it -- so no two goroutines ever touch the same memory.
+// goroutine -- whichever one dequeued message i via waitForNext and later
+// calls resolve* on it -- so no two goroutines ever touch the same memory.
 type rangeState struct {
 	lease controller.RangeLease
 	ids   []int64 // message id per result index -- set once, read-only after
@@ -82,9 +82,9 @@ type rangeState struct {
 	// DeliveryLogModeAll wants them, so the common case skips the allocation
 	includeSuccesses bool
 
-	dispatched atomic.Int64 // count handed out by WaitForNext
+	dispatched atomic.Int64 // count handed out by waitForNext
 	resolved   atomic.Int64 // resolved==total means every result is done
-	committed  atomic.Bool  // TryGetSnapshot's one-shot CAS
+	committed  atomic.Bool  // tryGetSnapshot's one-shot CAS
 	stale      atomic.Bool
 	results    []result
 }
@@ -119,9 +119,9 @@ func (r *rangeState) isResolved() bool {
 	return r.resolved.Load() == int64(r.total)
 }
 
-// TryGetSnapshot hands the snapshot to exactly one caller: isResolved is
+// tryGetSnapshot hands the snapshot to exactly one caller: isResolved is
 // checked BEFORE the CAS so a premature call can't burn snapshot ownership.
-func (r *rangeState) TryGetSnapshot() (*rangeSnapshot, error) {
+func (r *rangeState) tryGetSnapshot() (*rangeSnapshot, error) {
 	if !r.isResolved() {
 		return nil, errRangeNotResolved
 	}

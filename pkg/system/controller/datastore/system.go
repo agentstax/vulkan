@@ -11,19 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// RegisterSystem creates the shared control-plane schema and resolves the
+// Register creates the shared control-plane schema and resolves the
 // singleton system row, returning it.
-func (d *SystemDatastore) RegisterSystem(ctx context.Context) (*SystemData, error) {
+func (d *SystemDatastore) Register(ctx context.Context) (*SystemData, error) {
 	var registered *SystemData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		registered, err = d.registerSystem(ctx)
+		registered, err = d.register(ctx)
 		return err
 	})
 	return registered, err
 }
 
-func (d *SystemDatastore) registerSystem(ctx context.Context) (*SystemData, error) {
+func (d *SystemDatastore) register(ctx context.Context) (*SystemData, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemDat
 		return seeded, nil
 	}
 
-	existing, err := d.getSystem(ctx, tx)
+	existing, err := d.get(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,19 +95,19 @@ func (d *SystemDatastore) recordBaseline(ctx context.Context, tx pgx.Tx, systemI
 	return err
 }
 
-// GetSystem returns the singleton system row, or (nil, nil) if the system
+// Get returns the singleton system row, or (nil, nil) if the system
 // hasn't been registered.
-func (d *SystemDatastore) GetSystem(ctx context.Context) (*SystemData, error) {
+func (d *SystemDatastore) Get(ctx context.Context) (*SystemData, error) {
 	var systemData *SystemData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		systemData, err = d.getSystem(ctx, d.Datastore.Pool)
+		systemData, err = d.get(ctx, d.Datastore.Pool)
 		return err
 	})
 	return systemData, err
 }
 
-func (d *SystemDatastore) getSystem(ctx context.Context, q datastore.Querier) (*SystemData, error) {
+func (d *SystemDatastore) get(ctx context.Context, q datastore.Querier) (*SystemData, error) {
 	sql := `
 		SELECT id, created_at, updated_at
 		FROM system;

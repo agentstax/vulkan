@@ -56,24 +56,24 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 // (or your own crash) without double-publishing, supply an IdempotencyKey:
 // the rerun dedups against whatever actually landed, reported as
 // ProduceResult.Duplicate == true.
-func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.Config.Message)
-	if err := opts.Validate(); err != nil {
+func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options ProduceOptions) (*ProduceResult[Message], error) {
+	options.Message = options.Message.Fill(p.Config.Message)
+	if err := options.Validate(); err != nil {
 		return nil, err
 	}
 
 	// caller keys can collide -- a collision inside a shared txn stalls the
 	// whole batch, so keyed calls take a per-call transaction
-	if opts.IdempotencyKey != uuid.Nil {
+	if options.IdempotencyKey != uuid.Nil {
 		passthrough := func(context.Context, Tx, uuid.UUID) (*Message, error) { return message, nil }
-		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, opts)
+		appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, passthrough, options)
 		if err != nil {
 			return nil, err
 		}
 		return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 	}
 
-	appended, err := p.batcher.Produce(ctx, message, opts)
+	appended, err := p.batcher.Produce(ctx, message, options)
 	if err != nil {
 		return nil, err
 	}
@@ -123,13 +123,13 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
-func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.Config.Message)
-	if err := opts.Validate(); err != nil {
+func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
+	options.Message = options.Message.Fill(p.Config.Message)
+	if err := options.Validate(); err != nil {
 		return nil, err
 	}
 
-	appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+	appended, err := p.controller.AppendMessage(ctx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, options)
 	if err != nil {
 		return nil, err
 	}
@@ -147,13 +147,13 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // effectively takes a lock on consumer progress for the whole topic: claims
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
-func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], opts ProduceOptions) (*ProduceResult[Message], error) {
-	opts.Message = opts.Message.Fill(p.Config.Message)
-	if err := opts.Validate(); err != nil {
+func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
+	options.Message = options.Message.Fill(p.Config.Message)
+	if err := options.Validate(); err != nil {
 		return nil, err
 	}
 
-	appended, err := p.controller.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, opts)
+	appended, err := p.controller.AppendMessageInTx(ctx, tx, p.Topic.Id, p.Topic.PartitionSize, producerFunc, options)
 	if err != nil {
 		return nil, err
 	}

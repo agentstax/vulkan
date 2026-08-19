@@ -54,7 +54,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		return err
 	}
 
-	// keeps a key's history read (ListCompactionKeyMessages) an index scan.
+	// keeps a key's history read (compaction's ListKeyMessages) an index scan.
 	// partial, so topics that never set a compaction key pay nothing.
 	createCompactionKeyIndexSql := fmt.Sprintf(`
 		CREATE INDEX IF NOT EXISTS %s_compaction_key ON %s (compaction_key, id)

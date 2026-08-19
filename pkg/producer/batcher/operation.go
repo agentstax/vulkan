@@ -54,12 +54,3 @@ func (r *batchResponse[Message]) record(err error) {
 	r.err = err
 	close(r.done) // a second record panics here -- every operation gets exactly one outcome
 }
-
-func (r *batchResponse[Message]) Done() <-chan struct{} {
-	return r.done
-}
-
-// Err is only valid after Done is closed.
-func (r *batchResponse[Message]) Err() error {
-	return r.err
-}

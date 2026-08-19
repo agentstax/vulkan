@@ -26,26 +26,26 @@ func (a *MessageAdmin) TopicMetrics(ctx context.Context, name string, version to
 // series on __system.metrics.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.MessageRow[metrics.Measurement], error) {
-	found, err := a.topicController.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	found, err := a.topicController.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return nil, err
 	}
 	if found == nil {
 		return nil, fmt.Errorf("%w: topic %q -- run RegisterSystem first", topic.ErrTopicNotFound, metrics.TopicName)
 	}
-	return a.measurementHeads.ListCompactionHeads(ctx, found.Id)
+	return a.measurementHeads.ListHeads(ctx, found.Id)
 }
 
 // ListMeasurementMessages returns one series' retained measurements, newest first.
 // compactionKey is metrics.MeasurementKey(name, attributes); limit is required.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, compactionKey string, limit int) ([]*producer.MessageRow[metrics.Measurement], error) {
-	found, err := a.topicController.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	found, err := a.topicController.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return nil, err
 	}
 	if found == nil {
 		return nil, fmt.Errorf("%w: topic %q -- run RegisterSystem first", topic.ErrTopicNotFound, metrics.TopicName)
 	}
-	return a.measurementHeads.ListCompactionKeyMessages(ctx, found.Id, compactionKey, limit)
+	return a.measurementHeads.ListKeyMessages(ctx, found.Id, compactionKey, limit)
 }

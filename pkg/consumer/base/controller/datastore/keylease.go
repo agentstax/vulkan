@@ -9,22 +9,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// ClaimKeyLease attempts to acquire the exclusive right to run a keyed
+// Claim attempts to acquire the exclusive right to run a keyed
 // message. Acquired guarantees the message was still its key's compaction
 // head after the lease was won.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (d *KeyLeaseDatastore) ClaimKeyLease(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
+func (d *KeyLeaseDatastore) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
 	var claim *KeyLeaseData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claim, err = d.claimKeyLease(ctx, topicId, groupId, key, messageId, duration, token)
+		claim, err = d.claim(ctx, topicId, groupId, key, messageId, duration, token)
 		return err
 	})
 	return claim, err
 }
 
-func (d *KeyLeaseDatastore) claimKeyLease(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
+func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
 	// the head check gates the insert -- a superseded message never creates
 	// or locks a lease row.
 	claimSql := `
@@ -109,20 +109,20 @@ func (d *KeyLeaseDatastore) claimKeyLease(ctx context.Context, topicId int64, gr
 	return &claim, nil
 }
 
-// ReleaseKeyLease frees an acquired key.
+// Release frees an acquired key.
 // false -> no row matched the claim's Token: the lease expired, and the
 // row was taken over or deleted by the janitor.
-func (d *KeyLeaseDatastore) ReleaseKeyLease(ctx context.Context, claim *KeyLeaseData) (bool, error) {
+func (d *KeyLeaseDatastore) Release(ctx context.Context, claim *KeyLeaseData) (bool, error) {
 	var released bool
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		released, err = d.releaseKeyLease(ctx, d.Datastore.Pool, claim)
+		released, err = d.release(ctx, d.Datastore.Pool, claim)
 		return err
 	})
 	return released, err
 }
 
-func (d *KeyLeaseDatastore) releaseKeyLease(ctx context.Context, q datastore.Querier, claim *KeyLeaseData) (bool, error) {
+func (d *KeyLeaseDatastore) release(ctx context.Context, q datastore.Querier, claim *KeyLeaseData) (bool, error) {
 	sql := `
 		DELETE FROM key_lease
 		WHERE consumer_group_id = $1

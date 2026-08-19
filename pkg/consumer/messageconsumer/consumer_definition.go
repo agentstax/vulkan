@@ -6,7 +6,7 @@ package messageconsumer
 //
 // Run alone:
 //   - exception rows are written but never retried
-//   - the waterline never advances, pinning retention
+//   - committed never advances, pinning retention
 //   - the unresolved-exceptions alert eventually surfaces both
 
 import (

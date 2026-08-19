@@ -20,7 +20,7 @@ func (d *CompactionReadCostDefinition) Declare(ctx context.Context, owner *commo
 		return err
 	}
 
-	cronTopic, err := d.topics.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	cronTopic, err := d.topics.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
@@ -61,5 +61,5 @@ func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId i
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newCompactionReadCostExecution(d, owner, claimed, parsed.RepeatInterval)
+	return newCompactionReadCostInstance(d, owner, claimed, parsed.RepeatInterval)
 }

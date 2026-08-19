@@ -43,8 +43,9 @@ each func param has explicit type, never combined
   this list ad hoc; if a name feels too long, the type is probably doing too
   much.
 - Single letters are for loop indices and receivers only (`i`, `p`, `c`), and
-  the receiver matches the type's initial. A single letter never holds a
-  domain value.
+  the receiver matches the initial of the type's FINAL word -- `d` on
+  `*TopicDatastore`, `c` on `*ControllerConfig`, `i` on `*JanitorInstance`,
+  `d` on every `*Definition`. A single letter never holds a domain value.
 
 ## Structure
 

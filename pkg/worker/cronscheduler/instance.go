@@ -18,7 +18,7 @@ import (
 // scans cron_job for due rows at the row's poll_rate while a heartbeat holds
 // the claim, producing one JobRequest per due row and advancing each produced
 // row to its next scheduled time
-type CronSchedulerExecution struct {
+type CronSchedulerInstance struct {
 	Owner  *common.Owner
 	Config *CronSchedulerConfig
 	Logger common.Logger
@@ -30,7 +30,7 @@ type CronSchedulerExecution struct {
 	producerInstance *producer.ProducerInstance[cron.JobRequest]
 }
 
-func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata, producerInstance *producer.ProducerInstance[cron.JobRequest]) (*CronSchedulerExecution, error) {
+func newCronSchedulerInstance(cronScheduler *CronSchedulerDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *cronSchedulerMetadata, producerInstance *producer.ProducerInstance[cron.JobRequest]) (*CronSchedulerInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -51,7 +51,7 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 		return nil, err
 	}
 
-	return &CronSchedulerExecution{
+	return &CronSchedulerInstance{
 		Owner:            owner,
 		Config:           cronScheduler.Config,
 		Logger:           cronScheduler.Logger,
@@ -65,7 +65,7 @@ func newCronSchedulerExecution(cronScheduler *CronSchedulerDefinition, owner *co
 
 // Run scans until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (i *CronSchedulerExecution) Run(ctx context.Context) error {
+func (i *CronSchedulerInstance) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "cron scheduler starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.scan)
@@ -79,8 +79,8 @@ func (i *CronSchedulerExecution) Run(ctx context.Context) error {
 // transaction per row -- a shared transaction would let one bad row roll back
 // every job's produce, and would hold ProduceInTx's whole-topic
 // consumer-progress lock from the first produce to the end of the pass.
-func (i *CronSchedulerExecution) scan(ctx context.Context) error {
-	ids, err := i.controller.DueCronJobs(ctx)
+func (i *CronSchedulerInstance) scan(ctx context.Context) error {
+	ids, err := i.controller.ListDue(ctx)
 	if err != nil {
 		return err
 	}
@@ -100,9 +100,9 @@ func (i *CronSchedulerExecution) scan(ctx context.Context) error {
 // advance + idempotency claim share the transaction, so an ambiguous-commit
 // replay rolls all three back together and the cron.IdempotencyKey dedupe
 // covers exactly that replay.
-func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64) error {
+func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64) error {
 	return producer.InTransaction(ctx, i.ds, func(ctx context.Context, tx producer.Tx) error {
-		row, err := i.controller.ClaimDueCronJob(ctx, tx, id)
+		row, err := i.controller.ClaimDue(ctx, tx, id)
 		if err != nil || row == nil {
 			return err
 		}
@@ -160,8 +160,8 @@ func (i *CronSchedulerExecution) produceJobRequest(ctx context.Context, id int64
 			// schedule went unsatisfiable (tzdata drift): keep the produce,
 			// suspend the row -- it has no honest next_scheduled_time
 			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job", row.Id, "name", row.Name, "schedule", row.Schedule)
-			return i.controller.SuspendCronJob(ctx, tx, row.Id, scheduledTime)
+			return i.controller.Suspend(ctx, tx, row.Id, scheduledTime)
 		}
-		return i.controller.AdvanceCronJob(ctx, tx, row.Id, next, scheduledTime)
+		return i.controller.Advance(ctx, tx, row.Id, next, scheduledTime)
 	})
 }

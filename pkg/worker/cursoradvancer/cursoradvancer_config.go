@@ -1,4 +1,4 @@
-package waterline
+package cursoradvancer
 
 import (
 	"fmt"
@@ -8,24 +8,24 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-type WaterlineConfig struct {
+type CursorAdvancerConfig struct {
 	// InstanceTTL is how long the claimed worker_instance row stays live
 	// without a renewal -- past it the instance counts as dead and a
 	// replacement can claim. The heartbeat renews at half this.
 	// Default: 30s.
 	InstanceTTL time.Duration
 
-	// JitterFraction spreads roll ticks out of phase: each tick's delay is
+	// JitterFraction spreads advance ticks out of phase: each tick's delay is
 	// poll_rate * (1 ± JitterFraction).
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger    common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
-	Retry     *common.RetryPolicy // transient-error retry policy for the waterline's own Postgres calls. Default: common.NewDefaultRetryPolicy().
-	RollRetry *common.RetryPolicy // failed-roll backoff curve, unrelated to Retry above. Default: common.NewDefaultRetryPolicy().
+	Logger       common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry        *common.RetryPolicy // transient-error retry policy for the cursor advancer's own Postgres calls. Default: common.NewDefaultRetryPolicy().
+	AdvanceRetry *common.RetryPolicy // failed-advance backoff curve, unrelated to Retry above. Default: common.NewDefaultRetryPolicy().
 }
 
-func (c *WaterlineConfig) WithDefaults() *WaterlineConfig {
+func (c *CursorAdvancerConfig) WithDefaults() *CursorAdvancerConfig {
 	if c.InstanceTTL == 0 {
 		c.InstanceTTL = 30 * time.Second
 	}
@@ -36,13 +36,13 @@ func (c *WaterlineConfig) WithDefaults() *WaterlineConfig {
 		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	c.Retry = c.Retry.WithDefaults()
-	c.RollRetry = c.RollRetry.WithDefaults()
+	c.AdvanceRetry = c.AdvanceRetry.WithDefaults()
 	return c
 }
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *WaterlineConfig) Validate() error {
+func (c *CursorAdvancerConfig) Validate() error {
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
 	}
@@ -52,8 +52,8 @@ func (c *WaterlineConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}
-	if err := c.RollRetry.Validate(); err != nil {
-		return fmt.Errorf("RollRetry: %w", err)
+	if err := c.AdvanceRetry.Validate(); err != nil {
+		return fmt.Errorf("AdvanceRetry: %w", err)
 	}
 	return nil
 }

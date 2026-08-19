@@ -12,7 +12,7 @@ import (
 )
 
 // sweeps the topic at the row's poll_rate while a heartbeat holds the claim
-type JanitorExecution struct {
+type JanitorInstance struct {
 	Topic  *topic.Topic
 	Config *JanitorConfig
 	Logger common.Logger
@@ -22,7 +22,7 @@ type JanitorExecution struct {
 	metadata   *janitorMetadata
 }
 
-func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorExecution, error) {
+func newJanitorInstance(janitor *JanitorDefinition, current *topic.Topic, claimed *worker.WorkerInstance, metadata *janitorMetadata) (*JanitorInstance, error) {
 	if current == nil {
 		return nil, errors.New("topic must not be nil")
 	}
@@ -40,7 +40,7 @@ func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claim
 		return nil, err
 	}
 
-	return &JanitorExecution{
+	return &JanitorInstance{
 		Topic:      current,
 		Config:     janitor.Config,
 		Logger:     janitor.Logger,
@@ -52,7 +52,7 @@ func newJanitorExecution(janitor *JanitorDefinition, current *topic.Topic, claim
 
 // Run sweeps until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (i *JanitorExecution) Run(ctx context.Context) error {
+func (i *JanitorInstance) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "janitor starting", "topic", i.Topic.Id, "version", i.Topic.SchemaVersion, "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.sweep)
@@ -63,16 +63,16 @@ func (i *JanitorExecution) Run(ctx context.Context) error {
 }
 
 // sweep is one janitor pass.
-func (i *JanitorExecution) sweep(ctx context.Context) error {
-	t := i.Topic
-	if err := i.controller.DropExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, t.DeliveryLogMode); err != nil {
+func (i *JanitorInstance) sweep(ctx context.Context) error {
+	current := i.Topic
+	if err := i.controller.DropExpiredPartitions(ctx, current.Id, current.PartitionSize, current.RetentionTTL, current.AllowDropPastCommitted, current.DeliveryLogMode); err != nil {
 		return err
 	}
-	if err := i.controller.SweepExpiredPartitions(ctx, t.Id, t.PartitionSize, t.RetentionTTL, t.AllowDropPastCommitted, i.metadata.SweepBatchSize, t.DeliveryLogMode); err != nil {
+	if err := i.controller.SweepExpiredPartitions(ctx, current.Id, current.PartitionSize, current.RetentionTTL, current.AllowDropPastCommitted, i.metadata.SweepBatchSize, current.DeliveryLogMode); err != nil {
 		return err
 	}
-	if err := i.controller.SweepExpiredIdempotencyKeys(ctx, t.Id, t.IdempotencyKeyTTL, i.metadata.SweepBatchSize); err != nil {
+	if err := i.controller.SweepExpiredIdempotencyKeys(ctx, current.Id, current.IdempotencyKeyTTL, i.metadata.SweepBatchSize); err != nil {
 		return err
 	}
-	return i.controller.SweepExpiredKeyLeases(ctx, t.Id, i.metadata.SweepBatchSize)
+	return i.controller.SweepExpiredKeyLeases(ctx, current.Id, i.metadata.SweepBatchSize)
 }

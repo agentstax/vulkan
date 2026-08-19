@@ -22,7 +22,7 @@ import (
 type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
 
 // Consumer runs a consumer group on one topic. Failed messages retry with
-// backoff, and the topic's upkeep (partitions, retention, waterline) runs
+// backoff, and the topic's upkeep (partitions, retention, committed advance) runs
 // alongside consumption.
 type Consumer[Message any] struct {
 	Config *ConsumerConfig
@@ -104,7 +104,7 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
 	}
 
-	current, err := c.topicController.GetTopic(ctx, topicName, version)
+	current, err := c.topicController.Get(ctx, topicName, version)
 	if err != nil {
 		return nil, err
 	}

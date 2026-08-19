@@ -71,6 +71,6 @@ func NewCronSchedulerDefinition(ds *iDatastore.PostgresDatastore, cfg *CronSched
 	}, nil
 }
 
-func (s *CronSchedulerDefinition) Name() string {
+func (d *CronSchedulerDefinition) Name() string {
 	return WorkerCronScheduler
 }

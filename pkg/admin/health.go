@@ -25,7 +25,7 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 		return nil, errors.New("topic name is required")
 	}
 
-	all, err := a.topicController.ListTopics(ctx)
+	all, err := a.topicController.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -33,11 +33,11 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 	// ListTopics is already ORDER BY name, schema_version -- a name's versions
 	// come out in order, so no separate query or re-sort is needed here.
 	health := make([]*VersionHealth, 0, len(all))
-	for _, t := range all {
-		if t.Name != name {
+	for _, listed := range all {
+		if listed.Name != name {
 			continue
 		}
-		h, err := a.versionHealth(ctx, t)
+		h, err := a.versionHealth(ctx, listed)
 		if err != nil {
 			return nil, err
 		}
@@ -46,13 +46,13 @@ func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*Versio
 	return health, nil
 }
 
-func (a *MessageAdmin) versionHealth(ctx context.Context, t *topic.Topic) (*VersionHealth, error) {
-	snapshot, err := a.metricsController.TopicSnapshot(ctx, t.Id)
+func (a *MessageAdmin) versionHealth(ctx context.Context, found *topic.Topic) (*VersionHealth, error) {
+	snapshot, err := a.metricsController.TopicSnapshot(ctx, found.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	h := &VersionHealth{Topic: t, Compacted: snapshot.Compacted, Groups: snapshot.Groups}
+	h := &VersionHealth{Topic: found, Compacted: snapshot.Compacted, Groups: snapshot.Groups}
 	h.evaluate()
 
 	return h, nil
@@ -74,10 +74,10 @@ func (h *VersionHealth) evaluate() {
 	}
 
 	var lagging []string
-	for _, g := range h.Groups {
-		lag := g.GroupLag()
+	for _, group := range h.Groups {
+		lag := group.GroupLag()
 		if lag.Lag > 0 || lag.UnresolvedExceptions > 0 {
-			lagging = append(lagging, g.ConsumerGroup)
+			lagging = append(lagging, group.ConsumerGroup)
 		}
 	}
 	if len(lagging) == 0 {

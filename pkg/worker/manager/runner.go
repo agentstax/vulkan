@@ -10,7 +10,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
-// Runner keeps a claimed manager execution running for an owner across lives
+// Runner keeps a claimed manager instance running for an owner across lives
 // -- the self-heal a manager gives the workers it spawns, given to the manager
 // itself. Safe only for manager rows: a target-gated worker re-claiming itself
 // would take back an instance another claim just won.
@@ -45,7 +45,7 @@ func NewRunner(definition *ManagerDefinition, owner *common.Owner, cfg *RunnerCo
 	}, nil
 }
 
-// Run claims and runs manager executions until ctx cancels; a requested stop
+// Run claims and runs manager instances until ctx cancels; a requested stop
 // returns nil.
 // error before the first claim -> return it, the row is misconfigured
 // error after -> log and retry, degraded upkeep never stops the host process

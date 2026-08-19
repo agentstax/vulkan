@@ -16,9 +16,9 @@ const (
 
 type Schedule struct {
 	// the parsed form can't turn back into text -- this is what cron_job stores
-	expr    string
-	sched   robfig.Schedule
-	minRate time.Duration
+	expr     string
+	schedule robfig.Schedule
+	minRate  time.Duration
 }
 
 // ParseSchedule parses a 5-field cron spec or a descriptor, UTC unless the
@@ -27,23 +27,23 @@ type Schedule struct {
 //   - descriptor: "@hourly", "@every 90m"
 //   - zoned: "TZ=America/New_York 0 9 * * *" -- 09:00 New York time
 func ParseSchedule(expr string) (*Schedule, error) {
-	sched, err := robfig.ParseStandard(expr)
+	schedule, err := robfig.ParseStandard(expr)
 	if err != nil {
 		return nil, err
 	}
-	rate, err := minRate(sched)
+	rate, err := minRate(schedule)
 	if err != nil {
 		return nil, fmt.Errorf("schedule %q: %w", expr, err)
 	}
 	if rate < time.Minute {
 		return nil, fmt.Errorf("schedule %q recurs every %v -- more often than the 1m scheduler resolution", expr, rate)
 	}
-	return &Schedule{expr: expr, sched: sched, minRate: rate}, nil
+	return &Schedule{expr: expr, schedule: schedule, minRate: rate}, nil
 }
 
-// Next is the next scheduled time strictly after t; zero = none remains.
-func (s *Schedule) Next(t time.Time) time.Time {
-	return s.sched.Next(t)
+// Next is the next scheduled time strictly after the given time; zero = none remains.
+func (s *Schedule) Next(after time.Time) time.Time {
+	return s.schedule.Next(after)
 }
 
 func (s *Schedule) String() string {
@@ -61,24 +61,24 @@ func (s *Schedule) MinRate() time.Duration {
 // *** HELPERS ***
 // ***************
 
-func minRate(sched robfig.Schedule) (time.Duration, error) {
+func minRate(schedule robfig.Schedule) (time.Duration, error) {
 	start := time.Now().UTC()
-	prev := sched.Next(start)
-	if prev.IsZero() {
+	previous := schedule.Next(start)
+	if previous.IsZero() {
 		return 0, errors.New("no upcoming scheduled times")
 	}
 
 	horizon := start.Add(minRateHorizon)
-	min := time.Duration(math.MaxInt64)
+	minimum := time.Duration(math.MaxInt64)
 	for range minRateScheduledTimes - 1 {
-		n := sched.Next(prev)
-		if n.IsZero() || n.After(horizon) {
+		next := schedule.Next(previous)
+		if next.IsZero() || next.After(horizon) {
 			break
 		}
-		if rate := n.Sub(prev); rate < min {
-			min = rate
+		if rate := next.Sub(previous); rate < minimum {
+			minimum = rate
 		}
-		prev = n
+		previous = next
 	}
-	return min, nil
+	return minimum, nil
 }

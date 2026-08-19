@@ -29,13 +29,13 @@ func (d *TopicDatastore) isEmpty(ctx context.Context, topicId int64) (bool, erro
 	return !notEmpty, nil
 }
 
-func (d *TopicDatastore) DeleteTopic(ctx context.Context, topicId int64, name string) error {
+func (d *TopicDatastore) Delete(ctx context.Context, topicId int64, name string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.deleteTopic(ctx, topicId, name)
+		return d.delete(ctx, topicId, name)
 	})
 }
 
-func (d *TopicDatastore) deleteTopic(ctx context.Context, topicId int64, name string) error {
+func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string) error {
 	if err := d.drainPartitions(ctx, iTopic.MessageLogTable(topicId)); err != nil {
 		if errors.Is(err, errPartitionsRemain) {
 			return fmt.Errorf("topic %s: %w -- a producer is likely still writing; stop producers and call Destroy again", name, err)

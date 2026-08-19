@@ -8,10 +8,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// replaceTopicConfig overwrites an already-registered topic's mutable config
+// replaceConfig overwrites an already-registered topic's mutable config
 // with declared's: the newest declaration wins.
 // partition_size is not mutable config.
-func (d *TopicDatastore) replaceTopicConfig(ctx context.Context, found *TopicData, declared *TopicData) (*TopicData, error) {
+func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData) (*TopicData, error) {
 	if found.PartitionSize != declared.PartitionSize {
 		return nil, fmt.Errorf("%w: topic %s version %d: partition_size is fixed at %d, got %d",
 			topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, found.PartitionSize, declared.PartitionSize)

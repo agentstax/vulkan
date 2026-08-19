@@ -19,7 +19,7 @@ type SystemController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range. declarers run on every
-// RegisterSystem to create the system's worker rows -- pass them only from a
+// Register to create the system's worker rows -- pass them only from a
 // registrar; a controller built for reads needs none.
 func NewSystemController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*SystemController, error) {
 	if ds == nil {

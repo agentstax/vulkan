@@ -20,7 +20,7 @@ type CursorSnapshot struct {
 	Claimed   int64 // cursor.claimed -- the read frontier
 	Committed int64 // cursor.committed -- everything <= this is done/dead
 
-	Backlog  int64 // Head - Committed -- the waterline gap
+	Backlog  int64 // Head - Committed
 	Inflight int64 // Claimed - Committed -- claimed but not yet resolved
 }
 

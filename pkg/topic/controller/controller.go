@@ -21,7 +21,7 @@ type TopicController struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range. declarers run on every
-// RegisterTopic to create the registered topic's worker rows -- pass them
+// Register to create the registered topic's worker rows -- pass them
 // only from a registrar; a controller built for reads needs none.
 func NewTopicController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig, declarers ...worker.Declarer) (*TopicController, error) {
 	if ds == nil {

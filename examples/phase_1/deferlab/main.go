@@ -337,11 +337,11 @@ func main() {
 	// backstop's 'inflight' predicate. Driven directly so no consumer touches
 	// the row mid-check.
 	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
-	must(exceptionConsumers.KillExceptions(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures))
+	must(exceptionConsumers.Kill(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures))
 	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
 		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
 	}
-	if _, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
+	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if n := deliveryAttempts(ctx, g8, v7); n != 99 {
@@ -350,7 +350,7 @@ func main() {
 	// the unexpired key_lease alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
 	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
-	if _, err := exceptionConsumers.ClaimExceptions(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
+	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
@@ -632,7 +632,7 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *e
 func groupOwner(ctx context.Context, topicName string, group string) *common.Owner {
 	topicController, err := topiccontroller.NewTopicController(ds, nil)
 	must(err)
-	tp, err := topicController.GetTopic(ctx, topicName, topic.SchemaVersion(1))
+	tp, err := topicController.Get(ctx, topicName, topic.SchemaVersion(1))
 	must(err)
 
 	consumerDatastore, err := consumercontroller.NewConsumerController(ds, nil)

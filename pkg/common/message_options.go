@@ -51,17 +51,17 @@ func (o *MessageOptions) Fill(defaults *MessageOptions) *MessageOptions {
 }
 
 // returns new copy not modified pointer
-func (o *MessageOptions) Clamp(min, max *MessageOptions) *MessageOptions {
+func (o *MessageOptions) Clamp(minimum, maximum *MessageOptions) *MessageOptions {
 	if o == nil {
 		return nil
 	}
 
 	var lo, hi MessageOptions
-	if min != nil {
-		lo = *min
+	if minimum != nil {
+		lo = *minimum
 	}
-	if max != nil {
-		hi = *max
+	if maximum != nil {
+		hi = *maximum
 	}
 	clamped := *o
 	clamped.Timeout = clampDuration(clamped.Timeout, lo.Timeout, hi.Timeout)
@@ -133,34 +133,34 @@ func (o *MessageOptions) Validate() error {
 // *** HELPERS ***
 // ***************
 
-func validateSparsePolicy(p *RetryPolicy) error {
-	if p.MaxRetries < 0 {
-		return fmt.Errorf("MaxRetries must be >= 0, got %d", p.MaxRetries)
+func validateSparsePolicy(policy *RetryPolicy) error {
+	if policy.MaxRetries < 0 {
+		return fmt.Errorf("MaxRetries must be >= 0, got %d", policy.MaxRetries)
 	}
-	if p.BaseDelay < 0 {
-		return fmt.Errorf("BaseDelay must be >= 0, got %v", p.BaseDelay)
+	if policy.BaseDelay < 0 {
+		return fmt.Errorf("BaseDelay must be >= 0, got %v", policy.BaseDelay)
 	}
-	if p.MaxDelay < 0 {
-		return fmt.Errorf("MaxDelay must be >= 0, got %v", p.MaxDelay)
+	if policy.MaxDelay < 0 {
+		return fmt.Errorf("MaxDelay must be >= 0, got %v", policy.MaxDelay)
 	}
-	if p.BaseDelay > 0 && p.MaxDelay > 0 && p.MaxDelay < p.BaseDelay {
-		return fmt.Errorf("MaxDelay (%v) must be >= BaseDelay (%v)", p.MaxDelay, p.BaseDelay)
+	if policy.BaseDelay > 0 && policy.MaxDelay > 0 && policy.MaxDelay < policy.BaseDelay {
+		return fmt.Errorf("MaxDelay (%v) must be >= BaseDelay (%v)", policy.MaxDelay, policy.BaseDelay)
 	}
-	if p.Exponent < 0 {
-		return fmt.Errorf("Exponent must be >= 0, got %d", p.Exponent)
+	if policy.Exponent < 0 {
+		return fmt.Errorf("Exponent must be >= 0, got %d", policy.Exponent)
 	}
 	return nil
 }
 
 // returns new copy not modified pointer
-func fillPolicy(p, defaults *RetryPolicy) *RetryPolicy {
-	if p == nil && defaults == nil {
+func fillPolicy(policy, defaults *RetryPolicy) *RetryPolicy {
+	if policy == nil && defaults == nil {
 		return nil
 	}
 
 	var merged, d RetryPolicy
-	if p != nil {
-		merged = *p
+	if policy != nil {
+		merged = *policy
 	}
 	if defaults != nil {
 		d = *defaults
@@ -181,19 +181,19 @@ func fillPolicy(p, defaults *RetryPolicy) *RetryPolicy {
 }
 
 // returns new copy not modified pointer
-func clampPolicy(p, min, max *RetryPolicy) *RetryPolicy {
-	if p == nil {
+func clampPolicy(policy, minimum, maximum *RetryPolicy) *RetryPolicy {
+	if policy == nil {
 		return nil
 	}
 
 	var lo, hi RetryPolicy
-	if min != nil {
-		lo = *min
+	if minimum != nil {
+		lo = *minimum
 	}
-	if max != nil {
-		hi = *max
+	if maximum != nil {
+		hi = *maximum
 	}
-	clamped := *p
+	clamped := *policy
 	clamped.MaxRetries = clampInt(clamped.MaxRetries, lo.MaxRetries, hi.MaxRetries)
 	clamped.BaseDelay = clampDuration(clamped.BaseDelay, lo.BaseDelay, hi.BaseDelay)
 	clamped.MaxDelay = clampDuration(clamped.MaxDelay, lo.MaxDelay, hi.MaxDelay)
@@ -201,22 +201,22 @@ func clampPolicy(p, min, max *RetryPolicy) *RetryPolicy {
 	return &clamped
 }
 
-func clampDuration(v, min, max time.Duration) time.Duration {
-	if min > 0 && v < min {
-		v = min
+func clampDuration(value, minimum, maximum time.Duration) time.Duration {
+	if minimum > 0 && value < minimum {
+		value = minimum
 	}
-	if max > 0 && v > max {
-		v = max
+	if maximum > 0 && value > maximum {
+		value = maximum
 	}
-	return v
+	return value
 }
 
-func clampInt(v, min, max int) int {
-	if min > 0 && v < min {
-		v = min
+func clampInt(value, minimum, maximum int) int {
+	if minimum > 0 && value < minimum {
+		value = minimum
 	}
-	if max > 0 && v > max {
-		v = max
+	if maximum > 0 && value > maximum {
+		value = maximum
 	}
-	return v
+	return value
 }

@@ -34,7 +34,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 
-	registered, err := a.systemController.RegisterSystem(ctx, cfg.System)
+	registered, err := a.systemController.Register(ctx, cfg.System)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 // GetSystem returns the singleton system config. Returns
 // migrate.ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
-	sys, err := a.systemController.GetSystem(ctx)
+	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (a *MessageAdmin) GetSystem(ctx context.Context) (*system.System, error) {
 // MigrateSystem moves the system schema to targetVersion.
 // Returns an error ErrNotRegistered if RegisterSystem hasn't run.
 func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) error {
-	sys, err := a.systemController.GetSystem(ctx)
+	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -120,15 +120,15 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 // Idempotent -- a system already destroyed (or never registered) resolves as
 // a no-op, and a re-run after a partial failure resumes where it stopped.
 //
-// Unless opts.Force is set:
+// Unless options.Force is set:
 //   - a worker instance is still live   -> system.ErrSystemLive
 //   - a non-system topic is registered  -> system.ErrTopicsRegistered
-func (a *MessageAdmin) DestroySystem(ctx context.Context, opts DestroyOptions) error {
+func (a *MessageAdmin) DestroySystem(ctx context.Context, options DestroyOptions) error {
 	if !a.allowDestroy {
 		return ErrDestroyDisabled
 	}
 
-	sys, err := a.systemController.GetSystem(ctx)
+	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (a *MessageAdmin) DestroySystem(ctx context.Context, opts DestroyOptions) e
 		return nil
 	}
 
-	if !opts.Force {
+	if !options.Force {
 		if err := a.assertSystemIdle(ctx); err != nil {
 			return err
 		}
@@ -146,17 +146,17 @@ func (a *MessageAdmin) DestroySystem(ctx context.Context, opts DestroyOptions) e
 
 	// each topic through the same delete path DestroyTopic uses, keeping its
 	// partition-drain safety against a still-writing producer
-	topics, err := a.topicController.ListTopics(ctx)
+	topics, err := a.topicController.List(ctx)
 	if err != nil {
 		return err
 	}
 	for _, found := range topics {
-		if err := a.topicController.DeleteTopic(ctx, found.Id, found.Name); err != nil {
+		if err := a.topicController.Delete(ctx, found.Id, found.Name); err != nil {
 			return err
 		}
 	}
 
-	return a.systemController.DeleteSystem(ctx)
+	return a.systemController.Delete(ctx)
 }
 
 // assertSystemIdle is DestroySystem's guard: nothing is running against the
@@ -173,7 +173,7 @@ func (a *MessageAdmin) assertSystemIdle(ctx context.Context) error {
 		}
 	}
 
-	topics, err := a.topicController.ListTopics(ctx)
+	topics, err := a.topicController.List(ctx)
 	if err != nil {
 		return err
 	}

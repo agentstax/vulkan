@@ -40,7 +40,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	waterlinedatastore "github.com/agentstax/vulkan/pkg/worker/waterline/controller/datastore"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -85,7 +85,7 @@ func main() {
 	must(err)
 	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
 	must(err)
-	waterlineDatastore, err := waterlinedatastore.NewWaterlineDatastore(ds, nil)
+	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[KeyedRecord](ds, nil)
 	must(err)
@@ -115,7 +115,7 @@ func main() {
 	assertInt("all 6 rows still physically exist -- compaction filters, never deletes", rowCount(ctx, ds, tp.Id), 6)
 
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed := advance(ctx, waterlineDatastore, tp.Id)
+	committed := advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed advances over the whole range regardless of compaction", committed, 6)
 
 	// ===== a delivered version isn't retroactively unsent once superseded (ids 7-8) =====
@@ -125,7 +125,7 @@ func main() {
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed", committed, 7)
 
 	publish(ctx, wpInstance, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
@@ -133,7 +133,7 @@ func main() {
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed only ever moves forward", committed, 8)
 	assertTrue("v1 (id 7) is still physically present -- compaction never rewrites history", rowExists(ctx, ds, tp.Id, 7))
 
@@ -172,7 +172,7 @@ func main() {
 	fmt.Println("     once v2 superseded it, exactly like Kafka's own compacted-topic contract")
 
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim2.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed moves past the (empty) reclaimed range", committed, 9)
 
 	step("v2 still gets its own, independent delivery -- the obligation carried forward")
@@ -180,7 +180,7 @@ func main() {
 	must(err)
 	assertIDs("user:4 v2 delivered", ids(claim3.Messages), []int64{10})
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim3.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed", committed, 10)
 
 	// ===== tombstones are a pure app convention (ids 11-12) =====
@@ -191,7 +191,7 @@ func main() {
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
 	assertTrue("payload's own Deleted field survives -- the query never special-cases it", decode(claim.Messages[0].Payload).Deleted)
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
-	committed = advance(ctx, waterlineDatastore, tp.Id)
+	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed", committed, 11)
 
 	publish(ctx, wpInstance, "user:6", 1, true)                                   // id 12, LIFECYCLE path
@@ -238,8 +238,8 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[KeyedRec
 	must(err)
 }
 
-func advance(ctx context.Context, waterlineDatastore *waterlinedatastore.WaterlineDatastore, topicId int64) int64 {
-	c, err := waterlineDatastore.AdvanceWaterline(ctx, topicId, cursorGroupID)
+func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatastore.CursorAdvancerDatastore, topicId int64) int64 {
+	c, err := cursorAdvancerDatastore.AdvanceCommitted(ctx, topicId, cursorGroupID)
 	must(err)
 	return c
 }

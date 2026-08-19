@@ -21,7 +21,7 @@ import (
 
 // reads the deployment's snapshots at the row's poll_rate while a heartbeat
 // holds the claim, producing one Measurement per metric to __system.metrics
-type MetricsCollectorExecution struct {
+type MetricsCollectorInstance struct {
 	Owner  *common.Owner
 	Config *MetricsCollectorConfig
 	Logger common.Logger
@@ -34,7 +34,7 @@ type MetricsCollectorExecution struct {
 	producerInstance *producer.ProducerInstance[metrics.Measurement]
 }
 
-func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *metricsCollectorMetadata, producerInstance *producer.ProducerInstance[metrics.Measurement]) (*MetricsCollectorExecution, error) {
+func newMetricsCollectorInstance(collector *MetricsCollectorDefinition, owner *common.Owner, claimed *worker.WorkerInstance, metadata *metricsCollectorMetadata, producerInstance *producer.ProducerInstance[metrics.Measurement]) (*MetricsCollectorInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -55,7 +55,7 @@ func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *
 		return nil, err
 	}
 
-	return &MetricsCollectorExecution{
+	return &MetricsCollectorInstance{
 		Owner:            owner,
 		Config:           collector.Config,
 		Logger:           collector.Logger,
@@ -70,7 +70,7 @@ func newMetricsCollectorExecution(collector *MetricsCollectorDefinition, owner *
 
 // Run collects until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
-func (i *MetricsCollectorExecution) Run(ctx context.Context) error {
+func (i *MetricsCollectorInstance) Run(ctx context.Context) error {
 	i.Logger.InfoContext(ctx, "metrics collector starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.collect)
@@ -82,7 +82,7 @@ func (i *MetricsCollectorExecution) Run(ctx context.Context) error {
 
 // collect is one collection pass. A failed produce fails the whole pass --
 // the next tick reproduces every measurement, so nothing is salvaged per measurement.
-func (i *MetricsCollectorExecution) collect(ctx context.Context) error {
+func (i *MetricsCollectorInstance) collect(ctx context.Context) error {
 	if err := i.collectWorkers(ctx); err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (i *MetricsCollectorExecution) collect(ctx context.Context) error {
 	return i.collectTopics(ctx)
 }
 
-func (i *MetricsCollectorExecution) collectWorkers(ctx context.Context) error {
+func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 	workers, err := i.metrics.WorkerSnapshots(ctx)
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func (i *MetricsCollectorExecution) collectWorkers(ctx context.Context) error {
 	return i.produceMeasurement(ctx, measurement)
 }
 
-func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
+func (i *MetricsCollectorInstance) collectCronJobs(ctx context.Context) error {
 	jobs, err := i.metrics.CronJobSnapshots(ctx)
 	if err != nil {
 		return err
@@ -184,12 +184,12 @@ func (i *MetricsCollectorExecution) collectCronJobs(ctx context.Context) error {
 	return i.produceMeasurement(ctx, measurement)
 }
 
-func (i *MetricsCollectorExecution) collectAlerts(ctx context.Context) error {
-	alertsTopic, err := i.topics.GetTopic(ctx, alert.TopicName, topic.SchemaVersion(1))
+func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
+	alertsTopic, err := i.topics.Get(ctx, alert.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return err
 	}
-	heads, err := i.alertHeads.ListCompactionHeads(ctx, alertsTopic.Id)
+	heads, err := i.alertHeads.ListHeads(ctx, alertsTopic.Id)
 	if err != nil {
 		return err
 	}
@@ -220,8 +220,8 @@ func (i *MetricsCollectorExecution) collectAlerts(ctx context.Context) error {
 	return i.produceMeasurement(ctx, measurement)
 }
 
-func (i *MetricsCollectorExecution) collectTopics(ctx context.Context) error {
-	topics, err := i.topics.ListTopics(ctx)
+func (i *MetricsCollectorInstance) collectTopics(ctx context.Context) error {
+	topics, err := i.topics.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (i *MetricsCollectorExecution) collectTopics(ctx context.Context) error {
 	return group.Wait()
 }
 
-func (i *MetricsCollectorExecution) collectTopic(ctx context.Context, current *topic.Topic) error {
+func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *topic.Topic) error {
 	snapshot, err := i.metrics.TopicSnapshot(ctx, current.Id)
 	if err != nil {
 		return err
@@ -279,7 +279,7 @@ func (i *MetricsCollectorExecution) collectTopic(ctx context.Context, current *t
 	return nil
 }
 
-func (i *MetricsCollectorExecution) collectConsumerGroup(ctx context.Context, snapshot *metrics.ConsumerGroupSnapshot, attributes map[string]string, at time.Time) error {
+func (i *MetricsCollectorInstance) collectConsumerGroup(ctx context.Context, snapshot *metrics.ConsumerGroupSnapshot, attributes map[string]string, at time.Time) error {
 	points := []struct {
 		name  string
 		value float64
@@ -325,7 +325,7 @@ func (i *MetricsCollectorExecution) collectConsumerGroup(ctx context.Context, sn
 	return err
 }
 
-func (i *MetricsCollectorExecution) produceMeasurement(ctx context.Context, measurement *metrics.Measurement) error {
+func (i *MetricsCollectorInstance) produceMeasurement(ctx context.Context, measurement *metrics.Measurement) error {
 	compaction, err := producer.NewCompactionOptions(metrics.MeasurementKey(measurement.Name, measurement.Attributes), 0)
 	if err != nil {
 		return err

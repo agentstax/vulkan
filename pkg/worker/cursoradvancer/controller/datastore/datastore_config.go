@@ -7,12 +7,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-type WaterlineDatastoreConfig struct {
+type CursorAdvancerDatastoreConfig struct {
 	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this datastore's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 }
 
-func (c *WaterlineDatastoreConfig) WithDefaults() *WaterlineDatastoreConfig {
+func (c *CursorAdvancerDatastoreConfig) WithDefaults() *CursorAdvancerDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
@@ -22,7 +22,7 @@ func (c *WaterlineDatastoreConfig) WithDefaults() *WaterlineDatastoreConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *WaterlineDatastoreConfig) Validate() error {
+func (c *CursorAdvancerDatastoreConfig) Validate() error {
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)
 	}

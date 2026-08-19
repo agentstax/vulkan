@@ -92,6 +92,6 @@ func NewMetricsCollectorDefinition(ds *iDatastore.PostgresDatastore, cfg *Metric
 	}, nil
 }
 
-func (c *MetricsCollectorDefinition) Name() string {
+func (d *MetricsCollectorDefinition) Name() string {
 	return WorkerMetricsCollector
 }
