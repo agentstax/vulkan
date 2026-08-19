@@ -191,6 +191,11 @@ Three layers per domain (template: worker, topic):
   by WithDefaults or meaningful at zero. A Validate error on a field
   WithDefaults never fills is a required value hiding in the config -- move
   it into the constructor's params.
+- Config fields order domain-first, grouped by concern with blank lines,
+  and end with the ambient tail: Logger, Retry, then any per-loop retry
+  curves (SweepRetry, TickRetry). WithDefaults and Validate walk fields in
+  declaration order; a default computed from other fields may trail its
+  inputs instead.
 - Param order is primary collaborator first, ambient last: the dep the struct
   is *about* leads, then its remaining deps, then `cfg`, and a bare
   `log common.Logger` always trails (prefer `cfg.Logger` over a bare param).

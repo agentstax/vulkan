@@ -40,7 +40,13 @@ func (d *MessageConsumerDatastore) reclaimWithCursor(ctx context.Context, topicI
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING *;
+		RETURNING
+			token,
+			consumer_group_id,
+			low,
+			high,
+			until,
+			reclaims;
 	`
 	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {

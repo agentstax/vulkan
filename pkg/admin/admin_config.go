@@ -8,15 +8,15 @@ import (
 )
 
 type MessageAdminConfig struct {
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *common.RetryPolicy // Default: common.NewDefaultRetryPolicy().
-
 	// AllowDestroy - whether this admin may destroy topics at all.
 	// Default: false.
 	//
 	// A service that only ever registers topics should never opt in --
 	// create is recoverable, destroy is not.
 	AllowDestroy bool
+
+	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *common.RetryPolicy // Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *MessageAdminConfig) WithDefaults() *MessageAdminConfig {

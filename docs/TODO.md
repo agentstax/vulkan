@@ -13,5 +13,8 @@ pattern decisions must settle before any file moves.
       + CONVENTIONS.md rule + PostgresConnectionConfig fix; Compaction
       nested into ProduceOptions.Compaction (NewCompactionOptions);
       Register kept at 5 params, NewConsumerInstance unexported.
-- [ ] Sweep: group/order config fields and table fields by likeness.
+- [x] Sweep: config + table fields grouped by likeness [0543]: ambient
+      tail (Logger, Retry, per-loop curves) codified in CONVENTIONS.md;
+      six configs reordered; cron_job + delivery DDL regrouped (fresh-DB
+      verified); two lease `RETURNING *` fixed to named columns.
 - [ ] Sweep: pass through config/options/vars/params, delete dead fields.

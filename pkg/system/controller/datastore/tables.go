@@ -235,9 +235,9 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			name TEXT NOT NULL UNIQUE,                       -- also the routing key every job request is produced with
 			schedule TEXT NOT NULL,                          -- cron spec; UTC unless it carries TZ=
+			suspended BOOLEAN NOT NULL DEFAULT false,        -- a suspended job keeps its schedule but never produces
 			concurrency TEXT NOT NULL DEFAULT 'allow',       -- -> MessageOptions.Concurrency
 			timeout_ns BIGINT NOT NULL,                      -- nanoseconds; -> MessageOptions.Timeout
-			suspended BOOLEAN NOT NULL DEFAULT false,
 			data JSONB NOT NULL DEFAULT '{}',                -- opaque payload
 			metadata JSONB NOT NULL DEFAULT '{}',
 			next_scheduled_time TIMESTAMPTZ NOT NULL,

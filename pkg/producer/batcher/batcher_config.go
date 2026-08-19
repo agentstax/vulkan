@@ -9,8 +9,6 @@ import (
 )
 
 type BatcherConfig struct {
-	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
-
 	// MaxSize - messages sharing one batched-Produce transaction. Caps
 	// lock-hold, latency tail, and the rerun cost of evicting poison.
 	// Default: 100.
@@ -29,12 +27,11 @@ type BatcherConfig struct {
 	// real outcome. Keep it above AttemptTimeout.
 	// Default: 15s. Negative: abandon immediately.
 	ShutdownGrace time.Duration
+
+	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
 }
 
 func (c *BatcherConfig) WithDefaults() *BatcherConfig {
-	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
-	}
 	if c.MaxSize == 0 {
 		c.MaxSize = 100
 	}
@@ -46,6 +43,9 @@ func (c *BatcherConfig) WithDefaults() *BatcherConfig {
 	}
 	if c.ShutdownGrace == 0 {
 		c.ShutdownGrace = 15 * time.Second
+	}
+	if c.Logger == nil {
+		c.Logger = common.NewDefaultLogger(os.Stdout)
 	}
 	return c
 }

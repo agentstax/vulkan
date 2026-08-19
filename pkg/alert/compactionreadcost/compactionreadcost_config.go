@@ -9,9 +9,6 @@ import (
 )
 
 type CompactionReadCostConfig struct {
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
-	Retry  *common.RetryPolicy // transient-error retry policy for the definition's own Postgres calls. Default: common.NewDefaultRetryPolicy().
-
 	// InstanceTTL - how long the claimed worker_instance row stays live
 	// between heartbeats.
 	// Default: 30s.
@@ -21,33 +18,36 @@ type CompactionReadCostConfig struct {
 	// repeats as a reminder.
 	// Default: 4h.
 	RepeatInterval time.Duration
+
+	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *common.RetryPolicy // transient-error retry policy for the definition's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *CompactionReadCostConfig) WithDefaults() *CompactionReadCostConfig {
-	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
-	}
-	c.Retry = c.Retry.WithDefaults()
 	if c.InstanceTTL == 0 {
 		c.InstanceTTL = 30 * time.Second
 	}
 	if c.RepeatInterval == 0 {
 		c.RepeatInterval = 4 * time.Hour
 	}
+	if c.Logger == nil {
+		c.Logger = common.NewDefaultLogger(os.Stdout)
+	}
+	c.Retry = c.Retry.WithDefaults()
 	return c
 }
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
 func (c *CompactionReadCostConfig) Validate() error {
-	if err := c.Retry.Validate(); err != nil {
-		return fmt.Errorf("Retry: %w", err)
-	}
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
 	}
 	if c.RepeatInterval <= 0 {
 		return fmt.Errorf("RepeatInterval must be > 0, got %v", c.RepeatInterval)
+	}
+	if err := c.Retry.Validate(); err != nil {
+		return fmt.Errorf("Retry: %w", err)
 	}
 	return nil
 }

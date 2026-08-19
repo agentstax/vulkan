@@ -16,7 +16,8 @@ type DeliveryConsumerConfig struct {
 	FanOutBatchLimit int // max log rows the fan-out scans per tick -- bounds a cold group's catch-up scan
 	ClaimPollRate    time.Duration
 	TimeoutGrace     time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
-	InstanceTTL      time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+
+	InstanceTTL time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
 
 	// Message / MessageMin / MessageMax / ConcurrencyOverride resolve each
 	// message's own requested options against this group's defaults and bounds.

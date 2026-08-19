@@ -12,17 +12,20 @@ import (
 // worker row runs on. The door resolves and validates the whole config once,
 // then builds this -- so WithDefaults here only backstops a direct caller.
 type MessageConsumerConfig struct {
-	BatchLimit              int // messages claimed per range
-	QueueSize               int // claimed messages buffered ahead of processing -- must be >= BatchLimit
-	MessageConcurrency      int // messages processed concurrently
-	MaxRangeReclaims        int // past this many reclaims a range is POISON -- quarantined into the exception window
+	BatchLimit         int // messages claimed per range
+	QueueSize          int // claimed messages buffered ahead of processing -- must be >= BatchLimit
+	MessageConcurrency int // messages processed concurrently
+	MaxRangeReclaims   int // past this many reclaims a range is POISON -- quarantined into the exception window
+
 	ClaimPollRate           time.Duration
 	QueueMargin             time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
 	RecordMargin            time.Duration // lease padding for recording success/failure after consumerFunc returns
 	TimeoutGrace            time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception row is first written
-	ShutdownTimeout         time.Duration // bounds how long drain waits for in-flight work before open ranges are settled
-	InstanceTTL             time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+
+	InstanceTTL time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
+
+	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight work before open ranges are settled
 
 	// Message / MessageMin / MessageMax / ConcurrencyOverride resolve each
 	// message's own requested options against this group's defaults and bounds.
@@ -114,11 +117,11 @@ func (c *MessageConsumerConfig) Validate() error {
 	if c.ExceptionInitialBackoff <= 0 {
 		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", c.ExceptionInitialBackoff)
 	}
-	if c.ShutdownTimeout <= 0 {
-		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)
-	}
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)
+	}
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("ShutdownTimeout must be > 0, got %v", c.ShutdownTimeout)
 	}
 	if err := c.Message.Validate(); err != nil {
 		return fmt.Errorf("Message: %w", err)

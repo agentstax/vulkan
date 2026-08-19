@@ -47,7 +47,7 @@ func main() {
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
-		Pass: "example_password",
+		Pass:     "example_password",
 		MaxConns: 40, // headroom above the contention scenario's 20 concurrent goroutines
 	})
 	must(err)

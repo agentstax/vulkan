@@ -90,10 +90,10 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			message_id BIGINT NOT NULL,                       -- PK
 			status TEXT NOT NULL,                             -- 'ready' | 'processing' | 'inflight' | 'deferred' | 'done' | 'dead'
 			attempts INT NOT NULL default 0,
-			lease_until TIMESTAMPTZ,
-			lease_token UUID,
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries
 			last_error TEXT,
+			lease_token UUID,
+			lease_until TIMESTAMPTZ,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (consumer_group_id, message_id)

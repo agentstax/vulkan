@@ -14,9 +14,10 @@ type ConsumerConfig struct {
 	QueueSize          int // claimed messages buffered ahead of processing -- must be >= BatchLimit or the prefetcher can never claim a full batch. Default: BatchLimit.
 	MessageConcurrency int // messages processed concurrently. Default: 1.
 	MaxRangeReclaims   int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
-	ClaimPollRate      time.Duration
-	QueueMargin        time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
-	RecordMargin       time.Duration // lease padding for recording success/failure after consumerFunc returns
+
+	ClaimPollRate time.Duration
+	QueueMargin   time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
+	RecordMargin  time.Duration // lease padding for recording success/failure after consumerFunc returns
 	// TimeoutGrace is scheduling slack for a consumerFunc that DID respect
 	// ctx.Done() to actually unwind and send on the result channel before the
 	// hard cutoff abandons it -- not extra time to keep working. Go's own
@@ -26,12 +27,17 @@ type ConsumerConfig struct {
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
 	TimeoutGrace            time.Duration
-	ExceptionInitialBackoff time.Duration       // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
-	InstanceTTL             time.Duration       // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
-	BindingRetryInterval    time.Duration       // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
-	Retry                   *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
-	ShutdownTimeout         time.Duration       // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + RecordMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
-	Logger                  common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
+
+	InstanceTTL          time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
+	BindingRetryInterval time.Duration // how often Consume re-attempts a waiting binding declaration while a live instance still declares a different set. Default: 10s.
+
+	ShutdownTimeout time.Duration // bounds how long drain waits for in-flight processClaim calls to finish before closeOpenRanges settles whatever's left. Default: MessageMax.Timeout + TimeoutGrace + RecordMargin -- one callSafely's worst case at the ceiling a message may request, plus recording its outcome
+	// DisableGracefulShutdown - lets Consume accept a context that can never
+	// be cancelled (e.g. context.Background()), leaving process exit as the
+	// only stop. Prefer passing the application's shutdown context to Consume.
+	// Default: false.
+	DisableGracefulShutdown bool
 
 	// Message - default MessageOptions: fills any option the produced message left unset.
 	// Default: Timeout 30s; Retry MaxRetries 3 with the default curve.
@@ -53,11 +59,8 @@ type ConsumerConfig struct {
 	// Default: "" (honor each message's own policy).
 	ConcurrencyOverride common.ConcurrencyPolicy
 
-	// DisableGracefulShutdown - lets Consume accept a context that can never
-	// be cancelled (e.g. context.Background()), leaving process exit as the
-	// only stop. Prefer passing the application's shutdown context to Consume.
-	// Default: false.
-	DisableGracefulShutdown bool
+	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Retry  *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
@@ -178,9 +181,6 @@ func (c *ConsumerConfig) Validate() error {
 	if err := c.Message.Retry.Validate(); err != nil {
 		return fmt.Errorf("Message.Retry: %w", err)
 	}
-	if err := c.Retry.Validate(); err != nil {
-		return fmt.Errorf("Retry: %w", err)
-	}
 
 	if err := c.MessageMin.Validate(); err != nil {
 		return fmt.Errorf("MessageMin: %w", err)
@@ -196,6 +196,9 @@ func (c *ConsumerConfig) Validate() error {
 	}
 	if err := c.ConcurrencyOverride.Validate(); err != nil {
 		return fmt.Errorf("ConcurrencyOverride: %w", err)
+	}
+	if err := c.Retry.Validate(); err != nil {
+		return fmt.Errorf("Retry: %w", err)
 	}
 	return c.validateMessageBounds()
 }

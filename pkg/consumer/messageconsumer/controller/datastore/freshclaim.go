@@ -202,7 +202,13 @@ func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx,
 			$3,
 			now() + make_interval(secs => $4)
 		)
-		RETURNING *;
+		RETURNING
+			token,
+			consumer_group_id,
+			low,
+			high,
+			until,
+			reclaims;
 	`
 	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
