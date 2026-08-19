@@ -26,7 +26,7 @@ func ValidateOwner(owner *common.Owner, ownedBy common.OwnerKind, name string) e
 // instance is a declined claim (target_instances already filled), not an
 // error. Callers parse and validate the row's metadata before claiming;
 // name is only for error text.
-func RegisterInstance(ctx context.Context, workers *WorkerController, workerId int64, owner *common.Owner, ownedBy common.OwnerKind, name string, ttl time.Duration) (*worker.WorkerInstance, error) {
+func (c *WorkerController) RegisterInstance(ctx context.Context, workerId int64, owner *common.Owner, ownedBy common.OwnerKind, name string, ttl time.Duration) (*worker.WorkerInstance, error) {
 	if workerId <= 0 {
 		return nil, fmt.Errorf("workerId must be > 0, got %d", workerId)
 	}
@@ -34,11 +34,11 @@ func RegisterInstance(ctx context.Context, workers *WorkerController, workerId i
 		return nil, err
 	}
 
-	if err := workers.AssertSchemaSupported(ctx, owner); err != nil {
+	if err := c.AssertSchemaSupported(ctx, owner); err != nil {
 		return nil, err
 	}
 
-	claimed, err := workers.ClaimInstance(ctx, workerId, ttl)
+	claimed, err := c.ClaimInstance(ctx, workerId, ttl)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

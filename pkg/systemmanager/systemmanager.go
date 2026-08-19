@@ -53,6 +53,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 	if err != nil {
 		return nil, err
 	}
+
 	cronSchedulerDefinition, err := cronscheduler.NewCronSchedulerDefinition(ds, &cronscheduler.CronSchedulerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

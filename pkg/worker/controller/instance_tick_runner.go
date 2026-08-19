@@ -62,14 +62,14 @@ func NewInstanceTickRunner(workers *WorkerController, claimed *worker.WorkerInst
 // exits.
 func (r *InstanceTickRunner) Run(ctx context.Context, onTick func(context.Context) error) error {
 	if onTick == nil {
-		return errors.New("pass must not be nil")
+		return errors.New("onTick must not be nil")
 	}
 	return r.runner.Run(ctx, func(workCtx context.Context) error {
 		return r.ticker(workCtx, onTick)
 	})
 }
 
-// tick paces the onTick at the row's poll_rate. onTick errors are never fatal --
+// ticker paces onTick at the row's poll_rate. onTick errors are never fatal --
 // a degraded worker doesn't take the process down -- so a failure logs,
 // records the streak, and backs the next tick off.
 func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Context) error) error {

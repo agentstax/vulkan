@@ -40,7 +40,7 @@ func (c *MetricsCollectorDefinition) Provision(ctx context.Context, workerId int
 	if err != nil {
 		return nil, err
 	}
-	claimed, err := controller.RegisterInstance(ctx, c.workers, workerId, owner, common.OwnerSystem, WorkerMetricsCollector, c.Config.InstanceTTL)
+	claimed, err := c.workers.RegisterInstance(ctx, workerId, owner, common.OwnerSystem, WorkerMetricsCollector, c.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

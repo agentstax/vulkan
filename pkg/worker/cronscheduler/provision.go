@@ -40,7 +40,7 @@ func (s *CronSchedulerDefinition) Provision(ctx context.Context, workerId int64,
 	if err != nil {
 		return nil, err
 	}
-	claimed, err := controller.RegisterInstance(ctx, s.workers, workerId, owner, common.OwnerSystem, WorkerCronScheduler, s.Config.InstanceTTL)
+	claimed, err := s.workers.RegisterInstance(ctx, workerId, owner, common.OwnerSystem, WorkerCronScheduler, s.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

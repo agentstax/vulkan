@@ -40,7 +40,7 @@ func (m *ManagerDefinition) Provision(ctx context.Context, workerId int64, owner
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := controller.RegisterInstance(ctx, m.workers, workerId, owner, owner.Kind(), WorkerManager, m.Config.InstanceTTL)
+	claimed, err := m.workers.RegisterInstance(ctx, workerId, owner, owner.Kind(), WorkerManager, m.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

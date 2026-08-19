@@ -123,5 +123,5 @@ func (c *BaseDefinition[Message]) DeclareWorker(ctx context.Context, owner *comm
 // RegisterInstance claims one live instance under the worker row; a nil
 // instance is a declined claim, not an error.
 func (c *BaseDefinition[Message]) RegisterInstance(ctx context.Context, workerId int64, owner *common.Owner, instanceTTL time.Duration) (*worker.WorkerInstance, error) {
-	return workercontroller.RegisterInstance(ctx, c.workers, workerId, owner, common.OwnerConsumerGroup, c.workerName, instanceTTL)
+	return c.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, c.workerName, instanceTTL)
 }

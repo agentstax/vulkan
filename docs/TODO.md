@@ -19,13 +19,22 @@ Surfaces, in review order:
       `any` is the deliberate JSONB contract (ParseMetadata types it).
       Declarer/Provisioner/Definition/Execution restructure + *Execution ->
       *Instance rename deferred to the naming pass by design.
-- [ ] pkg/worker/controller -- WorkerController + WorkerConfig +
-      ControllerConfig, free funcs (ParseMetadata, RegisterInstance,
-      ValidateOwner), InstanceRunner/InstanceTickRunner + configs
+- [x] pkg/worker/controller -- reviewed 2026-08-19. RegisterInstance
+      free-func-taking-the-controller converted to a WorkerController
+      method (9 call sites); stale "pass" param name fixed in
+      InstanceTickRunner's error + ticker comment. ValidateOwner stays a
+      free func (pure). Noted for config refinement: TargetInstances'
+      creation-only semantics, the ownedBy+name param pair.
       (MetadataValue no longer exists -- stale roadmap mention, removed)
-- [ ] worker kinds -- janitor, waterline, cronscheduler, metricscollector
-      (Definition/Execution/Config each), manager (+ Runner, RunnerConfig)
-- [ ] pkg/systemmanager -- SystemManager + SystemManagerConfig
+- [x] worker kinds -- reviewed 2026-08-19. Stale "first tick is uniform
+      over one whole interval" comment fixed in all four kind configs
+      (InstanceTickRunner fires the first tick immediately); janitor's
+      Provision gained ValidateOwner before its pre-claim topic resolution
+      (only kind that derefs owner before RegisterInstance's check).
+      Receiver-letter nits stay with the naming pass. Manager clean.
+- [x] pkg/systemmanager -- reviewed 2026-08-19, clean (permit-guarded Run,
+      minimal sparse config); one paragraph-consistency blank added in the
+      constructor run.
 - [ ] consumer split -- Consumer/ConsumerInstance/ConsumerFunc +
       ConsumerConfig; the three sub-consumer Definitions + Configs;
       consumer/base (BaseConsumer/BaseDefinition/BaseExecution + configs).

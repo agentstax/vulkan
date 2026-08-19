@@ -31,7 +31,7 @@ func (w *WaterlineDefinition) Provision(ctx context.Context, workerId int64, own
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := controller.RegisterInstance(ctx, w.workers, workerId, owner, common.OwnerConsumerGroup, WorkerWaterline, w.Config.InstanceTTL)
+	claimed, err := w.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, WorkerWaterline, w.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

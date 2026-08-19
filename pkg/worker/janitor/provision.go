@@ -25,6 +25,11 @@ func (j *JanitorDefinition) Declare(ctx context.Context, owner *common.Owner) er
 // Provision claims one live instance. nil = declined (target_instances
 // already filled) -- not an error, try again later.
 func (j *JanitorDefinition) Provision(ctx context.Context, workerId int64, owner *common.Owner, metadata any) (worker.Execution, error) {
+	// owner is read before the claim (topic resolution below), so its check
+	// cannot wait for RegisterInstance's
+	if err := controller.ValidateOwner(owner, common.OwnerTopic, WorkerJanitor); err != nil {
+		return nil, err
+	}
 	parsed, err := controller.ParseMetadata[janitorMetadata](metadata)
 	if err != nil {
 		return nil, err
@@ -42,7 +47,7 @@ func (j *JanitorDefinition) Provision(ctx context.Context, workerId int64, owner
 	if current == nil {
 		return nil, fmt.Errorf("topic %d not found -- register it with MessageAdmin.RegisterTopic first", owner.TopicId)
 	}
-	claimed, err := controller.RegisterInstance(ctx, j.workers, workerId, owner, common.OwnerTopic, WorkerJanitor, j.Config.InstanceTTL)
+	claimed, err := j.workers.RegisterInstance(ctx, workerId, owner, common.OwnerTopic, WorkerJanitor, j.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

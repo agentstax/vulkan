@@ -57,7 +57,7 @@ func (d *CompactionReadCostDefinition) Provision(ctx context.Context, workerId i
 	if err := parsed.Validate(); err != nil {
 		return nil, err
 	}
-	claimed, err := workercontroller.RegisterInstance(ctx, d.workers, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, workerId, owner, common.OwnerConsumerGroup, JobName, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
