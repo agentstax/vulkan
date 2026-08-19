@@ -26,10 +26,12 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   - Internal-only readability debt sweep. (The pkg/producer/datastore.go
     split already happened — it lives as nine files under
     pkg/producer/controller/datastore; stale mention removed 2026-08-17.)
-  - The on-hold LIFECYCLE surface and its cursor counterparts move to an
-    internal package (still exported there, private by convention), true
-    public APIs living in pkg — this is also when the removed
-    datastore-interfaces question gets its "re-add if desired" revisit.
+  - LIFECYCLE demoted out of the pkg/consumer door (shipped 2026-08-19:
+    ConsumerType/CURSOR/LIFECYCLE, ConsumerConfig.Type and FanOutBatchLimit
+    deleted; NewConsumer always builds cursor; deliveryconsumer reachable
+    only by direct import, ON HOLD package doc added; labs untouched).
+    internal/ moves deferred for now — revisit alongside the removed
+    datastore-interfaces question's "re-add if desired" pass.
   - A file content ordering convention: vars/const at top; struct, New,
     validates; public->private pairs; helper funcs at bottom behind a helper
     block comment.
@@ -87,10 +89,8 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   - Also demoted: common.NewDefaultRetryPolicy/IsRetryable/RetryableFunc
     (retry merged into pkg/common 2026-08-17, [0528] — demotion is now an
     unexport inside common; config Retry fields stay nil, WithDefaults
-    fills them) and
-    consumer.ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
-    (NewConsumer defaults to cursor; LIFECYCLE reached via
-    NewDeliveryConsumer directly).
+    fills them). The ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
+    demotion shipped 2026-08-19 (see the file-structure cleanup item).
   - Trim redundant pairs generally: e.g. DestroyTopic + DestroyTopicVersion
     can only confuse — consider one DestroyTopic with a version option.
   - Decide whether the field-less system config stub (RegisterSystem cfg /

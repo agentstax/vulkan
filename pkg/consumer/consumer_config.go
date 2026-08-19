@@ -8,24 +8,11 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-type ConsumerType string
-
-const (
-	CURSOR ConsumerType = "CURSOR"
-
-	// LIFECYCLE is ON HOLD -- prefer CURSOR. At the current feature set it is a
-	// strictly more expensive CURSOR; it re-earns its place only with the
-	// non-FIFO queue work (priority/delay/fairness).
-	LIFECYCLE ConsumerType = "LIFECYCLE"
-)
-
 // TODO - better comments for each field. Should follow structure of producer.Options and the topic register Config
 type ConsumerConfig struct {
-	Type               ConsumerType
 	BatchLimit         int
-	QueueSize          int // claimed messages buffered ahead of processing (CURSOR only) -- must be >= BatchLimit or the prefetcher can never claim a full batch. Default: BatchLimit.
-	MessageConcurrency int // messages processed concurrently (CURSOR only). Default: 1.
-	FanOutBatchLimit   int // max log rows FanOut scans per tick (LIFECYCLE only) -- bounds a cold group's catch-up scan; new messages materialize this many per tick until caught up
+	QueueSize          int // claimed messages buffered ahead of processing -- must be >= BatchLimit or the prefetcher can never claim a full batch. Default: BatchLimit.
+	MessageConcurrency int // messages processed concurrently. Default: 1.
 	MaxRangeReclaims   int // past this many reclaims a range is POISON -- quarantined into the exception window instead of handed out again
 	ClaimPollRate      time.Duration
 	QueueMargin        time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
@@ -74,10 +61,6 @@ type ConsumerConfig struct {
 }
 
 func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
-	if c.Type == "" {
-		c.Type = CURSOR
-	}
-
 	if c.BatchLimit == 0 {
 		c.BatchLimit = 1 // no batching by default
 	}
@@ -88,10 +71,6 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 
 	if c.MessageConcurrency == 0 {
 		c.MessageConcurrency = 1
-	}
-
-	if c.FanOutBatchLimit == 0 {
-		c.FanOutBatchLimit = 1000 // fanout rows are cheap next to processing -- a wide default so only genuinely cold groups feel the cap
 	}
 
 	if c.MaxRangeReclaims == 0 {
@@ -160,9 +139,6 @@ func (c *ConsumerConfig) Validate() error {
 	}
 	if c.MessageConcurrency < 1 {
 		return fmt.Errorf("MessageConcurrency must be >= 1, got %d", c.MessageConcurrency)
-	}
-	if c.FanOutBatchLimit < 1 {
-		return fmt.Errorf("FanOutBatchLimit must be >= 1, got %d", c.FanOutBatchLimit)
 	}
 	if c.MaxRangeReclaims < 1 {
 		return fmt.Errorf("MaxRangeReclaims must be >= 1, got %d", c.MaxRangeReclaims)

@@ -1,7 +1,6 @@
 package consumer
 
 import (
-	"github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer"
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 )
@@ -38,22 +37,6 @@ func toExceptionConsumerConfig(c *ConsumerConfig) *exceptionconsumer.ExceptionCo
 		ClaimPollRate:       c.ClaimPollRate,
 		QueueMargin:         c.QueueMargin,
 		RecordMargin:        c.RecordMargin,
-		TimeoutGrace:        c.TimeoutGrace,
-		InstanceTTL:         c.InstanceTTL,
-		Message:             c.Message,
-		MessageMin:          c.MessageMin,
-		MessageMax:          c.MessageMax,
-		ConcurrencyOverride: c.ConcurrencyOverride,
-		Logger:              c.Logger,
-		Retry:               c.Retry,
-	}
-}
-
-func toDeliveryConsumerConfig(c *ConsumerConfig) *deliveryconsumer.DeliveryConsumerConfig {
-	return &deliveryconsumer.DeliveryConsumerConfig{
-		BatchLimit:          c.BatchLimit,
-		FanOutBatchLimit:    c.FanOutBatchLimit,
-		ClaimPollRate:       c.ClaimPollRate,
 		TimeoutGrace:        c.TimeoutGrace,
 		InstanceTTL:         c.InstanceTTL,
 		Message:             c.Message,

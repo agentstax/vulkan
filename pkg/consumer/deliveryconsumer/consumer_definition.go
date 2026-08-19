@@ -1,10 +1,13 @@
 package deliveryconsumer
 
-// The LIFECYCLE consumption path, ON HOLD: at the current feature set it is a
-// strictly more expensive CURSOR (a delivery row per message vs one frontier)
-// with no shipped capability CURSOR lacks. It re-earns its place only with the
-// non-FIFO queue work (priority/delay/fairness). Keep its labs green; don't
-// invest new work here.
+// Package deliveryconsumer is ON HOLD -- prefer consumer.NewConsumer, which
+// builds the cursor path. At the current feature set this path is a strictly
+// more expensive cursor consumer (a delivery row per message vs one frontier)
+// with no shipped capability the cursor path lacks; it re-earns its place only
+// with the non-FIFO queue work (priority/delay/fairness). Not wired into
+// consumer.NewConsumer -- reachable only by building a
+// DeliveryConsumerDefinition directly. Keep its labs green; don't invest new
+// work here.
 
 import (
 	"context"

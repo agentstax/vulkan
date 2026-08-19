@@ -76,7 +76,6 @@ func main() {
 	}
 
 	workConsumer, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
-		Type:               consumer.CURSOR,
 		BatchLimit:         10,
 		QueueSize:          concurrencyLimit * 10,
 		MessageConcurrency: concurrencyLimit,

@@ -3,7 +3,6 @@ package consumer
 import (
 	"context"
 
-	"github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer"
 	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
 	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -53,17 +52,8 @@ func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consum
 	})
 }
 
-// CURSOR -> one frontier per group, with a waterline rolling behind it
-// LIFECYCLE -> state per delivery row, so no exception window and no waterline
+// one frontier per group, with a waterline rolling behind it
 func (i *ConsumerInstance[Message]) newGroupDefinitions(consumerFunc ConsumerFunc[Message]) ([]worker.Definition, error) {
-	if i.Config.Type != CURSOR {
-		delivery, err := deliveryconsumer.NewDeliveryConsumerDefinition(i.ds, consumerFunc, i.abandonedEvents, toDeliveryConsumerConfig(i.Config))
-		if err != nil {
-			return nil, err
-		}
-		return []worker.Definition{delivery}, nil
-	}
-
 	message, err := messageconsumer.NewMessageConsumerDefinition(i.ds, consumerFunc, i.abandonedEvents, toMessageConsumerConfig(i.Config))
 	if err != nil {
 		return nil, err
