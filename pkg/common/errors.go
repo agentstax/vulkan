@@ -1,18 +1,19 @@
 package common
 
-import "errors"
-
 // ErrAlreadyConsuming means Consume ran twice at once on one instance -- an
-// instance runs one Consume at a time. Wait for the first to return, or
-// Register another instance.
-var ErrAlreadyConsuming = errors.New("already consuming")
+// instance runs one Consume at a time.
+var ErrAlreadyConsuming = NewError("VK0001", Permanent,
+	"instance is already consuming",
+	"wait for the running Consume to return, or Register another instance")
 
 // ErrLifecycleContextNotCancellable means Consume's ctx can never be
 // cancelled (e.g. context.Background()), so shutdown could never be
-// requested. Pass the application's shutdown context, or opt out with the
-// config's DisableGracefulShutdown.
-var ErrLifecycleContextNotCancellable = errors.New("lifecycle context can never be cancelled")
+// requested.
+var ErrLifecycleContextNotCancellable = NewError("VK0002", Permanent,
+	"lifecycle context can never be cancelled",
+	"pass the application's shutdown context, or set the config's DisableGracefulShutdown")
 
 // ErrLeaseLost means the row was reclaimed by another consumer between the
-// claim and the write.
-var ErrLeaseLost = errors.New("lease lost: row reclaimed by another consumer")
+// claim and the write; the delivery machinery handles the redelivery.
+var ErrLeaseLost = NewError("VK0003", Permanent,
+	"lease lost to another consumer", "")

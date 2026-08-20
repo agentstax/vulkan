@@ -47,15 +47,29 @@ fresh-DB suite at the review-ready checkpoint.
 
 ### Chunk 3 — declaration migration
 
-- [ ] Assign flat serial codes (VK0001+) to every existing named error
-      variable across pkg/*/errors.go (common, topic, admin, worker, cron,
-      consumer, migrate, system, producer, metrics, alert); record the
-      assignment order in the chunk's commit.
-- [ ] Rewrite each declaration via common.NewError with recovery + fix;
+- [x] Assign flat serial codes (VK0001+) to every named error variable in
+      an errors.go. 17 total, domain order: common VK0001-0003
+      (AlreadyConsuming, LifecycleContextNotCancellable, LeaseLost), topic
+      VK0004-0007 (ConfigMismatch, NotFound, NotEmpty, NameTaken), admin
+      VK0008-0009 (DestroyDisabled, ReservedTopicName), system VK0010-0011
+      (SystemLive, TopicsRegistered), worker VK0012 (InstanceLost), cron
+      VK0013 (CronJobNotFound), consumer/controller VK0014-0016
+      (GroupNotFound, GroupLive, GroupDeliveriesPending), migrate VK0017
+      (NotRegistered). All Permanent -- today's transients are pg errors
+      classified by IsTransientPgError. Unexported internal signals
+      (errPartitionsRemain, errRangeNotTracked) stay plain per the settled
+      which-errors-get-codes rule. CONVENTIONS example updated
+      VK0104 -> VK0005 (the real ErrTopicNotFound).
+- [x] Rewrite each declaration via common.NewError with recovery + fix;
       doc comments keep the what-it-means/what-to-do wording.
-- [ ] consumer's lifecycleContextHelp block: keep as the long-help const
+- [x] consumer's lifecycleContextHelp block: kept as the long-help const
       appended below the one-line message (rule sheet: first line must
       stand alone).
+- [ ] Walk-test coverage gap: the tense/banned-word tests live in
+      pkg/common and only see codes registered in that test binary
+      (VK0001-0003 + fixtures). Extend the walks to a home that imports
+      every declaring domain -- decide at chunk 6, where docs generation
+      needs the same full registry.
 
 ### Chunk 4 — raise-site sweep
 

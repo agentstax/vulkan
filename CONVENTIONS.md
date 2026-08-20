@@ -292,7 +292,7 @@ cannot make.
 The whole shape, one example:
 
     // pkg/topic/errors.go -- the declaration owns everything but the values
-    var ErrTopicNotFound = common.NewError("VK0104", common.Permanent,
+    var ErrTopicNotFound = common.NewError("VK0005", common.Permanent,
     	"topic not found",
     	"register it with MessageAdmin.RegisterTopic first")
 
@@ -301,7 +301,7 @@ The whole shape, one example:
 
     // Error() one-liner (logs, wrapped chains) -- the code is the docs link
     topic not found: topic "orders", version 3 -- register it with
-    MessageAdmin.RegisterTopic first [VK0104]
+    MessageAdmin.RegisterTopic first [VK0005]
 
 The CLI block, slog output, and --output json render these same parts as
 fields; only the fix wording differs per surface (Go API in the library, a
@@ -317,7 +317,7 @@ vulkan command in the CLI).
 - Classify recovery by one question -- can an unchanged retry succeed?
   Transient = yes; Permanent = no. Retry machinery stops immediately on
   Permanent, so a wrong Transient burns a backoff curve on a lost cause.
-- Land the docs page (…/errors/VK0104, headed by the verbatim problem
+- Land the docs page (…/errors/VK0005, headed by the verbatim problem
   text) in the same change -- readers and agents find it by pasting the
   message into search.
 
