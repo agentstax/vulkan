@@ -130,6 +130,11 @@ root or a domain controller. What only your own tree imports nests freely
 them). The placement law: a worker package lives under the domain whose
 tables it maintains, never under its assembler.
 
+Developer tooling lives in the dev-only `tools/` module (own go.mod,
+never tagged, outside the root test surface) -- the machine-checkable
+rules of this file run as tests in `tools/conventions`, via `just
+verify`. Production code never imports anything under tools/.
+
 The domain layers:
 
 - `pkg/<x>` -- vocabulary only: pure read-models, consts, named error

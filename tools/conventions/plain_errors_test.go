@@ -1,4 +1,4 @@
-package errorregistry
+package conventions
 
 // Walks every plain raise string (errors.New / fmt.Errorf string literals)
 // under pkg/, otelvulkan/, and cmd/vulkan/ and enforces the mechanical half

@@ -237,7 +237,7 @@ prerequisite if quorum-as-a-fraction wins.
   persist after this ships ([0550] context).
   - Error docs-page drift check (user-settled 2026-08-19: pages are
     hand-written, NEVER generated): a CI script that walks the registry
-    (internal/errorregistry) and fails when a code has no page under
+    (tools/conventions) and fails when a code has no page under
     website/src/content/docs/errors/ or the page title no longer matches
     the declaration's verbatim problem text; plus an agent-facing hook so
     an agent editing a declaration is pointed at the stale page in the

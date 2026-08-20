@@ -1,4 +1,4 @@
-package errorregistry
+package conventions
 
 import (
 	"io/fs"

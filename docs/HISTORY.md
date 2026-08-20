@@ -38,6 +38,11 @@ ledger was created; dates come from the phase git tags.
   ast-walks every plain raise string (banned words, static fmt.Errorf,
   missing got-clauses, declared-problem restatement) — the audits'
   wording half is a ratchet, not a manual pass.
+- Developer tooling isolated [0557]: dev-only tools/ module (6th go.work
+  entry); errorregistry became tools/conventions — one package named for
+  the document it enforces; `just verify` is the blessed pre-commit/CI
+  command (all five modules build, walks run); internal/ holds only
+  live code.
 
 ## 2026-08-19 — Structured error anatomy shipped [0550][0551][0552]
 
