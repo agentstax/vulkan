@@ -36,3 +36,15 @@ var ErrTopicPartitionsRemain = common.NewError("VK0020", common.Permanent,
 var ErrTopicDeclarationInterrupted = common.NewError("VK0021", common.Transient,
 	"could not finish the topic declaration",
 	"run RegisterTopic again if the topic should still exist")
+
+// ErrDestroyDisabled means a Destroy* call ran without AllowDestroy set
+// on the admin's config.
+var ErrDestroyDisabled = common.NewError("VK0008", common.Permanent,
+	"destroy is disabled",
+	"set MessageAdminConfig.AllowDestroy")
+
+// ErrReservedTopicName means Register/Rename touched a name under
+// SystemTopicPrefix -- reserved for the admin's own system topics.
+var ErrReservedTopicName = common.NewError("VK0009", common.Permanent,
+	"topic name uses the reserved __system. prefix",
+	"choose a name outside the __system. prefix")

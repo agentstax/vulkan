@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/agentstax/vulkan/pkg/cron"
 )
 
 // replaceConfig overwrites an already-registered cron job's mutable
@@ -52,7 +54,7 @@ func (d *CronJobDatastore) replaceConfig(ctx context.Context, found *CronJobData
 		return nil, err
 	}
 	if updated == nil {
-		return nil, fmt.Errorf("cron job %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", found.Name)
+		return nil, cron.ErrDeclarationInterrupted.With("cron_job", found.Name)
 	}
 
 	changes := configChanges(found, updated)

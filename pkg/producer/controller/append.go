@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
@@ -35,7 +36,7 @@ func NewAppend[Message any](payload *Message, options ProduceOptions) (*Append[M
 // store.
 func (c *ProducerController[Message]) AppendMessage(ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], options ProduceOptions) (*Appended[Message], error) {
 	if topicId <= 0 {
-		return nil, errors.New("topicId must be > 0")
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if produceFunc == nil {
 		return nil, errors.New("produceFunc must not be nil")
@@ -63,7 +64,7 @@ func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx 
 		return nil, errors.New("tx must not be nil")
 	}
 	if topicId <= 0 {
-		return nil, errors.New("topicId must be > 0")
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if produceFunc == nil {
 		return nil, errors.New("produceFunc must not be nil")
@@ -88,7 +89,7 @@ func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx 
 // the FIRST failure in pipeline order, -1 when the failure carries no index.
 func (c *ProducerController[Message]) AppendMessageBatch(ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
 	if topicId <= 0 {
-		return nil, -1, errors.New("topicId must be > 0")
+		return nil, -1, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if len(appends) == 0 {
 		return nil, -1, errors.New("appends must not be empty")

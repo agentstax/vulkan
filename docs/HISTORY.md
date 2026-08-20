@@ -5,6 +5,36 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-20 — Plain-error standard + package-kinds restructure [0554][0555]
+
+- Plain errors standardized [0554]: CONVENTIONS.md "When writing a plain
+  error" (templates/banned words/tense apply below the declaration
+  boundary; constraint guards end `, got <value>`; names spelled as the
+  caller knows them; errors.New for static text; fix clauses under the
+  fix rules; wrap only the owned fact). Swept: 33 got-clauses, 6 static
+  fmt.Errorf, off-template rewordings, the VK0004 raise moved from
+  fmt.Errorf prose to .With. cron.ErrDeclarationInterrupted VK0025
+  declared (+docs page) — the third deleted-mid-declaration race, missed
+  by 0553's audit, now Transient-healed like VK0021/VK0024.
+- Package kinds [0555]: every package is infrastructure, a domain
+  (vocabulary root ← controller ← datastore + the workers maintaining
+  its tables), or an API package (producer, consumer, admin,
+  systemmanager — no declared errors, no SQL, no vocabulary). Seam law:
+  what another stack imports is a vocabulary root or domain controller;
+  own-tree-only imports nest freely. Placement law: a worker lives under
+  the domain whose tables it maintains.
+- Moves: NEW pkg/consumergroup (VK0014–16, Group, binding types,
+  MessageMeta; ex-consumer/controller as ConsumerGroupController; base,
+  the three subconsumers, cursoradvancer); worker/janitor →
+  topic/janitor; worker/cronscheduler → cron/scheduler;
+  worker/metricscollector → metrics/collector; admin's VK0008/VK0009 →
+  pkg/topic. The binding-declaration datastore now raises
+  consumergroup.ErrGroupNotFound — the gap that started the redesign.
+- "door" banned from the vocabulary; live occurrences reworded.
+  schema-gate-lab's stale pre-VK0023 text checks moved onto errors.Is.
+- Verified: build/vet/`go test -race` across all three modules;
+  41/41 fresh-DB labs.
+
 ## 2026-08-19 — Structured error anatomy shipped [0550][0551][0552]
 
 - common.Error (pkg/common/error.go): code + recovery + problem + fix +

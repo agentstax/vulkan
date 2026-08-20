@@ -7,9 +7,8 @@ package errorregistry
 // is).
 
 import (
-	_ "github.com/agentstax/vulkan/pkg/admin"
 	_ "github.com/agentstax/vulkan/pkg/common"
-	_ "github.com/agentstax/vulkan/pkg/consumer/controller"
+	_ "github.com/agentstax/vulkan/pkg/consumergroup"
 	_ "github.com/agentstax/vulkan/pkg/cron"
 	_ "github.com/agentstax/vulkan/pkg/migrate"
 	_ "github.com/agentstax/vulkan/pkg/producer/controller/datastore"

@@ -33,8 +33,8 @@ import (
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	"github.com/agentstax/vulkan/pkg/consumer/binding"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
@@ -139,7 +139,7 @@ func seedingSection(ctx context.Context) {
 		declared := false
 		for _, declaration := range declarations {
 			if declaration.GroupName == jobName && declaration.TopicName == cron.TopicName &&
-				declaration.Status == binding.DeclarationInstalled &&
+				declaration.Status == consumergroup.DeclarationInstalled &&
 				len(declaration.Patterns) == 1 && declaration.Patterns[0] == jobName {
 				declared = true
 			}
@@ -323,7 +323,7 @@ func executorSection(ctx context.Context) {
 	declared := false
 	for _, declaration := range declarations {
 		if declaration.GroupName == partitioncount.JobName && declaration.TopicName == cron.TopicName &&
-			declaration.Status == binding.DeclarationInstalled &&
+			declaration.Status == consumergroup.DeclarationInstalled &&
 			len(declaration.Patterns) == 1 && declaration.Patterns[0] == partitioncount.JobName {
 			declared = true
 		}
@@ -507,7 +507,7 @@ func startExecutor(ctx context.Context) func() {
 // registerGroup creates a consumer group on the job_requests topic, bound to
 // the given job names (none = bindingless), and returns its id.
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
-	controller, err := consumercontroller.NewConsumerController(ds, nil)
+	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
 	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name)
 	must(err)

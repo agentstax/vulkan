@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -27,7 +27,7 @@ type PartitionCountProvisioner struct {
 	ds                  *iDatastore.PostgresDatastore
 	workers             *workercontroller.WorkerController
 	topics              *topiccontroller.TopicController
-	consumers           *consumercontroller.ConsumerController
+	consumers           *consumergroupcontroller.ConsumerGroupController
 	controller          *controller.PartitionCountController
 	alertProducer       *producer.Producer[alert.Alert]
 	alertHeads          *compactioncontroller.CompactionController[alert.Alert]
@@ -67,7 +67,7 @@ func NewPartitionCountProvisioner(ds *iDatastore.PostgresDatastore, cfg *Partiti
 		return nil, err
 	}
 
-	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
+	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

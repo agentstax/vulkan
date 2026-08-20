@@ -113,12 +113,29 @@ inside a step.
 
 ## Package layout
 
-Three layers per domain (template: worker, topic):
+Every package is exactly one of three kinds:
 
-- `pkg/<x>` -- vocabulary only: pure read-models, consts, error sentinels.
-  Imports ~common only. No constructors for read-models, no Config types, no
-  fields without production readers.
-- `pkg/<x>/controller` -- the only door to persistence: all public verbs, ALL
+- **Infrastructure** (`common`, `datastore`) -- vocabulary and seams
+  importable by everything.
+- **Domain** -- `pkg/<noun>` vocabulary root, its `controller` and
+  `controller/datastore`, and the worker packages that maintain the
+  domain's tables (template: topic, consumergroup).
+- **API package** (`producer`, `consumer`, `admin`, `systemmanager`) --
+  constructors, configs, instances; assembles domains and workers.
+  Declares no named error variables, owns no SQL, holds no vocabulary.
+
+The seam law: anything another stack imports is a seam -- a vocabulary
+root or a domain controller. What only your own tree imports nests freely
+(producer keeps its controller/datastore/batcher: nothing else imports
+them). The placement law: a worker package lives under the domain whose
+tables it maintains, never under its assembler.
+
+The domain layers:
+
+- `pkg/<x>` -- vocabulary only: pure read-models, consts, named error
+  variables. Imports infrastructure only. No constructors for
+  read-models, no Config types, no fields without production readers.
+- `pkg/<x>/controller` -- the only path to persistence: all public verbs, ALL
   input validation, `to*` adapters, schema asserts. Files: `<x>_config.go`,
   `controller_config.go`.
 - `pkg/<x>/controller/datastore` -- all SQL; trusts inputs, no re-validation.
@@ -367,6 +384,32 @@ vulkan command in the CLI).
   message text -- wording stays free to improve everywhere at once.
 - A wrapping layer adds only the fact it owns (`item %d: %w`); an error
   is returned or logged, never both.
+
+### When writing a plain error
+
+The errors that stay below the declaration boundary -- validation guards,
+internal invariants, same-package control-flow signals.
+
+- The problem-line templates, banned words, and tense rules above apply
+  identically -- a plain error is the same fact minus the code, recovery,
+  and registry. Before writing prose, check the 24 declared conditions:
+  restating one is a bug, raise the Err* variable.
+- A constraint guard ends with the violating value:
+  `<name> must be <constraint>, got <value>` -- %d for ints, %v for
+  durations (units come free), %q for strings. Absence guards
+  (nil / required / empty) carry no value clause.
+- `<name>` is the identifier as the caller knows it: the param name for
+  constructor args, the exported field spelled exactly for config fields,
+  the column or JSON key when validating stored data.
+- `errors.New` for static text; `fmt.Errorf` only when a value is
+  interpolated.
+- A plain error may carry the same ` -- <fix>` clause, under the
+  fix-writing rules above. A fix naming another package's method or a
+  CLI command is the promotion tell -- the condition is user-facing, so
+  declare it.
+- Wrapping is the same rule as above -- only the owned fact, spelled as
+  declared: `<Field>: %w` in config Validate chains, `item %d: %w` per
+  element. Never restate the cause's content.
 
 ## Comments
 

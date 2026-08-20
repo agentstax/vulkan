@@ -194,11 +194,11 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 	return a.cronJobController.ListRequests(ctx, jobRequests.Id, job.Id, job.Name, limit)
 }
 
-// DestroyCronJob permanently deletes the job. Returns ErrDestroyDisabled
+// DestroyCronJob permanently deletes the job. Returns topic.ErrDestroyDisabled
 // unless MessageAdminConfig.AllowDestroy is set.
 func (a *MessageAdmin) DestroyCronJob(ctx context.Context, name string) error {
 	if !a.allowDestroy {
-		return ErrDestroyDisabled
+		return topic.ErrDestroyDisabled
 	}
 	if name == "" {
 		return errors.New("cron job name is required")

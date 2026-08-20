@@ -45,10 +45,10 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
-	exceptionconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer/controller"
-	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
+	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -89,9 +89,9 @@ func main() {
 	must(err)
 	topicId = tp.Id
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	exceptionConsumers, err := exceptionconsumercontroller.NewExceptionConsumerController(ds, nil)
+	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[Rec](ds, nil)
 	must(err)
@@ -635,7 +635,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 	tp, err := topicController.Get(ctx, topicName, topic.SchemaVersion(1))
 	must(err)
 
-	consumerDatastore, err := consumercontroller.NewConsumerController(ds, nil)
+	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
 	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
 	must(err)
@@ -711,7 +711,7 @@ func publishUnkeyed(ctx context.Context, wpInstance *producer.ProducerInstance[R
 	must(err)
 }
 
-func groupId(ctx context.Context, cd *consumercontroller.ConsumerController, name string) int64 {
+func groupId(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, name string) int64 {
 	g, err := cd.RegisterGroup(ctx, topicId, name)
 	must(err)
 	return g.Id

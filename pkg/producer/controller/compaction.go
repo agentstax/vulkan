@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // GetCompactionHeadInTx reads the head against the caller's tx, locking it
@@ -13,7 +14,7 @@ func (c *ProducerController[Message]) GetCompactionHeadInTx(ctx context.Context,
 		return nil, errors.New("tx must not be nil")
 	}
 	if topicId <= 0 {
-		return nil, errors.New("topicId must be > 0")
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if compactionKey == "" {
 		return nil, errors.New("compaction key is required")

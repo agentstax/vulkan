@@ -27,13 +27,14 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller/datastore"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	cursoradvancerdatastore "github.com/agentstax/vulkan/pkg/worker/cursoradvancer/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -108,9 +109,9 @@ func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -187,9 +188,9 @@ func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []f
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -274,9 +275,9 @@ func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -332,9 +333,9 @@ func timeConcurrentCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
@@ -420,4 +421,4 @@ func die(msg string) {
 	os.Exit(1)
 }
 
-func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }

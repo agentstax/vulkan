@@ -5,13 +5,16 @@
 // per-second throughput line (rows materialized/s) for the harness to parse.
 //
 // Modes:
-//   -mode=poll   : sleep -poll-ms between catch-up passes
-//   -mode=listen : LISTEN events_appended; wake on a (coalesced) notify, then
-//                  catch up fully. The producer trigger emits one notify per
-//                  INSERT statement (never per row).
+//
+//	-mode=poll   : sleep -poll-ms between catch-up passes
+//	-mode=listen : LISTEN events_appended; wake on a (coalesced) notify, then
+//	               catch up fully. The producer trigger emits one notify per
+//	               INSERT statement (never per row).
 //
 // Sharding: instance i of n handles groups where
-//   ((hashtextextended(group,0) % n)+n)%n = i
+//
+//	((hashtextextended(group,0) % n)+n)%n = i
+//
 // Run n instances (shard 0..n-1, nshards n) for parallel materialization.
 package main
 

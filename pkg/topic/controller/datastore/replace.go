@@ -13,8 +13,9 @@ import (
 // partition_size is not mutable config.
 func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData) (*TopicData, error) {
 	if found.PartitionSize != declared.PartitionSize {
-		return nil, fmt.Errorf("%w: topic %s version %d: partition_size is fixed at %d, got %d",
-			topic.ErrTopicConfigMismatch, found.Name, found.SchemaVersion, found.PartitionSize, declared.PartitionSize)
+		return nil, topic.ErrTopicConfigMismatch.With(
+			"topic", found.Name, "version", found.SchemaVersion,
+			"existing_partition_size", found.PartitionSize, "declared_partition_size", declared.PartitionSize)
 	}
 
 	changes := configChanges(found, declared)

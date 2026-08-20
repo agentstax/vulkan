@@ -3,14 +3,14 @@ package consumer
 import (
 	"context"
 
-	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
-	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
+	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/cron/scheduler"
+	"github.com/agentstax/vulkan/pkg/metrics/collector"
+	"github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
-	"github.com/agentstax/vulkan/pkg/worker/cursoradvancer"
-	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
-	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 )
 
 // every group-owned row is declared here rather than at Register, so the
@@ -89,7 +89,7 @@ func (i *ConsumerInstance[Message]) newTopicProvisioners() ([]worker.Provisioner
 		return nil, err
 	}
 
-	cronSchedulerProvisioner, err := cronscheduler.NewCronSchedulerProvisioner(i.ds, &cronscheduler.CronSchedulerConfig{
+	cronSchedulerProvisioner, err := scheduler.NewCronSchedulerProvisioner(i.ds, &scheduler.CronSchedulerConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
 	})
@@ -97,7 +97,7 @@ func (i *ConsumerInstance[Message]) newTopicProvisioners() ([]worker.Provisioner
 		return nil, err
 	}
 
-	metricsCollectorProvisioner, err := metricscollector.NewMetricsCollectorProvisioner(i.ds, &metricscollector.MetricsCollectorConfig{
+	metricsCollectorProvisioner, err := collector.NewMetricsCollectorProvisioner(i.ds, &collector.MetricsCollectorConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
 	})

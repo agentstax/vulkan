@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
@@ -56,7 +56,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 		return nil, err
 	}
 	if group == nil {
-		return nil, consumercontroller.ErrGroupNotFound.With("group", groupName, "topic", topicName)
+		return nil, consumergroup.ErrGroupNotFound.With("group", groupName, "topic", topicName)
 	}
 
 	return common.NewConsumerGroupOwner(found.SystemId, found.Id, group.Id, group.Name)
@@ -67,14 +67,14 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 // delivery rows, group-owned workers, and group-owned cron jobs. The
 // topic and its messages are untouched.
 //
-// Returns ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set,
+// Returns topic.ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set,
 // and ErrTopicNotFound / ErrGroupNotFound when either side is missing.
 // Unless options.Force is set:
 //   - a consumer still runs on the group     -> ErrGroupLive
 //   - the group still holds delivery rows    -> ErrGroupDeliveriesPending
 func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string, options DestroyOptions) error {
 	if !a.allowDestroy {
-		return ErrDestroyDisabled
+		return topic.ErrDestroyDisabled
 	}
 	if topicName == "" {
 		return errors.New("topic name is required")
@@ -96,7 +96,7 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, versi
 		return err
 	}
 	if group == nil {
-		return consumercontroller.ErrGroupNotFound.With("group", groupName, "topic", topicName)
+		return consumergroup.ErrGroupNotFound.With("group", groupName, "topic", topicName)
 	}
 
 	if !options.Force {
@@ -120,7 +120,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	}
 	for _, snapshot := range workers {
 		if snapshot.Owner.ConsumerGroupId == groupId && snapshot.LiveInstances > 0 {
-			return consumercontroller.ErrGroupLive.With("group", groupName)
+			return consumergroup.ErrGroupLive.With("group", groupName)
 		}
 	}
 
@@ -132,7 +132,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	exceptions := group.Exceptions
 	total := exceptions.Ready + exceptions.Inflight + exceptions.Deferred + exceptions.Dead
 	if total > 0 {
-		return consumercontroller.ErrGroupDeliveriesPending.With("group", groupName)
+		return consumergroup.ErrGroupDeliveriesPending.With("group", groupName)
 	}
 	return nil
 }

@@ -30,7 +30,8 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -47,7 +48,7 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
 
 	suffix := time.Now().UnixNano()
@@ -136,7 +137,7 @@ func main() {
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
 }
 
-func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumercontroller.ConsumerController, topicA *topic.Topic, suffix int64) {
+func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, cd *consumergroupcontroller.ConsumerGroupController, topicA *topic.Topic, suffix int64) {
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
@@ -147,10 +148,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 
 	locked, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	if err := locked.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, admin.ErrDestroyDisabled) {
+	if err := locked.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, topic.ErrDestroyDisabled) {
 		die(fmt.Sprintf("destroy without AllowDestroy: want ErrDestroyDisabled, got %v", err))
 	}
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName+".missing", admin.DestroyOptions{}); !errors.Is(err, consumercontroller.ErrGroupNotFound) {
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName+".missing", admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupNotFound) {
 		die(fmt.Sprintf("destroy of an unregistered group: want ErrGroupNotFound, got %v", err))
 	}
 	fmt.Printf("  ✓ AllowDestroy gate and not-found error\n")
@@ -169,7 +170,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	if claimed == nil {
 		die("the lab's own worker claim was declined")
 	}
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumercontroller.ErrGroupLive) {
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupLive) {
 		die(fmt.Sprintf("destroy with a live worker instance: want ErrGroupLive, got %v", err))
 	}
 	must(workers.ReleaseInstance(ctx, claimed.Id, claimed.Token))
@@ -185,7 +186,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	must(err)
 	_, err = ds.Pool.Exec(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, doomed.Id)
 	must(err)
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumercontroller.ErrGroupDeliveriesPending) {
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
 		die(fmt.Sprintf("destroy with delivery rows: want ErrGroupDeliveriesPending, got %v", err))
 	}
 	must(mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{Force: true}))

@@ -1,6 +1,7 @@
 package alert
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -57,7 +58,7 @@ type AlertOptions struct {
 
 func NewAlert(name string, owner *common.Owner, status Status, severity Severity, message string, options *AlertOptions) (*Alert, error) {
 	if name == "" {
-		return nil, fmt.Errorf("alert name is required")
+		return nil, errors.New("alert name is required")
 	}
 	if owner == nil {
 		return nil, fmt.Errorf("alert %q: owner is required", name)
@@ -115,7 +116,7 @@ func CompactionKey(name string, owner *common.Owner) (string, error) {
 	case common.OwnerConsumerGroup:
 		id = owner.ConsumerGroupId
 	default:
-		return "", fmt.Errorf("alert %q: unhandled owner kind %q", name, owner.Kind())
+		return "", fmt.Errorf("alert %q: unrecognized owner kind: %q", name, owner.Kind())
 	}
 	return fmt.Sprintf("%s/%s/%d", name, owner.Kind(), id), nil
 }

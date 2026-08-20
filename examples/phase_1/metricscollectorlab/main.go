@@ -24,15 +24,15 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 )
 
 const (
@@ -74,7 +74,7 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	step("seed 6 topics x 2 groups x 5 messages -- more topics than TopicConcurrency")
-	consumers, err := consumercontroller.NewConsumerController(ds, nil)
+	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
 	workProducer, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -115,10 +115,10 @@ func main() {
 	must(err)
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
-	row, err := workers.GetWorker(ctx, metricscollector.WorkerMetricsCollector, systemOwner)
+	row, err := workers.GetWorker(ctx, collector.WorkerMetricsCollector, systemOwner)
 	must(err)
 
-	provisioner, err := metricscollector.NewMetricsCollectorProvisioner(ds, &metricscollector.MetricsCollectorConfig{
+	provisioner, err := collector.NewMetricsCollectorProvisioner(ds, &collector.MetricsCollectorConfig{
 		TopicConcurrency: 4,
 	})
 	must(err)

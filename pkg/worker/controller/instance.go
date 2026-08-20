@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -82,7 +83,7 @@ func validInstanceInputs(instanceId int64, token uuid.UUID) error {
 		return fmt.Errorf("instanceId must be > 0, got %d", instanceId)
 	}
 	if token == uuid.Nil {
-		return fmt.Errorf("token is required")
+		return errors.New("token is required")
 	}
 	return nil
 }

@@ -24,9 +24,10 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	deliveryconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/deliveryconsumer/controller"
-	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	deliveryconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -51,11 +52,11 @@ func main() {
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
 	must(err)
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	deliveryConsumers, err := deliveryconsumercontroller.NewDeliveryConsumerController(ds, nil)
+	deliveryConsumers, err := deliveryconsumergroupcontroller.NewDeliveryConsumerGroupController(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
@@ -214,4 +215,4 @@ func die(msg string) {
 	os.Exit(1)
 }
 
-func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }

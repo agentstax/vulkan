@@ -10,8 +10,8 @@ import (
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/consumer/binding"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -31,7 +31,7 @@ type Consumer[Message any] struct {
 	ds *datastore.PostgresDatastore
 
 	topicController *topiccontroller.TopicController
-	consumers       *consumercontroller.ConsumerController
+	consumers       *consumergroupcontroller.ConsumerGroupController
 	evaluators      []alert.Evaluator
 }
 
@@ -55,7 +55,7 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 		return nil, err
 	}
 
-	consumers, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
+	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -134,7 +134,7 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 	if err != nil {
 		return nil, err
 	}
-	if outcome == binding.DeclarationWaiting {
+	if outcome == consumergroup.DeclarationWaiting {
 		c.Logger.InfoContext(ctx, "binding declaration waiting -- a live instance still declares a different set; Consume retries until installed",
 			"group", group.Name, "patterns", bindings)
 	}

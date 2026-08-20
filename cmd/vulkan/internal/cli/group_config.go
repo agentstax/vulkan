@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
@@ -96,7 +96,7 @@ func decodeMessageOptions(value any) (*common.MessageOptions, error) {
 // groupError maps a group config command failure to CLI output.
 func groupError(topicName string, groupName string, err error) error {
 	switch {
-	case errors.Is(err, consumercontroller.ErrGroupNotFound):
+	case errors.Is(err, consumergroup.ErrGroupNotFound):
 		return failOp("consumer group %q not found on topic %q", groupName, topicName)
 	case errors.Is(err, topic.ErrTopicNotFound):
 		return errTopicNotFound(topicName)

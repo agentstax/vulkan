@@ -23,7 +23,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/consumer/binding"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -221,26 +221,26 @@ func bindingDisplays(ctx context.Context) string {
 
 // labDeclarations reads the listing surface and returns the lab group's
 // installed row and open waiting row (nil when absent).
-func labDeclarations(ctx context.Context) (*binding.Declaration, *binding.Declaration) {
+func labDeclarations(ctx context.Context) (*consumergroup.Declaration, *consumergroup.Declaration) {
 	declarations, err := mAdmin.ListDeclarations(ctx)
 	must(err)
-	var installed *binding.Declaration
-	var waiter *binding.Declaration
+	var installed *consumergroup.Declaration
+	var waiter *consumergroup.Declaration
 	for _, declaration := range declarations {
 		if declaration.TopicName != topicName || declaration.GroupName != groupName {
 			continue
 		}
 		switch declaration.Status {
-		case binding.DeclarationInstalled:
+		case consumergroup.DeclarationInstalled:
 			installed = declaration
-		case binding.DeclarationWaiting:
+		case consumergroup.DeclarationWaiting:
 			waiter = declaration
 		}
 	}
 	return installed, waiter
 }
 
-func patterns(declaration *binding.Declaration) string {
+func patterns(declaration *consumergroup.Declaration) string {
 	joined := ""
 	for i, pattern := range declaration.Patterns {
 		if i > 0 {

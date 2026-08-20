@@ -12,7 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 )
 
-// AlertController is the alert domain's write door: it records what a run
+// AlertController is the alert domain's write path: it records what a run
 // found to the __system.alerts topic and logs status changes.
 type AlertController struct {
 	Logger common.Logger

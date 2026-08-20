@@ -104,7 +104,7 @@ func (c *Controller) RunAll(ctx context.Context, targetVersion int64, kind commo
 func (c *Controller) owners(ctx context.Context, conn *pgxpool.Conn, kind common.OwnerKind) ([]*common.Owner, error) {
 	switch kind {
 	case common.OwnerSystem:
-		return nil, fmt.Errorf("system is a singleton -- use RunOnce, not RunAll")
+		return nil, errors.New("system is a singleton -- use RunOnce, not RunAll")
 	case common.OwnerTopic:
 		return c.datastore.ListTopics(ctx, conn)
 	default:

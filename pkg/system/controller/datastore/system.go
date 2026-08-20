@@ -3,7 +3,6 @@ package datastore
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -75,7 +74,7 @@ func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemDat
 		return nil, err
 	}
 	if existing == nil {
-		return nil, fmt.Errorf("system row missing right after seed -- unexpected")
+		return nil, errors.New("system row missing right after seed")
 	}
 	return existing, nil
 }

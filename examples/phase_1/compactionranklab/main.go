@@ -24,8 +24,9 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -60,9 +61,9 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	wp, err := producer.NewProducer[RankedRecord](ds, nil)
 	must(err)
@@ -150,7 +151,7 @@ func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, arg
 	return v
 }
 
-func ids(msgs []messageconsumercontroller.Message) []int64 {
+func ids(msgs []messageconsumergroupcontroller.Message) []int64 {
 	out := make([]int64, len(msgs))
 	for i, m := range msgs {
 		out[i] = m.Id
@@ -192,4 +193,4 @@ func assertTrue(label string, cond bool) {
 	fmt.Printf("  ✓ %s\n", label)
 }
 
-func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }

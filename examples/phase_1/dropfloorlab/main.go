@@ -32,13 +32,14 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
-	messageconsumercontroller "github.com/agentstax/vulkan/pkg/consumer/messageconsumer/controller"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	messageconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	janitordatastore "github.com/agentstax/vulkan/pkg/worker/janitor/controller/datastore"
+	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	"github.com/google/uuid"
 )
 
@@ -72,9 +73,9 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	cd, err := consumercontroller.NewConsumerController(ds, nil)
+	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	messageConsumers, err := messageconsumercontroller.NewMessageConsumerController(ds, nil)
+	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
@@ -161,7 +162,7 @@ func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 	must(err)
 }
 
-func reset(ctx context.Context, cd *consumercontroller.ConsumerController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
+func reset(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
 	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group))
 	_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, groupId)
 	must(err)
@@ -177,7 +178,7 @@ func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, group stri
 	must(err)
 }
 
-func freshClaim(ctx context.Context, cd *messageconsumercontroller.MessageConsumerController, topicId int64, group string, limit int) *messageconsumercontroller.ClaimedRange {
+func freshClaim(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, topicId int64, group string, limit int) *messageconsumergroupcontroller.ClaimedRange {
 	claim, err := cd.ClaimMessagesWithCursor(ctx, topicId, groupId, limit, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
@@ -237,4 +238,4 @@ func assertPartitions(label string, got, want []int64) {
 	fmt.Printf("  ✓ %s %v\n", label, got)
 }
 
-func mustGroupID(g *consumercontroller.Group, err error) int64 { must(err); return g.Id }
+func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }

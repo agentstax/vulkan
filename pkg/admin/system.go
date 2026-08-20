@@ -115,7 +115,7 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 // - workers
 // - shared control-plane tables
 //
-// Returns ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set.
+// Returns topic.ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set.
 // Idempotent -- a system already destroyed (or never registered) resolves as
 // a no-op, and a re-run after a partial failure resumes where it stopped.
 //
@@ -124,7 +124,7 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 //   - a non-system topic is registered  -> system.ErrTopicsRegistered
 func (a *MessageAdmin) DestroySystem(ctx context.Context, options DestroyOptions) error {
 	if !a.allowDestroy {
-		return ErrDestroyDisabled
+		return topic.ErrDestroyDisabled
 	}
 
 	sys, err := a.systemController.Get(ctx)

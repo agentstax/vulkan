@@ -65,7 +65,7 @@ func main() {
 }
 
 func assertReserved(label string, err error) {
-	if !errors.Is(err, admin.ErrReservedTopicName) {
+	if !errors.Is(err, topic.ErrReservedTopicName) {
 		die(fmt.Sprintf("%s: expected ErrReservedTopicName, got %v", label, err))
 	}
 	fmt.Printf("  ✓ %s -> %v\n", label, err)

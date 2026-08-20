@@ -29,7 +29,7 @@ func NewBatcher[Message any](producerController *controller.ProducerController[M
 		return nil, errors.New("controller must not be nil")
 	}
 	if topicId <= 0 {
-		return nil, errors.New("topicId must be > 0")
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if cfg == nil {
 		cfg = &BatcherConfig{}

@@ -8,14 +8,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
+	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
+	"github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
-	"github.com/agentstax/vulkan/pkg/worker/cursoradvancer"
-	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
-	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 )
 
 // SystemManager keeps the deployment's upkeep running with no user process
@@ -54,7 +54,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	cronSchedulerProvisioner, err := cronscheduler.NewCronSchedulerProvisioner(ds, &cronscheduler.CronSchedulerConfig{
+	cronSchedulerProvisioner, err := scheduler.NewCronSchedulerProvisioner(ds, &scheduler.CronSchedulerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -72,7 +72,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	metricsCollectorProvisioner, err := metricscollector.NewMetricsCollectorProvisioner(ds, &metricscollector.MetricsCollectorConfig{
+	metricsCollectorProvisioner, err := collector.NewMetricsCollectorProvisioner(ds, &collector.MetricsCollectorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -135,7 +135,7 @@ func (s *SystemManager) Run(ctx context.Context) error {
 	// a second claim -- meaning a second Run runs a rival reconcile loop
 	release, ok := s.permit.Acquire()
 	if !ok {
-		return errors.New("this SystemManager is already running")
+		return errors.New("system manager already running")
 	}
 	defer release()
 

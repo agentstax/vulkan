@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -64,7 +66,7 @@ func main() {
 	bump(ctx, pool, sysOwner, 2)
 	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	show(err)
-	check(err != nil && strings.Contains(err.Error(), "system schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
+	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version and the fix")
 	unbump(ctx, pool, sysOwner, 2)
 
@@ -73,7 +75,7 @@ func main() {
 	bump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
 	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	show(err)
-	check(err != nil && strings.Contains(err.Error(), "topic schema is version 2") && strings.Contains(err.Error(), "upgrade the binary"),
+	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the topic version and the fix")
 	unbump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
 

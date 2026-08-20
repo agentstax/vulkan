@@ -5,29 +5,29 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
+	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
+	"github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
-	"github.com/agentstax/vulkan/pkg/worker/janitor"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
-	"github.com/agentstax/vulkan/pkg/worker/metricscollector"
 )
 
 type MessageAdmin struct {
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
 	cronJobController  *croncontroller.CronJobController
-	consumerController *consumercontroller.ConsumerController
+	consumerController *consumergroupcontroller.ConsumerGroupController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
 	// only measurements carry compaction keys on __system.metrics, so this
@@ -49,7 +49,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	cronSchedulerProvisioner, err := cronscheduler.NewCronSchedulerProvisioner(ds, &cronscheduler.CronSchedulerConfig{
+	cronSchedulerProvisioner, err := scheduler.NewCronSchedulerProvisioner(ds, &scheduler.CronSchedulerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -65,7 +65,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	metricsCollectorProvisioner, err := metricscollector.NewMetricsCollectorProvisioner(ds, &metricscollector.MetricsCollectorConfig{
+	metricsCollectorProvisioner, err := collector.NewMetricsCollectorProvisioner(ds, &collector.MetricsCollectorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -130,7 +130,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	consumerController, err := consumercontroller.NewConsumerController(ds, &consumercontroller.ControllerConfig{
+	consumerController, err := consumergroupcontroller.NewConsumerGroupController(ds, &consumergroupcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

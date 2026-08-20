@@ -35,14 +35,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
+	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
+	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
-	"github.com/agentstax/vulkan/pkg/worker/cronscheduler"
 )
 
 const schedulerPollRate = 100 * time.Millisecond
@@ -627,10 +627,10 @@ func startScheduler(ctx context.Context) func() {
 	must(err)
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
-	row, err := workers.GetWorker(ctx, cronscheduler.WorkerCronScheduler, owner)
+	row, err := workers.GetWorker(ctx, scheduler.WorkerCronScheduler, owner)
 	must(err)
 
-	provisioner, err := cronscheduler.NewCronSchedulerProvisioner(ds, nil)
+	provisioner, err := scheduler.NewCronSchedulerProvisioner(ds, nil)
 	must(err)
 
 	// a crashed earlier run's claim lingers until its InstanceTTL expires --
@@ -663,7 +663,7 @@ func startScheduler(ctx context.Context) func() {
 // registerGroup creates the consumer group on the job_requests topic, bound to
 // the given job names (none = bindingless), and returns its id.
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
-	controller, err := consumercontroller.NewConsumerController(ds, nil)
+	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
 	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name)
 	must(err)

@@ -1,8 +1,8 @@
 package consumer
 
 import (
-	"github.com/agentstax/vulkan/pkg/consumer/exceptionconsumer"
-	"github.com/agentstax/vulkan/pkg/consumer/messageconsumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 )
 
 // Each worker row runs on its own slice of this config. WithDefaults and

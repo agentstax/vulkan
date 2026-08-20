@@ -1,6 +1,9 @@
 package common
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type OwnerKind string
 
@@ -47,7 +50,7 @@ func NewTopicOwner(systemId int64, topicId int64, name string) (*Owner, error) {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errors.New("name is required")
 	}
 
 	return &Owner{SystemId: systemId, TopicId: topicId, Name: name}, nil
@@ -64,7 +67,7 @@ func NewConsumerGroupOwner(systemId int64, topicId int64, consumerGroupId int64,
 		return nil, fmt.Errorf("consumerGroupId must be > 0, got %d", consumerGroupId)
 	}
 	if name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, errors.New("name is required")
 	}
 
 	return &Owner{SystemId: systemId, TopicId: topicId, ConsumerGroupId: consumerGroupId, Name: name}, nil

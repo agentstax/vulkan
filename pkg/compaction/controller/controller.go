@@ -8,7 +8,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
-// CompactionController is the read door to compaction heads -- the write side
+// CompactionController reads compaction heads -- the write side
 // (the head upsert and the FOR UPDATE read inside a produce transaction)
 // belongs to the producer.
 type CompactionController[Message any] struct {

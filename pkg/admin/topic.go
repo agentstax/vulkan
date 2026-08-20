@@ -50,7 +50,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 		return nil, errors.New("topic name is required")
 	}
 	if isReservedTopicName(name) {
-		return nil, ErrReservedTopicName.With("topic", name)
+		return nil, topic.ErrReservedTopicName.With("topic", name)
 	}
 	if version < 1 {
 		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
@@ -104,14 +104,17 @@ func (a *MessageAdmin) MigrateTopics(ctx context.Context, targetVersion int64) e
 // Running producers/consumers keep working (they resolved the id at their Register),
 // but anything still CONFIGURED with the old name fails its next restart's Register.
 func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName string) ([]*topic.Topic, error) {
-	if name == "" || newName == "" {
-		return nil, errors.New("topic name and new name are required")
+	if name == "" {
+		return nil, errors.New("name is required")
+	}
+	if newName == "" {
+		return nil, errors.New("newName is required")
 	}
 	if newName == name {
 		return nil, errors.New("new name matches the current name -- nothing to rename")
 	}
 	if isReservedTopicName(name) || isReservedTopicName(newName) {
-		return nil, ErrReservedTopicName.With("topic", name, "new_name", newName)
+		return nil, topic.ErrReservedTopicName.With("topic", name, "new_name", newName)
 	}
 
 	renamed, err := a.topicController.Rename(ctx, name, newName)
@@ -132,19 +135,19 @@ type DestroyOptions struct {
 }
 
 // DestroyTopic permanently drops topic (name, version) and every
-// message it holds. Returns ErrDestroyDisabled unless
+// message it holds. Returns topic.ErrDestroyDisabled unless
 // MessageAdminConfig.AllowDestroy is set, ErrTopicNotFound if that version
 // isn't registered under name, and ErrTopicNotEmpty if the topic still holds
 // messages and options.Force isn't set.
 func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version topic.SchemaVersion, options DestroyOptions) error {
 	if !a.allowDestroy {
-		return ErrDestroyDisabled
+		return topic.ErrDestroyDisabled
 	}
 	if name == "" {
 		return errors.New("topic name is required")
 	}
 	if isReservedTopicName(name) {
-		return ErrReservedTopicName.With("topic", name)
+		return topic.ErrReservedTopicName.With("topic", name)
 	}
 
 	found, err := a.topicController.Get(ctx, name, version)
