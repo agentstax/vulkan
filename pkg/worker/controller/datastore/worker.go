@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -69,7 +70,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	err = tx.QueryRow(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).
 		Scan(&changed, &storedMetadata, &declaredMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("worker %q was deleted while its declaration was in flight -- rerun the declaration if it should still exist", name)
+		return worker.ErrDeclarationInterrupted.With("worker", name)
 	}
 	if err != nil {
 		return err

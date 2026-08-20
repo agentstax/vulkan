@@ -2,9 +2,9 @@ package janitor
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -39,7 +39,7 @@ func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.Wor
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("topic %d not found -- register it with MessageAdmin.RegisterTopic first", declared.Owner.TopicId)
+		return nil, topic.ErrTopicNotFound.With("topic_id", declared.Owner.TopicId)
 	}
 	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerTopic, WorkerJanitor, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {

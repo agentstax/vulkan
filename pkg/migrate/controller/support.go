@@ -47,9 +47,9 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 func assertVersionInRange(kind common.OwnerKind, version int64, minVersion int64, maxVersion int64) error {
 	switch {
 	case version < minVersion:
-		return fmt.Errorf("%s schema is version %d but this build needs at least %d -- migrate the database up first", kind, version, minVersion)
+		return migrate.ErrSchemaOlderThanBuild.With("kind", kind, "version", version, "min_version", minVersion)
 	case version > maxVersion:
-		return fmt.Errorf("%s schema is version %d but this build only understands up to %d -- upgrade the binary", kind, version, maxVersion)
+		return migrate.ErrSchemaNewerThanBuild.With("kind", kind, "version", version, "max_version", maxVersion)
 	}
 	return nil
 }

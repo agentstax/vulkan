@@ -119,7 +119,7 @@ func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner
 		return err
 	}
 	if current > maxVersion {
-		return fmt.Errorf("%s schema is version %d but this build only defines up to %d -- upgrade the binary", owner.Kind(), current, maxVersion)
+		return migrate.ErrSchemaNewerThanBuild.With("kind", owner.Kind(), "version", current, "max_version", maxVersion)
 	}
 
 	switch {

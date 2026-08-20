@@ -309,6 +309,13 @@ vulkan command in the CLI).
 
 ### When declaring a new error condition
 
+- A condition earns a declaration (and code) by any one of: a caller in
+  another package branches on it with errors.Is; its recovery must differ
+  from what IsTransientDatastoreError concludes on its own; it is a
+  user-facing condition worth a docs page. Constructor/config validation,
+  internal invariant guards, and unexported same-package control-flow
+  signals stay plain errors on the templates below -- promote one to a
+  declaration the moment it crosses the boundary.
 - Declare a named Err* variable in the owning pkg/<x>/errors.go via
   common.NewError -- code, recovery, problem, and fix fixed at declaration.
 - Code = "VK" + the next four-digit serial after the current max (same

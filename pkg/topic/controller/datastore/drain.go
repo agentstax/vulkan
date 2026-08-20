@@ -2,8 +2,9 @@ package datastore
 
 import (
 	"context"
-	"errors"
 	"fmt"
+
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // Dropping one partition locks ~5 relations:
@@ -21,8 +22,6 @@ import (
 // drainPartitions drops batches of this size, each in its own transaction
 // -- 100 partitions hold ~500 slots, under 10% of the stock pool.
 const dropPartitionBatchSize = 100
-
-var errPartitionsRemain = errors.New("partitions remain")
 
 // Batched partition drain: removes a partitioned table's partitions a
 // batch at a time so no single transaction holds more than a batch's
@@ -59,7 +58,7 @@ func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName st
 	}
 
 	// went past passLimit
-	return fmt.Errorf("%w: %s after %d drop passes", errPartitionsRemain, parentTableName, passLimit)
+	return topic.ErrTopicPartitionsRemain.With("table", parentTableName, "passes", passLimit)
 }
 
 func (d *TopicDatastore) listPartitions(ctx context.Context, parentTableName string) ([]string, error) {

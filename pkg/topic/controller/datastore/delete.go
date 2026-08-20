@@ -2,7 +2,6 @@ package datastore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
@@ -37,9 +36,6 @@ func (d *TopicDatastore) Delete(ctx context.Context, topicId int64, name string)
 
 func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string) error {
 	if err := d.drainPartitions(ctx, iTopic.MessageLogTable(topicId)); err != nil {
-		if errors.Is(err, errPartitionsRemain) {
-			return fmt.Errorf("topic %s: %w -- a producer is likely still writing; stop producers and call Destroy again", name, err)
-		}
 		return err
 	}
 

@@ -23,3 +23,16 @@ var ErrTopicNotEmpty = common.NewError("VK0006", common.Permanent,
 var ErrTopicNameTaken = common.NewError("VK0007", common.Permanent,
 	"topic name already taken",
 	"choose a different name")
+
+// ErrTopicPartitionsRemain means Destroy kept finding new partitions after
+// its drop-pass limit -- a producer is likely still writing.
+var ErrTopicPartitionsRemain = common.NewError("VK0020", common.Permanent,
+	"topic partitions remain after draining",
+	"stop the topic's producers and call DestroyTopic again")
+
+// ErrTopicDeclarationInterrupted means the topic row was destroyed between
+// the declaration's config write and its re-read; an unchanged retry
+// registers the topic fresh, so DatastoreRetry heals the race.
+var ErrTopicDeclarationInterrupted = common.NewError("VK0021", common.Transient,
+	"could not finish the topic declaration",
+	"run RegisterTopic again if the topic should still exist")

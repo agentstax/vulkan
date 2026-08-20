@@ -35,6 +35,16 @@ ledger was created; dates come from the phase git tags.
   problem text; auto-generation rejected — convention + parked CI drift
   check keep them honest).
 - Verified: 41/41 fresh-DB labs; all modules build; go test -race green.
+- Same-day follow-on [0553]: the declaration boundary codified in
+  CONVENTIONS ## Errors (cross-package brancher / recovery override /
+  docs-worthy condition; validation and same-package signals stay plain),
+  then a full audit of all ~618 raise sites: five promotions
+  (VK0020 topic partitions remain; VK0021/VK0024 topic/worker
+  declaration-interrupted races, Transient so DatastoreRetry heals them;
+  VK0022/VK0023 schema version skew) and two topic-not-registered prose
+  duplicates folded into ErrTopicNotFound. Five hand-written docs pages;
+  affected labs green (register-idempotency, destroy-system,
+  schema-evolution, consumergroup).
 
 ## 2026-08-19 — Definition/Provisioner split [0549]
 

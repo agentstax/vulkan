@@ -28,3 +28,8 @@ block; paste the message text or code into search to land on its page.
 | [VK0017](/errors/VK0017) | schema not registered | permanent |
 | [VK0018](/errors/VK0018) | could not create the covering partition | transient |
 | [VK0019](/errors/VK0019) | commit confirmation was lost | permanent |
+| [VK0020](/errors/VK0020) | topic partitions remain after draining | permanent |
+| [VK0021](/errors/VK0021) | could not finish the topic declaration | transient |
+| [VK0022](/errors/VK0022) | schema version is older than this build requires | permanent |
+| [VK0023](/errors/VK0023) | schema version is newer than this build understands | permanent |
+| [VK0024](/errors/VK0024) | could not finish the worker declaration | transient |

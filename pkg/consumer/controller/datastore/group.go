@@ -7,6 +7,7 @@ import (
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -93,7 +94,7 @@ func (d *ConsumerDatastore) registerGroup(ctx context.Context, topicId int64, na
 		// 23503 = the topic_id FK -- name the real problem, not the constraint
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return nil, fmt.Errorf("topic %d is not registered -- register it with MessageAdmin.RegisterTopic first", topicId)
+			return nil, topic.ErrTopicNotFound.With("topic_id", topicId)
 		}
 		return nil, err
 	}

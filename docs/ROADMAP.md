@@ -50,10 +50,10 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   - Broader internal/ moves were deferred 2026-08-19 (LIFECYCLE demotion
     shipped instead) — re-decide here, alongside the removed
     datastore-interfaces question's "re-add if desired" revisit.
-  - Also demoted: common.NewDefaultRetryPolicy/IsRetryable/RetryableFunc
-    (retry merged into pkg/common 2026-08-17, [0528] — demotion is now an
-    unexport inside common; config Retry fields stay nil, WithDefaults
-    fills them). The ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
+  - Also demoted: common.NewDefaultRetryPolicy/RetryableFunc (IsRetryable
+    was deleted outright with the marker types, [0551]; retry merged into
+    pkg/common 2026-08-17, [0528] — demotion is now an unexport inside
+    common; config Retry fields stay nil, WithDefaults fills them). The ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
     demotion shipped 2026-08-19 (see the file-structure cleanup item).
   - Trim redundant pairs generally: e.g. DestroyTopic + DestroyTopicVersion
     can only confuse — consider one DestroyTopic with a version option.
