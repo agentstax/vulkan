@@ -73,28 +73,43 @@ fresh-DB suite at the review-ready checkpoint.
 
 ### Chunk 4 — raise-site sweep
 
-- [ ] Raise sites of coded errors switch to `.With(...)` value pairs; the
-      fix text moves from fmt.Errorf strings into the declaration.
-- [ ] Wording sweep of remaining plain errors (validation fmt.Errorf) onto
-      the CONVENTIONS templates -- one phrasal template per condition kind;
-      "at least one item is required" -> `items must not be empty` etc.
-- [ ] Wrapping audit: each layer adds only its own fact; no return+log
-      double-reporting.
-- [ ] Migrate the marker-type raise sites onto declared errors (swept
-      2026-08-19): producer datastore partition.go createPartitionAhead
-      (NewRetryableError on lock_timeout -> Transient declared error
-      wrapping the cause), messageconsumer datastore commit.go
-      (NewPermanentError on ambiguous Commit with outcomes -> Permanent
-      declared error wrapping the cause), multitargetlab main.go
-      assertion updated to the new shape.
-- [ ] CHUNK CLOSER -- delete pkg/common/retry_error.go wholesale
-      (RetryableError, PermanentError, IsRetryable). Classification is
-      consulted, never encoded onto the error: Retry gains an unexported
-      classification func field (default = recovery on the error),
-      RetryDatastore sets recovery-then-IsTransientPgError, classify's
-      wrapping goes away and errors surface bare. producer batcher
-      resolve.go classifyBatchFailure switches off IsRetryable onto the
-      same check. Grep proves zero marker references before the delete.
+- [x] Raise sites of coded errors switch to `.With(...)` value pairs (~30
+      sites); the fix text moved from fmt.Errorf strings into declarations.
+      DECIDED in the sweep: a missing `__system.*` topic now raises
+      migrate.ErrNotRegistered everywhere (admin metrics/alert/cron paths,
+      otelvulkan, alert provisioners) -- it was split between
+      ErrTopicNotFound-with-RegisterSystem-hint and ErrNotRegistered, two
+      mechanisms for one fact, and ErrTopicNotFound's declared fix
+      (RegisterTopic) is wrong for reserved topics. Doc comments and the
+      CLI manager_run branch updated; user topics keep ErrTopicNotFound.
+- [x] Wording sweep of plain errors onto the CONVENTIONS templates:
+      enum Validates now name every legal value ("must be one of ..., got"),
+      "unknown/invalid X" -> template forms, "at least one X" -> "must not
+      be empty" (alert.go, owner.go, outcome.go, freshclaim.go, migrate
+      step.go/controller.go, producer_instance.go, claimbuffer.go, worker
+      manager.go). Vendored robfig parser left verbatim per the vendor rule.
+- [x] Wrapping audit: the three ErrorContext sites are log-only swallowed
+      paths (best-effort failure record, lock release, tick backoff) -- no
+      return+log double-reporting found; batcher wraps add only their fact.
+- [x] Marker-type raise sites migrated: producer datastore gained
+      errPartitionLockTimeout VK0018 Transient (datastore-local errors.go --
+      producer's door-first stack makes pkg/producer unreachable from its
+      datastore; migrate datastore errors.go precedent), commit.go raises
+      common.ErrCommitConfirmationLost VK0019 Permanent .Wrap(cause),
+      multitargetlab asserts no *common.Error wrapper instead.
+- [x] CHUNK CLOSER done -- retry_error.go DELETED (RetryableError,
+      PermanentError, IsRetryable); classify + the Wrap shadow gone. Errors
+      surface bare; classification is consulted, never encoded: Wrap calls
+      the exported IsTransientDatastoreError (recovery first, then
+      IsTransientPgError); batcher resolve.go uses the same check. Then
+      retry.go DELETED too -- plain Retry had zero users besides
+      RetryDatastore (a classifier-func field existed only to be
+      overwritten), so the type merged into RetryDatastore: one retry
+      machine, one hardcoded classification, MIN_DELAY moved beside its
+      only consumer in retry_policy.go. A general-purpose retry, if the
+      v1 API review wants one, gets designed then. Grep proves zero marker
+      references. Labs run green: multi-target, reclaim, reserved-topic,
+      register-idempotency, consumergroup.
 
 ### Chunk 5 — CLI
 

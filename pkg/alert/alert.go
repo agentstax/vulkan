@@ -71,11 +71,11 @@ func NewAlert(name string, owner *common.Owner, status Status, severity Severity
 	switch status {
 	case StatusActive, StatusResolved:
 	default:
-		return nil, fmt.Errorf("alert %q: invalid status %q", name, status)
+		return nil, fmt.Errorf("alert %q: status must be one of %q, %q, got %q", name, StatusActive, StatusResolved, status)
 	}
 
 	if severity != SeverityWarn {
-		return nil, fmt.Errorf("alert %q: invalid severity %q", name, severity)
+		return nil, fmt.Errorf("alert %q: severity must be %q, got %q", name, SeverityWarn, severity)
 	}
 
 	if options == nil {

@@ -248,7 +248,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 		// 23505 = unqiue constraint violation ie name taken
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, fmt.Errorf("%w: %s", topic.ErrTopicNameTaken, newName)
+			return nil, topic.ErrTopicNameTaken.With("topic", newName)
 		}
 		return nil, err
 	}

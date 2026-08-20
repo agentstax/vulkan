@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const MIN_DELAY = 0
+
 // RetryPolicy is the tunable retry config
 type RetryPolicy struct {
 	MaxRetries int           `json:"max_retries,omitempty"`

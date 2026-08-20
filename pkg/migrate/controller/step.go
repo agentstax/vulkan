@@ -43,6 +43,6 @@ func toStep(migration *migrate.Migration, stepType datastore.StepType, targetVer
 		}
 		return datastore.NewStep(targetVersion, migration.ValidateDown, migration.Down, migration.NoTxn)
 	default:
-		return nil, fmt.Errorf("invalid stepType %s defined", stepType)
+		return nil, fmt.Errorf("step type must be %q or %q, got %q", datastore.StepUp, datastore.StepDown, stepType)
 	}
 }

@@ -8,7 +8,6 @@ package otelvulkan
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"sync"
 
@@ -16,6 +15,7 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"go.opentelemetry.io/otel/attribute"
@@ -192,7 +192,7 @@ func (m *Metrics) resolveTopicId(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	if found == nil {
-		return 0, fmt.Errorf("%w: topic %q -- run RegisterSystem first", topic.ErrTopicNotFound, metrics.TopicName)
+		return 0, migrate.ErrNotRegistered.With("topic", metrics.TopicName)
 	}
 	m.topicId = found.Id
 	return found.Id, nil

@@ -17,3 +17,9 @@ var ErrLifecycleContextNotCancellable = NewError("VK0002", Permanent,
 // claim and the write; the delivery machinery handles the redelivery.
 var ErrLeaseLost = NewError("VK0003", Permanent,
 	"lease lost to another consumer", "")
+
+// ErrCommitConfirmationLost means the connection died at Commit with
+// outcomes already queued: whether they landed is unconfirmable, so a retry
+// could record duplicates -- the lease's expiry sorts the truth out.
+var ErrCommitConfirmationLost = NewError("VK0019", Permanent,
+	"commit confirmation was lost", "")

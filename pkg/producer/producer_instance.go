@@ -90,7 +90,7 @@ func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Messag
 // own crash) can publish every item twice, exactly as with unkeyed Produce.
 func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*ProduceItem[Message]) ([]*ProduceResult[Message], error) {
 	if len(items) == 0 {
-		return nil, errors.New("at least one item is required")
+		return nil, errors.New("items must not be empty")
 	}
 
 	appends := make([]*controller.Append[Message], 0, len(items))

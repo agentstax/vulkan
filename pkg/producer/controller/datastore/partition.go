@@ -8,7 +8,6 @@ import (
 	"time"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
-	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -90,12 +89,8 @@ func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partiti
 
 		err := d.DatastoreRetry.Wrap(ctx, func() error {
 			err := d.ensureCoveringPartition(ctx, topicId, partitionSize)
-
-			// lock_timeout classifies permanent -- right for the heal's
-			// fail-fast, wrong here: lock contention is exactly the case this
-			// run's backoff schedule exists to ride out
 			if isLockNotAvailable(err) {
-				return common.NewRetryableError(err)
+				return errPartitionLockTimeout.Wrap(err)
 			}
 			return err
 		})

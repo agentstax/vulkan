@@ -19,7 +19,7 @@ func (k OwnerKind) Validate() error {
 	case OwnerSystem, OwnerTopic, OwnerConsumerGroup:
 		return nil
 	default:
-		return fmt.Errorf("unknown owner kind %q", k)
+		return fmt.Errorf("must be one of %q, %q, %q, got %q", OwnerSystem, OwnerTopic, OwnerConsumerGroup, k)
 	}
 }
 

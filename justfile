@@ -263,7 +263,7 @@ rollup-lab:
 # back both (not just the failing one), a missing-partition self-heal on one
 # target never touches the other's already-made insert or reruns a caller
 # side effect between the two calls, a Commit-time failure surfaces
-# completely unclassified (no retry.PermanentError wrapping -- retrying is
+# completely unclassified (no common.Error wrapping -- retrying is
 # the caller's decision), and rerunning the closure under caller-supplied
 # IdempotencyKeys dedups every target instead of double-publishing.
 multi-target-lab:

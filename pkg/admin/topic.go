@@ -50,7 +50,7 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, version t
 		return nil, errors.New("topic name is required")
 	}
 	if isReservedTopicName(name) {
-		return nil, fmt.Errorf("%w: %s", ErrReservedTopicName, name)
+		return nil, ErrReservedTopicName.With("topic", name)
 	}
 	if version < 1 {
 		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
@@ -67,7 +67,7 @@ func (a *MessageAdmin) registerTopic(ctx context.Context, name string, version t
 		return nil, err
 	}
 	if sys == nil {
-		return nil, fmt.Errorf("register the system with RegisterSystem before registering topic %q: %w", name, migrate.ErrNotRegistered)
+		return nil, migrate.ErrNotRegistered.With("topic", name)
 	}
 
 	return a.topicController.Register(ctx, sys.Id, name, version, cfg)
@@ -81,7 +81,7 @@ func (a *MessageAdmin) MigrateTopic(ctx context.Context, name string, version to
 		return err
 	}
 	if found == nil {
-		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
+		return topic.ErrTopicNotFound.With("topic", name, "version", version)
 	}
 
 	owner, err := common.NewTopicOwner(found.SystemId, found.Id, found.Name)
@@ -111,7 +111,7 @@ func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName str
 		return nil, errors.New("new name matches the current name -- nothing to rename")
 	}
 	if isReservedTopicName(name) || isReservedTopicName(newName) {
-		return nil, fmt.Errorf("%w: %s -> %s", ErrReservedTopicName, name, newName)
+		return nil, ErrReservedTopicName.With("topic", name, "new_name", newName)
 	}
 
 	renamed, err := a.topicController.Rename(ctx, name, newName)
@@ -119,7 +119,7 @@ func (a *MessageAdmin) RenameTopic(ctx context.Context, name string, newName str
 		return nil, err
 	}
 	if renamed == nil {
-		return nil, fmt.Errorf("%w: %s", topic.ErrTopicNotFound, name)
+		return nil, topic.ErrTopicNotFound.With("topic", name)
 	}
 	return renamed, nil
 }
@@ -144,7 +144,7 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 		return errors.New("topic name is required")
 	}
 	if isReservedTopicName(name) {
-		return fmt.Errorf("%w: %s", ErrReservedTopicName, name)
+		return ErrReservedTopicName.With("topic", name)
 	}
 
 	found, err := a.topicController.Get(ctx, name, version)
@@ -152,7 +152,7 @@ func (a *MessageAdmin) DestroyTopic(ctx context.Context, name string, version to
 		return err
 	}
 	if found == nil {
-		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, name, version)
+		return topic.ErrTopicNotFound.With("topic", name, "version", version)
 	}
 
 	if !options.Force {
@@ -171,7 +171,7 @@ func (a *MessageAdmin) assertTopicIdle(ctx context.Context, topicId int64, name 
 		return err
 	}
 	if !empty {
-		return fmt.Errorf("%w: %s", topic.ErrTopicNotEmpty, name)
+		return topic.ErrTopicNotEmpty.With("topic", name)
 	}
 	return nil
 }

@@ -109,7 +109,7 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, topicName, version)
+		return nil, topic.ErrTopicNotFound.With("topic", topicName, "version", version)
 	}
 	if err := c.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return nil, err

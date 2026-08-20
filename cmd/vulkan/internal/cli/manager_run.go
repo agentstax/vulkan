@@ -14,7 +14,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/systemmanager"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
 
@@ -65,7 +64,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 					return failOp("%s", err.Error())
 				}
 				if err := exporter.RegisterMetricInstruments(ctx); err != nil {
-					if errors.Is(err, topic.ErrTopicNotFound) {
+					if errors.Is(err, migrate.ErrNotRegistered) {
 						return errSystemNotRegistered()
 					}
 					return failOp("%s", err.Error())

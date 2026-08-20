@@ -83,12 +83,12 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	// Done() == nil -> Background/TODO -> no cancel can ever arrive, so the
 	// shutdown phase would silently not exist
 	if ctx.Done() == nil && !i.Config.DisableGracefulShutdown {
-		return fmt.Errorf("%w: consumer group %q\n%s", common.ErrLifecycleContextNotCancellable, i.Owner.Name, lifecycleContextHelp)
+		return fmt.Errorf("%w\n%s", common.ErrLifecycleContextNotCancellable.With("group", i.Owner.Name), lifecycleContextHelp)
 	}
 
 	release, ok := i.permit.Acquire()
 	if !ok {
-		return fmt.Errorf("%w: consumer group %q on topic %d", common.ErrAlreadyConsuming, i.Owner.Name, i.Owner.TopicId)
+		return common.ErrAlreadyConsuming.With("group", i.Owner.Name, "topic_id", i.Owner.TopicId)
 	}
 	defer release()
 

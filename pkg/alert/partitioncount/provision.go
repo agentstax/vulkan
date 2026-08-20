@@ -2,11 +2,11 @@ package partitioncount
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
+	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -25,7 +25,7 @@ func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.O
 		return err
 	}
 	if cronTopic == nil {
-		return fmt.Errorf("%w: topic %q -- RegisterSystem creates it before declaring alert consumers", topic.ErrTopicNotFound, cron.TopicName)
+		return migrate.ErrNotRegistered.With("topic", cron.TopicName)
 	}
 
 	group, err := d.consumers.RegisterGroup(ctx, cronTopic.Id, JobName)

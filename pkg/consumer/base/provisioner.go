@@ -7,7 +7,6 @@ package base
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -113,7 +112,7 @@ func (d *BaseProvisioner[Message]) GetTopic(ctx context.Context, topicId int64) 
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("%w: topic %d", topic.ErrTopicNotFound, topicId)
+		return nil, topic.ErrTopicNotFound.With("topic_id", topicId)
 	}
 	return current, nil
 }

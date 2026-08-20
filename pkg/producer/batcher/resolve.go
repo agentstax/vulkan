@@ -77,7 +77,7 @@ func (b *Batcher[Message]) attemptBatch(ctx context.Context, batch *batch[Messag
 func classifyBatchFailure(err error, failedIdx int) batchFailureAction {
 	// checked FIRST -- these can carry a statement index that is a retry
 	// artifact, NOT poison to evict
-	if common.IsRetryable(err) || errors.Is(err, context.DeadlineExceeded) {
+	if common.IsTransientDatastoreError(err) || errors.Is(err, context.DeadlineExceeded) {
 		return failBatch
 	}
 

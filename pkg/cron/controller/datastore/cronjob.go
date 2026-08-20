@@ -105,7 +105,7 @@ func (d *CronJobDatastore) suspend(ctx context.Context, name string) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 	d.Logger.InfoContext(ctx, "cron job suspended", "cron_job", name)
 	return nil
@@ -125,7 +125,7 @@ func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
 		return err
 	}
 	if job == nil {
-		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
 	schedule, err := cron.ParseSchedule(job.Schedule)
@@ -142,7 +142,7 @@ func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 	d.Logger.InfoContext(ctx, "cron job unsuspended", "cron_job", name, "next_scheduled_time", next)
 	return nil
@@ -183,7 +183,7 @@ func (d *CronJobDatastore) delete(ctx context.Context, name string) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 	d.Logger.WarnContext(ctx, "cron job destroyed", "cron_job", name)
 	return nil

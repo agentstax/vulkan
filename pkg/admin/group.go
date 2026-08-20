@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	consumercontroller "github.com/agentstax/vulkan/pkg/consumer/controller"
@@ -49,7 +48,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 		return nil, err
 	}
 	if found == nil {
-		return nil, fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, topicName, version)
+		return nil, topic.ErrTopicNotFound.With("topic", topicName, "version", version)
 	}
 
 	group, err := a.consumerController.GetGroup(ctx, found.Id, groupName)
@@ -57,7 +56,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 		return nil, err
 	}
 	if group == nil {
-		return nil, fmt.Errorf("%w: %s on topic %s", consumercontroller.ErrGroupNotFound, groupName, topicName)
+		return nil, consumercontroller.ErrGroupNotFound.With("group", groupName, "topic", topicName)
 	}
 
 	return common.NewConsumerGroupOwner(found.SystemId, found.Id, group.Id, group.Name)
@@ -89,7 +88,7 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, versi
 		return err
 	}
 	if found == nil {
-		return fmt.Errorf("%w: %s version %d", topic.ErrTopicNotFound, topicName, version)
+		return topic.ErrTopicNotFound.With("topic", topicName, "version", version)
 	}
 
 	group, err := a.consumerController.GetGroup(ctx, found.Id, groupName)
@@ -97,7 +96,7 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, versi
 		return err
 	}
 	if group == nil {
-		return fmt.Errorf("%w: %s on topic %s", consumercontroller.ErrGroupNotFound, groupName, topicName)
+		return consumercontroller.ErrGroupNotFound.With("group", groupName, "topic", topicName)
 	}
 
 	if !options.Force {
@@ -121,7 +120,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	}
 	for _, snapshot := range workers {
 		if snapshot.Owner.ConsumerGroupId == groupId && snapshot.LiveInstances > 0 {
-			return fmt.Errorf("%w: %s", consumercontroller.ErrGroupLive, groupName)
+			return consumercontroller.ErrGroupLive.With("group", groupName)
 		}
 	}
 
@@ -133,7 +132,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	exceptions := group.Exceptions
 	total := exceptions.Ready + exceptions.Inflight + exceptions.Deferred + exceptions.Dead
 	if total > 0 {
-		return fmt.Errorf("%w: %s", consumercontroller.ErrGroupDeliveriesPending, groupName)
+		return consumercontroller.ErrGroupDeliveriesPending.With("group", groupName)
 	}
 	return nil
 }

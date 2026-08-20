@@ -11,51 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func TestIsRetryableChecksRecoveryFirst(t *testing.T) {
-	if !IsRetryable(errTestConnection.With("host", "db.local")) {
-		t.Fatal("Transient error not retryable")
+func TestIsTransientDatastoreError(t *testing.T) {
+	if !IsTransientDatastoreError(errTestConnection.With("host", "db.local")) {
+		t.Fatal("Transient recovery not transient")
 	}
-	if IsRetryable(errTestTopicMissing.With("topic", "orders")) {
-		t.Fatal("Permanent error retryable")
+	if IsTransientDatastoreError(errTestTopicMissing.With("topic", "orders")) {
+		t.Fatal("Permanent recovery transient")
 	}
-	if !IsRetryable(fmt.Errorf("list topics: %w", errTestConnection)) {
-		t.Fatal("fmt.Errorf-wrapped Transient error not retryable")
+	if !IsTransientDatastoreError(fmt.Errorf("list topics: %w", errTestConnection)) {
+		t.Fatal("fmt.Errorf-wrapped Transient recovery not transient")
+	}
+
+	// recovery wins over the wrapped cause's own classification
+	if IsTransientDatastoreError(errTestTopicMissing.Wrap(&pgconn.PgError{Code: "40P01"})) {
+		t.Fatal("Permanent recovery lost to its wrapped deadlock")
+	}
+
+	if !IsTransientDatastoreError(&pgconn.PgError{Code: "40P01"}) {
+		t.Fatal("bare deadlock not transient")
+	}
+	if IsTransientDatastoreError(errors.New("no classification anywhere")) {
+		t.Fatal("bare unclassifiable error transient")
 	}
 }
 
-func TestClassifyPassesRecoveryThrough(t *testing.T) {
-	raised := errTestConnection.With("host", "db.local")
-	if classify(raised) != error(raised) {
-		t.Fatal("classify wrapped an error that already carries recovery")
-	}
+func TestRetryDatastoreStopsOnUnclassifiedError(t *testing.T) {
+	retryDatastore := newTestRetryDatastore(t)
 
-	wrapped := fmt.Errorf("list topics: %w", errTestTopicMissing)
-	if classify(wrapped) != wrapped {
-		t.Fatal("classify wrapped a chain that already carries recovery")
-	}
-}
-
-func TestClassifyKeepsMarkerTypes(t *testing.T) {
-	retryable := NewRetryableError(errors.New("plain cause"))
-	if classify(retryable) != error(retryable) {
-		t.Fatal("classify rewrapped a RetryableError")
-	}
-
-	permanent := NewPermanentError(errors.New("plain cause"))
-	if classify(permanent) != error(permanent) {
-		t.Fatal("classify rewrapped a PermanentError")
-	}
-}
-
-func TestClassifyWrapsUnclassifiedErrors(t *testing.T) {
-	deadlock := classify(&pgconn.PgError{Code: "40P01"})
-	if _, ok := errors.AsType[*RetryableError](deadlock); !ok {
-		t.Fatal("deadlock not classified retryable")
-	}
-
-	plain := classify(errors.New("no classification anywhere"))
-	if _, ok := errors.AsType[*PermanentError](plain); !ok {
-		t.Fatal("unclassifiable error not classified permanent")
+	attempts := 0
+	err := retryDatastore.Wrap(context.Background(), func() error {
+		attempts++
+		return errors.New("no classification anywhere")
+	})
+	if err == nil || attempts != 1 {
+		t.Fatalf("unclassifiable error retried: %d attempts", attempts)
 	}
 }
 

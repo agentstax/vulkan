@@ -4,35 +4,90 @@ import (
 	"context"
 	"errors"
 	"net"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// RetryDatastore is Retry specialized for Postgres, shared by producer/consumer/topic:
-// same backoff/attempt machinery, but the error returned from retryableFunc is
-// classified automatically instead of every call site wrapping it by hand.
+type RetryableFunc func() error
+
+// RetryDatastore reruns a datastore call on transient errors, shared by
+// producer/consumer/topic: one backoff/attempt machinery, with
+// IsTransientDatastoreError as the classification -- errors surface as-is,
+// never rewrapped.
 type RetryDatastore struct {
-	*Retry
+	*RetryPolicy
+	Logger Logger
 }
 
 // policy may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
 func NewRetryDatastore(policy *RetryPolicy, log Logger) (*RetryDatastore, error) {
-	r, err := NewRetry(policy, log)
-	if err != nil {
+	if log == nil {
+		return nil, errors.New("logger must not be nil")
+	}
+	policy = policy.WithDefaults()
+	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
 	return &RetryDatastore{
-		Retry: r,
+		RetryPolicy: policy,
+		Logger:      log,
 	}, nil
 }
 
-// Wrap shadows the embedded Retry.Wrap -- same signature, so call sites keep
-// writing the real DB call with no manual classification.
 func (r *RetryDatastore) Wrap(ctx context.Context, retryableFunc RetryableFunc) error {
-	return r.Retry.Wrap(ctx, func() error {
-		return classify(retryableFunc())
-	})
+	var retryErrs []error
+	for retryCount := range r.MaxRetries {
+		// respect context cancelation
+		if ctx.Err() != nil {
+			return errors.Join(append(retryErrs, ctx.Err())...)
+		}
+
+		err := retryableFunc()
+
+		if err == nil {
+			return nil // success -- prior (now-irrelevant) retry errors don't belong in the result
+		}
+
+		// permanent -> exit early
+		if !IsTransientDatastoreError(err) {
+			return errors.Join(append(retryErrs, err)...)
+		}
+
+		retryErrs = append(retryErrs, err)
+
+		// last attempt already spent -- no point sleeping before returning
+		if retryCount == r.MaxRetries-1 {
+			break
+		}
+
+		delay := r.CalculateDelay(retryCount)
+
+		r.Logger.DebugContext(ctx, "retrying after transient error", "attempt", retryCount+1, "max_retries", r.MaxRetries, "delay", delay, "error", err)
+
+		select {
+		case <-ctx.Done():
+			return errors.Join(append(retryErrs, ctx.Err())...)
+		case <-time.After(delay):
+			continue
+		}
+	}
+
+	if len(retryErrs) > 0 {
+		r.Logger.WarnContext(ctx, "retry attempts exhausted", "max_retries", r.MaxRetries, "error", errors.Join(retryErrs...))
+	}
+
+	return errors.Join(retryErrs...)
+}
+
+// IsTransientDatastoreError is RetryDatastore's classification: recovery
+// declared on the error decides; a bare error is judged by IsTransientPgError.
+func IsTransientDatastoreError(err error) bool {
+	if classified, ok := errors.AsType[*Error](err); ok {
+		return classified.Recovery == Transient
+	}
+	return IsTransientPgError(err)
 }
 
 // IsTransientPgError reports whether a retry is safe -- never a
@@ -80,33 +135,4 @@ func IsTransientPgError(err error) bool {
 
 	_, ok := errors.AsType[net.Error](err)
 	return ok
-}
-
-// ***************
-// *** HELPERS ***
-// ***************
-
-// classify wraps IsTransientPgError into the RetryableError/PermanentError shape
-func classify(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	// an *Error already carries its recovery -- passes through unwrapped
-	if _, ok := errors.AsType[*Error](err); ok {
-		return err
-	}
-
-	if _, ok := errors.AsType[*RetryableError](err); ok {
-		return err
-	}
-	if _, ok := errors.AsType[*PermanentError](err); ok {
-		return err
-	}
-	if IsTransientPgError(err) {
-		return NewRetryableError(err)
-	}
-
-	// dont retry if not classify-able
-	return NewPermanentError(err)
 }

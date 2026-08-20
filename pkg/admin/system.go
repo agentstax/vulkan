@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/agentstax/vulkan/pkg/alert"
@@ -169,7 +168,7 @@ func (a *MessageAdmin) assertSystemIdle(ctx context.Context) error {
 	}
 	for _, snapshot := range workers {
 		if snapshot.LiveInstances > 0 {
-			return fmt.Errorf("%w: worker %s", system.ErrSystemLive, snapshot.Name)
+			return system.ErrSystemLive.With("worker", snapshot.Name)
 		}
 	}
 
@@ -184,7 +183,7 @@ func (a *MessageAdmin) assertSystemIdle(ctx context.Context) error {
 		}
 	}
 	if len(names) > 0 {
-		return fmt.Errorf("%w: %s", system.ErrTopicsRegistered, strings.Join(names, ", "))
+		return system.ErrTopicsRegistered.With("topics", strings.Join(names, ", "))
 	}
 	return nil
 }

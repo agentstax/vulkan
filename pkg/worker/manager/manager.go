@@ -33,7 +33,7 @@ func NewManagerProvisioner(ds *iDatastore.PostgresDatastore, cfg *ManagerConfig,
 		return nil, errors.New("datastore must not be nil")
 	}
 	if len(provisioners) == 0 {
-		return nil, errors.New("at least one worker provisioner is required")
+		return nil, errors.New("provisioners must not be empty")
 	}
 	if cfg == nil {
 		cfg = &ManagerConfig{}

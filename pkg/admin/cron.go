@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -39,7 +38,7 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 		return nil, err
 	}
 	if sys == nil {
-		return nil, fmt.Errorf("register the system with RegisterSystem before registering cron job %q: %w", name, migrate.ErrNotRegistered)
+		return nil, migrate.ErrNotRegistered.With("cron_job", name)
 	}
 
 	// every cron_job row has exactly one owner; admin-registered jobs are the
@@ -110,7 +109,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, err
 	}
 	if job == nil {
-		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
 	instance, err := a.jobRequestProducer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
@@ -153,7 +152,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, err
 	}
 	if job == nil {
-		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
 	jobRequests, err := a.topicController.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
@@ -161,7 +160,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, err
 	}
 	if jobRequests == nil {
-		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
+		return nil, migrate.ErrNotRegistered.With("topic", cron.TopicName)
 	}
 
 	return a.cronJobController.Status(ctx, jobRequests.Id, job.Id, job.Name)
@@ -181,7 +180,7 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 		return nil, err
 	}
 	if job == nil {
-		return nil, fmt.Errorf("%w: %s", cron.ErrCronJobNotFound, name)
+		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
 	jobRequests, err := a.topicController.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
@@ -189,7 +188,7 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 		return nil, err
 	}
 	if jobRequests == nil {
-		return nil, fmt.Errorf("topic %q not found -- register the system with RegisterSystem first: %w", cron.TopicName, migrate.ErrNotRegistered)
+		return nil, migrate.ErrNotRegistered.With("topic", cron.TopicName)
 	}
 
 	return a.cronJobController.ListRequests(ctx, jobRequests.Id, job.Id, job.Name, limit)

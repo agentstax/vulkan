@@ -190,7 +190,7 @@ func (d *MessageConsumerDatastore) freshClaimMessagesWithCursor(ctx context.Cont
 // this guard catches a cursor row that went backwards, not bad input.
 func (d *MessageConsumerDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRangeData, error) {
 	if low >= high {
-		return nil, errors.New("invalid claimed range")
+		return nil, fmt.Errorf("claimed range must advance: low %d, high %d", low, high)
 	}
 
 	// get new lease associated with range

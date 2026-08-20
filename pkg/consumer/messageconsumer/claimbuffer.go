@@ -60,7 +60,7 @@ func (b *claimBuffer) add(ctx context.Context, claimed *controller.ClaimedRange)
 		return errors.New("claimed must not be nil")
 	}
 	if len(claimed.Messages) == 0 {
-		return errors.New("claimed must have at least one message")
+		return errors.New("claimed.Messages must not be empty")
 	}
 
 	state := newRangeState(claimed, b.includeSuccesses)

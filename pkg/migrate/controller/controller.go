@@ -108,7 +108,7 @@ func (c *Controller) owners(ctx context.Context, conn *pgxpool.Conn, kind common
 	case common.OwnerTopic:
 		return c.datastore.ListTopics(ctx, conn)
 	default:
-		return nil, fmt.Errorf("unknown owner kind %q", kind)
+		return nil, fmt.Errorf("owner kind must be %q, got %q", common.OwnerTopic, kind)
 	}
 }
 

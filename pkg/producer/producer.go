@@ -98,7 +98,7 @@ func (p *Producer[Message]) Register(ctx context.Context, topicName string, vers
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("%w: topic %q version %d -- register it with MessageAdmin.RegisterTopic first", topic.ErrTopicNotFound, topicName, version)
+		return nil, topic.ErrTopicNotFound.With("topic", topicName, "version", version)
 	}
 
 	// fail fast if the db's schema is outside the range this build understands

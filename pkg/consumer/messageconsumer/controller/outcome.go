@@ -26,5 +26,5 @@ func (k OutcomeKind) Validate() error {
 	case OutcomeException, OutcomeTerminal, OutcomeSuperseded, OutcomeDeferred, OutcomeSuccess:
 		return nil
 	}
-	return fmt.Errorf("invalid outcome kind %q", k)
+	return fmt.Errorf("must be one of %q, %q, %q, %q, %q, got %q", OutcomeException, OutcomeTerminal, OutcomeSuperseded, OutcomeDeferred, OutcomeSuccess, k)
 }
