@@ -12,22 +12,25 @@ fresh-DB suite at the review-ready checkpoint.
 
 ### Chunk 1 — common.Error
 
-- [ ] `pkg/common/error.go`: Error struct (code, recovery, problem, fix,
+- [x] `pkg/common/error.go`: Error struct (code, recovery, problem, fix,
       values as named pairs, wrapped error), Recovery enum
       (Transient | Permanent), NewError constructor.
-- [ ] `With(...)` returns a copy carrying the values -- declared `Err*`
+- [x] `With(...)` returns a copy carrying the values -- declared `Err*`
       variables stay immutable; a raise never mutates the declaration.
-- [ ] `Error()` renders `problem: name value, name value -- fix [code]`;
-      empty fix drops the ` -- ` part; no values drops the `:` part.
-- [ ] `Is` matches on code so `errors.Is(err, topic.ErrX)` keeps working;
-      `Unwrap` returns the wrapped error.
-- [ ] `LogValue()` (slog.LogValuer): code, problem, recovery, docs, each
-      value as its own attr.
-- [ ] `Docs()` derives the URL from the code; base URL is one const.
-- [ ] NewError registers each code in a package-level registry at init;
+- [x] `Error()` renders `problem: name value, name value -- fix [code]`;
+      empty fix drops the ` -- ` part; no values drops the `:` part;
+      a wrapped cause renders after the code (`[VK0104]: cause`).
+- [x] `Is` matches on code so `errors.Is(err, topic.ErrX)` keeps working;
+      `Unwrap` returns the wrapped error (`Wrap(cause)` attaches it,
+      copy semantics like With).
+- [x] `LogValue()` (slog.LogValuer): code, problem, recovery, docs, fix,
+      each value as its own attr, cause when wrapped.
+- [x] `Docs()` derives the URL from the code; base URL is one const
+      (`https://vulkan-5ss.pages.dev/errors/`).
+- [x] NewError registers each code in a package-level registry at init;
       registry rejects duplicate codes and is the enumeration the tests
-      below walk.
-- [ ] Tests: tense-follows-recovery walk (Transient => problem starts
+      below walk (`common.Errors()`).
+- [x] Tests: tense-follows-recovery walk (Transient => problem starts
       "could not"; Permanent => never does), duplicate-code rejection,
       banned-word walk over problem lines ("failed", "invalid", "bad",
       "illegal", "unable", "unknown", "error", "please", "sorry", "!").
@@ -83,11 +86,16 @@ fresh-DB suite at the review-ready checkpoint.
 ### Open questions (decide when the chunk is picked up, record if they
 ### change [0550])
 
-- Which errors get codes: every branchable condition and CLI-visible
-  failure, or also constructor/config validation errors? (Current lean:
-  validation stays plain fmt.Errorf on the templates -- no caller
-  branches on them -- but confirm before chunk 3.)
-- Values on the one-liner when a value is itself an error (wrapped cause):
-  where does the `%w` chain render relative to ` -- fix [code]`?
-- Docs base URL const: real site path under vulkan-5ss.pages.dev vs
-  placeholder until the site section exists.
+- SETTLED (chunk 1, 2026-08-19; none change [0550]):
+  - Which errors get codes: only conditions declared as named `Err*`
+    variables in an errors.go -- branchable or runtime-visible.
+    Constructor/config validation stays plain fmt.Errorf on the
+    CONVENTIONS templates: nothing branches on it, retry never sees it,
+    a docs page per nil-check dilutes what a code means. A plain error
+    that gains a runtime brancher gets promoted to a named variable.
+  - Wrapped cause: attached via `Wrap(cause)` (copy semantics), renders
+    after the code -- `problem: values -- fix [code]: cause` -- keeping
+    the five parts contiguous and matching Go's `context: cause` chains.
+    A With value that happens to be an error renders inline as text.
+  - Docs base URL: `https://vulkan-5ss.pages.dev/errors/` (the deployed
+    site); chunk 6 generates the pages under it.

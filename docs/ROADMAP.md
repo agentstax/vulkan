@@ -500,3 +500,8 @@ prerequisite if quorum-as-a-fraction wins.
   instances.
 - **Antithesis** (https://antithesis.com) for production hardening and bug
   hunting.
+- should look into using https://go.dev/doc/go1.27#goroutineleak-profiles instead
+  of potentially our custom goroutine tracking - might simplify things / make it
+  easier for users as well
+- should also look into using https://pkg.go.dev/uuid instead of the google impl
+  and package
