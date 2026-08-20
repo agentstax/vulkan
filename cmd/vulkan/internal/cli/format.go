@@ -7,7 +7,7 @@ import (
 )
 
 // commaInt renders 1000000 as "1,000,000". Only PartitionSize gets grouping;
-// everything else (batch sizes, ids) prints bare, matching ADMIN_CLI.md.
+// everything else (batch sizes, ids) prints bare, matching the README transcripts.
 func commaInt(n int64) string {
 	s := strconv.FormatInt(n, 10)
 	neg := ""

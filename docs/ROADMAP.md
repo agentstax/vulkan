@@ -101,6 +101,11 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1, after 14b — measurement, evaluation, and documentation; these want a
 surface that has stopped moving.
 
+- **CLI `--output json`.** One flag covering results and errors together --
+  deferred from the error-anatomy work ([0550]) because a flag that
+  json-ifies only errors while results stay tables is half a feature. The
+  error object shape is already settled: the five parts + recovery as one
+  object, mirroring common.Error's LogValue fields.
 - **Potential project rename away from "vulkan".** No candidate yet; decide
   before v1 -- after v1 the name is public API. A rename ripples through the
   module path, the CLI binary, the docs site (docsBaseURL const in

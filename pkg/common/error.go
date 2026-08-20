@@ -85,6 +85,11 @@ func (e *Error) Wrap(cause error) *Error {
 	return &copied
 }
 
+// Values returns the attached name/value pairs in attachment order.
+func (e *Error) Values() []slog.Attr {
+	return slices.Clone(e.values)
+}
+
 func (e *Error) Unwrap() error {
 	return e.wrapped
 }

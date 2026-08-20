@@ -113,12 +113,26 @@ fresh-DB suite at the review-ready checkpoint.
 
 ### Chunk 5 — CLI
 
-- [ ] errorHandler branch renders any *common.Error as the block
-      (error[code] / value lines / retry line when Transient / fix / docs).
-- [ ] CLI fix vocabulary: per-code rewrite to a vulkan command that runs
-      verbatim as pasted (translateAdminError grows into this seam).
-- [ ] `--output json`: the five parts + recovery as one object.
-- [ ] ADMIN_CLI.md transcripts re-checked against the new stderr shape.
+- [x] errorHandler renders any *common.Error as the block: header
+      `error[code]: problem`, then aligned label rows -- values, cause,
+      retry line when Transient, fix, docs. One renderer
+      (renderErrorBlock), golden-tested for alignment; cliError carries
+      the structured error + resolved fix, plain `error: <msg>` unchanged
+      for everything else. common.Error gained the Values() accessor.
+- [x] CLI fix vocabulary: cliFixes map rewrites a code's fix to a vulkan
+      command that runs verbatim as pasted (translateAdminError is the
+      seam). Seeded with VK0017 -> run `vulkan migrate init`; most codes
+      keep the library fix because their commands don't exist by design
+      (README: no `vulkan topic register`), and the per-command errors.Is
+      branches already carry curated fixes (--force wording etc.).
+- [ ] DEFERRED -- `--output json`: the CLI has no output-format flag at
+      all today; a flag that json-ifies only errors while results stay
+      tables is half a feature. Moved to ROADMAP Later as one item
+      covering results + errors (error object shape settled: five parts +
+      recovery, mirroring LogValue).
+- [x] ADMIN_CLI.md transcripts: the doc no longer exists and
+      cmd/vulkan/README.md holds no error transcripts -- nothing to
+      re-check; format.go's stale ADMIN_CLI.md reference reworded.
 
 ### Chunk 6 — docs pages (review-ready checkpoint)
 
