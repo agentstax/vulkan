@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -27,7 +28,7 @@ type connection struct {
 
 func newConnection(user string, host string, database string, config *datastore.PostgresConnectionConfig) (*connection, error) {
 	if config == nil {
-		return nil, fmt.Errorf("config must not be nil")
+		return nil, errors.New("config must not be nil")
 	}
 	return &connection{User: user, Host: host, Database: database, Config: config}, nil
 }

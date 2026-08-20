@@ -29,11 +29,13 @@ func TestProblemTenseFollowsRecovery(t *testing.T) {
 	}
 }
 
-func TestProblemAvoidsBannedWords(t *testing.T) {
-	banned := regexp.MustCompile(`(?i)\b(failed|invalid|bad|illegal|unable|unknown|error|please|sorry)\b`)
+// bannedWords is shared with the plain-raise-string walk in
+// plain_errors_test.go -- one list, both walks.
+var bannedWords = regexp.MustCompile(`(?i)\b(failed|invalid|bad|illegal|unable|unknown|error|please|sorry)\b`)
 
+func TestProblemAvoidsBannedWords(t *testing.T) {
 	for _, registered := range common.Errors() {
-		if match := banned.FindString(registered.Problem); match != "" {
+		if match := bannedWords.FindString(registered.Problem); match != "" {
 			t.Errorf("%s problem contains banned word %q: %q", registered.Code, match, registered.Problem)
 		}
 		if strings.Contains(registered.Problem, "!") {

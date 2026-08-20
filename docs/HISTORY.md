@@ -34,6 +34,10 @@ ledger was created; dates come from the phase git tags.
   schema-gate-lab's stale pre-VK0023 text checks moved onto errors.Is.
 - Verified: build/vet/`go test -race` across all three modules;
   41/41 fresh-DB labs.
+- Standing plain-error walks [0556]: internal/errorregistry now
+  ast-walks every plain raise string (banned words, static fmt.Errorf,
+  missing got-clauses, declared-problem restatement) — the audits'
+  wording half is a ratchet, not a manual pass.
 
 ## 2026-08-19 — Structured error anatomy shipped [0550][0551][0552]
 
