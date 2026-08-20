@@ -5,6 +5,37 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-19 — Structured error anatomy shipped [0550][0551][0552]
+
+- common.Error (pkg/common/error.go): code + recovery + problem + fix +
+  values (slog attrs) + wrapped cause. NewError registers each code at init
+  and panics on structural mistakes (malformed/duplicate code, unrecognized
+  recovery, empty problem); With/Wrap return copies so declared Err*
+  variables stay immutable; Error() renders
+  `problem: name value -- fix [code]: cause`; errors.Is identity = code;
+  LogValue() renders the parts as JSON-log fields; Docs() derives the page
+  URL from one base-URL const.
+- 19 codes assigned (VK0001–VK0019); every named error variable declares
+  via common.NewError; ~30 raise sites moved onto .With value pairs;
+  remaining plain validation errors swept onto the CONVENTIONS templates
+  (enum Validates enumerate every legal value). A missing `__system.*`
+  topic raises migrate.ErrNotRegistered everywhere [0552].
+- Retry classification is consulted, never encoded [0551]: retry_error.go
+  (marker types) and retry.go deleted; RetryDatastore is the one retry
+  type; IsTransientDatastoreError (recovery first, then IsTransientPgError)
+  is the one check; datastore errors surface unwrapped.
+- CLI: renderErrorBlock is the single renderer for structured errors
+  (aligned block: header + values/cause/retry-when-Transient/fix/docs);
+  cliFixes rewrites a code's fix to a pasteable vulkan command (VK0017 →
+  `vulkan migrate init`). `--output json` deferred to ROADMAP Later.
+- internal/errorregistry: registry-wide tense + banned-word walks plus a
+  source-scan completeness test that fails when a declaring package is
+  missing from the import list. 19 hand-owned docs pages seeded under
+  website/src/content/docs/errors/ (one per code, titled by the verbatim
+  problem text; auto-generation rejected — convention + parked CI drift
+  check keep them honest).
+- Verified: 41/41 fresh-DB labs; all modules build; go test -race green.
+
 ## 2026-08-19 — Definition/Provisioner split [0549]
 
 - worker.Definition became a data struct (Name, Metadata, OwnerKind with

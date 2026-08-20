@@ -59,6 +59,11 @@ export default defineConfig({
 						{ label: 'Vulkan vs. Job Queues', slug: 'compare/job-queues' },
 					],
 				},
+				{
+					label: 'Errors',
+					collapsed: true,
+					items: [{ autogenerate: { directory: 'errors' } }],
+				},
 				{ label: 'Roadmap', slug: 'roadmap' },
 			],
 		}),

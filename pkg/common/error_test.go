@@ -3,8 +3,6 @@ package common
 import (
 	"errors"
 	"fmt"
-	"regexp"
-	"strings"
 	"testing"
 	"time"
 )
@@ -150,36 +148,6 @@ func TestNewErrorRejectsEmptyProblem(t *testing.T) {
 	expectPanic(t, func() {
 		NewError("VK9904", Permanent, "", "")
 	})
-}
-
-func TestProblemTenseFollowsRecovery(t *testing.T) {
-	for _, registered := range Errors() {
-		startsCouldNot := strings.HasPrefix(registered.Problem, "could not ")
-
-		switch registered.Recovery {
-		case Transient:
-			if !startsCouldNot {
-				t.Errorf(`%s is Transient but its problem does not start "could not ": %q`, registered.Code, registered.Problem)
-			}
-		case Permanent:
-			if startsCouldNot {
-				t.Errorf(`%s is Permanent but its problem starts "could not ": %q`, registered.Code, registered.Problem)
-			}
-		}
-	}
-}
-
-func TestProblemAvoidsBannedWords(t *testing.T) {
-	banned := regexp.MustCompile(`(?i)\b(failed|invalid|bad|illegal|unable|unknown|error|please|sorry)\b`)
-
-	for _, registered := range Errors() {
-		if match := banned.FindString(registered.Problem); match != "" {
-			t.Errorf("%s problem contains banned word %q: %q", registered.Code, match, registered.Problem)
-		}
-		if strings.Contains(registered.Problem, "!") {
-			t.Errorf("%s problem contains an exclamation point: %q", registered.Code, registered.Problem)
-		}
-	}
 }
 
 func expectPanic(t *testing.T, run func()) {

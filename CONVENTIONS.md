@@ -319,7 +319,10 @@ vulkan command in the CLI).
   Permanent, so a wrong Transient burns a backoff curve on a lost cause.
 - Land the docs page (…/errors/VK0005, headed by the verbatim problem
   text) in the same change -- readers and agents find it by pasting the
-  message into search.
+  message into search. Pages are hand-written under
+  website/src/content/docs/errors/ (never generated); a change to a
+  declaration's problem, recovery, or fix updates its page in the same
+  change, and the page title stays the verbatim problem text.
 
 ### When writing the problem line
 

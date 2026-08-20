@@ -62,17 +62,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     gets deleted until a real system-wide knob exists ([0516]).
 - **Named-return-params house style** — decide and apply consistently across
   the reviewed surface.
-- **Error message consistency and obsession.** Standardize every error
-  message to be understandable and actionable — enrich context, eventually
-  add doc links. Consider a standard shape: Handler (where), Description
-  (why/what), Action (how to resolve), Link (future docs).
-  - Named/defined errors for users to errors.Is on — decide the taxonomy
-    (coordinates with the circuit breaker's error_class enum).
-  - Design SETTLED 2026-08-19 in [0550]; rule sheet lives in CONVENTIONS.md
-    ## Errors. Remaining work = implementation: common.Error + renderers +
-    tense test, recovery folded into RetryDatastore classify (marker types
-    retired), sweep of errors.New/fmt.Errorf raise sites, CLI errorHandler
-    branch, docs page per code.
 - **Logging consistency and obsession.** Informative, actionable,
   filterable/queryable, consistently structured.
 - **Comment conventions for public surfaces** — a standard: description,
@@ -246,6 +235,13 @@ prerequisite if quorum-as-a-fraction wins.
   rule-count decay); every rule the vet layer owns stops taxing adherence
   to the rest. Revisit splitting/scoping CONVENTIONS.md only if violations
   persist after this ships ([0550] context).
+  - Error docs-page drift check (user-settled 2026-08-19: pages are
+    hand-written, NEVER generated): a CI script that walks the registry
+    (internal/errorregistry) and fails when a code has no page under
+    website/src/content/docs/errors/ or the page title no longer matches
+    the declaration's verbatim problem text; plus an agent-facing hook so
+    an agent editing a declaration is pointed at the stale page in the
+    same change.
 - **FIFO partitions** (Phase 12) — ordering on demand, paid only where opted
   in. `partition_key` on message rows (nullable = no ordering; a second key
   beside compaction_key on purpose: compaction_key is a read-time "what's
