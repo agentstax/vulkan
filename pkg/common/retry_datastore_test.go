@@ -8,8 +8,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/jackc/pgx/v5/pgconn"
+)
+
+var (
+	errTestConnection = diagnostic.NewError("VK9905", diagnostic.Transient,
+		"could not reach the test database", "")
+	errTestTopicMissing = diagnostic.NewError("VK9906", diagnostic.Permanent,
+		"test topic not found", "")
 )
 
 func TestIsTransientDatastoreError(t *testing.T) {

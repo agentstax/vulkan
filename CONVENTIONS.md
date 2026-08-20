@@ -115,9 +115,9 @@ inside a step.
 
 Every package is exactly one of three kinds:
 
-- **Infrastructure** (`common` and its machinery subpackages such as
-  `common/logging`, `datastore`) -- vocabulary and seams importable by
-  everything.
+- **Infrastructure** (`common` and its subpackages `common/diagnostic`,
+  `common/logging`, plus `datastore`) -- vocabulary and seams importable
+  by everything.
 - **Domain** -- `pkg/<noun>` vocabulary root, its `controller` and
   `controller/datastore`, and the worker packages that maintain the
   domain's tables (template: topic, consumergroup).
@@ -311,15 +311,15 @@ The domain layers:
 ## Errors
 
 Every error is five parts plus a recovery classification, carried by one
-struct (common.Error) and rendered by one renderer per surface -- raise
-sites never format anything. Renderer mechanics live in pkg/common/error.go
+struct (diagnostic.Error) and rendered by one renderer per surface -- raise
+sites never format anything. Renderer mechanics live in pkg/common/diagnostic/error.go
 and the CLI errorHandler; the rules here are the choices the mechanism
 cannot make.
 
 The whole shape, one example:
 
     // pkg/topic/errors.go -- the declaration owns everything but the values
-    var ErrTopicNotFound = common.NewError("VK0005", common.Permanent,
+    var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
     	"topic not found",
     	"register it with MessageAdmin.RegisterTopic first")
 
@@ -344,7 +344,7 @@ vulkan command in the CLI).
   signals stay plain errors on the templates below -- promote one to a
   declaration the moment it crosses the boundary.
 - Declare a named Err* variable in the owning pkg/<x>/errors.go via
-  common.NewError -- code, recovery, problem, and fix fixed at declaration.
+  diagnostic.NewError -- code, recovery, problem, and fix fixed at declaration.
 - Code = "VK" + the next four-digit serial after the current max (same
   scheme as decision records). Never reuse or renumber; a deleted
   condition retires its number.
@@ -479,6 +479,25 @@ a tick loop -- is the one place logging a failure belongs.
   Labs assert on log events by level and attrs through a counting
   Logger, never by matching message substrings.
 
+### Declared events
+
+The mirror of the error-declaration boundary: a Warn or Error event
+earns a declaration (and a code) when it is operator-actionable enough
+for a docs page -- a durable data consequence, a reclaim, a backstop, a
+stopped mechanism. Debug/Info narration never declares.
+
+- Declare in the owning vocabulary package's logs.go via
+  diagnostic.NewEvent(code, message, consequence) -- the codes share the
+  errors' VK serial space, next four-digit serial after the current max
+  across both registries.
+- Call sites log the declaration's Message and attach `"code",
+  Event.Code` as the first attr pair -- the message stays static, the
+  code is the greppable pointer.
+- Land the hand-written docs page (same /errors/ path) in the same
+  change; `vulkan explain` lists events beside errors.
+- The message follows the ### Messages grammar; the consequence clause
+  is fixed at declaration, never at the call site.
+
 ### Attrs
 
 - One key per concept, flat snake_case, spelled from this table; a new
@@ -486,7 +505,8 @@ a tick loop -- is the one place logging a failure belongs.
 
       error         the error value itself (never `err`, never
                     stringified first -- .Error() defeats
-                    common.Error.LogValue)
+                    diagnostic.Error.LogValue)
+      code          a declared log event's code (Event.Code)
       topic         topic name
       topic_id      topic id
       version       schema version
@@ -518,8 +538,9 @@ A long-lived instance's "starting" line is its diagnosis snapshot: a
 pasted log answers "what was your setup?" without a second question. It
 carries the module version (common.BuildVersion), the instance identity,
 and the resolved config facts an operator would ask for (poll rate,
-timeouts, batch sizes) -- one line, attrs only. The paired "stopped"
-line carries the bound identity and nothing else.
+timeouts, batch sizes) -- one line, attrs only. A config fact's key
+spells its config field snake_cased (shutdown_timeout, batch_limit).
+The paired "stopped" line carries the bound identity and nothing else.
 
 ### The failure record
 

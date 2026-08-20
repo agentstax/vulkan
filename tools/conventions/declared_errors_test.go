@@ -9,19 +9,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 )
 
 func TestProblemTenseFollowsRecovery(t *testing.T) {
-	for _, registered := range common.Errors() {
+	for _, registered := range diagnostic.Errors() {
 		startsCouldNot := strings.HasPrefix(registered.Problem, "could not ")
 
 		switch registered.Recovery {
-		case common.Transient:
+		case diagnostic.Transient:
 			if !startsCouldNot {
 				t.Errorf(`%s is Transient but its problem does not start "could not ": %q`, registered.Code, registered.Problem)
 			}
-		case common.Permanent:
+		case diagnostic.Permanent:
 			if startsCouldNot {
 				t.Errorf(`%s is Permanent but its problem starts "could not ": %q`, registered.Code, registered.Problem)
 			}
@@ -34,7 +34,7 @@ func TestProblemTenseFollowsRecovery(t *testing.T) {
 var bannedWords = regexp.MustCompile(`(?i)\b(failed|invalid|bad|illegal|unable|unknown|error|please|sorry)\b`)
 
 func TestProblemAvoidsBannedWords(t *testing.T) {
-	for _, registered := range common.Errors() {
+	for _, registered := range diagnostic.Errors() {
 		if match := bannedWords.FindString(registered.Problem); match != "" {
 			t.Errorf("%s problem contains banned word %q: %q", registered.Code, match, registered.Problem)
 		}
@@ -44,14 +44,28 @@ func TestProblemAvoidsBannedWords(t *testing.T) {
 	}
 }
 
+func TestLogEventMessageAvoidsBannedWords(t *testing.T) {
+	for _, registered := range diagnostic.Events() {
+		if match := bannedWords.FindString(registered.Message); match != "" {
+			t.Errorf("%s message contains banned word %q: %q", registered.Code, match, registered.Message)
+		}
+		if strings.Contains(registered.Message, "!") {
+			t.Errorf("%s message contains an exclamation point: %q", registered.Code, registered.Message)
+		}
+	}
+}
+
 // TestRegistryCoversEverySourceCode proves the import list above is complete:
 // every code declared anywhere under pkg/ must be visible in the registry
-// this binary sees, so the walks above and the docs generator miss nothing.
+// this binary sees, so the walks above miss nothing.
 func TestRegistryCoversEverySourceCode(t *testing.T) {
-	declared := regexp.MustCompile(`NewError\("(VK\d{4})"`)
+	declared := regexp.MustCompile(`New(?:Error|Event)\("(VK\d{4})"`)
 
 	registered := map[string]bool{}
-	for _, entry := range common.Errors() {
+	for _, entry := range diagnostic.Errors() {
+		registered[entry.Code] = true
+	}
+	for _, entry := range diagnostic.Events() {
 		registered[entry.Code] = true
 	}
 
@@ -70,7 +84,7 @@ func TestRegistryCoversEverySourceCode(t *testing.T) {
 		}
 		for _, match := range declared.FindAllStringSubmatch(string(source), -1) {
 			if !registered[match[1]] {
-				t.Errorf("%s declares %s but the registry misses it -- add its package to errorregistry.go", path, match[1])
+				t.Errorf("%s declares %s but the registry misses it -- add its package to conventions.go", path, match[1])
 			}
 		}
 		return nil

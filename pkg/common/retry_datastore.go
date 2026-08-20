@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -81,8 +82,8 @@ func (r *RetryDatastore) Wrap(ctx context.Context, retryableFunc RetryableFunc) 
 // IsTransientDatastoreError is RetryDatastore's classification: recovery
 // declared on the error decides; a bare error is judged by IsTransientPgError.
 func IsTransientDatastoreError(err error) bool {
-	if classified, ok := errors.AsType[*Error](err); ok {
-		return classified.Recovery == Transient
+	if classified, ok := errors.AsType[*diagnostic.Error](err); ok {
+		return classified.Recovery == diagnostic.Transient
 	}
 	return IsTransientPgError(err)
 }

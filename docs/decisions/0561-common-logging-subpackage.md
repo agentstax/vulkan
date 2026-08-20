@@ -22,8 +22,10 @@ common.Error, so a subpackage would cross-import its parent.
 - Everything else stays flat in pkg/common; concurrency's destination
   remains internal/, never common/ -- the subpackage pattern is for
   public machinery only.
-- toAttrs moves up as exported logging.Attrs; common.Error.With calls it
-  (root imports its own subpackage; logging imports no vulkan package).
+- toAttrs stays unexported on each side -- error.go keeps its copy, the
+  ring's drain gets its own: duplication over a manufactured seam. common
+  imports logging only where it consumes the Logger seam (lifecycle,
+  RetryDatastore); the error anatomy depends on no machinery.
 - Names travel unchanged (LoggerWith stays LoggerWith).
 - CONVENTIONS.md: infrastructure kind reads "`common` and its machinery
   subpackages"; ## Logging references logging.Logger.
@@ -35,3 +37,7 @@ common.Error, so a subpackage would cross-import its parent.
   [0528] removed, accepted for the physical grouping.
 - Narrows [0528]: its logger merge is undone; the errors/retry/context
   merges stand.
+
+Narrowed by [0563] (2026-08-20): the error anatomy, log events, and their
+registry moved to pkg/common/diagnostic -- the stdlib-shadow objection
+applied to the name "errors", not to the move.

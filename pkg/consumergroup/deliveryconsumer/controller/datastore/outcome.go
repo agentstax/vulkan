@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -159,6 +160,6 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 		return err
 	}
 
-	d.Logger.WarnContext(ctx, "message dead-lettered", "group_id", delivery.ConsumerGroupId, "topic_id", delivery.TopicId, "message_id", delivery.MessageId, "error", terminalErr)
+	d.Logger.WarnContext(ctx, consumergroup.EventMessageDeadLettered.Message, "code", consumergroup.EventMessageDeadLettered.Code, "group_id", delivery.ConsumerGroupId, "topic_id", delivery.TopicId, "message_id", delivery.MessageId, "error", terminalErr)
 	return nil
 }

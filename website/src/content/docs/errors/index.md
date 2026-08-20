@@ -33,3 +33,23 @@ block; paste the message text or code into search to land on its page.
 | [VK0022](/errors/VK0022) | schema version is older than this build requires | permanent |
 | [VK0023](/errors/VK0023) | schema version is newer than this build understands | permanent |
 | [VK0024](/errors/VK0024) | could not finish the worker declaration | transient |
+| [VK0025](/errors/VK0025) | could not finish the cron job declaration | transient |
+
+Log events share the same `VK` code space: a Warn- or Error-level line
+that is operator-actionable carries its code in the line's `code` attr,
+and the code lands on a page here the same way.
+
+| Code | Event | Level |
+| ---- | ----- | ----- |
+| [VK0026](/errors/VK0026) | lease reclaimed from expired worker | warn |
+| [VK0027](/errors/VK0027) | range quarantined after max reclaims | warn |
+| [VK0028](/errors/VK0028) | messages dead-lettered | warn |
+| [VK0029](/errors/VK0029) | message dead-lettered | warn |
+| [VK0030](/errors/VK0030) | exception dead-lettered | warn |
+| [VK0031](/errors/VK0031) | crash-loop kill backstop fired | warn |
+| [VK0032](/errors/VK0032) | stored message options outside this consumer's bounds | warn |
+| [VK0033](/errors/VK0033) | could not create partition ahead | warn |
+| [VK0034](/errors/VK0034) | worker instance lost | warn |
+| [VK0035](/errors/VK0035) | manager row suspended | warn |
+| [VK0036](/errors/VK0036) | worker tick backoff curve exhausted | error |
+| [VK0037](/errors/VK0037) | cron job request was already published by an earlier ambiguous commit | warn |

@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 )
 
 // MessageConsumerConfig is the slice of the group's consumer config this
@@ -156,7 +157,7 @@ func (c *MessageConsumerConfig) withMetadata(ctx context.Context, metadata *mess
 	message := metadata.Message
 	applied.Message = message.Clamp(c.MessageMin, c.MessageMax)
 	if !applied.Message.Equal(&message) {
-		c.Logger.WarnContext(ctx, "stored message options outside this consumer's bounds -- clamped", "stored", message, "clamped", applied.Message)
+		c.Logger.WarnContext(ctx, consumergroup.EventStoredOptionsClamped.Message, "code", consumergroup.EventStoredOptionsClamped.Code, "stored", message, "clamped", applied.Message)
 	}
 	return &applied
 }

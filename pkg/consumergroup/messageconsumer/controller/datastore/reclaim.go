@@ -8,6 +8,7 @@ import (
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -64,7 +65,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		return nil, err
 	}
 
-	d.Logger.WarnContext(ctx, "lease reclaimed from expired worker", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+	d.Logger.WarnContext(ctx, consumergroup.EventLeaseReclaimed.Message, "code", consumergroup.EventLeaseReclaimed.Code, "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	if lease.Reclaims >= maxRangeReclaims {
 		if err := d.quarantine(ctx, tx, topicId, groupId, lease, deliveryLogMode); err != nil {
@@ -94,7 +95,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 // AdvanceCommitted's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
-	d.Logger.WarnContext(ctx, "range quarantined after max reclaims -- messages written as 'ready' exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+	d.Logger.WarnContext(ctx, consumergroup.EventRangeQuarantined.Message, "code", consumergroup.EventRangeQuarantined.Code, "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var deliverySql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {

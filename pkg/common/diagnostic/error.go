@@ -1,23 +1,11 @@
-package common
+package diagnostic
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
-
-	"github.com/agentstax/vulkan/pkg/common/logging"
-)
-
-// TODO - fill with actual docsite once created
-const docsBaseURL = "https://vulkan-5ss.pages.dev/errors/"
-
-// registeredErrors holds every declared error by code; NewError fills it at
-// package init, tests and docs generation walk it via Errors.
-var (
-	registeredErrors = map[string]*Error{}
-	registryLock     sync.Mutex
 )
 
 // Recovery states whether an unchanged retry of the operation can succeed.
@@ -48,9 +36,6 @@ type Error struct {
 // happens at package init, so structural mistakes panic
 // instead of returning an error nothing would check.
 func NewError(code string, recovery Recovery, problem string, fix string) *Error {
-	if !isErrorCode(code) {
-		panic(`error code must be "VK" followed by four digits: ` + code)
-	}
 	if recovery != Transient && recovery != Permanent {
 		panic("recovery must be Transient or Permanent: " + string(recovery))
 	}
@@ -58,14 +43,8 @@ func NewError(code string, recovery Recovery, problem string, fix string) *Error
 		panic("problem must not be empty: " + code)
 	}
 
-	registryLock.Lock()
-	defer registryLock.Unlock()
-	if _, ok := registeredErrors[code]; ok {
-		panic("error code already registered: " + code)
-	}
-
 	declared := &Error{Code: code, Recovery: recovery, Problem: problem, Fix: fix}
-	registeredErrors[code] = declared
+	register(declared)
 	return declared
 }
 
@@ -74,7 +53,7 @@ func NewError(code string, recovery Recovery, problem string, fix string) *Error
 // Identifier strings render quoted, everything else via its slog value.
 func (e *Error) With(pairs ...any) *Error {
 	copied := *e
-	copied.values = append(slices.Clone(e.values), logging.Attrs(pairs)...)
+	copied.values = append(slices.Clone(e.values), toAttrs(pairs)...)
 	return &copied
 }
 
@@ -166,36 +145,39 @@ func (e *Error) Docs() string {
 	return docsBaseURL + e.Code
 }
 
+// GetCode and GetKind satisfy Declaration; Get-prefixed because Code is
+// already the field.
+func (e *Error) GetCode() string {
+	return e.Code
+}
+
+func (e *Error) GetKind() Kind {
+	return KindError
+}
+
 // Errors lists every registered error ordered by code.
 func Errors() []*Error {
-	registryLock.Lock()
-	defer registryLock.Unlock()
-
-	listed := make([]*Error, 0, len(registeredErrors))
-	for _, registered := range registeredErrors {
-		listed = append(listed, registered)
-	}
-	slices.SortFunc(listed, func(left *Error, right *Error) int {
-		return strings.Compare(left.Code, right.Code)
-	})
-
-	return listed
+	return listRegistered[*Error]()
 }
 
 // ***************
 // *** HELPERS ***
 // ***************
 
-func isErrorCode(code string) bool {
-	if len(code) != 6 || code[:2] != "VK" {
-		return false
-	}
-	for _, digit := range code[2:] {
-		if digit < '0' || digit > '9' {
-			return false
+func toAttrs(pairs []any) []slog.Attr {
+	attrs := make([]slog.Attr, 0, (len(pairs)+1)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		name := fmt.Sprint(pairs[i])
+
+		// a name with no value is a raise-site bug; render the gap
+		// rather than crash or silently drop the name
+		if i+1 >= len(pairs) {
+			attrs = append(attrs, slog.String(name, "(missing)"))
+			break
 		}
+		attrs = append(attrs, slog.Any(name, pairs[i+1]))
 	}
-	return true
+	return attrs
 }
 
 func formatValue(value slog.Value) string {

@@ -5,7 +5,6 @@ package logging
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -68,21 +67,4 @@ func NewDefaultLogger(w io.Writer, level ...slog.Level) *slog.Logger {
 		lvl = level[0]
 	}
 	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: lvl}))
-}
-
-// Attrs converts alternating name/value pairs into slog attrs.
-func Attrs(pairs []any) []slog.Attr {
-	attrs := make([]slog.Attr, 0, (len(pairs)+1)/2)
-	for i := 0; i < len(pairs); i += 2 {
-		name := fmt.Sprint(pairs[i])
-
-		// a name with no value is a raise-site bug; render the gap
-		// rather than crash or silently drop the name
-		if i+1 >= len(pairs) {
-			attrs = append(attrs, slog.String(name, "(missing)"))
-			break
-		}
-		attrs = append(attrs, slog.Any(name, pairs[i+1]))
-	}
-	return attrs
 }

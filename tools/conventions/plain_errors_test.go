@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 )
 
 type raiseSite struct {
@@ -72,7 +72,7 @@ func TestPlainConstraintGuardsCarryTheValue(t *testing.T) {
 
 func TestPlainRaiseStringsNeverRestateDeclaredProblems(t *testing.T) {
 	for _, site := range plainRaiseSites(t) {
-		for _, registered := range common.Errors() {
+		for _, registered := range diagnostic.Errors() {
 			if strings.Contains(site.Message, registered.Problem) {
 				t.Errorf("%s restates %s -- raise the declared variable instead: %q", site.Position, registered.Code, site.Message)
 			}

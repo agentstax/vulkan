@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/charmbracelet/fang"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -27,8 +27,8 @@ type cliError struct {
 	code       int
 	msg        string
 	printed    bool
-	structured *common.Error // set when the failure carries the full anatomy; renders as the block
-	fix        string        // the fix line for structured; "" drops it
+	structured *diagnostic.Error // set when the failure carries the full anatomy; renders as the block
+	fix        string            // the fix line for structured; "" drops it
 }
 
 func (e *cliError) Error() string { return e.msg }
@@ -52,7 +52,7 @@ func failPrinted() error {
 
 // failStructured - the operation surfaced a structured error; the handler
 // renders it as the block. fix is the resolved fix line ("" drops it).
-func failStructured(structuredError *common.Error, fix string) error {
+func failStructured(structuredError *diagnostic.Error, fix string) error {
 	return &cliError{code: 1, structured: structuredError, fix: fix}
 }
 
@@ -99,7 +99,7 @@ func exitCode(err error) int {
 // ever migrated hits Postgres 42P01 (undefined_table) deep in a query --
 // surface the fix, not the raw SQLSTATE.
 func translateAdminError(err error) error {
-	if structuredError, ok := errors.AsType[*common.Error](err); ok {
+	if structuredError, ok := errors.AsType[*diagnostic.Error](err); ok {
 		fix := structuredError.Fix
 		if cliFix, ok := cliFixes[structuredError.Code]; ok {
 			fix = cliFix
@@ -121,7 +121,7 @@ func translateAdminError(err error) error {
 // renderErrorBlock is the CLI's one renderer for a structured error: the
 // header line, then one aligned label per fact -- values, cause, the retry
 // line when an unchanged retry can succeed, fix, docs.
-func renderErrorBlock(w io.Writer, structuredError *common.Error, fix string) {
+func renderErrorBlock(w io.Writer, structuredError *diagnostic.Error, fix string) {
 	fmt.Fprintf(w, "error[%s]: %s\n", structuredError.Code, structuredError.Problem)
 
 	rows := make([][2]string, 0, 8)
@@ -131,7 +131,7 @@ func renderErrorBlock(w io.Writer, structuredError *common.Error, fix string) {
 	if cause := structuredError.Unwrap(); cause != nil {
 		rows = append(rows, [2]string{"cause", cause.Error()})
 	}
-	if structuredError.Recovery == common.Transient {
+	if structuredError.Recovery == diagnostic.Transient {
 		rows = append(rows, [2]string{"retry", "safe -- an unchanged retry can succeed"})
 	}
 	if fix != "" {
@@ -146,6 +146,13 @@ func renderErrorBlock(w io.Writer, structuredError *common.Error, fix string) {
 	for _, row := range rows {
 		fmt.Fprintf(w, "  %-*s %s\n", width+1, row[0]+":", row[1])
 	}
+}
+
+// renderLogEventBlock is renderErrorBlock's sibling for a declared log
+// event: the header line, then the docs row.
+func renderLogEventBlock(w io.Writer, event *diagnostic.Event) {
+	fmt.Fprintf(w, "event[%s]: %s\n", event.Code, event.Message)
+	fmt.Fprintf(w, "  docs: %s\n", event.Docs())
 }
 
 func formatAttrValue(value slog.Value) string {

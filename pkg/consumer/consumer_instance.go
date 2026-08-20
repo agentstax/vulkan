@@ -107,7 +107,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		return err
 	}
 
-	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion())
+	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", i.Config.ShutdownTimeout, "batch_limit", i.Config.BatchLimit)
 
 	group, runCtx := errgroup.WithContext(ctx)
 

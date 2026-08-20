@@ -152,7 +152,7 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 		if produced.Duplicate {
 			// an earlier tick's ambiguous commit published this request, then
 			// failed to advance the row
-			i.Logger.WarnContext(ctx, "cron job request was already published by an earlier ambiguous commit", "cron_job_id", row.Id, "cron_job", row.Name, "scheduled_time", scheduledTime)
+			i.Logger.WarnContext(ctx, cron.EventJobRequestAlreadyPublished.Message, "code", cron.EventJobRequestAlreadyPublished.Code, "cron_job_id", row.Id, "cron_job", row.Name, "scheduled_time", scheduledTime)
 		}
 
 		// next scheduled time from the DB clock ONLY -- Go/DB skew

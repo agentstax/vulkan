@@ -64,7 +64,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			}
 			r.Logger.WarnContext(ctx, "could not re-claim manager row -- retrying", "owner", r.Owner.Name, "error", err)
 		case execution == nil:
-			r.Logger.WarnContext(ctx, "manager row suspended -- its chain goes unreconciled until target_instances is restored", "owner", r.Owner.Name)
+			r.Logger.WarnContext(ctx, worker.EventManagerRowSuspended.Message, "code", worker.EventManagerRowSuspended.Code, "owner", r.Owner.Name)
 		default:
 			claimed = true
 			if err := execution.Run(ctx); !errors.Is(err, worker.ErrInstanceLost) {

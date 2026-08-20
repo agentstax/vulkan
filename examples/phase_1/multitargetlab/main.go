@@ -16,7 +16,7 @@ package main
 //     between the two ProduceInTx calls.
 //   - ambiguousCommitScenario: a Commit-time failure (a deferred FK
 //     violation, so it surfaces at Commit, not at any INSERT) comes back
-//     from InTransaction completely unclassified -- no iCommon.Error
+//     from InTransaction completely unclassified -- no diagnostic.Error
 //     wrapping, no special-casing. InTransaction never retries; whether a
 //     rerun is safe is the caller's call, so the raw error must reach them.
 //   - callerKeyRetryScenario: the sanctioned way to make that rerun safe --
@@ -33,7 +33,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -176,8 +176,8 @@ func ambiguousCommitScenario(ctx context.Context, ds *iDatastore.PostgresDatasto
 	if !ok || pgErr.Code != "23503" {
 		die(fmt.Sprintf("expected the raw foreign_key_violation (23503) from tx.Commit, got %v", err))
 	}
-	if _, ok := errors.AsType[*iCommon.Error](err); ok {
-		die("InTransaction wrapped the commit error in an iCommon.Error -- it must never classify, only surface as-is")
+	if _, ok := errors.AsType[*diagnostic.Error](err); ok {
+		die("InTransaction wrapped the commit error in an diagnostic.Error -- it must never classify, only surface as-is")
 	}
 
 	assertMessageLogCount(ctx, ds, topicA.Id, 0)

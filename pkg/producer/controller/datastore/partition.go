@@ -105,7 +105,7 @@ func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partiti
 				d.createAheadGate.delete(topicId)
 				return
 			}
-			d.Logger.WarnContext(ctx, "could not create partition ahead -- the first insert past the boundary will create it", "topic_id", topicId, "error", err)
+			d.Logger.WarnContext(ctx, eventPartitionNotCreatedAhead.Message, "code", eventPartitionNotCreatedAhead.Code, "topic_id", topicId, "error", err)
 		}
 	}()
 }

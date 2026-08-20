@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/migrate"
 )
 
-var errTestBroker = common.NewError("VK9801", common.Transient,
+var errTestBroker = diagnostic.NewError("VK9801", diagnostic.Transient,
 	"could not reach the test broker", "retry the produce call")
 
 func TestRenderErrorBlockAlignsAllParts(t *testing.T) {

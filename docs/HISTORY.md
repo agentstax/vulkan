@@ -5,12 +5,30 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-20 — Coded declarations get their own package [0563]
+
+- pkg/common/diagnostic now owns the error anatomy, the log events, and
+  their shared VK registry (registry.go / error.go / event.go); LogEvent
+  renamed Event (diagnostic.Event, NewEvent, Events(), KindEvent). Domains
+  declare via diagnostic.NewError/NewEvent; common root is vocabulary
+  only, beside subpackages diagnostic and logging.
+
+## 2026-08-20 — Log events carry VK codes [0562]
+
+- common.NewLogEvent registers operator-actionable Warn/Error log events in
+  the errors' VK serial space; 12 declarations (VK0026-VK0037) in
+  consumergroup/worker/cron logs.go + producer datastore, call sites log
+  the declared Message with the code as the first attr, hand-written docs
+  pages on /errors/, `vulkan explain` lists both kinds, conventions walks
+  extended. Consumer start line finishes [0558]'s snapshot rule with
+  message_timeout/shutdown_timeout/batch_limit.
+
 ## 2026-08-20 — Logging machinery carved out to pkg/common/logging [0561]
 
 - New infrastructure subpackage pkg/common/logging owns the Logger seam:
   Logger, LoggerWith, NewDefaultLogger, BufferLogger, WithLogBuffer, the
-  debug-buffer ring; toAttrs exported as logging.Attrs (common.Error.With
-  calls it). Narrows [0528]: errors/retry stay flat (stdlib shadow;
+  debug-buffer ring; toAttrs stays unexported, duplicated per side.
+  Narrows [0528]: errors/retry stay flat (stdlib shadow;
   MessageOptions↔Error cross-import). ~315 qualifier renames across 130
   files; CONVENTIONS.md infrastructure kind now reads "common and its
   machinery subpackages".

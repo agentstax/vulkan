@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -70,7 +71,7 @@ func (b *logBuffer) drain() (slog.Value, bool) {
 			slog.String("level", record.level.String()),
 			slog.String("message", record.message),
 		}
-		recordAttrs = append(recordAttrs, Attrs(record.args)...)
+		recordAttrs = append(recordAttrs, toAttrs(record.args)...)
 		attrs = append(attrs, slog.Attr{Key: strconv.Itoa(i), Value: slog.GroupValue(recordAttrs...)})
 	}
 	if b.droppedCount > 0 {
@@ -90,4 +91,20 @@ func (b *logBuffer) drain() (slog.Value, bool) {
 func logBufferFrom(ctx context.Context) (*logBuffer, bool) {
 	buffer, ok := ctx.Value(logBufferKey{}).(*logBuffer)
 	return buffer, ok
+}
+
+func toAttrs(pairs []any) []slog.Attr {
+	attrs := make([]slog.Attr, 0, (len(pairs)+1)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		name := fmt.Sprint(pairs[i])
+
+		// a name with no value is a call-site bug; render the gap
+		// rather than crash or silently drop the name
+		if i+1 >= len(pairs) {
+			attrs = append(attrs, slog.String(name, "(missing)"))
+			break
+		}
+		attrs = append(attrs, slog.Any(name, pairs[i+1]))
+	}
+	return attrs
 }

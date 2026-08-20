@@ -6,6 +6,7 @@ import (
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -179,7 +180,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 		}
 	}
 
-	d.Logger.WarnContext(ctx, "exception dead-lettered -- unrecoverable, will not be retried", "group_id", exception.ConsumerGroupId, "topic_id", exception.TopicId, "message_id", exception.MessageId, "attempts", exception.Attempts)
+	d.Logger.WarnContext(ctx, consumergroup.EventExceptionDeadLettered.Message, "code", consumergroup.EventExceptionDeadLettered.Code, "group_id", exception.ConsumerGroupId, "topic_id", exception.TopicId, "message_id", exception.MessageId, "attempts", exception.Attempts)
 	return nil
 }
 

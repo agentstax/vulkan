@@ -120,7 +120,7 @@ func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Con
 
 			// a streak past the curve's cap stopped being a blip -- escalate
 			if attempts > r.Config.TickRetry.MaxRetries {
-				r.Logger.ErrorContext(ctx, "worker tick backoff curve exhausted -- ticks continue at its cap", "attempts", attempts, "delay", delay, "error", err)
+				r.Logger.ErrorContext(ctx, worker.EventTickBackoffCurveExhausted.Message, "code", worker.EventTickBackoffCurveExhausted.Code, "attempts", attempts, "delay", delay, "error", err)
 			} else {
 				r.Logger.WarnContext(ctx, "could not run worker tick -- backing off", "attempts", attempts, "delay", delay, "error", err)
 			}

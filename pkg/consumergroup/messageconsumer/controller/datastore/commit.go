@@ -7,6 +7,7 @@ import (
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -60,7 +61,7 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 	}
 
 	if terminals > 0 {
-		d.Logger.WarnContext(ctx, "messages dead-lettered -- unrecoverable, will not be retried", "group_id", groupId, "topic_id", topicId, "dead_count", terminals)
+		d.Logger.WarnContext(ctx, consumergroup.EventMessagesDeadLettered.Message, "code", consumergroup.EventMessagesDeadLettered.Code, "group_id", groupId, "topic_id", topicId, "dead_count", terminals)
 	}
 	return nil
 }
@@ -121,7 +122,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 	}
 
 	if terminals > 0 {
-		d.Logger.WarnContext(ctx, "messages dead-lettered -- unrecoverable, will not be retried", "group_id", groupId, "topic_id", topicId, "dead_count", terminals)
+		d.Logger.WarnContext(ctx, consumergroup.EventMessagesDeadLettered.Message, "code", consumergroup.EventMessagesDeadLettered.Code, "group_id", groupId, "topic_id", topicId, "dead_count", terminals)
 	}
 	return nil
 }
