@@ -61,7 +61,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			if !claimed {
 				return err
 			}
-			r.Logger.WarnContext(ctx, "manager re-claim failed -- retrying", "owner", r.Owner.Name, "error", err)
+			r.Logger.WarnContext(ctx, "could not re-claim manager row -- retrying", "owner", r.Owner.Name, "error", err)
 		case execution == nil:
 			r.Logger.WarnContext(ctx, "manager row suspended -- its chain goes unreconciled until target_instances is restored", "owner", r.Owner.Name)
 		default:

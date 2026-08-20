@@ -62,7 +62,7 @@ func (c *Controller) RunOnce(ctx context.Context, targetVersion int64, owner *co
 	if err != nil {
 		return err
 	}
-	defer c.datastore.ReleaseLock(conn)
+	defer c.datastore.ReleaseLock(ctx, conn)
 
 	return c.migrateOwner(ctx, conn, owner, targetVersion, maxVersion, registry)
 }
@@ -85,7 +85,7 @@ func (c *Controller) RunAll(ctx context.Context, targetVersion int64, kind commo
 	if err != nil {
 		return err
 	}
-	defer c.datastore.ReleaseLock(conn)
+	defer c.datastore.ReleaseLock(ctx, conn)
 
 	owners, err := c.owners(ctx, conn, kind)
 	if err != nil {
@@ -130,7 +130,7 @@ func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner
 				c.datastore.TryRecordFailure(ctx, conn, owner, v, err)
 				return fmt.Errorf("up to version %d: %w", v, err)
 			}
-			c.Logger.InfoContext(ctx, "schema migrated up", "owner", owner.Kind(), "topic_id", owner.TopicId, "version", v)
+			c.Logger.InfoContext(ctx, "schema migrated up", "owner_kind", owner.Kind(), "topic_id", owner.TopicId, "version", v)
 		}
 	case targetVersion < current:
 		for v := current - 1; v >= targetVersion; v-- {
@@ -139,7 +139,7 @@ func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner
 				c.datastore.TryRecordFailure(ctx, conn, owner, v, err)
 				return fmt.Errorf("down to version %d: %w", v, err)
 			}
-			c.Logger.InfoContext(ctx, "schema migrated down", "owner", owner.Kind(), "topic_id", owner.TopicId, "version", v)
+			c.Logger.InfoContext(ctx, "schema migrated down", "owner_kind", owner.Kind(), "topic_id", owner.TopicId, "version", v)
 		}
 	}
 	return nil

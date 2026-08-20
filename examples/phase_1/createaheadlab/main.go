@@ -14,7 +14,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -226,14 +225,26 @@ func (w *WarnCounter) DebugContext(ctx context.Context, msg string, args ...any)
 func (w *WarnCounter) InfoContext(ctx context.Context, msg string, args ...any) {
 	w.inner.InfoContext(ctx, msg, args...)
 }
+// counted by attr shape, never message text: both partition warns carry
+// topic_id; only the create-ahead one carries an error value.
 func (w *WarnCounter) WarnContext(ctx context.Context, msg string, args ...any) {
-	if strings.Contains(msg, "no partition covers") {
-		w.HealWarns.Add(1)
-	}
-	if strings.Contains(msg, "create-ahead failed") {
-		w.DropWarns.Add(1)
+	if hasArgKey(args, "topic_id") {
+		if hasArgKey(args, "error") {
+			w.DropWarns.Add(1)
+		} else {
+			w.HealWarns.Add(1)
+		}
 	}
 	w.inner.WarnContext(ctx, msg, args...)
+}
+
+func hasArgKey(args []any, key string) bool {
+	for i := 0; i+1 < len(args); i += 2 {
+		if name, ok := args[i].(string); ok && name == key {
+			return true
+		}
+	}
+	return false
 }
 func (w *WarnCounter) ErrorContext(ctx context.Context, msg string, args ...any) {
 	w.inner.ErrorContext(ctx, msg, args...)

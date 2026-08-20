@@ -24,6 +24,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 		// deleted CTE + INSERT keeps the success-deletion and its
 		// delivery_log_<topic_id> row atomic
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordSuccess
 			WITH deleted AS (
 				DELETE FROM %[1]s
 				WHERE consumer_group_id = $1
@@ -37,6 +38,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 		`, iTopic.DeliveryTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordSuccess
 			DELETE FROM %s
 			WHERE consumer_group_id = $1
 				AND message_id = $2
@@ -67,6 +69,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordFailure
 			UPDATE %s
 			SET
 				status = 'ready',
@@ -81,6 +84,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 		`, iTopic.DeliveryTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordFailure
 			WITH updated AS (
 				UPDATE %[1]s
 				SET
@@ -124,6 +128,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordTerminal
 			UPDATE %s
 			SET
 				status = 'dead',
@@ -139,6 +144,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 		// updated CTE + INSERT ... WHERE EXISTS keeps the UPDATE and its
 		// delivery_log_<topic_id> row atomic
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordTerminal
 			WITH updated AS (
 				UPDATE %[1]s
 				SET
@@ -173,7 +179,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 		}
 	}
 
-	d.Logger.WarnContext(ctx, "exception dead-lettered (unrecoverable, will not be retried)", "group_id", exception.ConsumerGroupId, "topic_id", exception.TopicId, "message_id", exception.MessageId, "attempts", exception.Attempts)
+	d.Logger.WarnContext(ctx, "exception dead-lettered -- unrecoverable, will not be retried", "group_id", exception.ConsumerGroupId, "topic_id", exception.TopicId, "message_id", exception.MessageId, "attempts", exception.Attempts)
 	return nil
 }
 
@@ -189,6 +195,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordSuperseded
 			UPDATE %s
 			SET
 				status = 'superseded',
@@ -204,6 +211,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
 		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordSuperseded
 			WITH updated AS (
 				UPDATE %[1]s
 				SET
@@ -245,6 +253,7 @@ func (d *ExceptionConsumerGroupDatastore) recordAndReleaseKey(ctx context.Contex
 	}
 
 	releaseSql := `
+		-- vulkan: exceptionconsumer.recordAndReleaseKey
 		DELETE FROM key_lease
 		WHERE consumer_group_id = $1
 			AND compaction_key = $2

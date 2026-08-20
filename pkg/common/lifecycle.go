@@ -21,7 +21,7 @@ import (
 func LifecycleContext(log Logger) (context.Context, context.CancelFunc) {
 	if log == nil {
 		// specifically INFO here so lifecycle events are logged to user for clarity and understanding
-		log = NewDefaultLogger(os.Stdout, slog.LevelInfo)
+		log = NewDefaultLogger(os.Stderr, slog.LevelInfo)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, 2)

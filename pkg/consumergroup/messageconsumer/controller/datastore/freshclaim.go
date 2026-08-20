@@ -26,6 +26,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 	// this entire transaction completes. Basically fresh-pair would never be selected
 	// and claims would always have to wait at least a poll tick, slowing things down.
 	snapshotSql := fmt.Sprintf(`
+		-- vulkan: messageconsumer.freshClaimMessagesWithCursor
 		SELECT
 			(SELECT COALESCE(MAX(id), 0) FROM %s) AS head,
 			pg_snapshot_xmax(pg_current_snapshot())::text AS xmax,
@@ -53,6 +54,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 
 	// TODO - projector could likely tracked head in a RWMutex such that it doesn't need to be calculated here
 	cursorSql := `
+		-- vulkan: messageconsumer.freshClaimMessagesWithCursor
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
 			SELECT
 				claimed,
@@ -195,6 +197,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 
 	// get new lease associated with range
 	leaseSql := `
+		-- vulkan: messageconsumer.claimMessages
 		INSERT INTO lease (consumer_group_id, low, high, until)
 		VALUES (
 			$1,

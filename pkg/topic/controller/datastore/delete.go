@@ -20,7 +20,8 @@ func (d *TopicDatastore) IsEmpty(ctx context.Context, topicId int64) (bool, erro
 
 func (d *TopicDatastore) isEmpty(ctx context.Context, topicId int64) (bool, error) {
 	// Partition-pruned and LIMIT 1'd, so it stays cheap regardless of topic size.
-	sql := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s LIMIT 1);`, iTopic.MessageLogTable(topicId))
+	sql := fmt.Sprintf(`-- vulkan: topic.isEmpty
+SELECT EXISTS (SELECT 1 FROM %s LIMIT 1);`, iTopic.MessageLogTable(topicId))
 	var notEmpty bool
 	if err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&notEmpty); err != nil {
 		return false, err
@@ -46,6 +47,7 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 	defer tx.Rollback(ctx)
 
 	leaseSql := `
+		-- vulkan: topic.delete
 		DELETE FROM lease
 		WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE topic_id = $1);
 	`
@@ -54,6 +56,7 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 	}
 
 	keyLeaseSql := `
+		-- vulkan: topic.delete
 		DELETE FROM key_lease
 		WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE topic_id = $1);
 	`
@@ -61,28 +64,34 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 		return err
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM topic WHERE id = $1;`, topicId); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: topic.delete
+DELETE FROM topic WHERE id = $1;`, topicId); err != nil {
 		return err
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM compaction_head WHERE topic_id = $1;`, topicId); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: topic.delete
+DELETE FROM compaction_head WHERE topic_id = $1;`, topicId); err != nil {
 		return err
 	}
 
 	// the now-empty parent, delivery_<id>, and idempotency_key_<id>
-	dropTableSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.MessageLogTable(topicId))
+	dropTableSql := fmt.Sprintf(`-- vulkan: topic.delete
+DROP TABLE IF EXISTS %s;`, iTopic.MessageLogTable(topicId))
 	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
 		return err
 	}
-	dropDeliverySql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.DeliveryTable(topicId))
+	dropDeliverySql := fmt.Sprintf(`-- vulkan: topic.delete
+DROP TABLE IF EXISTS %s;`, iTopic.DeliveryTable(topicId))
 	if _, err := tx.Exec(ctx, dropDeliverySql); err != nil {
 		return err
 	}
-	dropDeliveryLogSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.DeliveryLogTable(topicId))
+	dropDeliveryLogSql := fmt.Sprintf(`-- vulkan: topic.delete
+DROP TABLE IF EXISTS %s;`, iTopic.DeliveryLogTable(topicId))
 	if _, err := tx.Exec(ctx, dropDeliveryLogSql); err != nil {
 		return err
 	}
-	dropIdempotencyKeySql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, iTopic.IdempotencyKeyTable(topicId))
+	dropIdempotencyKeySql := fmt.Sprintf(`-- vulkan: topic.delete
+DROP TABLE IF EXISTS %s;`, iTopic.IdempotencyKeyTable(topicId))
 	if _, err := tx.Exec(ctx, dropIdempotencyKeySql); err != nil {
 		return err
 	}
@@ -91,6 +100,6 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 		return err
 	}
 
-	d.Logger.WarnContext(ctx, "topic destroyed", "topic", name, "topic_id", topicId)
+	d.Logger.InfoContext(ctx, "topic destroyed", "topic", name, "topic_id", topicId)
 	return nil
 }

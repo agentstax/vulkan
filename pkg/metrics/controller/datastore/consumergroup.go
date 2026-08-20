@@ -21,11 +21,13 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId in
 
 func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
 	var consumerGroupId int64
-	if err := d.Datastore.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, `-- vulkan: metrics.consumerGroupSnapshot
+SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
 		return nil, err
 	}
 
 	sql := fmt.Sprintf(`
+		-- vulkan: metrics.consumerGroupSnapshot
 		SELECT
 			c.claimed,
 			c.committed,
@@ -100,6 +102,7 @@ func (d *MetricsDatastore) ListConsumerGroups(ctx context.Context, topicId int64
 
 func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64) ([]string, error) {
 	sql := `
+		-- vulkan: metrics.listConsumerGroups
 		SELECT name
 		FROM consumer_group
 		WHERE topic_id = $1 ORDER BY name;

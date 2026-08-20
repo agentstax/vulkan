@@ -19,7 +19,7 @@ type CompactionReadCostConfig struct {
 	// Default: 4h.
 	RepeatInterval time.Duration
 
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for the provisioner's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 }
 
@@ -31,8 +31,9 @@ func (c *CompactionReadCostConfig) WithDefaults() *CompactionReadCostConfig {
 		c.RepeatInterval = 4 * time.Hour
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	c.Retry = c.Retry.WithDefaults()
 	return c
 }

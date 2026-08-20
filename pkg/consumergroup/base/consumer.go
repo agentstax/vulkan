@@ -77,6 +77,8 @@ func (b *BaseConsumer[Message]) ReleaseKeyedRun(ctx context.Context, claim *cont
 // Handles: nil map write, index out of range, bad type assertion
 // Does not handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
 func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message, messageId int64, attempt int, requested *common.MessageOptions, timeout time.Duration) error {
+	ctx = common.WithLogBuffer(ctx)
+
 	// the timeout cause names which side's budget fired
 	cause := fmt.Errorf("Timeout (%s) exceeded for message %d attempt %d", timeout, messageId, attempt)
 	if requested != nil && requested.Timeout > timeout {
@@ -116,8 +118,7 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 			b.abandonedEvents.Remove(b.Topic.Id, b.Owner.Name, messageId, attempt)
 		}()
 
-		// never log the message itself -- it may hold sensitive values
-		b.Logger.WarnContext(ctx, "consumerFunc hard timeout, goroutine abandoned", "group", b.Owner.Name, "message_id", messageId, "attempt", attempt, "timeout", timeout+b.Config.TimeoutGrace)
+		// never include the message itself -- it may hold sensitive values
 		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", timeout+b.Config.TimeoutGrace, messageId)
 	}
 }

@@ -24,6 +24,7 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 		// updated CTE + INSERT keeps the 'done' mark and its
 		// delivery_log_<topic_id> row atomic
 		sql = fmt.Sprintf(`
+			-- vulkan: deliveryconsumer.recordSuccess
 			WITH updated AS (
 				UPDATE %[1]s
 				SET
@@ -40,6 +41,7 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
+			-- vulkan: deliveryconsumer.recordSuccess
 			UPDATE %s
 			SET
 				status = 'done',
@@ -77,6 +79,7 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 	args := []any{delivery.ConsumerGroupId, delivery.MessageId, failureErr.Error()}
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
+			-- vulkan: deliveryconsumer.recordFailure
 			UPDATE %s
 			SET
 				status = 'ready',
@@ -87,6 +90,7 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 		`, iTopic.DeliveryTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
+			-- vulkan: deliveryconsumer.recordFailure
 			WITH updated AS (
 				UPDATE %[1]s
 				SET
@@ -122,6 +126,7 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 	args := []any{delivery.ConsumerGroupId, delivery.MessageId, terminalErr.Error()}
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
+			-- vulkan: deliveryconsumer.recordTerminal
 			UPDATE %s
 			SET
 				status = 'dead',
@@ -132,6 +137,7 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 		`, iTopic.DeliveryTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
+			-- vulkan: deliveryconsumer.recordTerminal
 			WITH updated AS (
 				UPDATE %[1]s
 				SET

@@ -40,6 +40,7 @@ func (d *MessageConsumerGroupDatastore) claimMessagesWithCursor(ctx context.Cont
 // readMessages reads topicId's message_log rows in (low, high], ordered by id.
 func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, low int64, high int64) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: messageconsumer.readMessages
 		SELECT
 			m.id,
 			m.payload,

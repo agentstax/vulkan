@@ -76,7 +76,7 @@ func (e *Exporter) Handler() http.Handler {
 	serve := promhttp.HandlerFor(e.registry, promhttp.HandlerOpts{})
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if err := e.metrics.RegisterMetricInstruments(request.Context()); err != nil {
-			e.Logger.WarnContext(request.Context(), "metric instrument registration failed", "error", err)
+			e.Logger.WarnContext(request.Context(), "could not register metric instrument", "error", err)
 		}
 		serve.ServeHTTP(writer, request)
 	})

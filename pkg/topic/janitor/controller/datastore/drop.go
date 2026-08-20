@@ -32,6 +32,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId in
 	}
 
 	headSql := fmt.Sprintf(`
+		-- vulkan: janitor.dropExpiredPartitions
 		SELECT COALESCE(MAX(id), 0) FROM %s;
 	`, iTopic.MessageLogTable(topicId))
 	var head int64
@@ -81,7 +82,8 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	defer tx.Rollback(ctx)
 
 	// also cap the orphan DELETEs' row-lock waits
-	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: janitor.dropPartition
+SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 		return false, err
 	}
 
@@ -102,6 +104,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	// otherwise these delivery rows (mostly 'dead' DLQ, since live ones are
 	// already floor-protected) would join to nothing and sit there forever.
 	orphanSql := fmt.Sprintf(`
+		-- vulkan: janitor.dropPartition
 		DELETE FROM %s
 		WHERE message_id >= $1
 			AND message_id < $2;
@@ -112,6 +115,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 
 	if deliveryLogMode != topic.DeliveryLogModeOff {
 		orphanLogSql := fmt.Sprintf(`
+			-- vulkan: janitor.dropPartition
 			DELETE FROM %s
 			WHERE message_id >= $1
 				AND message_id < $2;
@@ -124,6 +128,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	// a dropped partition holding a key's latest row is a dormant key expiring
 	// drop the now-dangling pointer rather than leave it forever
 	orphanKeySql := `
+		-- vulkan: janitor.dropPartition
 		DELETE FROM compaction_head
 		WHERE topic_id = $1
 			AND head_id >= $2
@@ -134,6 +139,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	}
 
 	dropSql := fmt.Sprintf(`
+		-- vulkan: janitor.dropPartition
 		DROP TABLE IF EXISTS %s;
 	`, iTopic.MessageLogPartitionTable(topicId, n))
 

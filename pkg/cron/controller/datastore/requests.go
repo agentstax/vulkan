@@ -61,6 +61,7 @@ func (d *CronJobDatastore) listRequests(ctx context.Context, jobRequestsTopicId 
 // key, newest first.
 func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId int64, compactionKey string, limit int) ([]jobMessageData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: cron.jobMessages
 		SELECT m.id, m.payload, m.created_at
 		FROM %s m
 		WHERE m.compaction_key = $1

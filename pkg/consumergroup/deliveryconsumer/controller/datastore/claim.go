@@ -29,6 +29,7 @@ func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.
 	// No lease here: the lifecycle path never grew crash recovery, so a
 	// 'processing' row that never gets resolved (consumer crash) just sits there.
 	sql := fmt.Sprintf(`
+		-- vulkan: deliveryconsumer.claimMessagesWithLifecycle
 		WITH claimed AS (
 			UPDATE %[1]s
 			SET

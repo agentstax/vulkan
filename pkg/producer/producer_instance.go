@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -57,6 +58,8 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 // the rerun dedups against whatever actually landed, reported as
 // ProduceResult.Duplicate == true.
 func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options ProduceOptions) (*ProduceResult[Message], error) {
+	ctx = common.WithLogBuffer(ctx)
+
 	options.Message = options.Message.Fill(p.Config.Message)
 	if err := options.Validate(); err != nil {
 		return nil, err
@@ -92,6 +95,7 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 	if len(items) == 0 {
 		return nil, errors.New("items must not be empty")
 	}
+	ctx = common.WithLogBuffer(ctx)
 
 	appends := make([]*controller.Append[Message], 0, len(items))
 	for i, item := range items {

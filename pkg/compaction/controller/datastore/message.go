@@ -20,6 +20,7 @@ func (d *CompactionDatastore) ListKeyMessages(ctx context.Context, topicId int64
 
 func (d *CompactionDatastore) listKeyMessages(ctx context.Context, topicId int64, compactionKey string, limit int) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: compaction.listKeyMessages
 		SELECT
 			id,
 			payload,

@@ -27,6 +27,7 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 	}
 
 	sql := `
+		-- vulkan: metrics.eventTimestamps
 		SELECT
 			(payload->>'message_id')::bigint,
 			(payload->>'attempt')::int,
@@ -56,7 +57,8 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 func (d *MetricsDatastore) resolveMetricsTopicId(ctx context.Context) (int64, error) {
 	var id int64
 	err := d.Datastore.Pool.QueryRow(ctx,
-		`SELECT id FROM topic WHERE name = $1 AND schema_version = 1;`, metrics.TopicName,
+		`-- vulkan: metrics.resolveMetricsTopicId
+SELECT id FROM topic WHERE name = $1 AND schema_version = 1;`, metrics.TopicName,
 	).Scan(&id)
 	if err != nil {
 		return 0, err

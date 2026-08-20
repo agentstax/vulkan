@@ -24,6 +24,7 @@ func (d *CronJobDatastore) Get(ctx context.Context, name string) (*CronJobData, 
 
 func (d *CronJobDatastore) get(ctx context.Context, q datastore.Querier, name string) (*CronJobData, error) {
 	sql := `
+		-- vulkan: cron.get
 		SELECT
 			id,
 			COALESCE(system_id, 0),
@@ -56,6 +57,7 @@ func (d *CronJobDatastore) List(ctx context.Context) ([]CronJobData, error) {
 
 func (d *CronJobDatastore) list(ctx context.Context) ([]CronJobData, error) {
 	sql := `
+		-- vulkan: cron.list
 		SELECT
 			id,
 			COALESCE(system_id, 0),
@@ -100,7 +102,8 @@ func (d *CronJobDatastore) Suspend(ctx context.Context, name string) error {
 }
 
 func (d *CronJobDatastore) suspend(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `UPDATE cron_job SET suspended = true WHERE name = $1;`, name)
+	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.suspend
+UPDATE cron_job SET suspended = true WHERE name = $1;`, name)
 	if err != nil {
 		return err
 	}
@@ -137,7 +140,8 @@ func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
 		return fmt.Errorf("cron job %q stays suspended: %w", name, err)
 	}
 
-	tag, err := d.Datastore.Pool.Exec(ctx, `UPDATE cron_job SET suspended = false, next_scheduled_time = $2 WHERE name = $1;`, name, next)
+	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.unsuspend
+UPDATE cron_job SET suspended = false, next_scheduled_time = $2 WHERE name = $1;`, name, next)
 	if err != nil {
 		return err
 	}
@@ -152,7 +156,8 @@ func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
 // clocks, getting time from db normalizes to a single source.
 func (d *CronJobDatastore) dbNow(ctx context.Context, q datastore.Querier) (time.Time, error) {
 	var now time.Time
-	err := q.QueryRow(ctx, `SELECT now();`).Scan(&now)
+	err := q.QueryRow(ctx, `-- vulkan: cron.dbNow
+SELECT now();`).Scan(&now)
 	return now, err
 }
 
@@ -178,14 +183,15 @@ func (d *CronJobDatastore) Delete(ctx context.Context, name string) error {
 }
 
 func (d *CronJobDatastore) delete(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `DELETE FROM cron_job WHERE name = $1;`, name)
+	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.delete
+DELETE FROM cron_job WHERE name = $1;`, name)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return cron.ErrCronJobNotFound.With("cron_job", name)
 	}
-	d.Logger.WarnContext(ctx, "cron job destroyed", "cron_job", name)
+	d.Logger.InfoContext(ctx, "cron job destroyed", "cron_job", name)
 	return nil
 }
 

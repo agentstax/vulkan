@@ -28,7 +28,7 @@ type BatcherConfig struct {
 	// Default: 15s. Negative: abandon immediately.
 	ShutdownGrace time.Duration
 
-	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 }
 
 func (c *BatcherConfig) WithDefaults() *BatcherConfig {
@@ -45,8 +45,9 @@ func (c *BatcherConfig) WithDefaults() *BatcherConfig {
 		c.ShutdownGrace = 15 * time.Second
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	return c
 }
 

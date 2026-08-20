@@ -90,6 +90,6 @@ func (p *MetricsProducer) produce(ctx context.Context, instance *iProducer.Produ
 	routingKey := metrics.AbandonedRoutineKey(event.TopicId, event.Group)
 
 	if _, err := instance.Produce(ctx, event, iProducer.ProduceOptions{RoutingKey: routingKey}); err != nil {
-		p.Logger.WarnContext(ctx, "abandoned event produce failed", "group", event.Group, "topic_id", event.TopicId, "type", event.EventType, "err", err)
+		p.Logger.WarnContext(ctx, "could not produce abandoned event", "group", event.Group, "topic_id", event.TopicId, "type", event.EventType, "error", err)
 	}
 }

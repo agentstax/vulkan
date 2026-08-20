@@ -28,6 +28,7 @@ func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId in
 	// the head check gates the insert -- a superseded message never creates
 	// or locks a lease row.
 	claimSql := `
+		-- vulkan: consumerbase.claim
 		WITH head AS (
 			SELECT head_id
 			FROM compaction_head
@@ -56,6 +57,7 @@ func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId in
 	// acquisition if the head moved. So a failed batch rolls the insert
 	// back instead of orphaning the lease.
 	recheckSql := `
+		-- vulkan: consumerbase.claim
 		DELETE FROM key_lease
 		WHERE consumer_group_id = $3
 			AND compaction_key = $2
@@ -124,6 +126,7 @@ func (d *KeyLeaseDatastore) Release(ctx context.Context, claim *KeyLeaseData) (b
 
 func (d *KeyLeaseDatastore) release(ctx context.Context, q datastore.Querier, claim *KeyLeaseData) (bool, error) {
 	sql := `
+		-- vulkan: consumerbase.release
 		DELETE FROM key_lease
 		WHERE consumer_group_id = $1
 			AND compaction_key = $2

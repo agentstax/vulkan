@@ -26,6 +26,7 @@ func (d *ConsumerGroupDatastore) GetGroup(ctx context.Context, topicId int64, na
 
 func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Querier, topicId int64, name string) (*GroupData, error) {
 	sql := `
+		-- vulkan: consumergroup.getGroup
 		SELECT id, topic_id, name, created_at
 		FROM consumer_group
 		WHERE topic_id = $1 AND name = $2;
@@ -71,7 +72,8 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 	}
 
 	// txn-scoped, per-(topic, name) -- auto-released at commit/rollback
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint, $2::text)));`, topicId, name); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.registerGroup
+SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint, $2::text)));`, topicId, name); err != nil {
 		return nil, err
 	}
 
@@ -85,6 +87,7 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 	}
 
 	insertSql := `
+		-- vulkan: consumergroup.registerGroup
 		INSERT INTO consumer_group (topic_id, name)
 		VALUES ($1, $2)
 		RETURNING id, topic_id, name, created_at;
@@ -100,6 +103,7 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 	}
 
 	cursorSql := `
+		-- vulkan: consumergroup.registerGroup
 		INSERT INTO cursor (consumer_group_id)
 		VALUES ($1);
 	`
@@ -111,7 +115,7 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "consumer group registered (created)", "consumer_group", group.Name, "topic_id", group.TopicId, "group_id", group.Id)
+	d.Logger.InfoContext(ctx, "consumer group registered (created)", "group", group.Name, "topic_id", group.TopicId, "group_id", group.Id)
 	return &group, nil
 }
 
@@ -130,30 +134,35 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	defer tx.Rollback(ctx)
 
 	// no cascade -- nothing references lease
-	if _, err := tx.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id = $1;`, groupId); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.deleteGroup
+DELETE FROM lease WHERE consumer_group_id = $1;`, groupId); err != nil {
 		return err
 	}
 
 	// no cascade -- nothing references key_lease
-	if _, err := tx.Exec(ctx, `DELETE FROM key_lease WHERE consumer_group_id = $1;`, groupId); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.deleteGroup
+DELETE FROM key_lease WHERE consumer_group_id = $1;`, groupId); err != nil {
 		return err
 	}
 
 	// no cascade -- nothing references the per-topic delivery table
-	deliverySql := fmt.Sprintf(`DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryTable(topicId))
+	deliverySql := fmt.Sprintf(`-- vulkan: consumergroup.deleteGroup
+DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryTable(topicId))
 	if _, err := tx.Exec(ctx, deliverySql, groupId); err != nil {
 		return err
 	}
 
 	// no cascade -- nothing references the per-topic delivery_log table
-	deliveryLogSql := fmt.Sprintf(`DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryLogTable(topicId))
+	deliveryLogSql := fmt.Sprintf(`-- vulkan: consumergroup.deleteGroup
+DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryLogTable(topicId))
 	if _, err := tx.Exec(ctx, deliveryLogSql, groupId); err != nil {
 		return err
 	}
 
 	// cascades: cursor, binding, migration_log, group-owned worker and
 	// cron_job rows; worker_instance follows its worker
-	if _, err := tx.Exec(ctx, `DELETE FROM consumer_group WHERE id = $1;`, groupId); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.deleteGroup
+DELETE FROM consumer_group WHERE id = $1;`, groupId); err != nil {
 		return err
 	}
 
@@ -161,6 +170,6 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 		return err
 	}
 
-	d.Logger.WarnContext(ctx, "consumer group deleted", "consumer_group", name, "topic_id", topicId, "group_id", groupId)
+	d.Logger.InfoContext(ctx, "consumer group deleted", "group", name, "topic_id", topicId, "group_id", groupId)
 	return nil
 }

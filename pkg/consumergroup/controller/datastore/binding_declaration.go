@@ -35,6 +35,7 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId in
 	// installed rows have no uniqueness; this row lock is what serializes
 	// concurrent installers on the group
 	lockSql := `
+		-- vulkan: consumergroup.declareBindings
 		SELECT id
 		FROM consumer_group
 		WHERE id = $1
@@ -94,6 +95,7 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId in
 // the stored set.
 func (d *ConsumerGroupDatastore) groupHasLiveInstance(ctx context.Context, tx pgx.Tx, groupId int64) (bool, error) {
 	sql := `
+		-- vulkan: consumergroup.groupHasLiveInstance
 		SELECT EXISTS (
 			SELECT 1
 			FROM worker_instance
@@ -111,6 +113,7 @@ func (d *ConsumerGroupDatastore) groupHasLiveInstance(ctx context.Context, tx pg
 // appendDeclaration writes one attempt row; attempt_at is the insert's now().
 func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, groupId int64, status BindingDeclarationStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
 	sql := `
+		-- vulkan: consumergroup.appendDeclaration
 		INSERT INTO binding_declaration (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
 	`
@@ -120,6 +123,7 @@ func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.T
 
 func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, groupId int64, patterns []string) error {
 	deleteSql := `
+		-- vulkan: consumergroup.replaceBindings
 		DELETE FROM binding
 		WHERE consumer_group_id = $1;
 	`
@@ -128,6 +132,7 @@ func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx,
 	}
 
 	insertSql := `
+		-- vulkan: consumergroup.replaceBindings
 		INSERT INTO binding (consumer_group_id, pattern, display)
 		VALUES ($1, $2, $3);
 	`
@@ -156,6 +161,7 @@ func (d *ConsumerGroupDatastore) listBindingDeclarations(ctx context.Context, qu
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller
 	sql := `
+		-- vulkan: consumergroup.listBindingDeclarations
 		SELECT DISTINCT ON (binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by)
 			binding_declaration.id,
 			binding_declaration.consumer_group_id,

@@ -33,6 +33,7 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 	defer tx.Rollback(ctx)
 
 	freeSql := `
+		-- vulkan: messageconsumer.commit
 		DELETE FROM lease
 		WHERE consumer_group_id = $1
 			AND token = $2;
@@ -59,7 +60,7 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 	}
 
 	if terminals > 0 {
-		d.Logger.WarnContext(ctx, "message(s) dead-lettered (unrecoverable, will not be retried)", "group_id", groupId, "topic_id", topicId, "count", terminals)
+		d.Logger.WarnContext(ctx, "messages dead-lettered -- unrecoverable, will not be retried", "group_id", groupId, "topic_id", topicId, "dead_count", terminals)
 	}
 	return nil
 }
@@ -86,6 +87,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 	// UPDATE still matches it, so it reaches the delivery insert again. See the
 	// recorded-anything guard below.
 	truncateSql := `
+		-- vulkan: messageconsumer.partialCommit
 		UPDATE lease
 		SET low = $3
 		WHERE consumer_group_id = $1
@@ -119,7 +121,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 	}
 
 	if terminals > 0 {
-		d.Logger.WarnContext(ctx, "message(s) dead-lettered (unrecoverable, will not be retried)", "group_id", groupId, "topic_id", topicId, "count", terminals)
+		d.Logger.WarnContext(ctx, "messages dead-lettered -- unrecoverable, will not be retried", "group_id", groupId, "topic_id", topicId, "dead_count", terminals)
 	}
 	return nil
 }
@@ -130,6 +132,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 
 func deliveryStatement(topicId int64) string {
 	return fmt.Sprintf(`
+		-- vulkan: messageconsumer.deliveryStatement
 		INSERT INTO %s (consumer_group_id, message_id, status, attempts, can_run_after, last_error)
 		VALUES (
 			$1,
@@ -145,6 +148,7 @@ func deliveryStatement(topicId int64) string {
 // a freshly written delivery row is always the first recorded attempt (0)
 func logStatement(topicId int64) string {
 	return fmt.Sprintf(`
+		-- vulkan: messageconsumer.logStatement
 		INSERT INTO %s (consumer_group_id, message_id, attempt, status, error)
 		VALUES ($1, $2, 0, $3, $4);
 	`, iTopic.DeliveryLogTable(topicId))

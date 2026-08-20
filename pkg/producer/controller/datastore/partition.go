@@ -27,6 +27,7 @@ const createAheadAttemptAllowance = 3 * ddlLockTimeout
 // fresh id has somewhere to land.
 func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
+		-- vulkan: producer.ensureCoveringPartition
 		SELECT COALESCE(MAX(id), 0) FROM %s;
 	`, iTopic.MessageLogTable(topicId))
 
@@ -38,6 +39,7 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 	next := head/partitionSize + 1
 
 	createPartitionSql := fmt.Sprintf(`
+		-- vulkan: producer.ensureCoveringPartition
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (%d) TO (%d);
@@ -50,11 +52,13 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 	// instead of leaking it to whatever might use this pooled connection next,
 	// and releases the advisory lock at commit
 	batch := &pgx.Batch{}
-	batch.Queue(fmt.Sprintf(`SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds()))
+	batch.Queue(fmt.Sprintf(`-- vulkan: producer.ensureCoveringPartition
+SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds()))
 
 	// one winner runs the CREATE; every concurrent caller sleeps here (bounded
 	// by the lock_timeout above) until that commit.
-	batch.Queue(`SELECT pg_advisory_xact_lock($1);`, lockKey)
+	batch.Queue(`-- vulkan: producer.ensureCoveringPartition
+SELECT pg_advisory_xact_lock($1);`, lockKey)
 	batch.Queue(createPartitionSql)
 
 	results := d.Datastore.Pool.SendBatch(ctx, batch)
@@ -101,7 +105,7 @@ func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partiti
 				d.createAheadGate.delete(topicId)
 				return
 			}
-			d.Logger.WarnContext(ctx, "partition create-ahead failed -- the first insert past the boundary will create it", "topic_id", topicId, "error", err)
+			d.Logger.WarnContext(ctx, "could not create partition ahead -- the first insert past the boundary will create it", "topic_id", topicId, "error", err)
 		}
 	}()
 }

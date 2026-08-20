@@ -23,6 +23,7 @@ func (d *CronSchedulerDatastore) ListDue(ctx context.Context) ([]int64, error) {
 
 func (d *CronSchedulerDatastore) listDue(ctx context.Context) ([]int64, error) {
 	sql := `
+		-- vulkan: cronscheduler.listDue
 		SELECT id FROM cron_job
 		WHERE next_scheduled_time <= now() AND NOT suspended
 		ORDER BY next_scheduled_time;
@@ -55,6 +56,7 @@ func (d *CronSchedulerDatastore) ClaimDue(ctx context.Context, q datastore.Queri
 
 func (d *CronSchedulerDatastore) claimDue(ctx context.Context, q datastore.Querier, id int64) (*DueCronJobData, error) {
 	sql := `
+		-- vulkan: cronscheduler.claimDue
 		SELECT
 			id,
 			name,
@@ -91,7 +93,8 @@ func (d *CronSchedulerDatastore) Advance(ctx context.Context, q datastore.Querie
 }
 
 func (d *CronSchedulerDatastore) advance(ctx context.Context, q datastore.Querier, id int64, next time.Time, produced time.Time) error {
-	_, err := q.Exec(ctx, `UPDATE cron_job SET next_scheduled_time = $2, last_scheduled_time = $3 WHERE id = $1;`, id, next, produced)
+	_, err := q.Exec(ctx, `-- vulkan: cronscheduler.advance
+UPDATE cron_job SET next_scheduled_time = $2, last_scheduled_time = $3 WHERE id = $1;`, id, next, produced)
 	return err
 }
 
@@ -103,6 +106,7 @@ func (d *CronSchedulerDatastore) Suspend(ctx context.Context, q datastore.Querie
 }
 
 func (d *CronSchedulerDatastore) suspend(ctx context.Context, q datastore.Querier, id int64, produced time.Time) error {
-	_, err := q.Exec(ctx, `UPDATE cron_job SET suspended = true, last_scheduled_time = $2 WHERE id = $1;`, id, produced)
+	_, err := q.Exec(ctx, `-- vulkan: cronscheduler.suspend
+UPDATE cron_job SET suspended = true, last_scheduled_time = $2 WHERE id = $1;`, id, produced)
 	return err
 }

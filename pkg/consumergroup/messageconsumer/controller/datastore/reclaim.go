@@ -28,6 +28,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 	// SAME row instead of resetting to 0 every time. token still rotates, so a
 	// dead worker's stale commit still no-ops the same as before.
 	reclaimSql := `
+		-- vulkan: messageconsumer.reclaimWithCursor
 		UPDATE lease
 		SET
 			reclaims = reclaims + 1,
@@ -63,7 +64,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "lease reclaimed from expired worker", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+	d.Logger.WarnContext(ctx, "lease reclaimed from expired worker", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	if lease.Reclaims >= maxRangeReclaims {
 		if err := d.quarantine(ctx, tx, topicId, groupId, lease, deliveryLogMode); err != nil {
@@ -93,11 +94,12 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 // AdvanceCommitted's exception-blocker term pins committed on whichever
 // resolves last, so one bad message no longer holds up its siblings forever.
 func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, lease LeaseData, deliveryLogMode topic.DeliveryLogMode) error {
-	d.Logger.WarnContext(ctx, "range quarantined after max reclaims, messages written as 'ready' exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
+	d.Logger.WarnContext(ctx, "range quarantined after max reclaims -- messages written as 'ready' exceptions", "group_id", groupId, "topic_id", topicId, "low", lease.Low, "high", lease.High, "reclaims", lease.Reclaims)
 
 	var deliverySql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		deliverySql = fmt.Sprintf(`
+			-- vulkan: messageconsumer.quarantine
 			INSERT INTO %s (consumer_group_id, message_id, status, attempts, last_error)
 			SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
 			FROM %s
@@ -109,6 +111,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 		// rows atomic -- one log row per message written, same first-recorded-attempt
 		// convention (attempt=0) as commit's own log statement.
 		deliverySql = fmt.Sprintf(`
+			-- vulkan: messageconsumer.quarantine
 			WITH inserted AS (
 				INSERT INTO %[1]s (consumer_group_id, message_id, status, attempts, last_error)
 				SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
@@ -126,6 +129,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 	}
 
 	freeSql := `
+		-- vulkan: messageconsumer.quarantine
 		DELETE FROM lease
 		WHERE consumer_group_id = $1
 			AND token = $2;
@@ -147,6 +151,7 @@ func (d *MessageConsumerGroupDatastore) forceReclaimRange(ctx context.Context, g
 	// reclaims goes negative on purpose: the next reclaimWithCursor's
 	// unconditional +1 nets it back to 0 -- this must not count as a real reclaim.
 	sql := `
+		-- vulkan: messageconsumer.forceReclaimRange
 		UPDATE lease
 		SET
 			until = now(),

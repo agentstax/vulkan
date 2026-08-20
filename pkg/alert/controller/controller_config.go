@@ -7,13 +7,14 @@ import (
 )
 
 type ControllerConfig struct {
-	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 }
 
 func (c *ControllerConfig) WithDefaults() *ControllerConfig {
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	return c
 }
 

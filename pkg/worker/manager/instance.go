@@ -29,10 +29,11 @@ func newManagerInstance(manager *ManagerProvisioner, owner *common.Owner, claime
 		return nil, errors.New("metadata must not be nil")
 	}
 
+	logger := common.LoggerWith(manager.Logger, "worker", WorkerManager, "owner", owner.Name)
 	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    manager.Config.InstanceTTL,
 		JitterFraction: manager.Config.JitterFraction,
-		Logger:         common.LoggerWith(manager.Logger, "worker", WorkerManager, "scope", owner.Name),
+		Logger:         logger,
 		TickRetry:      manager.Config.RefreshRetry,
 	})
 	if err != nil {
@@ -42,7 +43,7 @@ func newManagerInstance(manager *ManagerProvisioner, owner *common.Owner, claime
 	return &ManagerInstance{
 		Owner:        owner,
 		Config:       manager.Config,
-		Logger:       manager.Logger,
+		Logger:       logger,
 		runner:       runner,
 		workers:      manager.workers,
 		provisioners: manager.provisioners,
@@ -54,11 +55,13 @@ func newManagerInstance(manager *ManagerProvisioner, owner *common.Owner, claime
 // requested stop returns nil. The claimed instance releases on the way out
 // however Run exits.
 func (i *ManagerInstance) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "manager instance starting", "scope", i.Owner.Name, "rate", i.metadata.PollRate)
+	i.Logger.InfoContext(ctx, "manager instance starting", "vulkan_version", common.BuildVersion(), "rate", i.metadata.PollRate)
 
-	// a fatal spawned-instance error cancels runCtx through the group
+	// a fatal spawned-instance error cancels runCtx through the group;
+	// pool lines carry their own worker/owner pairs, so the pool gets the
+	// unenriched logger
 	group, runCtx := errgroup.WithContext(ctx)
-	pool, err := newInstancePool(i.provisioners, group, i.Logger)
+	pool, err := newInstancePool(i.provisioners, group, i.Config.Logger)
 	if err != nil {
 		return err
 	}
@@ -96,7 +99,7 @@ func (i *ManagerInstance) refresh(ctx context.Context) error {
 		return err
 	}
 	if swept > 0 {
-		i.Logger.InfoContext(ctx, "swept expired worker instances", "count", swept)
+		i.Logger.InfoContext(ctx, "swept expired worker instances", "swept_count", swept)
 	}
 	return nil
 }

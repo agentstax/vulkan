@@ -85,7 +85,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 			return err
 		}
 		if !renewed {
-			r.Logger.DebugContext(ctx, "lease lost before the run started, re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "message_id", exception.MessageId)
+			r.Logger.DebugContext(ctx, "lease lost before the run started -- re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId)
 			return nil
 		}
 	}
@@ -101,7 +101,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 			return r.recordSuperseded(ctx, exception)
 		case claim.Verdict == keyleasecontroller.KeyLeaseBusy:
 			// our lease expired in the batch queue and another worker re-claimed it
-			r.Logger.WarnContext(ctx, "key busy at gate, delivery re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
+			r.Logger.WarnContext(ctx, "key busy at gate -- delivery re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
 			return nil
 		}
 		keyClaim = claim
@@ -168,7 +168,7 @@ func (r *exceptionRunner[Message]) recordContext(ctx context.Context, keyClaim *
 // now, so this side has nothing left to record.
 func (r *exceptionRunner[Message]) absorbLostLease(ctx context.Context, exception *controller.ClaimedException, err error) error {
 	if errors.Is(err, common.ErrLeaseLost) {
-		r.Logger.DebugContext(ctx, "lease lost recording exception outcome, re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "message_id", exception.MessageId)
+		r.Logger.DebugContext(ctx, "lease lost recording exception outcome -- re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId)
 		return nil
 	}
 	return err

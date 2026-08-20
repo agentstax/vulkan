@@ -19,6 +19,7 @@ func (d *ProducerDatastore[Message]) GetCompactionHeadInTx(ctx context.Context, 
 
 func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q iDatastore.Querier, topicId int64, compactionKey string) (*HeadData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: producer.getCompactionHead
 		SELECT
 			m.id,
 			m.payload,

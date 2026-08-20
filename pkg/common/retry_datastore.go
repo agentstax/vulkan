@@ -64,7 +64,7 @@ func (r *RetryDatastore) Wrap(ctx context.Context, retryableFunc RetryableFunc) 
 
 		delay := r.CalculateDelay(retryCount)
 
-		r.Logger.DebugContext(ctx, "retrying after transient error", "attempt", retryCount+1, "max_retries", r.MaxRetries, "delay", delay, "error", err)
+		r.Logger.DebugContext(ctx, "retrying datastore call", "attempt", retryCount+1, "max_retries", r.MaxRetries, "delay", delay, "error", err)
 
 		select {
 		case <-ctx.Done():
@@ -72,10 +72,6 @@ func (r *RetryDatastore) Wrap(ctx context.Context, retryableFunc RetryableFunc) 
 		case <-time.After(delay):
 			continue
 		}
-	}
-
-	if len(retryErrs) > 0 {
-		r.Logger.WarnContext(ctx, "retry attempts exhausted", "max_retries", r.MaxRetries, "error", errors.Join(retryErrs...))
 	}
 
 	return errors.Join(retryErrs...)

@@ -23,6 +23,7 @@ func (d *CronJobDatastore) replaceConfig(ctx context.Context, found *CronJobData
 	}
 
 	sql := `
+		-- vulkan: cron.replaceConfig
 		UPDATE cron_job
 		SET
 			schedule = $2,

@@ -109,7 +109,7 @@ func (r *InstanceRunner) startRenewalHeartbeat(workCtx context.Context, stopWork
 				if workCtx.Err() == nil {
 					// keep working unrenewed -- worst case the row expires and
 					// a replacement overlaps, which work must tolerate
-					r.Logger.WarnContext(workCtx, "worker instance renewal failed", "error", err)
+					r.Logger.WarnContext(workCtx, "could not renew worker instance", "error", err)
 				}
 			}
 		}
@@ -124,6 +124,6 @@ func (r *InstanceRunner) releaseInstance(ctx context.Context) {
 	defer cancel()
 
 	if err := r.workers.ReleaseInstance(releaseCtx, r.claimed.Id, r.claimed.Token); err != nil && !errors.Is(err, worker.ErrInstanceLost) {
-		r.Logger.WarnContext(releaseCtx, "worker instance release failed -- a replacement waits out expires_at", "error", err)
+		r.Logger.WarnContext(releaseCtx, "could not release worker instance -- a replacement waits out expires_at", "error", err)
 	}
 }

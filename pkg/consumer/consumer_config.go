@@ -59,7 +59,7 @@ type ConsumerConfig struct {
 	// Default: "" (honor each message's own policy).
 	ConcurrencyOverride common.ConcurrencyPolicy
 
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
 }
 
@@ -125,8 +125,9 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	c.Retry = c.Retry.WithDefaults()
 
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 
 	return c
 }

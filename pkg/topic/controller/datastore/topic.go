@@ -3,7 +3,6 @@ package datastore
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -25,6 +24,7 @@ func (d *TopicDatastore) Get(ctx context.Context, name string, schemaVersion int
 
 func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string, schemaVersion int64) (*TopicData, error) {
 	sql := `
+		-- vulkan: topic.get
 		SELECT
 			id,
 			system_id,
@@ -56,6 +56,7 @@ func (d *TopicDatastore) GetById(ctx context.Context, id int64) (*TopicData, err
 
 func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicData, error) {
 	sql := `
+		-- vulkan: topic.getById
 		SELECT
 			id,
 			system_id,
@@ -86,6 +87,7 @@ func (d *TopicDatastore) List(ctx context.Context) ([]TopicData, error) {
 
 func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 	sql := `
+		-- vulkan: topic.list
 		SELECT
 			id,
 			system_id,
@@ -154,7 +156,8 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData) (*To
 	defer tx.Rollback(ctx)
 
 	// txn-scoped, per-name -- auto-released at commit/rollback
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: topic.register
+SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err != nil {
 		return nil, err
 	}
 
@@ -168,6 +171,7 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData) (*To
 	}
 
 	insertSql := `
+		-- vulkan: topic.register
 		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at;
@@ -184,6 +188,7 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData) (*To
 
 	// add the migration baseline in the SAME txn
 	migrationSql := `
+		-- vulkan: topic.register
 		INSERT INTO migration_log (topic_id, migration_version, status)
 		VALUES ($1, 1, 'success');
 	`
@@ -214,6 +219,7 @@ func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName str
 
 func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
 	sql := `
+		-- vulkan: topic.rename
 		UPDATE topic
 		SET name = $2, updated_at = NOW()
 		WHERE name = $1
@@ -256,7 +262,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 		return nil, nil
 	}
 
-	d.Logger.InfoContext(ctx, "topic family renamed", "versions", len(topics), "name", fmt.Sprintf("%s -> %s", oldName, newName))
+	d.Logger.InfoContext(ctx, "topic family renamed", "topic", oldName, "new_name", newName, "version_count", len(topics))
 	return topics, nil
 }
 

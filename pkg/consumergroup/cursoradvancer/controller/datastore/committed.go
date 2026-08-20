@@ -40,6 +40,7 @@ func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId 
 	// 		claimed (its caught up to head of log)
 	// LEAST ignores NULLs so any/all of those can be absent.
 	targetSql := fmt.Sprintf(`
+		-- vulkan: cursoradvancer.advanceCommitted
 		SELECT LEAST(
 			(SELECT MIN(low) FROM lease WHERE consumer_group_id = $1),
 			(SELECT MIN(message_id) - 1 FROM %s WHERE consumer_group_id = $1 AND status IN ('ready', 'inflight', 'deferred')),
@@ -56,6 +57,7 @@ func (d *CursorAdvancerDatastore) advanceCommitted(ctx context.Context, topicId 
 
 	// 2. apply it. GREATEST -> committed only ever moves forward.
 	const advanceSql = `
+		-- vulkan: cursoradvancer.advanceCommitted
 		UPDATE cursor
 		SET committed = GREATEST(committed, $2)
 		WHERE consumer_group_id = $1

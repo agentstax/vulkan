@@ -23,7 +23,8 @@ func (d *PartitionCountDatastore) PartitionCount(ctx context.Context, topicId in
 }
 
 func (d *PartitionCountDatastore) partitionCount(ctx context.Context, topicId int64) (int64, error) {
-	sql := `SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
+	sql := `-- vulkan: partitioncount.partitionCount
+SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
 	var count int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, iTopic.MessageLogTable(topicId)).Scan(&count)
 	return count, err
@@ -44,6 +45,7 @@ func (d *PartitionCountDatastore) PartitionLockCeiling(ctx context.Context) (int
 func (d *PartitionCountDatastore) partitionLockCeiling(ctx context.Context) (int64, error) {
 	// the product is the lock table's total size, fixed at server start
 	sql := `
+		-- vulkan: partitioncount.partitionLockCeiling
 		SELECT current_setting('max_locks_per_transaction')::bigint
 			* (current_setting('max_connections')::bigint
 				+ current_setting('max_prepared_transactions')::bigint);

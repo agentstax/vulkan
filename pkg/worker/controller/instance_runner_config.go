@@ -15,7 +15,7 @@ type InstanceRunnerConfig struct {
 	// Default: 30s.
 	InstanceTTL time.Duration
 
-	Logger common.Logger // enrich with the worker's identity via common.LoggerWith. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // enrich with the worker's identity via common.LoggerWith. Default: text lines to stderr, warn level and up.
 }
 
 func (c *InstanceRunnerConfig) WithDefaults() *InstanceRunnerConfig {
@@ -23,8 +23,9 @@ func (c *InstanceRunnerConfig) WithDefaults() *InstanceRunnerConfig {
 		c.InstanceTTL = 30 * time.Second
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	return c
 }
 

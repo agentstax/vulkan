@@ -61,8 +61,9 @@ func (c *ExceptionConsumerConfig) WithDefaults() *ExceptionConsumerConfig {
 
 	c.Retry = c.Retry.WithDefaults()
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	return c
 }
 

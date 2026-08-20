@@ -23,6 +23,7 @@ func (d *MigrateDatastore) IsLocked(ctx context.Context) (bool, error) {
 func (d *MigrateDatastore) isLocked(ctx context.Context) (bool, error) {
 	var locked bool
 	err := d.Datastore.Pool.QueryRow(ctx, `
+		-- vulkan: migrate.isLocked
 		SELECT EXISTS (
 			SELECT 1 FROM pg_locks
 			WHERE locktype = 'advisory' AND classid = 0 AND objid = $1 AND granted
@@ -39,16 +40,21 @@ func (d *MigrateDatastore) AcquireLock(ctx context.Context) (*pgxpool.Conn, erro
 	if err != nil {
 		return nil, err
 	}
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := conn.Exec(ctx, `-- vulkan: migrate.AcquireLock
+SELECT pg_advisory_lock($1);`, common.AdvisoryLock); err != nil {
 		conn.Release()
 		return nil, err
 	}
 	return conn, nil
 }
 
-func (d *MigrateDatastore) ReleaseLock(conn *pgxpool.Conn) {
-	if _, err := conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1);`, common.AdvisoryLock); err != nil {
-		d.Logger.ErrorContext(context.Background(), "could not release migration advisory lock", "error", err.Error())
+// ReleaseLock unlocks on a cancel-proof copy of ctx -- the cancel that ends a
+// migration must not also leak the session lock.
+func (d *MigrateDatastore) ReleaseLock(ctx context.Context, conn *pgxpool.Conn) {
+	ctx = context.WithoutCancel(ctx)
+	if _, err := conn.Exec(ctx, `-- vulkan: migrate.ReleaseLock
+SELECT pg_advisory_unlock($1);`, common.AdvisoryLock); err != nil {
+		d.Logger.ErrorContext(ctx, "could not release migration advisory lock", "error", err)
 	}
 	conn.Release()
 }

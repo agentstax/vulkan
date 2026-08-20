@@ -26,6 +26,7 @@ import (
 //     sequence -> a shared BIGSERIAL scatters them
 func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
 	createTableSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY,
 			-- never ALTER SEQUENCE ... CACHE on this sequence: the consumer's
@@ -46,6 +47,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 
 	// message_log_<id>_0 -- two-part name avoids colliding with another topic's table
 	createPartitionSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s
 			PARTITION OF %s
 			FOR VALUES FROM (0) TO (%d);
@@ -57,6 +59,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// keeps a key's history read (compaction's ListKeyMessages) an index scan.
 	// partial, so topics that never set a compaction key pay nothing.
 	createCompactionKeyIndexSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE INDEX IF NOT EXISTS %s_compaction_key ON %s (compaction_key, id)
 			WHERE compaction_key IS NOT NULL;
 	`, iTopic.MessageLogTable(id), iTopic.MessageLogTable(id))
@@ -66,6 +69,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 
 	// idempotency_key_<id> -- not partitioned (can't effectively be)
 	createIdempotencyKeySql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			idempotency_key UUID NOT NULL PRIMARY KEY,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -78,6 +82,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// keeps the per-topic TTL sweep's cleanup DELETE an index scan instead
 	// of a sequential scan
 	createIdempotencyKeyCreatedAtIndexSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE INDEX IF NOT EXISTS %s_created_at ON %s (created_at);
 	`, iTopic.IdempotencyKeyTable(id), iTopic.IdempotencyKeyTable(id))
 	if _, err := tx.Exec(ctx, createIdempotencyKeyCreatedAtIndexSql); err != nil {
@@ -85,6 +90,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	}
 
 	createDeliverySql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			consumer_group_id BIGINT NOT NULL,                -- PK
 			message_id BIGINT NOT NULL,                       -- PK
@@ -112,6 +118,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	//   - 'killed': dead-lettered by the crash-loop backstop
 	//   - 'success': the attempt ran clean -- written only under mode 'all'
 	createDeliveryLogSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			consumer_group_id BIGINT NOT NULL,    -- PK
 			message_id BIGINT NOT NULL,           -- PK

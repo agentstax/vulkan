@@ -15,7 +15,7 @@ type ExporterConfig struct {
 	// Default: 5s.
 	CollectTimeout time.Duration
 
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for the Postgres reads. Default: common.NewDefaultRetryPolicy().
 }
 
@@ -24,8 +24,9 @@ func (c *ExporterConfig) WithDefaults() *ExporterConfig {
 		c.CollectTimeout = 5 * time.Second
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	c.Retry = c.Retry.WithDefaults()
 	return c
 }

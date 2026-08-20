@@ -31,6 +31,7 @@ func (d *JanitorDatastore) sweepExpiredKeyLeases(ctx context.Context, topicId in
 // consumer's upsert inserts a fresh row instead of updating the expired one
 func (d *JanitorDatastore) sweepKeyLeasesBatch(ctx context.Context, topicId int64, batchSize int) (int, error) {
 	sql := `
+		-- vulkan: janitor.sweepKeyLeasesBatch
 		DELETE FROM key_lease
 		WHERE (consumer_group_id, compaction_key) IN (
 			SELECT k.consumer_group_id, k.compaction_key

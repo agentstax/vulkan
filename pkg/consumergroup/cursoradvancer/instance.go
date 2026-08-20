@@ -30,10 +30,11 @@ func newCursorAdvancerInstance(provisioner *CursorAdvancerProvisioner, owner *co
 		return nil, errors.New("metadata must not be nil")
 	}
 
+	logger := common.LoggerWith(provisioner.Logger, "worker", WorkerCursorAdvancer, "topic_id", owner.TopicId, "group", owner.Name)
 	runner, err := controller.NewInstanceTickRunner(provisioner.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    provisioner.Config.InstanceTTL,
 		JitterFraction: provisioner.Config.JitterFraction,
-		Logger:         common.LoggerWith(provisioner.Logger, "worker", WorkerCursorAdvancer, "topic", owner.TopicId, "group", owner.Name),
+		Logger:         logger,
 		TickRetry:      provisioner.Config.AdvanceRetry,
 	})
 	if err != nil {
@@ -43,7 +44,7 @@ func newCursorAdvancerInstance(provisioner *CursorAdvancerProvisioner, owner *co
 	return &CursorAdvancerInstance{
 		Owner:      owner,
 		Config:     provisioner.Config,
-		Logger:     provisioner.Logger,
+		Logger:     logger,
 		runner:     runner,
 		controller: provisioner.controller,
 		metadata:   metadata,
@@ -53,11 +54,11 @@ func newCursorAdvancerInstance(provisioner *CursorAdvancerProvisioner, owner *co
 // Run advances committed until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
 func (i *CursorAdvancerInstance) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "cursor advancer starting", "topic", i.Owner.TopicId, "group", i.Owner.Name, "rate", i.metadata.PollRate)
+	i.Logger.InfoContext(ctx, "cursor advancer starting", "vulkan_version", common.BuildVersion(), "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.advance)
 	if err == nil {
-		i.Logger.InfoContext(ctx, "cursor advancer stopped", "topic", i.Owner.TopicId, "group", i.Owner.Name)
+		i.Logger.InfoContext(ctx, "cursor advancer stopped")
 	}
 	return err
 }

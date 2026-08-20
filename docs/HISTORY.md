@@ -5,6 +5,27 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-20 — Logging rule sheet + debug buffer + SQL owner comments [0558][0559][0560]
+
+- Logging conventions written and swept [0558]: CONVENTIONS.md `## Logging`
+  (levels by "who must act", static messages under the problem-line grammar,
+  attr key registry, identity bound once, start line = diagnosis snapshot,
+  silent steady state, log-or-return-never-both); all 108 call sites
+  reclassified/rekeyed/reworded; default logger stdout -> stderr and the
+  ~40 copied Logger field comments resolved in one sweep; labs count log
+  events by level+attrs (createaheadlab off message text).
+- Per-operation debug buffer [0559]: common.WithLogBuffer +
+  common.BufferLogger hold Debug/Info/Warn in a bounded per-ctx ring and
+  drain it into the first Error record's `preceding` group attr; boundaries
+  at Produce/ProduceBatch, CallSafely, and every worker tick; tick failure
+  Warn escalates to Error past the TickRetry curve's cap.
+- SQL literal owner comments [0560]: 185 literals now open with
+  `-- vulkan: <package>.<method>`, attributing pg_stat_statements and
+  server-log lines to library verbs at zero runtime cost.
+- `vulkan explain [code]` renders any declared error condition offline from
+  the registry; migrate's advisory-lock release now threads ctx and passes
+  error values (LogValue intact). 41/41 fresh-DB labs, `just verify` green.
+
 ## 2026-08-20 — Plain-error standard + package-kinds restructure [0554][0555]
 
 - Plain errors standardized [0554]: CONVENTIONS.md "When writing a plain

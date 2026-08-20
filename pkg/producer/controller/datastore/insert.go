@@ -128,6 +128,7 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 		// claim + insert + compaction_head upsert in one round trip -- inserted
 		// stays empty when the claim already existed, so latest never fires either.
 		sql = fmt.Sprintf(`
+			-- vulkan: producer.protectedInsert
 			WITH claim AS (
 				INSERT INTO %s (idempotency_key)
 				VALUES ($1)
@@ -154,6 +155,7 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
 		sql = fmt.Sprintf(`
+			-- vulkan: producer.protectedInsert
 			WITH claim AS (
 				INSERT INTO %s (idempotency_key)
 				VALUES ($1)

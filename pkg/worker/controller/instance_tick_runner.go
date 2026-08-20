@@ -86,7 +86,7 @@ func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Con
 		case <-timer.C:
 		}
 
-		err := onTick(ctx)
+		err := onTick(common.WithLogBuffer(ctx))
 
 		// re-jittered every tick so replicas' phases keep drifting apart
 		jitter := 1 + r.Config.JitterFraction*(2*rand.Float64()-1)
@@ -100,7 +100,7 @@ func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Con
 					if errors.Is(err, worker.ErrInstanceLost) {
 						return err
 					}
-					r.Logger.WarnContext(ctx, "worker success record failed", "error", err)
+					r.Logger.WarnContext(ctx, "could not record worker success", "error", err)
 				}
 			}
 		case ctx.Err() != nil:
@@ -114,10 +114,16 @@ func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Con
 				return recordErr
 			default:
 				attempts++
-				r.Logger.WarnContext(ctx, "worker failure record failed", "error", recordErr)
+				r.Logger.WarnContext(ctx, "could not record worker failure", "error", recordErr)
 			}
 			delay = max(delay, r.Config.TickRetry.CalculateDelay(attempts-1))
-			r.Logger.ErrorContext(ctx, "worker tick failed -- backing off", "attempts", attempts, "delay", delay, "error", err)
+
+			// a streak past the curve's cap stopped being a blip -- escalate
+			if attempts > r.Config.TickRetry.MaxRetries {
+				r.Logger.ErrorContext(ctx, "worker tick backoff curve exhausted -- ticks continue at its cap", "attempts", attempts, "delay", delay, "error", err)
+			} else {
+				r.Logger.WarnContext(ctx, "could not run worker tick -- backing off", "attempts", attempts, "delay", delay, "error", err)
+			}
 		}
 
 		timer.Reset(delay)

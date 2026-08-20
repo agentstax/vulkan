@@ -106,7 +106,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		return err
 	}
 
-	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic", i.Owner.TopicId)
+	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion())
 
 	group, runCtx := errgroup.WithContext(ctx)
 
@@ -121,7 +121,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 
 	err = group.Wait()
 	if err == nil && ctx.Err() != nil {
-		i.Logger.InfoContext(context.WithoutCancel(ctx), "consumer stopped", "group", i.Owner.Name, "topic", i.Owner.TopicId)
+		i.Logger.InfoContext(context.WithoutCancel(ctx), "consumer stopped", "group", i.Owner.Name, "topic_id", i.Owner.TopicId)
 	}
 	return err
 }

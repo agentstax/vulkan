@@ -18,7 +18,8 @@ func (d *CompactionReadCostDatastore) PartitionCount(ctx context.Context, topicI
 }
 
 func (d *CompactionReadCostDatastore) partitionCount(ctx context.Context, topicId int64) (int64, error) {
-	sql := `SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
+	sql := `-- vulkan: compactionreadcost.partitionCount
+SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
 	var count int64
 	err := d.Datastore.Pool.QueryRow(ctx, sql, iTopic.MessageLogTable(topicId)).Scan(&count)
 	return count, err

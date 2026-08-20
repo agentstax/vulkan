@@ -20,14 +20,15 @@ type ProducerConfig struct {
 	// calls. See batcher.BatcherConfig for fields and defaults.
 	Batch batcher.BatcherConfig
 
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *ProducerConfig) WithDefaults() *ProducerConfig {
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 
 	// the batcher inherits this producer's logger unless given its own
 	if c.Batch.Logger == nil {

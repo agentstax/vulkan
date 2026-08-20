@@ -9,7 +9,8 @@ import (
 
 func (d *MigrateDatastore) recordSuccess(ctx context.Context, q datastore.Querier, owner *common.Owner, version int64) error {
 	_, err := q.Exec(ctx,
-		`INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`,
+		`-- vulkan: migrate.recordSuccess
+INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`,
 		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version)
 	return err
 }
@@ -21,11 +22,12 @@ func (d *MigrateDatastore) TryRecordFailure(ctx context.Context, q datastore.Que
 	ctx = context.WithoutCancel(ctx)
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		_, e := q.Exec(ctx,
-			`INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status, error) VALUES ($1, $2, $3, $4, 'failure', $5);`,
+			`-- vulkan: migrate.TryRecordFailure
+INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status, error) VALUES ($1, $2, $3, $4, 'failure', $5);`,
 			owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), version, cause.Error())
 		return e
 	})
 	if err != nil {
-		d.Logger.ErrorContext(ctx, "could not record migration failure", "owner", owner.Kind(), "name", owner.Name, "topic_id", owner.TopicId, "group_id", owner.ConsumerGroupId, "version", version, "cause", cause.Error(), "record_error", err.Error())
+		d.Logger.ErrorContext(ctx, "could not record migration failure", "owner", owner.Name, "owner_kind", owner.Kind(), "topic_id", owner.TopicId, "group_id", owner.ConsumerGroupId, "version", version, "cause", cause, "error", err)
 	}
 }

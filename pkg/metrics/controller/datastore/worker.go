@@ -16,6 +16,7 @@ func (d *MetricsDatastore) WorkerSnapshots(ctx context.Context) ([]WorkerSnapsho
 
 func (d *MetricsDatastore) workerSnapshots(ctx context.Context) ([]WorkerSnapshotData, error) {
 	sql := `
+		-- vulkan: metrics.workerSnapshots
 		SELECT
 			w.name,
 			COALESCE(w.system_id, t.system_id, 0),                        -- w.system_id is NULL unless system-owned

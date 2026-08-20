@@ -27,7 +27,8 @@ const dropPartitionBatchSize = 100
 // batch at a time so no single transaction holds more than a batch's
 // worth of lock slots, leaving the parent empty for a cheap final DROP.
 func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName string) error {
-	countSql := `SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
+	countSql := `-- vulkan: topic.drainPartitions
+SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
 	var partitionCount int64
 	if err := d.Datastore.Pool.QueryRow(ctx, countSql, parentTableName).Scan(&partitionCount); err != nil {
 		return err
@@ -64,6 +65,7 @@ func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName st
 func (d *TopicDatastore) listPartitions(ctx context.Context, parentTableName string) ([]string, error) {
 	// to_regclass, not ::regclass -- a missing parent yields NULL, not error
 	sql := `
+		-- vulkan: topic.listPartitions
 		SELECT c.relname
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
@@ -100,7 +102,8 @@ func (d *TopicDatastore) dropPartitionBatch(ctx context.Context, partitions []st
 	for _, partition := range partitions {
 		// IF EXISTS -- a live retention janitor can drop an expired
 		// partition between the listPartitions read and here
-		dropSql := fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, partition)
+		dropSql := fmt.Sprintf(`-- vulkan: topic.dropPartitionBatch
+DROP TABLE IF EXISTS %s;`, partition)
 		if _, err := tx.Exec(ctx, dropSql); err != nil {
 			return err
 		}

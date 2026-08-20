@@ -67,7 +67,7 @@ func (c *WorkerController) ListWorkers(ctx context.Context, owner *common.Owner)
 		// a bad row skips rather than erroring the whole list
 		listedWorker, err := toWorker(data)
 		if err != nil {
-			c.Logger.WarnContext(ctx, "worker row owner unreadable -- skipping", "worker", data.Name, "error", err)
+			c.Logger.WarnContext(ctx, "could not read worker row owner -- skipping", "worker", data.Name, "error", err)
 			continue
 		}
 		workers = append(workers, listedWorker)

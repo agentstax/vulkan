@@ -41,10 +41,11 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerProvisioner, owner *co
 		return nil, errors.New("producerInstance must not be nil")
 	}
 
+	logger := common.LoggerWith(cronScheduler.Logger, "worker", WorkerCronScheduler, "system_id", owner.SystemId)
 	runner, err := controller.NewInstanceTickRunner(cronScheduler.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    cronScheduler.Config.InstanceTTL,
 		JitterFraction: cronScheduler.Config.JitterFraction,
-		Logger:         common.LoggerWith(cronScheduler.Logger, "worker", WorkerCronScheduler, "system", owner.SystemId),
+		Logger:         logger,
 		TickRetry:      cronScheduler.Config.ScanRetry,
 	})
 	if err != nil {
@@ -54,7 +55,7 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerProvisioner, owner *co
 	return &CronSchedulerInstance{
 		Owner:            owner,
 		Config:           cronScheduler.Config,
-		Logger:           cronScheduler.Logger,
+		Logger:           logger,
 		runner:           runner,
 		ds:               cronScheduler.ds,
 		controller:       cronScheduler.controller,
@@ -66,11 +67,11 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerProvisioner, owner *co
 // Run scans until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
 func (i *CronSchedulerInstance) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "cron scheduler starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
+	i.Logger.InfoContext(ctx, "cron scheduler starting", "vulkan_version", common.BuildVersion(), "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.scan)
 	if err == nil {
-		i.Logger.InfoContext(ctx, "cron scheduler stopped", "system", i.Owner.SystemId)
+		i.Logger.InfoContext(ctx, "cron scheduler stopped")
 	}
 	return err
 }
@@ -89,7 +90,7 @@ func (i *CronSchedulerInstance) scan(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return err
 			}
-			i.Logger.WarnContext(ctx, "cron job request produce failed -- siblings proceed", "cron_job", id, "error", err)
+			i.Logger.WarnContext(ctx, "could not produce cron job request -- siblings proceed", "cron_job_id", id, "error", err)
 		}
 	}
 	return nil
@@ -150,7 +151,7 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 		if produced.Duplicate {
 			// an earlier tick's ambiguous commit published this request, then
 			// failed to advance the row
-			i.Logger.WarnContext(ctx, "cron job request was already published by an earlier ambiguous commit", "cron_job", row.Id, "name", row.Name, "scheduled_time", scheduledTime)
+			i.Logger.WarnContext(ctx, "cron job request was already published by an earlier ambiguous commit", "cron_job_id", row.Id, "cron_job", row.Name, "scheduled_time", scheduledTime)
 		}
 
 		// next scheduled time from the DB clock ONLY -- Go/DB skew
@@ -159,7 +160,7 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 		if next.IsZero() {
 			// schedule went unsatisfiable (tzdata drift): keep the produce,
 			// suspend the row -- it has no honest next_scheduled_time
-			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job", row.Id, "name", row.Name, "schedule", row.Schedule)
+			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job_id", row.Id, "cron_job", row.Name, "schedule", row.Schedule)
 			return i.controller.Suspend(ctx, tx, row.Id, scheduledTime)
 		}
 		return i.controller.Advance(ctx, tx, row.Id, next, scheduledTime)

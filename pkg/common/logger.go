@@ -24,6 +24,12 @@ func LoggerWith(l Logger, args ...any) Logger {
 	if sl, ok := l.(*slog.Logger); ok {
 		return sl.With(args...)
 	}
+
+	// a bufferLogger stays outermost through enrichment so BufferLogger's
+	// idempotence guard sees it and never wraps twice
+	if b, ok := l.(*bufferLogger); ok {
+		return &bufferLogger{inner: LoggerWith(b.inner, args...)}
+	}
 	return &withLogger{inner: l, args: args}
 }
 

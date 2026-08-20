@@ -22,6 +22,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 	// take the (head, xmax) pair the scan statement's gate below proves
 	// against.
 	snapshotSql := fmt.Sprintf(`
+		-- vulkan: deliveryconsumer.fanOut
 		SELECT
 			(SELECT COALESCE(MAX(id), 0) FROM %s) AS head,
 			pg_snapshot_xmax(pg_current_snapshot())::text AS xmax,
@@ -47,6 +48,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 	}
 
 	scanSql := fmt.Sprintf(`
+		-- vulkan: deliveryconsumer.fanOut
 		WITH old_values AS (
 			SELECT committed, pending_head, pending_xmax
 			FROM cursor

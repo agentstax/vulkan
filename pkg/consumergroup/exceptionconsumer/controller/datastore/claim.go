@@ -26,6 +26,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 	var claimSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		claimSql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.claim
 			WITH claimed AS (
 				UPDATE %[1]s
 				SET
@@ -81,6 +82,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 		// and attempts -- the expired_logged CTE needs both, atomically with
 		// the claim itself.
 		claimSql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.claim
 			WITH eligible AS (
 				SELECT d.consumer_group_id, d.message_id, d.status, d.attempts
 				FROM %[1]s d
@@ -165,6 +167,7 @@ func (d *ExceptionConsumerGroupDatastore) RenewLease(ctx context.Context, except
 
 func (d *ExceptionConsumerGroupDatastore) renewLease(ctx context.Context, exception *ExceptionData, duration time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: exceptionconsumer.renewLease
 		UPDATE %s
 		SET
 			lease_until = now() + make_interval(secs => $4),

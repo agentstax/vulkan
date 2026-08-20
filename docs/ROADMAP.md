@@ -62,8 +62,16 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     gets deleted until a real system-wide knob exists ([0516]).
 - **Named-return-params house style** — decide and apply consistently across
   the reviewed surface.
-- **Logging consistency and obsession.** Informative, actionable,
-  filterable/queryable, consistently structured.
+- **Log spam control on the error path** ([0558] follow-on) — a Logger-seam
+  primitive suppressing a repeat of the same message within a window, with a
+  suppressed_count attr on the next emitted line (Temporal poll-failure
+  dedup / NATS RateLimitErrorf / FDB SuppressedEventCount precedent). First
+  customer: the renewal heartbeat warning every InstanceTTL/2 against a
+  down database.
+- **Slow-operation threshold logging** ([0558] follow-on) — the Postgres
+  log_min_duration axis: a debug line for any produce/claim/tick exceeding
+  a configured duration. Slowness, not occurrence, is the event; the
+  threshold is the volume control.
 - **Comment conventions for public surfaces** — a standard: description,
   defaults, errors, doc links. Plus standardized SQL formatting.
 - **Comment sweeps:**
@@ -101,7 +109,7 @@ surface that has stopped moving.
   pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
   plus every declared code -- codes never renumber after v1, so the prefix
   must be final first).
-- **Topic config as append-only declaration rows.** Design settled in [0519];
+- [*] **Topic config as append-only declaration rows.** Design settled in [0519];
   build deferred so the config surface from [0518] settles first. topic keeps
   identity only (id, system_id, schema_version, created_at); a
   topic_declaration table holds name, partition_size and the four mutable
@@ -112,18 +120,25 @@ surface that has stopped moving.
   per-name advisory lock (both keys, sorted) and ErrTopicNameTaken comes from
   a check rather than 23505; and partition_size's immutability is enforced at
   append. Worker metadata takes the same shape afterwards.
-- **binding_declaration retention** — the ledger is append-only ([0511]):
+- [*] **binding_declaration retention** — the ledger is append-only ([0511]):
   waiting retries append attempt rows, so a long-blocked group grows the
   table without bound. Add time-based cleanup of superseded attempt rows
   (append-then-prune like message_log; off the register path, never touching
   the newest installed row or a declarer's newest waiting row).
+- **Stop line as session summary** — instance lifetime counters (produced,
+  consumed, dead-lettered, reclaims survived) on the "stopped" line, the
+  OBS ending-counters shape: "it was flaky" becomes numbers. Needs
+  in-memory counters; pairs with what the metrics collector already
+  gathers.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
   concurrency, pushed to real DB limits (connection pool, lock table, I/O)
   rather than the library's own bottleneck. Single-topic skip-vs-claim was
   already measured in bench/idempotency/RESULTS.md; multi-topic contention
-  is still open.
+  is still open. Also measure the debug buffer's overhead here
+  (WithLogBuffer + BufferLogger cost per operation, healthy path) — a
+  published number is the adoption gate for always-on capture ([0559]).
 - **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
   fix). An idle deployment pays per worker row per poll: winner's claim
   UPDATE + no-op work each tick, and — the growing term — every replica's
@@ -138,7 +153,7 @@ surface that has stopped moving.
   by the producer's partition self-heal; (3) LISTEN/NOTIFY-woken workers —
   real complexity, only if (2) measurably fails. Prior: rung 1 carries to
   ~1k rows, rung 2 well past 10k, rung 3 never earns it.
-- **Cross-version compatibility matrix** (14c) — producer/consumer built
+- [*] **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs
   plain additive). The other direction (binary N, database N-1) should fail
@@ -149,22 +164,25 @@ surface that has stopped moving.
   recorded there are Setup/Action/Assert prose from a scratch harness;
   implement as a real pkg/producer/pkg/consumer test suite once the API
   stops moving.
-- **Compaction-key deadlock evaluation** — test compaction key with default
+- [*] **Compaction-key deadlock evaluation** — test compaction key with default
   produce and determine whether deadlock contention from reverse-ordered
   transactions is a real problem: at what (extreme or not) example does it
   truly hurt users, or does the system self-heal through retries. ProduceFunc
   is the escape hatch either way; this is about knowing.
-- **System-table churn evaluation** — reconsider whether compaction_head
+- [*] **System-table churn evaluation** — reconsider whether compaction_head
   should be per-topic compaction_head_(topic_id) (high update churn from
   many topics), and evaluate all system tables: cursor / lease / binding /
   topic / compaction_head.
-- **Migration docs:** should use LOCK TIMEOUT for any ALTER migration
+- [*] **Migration docs:** should use LOCK TIMEOUT for any ALTER migration
   commands (likely just needs documenting).
-- **Append-only tables think-through** — making all tables append-only would
+- [*] **Append-only tables think-through** — making all tables append-only would
   be Cassandra-like, give audit/debuggability for all operations, and enable
   partition-based drops everywhere; trade-off is complexity and hot-path
   read throughput.
 - **Documentation** (Phase 15, deliberately last):
+  - After the next `just site-deploy`: confirm the deployed /errors/ pages
+    resolve at the Docs() URLs (exact-case /errors/VK0005), then drop the
+    placeholder TODO comment on docsBaseURL in pkg/common/error.go.
   - Doc site: worked example of the transactional-outbox side-effect footgun
     (calling sendEmailConfirmation() before a Produce/multi-target closure is
     known to commit fires the email even if a later step rolls back) — pair
@@ -226,6 +244,23 @@ dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
 
+- **Log-viewing as product** (post-v1 rungs from the logging research,
+  [0558]): a `vulkan tail`-style verb with --topic/--group/--level filters
+  (Laravel Pail / heroku logs -t precedent); a per-delivery "full story"
+  CLI view assembled from delivery_log + deliveries (Telescope/Rails
+  request block as CLI); an OBS-loganalyzer-style script diagnosing common
+  misconfigurations from any pasted log — feasible exactly because [0558]
+  fixed the key registry and static messages; a piped-log annotate mode
+  joining VK codes to their declarations (journalctl -x shape) extending
+  `vulkan explain`.
+- **Debug-buffer extensions** ([0559]) — AutoFlushDuration (.NET log
+  buffering: after a drain, forward live for N seconds — the aftermath is
+  usually the interesting part) and the Warn-as-drain-trigger revisit
+  already recorded in [0559]; pick up when a real incident wants them.
+- **Standing-state re-emit** — the start-line snapshot rotates away in a
+  months-running process, breaking "any pasted log answers what was your
+  setup" (FoundationDB re-logs standing state on every file roll). A
+  low-frequency re-emit or an on-demand CLI verb.
 - **Mechanical enforcement of checkable conventions** — a `just vet`
   analyzer (or lab-suite test) that fails on the CONVENTIONS.md rules a
   machine can check: `SELECT *` anywhere incl. CTEs, banned words in error

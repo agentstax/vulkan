@@ -30,10 +30,11 @@ func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claim
 		return nil, errors.New("metadata must not be nil")
 	}
 
+	logger := common.LoggerWith(janitor.Logger, "worker", WorkerJanitor, "topic_id", current.Id, "version", current.SchemaVersion)
 	runner, err := controller.NewInstanceTickRunner(janitor.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    janitor.Config.InstanceTTL,
 		JitterFraction: janitor.Config.JitterFraction,
-		Logger:         common.LoggerWith(janitor.Logger, "worker", WorkerJanitor, "topic", current.Id),
+		Logger:         logger,
 		TickRetry:      janitor.Config.SweepRetry,
 	})
 	if err != nil {
@@ -43,7 +44,7 @@ func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claim
 	return &JanitorInstance{
 		Topic:      current,
 		Config:     janitor.Config,
-		Logger:     janitor.Logger,
+		Logger:     logger,
 		runner:     runner,
 		controller: janitor.controller,
 		metadata:   metadata,
@@ -53,11 +54,11 @@ func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claim
 // Run sweeps until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
 func (i *JanitorInstance) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "janitor starting", "topic", i.Topic.Id, "version", i.Topic.SchemaVersion, "rate", i.metadata.PollRate)
+	i.Logger.InfoContext(ctx, "janitor starting", "vulkan_version", common.BuildVersion(), "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.sweep)
 	if err == nil {
-		i.Logger.InfoContext(ctx, "janitor stopped", "topic", i.Topic.Id, "version", i.Topic.SchemaVersion)
+		i.Logger.InfoContext(ctx, "janitor stopped")
 	}
 	return err
 }

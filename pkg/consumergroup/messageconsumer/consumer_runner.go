@@ -101,7 +101,7 @@ func (r *messageRunner[Message]) drain(ctx context.Context, wg *sync.WaitGroup) 
 	select {
 	case <-done:
 	case <-timer.C:
-		r.Logger.WarnContext(ctx, "in-flight work did not finish before ShutdownTimeout, stragglers settle via lease expiry", "group", r.Owner.Name, "topic", r.Topic.Id, "version", r.Topic.SchemaVersion, "shutdown_timeout", r.cfg.ShutdownTimeout)
+		r.Logger.WarnContext(ctx, "in-flight work did not finish before the shutdown timeout -- stragglers settle via lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "version", r.Topic.SchemaVersion, "shutdown_timeout", r.cfg.ShutdownTimeout)
 	}
 }
 
@@ -123,14 +123,14 @@ func (r *messageRunner[Message]) closeRange(ctx context.Context, state *rangeSta
 		defer cancel()
 
 		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, common.ErrLeaseLost) {
-			r.Logger.WarnContext(ctx, "force reclaim failed at shutdown, range rides out lease expiry instead", "group", r.Owner.Name, "topic", r.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
+			r.Logger.WarnContext(ctx, "could not force reclaim at shutdown -- range rides out lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "error", err)
 		}
 		return
 	}
 
 	lastProcessed, outcomes := state.contiguousResolved()
 	if err := r.cursorPartialCommit(ctx, lastProcessed, state.lease, outcomes); err != nil {
-		r.Logger.WarnContext(ctx, "partial commit failed at shutdown, range rides out lease expiry instead", "group", r.Owner.Name, "topic", r.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "err", err)
+		r.Logger.WarnContext(ctx, "partial commit did not complete at shutdown -- range rides out lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "error", err)
 	}
 }
 
@@ -276,13 +276,13 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 
 	released, err := r.ReleaseKeyedRun(releaseCtx, claim)
 	if err != nil {
-		r.Logger.WarnContext(ctx, "key lease release failed, key frees on expiry instead", "group", r.Owner.Name, "topic", r.Topic.Id, "compaction_key", claim.CompactionKey, "err", err)
+		r.Logger.WarnContext(ctx, "could not release key lease -- key frees on expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "compaction_key", claim.CompactionKey, "error", err)
 		return
 	}
 	if !released {
 		// the run outlived its lease -- another delivery on the key may have
 		// overlapped it
-		r.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group", r.Owner.Name, "topic", r.Topic.Id, "compaction_key", claim.CompactionKey)
+		r.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group", r.Owner.Name, "topic_id", r.Topic.Id, "compaction_key", claim.CompactionKey)
 	}
 }
 
@@ -294,11 +294,11 @@ func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeS
 	case err == nil:
 		r.buffer.remove(commit.Lease.Token)
 	case errors.Is(err, common.ErrLeaseLost):
-		r.Logger.DebugContext(ctx, "lease lost at commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
+		r.Logger.DebugContext(ctx, "lease lost at commit -- range re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
 		r.buffer.remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
 	default:
 		// stays tracked -- closeOpenRanges retries it on the way out
-		r.Logger.WarnContext(ctx, "commit failed, range stays open for a retry at shutdown", "group", r.Owner.Name, "topic", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High, "err", err)
+		r.Logger.WarnContext(ctx, "could not commit -- range stays open for a retry at shutdown", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High, "error", err)
 	}
 }
 
@@ -317,7 +317,7 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 	// range (including the already-resolved prefix) to sit out a full reclaim.
 	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode); err != nil {
 		if errors.Is(err, common.ErrLeaseLost) {
-			r.Logger.DebugContext(ctx, "lease lost at partial commit, range re-claimed by another worker", "group", r.Owner.Name, "topic", r.Topic.Id, "low", lease.Low, "high", lease.High)
+			r.Logger.DebugContext(ctx, "lease lost at partial commit -- range re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
 

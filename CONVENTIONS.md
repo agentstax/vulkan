@@ -302,6 +302,10 @@ The domain layers:
   migration. An enum-shaped TEXT column lists its values in an inline comment
   (`-- 'installed' | 'waiting'`); Go typing and validation are the only
   enforcement. Structural constraints (NOT NULL, FKs, uniqueness) stay in SQL.
+- Every SQL literal's first line is a comment naming its owner --
+  `-- vulkan: <package>.<method>`. Constant text per query, so statement
+  caching is unaffected; pg_stat_statements and the server log attribute
+  load back to library verbs.
 
 ## Errors
 
@@ -415,6 +419,119 @@ internal invariants, same-package control-flow signals.
 - Wrapping is the same rule as above -- only the owned fact, spelled as
   declared: `<Field>: %w` in config Validate chains, `item %d: %w` per
   element. Never restate the cause's content.
+
+## Logging
+
+Logs and errors are one message system with two mouths: an error speaks
+when a caller receives a value; a log speaks when there is no caller.
+They share the attr vocabulary, the problem-line grammar, and a
+classification question.
+
+### The seam
+
+- Every log call goes through a config's `common.Logger` and passes the
+  caller's ctx -- `context.Background()` in a log call is a bug outside
+  process-shutdown paths (there, `context.WithoutCancel(ctx)`).
+- The default logger writes text lines to stderr, WARN and up. Logs never
+  share stdout with program output.
+- Identity is bound once: a long-lived component wraps its logger via
+  `common.LoggerWith` at construction, and its call sites never repeat
+  the bound keys.
+
+### Levels
+
+Classify by one question -- who must act? -- the sibling of
+Transient/Permanent (can an unchanged retry succeed?).
+
+- Error: vulkan's own machinery stopped doing its job and no caller
+  receives an error value -- a backoff curve exhausted, a worker
+  suspended, a lock that could not be released. An operator must act.
+- Warn: degraded but self-healing, or a durable data consequence -- a
+  lease reclaimed from an expired worker, a message dead-lettered,
+  stored options clamped. An operator should learn of it eventually.
+- Info: lifecycle transitions and completed admin verbs only -- instance
+  started/stopped, topic registered/destroyed, partition dropped, N rows
+  swept. Info volume tracks state changes, never traffic.
+- Debug: per-message and per-attempt narration -- claims, produces,
+  batches, retries in progress. The domain working as designed
+  (duplicate publish skipped, request superseded) is Debug no matter how
+  dramatic it looks.
+
+Steady state is silent: a tick that changed nothing logs nothing at any
+level; a tick that changed rows logs one line with counts, never a line
+per row.
+
+An error is returned or logged, never both (the ## Errors rule): the
+caller owns what it receives; a layer with no caller -- a goroutine top,
+a tick loop -- is the one place logging a failure belongs.
+
+### Messages
+
+- The message is a static lowercase clause naming the event, constant
+  across occurrences; every variable fact is an attr. A value
+  interpolated into a message is a bug.
+- Problem-line rules apply verbatim: the banned words, tense follows the
+  fact (a self-healing failure reads "could not <verb>"; a completed
+  transition reads past participle -- "topic registered", "lease
+  reclaimed"), consequence or next action after ` -- `.
+- Nothing branches or filters on message text -- not code, not labs.
+  Labs assert on log events by level and attrs through a counting
+  Logger, never by matching message substrings.
+
+### Attrs
+
+- One key per concept, flat snake_case, spelled from this table; a new
+  concept adds its row in the same change:
+
+      error         the error value itself (never `err`, never
+                    stringified first -- .Error() defeats
+                    common.Error.LogValue)
+      topic         topic name
+      topic_id      topic id
+      version       schema version
+      group         consumer group name
+      group_id      consumer group id
+      system_id     system id
+      owner         owner name (Owner.Name)
+      owner_kind    owner kind (Owner.Kind())
+      worker        worker name
+      message_id    message id
+      cron_job      cron job name
+      cron_job_id   cron job id
+      low, high     id range bounds
+      attempt       retry position (attempts = the row's own column; a
+                    cap spells its config field, max_retries)
+      delay         backoff delay
+      rate          worker poll rate
+      vulkan_version  module version (common.BuildVersion) -- start lines
+      <verb>_count  rows affected by the named action (swept_count,
+                    reclaimed_count, dead_count)
+
+- Counts of affected rows end in `_count`; durations pass as
+  time.Duration values (units render free); ids use their column's own
+  name.
+
+### The start line
+
+A long-lived instance's "starting" line is its diagnosis snapshot: a
+pasted log answers "what was your setup?" without a second question. It
+carries the module version (common.BuildVersion), the instance identity,
+and the resolved config facts an operator would ask for (poll rate,
+timeouts, batch sizes) -- one line, attrs only. The paired "stopped"
+line carries the bound identity and nothing else.
+
+### The failure record
+
+- A Warn or Error event names enough domain state to reconstruct the
+  picture cold -- the ids, the range, the attempt, the durations: the
+  operands, not just the verdict.
+- Operations carry a debug buffer: a boundary (common.WithLogBuffer)
+  opens a small per-operation ring; Debug/Info/Warn records inside it
+  are held as well as forwarded, and the operation's first Error record
+  drains the ring into its `preceding` group attr -- the failure line
+  ships its own narration. Boundaries today: the produce call, the
+  per-delivery dispatch, the worker tick; a new operation shape adds its
+  boundary when built.
 
 ## Comments
 

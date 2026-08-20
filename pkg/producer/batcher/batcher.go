@@ -90,7 +90,6 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 		case <-grace.C:
 			// if shutdownGrace times out -> exit early
 			// work commit status is ambiguous and should be retried if possible when supplying external idempotency key
-			b.Config.Logger.WarnContext(ctx, "produce abandoned after shutdown grace, batch outcome ambiguous", "topic_id", b.topicId, "grace", b.Config.ShutdownGrace)
 			return nil, fmt.Errorf("produce abandoned after ShutdownGrace (%s) for topic %d, batch outcome ambiguous: %w", b.Config.ShutdownGrace, b.topicId, ctx.Err())
 		}
 	}

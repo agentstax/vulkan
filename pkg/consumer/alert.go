@@ -14,21 +14,22 @@ import (
 func (c *Consumer[Message]) logAlerts(ctx context.Context, current *topic.Topic) {
 	owner, err := common.NewTopicOwner(current.SystemId, current.Id, current.Name)
 	if err != nil {
-		c.Logger.WarnContext(ctx, "register-time alert pass failed", "topic", current.Name, "error", err)
+		c.Logger.WarnContext(ctx, "could not run register-time alert pass", "topic", current.Name, "error", err)
 		return
 	}
 
 	for _, evaluator := range c.evaluators {
 		found, err := evaluator.Evaluate(ctx, owner, 0)
 		if err != nil {
-			c.Logger.WarnContext(ctx, "register-time alert pass failed", "topic", current.Name, "error", err)
+			c.Logger.WarnContext(ctx, "could not run register-time alert pass", "topic", current.Name, "error", err)
 			continue
 		}
 		if found == nil {
 			continue
 		}
-		c.Logger.WarnContext(ctx, found.Message,
+		c.Logger.WarnContext(ctx, "alert condition holds",
+			"alert", found.Name, "message", found.Message,
 			"detail", found.Detail, "hint", found.Hint,
-			"alert", found.Name, "owner", found.Owner.Name, "severity", found.Severity)
+			"owner", found.Owner.Name, "severity", found.Severity)
 	}
 }

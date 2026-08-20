@@ -68,6 +68,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	}
 
 	sweepSql := fmt.Sprintf(`
+		-- vulkan: janitor.sweepBatch
 		DELETE FROM %s
 		WHERE id IN (
 			SELECT id FROM %s
@@ -96,6 +97,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	if len(ids) > 0 {
 		// otherwise these delivery rows (mostly 'dead' DLQ) would join to nothing and sit there forever.
 		orphanSql := fmt.Sprintf(`
+			-- vulkan: janitor.sweepBatch
 			DELETE FROM %s
 			WHERE message_id = ANY($1);
 		`, iTopic.DeliveryTable(topicId))
@@ -105,6 +107,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 
 		if deliveryLogMode != topic.DeliveryLogModeOff {
 			orphanLogSql := fmt.Sprintf(`
+				-- vulkan: janitor.sweepBatch
 				DELETE FROM %s
 				WHERE message_id = ANY($1);
 			`, iTopic.DeliveryLogTable(topicId))
@@ -120,6 +123,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 
 	if anyKeyed {
 		orphanKeySql := `
+			-- vulkan: janitor.sweepBatch
 			DELETE FROM compaction_head
 			WHERE topic_id = $1
 				AND head_id = ANY($2);
@@ -134,7 +138,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	}
 
 	if len(ids) > 0 {
-		d.Logger.DebugContext(ctx, "swept expired rows", "topic_id", topicId, "partition", n, "swept", len(ids), "batch_size", batchSize)
+		d.Logger.DebugContext(ctx, "swept expired rows", "topic_id", topicId, "partition", n, "swept_count", len(ids), "batch_size", batchSize)
 	}
 
 	return len(ids), nil

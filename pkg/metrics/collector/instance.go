@@ -45,10 +45,11 @@ func newMetricsCollectorInstance(collector *MetricsCollectorProvisioner, owner *
 		return nil, errors.New("producerInstance must not be nil")
 	}
 
+	logger := common.LoggerWith(collector.Logger, "worker", WorkerMetricsCollector, "system_id", owner.SystemId)
 	runner, err := controller.NewInstanceTickRunner(collector.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    collector.Config.InstanceTTL,
 		JitterFraction: collector.Config.JitterFraction,
-		Logger:         common.LoggerWith(collector.Logger, "worker", WorkerMetricsCollector, "system", owner.SystemId),
+		Logger:         logger,
 		TickRetry:      collector.Config.CollectRetry,
 	})
 	if err != nil {
@@ -58,7 +59,7 @@ func newMetricsCollectorInstance(collector *MetricsCollectorProvisioner, owner *
 	return &MetricsCollectorInstance{
 		Owner:            owner,
 		Config:           collector.Config,
-		Logger:           collector.Logger,
+		Logger:           logger,
 		runner:           runner,
 		metrics:          collector.metrics,
 		topics:           collector.topics,
@@ -71,11 +72,11 @@ func newMetricsCollectorInstance(collector *MetricsCollectorProvisioner, owner *
 // Run collects until ctx cancels; a requested stop returns nil. The claimed
 // instance releases on the way out however Run exits.
 func (i *MetricsCollectorInstance) Run(ctx context.Context) error {
-	i.Logger.InfoContext(ctx, "metrics collector starting", "system", i.Owner.SystemId, "rate", i.metadata.PollRate)
+	i.Logger.InfoContext(ctx, "metrics collector starting", "vulkan_version", common.BuildVersion(), "rate", i.metadata.PollRate)
 
 	err := i.runner.Run(ctx, i.collect)
 	if err == nil {
-		i.Logger.InfoContext(ctx, "metrics collector stopped", "system", i.Owner.SystemId)
+		i.Logger.InfoContext(ctx, "metrics collector stopped")
 	}
 	return err
 }

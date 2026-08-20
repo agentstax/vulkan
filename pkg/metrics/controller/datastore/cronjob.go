@@ -16,6 +16,7 @@ func (d *MetricsDatastore) CronJobSnapshots(ctx context.Context) ([]CronJobSnaps
 
 func (d *MetricsDatastore) cronJobSnapshots(ctx context.Context) ([]CronJobSnapshotData, error) {
 	sql := `
+		-- vulkan: metrics.cronJobSnapshots
 		SELECT
 			j.name,
 			COALESCE(j.system_id, t.system_id, 0),                       -- j.system_id is NULL unless system-owned

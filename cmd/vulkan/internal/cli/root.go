@@ -74,6 +74,7 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 	root.AddCommand(newSystemCmd(g))
 	root.AddCommand(newMigrateCmd(g))
 	root.AddCommand(newManagerCmd(g))
+	root.AddCommand(newExplainCmd())
 
 	return root, g
 }

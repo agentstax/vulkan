@@ -216,7 +216,7 @@ func (p *instancePool) start(ctx context.Context, desiredWorker *worker.Worker) 
 func (p *instancePool) stop(ctx context.Context, id int64) {
 	spawned, ok := p.running[id]
 	if !ok {
-		p.logger.WarnContext(ctx, "manager has no running execution for worker row -- nothing to stop", "worker_id", id)
+		p.logger.DebugContext(ctx, "manager has no running instance for worker row -- nothing to stop", "worker_id", id)
 		return
 	}
 	spawned.stop()

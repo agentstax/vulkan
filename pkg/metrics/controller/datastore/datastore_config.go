@@ -8,14 +8,15 @@ import (
 )
 
 type MetricsDatastoreConfig struct {
-	Logger common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // Default: common.NewDefaultRetryPolicy(). Metric polling may want a shorter policy than the default.
 }
 
 func (c *MetricsDatastoreConfig) WithDefaults() *MetricsDatastoreConfig {
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	c.Retry = c.Retry.WithDefaults()
 	return c
 }

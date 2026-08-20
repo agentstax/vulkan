@@ -22,7 +22,8 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 
 	// txn-scoped, same lock Register takes -- a concurrent register
 	// waits here and recreates the schema after the drop commits.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: system.delete
+SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		return err
 	}
 
@@ -43,7 +44,8 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 		"topic",
 		"system",
 	} {
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s;`, table)); err != nil {
+		if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: system.delete
+DROP TABLE IF EXISTS %s;`, table)); err != nil {
 			return err
 		}
 	}
@@ -52,6 +54,6 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 		return err
 	}
 
-	d.Logger.WarnContext(ctx, "system destroyed -- control-plane schema dropped")
+	d.Logger.InfoContext(ctx, "system destroyed -- control-plane schema dropped")
 	return nil
 }

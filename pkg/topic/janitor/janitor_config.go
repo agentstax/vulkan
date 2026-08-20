@@ -20,7 +20,7 @@ type JanitorConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger     common.Logger       // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger     common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 	Retry      *common.RetryPolicy // transient-error retry policy for the janitor's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 	SweepRetry *common.RetryPolicy // failed-sweep backoff curve, unrelated to Retry above. Default: common.NewDefaultRetryPolicy().
 }
@@ -33,8 +33,9 @@ func (c *JanitorConfig) WithDefaults() *JanitorConfig {
 		c.JitterFraction = 0.1
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	c.Retry = c.Retry.WithDefaults()
 	c.SweepRetry = c.SweepRetry.WithDefaults()
 	return c

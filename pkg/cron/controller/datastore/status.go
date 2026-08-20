@@ -53,6 +53,7 @@ func (d *CronJobDatastore) status(ctx context.Context, jobRequestsTopicId int64,
 // ordered by name.
 func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicId int64, name string) ([]matchingGroupData, error) {
 	sql := `
+		-- vulkan: cron.matchingGroups
 		SELECT cg.id, cg.name
 		FROM consumer_group cg
 		WHERE cg.topic_id = $1
@@ -88,6 +89,7 @@ func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicI
 // the retention window.
 func (d *CronJobDatastore) jobMessageIds(ctx context.Context, jobRequestsTopicId int64, compactionKey string) ([]int64, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: cron.jobMessageIds
 		SELECT m.id
 		FROM %s m
 		WHERE m.compaction_key = $1;
@@ -116,6 +118,7 @@ func (d *CronJobDatastore) jobMessageIds(ctx context.Context, jobRequestsTopicId
 // headId is the key's compaction_head pointer; 0 when the job has no messages.
 func (d *CronJobDatastore) headId(ctx context.Context, jobRequestsTopicId int64, compactionKey string) (int64, error) {
 	sql := `
+		-- vulkan: cron.headId
 		SELECT head_id
 		FROM compaction_head
 		WHERE topic_id = $1
@@ -137,6 +140,7 @@ func (d *CronJobDatastore) headId(ctx context.Context, jobRequestsTopicId int64,
 // rolled up to booleans and indexed by message id.
 func (d *CronJobDatastore) requestOutcomes(ctx context.Context, jobRequestsTopicId int64, consumerGroupId int64, messageIds []int64) (map[int64]requestOutcomeData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: cron.requestOutcomes
 		SELECT
 			d.message_id,
 			bool_or(d.status = 'success')                          AS succeeded,

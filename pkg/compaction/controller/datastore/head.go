@@ -23,6 +23,7 @@ func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, compac
 
 func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: compaction.getHead
 		SELECT
 			m.id,
 			m.payload,
@@ -67,6 +68,7 @@ func (d *CompactionDatastore) ListHeads(ctx context.Context, topicId int64) ([]M
 
 func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
 	sql := fmt.Sprintf(`
+		-- vulkan: compaction.listHeads
 		SELECT
 			m.id,
 			m.payload,

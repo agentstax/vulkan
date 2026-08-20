@@ -20,6 +20,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 	var killSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		killSql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.kill
 			UPDATE %s
 			SET
 				status = 'dead',
@@ -36,6 +37,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
 		// atomic in one statement.
 		killSql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.kill
 			WITH killed AS (
 				UPDATE %[1]s
 				SET
@@ -60,7 +62,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 		return err
 	}
 	if killTag.RowsAffected() > 0 {
-		d.Logger.WarnContext(ctx, "crash-loop kill backstop fired, exception(s) marked dead", "group_id", groupId, "topic_id", topicId, "count", killTag.RowsAffected())
+		d.Logger.WarnContext(ctx, "crash-loop kill backstop fired -- exceptions marked dead", "group_id", groupId, "topic_id", topicId, "dead_count", killTag.RowsAffected())
 	}
 	return nil
 }

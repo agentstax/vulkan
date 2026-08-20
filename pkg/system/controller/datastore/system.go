@@ -30,7 +30,8 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemData, error) {
 	defer tx.Rollback(ctx)
 
 	// txn-scoped -- acquired here, auto-released at commit.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := tx.Exec(ctx, `-- vulkan: system.register
+SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		return nil, err
 	}
 
@@ -56,6 +57,7 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemData, error) {
 // seedSystem seeds the singleton row, first register wins.
 func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemData, error) {
 	seedSystemSql := `
+		-- vulkan: system.seedSystem
 		INSERT INTO system (created_at, updated_at)
 		SELECT NOW(), NOW()
 		WHERE NOT EXISTS (SELECT 1 FROM system)
@@ -83,6 +85,7 @@ func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemDat
 // success row yet.
 func (d *SystemDatastore) recordBaseline(ctx context.Context, tx pgx.Tx, systemId int64) error {
 	recordBaselineSql := `
+		-- vulkan: system.recordBaseline
 		INSERT INTO migration_log (system_id, migration_version, status)
 		SELECT $1, 1, 'success'
 		WHERE NOT EXISTS (
@@ -108,6 +111,7 @@ func (d *SystemDatastore) Get(ctx context.Context) (*SystemData, error) {
 
 func (d *SystemDatastore) get(ctx context.Context, q datastore.Querier) (*SystemData, error) {
 	sql := `
+		-- vulkan: system.get
 		SELECT id, created_at, updated_at
 		FROM system;
 	`

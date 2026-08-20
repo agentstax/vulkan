@@ -20,7 +20,7 @@ type RunnerConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger common.Logger // pass your own *slog.Logger (own Handler) or anything satisfying common.Logger. Default: text logger to stdout, warn level and up.
+	Logger common.Logger // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
 }
 
 func (c *RunnerConfig) WithDefaults() *RunnerConfig {
@@ -31,8 +31,9 @@ func (c *RunnerConfig) WithDefaults() *RunnerConfig {
 		c.JitterFraction = 0.1
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stdout)
+		c.Logger = common.NewDefaultLogger(os.Stderr)
 	}
+	c.Logger = common.BufferLogger(c.Logger)
 	return c
 }
 

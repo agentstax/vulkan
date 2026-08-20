@@ -23,6 +23,7 @@ func (d *MigrateDatastore) SystemVersion(ctx context.Context, systemId int64) (i
 
 func (d *MigrateDatastore) systemVersion(ctx context.Context, systemId int64) (int64, error) {
 	sql := `
+		-- vulkan: migrate.systemVersion
 		SELECT migration_version FROM migration_log
 		WHERE system_id = $1
 			AND topic_id IS NULL
@@ -52,6 +53,7 @@ func (d *MigrateDatastore) TopicVersion(ctx context.Context, topicId int64) (int
 
 func (d *MigrateDatastore) topicVersion(ctx context.Context, topicId int64) (int64, error) {
 	sql := `
+		-- vulkan: migrate.topicVersion
 		SELECT migration_version FROM migration_log
 		WHERE system_id IS NULL
 			AND topic_id = $1
@@ -77,6 +79,7 @@ func (d *MigrateDatastore) topicVersion(ctx context.Context, topicId int64) (int
 func Version(ctx context.Context, q datastore.Querier, owner *common.Owner) (int64, error) {
 	// IS NOT DISTINCT FROM: NULL-safe equality against the owner's columns
 	sql := `
+		-- vulkan: migrate.Version
 		SELECT migration_version FROM migration_log
 		WHERE system_id IS NOT DISTINCT FROM $1
 			AND topic_id IS NOT DISTINCT FROM $2

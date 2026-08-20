@@ -31,6 +31,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	// three partial unique indexes cover the owner columns, so no single
 	// ON CONFLICT target names the one this row lands on
 	insertSql := `
+		-- vulkan: worker.registerWorker
 		INSERT INTO worker (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
 		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
 		ON CONFLICT DO NOTHING
@@ -52,6 +53,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	// the stored alias reads the row as it was before the SET, so the same
 	// statement writes the declaration and returns both sides of the change
 	updateSql := `
+		-- vulkan: worker.registerWorker
 		UPDATE worker w
 		SET metadata = COALESCE($5, '{}'::jsonb)
 		FROM worker stored
@@ -106,6 +108,7 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 	// one clause per level of the owner chain
 	// or all workers if owner is system.
 	sql := `
+		-- vulkan: worker.listWorkers
 		SELECT
 			w.id,
 			w.system_id,
@@ -159,6 +162,7 @@ func (d *WorkerDatastore) GetWorker(ctx context.Context, name string, owner *com
 
 func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *common.Owner) (*WorkerData, error) {
 	sql := `
+		-- vulkan: worker.getWorker
 		SELECT 
 			id, 
 			system_id, 

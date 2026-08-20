@@ -25,6 +25,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 	}
 
 	sql := `
+		-- vulkan: topic.replaceConfig
 		UPDATE topic
 		SET
 			retention_ttl_ns = $2,

@@ -16,6 +16,7 @@ import (
 // lands before registerSystem seeds anything into it.
 func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) error {
 	createSystemSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS system (
 			id BIGSERIAL PRIMARY KEY,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -27,6 +28,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	}
 
 	createTopicSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS topic (
 			id BIGSERIAL PRIMARY KEY,                                           -- corresponding id for table interpolation ie message_log_<id>
 			system_id BIGINT NOT NULL REFERENCES system (id) ON DELETE CASCADE, -- owning system
@@ -49,6 +51,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// consumer_group table provides:
 	// - lifcycle management for child ownershipt model (cursor, binding, maintainence)
 	createConsumerGroupSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS consumer_group (
 			id BIGSERIAL PRIMARY KEY,                                         -- what children reference
 			topic_id BIGINT NOT NULL REFERENCES topic (id) ON DELETE CASCADE, -- owning topic
@@ -64,6 +67,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// consumer group cursors for tracking offset in message_log.
 	// UNIQUE keeps group <-> cursor 1:1
 	createCursorSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS cursor (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group (id) ON DELETE CASCADE,
@@ -81,6 +85,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	}
 
 	createLeaseSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS lease (
 			token UUID NOT NULL DEFAULT gen_random_uuid(),
 			consumer_group_id BIGINT NOT NULL,
@@ -98,6 +103,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// key_lease: at most one in-flight delivery per compaction key per
 	// consumer group.
 	createKeyLeaseSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS key_lease (
 			consumer_group_id BIGINT NOT NULL, -- PK
 			compaction_key TEXT NOT NULL,      -- PK
@@ -112,6 +118,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 
 	// workers: one row per background job that should be running
 	createWorkerSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS worker (
 			id BIGSERIAL PRIMARY KEY,
 			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
@@ -130,9 +137,12 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 
 	// one worker of each name per owner: system, topic, group
 	for _, indexSql := range []string{
-		`CREATE UNIQUE INDEX IF NOT EXISTS worker_topic_name ON worker (name, topic_id) WHERE topic_id IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS worker_group_name ON worker (name, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS worker_system_name ON worker (name, system_id) WHERE system_id IS NOT NULL;`,
+		`-- vulkan: system.createSystemTables
+CREATE UNIQUE INDEX IF NOT EXISTS worker_topic_name ON worker (name, topic_id) WHERE topic_id IS NOT NULL;`,
+		`-- vulkan: system.createSystemTables
+CREATE UNIQUE INDEX IF NOT EXISTS worker_group_name ON worker (name, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
+		`-- vulkan: system.createSystemTables
+CREATE UNIQUE INDEX IF NOT EXISTS worker_system_name ON worker (name, system_id) WHERE system_id IS NOT NULL;`,
 	} {
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err
@@ -141,6 +151,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 
 	// worker instances: one row per live copy of a worker
 	createWorkerInstanceSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS worker_instance (
 			id BIGSERIAL PRIMARY KEY,
 			worker_id BIGINT NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
@@ -156,8 +167,10 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 
 	// the two hot lookups: live instances per worker, expired rows
 	for _, indexSql := range []string{
-		`CREATE INDEX IF NOT EXISTS worker_instance_worker ON worker_instance (worker_id);`,
-		`CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at);`,
+		`-- vulkan: system.createSystemTables
+CREATE INDEX IF NOT EXISTS worker_instance_worker ON worker_instance (worker_id);`,
+		`-- vulkan: system.createSystemTables
+CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at);`,
 	} {
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err
@@ -168,6 +181,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// group WITH a binding only receives events whose routing_key matches
 	// `pattern`.
 	createBindingSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS binding (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
@@ -186,6 +200,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// newest waiting row per declarer -> its latest still-blocked retry
 	// Claims never read this table; the effective set stays in binding rows.
 	createBindingDeclarationSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS binding_declaration (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
@@ -202,7 +217,8 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 
 	// helps listDeclarations so it doesn't have to sequential
 	// scan a long wait's appended retry rows
-	createBindingDeclarationIndexSql := `CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (consumer_group_id, status, declared_by, id);`
+	createBindingDeclarationIndexSql := `-- vulkan: system.createSystemTables
+CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (consumer_group_id, status, declared_by, id);`
 	if _, err := tx.Exec(ctx, createBindingDeclarationIndexSql); err != nil {
 		return err
 	}
@@ -213,6 +229,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// message_log) since it scales with DISTINCT compaction_key count, not
 	// total message volume.
 	createCompactionHeadSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS compaction_head (
 			topic_id        BIGINT NOT NULL,           -- PK
 			compaction_key  TEXT   NOT NULL,           -- PK
@@ -228,6 +245,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// cron_job: named schedules. Owner FKs are GC metadata only -- all NULL
 	// = standalone.
 	createCronJobSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS cron_job (
 			id BIGSERIAL PRIMARY KEY,
 			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
@@ -251,7 +269,8 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		return err
 	}
 
-	createCronJobDueIndexSql := `CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;`
+	createCronJobDueIndexSql := `-- vulkan: system.createSystemTables
+CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;`
 	if _, err := tx.Exec(ctx, createCronJobDueIndexSql); err != nil {
 		return err
 	}
@@ -259,6 +278,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 	// migration_log is the append-only history of migration attempts
 	// -- one row per attempt.
 	createMigrationLogSql := `
+		-- vulkan: system.createSystemTables
 		CREATE TABLE IF NOT EXISTS migration_log (
 			id BIGSERIAL PRIMARY KEY,
 			system_id BIGINT REFERENCES system (id) ON DELETE CASCADE,
