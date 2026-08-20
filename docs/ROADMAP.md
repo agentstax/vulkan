@@ -101,6 +101,12 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 Pre-v1, after 14b — measurement, evaluation, and documentation; these want a
 surface that has stopped moving.
 
+- **Potential project rename away from "vulkan".** No candidate yet; decide
+  before v1 -- after v1 the name is public API. A rename ripples through the
+  module path, the CLI binary, the docs site (docsBaseURL const in
+  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
+  plus every declared code -- codes never renumber after v1, so the prefix
+  must be final first).
 - **Topic config as append-only declaration rows.** Design settled in [0519];
   build deferred so the config surface from [0518] settles first. topic keeps
   identity only (id, system_id, schema_version, created_at); a

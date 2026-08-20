@@ -91,6 +91,12 @@ func classify(err error) error {
 	if err == nil {
 		return nil
 	}
+
+	// an *Error already carries its recovery -- passes through unwrapped
+	if _, ok := errors.AsType[*Error](err); ok {
+		return err
+	}
+
 	if _, ok := errors.AsType[*RetryableError](err); ok {
 		return err
 	}

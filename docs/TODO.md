@@ -37,13 +37,13 @@ fresh-DB suite at the review-ready checkpoint.
 
 ### Chunk 2 — recovery folded into retry
 
-- [ ] `classify` (pkg/common/retry_datastore.go) checks `*common.Error`
-      recovery FIRST, then existing marker types, then IsTransientPgError.
-- [ ] Once every raised error carries recovery: retire RetryableError /
-      PermanentError marker types and IsRetryable's AsType checks; recovery
-      on the error is the one classification mechanism.
-- [ ] Sweep marker-type call sites (grep NewRetryableError /
-      NewPermanentError) before deleting the types.
+- [x] `classify` (pkg/common/retry_datastore.go) passes a `*common.Error`
+      through unwrapped (recovery is already carried), then existing marker
+      types, then IsTransientPgError; IsRetryable checks recovery FIRST.
+      Tests: pass-through, marker preservation, unclassified wrapping,
+      Wrap stops on Permanent / walks the schedule on Transient.
+- Marker-type retirement moved to chunk 4 (its raise sites migrate there);
+  no transitional layering survives past that chunk.
 
 ### Chunk 3 — declaration migration
 
@@ -66,6 +66,21 @@ fresh-DB suite at the review-ready checkpoint.
       "at least one item is required" -> `items must not be empty` etc.
 - [ ] Wrapping audit: each layer adds only its own fact; no return+log
       double-reporting.
+- [ ] Migrate the marker-type raise sites onto declared errors (swept
+      2026-08-19): producer datastore partition.go createPartitionAhead
+      (NewRetryableError on lock_timeout -> Transient declared error
+      wrapping the cause), messageconsumer datastore commit.go
+      (NewPermanentError on ambiguous Commit with outcomes -> Permanent
+      declared error wrapping the cause), multitargetlab main.go
+      assertion updated to the new shape.
+- [ ] CHUNK CLOSER -- delete pkg/common/retry_error.go wholesale
+      (RetryableError, PermanentError, IsRetryable). Classification is
+      consulted, never encoded onto the error: Retry gains an unexported
+      classification func field (default = recovery on the error),
+      RetryDatastore sets recovery-then-IsTransientPgError, classify's
+      wrapping goes away and errors surface bare. producer batcher
+      resolve.go classifyBatchFailure switches off IsRetryable onto the
+      same check. Grep proves zero marker references before the delete.
 
 ### Chunk 5 — CLI
 
@@ -80,6 +95,10 @@ fresh-DB suite at the review-ready checkpoint.
 
 - [ ] website/: one page per code, headed by the verbatim problem text;
       generated from the registry, not hand-written.
+- [ ] docsBaseURL const (pkg/common/error.go): confirm the /errors/ path
+      against the shipped site section and drop the placeholder TODO
+      comment. If the project rename (ROADMAP Later) lands first, the VK
+      prefix and base URL change together.
 - [ ] Full fresh-DB lab suite; HISTORY.md entry citing [0550]; this TODO
       section and the ROADMAP item's settled sub-bullet removed.
 

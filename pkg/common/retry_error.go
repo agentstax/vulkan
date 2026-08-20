@@ -38,6 +38,11 @@ func (e *PermanentError) Unwrap() error {
 
 // IsRetryable checks if an error should trigger a retry
 func IsRetryable(err error) bool {
+	// recovery declared on the error is the classification when present
+	if classified, ok := errors.AsType[*Error](err); ok {
+		return classified.Recovery == Transient
+	}
+
 	if _, ok := errors.AsType[*PermanentError](err); ok {
 		return false
 	}
