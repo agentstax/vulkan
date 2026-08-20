@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/cron"
 	cronschedulercontroller "github.com/agentstax/vulkan/pkg/cron/scheduler/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -21,7 +22,7 @@ import (
 type CronSchedulerInstance struct {
 	Owner  *common.Owner
 	Config *CronSchedulerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	runner           *controller.InstanceTickRunner
 	ds               *iDatastore.PostgresDatastore
@@ -41,7 +42,7 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerProvisioner, owner *co
 		return nil, errors.New("producerInstance must not be nil")
 	}
 
-	logger := common.LoggerWith(cronScheduler.Logger, "worker", WorkerCronScheduler, "system_id", owner.SystemId)
+	logger := logging.LoggerWith(cronScheduler.Logger, "worker", WorkerCronScheduler, "system_id", owner.SystemId)
 	runner, err := controller.NewInstanceTickRunner(cronScheduler.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    cronScheduler.Config.InstanceTTL,
 		JitterFraction: cronScheduler.Config.JitterFraction,

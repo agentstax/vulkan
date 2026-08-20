@@ -4,13 +4,14 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type DeliveryConsumerGroupDatastore struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *common.RetryDatastore
-	Logger         common.Logger
+	Logger         logging.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left

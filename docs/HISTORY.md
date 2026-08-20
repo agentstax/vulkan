@@ -5,6 +5,16 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-20 — Logging machinery carved out to pkg/common/logging [0561]
+
+- New infrastructure subpackage pkg/common/logging owns the Logger seam:
+  Logger, LoggerWith, NewDefaultLogger, BufferLogger, WithLogBuffer, the
+  debug-buffer ring; toAttrs exported as logging.Attrs (common.Error.With
+  calls it). Narrows [0528]: errors/retry stay flat (stdlib shadow;
+  MessageOptions↔Error cross-import). ~315 qualifier renames across 130
+  files; CONVENTIONS.md infrastructure kind now reads "common and its
+  machinery subpackages".
+
 ## 2026-08-20 — Logging rule sheet + debug buffer + SQL owner comments [0558][0559][0560]
 
 - Logging conventions written and swept [0558]: CONVENTIONS.md `## Logging`

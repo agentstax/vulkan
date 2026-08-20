@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	cursoradvancercontroller "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
@@ -15,7 +16,7 @@ import (
 type CursorAdvancerInstance struct {
 	Owner  *common.Owner
 	Config *CursorAdvancerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	runner     *controller.InstanceTickRunner
 	controller *cursoradvancercontroller.CursorAdvancerController
@@ -30,7 +31,7 @@ func newCursorAdvancerInstance(provisioner *CursorAdvancerProvisioner, owner *co
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	logger := common.LoggerWith(provisioner.Logger, "worker", WorkerCursorAdvancer, "topic_id", owner.TopicId, "group", owner.Name)
+	logger := logging.LoggerWith(provisioner.Logger, "worker", WorkerCursorAdvancer, "topic_id", owner.TopicId, "group", owner.Name)
 	runner, err := controller.NewInstanceTickRunner(provisioner.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    provisioner.Config.InstanceTTL,
 		JitterFraction: provisioner.Config.JitterFraction,

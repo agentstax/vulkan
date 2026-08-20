@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/cron"
 	cronschedulercontroller "github.com/agentstax/vulkan/pkg/cron/scheduler/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -16,7 +17,7 @@ const WorkerCronScheduler = "cron_scheduler"
 
 type CronSchedulerProvisioner struct {
 	Config *CronSchedulerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	ds         *iDatastore.PostgresDatastore
 	workers    *controller.WorkerController

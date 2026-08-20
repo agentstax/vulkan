@@ -3,13 +3,13 @@ package controller
 import (
 	"errors"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumergroup/deliveryconsumer/controller/datastore"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type DeliveryConsumerGroupController struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	datastore *datastore.DeliveryConsumerGroupDatastore
 }

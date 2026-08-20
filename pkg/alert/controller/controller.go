@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 )
@@ -15,7 +15,7 @@ import (
 // AlertController is the alert domain's write path: it records what a run
 // found to the __system.alerts topic and logs status changes.
 type AlertController struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	alerts *producer.ProducerInstance[alert.Alert]
 	heads  *compactioncontroller.CompactionController[alert.Alert]

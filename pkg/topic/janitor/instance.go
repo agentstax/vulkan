@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/topic"
 	janitorcontroller "github.com/agentstax/vulkan/pkg/topic/janitor/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -15,7 +16,7 @@ import (
 type JanitorInstance struct {
 	Topic  *topic.Topic
 	Config *JanitorConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	runner     *controller.InstanceTickRunner
 	controller *janitorcontroller.JanitorController
@@ -30,7 +31,7 @@ func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claim
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	logger := common.LoggerWith(janitor.Logger, "worker", WorkerJanitor, "topic_id", current.Id, "version", current.SchemaVersion)
+	logger := logging.LoggerWith(janitor.Logger, "worker", WorkerJanitor, "topic_id", current.Id, "version", current.SchemaVersion)
 	runner, err := controller.NewInstanceTickRunner(janitor.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    janitor.Config.InstanceTTL,
 		JitterFraction: janitor.Config.JitterFraction,

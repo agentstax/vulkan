@@ -4,13 +4,14 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type MessageConsumerGroupDatastore struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *common.RetryDatastore // default Wrap classification covers everything except Commit/PartialCommit -- classified inline at that call site
-	Logger         common.Logger
+	Logger         logging.Logger
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left

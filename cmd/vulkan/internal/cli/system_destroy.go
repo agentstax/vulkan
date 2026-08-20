@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/system"
@@ -68,7 +69,7 @@ messages).`,
 				}
 			}
 			metricsController, err := metricscontroller.NewMetricsController(ds, &metricscontroller.ControllerConfig{
-				Logger: common.NewDefaultLogger(os.Stderr, slog.LevelError),
+				Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError),
 			})
 			if err != nil {
 				return failOp("could not check for live workers: %v", err)

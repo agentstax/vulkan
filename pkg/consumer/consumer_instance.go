@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
@@ -20,7 +21,7 @@ import (
 type ConsumerInstance[Message any] struct {
 	Owner  *common.Owner
 	Config *ConsumerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	ds              *datastore.PostgresDatastore
 	abandonedEvents *metricsproducer.MetricsProducer

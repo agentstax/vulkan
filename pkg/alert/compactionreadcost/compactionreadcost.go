@@ -6,6 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
@@ -22,7 +23,7 @@ import (
 // alert's consumer group on the job_requests topic.
 type CompactionReadCostProvisioner struct {
 	Config *CompactionReadCostConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	ds                  *iDatastore.PostgresDatastore
 	workers             *workercontroller.WorkerController

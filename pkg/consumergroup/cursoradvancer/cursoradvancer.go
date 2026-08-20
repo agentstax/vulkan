@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	cursoradvancercontroller "github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -14,7 +15,7 @@ const WorkerCursorAdvancer = "cursor_advancer"
 
 type CursorAdvancerProvisioner struct {
 	Config *CursorAdvancerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	workers    *controller.WorkerController
 	controller *cursoradvancercontroller.CursorAdvancerController

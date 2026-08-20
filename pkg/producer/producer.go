@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -21,7 +21,7 @@ type ProducerFunc[Message any] = controller.ProduceFunc[Message]
 
 type Producer[Message any] struct {
 	Config *ProducerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	controller      *controller.ProducerController[Message]
 	topicController *topiccontroller.TopicController

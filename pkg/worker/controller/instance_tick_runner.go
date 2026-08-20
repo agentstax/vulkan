@@ -7,17 +7,17 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
 // paces a worker's pass at the row's poll_rate while an InstanceRunner holds
 // the claim, recording the success/failure streak. Every tick-paced execution
-// composes one. Pass a common.LoggerWith-enriched Logger so its lines carry the
+// composes one. Pass a logging.LoggerWith-enriched Logger so its lines carry the
 // worker's identity.
 type InstanceTickRunner struct {
 	Config *InstanceTickRunnerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	runner   *InstanceRunner
 	workers  *WorkerController
@@ -86,7 +86,7 @@ func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Con
 		case <-timer.C:
 		}
 
-		err := onTick(common.WithLogBuffer(ctx))
+		err := onTick(logging.WithLogBuffer(ctx))
 
 		// re-jittered every tick so replicas' phases keep drifting apart
 		jitter := 1 + r.Config.JitterFraction*(2*rand.Float64()-1)

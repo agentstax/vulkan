@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
 type BatcherConfig struct {
@@ -28,7 +28,7 @@ type BatcherConfig struct {
 	// Default: 15s. Negative: abandon immediately.
 	ShutdownGrace time.Duration
 
-	Logger common.Logger // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
+	Logger logging.Logger // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 }
 
 func (c *BatcherConfig) WithDefaults() *BatcherConfig {
@@ -45,9 +45,9 @@ func (c *BatcherConfig) WithDefaults() *BatcherConfig {
 		c.ShutdownGrace = 15 * time.Second
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stderr)
+		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = common.BufferLogger(c.Logger)
+	c.Logger = logging.BufferLogger(c.Logger)
 	return c
 }
 

@@ -10,6 +10,7 @@ import (
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
 	partitioncountcontroller "github.com/agentstax/vulkan/pkg/alert/partitioncount/controller"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
@@ -26,7 +27,7 @@ type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
 // alongside consumption.
 type Consumer[Message any] struct {
 	Config *ConsumerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	ds *datastore.PostgresDatastore
 

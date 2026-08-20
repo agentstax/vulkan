@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"golang.org/x/sync/errgroup"
 )
@@ -13,13 +13,13 @@ import (
 // instancePool supervises the goroutine behind every execution the manager
 // has spawned.
 type instancePool struct {
-	logger       common.Logger
+	logger       logging.Logger
 	provisioners map[string]worker.Provisioner // keyed by Name, copied from the manager at construction
 	running      map[int64]*spawnedInstance    // keyed by worker row id
 	group        *errgroup.Group               // every spawned Run goroutine; its first fatal error cancels the manager's run
 }
 
-func newInstancePool(provisioners map[string]worker.Provisioner, group *errgroup.Group, log common.Logger) (*instancePool, error) {
+func newInstancePool(provisioners map[string]worker.Provisioner, group *errgroup.Group, log logging.Logger) (*instancePool, error) {
 	if provisioners == nil {
 		return nil, errors.New("provisioners must not be nil")
 	}

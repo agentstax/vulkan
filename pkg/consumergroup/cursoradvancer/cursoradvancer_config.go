@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
 type CursorAdvancerConfig struct {
@@ -20,7 +21,7 @@ type CursorAdvancerConfig struct {
 	// Default: 0.1. Must be < 1.
 	JitterFraction float64
 
-	Logger       common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
+	Logger       logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry        *common.RetryPolicy // transient-error retry policy for the cursor advancer's own Postgres calls. Default: common.NewDefaultRetryPolicy().
 	AdvanceRetry *common.RetryPolicy // failed-advance backoff curve, unrelated to Retry above. Default: common.NewDefaultRetryPolicy().
 }
@@ -33,9 +34,9 @@ func (c *CursorAdvancerConfig) WithDefaults() *CursorAdvancerConfig {
 		c.JitterFraction = 0.1
 	}
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stderr)
+		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = common.BufferLogger(c.Logger)
+	c.Logger = logging.BufferLogger(c.Logger)
 	c.Retry = c.Retry.WithDefaults()
 	c.AdvanceRetry = c.AdvanceRetry.WithDefaults()
 	return c

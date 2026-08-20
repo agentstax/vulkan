@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 )
 
 type ProducerDatastore[Message any] struct {
 	Datastore      *datastore.PostgresDatastore
 	DatastoreRetry *common.RetryDatastore // default Wrap classification covers everything except Commit -- classified inline at that call site
-	Logger         common.Logger
+	Logger         logging.Logger
 
 	createAheadGate    *createAheadGate
 	createAheadTimeout time.Duration

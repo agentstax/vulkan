@@ -20,7 +20,7 @@ import (
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
-	iCommon "github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -117,7 +117,7 @@ func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *adm
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	warns, err := NewWarnCounter(iCommon.NewDefaultLogger(os.Stdout))
+	warns, err := NewWarnCounter(logging.NewDefaultLogger(os.Stdout))
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Logger: warns})
 	must(err)
@@ -209,10 +209,10 @@ type WarnCounter struct {
 	HealWarns atomic.Int64
 	DropWarns atomic.Int64
 
-	inner iCommon.Logger
+	inner logging.Logger
 }
 
-func NewWarnCounter(inner iCommon.Logger) (*WarnCounter, error) {
+func NewWarnCounter(inner logging.Logger) (*WarnCounter, error) {
 	if inner == nil {
 		return nil, fmt.Errorf("inner logger must not be nil")
 	}
@@ -225,6 +225,7 @@ func (w *WarnCounter) DebugContext(ctx context.Context, msg string, args ...any)
 func (w *WarnCounter) InfoContext(ctx context.Context, msg string, args ...any) {
 	w.inner.InfoContext(ctx, msg, args...)
 }
+
 // counted by attr shape, never message text: both partition warns carry
 // topic_id; only the create-ahead one carries an error value.
 func (w *WarnCounter) WarnContext(ctx context.Context, msg string, args ...any) {

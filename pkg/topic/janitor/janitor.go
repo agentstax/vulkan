@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitorcontroller "github.com/agentstax/vulkan/pkg/topic/janitor/controller"
@@ -15,7 +16,7 @@ const WorkerJanitor = "janitor"
 
 type JanitorProvisioner struct {
 	Config *JanitorConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	workers    *controller.WorkerController
 	topics     *topiccontroller.TopicController

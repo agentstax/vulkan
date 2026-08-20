@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
@@ -24,7 +25,7 @@ import (
 type MetricsCollectorInstance struct {
 	Owner  *common.Owner
 	Config *MetricsCollectorConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	runner           *controller.InstanceTickRunner
 	metrics          *metricscontroller.MetricsController
@@ -45,7 +46,7 @@ func newMetricsCollectorInstance(collector *MetricsCollectorProvisioner, owner *
 		return nil, errors.New("producerInstance must not be nil")
 	}
 
-	logger := common.LoggerWith(collector.Logger, "worker", WorkerMetricsCollector, "system_id", owner.SystemId)
+	logger := logging.LoggerWith(collector.Logger, "worker", WorkerMetricsCollector, "system_id", owner.SystemId)
 	runner, err := controller.NewInstanceTickRunner(collector.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    collector.Config.InstanceTTL,
 		JitterFraction: collector.Config.JitterFraction,

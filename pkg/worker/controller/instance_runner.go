@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/worker"
 )
 
@@ -17,7 +17,7 @@ const releaseWindow = 5 * time.Second
 // and the instance releases on the way out. Pacing is the caller's.
 type InstanceRunner struct {
 	Config *InstanceRunnerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	workers *WorkerController
 	claimed *worker.WorkerInstance

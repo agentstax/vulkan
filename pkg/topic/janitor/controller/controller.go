@@ -3,7 +3,7 @@ package controller
 import (
 	"errors"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 )
@@ -11,7 +11,7 @@ import (
 // JanitorController is the janitor kind's door: the execution's sweep pass
 // drops and drains expired storage through it.
 type JanitorController struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	datastore *datastore.JanitorDatastore
 }

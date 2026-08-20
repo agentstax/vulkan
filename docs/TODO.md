@@ -25,4 +25,4 @@ docs page (the Warn/Error set); docs URLs stay on the one /errors/ path.
 - [ ] Start lines carry the resolved config facts the rule names —
       consumer adds work timeout, shutdown timeout, batch size (workers
       already carry rate); finishes [0558]'s snapshot rule.
-- [ ] Decision record 0561.
+- [ ] Decision record 0562.

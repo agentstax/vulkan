@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
@@ -18,7 +19,7 @@ const WorkerManager = "manager"
 // runs what, so any number of processes reconcile the same chain safely.
 type ManagerProvisioner struct {
 	Config *ManagerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	workers      *controller.WorkerController
 	provisioners map[string]worker.Provisioner // keyed by Name; every discovered worker row spawns through the provisioner whose Name matches

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/spf13/cobra"
@@ -50,7 +50,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			// 2. emptiness -- MessageAdmin doesn't expose this, so build a
 			// topic controller over the same pool (public API, no pkg change).
 			topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
-				Logger: common.NewDefaultLogger(os.Stderr, slog.LevelError),
+				Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError),
 			})
 			if err != nil {
 				return failOp("could not check whether topic is empty: %v", err)

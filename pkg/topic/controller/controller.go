@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/topic/controller/datastore"
@@ -12,7 +12,7 @@ import (
 )
 
 type TopicController struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	declarers         []worker.Declarer
 	datastore         *datastore.TopicDatastore

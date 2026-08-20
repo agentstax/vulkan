@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
 // MessageConsumerConfig is the slice of the group's consumer config this
@@ -35,7 +36,7 @@ type MessageConsumerConfig struct {
 	MessageMax          *common.MessageOptions
 	ConcurrencyOverride common.ConcurrencyPolicy
 
-	Logger common.Logger
+	Logger logging.Logger
 	Retry  *common.RetryPolicy // transient-error retry policy for this worker's own Postgres calls
 }
 
@@ -83,9 +84,9 @@ func (c *MessageConsumerConfig) WithDefaults() *MessageConsumerConfig {
 	}
 	c.Retry = c.Retry.WithDefaults()
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stderr)
+		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = common.BufferLogger(c.Logger)
+	c.Logger = logging.BufferLogger(c.Logger)
 	return c
 }
 

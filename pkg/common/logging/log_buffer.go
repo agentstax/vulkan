@@ -1,4 +1,4 @@
-package common
+package logging
 
 import (
 	"context"
@@ -70,7 +70,7 @@ func (b *logBuffer) drain() (slog.Value, bool) {
 			slog.String("level", record.level.String()),
 			slog.String("message", record.message),
 		}
-		recordAttrs = append(recordAttrs, toAttrs(record.args)...)
+		recordAttrs = append(recordAttrs, Attrs(record.args)...)
 		attrs = append(attrs, slog.Attr{Key: strconv.Itoa(i), Value: slog.GroupValue(recordAttrs...)})
 	}
 	if b.droppedCount > 0 {

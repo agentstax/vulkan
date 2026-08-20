@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
 // ExceptionConsumerConfig is the slice of the group's consumer config this
@@ -28,7 +29,7 @@ type ExceptionConsumerConfig struct {
 	MessageMax          *common.MessageOptions
 	ConcurrencyOverride common.ConcurrencyPolicy
 
-	Logger common.Logger
+	Logger logging.Logger
 	Retry  *common.RetryPolicy // transient-error retry policy for this worker's own Postgres calls
 }
 
@@ -61,9 +62,9 @@ func (c *ExceptionConsumerConfig) WithDefaults() *ExceptionConsumerConfig {
 
 	c.Retry = c.Retry.WithDefaults()
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stderr)
+		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = common.BufferLogger(c.Logger)
+	c.Logger = logging.BufferLogger(c.Logger)
 	return c
 }
 

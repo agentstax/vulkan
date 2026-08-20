@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 	"golang.org/x/sync/errgroup"
@@ -15,7 +16,7 @@ import (
 type ManagerInstance struct {
 	Owner  *common.Owner // the reconcile scope
 	Config *ManagerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	runner       *controller.InstanceTickRunner
 	workers      *controller.WorkerController
@@ -29,7 +30,7 @@ func newManagerInstance(manager *ManagerProvisioner, owner *common.Owner, claime
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	logger := common.LoggerWith(manager.Logger, "worker", WorkerManager, "owner", owner.Name)
+	logger := logging.LoggerWith(manager.Logger, "worker", WorkerManager, "owner", owner.Name)
 	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    manager.Config.InstanceTTL,
 		JitterFraction: manager.Config.JitterFraction,

@@ -4,14 +4,14 @@ import (
 	"errors"
 
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller/datastore"
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
 const AlertCompactionReadCost = "compaction_read_cost"
 
 type CompactionReadCostController struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	datastore *datastore.CompactionReadCostDatastore
 }

@@ -115,8 +115,9 @@ inside a step.
 
 Every package is exactly one of three kinds:
 
-- **Infrastructure** (`common`, `datastore`) -- vocabulary and seams
-  importable by everything.
+- **Infrastructure** (`common` and its machinery subpackages such as
+  `common/logging`, `datastore`) -- vocabulary and seams importable by
+  everything.
 - **Domain** -- `pkg/<noun>` vocabulary root, its `controller` and
   `controller/datastore`, and the worker packages that maintain the
   domain's tables (template: topic, consumergroup).
@@ -222,7 +223,7 @@ The domain layers:
   inputs instead.
 - Param order is primary collaborator first, ambient last: the dep the struct
   is *about* leads, then its remaining deps, then `cfg`, and a bare
-  `log common.Logger` always trails (prefer `cfg.Logger` over a bare param).
+  `log logging.Logger` always trails (prefer `cfg.Logger` over a bare param).
   A logger in the first position is the tell that a signature was copied from
   somewhere else -- readers scan position 1 for what the thing operates on.
 - No functional-options pattern. Every config struct: exported
@@ -268,7 +269,7 @@ The domain layers:
 - A value copy is not isolation: any slice, map, or pointer field inside it
   still aliases the original's backing memory, so mutating a copy can break
   the original's invariants.
-- Accept interfaces only at real seams (`common.Logger`; `Querier` stays
+- Accept interfaces only at real seams (`logging.Logger`; `Querier` stays
   private); return concrete `(*Struct, error)`. Never return a concrete
   pointer through an interface-typed return -- a typed nil stored in an
   interface compares non-nil, so every downstream nil guard lies.
@@ -429,13 +430,13 @@ classification question.
 
 ### The seam
 
-- Every log call goes through a config's `common.Logger` and passes the
+- Every log call goes through a config's `logging.Logger` and passes the
   caller's ctx -- `context.Background()` in a log call is a bug outside
   process-shutdown paths (there, `context.WithoutCancel(ctx)`).
 - The default logger writes text lines to stderr, WARN and up. Logs never
   share stdout with program output.
 - Identity is bound once: a long-lived component wraps its logger via
-  `common.LoggerWith` at construction, and its call sites never repeat
+  `logging.LoggerWith` at construction, and its call sites never repeat
   the bound keys.
 
 ### Levels
@@ -525,7 +526,7 @@ line carries the bound identity and nothing else.
 - A Warn or Error event names enough domain state to reconstruct the
   picture cold -- the ids, the range, the attempt, the durations: the
   operands, not just the verdict.
-- Operations carry a debug buffer: a boundary (common.WithLogBuffer)
+- Operations carry a debug buffer: a boundary (logging.WithLogBuffer)
   opens a small per-operation ring; Debug/Info/Warn records inside it
   are held as well as forwarded, and the operation's first Error record
   drains the ring into its `preceding` group attr -- the failure line

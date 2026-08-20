@@ -21,7 +21,7 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/admin"
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
@@ -46,7 +46,7 @@ func main() {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	controller, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{Logger: common.NewDefaultLogger(os.Stderr, slog.LevelError)})
+	controller, err := migratecontroller.NewController(ds, &migratecontroller.ControllerConfig{Logger: logging.NewDefaultLogger(os.Stderr, slog.LevelError)})
 	must(err)
 	reg := fixture()
 

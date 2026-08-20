@@ -3,7 +3,7 @@ package controller
 import (
 	"errors"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer/controller/datastore"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
@@ -11,7 +11,7 @@ import (
 // CursorAdvancerController is the cursor advancer kind's door: the instance advances
 // committed through it.
 type CursorAdvancerController struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	datastore *datastore.CursorAdvancerDatastore
 }

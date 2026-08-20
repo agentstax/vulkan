@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	iProducer "github.com/agentstax/vulkan/pkg/producer"
@@ -16,7 +16,7 @@ const abandonedEventsBufferSize = 256
 
 // uses queue / drain logic to be non-blocking on consumer claim path
 type MetricsProducer struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	producer *iProducer.Producer[metrics.GoRoutineEvent]
 	events   chan *metrics.GoRoutineEvent

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
 )
 
@@ -20,15 +21,15 @@ type ProducerConfig struct {
 	// calls. See batcher.BatcherConfig for fields and defaults.
 	Batch batcher.BatcherConfig
 
-	Logger common.Logger       // pass your own *slog.Logger or anything satisfying common.Logger. Default: text lines to stderr, warn level and up.
+	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: common.NewDefaultRetryPolicy().
 }
 
 func (c *ProducerConfig) WithDefaults() *ProducerConfig {
 	if c.Logger == nil {
-		c.Logger = common.NewDefaultLogger(os.Stderr)
+		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = common.BufferLogger(c.Logger)
+	c.Logger = logging.BufferLogger(c.Logger)
 
 	// the batcher inherits this producer's logger unless given its own
 	if c.Batch.Logger == nil {

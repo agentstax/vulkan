@@ -39,3 +39,6 @@ keep a cross-import — and common already imported retry.
 - The trim's retry demotions become unexports inside common.
 - CONVENTIONS.md now reads common.Logger / pkg/common where it said
   logger.Logger / pkg/errors.
+
+Narrowed by [0561] (2026-08-20): the logger group moved out to
+pkg/common/logging; the errors/retry/context merges stand.

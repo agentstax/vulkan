@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
@@ -23,7 +24,7 @@ import (
 // the row's definition, the controllers, and the group's consumerFunc.
 type BaseProvisioner[Message any] struct {
 	definition *worker.Definition
-	Logger     common.Logger
+	Logger     logging.Logger
 
 	workers         *workercontroller.WorkerController
 	topics          *topiccontroller.TopicController

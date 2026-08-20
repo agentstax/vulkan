@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -19,7 +19,7 @@ import (
 // serves values read at scrape time, never a cache.
 type Exporter struct {
 	Config *ExporterConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	metrics  *Metrics
 	provider *sdkmetric.MeterProvider

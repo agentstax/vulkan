@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -86,7 +87,7 @@ func newTestRetryDatastore(t *testing.T) *RetryDatastore {
 	t.Helper()
 
 	policy := &RetryPolicy{MaxRetries: 3, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond, Exponent: 1}
-	retryDatastore, err := NewRetryDatastore(policy, NewDefaultLogger(io.Discard))
+	retryDatastore, err := NewRetryDatastore(policy, logging.NewDefaultLogger(io.Discard))
 	if err != nil {
 		t.Fatal(err)
 	}

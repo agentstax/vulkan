@@ -1,12 +1,13 @@
 package common
 
 import (
-	"fmt"
 	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
 // TODO - fill with actual docsite once created
@@ -73,7 +74,7 @@ func NewError(code string, recovery Recovery, problem string, fix string) *Error
 // Identifier strings render quoted, everything else via its slog value.
 func (e *Error) With(pairs ...any) *Error {
 	copied := *e
-	copied.values = append(slices.Clone(e.values), toAttrs(pairs)...)
+	copied.values = append(slices.Clone(e.values), logging.Attrs(pairs)...)
 	return &copied
 }
 
@@ -195,22 +196,6 @@ func isErrorCode(code string) bool {
 		}
 	}
 	return true
-}
-
-func toAttrs(pairs []any) []slog.Attr {
-	attrs := make([]slog.Attr, 0, (len(pairs)+1)/2)
-	for i := 0; i < len(pairs); i += 2 {
-		name := fmt.Sprint(pairs[i])
-
-		// a name with no value is a raise-site bug; render the gap
-		// rather than crash or silently drop the name
-		if i+1 >= len(pairs) {
-			attrs = append(attrs, slog.String(name, "(missing)"))
-			break
-		}
-		attrs = append(attrs, slog.Any(name, pairs[i+1]))
-	}
-	return attrs
 }
 
 func formatValue(value slog.Value) string {

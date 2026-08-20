@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -19,7 +20,7 @@ type BaseConsumer[Message any] struct {
 	Owner  *common.Owner
 	Topic  *topic.Topic
 	Config *BaseConsumerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	keyLeases       *controller.KeyLeaseController
 	abandonedEvents *metricsproducer.MetricsProducer
@@ -77,7 +78,7 @@ func (b *BaseConsumer[Message]) ReleaseKeyedRun(ctx context.Context, claim *cont
 // Handles: nil map write, index out of range, bad type assertion
 // Does not handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
 func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message, messageId int64, attempt int, requested *common.MessageOptions, timeout time.Duration) error {
-	ctx = common.WithLogBuffer(ctx)
+	ctx = logging.WithLogBuffer(ctx)
 
 	// the timeout cause names which side's budget fired
 	cause := fmt.Errorf("Timeout (%s) exceeded for message %d attempt %d", timeout, messageId, attempt)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/migrate/controller/datastore"
@@ -13,7 +14,7 @@ import (
 )
 
 type Controller struct {
-	Logger common.Logger
+	Logger logging.Logger
 
 	datastore *datastore.MigrateDatastore
 }

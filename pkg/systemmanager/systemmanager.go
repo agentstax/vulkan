@@ -6,7 +6,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
-	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
 	"github.com/agentstax/vulkan/pkg/cron/scheduler"
@@ -24,7 +24,7 @@ import (
 // worker claims arbitrate who runs what.
 type SystemManager struct {
 	Config *SystemManagerConfig
-	Logger common.Logger
+	Logger logging.Logger
 
 	ds                *datastore.PostgresDatastore
 	manager           *manager.ManagerProvisioner

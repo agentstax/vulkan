@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/agentstax/vulkan/pkg/common/logging"
 )
 
 // LifecycleContext returns the application-lifetime context to pass to
@@ -18,10 +20,10 @@ import (
 //
 //	ctx, stop := common.LifecycleContext(nil)
 //	defer stop()
-func LifecycleContext(log Logger) (context.Context, context.CancelFunc) {
+func LifecycleContext(log logging.Logger) (context.Context, context.CancelFunc) {
 	if log == nil {
 		// specifically INFO here so lifecycle events are logged to user for clarity and understanding
-		log = NewDefaultLogger(os.Stderr, slog.LevelInfo)
+		log = logging.NewDefaultLogger(os.Stderr, slog.LevelInfo)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, 2)

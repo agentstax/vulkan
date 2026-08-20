@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -17,12 +18,12 @@ type RetryableFunc func() error
 // never rewrapped.
 type RetryDatastore struct {
 	*RetryPolicy
-	Logger Logger
+	Logger logging.Logger
 }
 
 // policy may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewRetryDatastore(policy *RetryPolicy, log Logger) (*RetryDatastore, error) {
+func NewRetryDatastore(policy *RetryPolicy, log logging.Logger) (*RetryDatastore, error) {
 	if log == nil {
 		return nil, errors.New("logger must not be nil")
 	}
