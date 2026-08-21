@@ -40,3 +40,6 @@ lookup + append of already-built args per buffered call. Rejected:
 slog.Handler-level replay (only works for *slog.Logger callers, needs
 Record.Clone contract); Warn as a drain trigger (routine self-heal warns
 would carry buffers) -- revisit per-event if a Warn proves to need it.
+
+Narrowed by [0565] (2026-08-20): the BufferLogger wrapper is replaced by
+pipeline stages; the boundaries, ring, and drain semantics stand.
