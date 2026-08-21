@@ -21,3 +21,9 @@ var EventManagerRowSuspended = diagnostic.NewEvent("VK0035",
 var EventTickBackoffCurveExhausted = diagnostic.NewEvent("VK0036",
 	"worker tick backoff curve exhausted",
 	"ticks continue at its cap")
+
+// EventSlowTick means one tick ran longer than the row's own poll_rate --
+// the worker is behind its own schedule.
+var EventSlowTick = diagnostic.NewEvent("VK0040",
+	"worker tick exceeded its poll rate",
+	"the next tick is late")

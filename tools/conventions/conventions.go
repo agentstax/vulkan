@@ -15,6 +15,7 @@ import (
 	_ "github.com/agentstax/vulkan/pkg/consumergroup"
 	_ "github.com/agentstax/vulkan/pkg/cron"
 	_ "github.com/agentstax/vulkan/pkg/migrate"
+	_ "github.com/agentstax/vulkan/pkg/producer"
 	_ "github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 	_ "github.com/agentstax/vulkan/pkg/system"
 	_ "github.com/agentstax/vulkan/pkg/topic"

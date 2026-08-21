@@ -86,7 +86,11 @@ func (r *InstanceTickRunner) ticker(ctx context.Context, onTick func(context.Con
 		case <-timer.C:
 		}
 
+		tickStart := time.Now()
 		err := onTick(logging.WithLogBuffer(ctx))
+		if duration := time.Since(tickStart); duration > r.pollRate {
+			r.Logger.WarnContext(ctx, worker.EventSlowTick.Message, "code", worker.EventSlowTick.Code, "duration", duration, "rate", r.pollRate)
+		}
 
 		// re-jittered every tick so replicas' phases keep drifting apart
 		jitter := 1 + r.Config.JitterFraction*(2*rand.Float64()-1)

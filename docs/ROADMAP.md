@@ -16,10 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Slow-operation threshold logging** ([0558] follow-on) — the Postgres
-  log_min_duration axis: a debug line for any produce/claim/tick exceeding
-  a configured duration. Slowness, not occurrence, is the event; the
-  threshold is the volume control.
 - **Stop line as session summary** — instance lifetime counters (produced,
   consumed, dead-lettered, reclaims survived) on the "stopped" line, the
   OBS ending-counters shape: "it was flaky" becomes numbers. Needs
@@ -82,6 +78,40 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
+- **Potential project rename away from "vulkan".** No candidate yet; decide
+  before v1 -- after v1 the name is public API. A rename ripples through the
+  module path, the CLI binary, the docs site (docsBaseURL const in
+  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
+  plus every declared code -- codes never renumber after v1, so the prefix
+  must be final first).
+- **Benchmark-recording pipeline** (14c) — decide where lab throughput
+  numbers get saved so regressions are visible over time. First real
+  workload: a thorough multi-topic throughput/latency benchmark under high
+  concurrency, pushed to real DB limits (connection pool, lock table, I/O)
+  rather than the library's own bottleneck. Single-topic skip-vs-claim was
+  already measured in bench/idempotency/RESULTS.md; multi-topic contention
+  is still open. Also measure the debug buffer's overhead here
+  (WithLogBuffer + BufferLogger cost per operation, healthy path) — a
+  published number is the adoption gate for always-on capture ([0559]).
+- **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
+  fix). An idle deployment pays per worker row per poll: winner's claim
+  UPDATE + no-op work each tick, and — the growing term — every replica's
+  LOSING claim attempt (R replicas x W rows x 1/poll_rate no-op UPDATEs).
+  Bench an idle fleet at 100 / 1k / 10k worker rows x 1-3 replicas:
+  Postgres CPU, QPS, where the curve hurts. Result picks a rung on the
+  settled fix ladder (cheapest first, don't skip rungs): (1) per-row
+  poll_rate already exists in worker metadata — coarsen quiet topics' rows,
+  document; (2) idle backoff inside the instance tick runner only — no
+  progress backs off toward a cap (~10x poll_rate), any progress snaps
+  back; cost is a committed-staleness spike on wake, janitor side covered
+  by the producer's partition self-heal; (3) LISTEN/NOTIFY-woken workers —
+  real complexity, only if (2) measurably fails. Prior: rung 1 carries to
+  ~1k rows, rung 2 well past 10k, rung 3 never earns it.
+- **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
+  recorded there are Setup/Action/Assert prose from a scratch harness;
+  implement as a real pkg/producer/pkg/consumer test suite once the API
+  stops moving.
+
 - **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
   decide and document. Weigh Go 1.27's new generics/type-inference features
   before finalizing.
@@ -141,39 +171,7 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
 
-- **Potential project rename away from "vulkan".** No candidate yet; decide
-  before v1 -- after v1 the name is public API. A rename ripples through the
-  module path, the CLI binary, the docs site (docsBaseURL const in
-  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
-  plus every declared code -- codes never renumber after v1, so the prefix
-  must be final first).
-- **Benchmark-recording pipeline** (14c) — decide where lab throughput
-  numbers get saved so regressions are visible over time. First real
-  workload: a thorough multi-topic throughput/latency benchmark under high
-  concurrency, pushed to real DB limits (connection pool, lock table, I/O)
-  rather than the library's own bottleneck. Single-topic skip-vs-claim was
-  already measured in bench/idempotency/RESULTS.md; multi-topic contention
-  is still open. Also measure the debug buffer's overhead here
-  (WithLogBuffer + BufferLogger cost per operation, healthy path) — a
-  published number is the adoption gate for always-on capture ([0559]).
-- **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
-  fix). An idle deployment pays per worker row per poll: winner's claim
-  UPDATE + no-op work each tick, and — the growing term — every replica's
-  LOSING claim attempt (R replicas x W rows x 1/poll_rate no-op UPDATEs).
-  Bench an idle fleet at 100 / 1k / 10k worker rows x 1-3 replicas:
-  Postgres CPU, QPS, where the curve hurts. Result picks a rung on the
-  settled fix ladder (cheapest first, don't skip rungs): (1) per-row
-  poll_rate already exists in worker metadata — coarsen quiet topics' rows,
-  document; (2) idle backoff inside the instance tick runner only — no
-  progress backs off toward a cap (~10x poll_rate), any progress snaps
-  back; cost is a committed-staleness spike on wake, janitor side covered
-  by the producer's partition self-heal; (3) LISTEN/NOTIFY-woken workers —
-  real complexity, only if (2) measurably fails. Prior: rung 1 carries to
-  ~1k rows, rung 2 well past 10k, rung 3 never earns it.
-- **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
-  recorded there are Setup/Action/Assert prose from a scratch harness;
-  implement as a real pkg/producer/pkg/consumer test suite once the API
-  stops moving.
+
 - **Documentation** (Phase 15, deliberately last):
   - After the next `just site-deploy`: confirm the deployed /errors/ pages
     resolve at the Docs() URLs (exact-case /errors/VK0005), then drop the
@@ -196,6 +194,7 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     Default constructors get built against that observed pattern rather
     than guessed.
   - DDL table design diagram.
+
 - **Circuit breaker implementation** (Phase 16, post-v1; two-tier design
   settled in Phase 13 — per-instance trip unit, quorum globalization,
   refund-on-close reconciliation; only questions explicitly left for

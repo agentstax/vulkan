@@ -21,6 +21,8 @@ type ExceptionConsumerConfig struct {
 	RecordMargin  time.Duration // lease padding for recording success/failure after consumerFunc returns
 	TimeoutGrace  time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
 
+	SlowDispatchThreshold time.Duration // a delivery dispatch running longer than this logs a warn line with its duration -- 0 disables
+
 	InstanceTTL time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
 
 	// Message / MessageMin / MessageMax / ConcurrencyOverride resolve each
@@ -86,6 +88,9 @@ func (c *ExceptionConsumerConfig) Validate() error {
 	}
 	if c.TimeoutGrace <= 0 {
 		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)
+	}
+	if c.SlowDispatchThreshold < 0 {
+		return fmt.Errorf("SlowDispatchThreshold must be >= 0, got %v", c.SlowDispatchThreshold)
 	}
 	if c.InstanceTTL <= 0 {
 		return fmt.Errorf("InstanceTTL must be > 0, got %v", c.InstanceTTL)

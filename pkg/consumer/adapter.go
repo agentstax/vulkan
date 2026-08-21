@@ -19,6 +19,7 @@ func toMessageConsumerConfig(cfg *ConsumerConfig) *messageconsumer.MessageConsum
 		QueueMargin:             cfg.QueueMargin,
 		RecordMargin:            cfg.RecordMargin,
 		TimeoutGrace:            cfg.TimeoutGrace,
+		SlowDispatchThreshold:   cfg.SlowDispatchThreshold,
 		ExceptionInitialBackoff: cfg.ExceptionInitialBackoff,
 		ShutdownTimeout:         cfg.ShutdownTimeout,
 		InstanceTTL:             cfg.InstanceTTL,
@@ -33,17 +34,18 @@ func toMessageConsumerConfig(cfg *ConsumerConfig) *messageconsumer.MessageConsum
 
 func toExceptionConsumerConfig(cfg *ConsumerConfig) *exceptionconsumer.ExceptionConsumerConfig {
 	return &exceptionconsumer.ExceptionConsumerConfig{
-		BatchLimit:          cfg.BatchLimit,
-		ClaimPollRate:       cfg.ClaimPollRate,
-		QueueMargin:         cfg.QueueMargin,
-		RecordMargin:        cfg.RecordMargin,
-		TimeoutGrace:        cfg.TimeoutGrace,
-		InstanceTTL:         cfg.InstanceTTL,
-		Message:             cfg.Message,
-		MessageMin:          cfg.MessageMin,
-		MessageMax:          cfg.MessageMax,
-		ConcurrencyOverride: cfg.ConcurrencyOverride,
-		Logger:              cfg.Logger,
-		Retry:               cfg.Retry,
+		BatchLimit:            cfg.BatchLimit,
+		ClaimPollRate:         cfg.ClaimPollRate,
+		QueueMargin:           cfg.QueueMargin,
+		RecordMargin:          cfg.RecordMargin,
+		TimeoutGrace:          cfg.TimeoutGrace,
+		SlowDispatchThreshold: cfg.SlowDispatchThreshold,
+		InstanceTTL:           cfg.InstanceTTL,
+		Message:               cfg.Message,
+		MessageMin:            cfg.MessageMin,
+		MessageMax:            cfg.MessageMax,
+		ConcurrencyOverride:   cfg.ConcurrencyOverride,
+		Logger:                cfg.Logger,
+		Retry:                 cfg.Retry,
 	}
 }

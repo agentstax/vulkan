@@ -5,6 +5,15 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-21 — Slow-operation threshold logging [0566]
+
+- One Warn line when an operation runs past its duration threshold, at
+  the [0559] boundaries: every produce entry point, the per-delivery
+  dispatch, the worker tick (threshold = the row's own poll_rate, no
+  config). ProducerConfig.SlowProduceThreshold and ConsumerConfig.
+  SlowDispatchThreshold opt in (0 = disabled); three declared events
+  VK0038-40 with docs pages; attr registry rows duration/threshold.
+
 ## 2026-08-20 — Record pipeline + repeated-line suppression [0564][0565]
 
 - logging.NewPipelineLogger(sink, cfg) is now the one wrapper: its config

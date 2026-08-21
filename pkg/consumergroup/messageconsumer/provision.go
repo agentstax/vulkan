@@ -29,8 +29,9 @@ func (d *MessageConsumerProvisioner[Message]) Provision(ctx context.Context, dec
 	}
 
 	base, err := consumerbase.NewBaseConsumer(d.BaseProvisioner, declared.Owner, resolvedTopic, &consumerbase.BaseConsumerConfig{
-		TimeoutGrace: cfg.TimeoutGrace,
-		RecordMargin: cfg.RecordMargin,
+		TimeoutGrace:          cfg.TimeoutGrace,
+		RecordMargin:          cfg.RecordMargin,
+		SlowDispatchThreshold: cfg.SlowDispatchThreshold,
 	})
 	if err != nil {
 		return nil, err

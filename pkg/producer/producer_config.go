@@ -3,6 +3,7 @@ package producer
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
@@ -20,6 +21,12 @@ type ProducerConfig struct {
 	// Batch - knobs for the shared-transaction batching of concurrent Produce
 	// calls. See batcher.BatcherConfig for fields and defaults.
 	Batch batcher.BatcherConfig
+
+	// SlowProduceThreshold - a produce call running longer than this logs a
+	// warn line with its duration. ProduceFunc and ProduceInTx durations
+	// include the caller's own closure and transaction time.
+	// Default: 0 (disabled).
+	SlowProduceThreshold time.Duration
 
 	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this producer's own Postgres calls -- never put on messages. Default: common.NewDefaultRetryPolicy().
@@ -44,6 +51,9 @@ func (c *ProducerConfig) WithDefaults() *ProducerConfig {
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
 func (c *ProducerConfig) Validate() error {
+	if c.SlowProduceThreshold < 0 {
+		return fmt.Errorf("SlowProduceThreshold must be >= 0, got %v", c.SlowProduceThreshold)
+	}
 	if err := c.Message.Validate(); err != nil {
 		return fmt.Errorf("Message: %w", err)
 	}

@@ -41,3 +41,8 @@ var EventKillBackstopFired = diagnostic.NewEvent("VK0031",
 // this consumer's MessageMin/MessageMax bounds.
 var EventStoredOptionsClamped = diagnostic.NewEvent("VK0032",
 	"stored message options outside this consumer's bounds", "clamped")
+
+// EventSlowDispatch means one delivery's dispatch ran past the group's
+// SlowDispatchThreshold, whatever the delivery's outcome.
+var EventSlowDispatch = diagnostic.NewEvent("VK0039",
+	"delivery dispatch exceeded the duration threshold", "")

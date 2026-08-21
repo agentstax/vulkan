@@ -27,7 +27,11 @@ type ConsumerConfig struct {
 	// own cancellation-response time (e.g. a DB driver's cancel-request round
 	// trip), which pkg/consumer can't know in general. Default assumes one
 	// same-region network round trip's worth of slack.
-	TimeoutGrace            time.Duration
+	TimeoutGrace time.Duration
+	// SlowDispatchThreshold - a delivery dispatch running longer than this
+	// logs a warn line with its duration; consumerFunc time is the dominant
+	// term. Default: 0 (disabled).
+	SlowDispatchThreshold   time.Duration
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception/terminal row is first written (Commit/PartialCommit) -- Message.Retry takes over on later retries
 
 	InstanceTTL          time.Duration // how long this consumer's claimed worker_instance rows stay live without a heartbeat renewal -- past it a replacement can claim. Default: 30s.
@@ -166,6 +170,9 @@ func (c *ConsumerConfig) Validate() error {
 	}
 	if c.TimeoutGrace <= 0 {
 		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)
+	}
+	if c.SlowDispatchThreshold < 0 {
+		return fmt.Errorf("SlowDispatchThreshold must be >= 0, got %v", c.SlowDispatchThreshold)
 	}
 	if c.ExceptionInitialBackoff <= 0 {
 		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", c.ExceptionInitialBackoff)

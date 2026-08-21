@@ -24,6 +24,7 @@ type MessageConsumerConfig struct {
 	QueueMargin             time.Duration // lease padding for time a claimed item sits queued before a worker starts on it
 	RecordMargin            time.Duration // lease padding for recording success/failure after consumerFunc returns
 	TimeoutGrace            time.Duration // scheduling slack for a consumerFunc that DID respect ctx.Done() to unwind before the hard cutoff abandons it
+	SlowDispatchThreshold   time.Duration // a delivery dispatch running longer than this logs a warn line with its duration -- 0 disables
 	ExceptionInitialBackoff time.Duration // can_run_after delay when an exception row is first written
 
 	InstanceTTL time.Duration // how long a claimed worker_instance row stays live without a heartbeat renewal
@@ -117,6 +118,9 @@ func (c *MessageConsumerConfig) Validate() error {
 	}
 	if c.TimeoutGrace <= 0 {
 		return fmt.Errorf("TimeoutGrace must be > 0, got %v", c.TimeoutGrace)
+	}
+	if c.SlowDispatchThreshold < 0 {
+		return fmt.Errorf("SlowDispatchThreshold must be >= 0, got %v", c.SlowDispatchThreshold)
 	}
 	if c.ExceptionInitialBackoff <= 0 {
 		return fmt.Errorf("ExceptionInitialBackoff must be > 0, got %v", c.ExceptionInitialBackoff)

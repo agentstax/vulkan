@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
@@ -58,6 +59,7 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 // the rerun dedups against whatever actually landed, reported as
 // ProduceResult.Duplicate == true.
 func (p *ProducerInstance[Message]) Produce(ctx context.Context, message *Message, options ProduceOptions) (*ProduceResult[Message], error) {
+	defer p.warnSlowProduce(ctx, time.Now())
 	ctx = logging.WithLogBuffer(ctx)
 
 	options.Message = options.Message.Fill(p.Config.Message)
@@ -95,6 +97,7 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 	if len(items) == 0 {
 		return nil, errors.New("items must not be empty")
 	}
+	defer p.warnSlowProduce(ctx, time.Now())
 	ctx = logging.WithLogBuffer(ctx)
 
 	appends := make([]*controller.Append[Message], 0, len(items))
@@ -128,6 +131,8 @@ func (p *ProducerInstance[Message]) ProduceBatch(ctx context.Context, items ...*
 // ProduceFunc appends the message returned by producerFunc, which runs inside
 // the message's transaction -- your writes commit or roll back with it.
 func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
+	defer p.warnSlowProduce(ctx, time.Now())
+
 	options.Message = options.Message.Fill(p.Config.Message)
 	if err := options.Validate(); err != nil {
 		return nil, err
@@ -152,6 +157,8 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
 func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
+	defer p.warnSlowProduce(ctx, time.Now())
+
 	options.Message = options.Message.Fill(p.Config.Message)
 	if err := options.Validate(); err != nil {
 		return nil, err
@@ -170,6 +177,17 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, prod
 // allowing for race-free compare and set.
 func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, compactionKey string) (*MessageRow[Message], error) {
 	return p.controller.GetCompactionHeadInTx(ctx, tx, p.Topic.Id, compactionKey)
+}
+
+// warnSlowProduce logs one line when a produce entry point ran past the
+// configured threshold -- slowness is its own fact, logged whatever the
+// call's outcome.
+func (p *ProducerInstance[Message]) warnSlowProduce(ctx context.Context, start time.Time) {
+	duration := time.Since(start)
+	if p.Config.SlowProduceThreshold <= 0 || duration <= p.Config.SlowProduceThreshold {
+		return
+	}
+	p.Config.Logger.WarnContext(ctx, eventSlowProduce.Message, "code", eventSlowProduce.Code, "topic", p.Topic.Name, "duration", duration, "threshold", p.Config.SlowProduceThreshold)
 }
 
 // toAppend shapes one batch item for the controller: fills message options

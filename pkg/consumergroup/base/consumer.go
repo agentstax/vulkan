@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -78,6 +79,7 @@ func (b *BaseConsumer[Message]) ReleaseKeyedRun(ctx context.Context, claim *cont
 // Handles: nil map write, index out of range, bad type assertion
 // Does not handle: OS-level fault -- stack overflow, SIGSEGV via cgo, OOM-kill, external kill
 func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message, messageId int64, attempt int, requested *common.MessageOptions, timeout time.Duration) error {
+	defer b.warnSlowDispatch(ctx, time.Now(), messageId, attempt)
 	ctx = logging.WithLogBuffer(ctx)
 
 	// the timeout cause names which side's budget fired
@@ -122,4 +124,15 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 		// never include the message itself -- it may hold sensitive values
 		return fmt.Errorf("hard timeout after %s, goroutine abandoned for message %d", timeout+b.Config.TimeoutGrace, messageId)
 	}
+}
+
+// warnSlowDispatch logs one line when a delivery's dispatch ran past the
+// configured threshold -- slowness is its own fact, logged whatever the
+// delivery's outcome.
+func (b *BaseConsumer[Message]) warnSlowDispatch(ctx context.Context, start time.Time, messageId int64, attempt int) {
+	duration := time.Since(start)
+	if b.Config.SlowDispatchThreshold <= 0 || duration <= b.Config.SlowDispatchThreshold {
+		return
+	}
+	b.Logger.WarnContext(ctx, consumergroup.EventSlowDispatch.Message, "code", consumergroup.EventSlowDispatch.Code, "group", b.Owner.Name, "topic_id", b.Topic.Id, "message_id", messageId, "attempt", attempt, "duration", duration, "threshold", b.Config.SlowDispatchThreshold)
 }

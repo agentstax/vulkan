@@ -533,6 +533,9 @@ stopped mechanism. Debug/Info narration never declares.
                     cap spells its config field, max_retries)
       delay         backoff delay
       rate          worker poll rate
+      duration      elapsed wall time of the operation the line reports
+      threshold     the configured duration ceiling the line compares
+                    against
       vulkan_version  module version (common.BuildVersion) -- start lines
       <verb>_count  rows affected by the named action (swept_count,
                     reclaimed_count, dead_count)
