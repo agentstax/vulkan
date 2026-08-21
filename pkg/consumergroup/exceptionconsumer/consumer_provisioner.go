@@ -36,7 +36,7 @@ type ExceptionConsumerProvisioner[Message any] struct {
 // the assembled consumer -- see the package doc.
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewExceptionConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerProvisioner[Message], error) {
+func NewExceptionConsumerProvisioner[Message any](ds *datastore.PostgresDatastore, consumerFunc func(ctx context.Context, message *Message) error, metrics *metricsproducer.MetricsProducer, cfg *ExceptionConsumerConfig) (*ExceptionConsumerProvisioner[Message], error) {
 	if cfg == nil {
 		cfg = &ExceptionConsumerConfig{}
 	}
@@ -49,7 +49,7 @@ func NewExceptionConsumerProvisioner[Message any](ds *datastore.PostgresDatastor
 	if err != nil {
 		return nil, err
 	}
-	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, abandonedEvents, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
+	baseProvisioner, err := consumerbase.NewBaseProvisioner(ds, definition, consumerFunc, metrics, &consumerbase.BaseProvisionerConfig{Logger: cfg.Logger, Retry: cfg.Retry})
 	if err != nil {
 		return nil, err
 	}

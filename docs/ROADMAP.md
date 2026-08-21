@@ -16,11 +16,20 @@ the item is removed.
 
 ## Now
 
-- **Stop line as session summary** — instance lifetime counters (produced,
-  consumed, dead-lettered, reclaims survived) on the "stopped" line, the
-  OBS ending-counters shape: "it was flaky" becomes numbers. Needs
-  in-memory counters; pairs with what the metrics collector already
-  gathers.
+- **Stop line as session summary** — design settled in [0567]: counters as
+  atomics + Snapshot() on the instance-side metrics producer, stopped line
+  renders the snapshot on every exit (memory only, never the DB), flush
+  tick ships totals as KindCounter with a session-uuid series attr; the
+  producer's produced counter alone waits on presence (13d). Build:
+  counter fields + bump sites, flush tick, stopped-line render, the
+  CONVENTIONS start-line amendment, exact counter names from row statuses.
+  - Evaluated 2026-08-21, kept both: ConsumerGroupSnapshot stays a live
+    DB read, never rerouted through the topic heads. Session counters
+    are flows (what one process did), the snapshot is a level (what
+    exists now) — neither derives the other, and the snapshot's readers
+    (admin health/group, GroupLag destroy guards) need truth at call
+    time, not collector-poll-stale values. The topic heads remain the
+    cache for staleness-tolerant readers (otelvulkan, Prometheus).
 - **Topic config as append-only declaration rows.** Design settled in [0519];
   build deferred so the config surface from [0518] settles first. topic keeps
   identity only (id, system_id, schema_version, created_at); a
@@ -37,6 +46,23 @@ the item is removed.
   table without bound. Add time-based cleanup of superseded attempt rows
   (append-then-prune like message_log; off the register path, never touching
   the newest installed row or a declarer's newest waiting row).
+  - Design settled 2026-08-21: batched DELETE of waiting rows past a flat 7d
+    TTL, excluding each declarer's newest waiting row (kept even past TTL —
+    dead waiters stay visible in listings; growth bounded by declarer count
+    in practice). Installed rows out of scope entirely: set-change audit is
+    kept forever, one row per real change.
+  - A live waiter is never touchable regardless — it re-appends every
+    BindingRetryInterval (10s), so its newest row sits far inside the TTL.
+    classifyDeclaration reads only installed rows, so declareBindings is
+    unaffected; no lock coordination (rows past TTL can't race an insert).
+  - Runs as a new worker kind under pkg/consumergroup at OwnerSystem scope
+    (one worker row total, slow poll rate on the order of hours), one
+    batched DELETE per tick; Debug line with swept_count only on ticks that
+    deleted rows. Riding the cursor advancer rejected (per-group rows
+    multiply idle-fleet cost; pruning isn't cursor work).
+  - TTL stays a flat const for now — add to the hardcoded-config audit. No
+    new index: the sweep keeps the table small enough that its own scan is
+    noise.
 - **Append-only tables think-through** — making all tables append-only would
   be Cassandra-like, give audit/debuggability for all operations, and enable
   partition-based drops everywhere; trade-off is complexity and hot-path
@@ -462,6 +488,10 @@ prerequisite if quorum-as-a-fraction wins.
     telegraph (idle/expiring visible in worker snapshots/state gauges
     BEFORE the reaper), and unresolved delivery rows refuse-or-alert, never
     silent drop.
+  - Fourth consumer — the producer half of the stop-line session summary
+    ([0567]): the producer has no lifecycle, so its produced counter's
+    stopped line is the heartbeat goroutine's stop. The consumer side is
+    not gated here — its session counters flush under a session uuid.
   - Real systems: RabbitMQ if-unused; Kafka group membership
     (session.timeout.ms as the TTL sweep); Temporal worker pollers view.
 - **Post-v1 research backlog** (14d):

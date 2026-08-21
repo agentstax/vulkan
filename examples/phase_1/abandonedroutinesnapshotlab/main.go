@@ -44,12 +44,12 @@ func main() {
 	must(err)
 	go func() { must(producerB.Run(ctx)) }()
 
-	producerA.Add(topicId, group, 1, 1) // matched pair, cleared by A
-	producerB.Add(topicId, group, 2, 1) // matched pair, cleared by B
-	time.Sleep(20 * time.Millisecond)   // let the self-clear latency be non-zero and measurable
-	producerA.Remove(topicId, group, 1, 1)
-	producerB.Remove(topicId, group, 2, 1)
-	producerA.Add(topicId, group, 3, 1) // never cleared -- outstanding
+	producerA.RecordAbandoned(topicId, group, 1, 1) // matched pair, cleared by A
+	producerB.RecordAbandoned(topicId, group, 2, 1) // matched pair, cleared by B
+	time.Sleep(20 * time.Millisecond)               // let the self-clear latency be non-zero and measurable
+	producerA.RecordCleared(topicId, group, 1, 1)
+	producerB.RecordCleared(topicId, group, 2, 1)
+	producerA.RecordAbandoned(topicId, group, 3, 1) // never cleared -- outstanding
 
 	// events are produced off the hot path via a buffered channel drained by
 	// a background goroutine -- give it a moment to actually land

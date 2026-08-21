@@ -143,7 +143,8 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 	}
 
 	// built per instance -- two instances must never share one event queue
-	abandonedEvents, err := metricsproducer.NewMetricsProducer(c.ds, &metricsproducer.ProducerConfig{
+	// or one set of session counters
+	instanceMetrics, err := metricsproducer.NewMetricsProducer(c.ds, &metricsproducer.ProducerConfig{
 		Logger: c.Config.Logger,
 		Retry:  c.Config.Retry,
 	})
@@ -151,5 +152,5 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, err
 	}
 
-	return newConsumerInstance[Message](owner, c.ds, abandonedEvents, c.consumers, bindings, declaredAt, c.Config)
+	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, bindings, declaredAt, c.Config)
 }

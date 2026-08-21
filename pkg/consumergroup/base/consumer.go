@@ -23,9 +23,9 @@ type BaseConsumer[Message any] struct {
 	Config *BaseConsumerConfig
 	Logger logging.Logger
 
-	keyLeases       *controller.KeyLeaseController
-	abandonedEvents *metricsproducer.MetricsProducer
-	consumerFunc    func(ctx context.Context, message *Message) error
+	keyLeases    *controller.KeyLeaseController
+	metrics      *metricsproducer.MetricsProducer
+	consumerFunc func(ctx context.Context, message *Message) error
 }
 
 // resolvedTopic comes from BaseProvisioner.GetTopic. cfg may be nil or a
@@ -50,13 +50,13 @@ func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], own
 	}
 
 	return &BaseConsumer[Message]{
-		Owner:           owner,
-		Topic:           resolvedTopic,
-		Config:          cfg,
-		Logger:          baseProvisioner.Logger,
-		keyLeases:       baseProvisioner.keyLeases,
-		abandonedEvents: baseProvisioner.abandonedEvents,
-		consumerFunc:    baseProvisioner.consumerFunc,
+		Owner:        owner,
+		Topic:        resolvedTopic,
+		Config:       cfg,
+		Logger:       baseProvisioner.Logger,
+		keyLeases:    baseProvisioner.keyLeases,
+		metrics:      baseProvisioner.metrics,
+		consumerFunc: baseProvisioner.consumerFunc,
 	}, nil
 }
 
@@ -111,14 +111,14 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 	// consumerFunc got Timeout to notice ctx and return; past Timeout + grace it
 	// is written off and its goroutine is left running, unreachable
 	case <-time.After(timeout + b.Config.TimeoutGrace):
-		b.abandonedEvents.Add(b.Topic.Id, b.Owner.Name, messageId, attempt)
+		b.metrics.RecordAbandoned(b.Topic.Id, b.Owner.Name, messageId, attempt)
 
 		// done is buffered(1) and nothing else reads it past this point, so this
 		// receive fires exactly when the abandoned goroutine finally returns.
 		// Started after Add, so Remove can never precede it.
 		go func() {
 			<-done
-			b.abandonedEvents.Remove(b.Topic.Id, b.Owner.Name, messageId, attempt)
+			b.metrics.RecordCleared(b.Topic.Id, b.Owner.Name, messageId, attempt)
 		}()
 
 		// never include the message itself -- it may hold sensitive values

@@ -50,7 +50,7 @@ func (i *ConsumerInstance[Message]) newManagerRunner(ctx context.Context, consum
 // one frontier per group, with committed advancing behind it. Each
 // provisioner declares its own row before it joins the manager's list.
 func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, consumerFunc ConsumerFunc[Message]) ([]worker.Provisioner, error) {
-	message, err := messageconsumer.NewMessageConsumerProvisioner(i.ds, consumerFunc, i.abandonedEvents, toMessageConsumerConfig(i.Config))
+	message, err := messageconsumer.NewMessageConsumerProvisioner(i.ds, consumerFunc, i.metrics, toMessageConsumerConfig(i.Config))
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, co
 		return nil, err
 	}
 
-	exception, err := exceptionconsumer.NewExceptionConsumerProvisioner(i.ds, consumerFunc, i.abandonedEvents, toExceptionConsumerConfig(i.Config))
+	exception, err := exceptionconsumer.NewExceptionConsumerProvisioner(i.ds, consumerFunc, i.metrics, toExceptionConsumerConfig(i.Config))
 	if err != nil {
 		return nil, err
 	}

@@ -53,3 +53,20 @@ func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
 		UnresolvedExceptions: s.Exceptions.Ready + s.Exceptions.Inflight + s.Exceptions.Deferred,
 	}
 }
+
+// SessionCounters is one consumer instance's lifetime totals, counted in
+// memory as the work happens -- the instance's own contribution, where
+// ConsumerGroupSnapshot is the fleet-wide DB truth.
+type SessionCounters struct {
+	Claimed    int64 // messages claimed
+	Success    int64 // deliveries recorded 'success'
+	Superseded int64 // deliveries recorded 'superseded'
+	Ready      int64 // delivery rows written 'ready'
+	Deferred   int64 // delivery rows written 'deferred'
+	Dead       int64 // delivery rows written 'dead'
+
+	Reclaimed   int64 // leases reclaimed from expired workers
+	Quarantined int64 // ranges quarantined after max reclaims
+	Abandoned   int64 // consumerFunc goroutines abandoned past the hard timeout
+	LeaseLost   int64 // commits rejected because the lease was reclaimed
+}

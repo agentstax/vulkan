@@ -26,16 +26,16 @@ type BaseProvisioner[Message any] struct {
 	definition *worker.Definition
 	Logger     logging.Logger
 
-	workers         *workercontroller.WorkerController
-	topics          *topiccontroller.TopicController
-	keyLeases       *controller.KeyLeaseController
-	abandonedEvents *metricsproducer.MetricsProducer
-	consumerFunc    func(ctx context.Context, message *Message) error
+	workers      *workercontroller.WorkerController
+	topics       *topiccontroller.TopicController
+	keyLeases    *controller.KeyLeaseController
+	metrics      *metricsproducer.MetricsProducer
+	consumerFunc func(ctx context.Context, message *Message) error
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, abandonedEvents *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
+func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -45,8 +45,8 @@ func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition
 	if consumerFunc == nil {
 		return nil, errors.New("consumerFunc must not be nil")
 	}
-	if abandonedEvents == nil {
-		return nil, errors.New("abandonedEvents producer must not be nil")
+	if metrics == nil {
+		return nil, errors.New("metrics must not be nil")
 	}
 	if cfg == nil {
 		cfg = &BaseProvisionerConfig{}
@@ -85,13 +85,13 @@ func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition
 	definition.TargetInstances = worker.NoInstanceTarget
 
 	return &BaseProvisioner[Message]{
-		definition:      definition,
-		Logger:          cfg.Logger,
-		workers:         workers,
-		topics:          topics,
-		keyLeases:       keyLeases,
-		abandonedEvents: abandonedEvents,
-		consumerFunc:    consumerFunc,
+		definition:   definition,
+		Logger:       cfg.Logger,
+		workers:      workers,
+		topics:       topics,
+		keyLeases:    keyLeases,
+		metrics:      metrics,
+		consumerFunc: consumerFunc,
 	}, nil
 }
 

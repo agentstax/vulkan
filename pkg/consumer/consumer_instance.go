@@ -23,26 +23,26 @@ type ConsumerInstance[Message any] struct {
 	Config *ConsumerConfig
 	Logger logging.Logger
 
-	ds              *datastore.PostgresDatastore
-	abandonedEvents *metricsproducer.MetricsProducer
-	consumers       *consumergroupcontroller.ConsumerGroupController
-	bindings        []string
-	declaredAt      time.Time
-	permit          *concurrency.Permit // held for the length of a Consume call
+	ds         *datastore.PostgresDatastore
+	metrics    *metricsproducer.MetricsProducer
+	consumers  *consumergroupcontroller.ConsumerGroupController
+	bindings   []string
+	declaredAt time.Time
+	permit     *concurrency.Permit // held for the length of a Consume call
 }
 
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
 // so there is nothing left to default or validate here.
 // bindings and declaredAt are Register's declaration, re-attempted by Consume.
-func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, abandonedEvents *metricsproducer.MetricsProducer, consumers *consumergroupcontroller.ConsumerGroupController, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumergroupcontroller.ConsumerGroupController, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
-	if abandonedEvents == nil {
-		return nil, errors.New("abandonedEvents must not be nil")
+	if metrics == nil {
+		return nil, errors.New("metrics must not be nil")
 	}
 	if consumers == nil {
 		return nil, errors.New("consumers must not be nil")
@@ -60,15 +60,15 @@ func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.Postgre
 	}
 
 	return &ConsumerInstance[Message]{
-		Owner:           owner,
-		Config:          cfg,
-		Logger:          cfg.Logger,
-		ds:              ds,
-		abandonedEvents: abandonedEvents,
-		consumers:       consumers,
-		bindings:        bindings,
-		declaredAt:      declaredAt,
-		permit:          permit,
+		Owner:      owner,
+		Config:     cfg,
+		Logger:     cfg.Logger,
+		ds:         ds,
+		metrics:    metrics,
+		consumers:  consumers,
+		bindings:   bindings,
+		declaredAt: declaredAt,
+		permit:     permit,
 	}, nil
 }
 
@@ -111,10 +111,10 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 
 	group, runCtx := errgroup.WithContext(ctx)
 
-	// abandonedEvents.Run goes beside the manager, abandonedEvents
+	// metrics.Run goes beside the manager: abandoned events
 	// arrive as consumers shut down, after claim work is done
 	group.Go(func() error {
-		return i.abandonedEvents.Run(runCtx)
+		return i.metrics.Run(runCtx)
 	})
 	group.Go(func() error {
 		return runner.Run(runCtx)
