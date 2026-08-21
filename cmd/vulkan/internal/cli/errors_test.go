@@ -13,6 +13,23 @@ import (
 var errTestBroker = diagnostic.NewError("VK9801", diagnostic.Transient,
 	"could not reach the test broker", "retry the produce call")
 
+var metricTestDepth = diagnostic.NewMetric("VK9802",
+	"vulkan.test.queue_depth", "gauge", "{message}", "test queue depth")
+
+func TestRenderMetricBlockAlignsAllParts(t *testing.T) {
+	var builder strings.Builder
+	renderMetricBlock(&builder, metricTestDepth)
+
+	want := "metric[VK9802]: vulkan.test.queue_depth\n" +
+		"  kind:        gauge\n" +
+		"  unit:        {message}\n" +
+		"  description: test queue depth\n" +
+		"  docs:        https://vulkan-5ss.pages.dev/errors/VK9802\n"
+	if builder.String() != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", builder.String(), want)
+	}
+}
+
 func TestRenderErrorBlockAlignsAllParts(t *testing.T) {
 	raised := errTestBroker.With("topic", "orders", "version", 3).Wrap(errors.New("connection refused"))
 

@@ -53,3 +53,25 @@ and the code lands on a page here the same way.
 | [VK0035](/errors/VK0035) | manager row suspended | warn |
 | [VK0036](/errors/VK0036) | worker tick backoff curve exhausted | error |
 | [VK0037](/errors/VK0037) | cron job request was already published by an earlier ambiguous commit | warn |
+| [VK0038](/errors/VK0038) | produce exceeded the duration threshold | warn |
+| [VK0039](/errors/VK0039) | delivery dispatch exceeded the duration threshold | warn |
+| [VK0040](/errors/VK0040) | worker tick exceeded its poll rate | warn |
+| [VK0041](/errors/VK0041) | consumer stopped | info |
+| [VK0052](/errors/VK0052) | abandoned-routine events dropped | warn |
+
+Declared metrics share the code space too: a measurement's name resolves
+to its declaration, and `vulkan explain` accepts the code, the full
+name, or the stop-line attr key (`ready_count`).
+
+| Code | Metric | Kind |
+| ---- | ------ | ---- |
+| [VK0042](/errors/VK0042) | vulkan.consumer.session.claimed | counter |
+| [VK0043](/errors/VK0043) | vulkan.consumer.session.success | counter |
+| [VK0044](/errors/VK0044) | vulkan.consumer.session.superseded | counter |
+| [VK0045](/errors/VK0045) | vulkan.consumer.session.ready | counter |
+| [VK0046](/errors/VK0046) | vulkan.consumer.session.deferred | counter |
+| [VK0047](/errors/VK0047) | vulkan.consumer.session.dead | counter |
+| [VK0048](/errors/VK0048) | vulkan.consumer.session.reclaimed | counter |
+| [VK0049](/errors/VK0049) | vulkan.consumer.session.quarantined | counter |
+| [VK0050](/errors/VK0050) | vulkan.consumer.session.abandoned | counter |
+| [VK0051](/errors/VK0051) | vulkan.consumer.session.lease_lost | counter |

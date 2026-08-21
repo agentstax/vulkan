@@ -89,9 +89,16 @@ docs/decisions/.
     counts them, the next tick reports dropped_count; docs page landed).
     Session-counter flush failures stay a plain Warn -- self-healing,
     next tick carries newer totals.
-- [ ] **Chunk 6 -- vulkan explain gains a metrics section.** List
-  metric declarations beside errors and events; explain by metric name
-  or stop-line attr key (ready_count -> vulkan.consumer.session.ready).
+- [x] **Chunk 6 -- vulkan explain gains a metrics section.** DONE
+  2026-08-21: the bare listing shows metrics beside errors/events (code
+  + name); a metric renders as its own block (kind, unit, description,
+  docs) resolved by code, full name, or stop-line attr key --
+  ready_count strips _count and matches a declared name's last segment.
+  renderMetricBlock + render test in the cli package. Docs: ten
+  hand-written pages VK0042-VK0051 (prose from the VK0041 catalog
+  bullets, flow-vs-gauge note, each linking back to VK0041); index.md
+  gained the metrics table AND the event rows VK0038-VK0041 + VK0052
+  that were missing (pre-existing drift).
 - [ ] **Chunk 7 -- checkpoint.** Fresh-DB run of affected labs + full
   suite; HISTORY.md entry citing [0567]+[0568]; drop the ROADMAP Now
   item.

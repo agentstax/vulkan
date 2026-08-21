@@ -155,6 +155,29 @@ func renderLogEventBlock(w io.Writer, event *diagnostic.Event) {
 	fmt.Fprintf(w, "  docs: %s\n", event.Docs())
 }
 
+// renderMetricBlock is renderErrorBlock's sibling for a declared metric:
+// the header line, then kind, unit, description, docs -- an empty unit
+// drops its row.
+func renderMetricBlock(w io.Writer, metric *diagnostic.Metric) {
+	fmt.Fprintf(w, "metric[%s]: %s\n", metric.Code, metric.Name)
+
+	rows := make([][2]string, 0, 4)
+	rows = append(rows, [2]string{"kind", metric.Kind})
+	if metric.Unit != "" {
+		rows = append(rows, [2]string{"unit", metric.Unit})
+	}
+	rows = append(rows, [2]string{"description", metric.Description})
+	rows = append(rows, [2]string{"docs", metric.Docs()})
+
+	width := 0
+	for _, row := range rows {
+		width = max(width, len(row[0]))
+	}
+	for _, row := range rows {
+		fmt.Fprintf(w, "  %-*s %s\n", width+1, row[0]+":", row[1])
+	}
+}
+
 func formatAttrValue(value slog.Value) string {
 	if value.Kind() == slog.KindString {
 		return strconv.Quote(value.String())
