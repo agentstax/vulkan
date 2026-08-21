@@ -493,7 +493,10 @@ a tick loop -- is the one place logging a failure belongs.
 The mirror of the error-declaration boundary: a Warn or Error event
 earns a declaration (and a code) when it is operator-actionable enough
 for a docs page -- a durable data consequence, a reclaim, a backstop, a
-stopped mechanism. Debug/Info narration never declares.
+stopped mechanism. Debug/Info narration never declares, with ONE
+exception: a lifecycle summary line whose attr set needs a docs page
+(the stopped line's session counters) declares despite being Info --
+the code is the line's breadcrumb to its own explanation.
 
 - Declare in the owning vocabulary package's logs.go via
   diagnostic.NewEvent(code, message, consequence) -- the codes share the
@@ -537,6 +540,9 @@ stopped mechanism. Debug/Info narration never declares.
       threshold     the configured duration ceiling the line compares
                     against
       vulkan_version  module version (common.BuildVersion) -- start lines
+      help          plain words ending in the verbatim command that
+                    explains the line ("counters explained: vulkan
+                    explain VK0041") -- summary lines only
       <verb>_count  rows affected by the named action (swept_count,
                     reclaimed_count, dead_count)
       suppressed_count  repeats of the same Warn/Error line dropped
@@ -554,7 +560,15 @@ carries the module version (common.BuildVersion), the instance identity,
 and the resolved config facts an operator would ask for (poll rate,
 timeouts, batch sizes) -- one line, attrs only. A config fact's key
 spells its config field snake_cased (shutdown_timeout, batch_limit).
-The paired "stopped" line carries the bound identity and nothing else.
+
+The paired "stopped" line is the session summary: bound identity, the
+session's `duration`, and every lifetime counter the instance keeps as
+`<verb>_count` attrs -- all printed, zeros included, so the line's shape
+never varies. It is emitted on EVERY exit, fatal-error teardown included
+(the error is still returned, never logged), and reads memory only --
+never the database, which may be exactly what is down. A summary line
+with counters is declared (the Declared-events exception) and carries a
+trailing `help` attr, so the line itself points at its explanation.
 
 ### The failure record
 

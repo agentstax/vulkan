@@ -35,32 +35,49 @@ docs/decisions/.
   absorbLostLease bumps lease_lost. deliveryconsumer (standalone
   lifecycle-path sub-consumer, not in the instance chain) deliberately
   not instrumented. Build + conventions + reclaim-lab + defer-lab pass.
-- [ ] **Chunk 3 -- stopped line renders the snapshot.** Consume emits
-  "consumer stopped" on EVERY exit (drop the clean-stop gate), with
-  identity + `duration` (session wall time) + every counter as
-  `<verb>_count` attrs, zeros printed. CONVENTIONS ### The start line
-  amendment: the stopped line is the session summary. Decide here
-  whether the standalone worker instances' stopped lines (janitor,
-  cron scheduler, collector, cursor advancer -- trivially local
-  counters) ride this build or go back on the ROADMAP.
-- [ ] **Chunk 4 -- flush tick to __system.metrics.** Session uuid
-  minted per Consume as a series attribute; vulkan.consumer.session.*
-  name consts in pkg/metrics; a tick in MetricsProducer.Run produces
-  current totals as KindCounter Measurements. No otelvulkan change
-  (KindCounter already maps to the monotonic observable). Decide the
-  tick interval + whether shutdown attempts a last flush (lean no:
-  queued events already drop on cancel; the stop line holds the final
-  numbers).
-  - Name-const comments must state the flow-vs-level split: session.*
-    are per-instance monotonic flows and never reconcile against the
-    consumer.cursor.*/exceptions.* gauges (levels) -- kept-both
-    evaluation noted on the ROADMAP item.
-  - Consider moving abandoned-routine event produces onto the flush
-    tick too (batch the queued events per tick, e.g. ProduceBatch)
-    instead of one produce per event -- an abandoned-routine storm
-    shouldn't add per-event DB writes. Weigh against: today's path is
-    already storm-bounded (256-cap queue, drop-on-full, one produce in
-    flight), and events are paired add/clear rows whose snapshot
-    latency matching may care about produce timing.
-- [ ] **Chunk 5 -- checkpoint.** Fresh-DB run of affected labs + full
-  suite; HISTORY.md entry citing [0567]; drop the ROADMAP Now item.
+- [x] **Chunk 3 -- stopped line renders the snapshot.** DONE 2026-08-21:
+  Consume emits logStopped on every exit (clean-stop gate dropped;
+  error still returned, never logged), identity + `duration` + all ten
+  `<verb>_count` attrs, zeros printed. CONVENTIONS start-line section
+  amended (session summary, every exit, memory only). Verified live:
+  claimed_count=3 success_count=3 + eight zeros on a real session.
+  OPEN for review: standalone worker instances' stopped lines (janitor,
+  cron scheduler, collector, cursor advancer) -- own local counters,
+  this build or ROADMAP follow-on; amendment phrased "every lifetime
+  counter the instance keeps," so counter-less lines comply meanwhile.
+- [x] **Chunk 4 -- the line carries its own breadcrumb.** DONE
+  2026-08-21, record [0568]: Declare the
+  stopped line: unexported event in pkg/consumer/logs.go (VK0038
+  precedent), next VK serial, message "consumer stopped", empty
+  consequence; logStopped logs code first and a trailing
+  `help` attr -- plain words ending in the pasteable command
+  ("counters explained: vulkan explain VK00xx"). Hand-written docs
+  page defining every counter (what it counts, what nonzero means,
+  paired gauge) lands in the same change -- this IS the session-summary
+  page. CONVENTIONS: `help` attr-registry row + Declared-events
+  boundary widened one notch (a lifecycle summary line whose attr set
+  needs a docs page may declare, Info included) + session-summary
+  paragraph mentions code/help. Decision record extending [0562].
+  Parking lot: evaluate pipeline-enrich auto-help for ALL coded lines.
+- [ ] **Chunk 5 -- flush tick to __system.metrics + metric
+  declarations.** vulkan.consumer.session.* declared as first-class
+  registry entries in pkg/metrics (name, kind, unit, description --
+  const comments become descriptions under the "what nonzero means"
+  grammar); flusher builds Measurements FROM the declaration (kind/
+  unit can't drift); session uuid minted per Consume as series attr;
+  tick in MetricsProducer.Run produces totals as KindCounter.
+  otelvulkan passes WithDescription for names the registry knows ->
+  Prometheus # HELP / Grafana hover. Decide tick interval + last-flush
+  (lean no: stop line holds final numbers).
+  - Descriptions state the flow-vs-level split: session.* never
+    reconcile against consumer.cursor.*/exceptions.* gauges.
+  - Consider batching abandoned-routine event produces onto the tick
+    (ProduceBatch) -- today's path is already storm-bounded (256-cap
+    queue, drop-on-full, one produce in flight); events' At stamps at
+    enqueue so latency math survives batching, only freshness lags.
+- [ ] **Chunk 6 -- vulkan explain gains a metrics section.** List
+  metric declarations beside errors and events; explain by metric name
+  or stop-line attr key (ready_count -> vulkan.consumer.session.ready).
+- [ ] **Chunk 7 -- checkpoint.** Fresh-DB run of affected labs + full
+  suite; HISTORY.md entry citing [0567]+[0568]; drop the ROADMAP Now
+  item.

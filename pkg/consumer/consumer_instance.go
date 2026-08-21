@@ -108,6 +108,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	}
 
 	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", i.Config.ShutdownTimeout, "batch_limit", i.Config.BatchLimit)
+	started := time.Now()
 
 	group, runCtx := errgroup.WithContext(ctx)
 
@@ -121,10 +122,33 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 	})
 
 	err = group.Wait()
-	if err == nil && ctx.Err() != nil {
-		i.Logger.InfoContext(context.WithoutCancel(ctx), "consumer stopped", "group", i.Owner.Name, "topic_id", i.Owner.TopicId)
-	}
+
+	// every exit gets the summary -- a failed session is the one whose
+	// numbers matter most. The error itself is returned, never logged.
+	i.logStopped(context.WithoutCancel(ctx), started)
 	return err
+}
+
+// logStopped is the session summary: bound identity, session wall time, and
+// every session counter, zeros included.
+func (i *ConsumerInstance[Message]) logStopped(ctx context.Context, started time.Time) {
+	counters := i.metrics.Snapshot()
+	i.Logger.InfoContext(ctx, eventConsumerStopped.Message,
+		"code", eventConsumerStopped.Code,
+		"group", i.Owner.Name,
+		"topic_id", i.Owner.TopicId,
+		"duration", time.Since(started),
+		"claimed_count", counters.Claimed,
+		"success_count", counters.Success,
+		"superseded_count", counters.Superseded,
+		"ready_count", counters.Ready,
+		"deferred_count", counters.Deferred,
+		"dead_count", counters.Dead,
+		"reclaimed_count", counters.Reclaimed,
+		"quarantined_count", counters.Quarantined,
+		"abandoned_count", counters.Abandoned,
+		"lease_lost_count", counters.LeaseLost,
+		"help", "metrics explained: vulkan explain "+eventConsumerStopped.Code)
 }
 
 // declareBindings retries the declaration until it is installed or joined.
