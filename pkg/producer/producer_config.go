@@ -29,7 +29,7 @@ func (c *ProducerConfig) WithDefaults() *ProducerConfig {
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = logging.BufferLogger(c.Logger)
+	c.Logger = logging.NewPipelineLogger(c.Logger, &logging.PipelineLoggerConfig{Buffer: true})
 
 	// the batcher inherits this producer's logger unless given its own
 	if c.Batch.Logger == nil {

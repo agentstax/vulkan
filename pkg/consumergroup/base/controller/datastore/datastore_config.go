@@ -17,7 +17,7 @@ func (c *KeyLeaseDatastoreConfig) WithDefaults() *KeyLeaseDatastoreConfig {
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = logging.BufferLogger(c.Logger)
+	c.Logger = logging.NewPipelineLogger(c.Logger, &logging.PipelineLoggerConfig{Buffer: true})
 	c.Retry = c.Retry.WithDefaults()
 	return c
 }

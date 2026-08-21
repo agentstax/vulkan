@@ -128,7 +128,7 @@ func (c *ConsumerConfig) WithDefaults() *ConsumerConfig {
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = logging.BufferLogger(c.Logger)
+	c.Logger = logging.NewPipelineLogger(c.Logger, &logging.PipelineLoggerConfig{Buffer: true})
 
 	return c
 }

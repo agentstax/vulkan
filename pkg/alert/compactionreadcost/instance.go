@@ -38,7 +38,7 @@ func newCompactionReadCostInstance(provisioner *CompactionReadCostProvisioner, o
 
 	runner, err := workercontroller.NewInstanceRunner(provisioner.workers, claimed, &workercontroller.InstanceRunnerConfig{
 		InstanceTTL: provisioner.Config.InstanceTTL,
-		Logger:      logging.LoggerWith(provisioner.Logger, "worker", JobName, "group", owner.Name),
+		Logger:      logging.NewPipelineLogger(provisioner.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", JobName, "group", owner.Name}}),
 	})
 	if err != nil {
 		return nil, err

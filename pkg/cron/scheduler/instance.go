@@ -42,7 +42,7 @@ func newCronSchedulerInstance(cronScheduler *CronSchedulerProvisioner, owner *co
 		return nil, errors.New("producerInstance must not be nil")
 	}
 
-	logger := logging.LoggerWith(cronScheduler.Logger, "worker", WorkerCronScheduler, "system_id", owner.SystemId)
+	logger := logging.NewPipelineLogger(cronScheduler.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", WorkerCronScheduler, "system_id", owner.SystemId}})
 	runner, err := controller.NewInstanceTickRunner(cronScheduler.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    cronScheduler.Config.InstanceTTL,
 		JitterFraction: cronScheduler.Config.JitterFraction,

@@ -48,6 +48,8 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 		return nil, err
 	}
 
+	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
+
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

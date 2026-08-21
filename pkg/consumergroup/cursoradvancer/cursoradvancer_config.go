@@ -36,7 +36,7 @@ func (c *CursorAdvancerConfig) WithDefaults() *CursorAdvancerConfig {
 	if c.Logger == nil {
 		c.Logger = logging.NewDefaultLogger(os.Stderr)
 	}
-	c.Logger = logging.BufferLogger(c.Logger)
+	c.Logger = logging.NewPipelineLogger(c.Logger, &logging.PipelineLoggerConfig{Buffer: true})
 	c.Retry = c.Retry.WithDefaults()
 	c.AdvanceRetry = c.AdvanceRetry.WithDefaults()
 	return c

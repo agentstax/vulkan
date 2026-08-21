@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"strconv"
 	"sync"
-	"time"
 )
 
 const logBufferMaxRecords = 64
@@ -14,7 +13,7 @@ const logBufferMaxRecords = 64
 type logBufferKey struct{}
 
 // WithLogBuffer opens an operation boundary: records logged below Error
-// through a BufferLogger carrying this ctx are held in a bounded ring, and
+// through a pipeline carrying this ctx are held in a bounded ring, and
 // the operation's first Error record drains the ring into its "preceding"
 // group attr. The ring dies with the ctx.
 func WithLogBuffer(ctx context.Context) context.Context {
@@ -26,23 +25,15 @@ func WithLogBuffer(ctx context.Context) context.Context {
 // record and appends overwrite it in place.
 type logBuffer struct {
 	mutex        sync.Mutex
-	records      []logBufferRecord
+	records      []record
 	start        int
 	droppedCount int
 }
 
-type logBufferRecord struct {
-	loggedAt time.Time
-	level    slog.Level
-	message  string
-	args     []any
-}
-
-func (b *logBuffer) append(loggedAt time.Time, level slog.Level, message string, args []any) {
+func (b *logBuffer) append(record record) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
-	record := logBufferRecord{loggedAt: loggedAt, level: level, message: message, args: args}
 	if len(b.records) < logBufferMaxRecords {
 		b.records = append(b.records, record)
 		return

@@ -31,7 +31,7 @@ func newCursorAdvancerInstance(provisioner *CursorAdvancerProvisioner, owner *co
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	logger := logging.LoggerWith(provisioner.Logger, "worker", WorkerCursorAdvancer, "topic_id", owner.TopicId, "group", owner.Name)
+	logger := logging.NewPipelineLogger(provisioner.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", WorkerCursorAdvancer, "topic_id", owner.TopicId, "group", owner.Name}})
 	runner, err := controller.NewInstanceTickRunner(provisioner.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    provisioner.Config.InstanceTTL,
 		JitterFraction: provisioner.Config.JitterFraction,

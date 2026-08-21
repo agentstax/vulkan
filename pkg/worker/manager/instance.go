@@ -30,7 +30,7 @@ func newManagerInstance(manager *ManagerProvisioner, owner *common.Owner, claime
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	logger := logging.LoggerWith(manager.Logger, "worker", WorkerManager, "owner", owner.Name)
+	logger := logging.NewPipelineLogger(manager.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", WorkerManager, "owner", owner.Name}})
 	runner, err := controller.NewInstanceTickRunner(manager.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    manager.Config.InstanceTTL,
 		JitterFraction: manager.Config.JitterFraction,

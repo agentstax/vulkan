@@ -5,6 +5,20 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-20 — Record pipeline + repeated-line suppression [0564][0565]
+
+- logging.NewPipelineLogger(sink, cfg) is now the one wrapper: its config
+  declares the composition (Args, Buffer, Suppress), building over an
+  existing pipeline merges instead of nesting, and internally each call
+  is a record walked through a one-method handler chain in one fixed
+  order (capture -> enrich -> suppress -> drain -> sink) [0565].
+  LoggerWith/BufferLogger and their wrapper types deleted; ~70 call
+  sites declare their composition; ring and WithLogBuffer untouched.
+- Producer, consumer, and system manager instances declare Suppress at
+  construction: repeats of one (level, message) Warn/Error line inside a
+  one-minute window collapse to the first line plus suppressed_count on
+  the next emission [0564]; suppressed_count joined the attr registry.
+
 ## 2026-08-20 — Coded declarations get their own package [0563]
 
 - pkg/common/diagnostic now owns the error anatomy, the log events, and

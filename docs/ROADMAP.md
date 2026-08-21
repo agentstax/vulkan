@@ -16,8 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Log spam control on the error path** ([0558] follow-on) — design
-  settled in [0564]/[0565]; in flight, expanded in TODO.md.
 - **Slow-operation threshold logging** ([0558] follow-on) — the Postgres
   log_min_duration axis: a debug line for any produce/claim/tick exceeding
   a configured duration. Slowness, not occurrence, is the event; the
@@ -258,6 +256,12 @@ prerequisite if quorum-as-a-fraction wins.
   months-running process, breaking "any pasted log answers what was your
   setup" (FoundationDB re-logs standing state on every file roll). A
   low-frequency re-emit or an on-demand CLI verb.
+- **Hardcoded-config audit** — sweep the library for internal constants a
+  user might reasonably need to tune and decide, per constant, whether it
+  becomes a Config field (WithDefaults keeps today's value) or stays fixed
+  with the rationale recorded. Known candidates: logging's
+  logBufferMaxRecords (64) and suppressionWindow (1 minute); the cron
+  snapshot's flat 10-minute overdue threshold; expect more.
 - **Mechanical enforcement of checkable conventions** — a `just vet`
   analyzer (or lab-suite test) that fails on the CONVENTIONS.md rules a
   machine can check: `SELECT *` anywhere incl. CTEs, banned words in error

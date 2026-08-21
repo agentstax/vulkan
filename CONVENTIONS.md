@@ -435,9 +435,18 @@ classification question.
   process-shutdown paths (there, `context.WithoutCancel(ctx)`).
 - The default logger writes text lines to stderr, WARN and up. Logs never
   share stdout with program output.
-- Identity is bound once: a long-lived component wraps its logger via
-  `logging.LoggerWith` at construction, and its call sites never repeat
-  the bound keys.
+- `logging.NewPipelineLogger` is the ONE wrapper: its config declares
+  what the pipeline composes -- `Buffer` (WithLogBuffer boundaries),
+  `Suppress` (repeat collapse), `Args` (bound attrs) -- and building
+  over an existing pipeline merges instead of nesting.
+- Identity is bound once: a long-lived component binds its attrs at
+  construction -- `NewPipelineLogger` with `Args` -- and its call sites
+  never repeat the bound keys.
+- A long-lived instance (producer, consumer, system manager) declares
+  `Buffer` + `Suppress` once at construction: repeats of one (level,
+  message) Warn/Error line inside a one-minute window collapse to the
+  first line, and the next emission carries the dropped total as
+  `suppressed_count`. All the instance's workers share the window.
 
 ### Levels
 
@@ -527,6 +536,8 @@ stopped mechanism. Debug/Info narration never declares.
       vulkan_version  module version (common.BuildVersion) -- start lines
       <verb>_count  rows affected by the named action (swept_count,
                     reclaimed_count, dead_count)
+      suppressed_count  repeats of the same Warn/Error line dropped
+                    inside the suppression window
 
 - Counts of affected rows end in `_count`; durations pass as
   time.Duration values (units render free); ids use their column's own

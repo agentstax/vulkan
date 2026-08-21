@@ -42,6 +42,8 @@ func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerCon
 		return nil, err
 	}
 
+	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
+
 	producerController, err := controller.NewProducerController[Message](ds, &controller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

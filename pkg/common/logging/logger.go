@@ -1,13 +1,12 @@
 package logging
 
-// The Logger seam every config carries, its stderr default, attr
-// enrichment, and the per-operation debug buffer.
+// The Logger seam every config carries, its stderr default, and the
+// pipeline composed behind it (see PipelineLogger).
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"slices"
 )
 
 // Logger is exactly *slog.Logger's Context method set. Pass your own
@@ -18,45 +17,6 @@ type Logger interface {
 	InfoContext(ctx context.Context, message string, args ...any)
 	WarnContext(ctx context.Context, message string, args ...any)
 	ErrorContext(ctx context.Context, message string, args ...any)
-}
-
-// LoggerWith returns a Logger that puts args onto every line. A *slog.Logger
-// keeps its own With -- attrs pre-resolve into the handler; anything else
-// is wrapped.
-func LoggerWith(l Logger, args ...any) Logger {
-	if sl, ok := l.(*slog.Logger); ok {
-		return sl.With(args...)
-	}
-
-	// a bufferLogger stays outermost through enrichment so BufferLogger's
-	// idempotence guard sees it and never wraps twice
-	if b, ok := l.(*bufferLogger); ok {
-		return &bufferLogger{inner: LoggerWith(b.inner, args...)}
-	}
-	return &withLogger{inner: l, args: args}
-}
-
-type withLogger struct {
-	inner Logger
-	args  []any
-}
-
-// Concat, not append -- a fresh slice per call, so concurrent callers never
-// share w.args' backing array.
-func (w *withLogger) DebugContext(ctx context.Context, message string, args ...any) {
-	w.inner.DebugContext(ctx, message, slices.Concat(w.args, args)...)
-}
-
-func (w *withLogger) InfoContext(ctx context.Context, message string, args ...any) {
-	w.inner.InfoContext(ctx, message, slices.Concat(w.args, args)...)
-}
-
-func (w *withLogger) WarnContext(ctx context.Context, message string, args ...any) {
-	w.inner.WarnContext(ctx, message, slices.Concat(w.args, args)...)
-}
-
-func (w *withLogger) ErrorContext(ctx context.Context, message string, args ...any) {
-	w.inner.ErrorContext(ctx, message, slices.Concat(w.args, args)...)
 }
 
 // NewDefaultLogger is the slog default: text lines to w, WARN and up.
