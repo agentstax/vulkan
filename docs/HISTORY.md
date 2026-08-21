@@ -5,6 +5,29 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-21 — Stop line as session summary [0567][0568][0569]
+
+- The consumer stopped line is the session summary: bound identity,
+  `duration`, and ten `<verb>_count` counters (zeros printed), emitted
+  on every exit including fatal-error teardown, memory only. Declared
+  VK0041 with a trailing `help` attr ("metrics explained: vulkan
+  explain VK0041"); the VK0041 page is the counter catalog.
+- Counters are metrics machinery on the instance-side MetricsProducer:
+  atomics bumped in the message/exception runners from facts in hand,
+  Snapshot() renders the line, and one Run tick loop
+  (ProducerConfig.SessionFlushRate, 30s default) flushes changed totals
+  as KindCounter series (session-uuid attr, one session per Consume
+  call) and drains the abandoned-event queue as one batch per tick.
+- vulkan.consumer.session.* are first-class declarations in the shared
+  VK registry (diagnostic.Metric, VK0042-51): the flusher builds
+  measurements from the declarations, otelvulkan renders Description as
+  Prometheus # HELP, and `vulkan explain` resolves a metric by code,
+  full name, or stop-line attr key — ten hand-written pages plus the
+  index rows (including drifted VK0038-41).
+- VK0052 "abandoned-routine events dropped" reports both failed batches
+  and queue-cap drops (counted at enqueue, reported next tick); the
+  registry completeness walk now links pkg/consumer and pkg/metrics.
+
 ## 2026-08-21 — Slow-operation threshold logging [0566]
 
 - One Warn line when an operation runs past its duration threshold, at

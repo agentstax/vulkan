@@ -16,20 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Stop line as session summary** — design settled in [0567]: counters as
-  atomics + Snapshot() on the instance-side metrics producer, stopped line
-  renders the snapshot on every exit (memory only, never the DB), flush
-  tick ships totals as KindCounter with a session-uuid series attr; the
-  producer's produced counter alone waits on presence (13d). Build:
-  counter fields + bump sites, flush tick, stopped-line render, the
-  CONVENTIONS start-line amendment, exact counter names from row statuses.
-  - Evaluated 2026-08-21, kept both: ConsumerGroupSnapshot stays a live
-    DB read, never rerouted through the topic heads. Session counters
-    are flows (what one process did), the snapshot is a level (what
-    exists now) — neither derives the other, and the snapshot's readers
-    (admin health/group, GroupLag destroy guards) need truth at call
-    time, not collector-poll-stale values. The topic heads remain the
-    cache for staleness-tolerant readers (otelvulkan, Prometheus).
 - **Topic config as append-only declaration rows.** Design settled in [0519];
   build deferred so the config surface from [0518] settles first. topic keeps
   identity only (id, system_id, schema_version, created_at); a
