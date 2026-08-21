@@ -524,6 +524,7 @@ the code is the line's breadcrumb to its own explanation.
       version       schema version
       group         consumer group name
       group_id      consumer group id
+      session       consumer session id -- one Consume call's uuid
       system_id     system id
       owner         owner name (Owner.Name)
       owner_kind    owner kind (Owner.Kind())
@@ -541,7 +542,7 @@ the code is the line's breadcrumb to its own explanation.
                     against
       vulkan_version  module version (common.BuildVersion) -- start lines
       help          plain words ending in the verbatim command that
-                    explains the line ("counters explained: vulkan
+                    explains the line ("metrics explained: vulkan
                     explain VK0041") -- summary lines only
       <verb>_count  rows affected by the named action (swept_count,
                     reclaimed_count, dead_count)

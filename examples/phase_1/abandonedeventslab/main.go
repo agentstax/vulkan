@@ -77,9 +77,11 @@ func main() {
 
 	// the abandoned-event producer outlives any one claim -- the events it
 	// carries are generated as the consumer shuts down
-	abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, nil)
+	abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 	must(err)
-	go func() { must(abandonedEvents.Run(ctx)) }()
+	go func() {
+		must(abandonedEvents.Run(ctx, group, tp.Name, topic.SchemaVersion(1), "abandonedeventslab-session"))
+	}()
 
 	var calls atomic.Int64
 	consumerFunc := func(ctx context.Context, work *common.Work) error {
@@ -133,14 +135,17 @@ type metricsRow struct {
 }
 
 func metricsRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int {
+	// the session counters flush to the same topic -- only the
+	// abandoned-routine events are this lab's subject
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE routing_key LIKE 'abandoned_routine.%%'`, topicId)).Scan(&count))
 	return count
 }
 
 func metricsRowsSince(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, sinceCount int) []metricsRow {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, routing_key, payload FROM message_log_%d
+		WHERE routing_key LIKE 'abandoned_routine.%%'
 		ORDER BY id
 		OFFSET %d
 	`, topicId, sinceCount))

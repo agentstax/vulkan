@@ -5,15 +5,18 @@ package conventions
 // nothing imports it, and it ships in the dev-only tools module so its
 // dependencies never enter the library's graph. Run it via `just verify`.
 //
-// The import block below links every package that declares coded errors or
-// log events, so the walks see the complete registry through diagnostic.Errors()
-// and diagnostic.Events(). A new errors.go or logs.go that declares codes
-// gets its package added here (the completeness test fails until it is).
+// The import block below links every package that declares coded errors,
+// log events, or metrics, so the walks see the complete registry through
+// diagnostic.Errors(), diagnostic.Events(), and diagnostic.Metrics(). A new
+// file that declares codes gets its package added here (the completeness
+// test fails until it is).
 
 import (
 	_ "github.com/agentstax/vulkan/pkg/common"
+	_ "github.com/agentstax/vulkan/pkg/consumer"
 	_ "github.com/agentstax/vulkan/pkg/consumergroup"
 	_ "github.com/agentstax/vulkan/pkg/cron"
+	_ "github.com/agentstax/vulkan/pkg/metrics"
 	_ "github.com/agentstax/vulkan/pkg/migrate"
 	_ "github.com/agentstax/vulkan/pkg/producer"
 	_ "github.com/agentstax/vulkan/pkg/producer/controller/datastore"

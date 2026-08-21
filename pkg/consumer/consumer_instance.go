@@ -13,6 +13,8 @@ import (
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -23,18 +25,20 @@ type ConsumerInstance[Message any] struct {
 	Config *ConsumerConfig
 	Logger logging.Logger
 
-	ds         *datastore.PostgresDatastore
-	metrics    *metricsproducer.MetricsProducer
-	consumers  *consumergroupcontroller.ConsumerGroupController
-	bindings   []string
-	declaredAt time.Time
-	permit     *concurrency.Permit // held for the length of a Consume call
+	ds           *datastore.PostgresDatastore
+	metrics      *metricsproducer.MetricsProducer
+	consumers    *consumergroupcontroller.ConsumerGroupController
+	topicName    string
+	topicVersion topic.SchemaVersion
+	bindings     []string
+	declaredAt   time.Time
+	permit       *concurrency.Permit // held for the length of a Consume call
 }
 
 // cfg arrives already resolved by NewConsumer -- Register is the only caller,
 // so there is nothing left to default or validate here.
 // bindings and declaredAt are Register's declaration, re-attempted by Consume.
-func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumergroupcontroller.ConsumerGroupController, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
+func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.PostgresDatastore, metrics *metricsproducer.MetricsProducer, consumers *consumergroupcontroller.ConsumerGroupController, topicName string, topicVersion topic.SchemaVersion, bindings []string, declaredAt time.Time, cfg *ConsumerConfig) (*ConsumerInstance[Message], error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -46,6 +50,9 @@ func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.Postgre
 	}
 	if consumers == nil {
 		return nil, errors.New("consumers must not be nil")
+	}
+	if topicName == "" {
+		return nil, errors.New("topicName must not be empty")
 	}
 	if declaredAt.IsZero() {
 		return nil, errors.New("declaredAt is required")
@@ -60,15 +67,17 @@ func newConsumerInstance[Message any](owner *common.Owner, ds *datastore.Postgre
 	}
 
 	return &ConsumerInstance[Message]{
-		Owner:      owner,
-		Config:     cfg,
-		Logger:     cfg.Logger,
-		ds:         ds,
-		metrics:    metrics,
-		consumers:  consumers,
-		bindings:   bindings,
-		declaredAt: declaredAt,
-		permit:     permit,
+		Owner:        owner,
+		Config:       cfg,
+		Logger:       cfg.Logger,
+		ds:           ds,
+		metrics:      metrics,
+		consumers:    consumers,
+		topicName:    topicName,
+		topicVersion: topicVersion,
+		bindings:     bindings,
+		declaredAt:   declaredAt,
+		permit:       permit,
 	}, nil
 }
 
@@ -107,15 +116,21 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 		return err
 	}
 
+	// a Consume call is one session: counters restart at zero and the flushed
+	// series gets a fresh identity
+	session, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	i.metrics.ResetCounters()
+
 	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", i.Config.ShutdownTimeout, "batch_limit", i.Config.BatchLimit)
 	started := time.Now()
 
 	group, runCtx := errgroup.WithContext(ctx)
 
-	// metrics.Run goes beside the manager: abandoned events
-	// arrive as consumers shut down, after claim work is done
 	group.Go(func() error {
-		return i.metrics.Run(runCtx)
+		return i.metrics.Run(runCtx, i.Owner.Name, i.topicName, i.topicVersion, session.String())
 	})
 	group.Go(func() error {
 		return runner.Run(runCtx)

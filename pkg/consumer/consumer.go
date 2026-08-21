@@ -152,5 +152,5 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, err
 	}
 
-	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, bindings, declaredAt, c.Config)
+	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, version, bindings, declaredAt, c.Config)
 }

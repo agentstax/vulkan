@@ -25,7 +25,7 @@ command to run.
   consequence, unexported in pkg/consumer/logs.go (VK0038 precedent --
   API packages hold no vocabulary).
 - logStopped logs the code as the first attr pair and a trailing `help`
-  attr -- plain words ending in the pasteable command: "counters
+  attr -- plain words ending in the pasteable command: "metrics
   explained: vulkan explain VK0041". New `help` attr-registry row,
   summary lines only.
 - The hand-written VK0041 page is the counter catalog: per counter,

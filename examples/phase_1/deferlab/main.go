@@ -650,7 +650,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 func abandonedEventProducer(ctx context.Context) *metricsproducer.MetricsProducer {
 	events, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
-	go func() { must(events.Run(ctx)) }()
+	go func() { must(events.Run(ctx, "deferlab", "deferlab", topic.SchemaVersion(1), "deferlab-session")) }()
 	return events
 }
 

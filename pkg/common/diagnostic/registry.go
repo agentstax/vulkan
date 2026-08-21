@@ -21,8 +21,9 @@ type Declaration interface {
 type Kind string
 
 const (
-	KindError Kind = "error"
-	KindEvent Kind = "event"
+	KindError  Kind = "error"
+	KindEvent  Kind = "event"
+	KindMetric Kind = "metric"
 )
 
 // The VK code registry: every declaration kind shares one serial space, so

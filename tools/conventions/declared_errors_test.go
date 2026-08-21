@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
+	"github.com/agentstax/vulkan/pkg/metrics"
 )
 
 func TestProblemTenseFollowsRecovery(t *testing.T) {
@@ -55,17 +56,47 @@ func TestLogEventMessageAvoidsBannedWords(t *testing.T) {
 	}
 }
 
+func TestMetricDescriptionAvoidsBannedWords(t *testing.T) {
+	for _, registered := range diagnostic.Metrics() {
+		if match := bannedWords.FindString(registered.Description); match != "" {
+			t.Errorf("%s description contains banned word %q: %q", registered.Code, match, registered.Description)
+		}
+		if strings.Contains(registered.Description, "!") {
+			t.Errorf("%s description contains an exclamation point: %q", registered.Code, registered.Description)
+		}
+	}
+}
+
+// A metric declaration's kind and unit are plain text on the diagnostic
+// side; this walk holds every declaration to the pkg/metrics vocabulary.
+func TestMetricDeclarationsCarryMetricsVocabulary(t *testing.T) {
+	for _, registered := range diagnostic.Metrics() {
+		if !strings.HasPrefix(registered.Name, metrics.MetricNameReservedPrefix) {
+			t.Errorf("%s name %q must start with %q", registered.Code, registered.Name, metrics.MetricNameReservedPrefix)
+		}
+		if err := metrics.Kind(registered.Kind).Validate(); err != nil {
+			t.Errorf("%s: %v", registered.Code, err)
+		}
+		if err := metrics.Unit(registered.Unit).Validate(); err != nil {
+			t.Errorf("%s: %v", registered.Code, err)
+		}
+	}
+}
+
 // TestRegistryCoversEverySourceCode proves the import list above is complete:
 // every code declared anywhere under pkg/ must be visible in the registry
 // this binary sees, so the walks above miss nothing.
 func TestRegistryCoversEverySourceCode(t *testing.T) {
-	declared := regexp.MustCompile(`New(?:Error|Event)\("(VK\d{4})"`)
+	declared := regexp.MustCompile(`New(?:Error|Event|Metric)\("(VK\d{4})"`)
 
 	registered := map[string]bool{}
 	for _, entry := range diagnostic.Errors() {
 		registered[entry.Code] = true
 	}
 	for _, entry := range diagnostic.Events() {
+		registered[entry.Code] = true
+	}
+	for _, entry := range diagnostic.Metrics() {
 		registered[entry.Code] = true
 	}
 

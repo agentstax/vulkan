@@ -107,9 +107,9 @@ func main() {
 	// consumer rows carry no instance target, so both "processes" claim a life
 	// of the same row
 	startConsumer := func(label string) {
-		abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{})
+		abandonedEvents, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 		must(err)
-		go func() { must(abandonedEvents.Run(runCtx)) }()
+		go func() { must(abandonedEvents.Run(runCtx, g.Name, tp.Name, topic.SchemaVersion(1), label)) }()
 
 		provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
 		must(err)

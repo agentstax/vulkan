@@ -206,11 +206,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     (calling sendEmailConfirmation() before a Produce/multi-target closure is
     known to commit fires the email even if a later step rolls back) — pair
     with the outbox framing already on the site.
-  - Session-summary page: hand-written docs page for the "consumer
-    stopped" line defining each counter in one line (what it counts,
-    which gauge it pairs with, what a nonzero value tells you) --
-    the stopped line is Info/undeclared so it carries no VK code;
-    this page is its explainer.
   - Doc comments on the public API surfaces 13/14b finalized.
   - Document the "consumerFunc hard timeout, goroutine abandoned" error
     (CallSafely in pkg/consumer/base/consumer.go): what it means, how to
@@ -269,6 +264,13 @@ dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
 
+- **Gauge metric declarations** ([0567] chunk-5 follow-on) — convert the
+  remaining bare vulkan.* metric name consts (the collector's gauges in
+  pkg/metrics/measurement.go) to NewMetric declarations so their
+  descriptions reach Prometheus # HELP / vulkan explain the same way the
+  session counters' do; the collector then builds measurements from the
+  declarations (kind/unit can't drift from the comment). Mechanical
+  sweep, ~25 names.
 - **Worker-instance stop-line counters** ([0567] follow-on) — the
   standalone worker instances (janitor, cron scheduler, metrics
   collector, cursor advancer) still log identity-only stopped lines;

@@ -59,22 +59,36 @@ docs/decisions/.
   needs a docs page may declare, Info included) + session-summary
   paragraph mentions code/help. Decision record extending [0562].
   Parking lot: evaluate pipeline-enrich auto-help for ALL coded lines.
-- [ ] **Chunk 5 -- flush tick to __system.metrics + metric
-  declarations.** vulkan.consumer.session.* declared as first-class
-  registry entries in pkg/metrics (name, kind, unit, description --
-  const comments become descriptions under the "what nonzero means"
-  grammar); flusher builds Measurements FROM the declaration (kind/
-  unit can't drift); session uuid minted per Consume as series attr;
-  tick in MetricsProducer.Run produces totals as KindCounter.
+- [x] **Chunk 5 -- flush tick to __system.metrics + metric
+  declarations.** DONE 2026-08-21 (details below; session = one Consume
+  call, ResetCounters + uuidv7 session attr; flush skips unchanged
+  snapshots; existing bare metric consts -> declarations left as a
+  follow-on sweep, noted on ROADMAP). vulkan.consumer.session.* declared
+  via diagnostic.NewMetric in the SHARED VK registry (user-corrected
+  2026-08-21: Metric lives in common/diagnostic beside Error/Event, each
+  metric carries its own code -- VK0042-VK0051; kind/unit are plain text
+  there, held to the pkg/metrics vocabulary by a conventions walk; also
+  fixed: pkg/consumer was never linked into the conventions binary, so
+  the registry completeness walk missed VK0041); flusher builds
+  Measurements FROM the declaration (kind/unit can't drift); session
+  uuid minted per Consume as series attr.
   otelvulkan passes WithDescription for names the registry knows ->
   Prometheus # HELP / Grafana hover. Decide tick interval + last-flush
   (lean no: stop line holds final numbers).
   - Descriptions state the flow-vs-level split: session.* never
     reconcile against consumer.cursor.*/exceptions.* gauges.
-  - Consider batching abandoned-routine event produces onto the tick
-    (ProduceBatch) -- today's path is already storm-bounded (256-cap
-    queue, drop-on-full, one produce in flight); events' At stamps at
-    enqueue so latency math survives batching, only freshness lags.
+  - DONE 2026-08-21 (user-directed): ONE metrics loop -- Run absorbed
+    RunSessionFlush; the abandoned-event channel became a mutex-guarded
+    queue (same 256 cap, drop-on-full) drained as one ProduceBatch per
+    tick beside the counters flush. ProducerConfig.SessionFlushRate
+    (default 30s) so labs shorten it; abandonedeventslab row reads now
+    filter routing_key LIKE 'abandoned_routine.%' (counters share the
+    topic). Trade accepted: events land up to one tick late. Drops are
+    declared: VK0052 "abandoned-routine events dropped" in
+    pkg/metrics/logs.go covers failed batches AND cap drops (enqueue
+    counts them, the next tick reports dropped_count; docs page landed).
+    Session-counter flush failures stay a plain Warn -- self-healing,
+    next tick carries newer totals.
 - [ ] **Chunk 6 -- vulkan explain gains a metrics section.** List
   metric declarations beside errors and events; explain by metric name
   or stop-line attr key (ready_count -> vulkan.consumer.session.ready).

@@ -10,6 +10,7 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func main() {
@@ -37,12 +38,16 @@ func main() {
 	assertDuration("SelfClearLatencyAvg", snapshot.SelfClearLatencyAvg, 0)
 
 	step("two producers (simulating two processes) interleave abandoned/cleared for the same group")
-	producerA, err := metricsproducer.NewMetricsProducer(ds, nil)
+	producerA, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 	must(err)
-	go func() { must(producerA.Run(ctx)) }()
-	producerB, err := metricsproducer.NewMetricsProducer(ds, nil)
+	go func() {
+		must(producerA.Run(ctx, group, "abandonedroutinesnapshotlab", topic.SchemaVersion(1), "session-a"))
+	}()
+	producerB, err := metricsproducer.NewMetricsProducer(ds, &metricsproducer.ProducerConfig{SessionFlushRate: 100 * time.Millisecond})
 	must(err)
-	go func() { must(producerB.Run(ctx)) }()
+	go func() {
+		must(producerB.Run(ctx, group, "abandonedroutinesnapshotlab", topic.SchemaVersion(1), "session-b"))
+	}()
 
 	producerA.RecordAbandoned(topicId, group, 1, 1) // matched pair, cleared by A
 	producerB.RecordAbandoned(topicId, group, 2, 1) // matched pair, cleared by B
@@ -51,8 +56,8 @@ func main() {
 	producerB.RecordCleared(topicId, group, 2, 1)
 	producerA.RecordAbandoned(topicId, group, 3, 1) // never cleared -- outstanding
 
-	// events are produced off the hot path via a buffered channel drained by
-	// a background goroutine -- give it a moment to actually land
+	// events are produced off the hot path, landing on the next flush tick --
+	// give them a moment to actually land
 	must(waitFor(10*time.Second, func() (bool, error) {
 		s, err := metricsController.AbandonedRoutineSnapshot(ctx, topicId, group)
 		if err != nil {

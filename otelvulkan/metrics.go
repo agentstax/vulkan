@@ -11,6 +11,7 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -143,12 +144,23 @@ func (m *Metrics) RegisterMetricInstruments(ctx context.Context) error {
 }
 
 // a counter measurement carries a running total, so it maps to the monotonic
-// observable; everything else is a point-in-time gauge
+// observable; everything else is a point-in-time gauge. A declared vulkan
+// metric's description becomes the instrument description -- Prometheus
+// renders it as # HELP.
 func (m *Metrics) newInstrument(measurement *metrics.Measurement) (metric.Float64Observable, error) {
+	unit := metric.WithUnit(string(measurement.Unit))
+	declared, ok := diagnostic.GetMetric(measurement.Name)
+
 	if measurement.Kind == metrics.KindCounter {
-		return m.meter.Float64ObservableCounter(measurement.Name, metric.WithUnit(string(measurement.Unit)))
+		if ok {
+			return m.meter.Float64ObservableCounter(measurement.Name, unit, metric.WithDescription(declared.Description))
+		}
+		return m.meter.Float64ObservableCounter(measurement.Name, unit)
 	}
-	return m.meter.Float64ObservableGauge(measurement.Name, metric.WithUnit(string(measurement.Unit)))
+	if ok {
+		return m.meter.Float64ObservableGauge(measurement.Name, unit, metric.WithDescription(declared.Description))
+	}
+	return m.meter.Float64ObservableGauge(measurement.Name, unit)
 }
 
 // observe runs inside every collection the meter's reader drives. A

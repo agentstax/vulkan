@@ -1,6 +1,25 @@
 package metrics
 
-import "time"
+import (
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/common/diagnostic"
+)
+
+// consumer session flows -- per-instance monotonic totals, one series per
+// session. Flows = "what this instance did".
+var (
+	MetricSessionClaimed     = diagnostic.NewMetric("VK0042", "vulkan.consumer.session.claimed", string(KindCounter), string(UnitCount("message")), "messages this instance claimed -- cursor ranges and exception retries together")
+	MetricSessionSuccess     = diagnostic.NewMetric("VK0043", "vulkan.consumer.session.success", string(KindCounter), string(UnitCount("message")), "consumerFunc runs that completed cleanly, counted at resolution")
+	MetricSessionSuperseded  = diagnostic.NewMetric("VK0044", "vulkan.consumer.session.superseded", string(KindCounter), string(UnitCount("message")), "messages resolved without running -- a newer message on their compaction key had already arrived")
+	MetricSessionReady       = diagnostic.NewMetric("VK0045", "vulkan.consumer.session.ready", string(KindCounter), string(UnitCount("message")), "delivery rows written 'ready' -- each will be retried once its backoff passes")
+	MetricSessionDeferred    = diagnostic.NewMetric("VK0046", "vulkan.consumer.session.deferred", string(KindCounter), string(UnitCount("message")), "delivery rows written 'deferred' -- another delivery held their compaction key")
+	MetricSessionDead        = diagnostic.NewMetric("VK0047", "vulkan.consumer.session.dead", string(KindCounter), string(UnitCount("message")), "delivery rows written 'dead' -- exhausted retries, unrecoverable payloads, and the kill backstop")
+	MetricSessionReclaimed   = diagnostic.NewMetric("VK0048", "vulkan.consumer.session.reclaimed", string(KindCounter), string(UnitCount("lease")), "leases taken over from expired workers -- another instance died or stalled mid-range")
+	MetricSessionQuarantined = diagnostic.NewMetric("VK0049", "vulkan.consumer.session.quarantined", string(KindCounter), string(UnitCount("range")), "ranges past the reclaim cap, written out as independent 'ready' exceptions")
+	MetricSessionAbandoned   = diagnostic.NewMetric("VK0050", "vulkan.consumer.session.abandoned", string(KindCounter), string(UnitCount("routine")), "consumerFunc goroutines written off past the hard timeout")
+	MetricSessionLeaseLost   = diagnostic.NewMetric("VK0051", "vulkan.consumer.session.lease_lost", string(KindCounter), string(UnitCount("commit")), "commits rejected because another worker reclaimed the lease first -- that work was redone elsewhere")
+)
 
 // ConsumerGroupSnapshot is the live, DB-truth picture of one (group, topic),
 // sectioned by the store each number reads -- answers "what's true right now"
