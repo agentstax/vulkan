@@ -33,6 +33,11 @@ type LeaseData struct {
 type ClaimedRangeData struct {
 	Lease    LeaseData
 	Messages []MessageData
+
+	// Quarantined -> the reclaimable range hit max reclaims and was written
+	// out as 'ready' exceptions instead; Messages is empty and the lease is
+	// already freed. Nothing to dispatch or commit.
+	Quarantined bool
 }
 
 // OutcomeKind is how one message of a claimed range resolved.

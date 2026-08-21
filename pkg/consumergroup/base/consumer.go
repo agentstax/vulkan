@@ -18,13 +18,13 @@ import (
 // BaseConsumer is built fresh per claimed life, so a respawned runner never
 // shares state with a predecessor still draining.
 type BaseConsumer[Message any] struct {
-	Owner  *common.Owner
-	Topic  *topic.Topic
-	Config *BaseConsumerConfig
-	Logger logging.Logger
+	Owner   *common.Owner
+	Topic   *topic.Topic
+	Config  *BaseConsumerConfig
+	Logger  logging.Logger
+	Metrics *metricsproducer.MetricsProducer
 
 	keyLeases    *controller.KeyLeaseController
-	metrics      *metricsproducer.MetricsProducer
 	consumerFunc func(ctx context.Context, message *Message) error
 }
 
@@ -54,8 +54,8 @@ func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], own
 		Topic:        resolvedTopic,
 		Config:       cfg,
 		Logger:       baseProvisioner.Logger,
+		Metrics:      baseProvisioner.metrics,
 		keyLeases:    baseProvisioner.keyLeases,
-		metrics:      baseProvisioner.metrics,
 		consumerFunc: baseProvisioner.consumerFunc,
 	}, nil
 }
@@ -111,14 +111,14 @@ func (b *BaseConsumer[Message]) CallSafely(ctx context.Context, payload *Message
 	// consumerFunc got Timeout to notice ctx and return; past Timeout + grace it
 	// is written off and its goroutine is left running, unreachable
 	case <-time.After(timeout + b.Config.TimeoutGrace):
-		b.metrics.RecordAbandoned(b.Topic.Id, b.Owner.Name, messageId, attempt)
+		b.Metrics.RecordAbandoned(b.Topic.Id, b.Owner.Name, messageId, attempt)
 
 		// done is buffered(1) and nothing else reads it past this point, so this
 		// receive fires exactly when the abandoned goroutine finally returns.
 		// Started after Add, so Remove can never precede it.
 		go func() {
 			<-done
-			b.metrics.RecordCleared(b.Topic.Id, b.Owner.Name, messageId, attempt)
+			b.Metrics.RecordCleared(b.Topic.Id, b.Owner.Name, messageId, attempt)
 		}()
 
 		// never include the message itself -- it may hold sensitive values

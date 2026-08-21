@@ -337,7 +337,9 @@ func main() {
 	// backstop's 'inflight' predicate. Driven directly so no consumer touches
 	// the row mid-check.
 	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
-	must(exceptionConsumers.Kill(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures))
+	if _, err := exceptionConsumers.Kill(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures); err != nil {
+		die(fmt.Sprintf("Kill: %v", err))
+	}
 	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
 		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
 	}

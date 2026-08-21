@@ -55,14 +55,17 @@ func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
 	leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.RecordMargin
 
 	// kill first, so an exhausted expired row is dead-lettered
-	if err := r.consumers.Kill(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.MessageMax.Retry.MaxRetries, r.Topic.DeliveryLogMode); err != nil {
+	killed, err := r.consumers.Kill(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.MessageMax.Retry.MaxRetries, r.Topic.DeliveryLogMode)
+	if err != nil {
 		return err
 	}
+	r.Metrics.RecordDead(int(killed))
 
 	claimed, err := r.consumers.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.BatchLimit, r.cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DeliveryLogMode)
 	if err != nil {
 		return err
 	}
+	r.Metrics.RecordClaimed(len(claimed))
 
 	for i := range claimed {
 		if err := r.processException(ctx, &claimed[i]); err != nil {
@@ -125,6 +128,9 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 // ctx: the key release is part of that same transaction and must land even
 // mid-shutdown.
 func (r *exceptionRunner[Message]) recordSuccess(ctx context.Context, exception *controller.ClaimedException, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
+	// the run already succeeded -- count it whether or not the record lands
+	r.Metrics.RecordSuccess(1)
+
 	recordCtx, cancel := r.recordContext(ctx, keyClaim)
 	defer cancel()
 
@@ -133,10 +139,18 @@ func (r *exceptionRunner[Message]) recordSuccess(ctx context.Context, exception 
 }
 
 func (r *exceptionRunner[Message]) recordFailure(ctx context.Context, exception *controller.ClaimedException, resolvedOptions *common.MessageOptions, runErr error, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
+	// out of attempts -- this failure is terminal, not another retry
+	if exception.Attempts >= resolvedOptions.Retry.MaxRetries {
+		return r.recordTerminal(ctx, exception, runErr, keyClaim)
+	}
+
 	recordCtx, cancel := r.recordContext(ctx, keyClaim)
 	defer cancel()
 
 	err := r.consumers.RecordFailure(recordCtx, resolvedOptions.Retry, exception, runErr, r.Topic.DeliveryLogMode, keyClaim)
+	if err == nil {
+		r.Metrics.RecordReady(1)
+	}
 	return r.absorbLostLease(ctx, exception, err)
 }
 
@@ -145,10 +159,16 @@ func (r *exceptionRunner[Message]) recordTerminal(ctx context.Context, exception
 	defer cancel()
 
 	err := r.consumers.RecordTerminal(recordCtx, exception, runErr, r.Topic.DeliveryLogMode, keyClaim)
+	if err == nil {
+		r.Metrics.RecordDead(1)
+	}
 	return r.absorbLostLease(ctx, exception, err)
 }
 
 func (r *exceptionRunner[Message]) recordSuperseded(ctx context.Context, exception *controller.ClaimedException) error {
+	// resolved without a run -- a newer message on the key owns the outcome
+	r.Metrics.RecordSuperseded(1)
+
 	err := r.consumers.RecordSuperseded(ctx, exception, r.Topic.DeliveryLogMode)
 	return r.absorbLostLease(ctx, exception, err)
 }
@@ -168,6 +188,7 @@ func (r *exceptionRunner[Message]) recordContext(ctx context.Context, keyClaim *
 // now, so this side has nothing left to record.
 func (r *exceptionRunner[Message]) absorbLostLease(ctx context.Context, exception *controller.ClaimedException, err error) error {
 	if errors.Is(err, common.ErrLeaseLost) {
+		r.Metrics.RecordLeaseLost(1)
 		r.Logger.DebugContext(ctx, "lease lost recording exception outcome -- re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId)
 		return nil
 	}

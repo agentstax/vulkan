@@ -71,7 +71,11 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		if err := d.quarantine(ctx, tx, topicId, groupId, lease, deliveryLogMode); err != nil {
 			return nil, err
 		}
-		return nil, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		// the lease is freed and every row written as a 'ready' exception
+		return &ClaimedRangeData{Lease: lease, Quarantined: true}, nil
 	}
 
 	messages, err := d.readMessages(ctx, tx, topicId, groupId, lease.Low, lease.High)

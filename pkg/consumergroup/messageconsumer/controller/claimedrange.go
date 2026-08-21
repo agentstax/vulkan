@@ -12,6 +12,11 @@ import (
 type ClaimedRange struct {
 	Lease    RangeLease
 	Messages []Message
+
+	// Quarantined -> the reclaimable range hit max reclaims and was written
+	// out as 'ready' exceptions instead; Messages is empty and the lease is
+	// already freed. Nothing to dispatch or commit.
+	Quarantined bool
 }
 
 // RangeLease guards a claimed (Low, High] window. Token is what every write

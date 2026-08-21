@@ -20,13 +20,21 @@ docs/decisions/.
   threading route (consumer instance, base provisioner/consumer, worker
   provisioners) -- the object is the instance's metrics side-channel
   now, the type name MetricsProducer stays.
-- [ ] **Chunk 2 -- bump sites in the worker runners.** messageconsumer
-  runner: claimed rows per range, outcome counts from the outcomes
-  slice after Commit/PartialCommit return nil, reclaimed/quarantined
-  off the claim result (surface the fact on ClaimedRangeData if it
-  doesn't reach the runner today), lease_lost on ErrLeaseLost.
-  exceptionconsumer runner: same for exception outcomes, kill-backstop
-  deads, lease_lost. Counters never bump inside datastores.
+- [x] **Chunk 2 -- bump sites in the worker runners.** DONE 2026-08-21:
+  BaseConsumer.Metrics exported; messageconsumer prefetch bumps
+  reclaimed (Lease.Reclaims > 0) / quarantined (new Quarantined marker
+  on ClaimedRangeData/ClaimedRange -- quarantine now returns the marker
+  instead of falling through to fresh claim) / claimed, runItem bumps
+  success+superseded at resolution, countDeliveryRows counts
+  ready/deferred/dead on landed Commit/PartialCommit, lease_lost on
+  both ErrLeaseLost branches. exceptionconsumer: Kill returns its dead
+  count (runner bumps), attempts-exhausted escalation MOVED from
+  datastore.recordFailure to the runner (policy at the driver;
+  datastore keeps dumb verbs), record* methods bump
+  success/superseded (resolution) and ready/dead (landed),
+  absorbLostLease bumps lease_lost. deliveryconsumer (standalone
+  lifecycle-path sub-consumer, not in the instance chain) deliberately
+  not instrumented. Build + conventions + reclaim-lab + defer-lab pass.
 - [ ] **Chunk 3 -- stopped line renders the snapshot.** Consume emits
   "consumer stopped" on EVERY exit (drop the clean-stop gate), with
   identity + `duration` (session wall time) + every counter as

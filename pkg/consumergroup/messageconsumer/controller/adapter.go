@@ -35,8 +35,9 @@ func toClaimedRange(data *datastore.ClaimedRangeData) *ClaimedRange {
 		messages = append(messages, toMessage(message))
 	}
 	return &ClaimedRange{
-		Lease:    toRangeLease(data.Lease),
-		Messages: messages,
+		Lease:       toRangeLease(data.Lease),
+		Messages:    messages,
+		Quarantined: data.Quarantined,
 	}
 }
 

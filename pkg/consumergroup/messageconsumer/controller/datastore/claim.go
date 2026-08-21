@@ -32,8 +32,7 @@ func (d *MessageConsumerGroupDatastore) claimMessagesWithCursor(ctx context.Cont
 		return reclaimed, nil
 	}
 
-	// nothing to reclaim, or the one reclaimable range was poisoned and just got
-	// quarantined instead -> try standard fresh claim (nil when caught up)
+	// nothing to reclaim -> try standard fresh claim (nil when caught up)
 	return d.freshClaimMessagesWithCursor(ctx, topicId, groupId, limit, leaseDuration)
 }
 

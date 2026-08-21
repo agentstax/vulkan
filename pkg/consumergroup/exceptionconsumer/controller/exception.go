@@ -33,15 +33,16 @@ type ClaimedException struct {
 // Kill marks expired 'inflight' rows that are out of attempts 'dead'
 // so nothing else resolves them. Run it before Claim so an exhausted
 // expired row is dead-lettered rather than claimed again.
-func (c *ExceptionConsumerGroupController) Kill(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) error {
+// Returns how many rows it marked.
+func (c *ExceptionConsumerGroupController) Kill(ctx context.Context, topicId int64, groupId int64, maxRetries int, deliveryLogMode topic.DeliveryLogMode) (int64, error) {
 	if topicId <= 0 {
-		return fmt.Errorf("topicId must be > 0, got %d", topicId)
+		return 0, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if groupId <= 0 {
-		return fmt.Errorf("groupId must be > 0, got %d", groupId)
+		return 0, fmt.Errorf("groupId must be > 0, got %d", groupId)
 	}
 	if maxRetries < 0 {
-		return fmt.Errorf("maxRetries must be >= 0, got %d", maxRetries)
+		return 0, fmt.Errorf("maxRetries must be >= 0, got %d", maxRetries)
 	}
 
 	return c.datastore.Kill(ctx, topicId, groupId, maxRetries, deliveryLogMode)
@@ -102,8 +103,8 @@ func (c *ExceptionConsumerGroupController) RecordSuccess(ctx context.Context, ex
 	return c.datastore.RecordSuccess(ctx, toExceptionData(exception), deliveryLogMode, toKeyLeaseData(keyClaim))
 }
 
-// RecordFailure resets the row so it can be retried, or marks it
-// 'dead' once retryPolicy's budget is spent.
+// RecordFailure resets the row as 'ready' with retryPolicy's
+// backoff so it can be retried.
 // A non-nil keyClaim frees the key in the same transaction.
 func (c *ExceptionConsumerGroupController) RecordFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ClaimedException, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
 	if retryPolicy == nil {

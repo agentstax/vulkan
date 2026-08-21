@@ -172,6 +172,17 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 			continue
 		}
 
+		// a fresh claim's lease starts at 0 reclaims; anything above marks a
+		// range taken over from an expired worker
+		if claimed.Lease.Reclaims > 0 {
+			r.Metrics.RecordReclaimed(1)
+		}
+		if claimed.Quarantined {
+			r.Metrics.RecordQuarantined(1)
+			continue
+		}
+		r.Metrics.RecordClaimed(len(claimed.Messages))
+
 		if len(claimed.Messages) == 0 {
 			// every message in the range compacted away -- nothing to dispatch or
 			// resolve, so commit it directly to immediately move on
@@ -242,6 +253,7 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 			r.buffer.resolveException(item, err)
 			return
 		case claim.Verdict == keyleasecontroller.KeyLeaseSuperseded:
+			r.Metrics.RecordSuperseded(1)
 			r.buffer.resolveSuperseded(item)
 			return
 		case claim.Verdict == keyleasecontroller.KeyLeaseBusy:
@@ -264,6 +276,7 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 	if err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, resolvedOptions.Timeout); err != nil {
 		r.buffer.resolveException(item, err)
 	} else {
+		r.Metrics.RecordSuccess(1)
 		r.buffer.resolveSuccess(item)
 	}
 }
@@ -292,8 +305,10 @@ func (r *messageRunner[Message]) commitRange(ctx context.Context, commit *rangeS
 	err := r.consumers.Commit(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, commit.Lease.Token, commit.Outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode)
 	switch {
 	case err == nil:
+		r.countDeliveryRows(commit.Outcomes)
 		r.buffer.remove(commit.Lease.Token)
 	case errors.Is(err, common.ErrLeaseLost):
+		r.Metrics.RecordLeaseLost(1)
 		r.Logger.DebugContext(ctx, "lease lost at commit -- range re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", commit.Lease.Low, "high", commit.Lease.High)
 		r.buffer.remove(commit.Lease.Token) // reclaimed mid-range -- the new owner processes it, not a failure here
 	default:
@@ -317,6 +332,7 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 	// range (including the already-resolved prefix) to sit out a full reclaim.
 	if err := r.consumers.PartialCommit(commitCtx, r.Topic.Id, r.Owner.ConsumerGroupId, lease.Token, lastProcessed, outcomes, r.cfg.ExceptionInitialBackoff, r.Topic.DeliveryLogMode); err != nil {
 		if errors.Is(err, common.ErrLeaseLost) {
+			r.Metrics.RecordLeaseLost(1)
 			r.Logger.DebugContext(ctx, "lease lost at partial commit -- range re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", lease.Low, "high", lease.High)
 			return nil // reclaimed mid-range -- the new owner processes it, not a failure here
 		}
@@ -328,5 +344,23 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 		}
 		return err
 	}
+
+	r.countDeliveryRows(outcomes)
 	return nil
+}
+
+// countDeliveryRows bumps the session counters for the delivery rows a landed
+// commit wrote. Success and superseded write no delivery row and are counted
+// at resolution instead.
+func (r *messageRunner[Message]) countDeliveryRows(outcomes []controller.MessageOutcome) {
+	for _, outcome := range outcomes {
+		switch outcome.Kind {
+		case controller.OutcomeException:
+			r.Metrics.RecordReady(1)
+		case controller.OutcomeDeferred:
+			r.Metrics.RecordDeferred(1)
+		case controller.OutcomeTerminal:
+			r.Metrics.RecordDead(1)
+		}
+	}
 }

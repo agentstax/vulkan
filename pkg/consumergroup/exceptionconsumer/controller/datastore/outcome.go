@@ -53,7 +53,9 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 	return d.recordAndReleaseKey(ctx, keyClaim, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken)
 }
 
-// RecordFailure resets delivery so it can be retried or marked 'dead'.
+// RecordFailure resets the row 'ready' with retryPolicy's backoff so it can
+// be retried. Exhausted attempts are the caller's call -- it records those
+// through RecordTerminal instead.
 // A non-nil keyClaim frees the key in the same transaction.
 func (d *ExceptionConsumerGroupDatastore) RecordFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
@@ -62,10 +64,6 @@ func (d *ExceptionConsumerGroupDatastore) RecordFailure(ctx context.Context, ret
 }
 
 func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, retryPolicy *common.RetryPolicy, exception *ExceptionData, failureErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
-	if exception.Attempts >= retryPolicy.MaxRetries {
-		return d.recordTerminal(ctx, exception, failureErr, deliveryLogMode, keyClaim)
-	}
-
 	// clears the lease so it's claimable as a fresh 'ready' retry once can_run_after passes.
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
