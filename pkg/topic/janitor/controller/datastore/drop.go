@@ -127,14 +127,13 @@ SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 
 	// a dropped partition holding a key's latest row is a dormant key expiring
 	// drop the now-dangling pointer rather than leave it forever
-	orphanKeySql := `
+	orphanKeySql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.dropPartition
-		DELETE FROM compaction_head
-		WHERE topic_id = $1
-			AND head_id >= $2
-			AND head_id < $3;
-	`
-	if _, err := tx.Exec(ctx, orphanKeySql, topicId, low, high); err != nil {
+		DELETE FROM %s
+		WHERE head_id >= $1
+			AND head_id < $2;
+	`, iTopic.CompactionHeadTable(topicId))
+	if _, err := tx.Exec(ctx, orphanKeySql, low, high); err != nil {
 		return false, err
 	}
 

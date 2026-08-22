@@ -15,6 +15,7 @@ const (
 // acquired; Release matches on it.
 type KeyLeaseData struct {
 	Verdict         KeyLeaseVerdict
+	TopicId         int64
 	ConsumerGroupId int64
 	CompactionKey   string
 	Token           pgtype.UUID

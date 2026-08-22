@@ -18,7 +18,10 @@ import (
 // whole topic, '*' in a pattern matches any run of characters.
 // declaredAt is when the declarer first stated the set, fixed across its
 // retries; callers retry on DeclarationWaiting.
-func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, groupId int64, patterns []string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
+func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
+	if topicId <= 0 {
+		return "", fmt.Errorf("topicId must be > 0, got %d", topicId)
+	}
 	if groupId <= 0 {
 		return "", fmt.Errorf("groupId must be > 0, got %d", groupId)
 	}
@@ -30,7 +33,7 @@ func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, groupId i
 	}
 
 	declared := normalizePatterns(patterns)
-	return c.datastore.DeclareBindings(ctx, groupId, declared, common.ProcessIdentity, declaredAt)
+	return c.datastore.DeclareBindings(ctx, topicId, groupId, declared, common.ProcessIdentity, declaredAt)
 }
 
 // ListDeclarations returns every group's effective declaration followed by

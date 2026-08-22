@@ -22,6 +22,7 @@ const (
 // acquired; Release matches on it.
 type KeyLeaseClaim struct {
 	Verdict         KeyLeaseVerdict
+	TopicId         int64
 	ConsumerGroupId int64
 	CompactionKey   string
 	Token           uuid.UUID
@@ -69,6 +70,9 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 func (c *KeyLeaseController) Release(ctx context.Context, claim *KeyLeaseClaim) (bool, error) {
 	if claim == nil {
 		return false, errors.New("claim must not be nil")
+	}
+	if claim.TopicId <= 0 {
+		return false, fmt.Errorf("claim.TopicId must be > 0, got %d", claim.TopicId)
 	}
 	if claim.Verdict != KeyLeaseAcquired {
 		return false, fmt.Errorf("only an acquired key lease can be released, got %q", claim.Verdict)

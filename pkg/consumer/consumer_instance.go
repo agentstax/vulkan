@@ -171,7 +171,7 @@ func (i *ConsumerInstance[Message]) declareBindings(ctx context.Context) error {
 	for attempt := 1; ; attempt++ {
 		// Register's outcome is not trusted -- another declarer may have
 		// replaced the set while this instance had no live heartbeat
-		outcome, err := i.consumers.DeclareBindings(ctx, i.Owner.ConsumerGroupId, i.bindings, i.declaredAt)
+		outcome, err := i.consumers.DeclareBindings(ctx, i.Owner.TopicId, i.Owner.ConsumerGroupId, i.bindings, i.declaredAt)
 		if err != nil {
 			return err
 		}

@@ -62,12 +62,12 @@ SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicId, cons
 			) AS oldest_unresolved_at,
 			COALESCE((
 				SELECT COUNT(*)
-				FROM lease
+				FROM %[3]s
 				WHERE consumer_group_id = $1
 			), 0) AS open_leases
-		FROM cursor c
+		FROM %[4]s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.DeliveryTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.DeliveryTable(topicId), iTopic.LeaseTable(topicId), iTopic.CursorTable(topicId))
 
 	var data ConsumerGroupSnapshotData
 	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupId).Scan(

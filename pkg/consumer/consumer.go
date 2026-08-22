@@ -133,7 +133,7 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 	}
 
 	declaredAt := time.Now()
-	outcome, err := c.consumers.DeclareBindings(ctx, group.Id, bindings, declaredAt)
+	outcome, err := c.consumers.DeclareBindings(ctx, current.Id, group.Id, bindings, declaredAt)
 	if err != nil {
 		return nil, err
 	}

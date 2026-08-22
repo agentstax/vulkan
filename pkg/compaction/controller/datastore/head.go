@@ -31,13 +31,13 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compac
 			COALESCE(m.routing_key, ''),
 			m.compaction_key,
 			m.compaction_rank
-		FROM compaction_head h
+		FROM %s h
 		JOIN %s m ON m.id = h.head_id
-		WHERE h.topic_id = $1 AND h.compaction_key = $2;
-	`, iTopic.MessageLogTable(topicId))
+		WHERE h.compaction_key = $1;
+	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
 	var head MessageData
-	err := d.Datastore.Pool.QueryRow(ctx, sql, topicId, compactionKey).Scan(
+	err := d.Datastore.Pool.QueryRow(ctx, sql, compactionKey).Scan(
 		&head.Id,
 		&head.Payload,
 		&head.CreatedAt,
@@ -76,13 +76,12 @@ func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]M
 			COALESCE(m.routing_key, ''),
 			m.compaction_key,
 			m.compaction_rank
-		FROM compaction_head h
+		FROM %s h
 		JOIN %s m ON m.id = h.head_id
-		WHERE h.topic_id = $1
 		ORDER BY h.compaction_key;
-	`, iTopic.MessageLogTable(topicId))
+	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)
+	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
 		return nil, err
 	}

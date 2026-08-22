@@ -1,6 +1,11 @@
 package datastore
 
-import "context"
+import (
+	"context"
+	"fmt"
+
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+)
 
 // IsCompacted reports whether topicId has ever seen a keyed publish -- any
 // compaction_head row means latest-per-key winners outlive retention.
@@ -15,10 +20,9 @@ func (d *MetricsDatastore) IsCompacted(ctx context.Context, topicId int64) (bool
 }
 
 func (d *MetricsDatastore) isCompacted(ctx context.Context, topicId int64) (bool, error) {
+	sql := fmt.Sprintf(`-- vulkan: metrics.isCompacted
+SELECT EXISTS (SELECT 1 FROM %s);`, iTopic.CompactionHeadTable(topicId))
 	var compacted bool
-	err := d.Datastore.Pool.QueryRow(ctx,
-		`-- vulkan: metrics.isCompacted
-SELECT EXISTS (SELECT 1 FROM compaction_head WHERE topic_id = $1);`, topicId,
-	).Scan(&compacted)
+	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&compacted)
 	return compacted, err
 }

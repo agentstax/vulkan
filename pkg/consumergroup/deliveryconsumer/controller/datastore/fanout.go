@@ -28,9 +28,9 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			pg_snapshot_xmax(pg_current_snapshot())::text AS xmax,
 			c.committed,
 			c.pending_head
-		FROM cursor c
+		FROM %s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.CursorTable(topicId))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
@@ -51,7 +51,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 		-- vulkan: deliveryconsumer.fanOut
 		WITH old_values AS (
 			SELECT committed, pending_head, pending_xmax
-			FROM cursor
+			FROM %[3]s                                             -- [3] = cursor table
 			WHERE consumer_group_id = $1
 			-- FOR UPDATE so a racing same-group peer's committed advance is
 			-- visible to our scan start (same race as the cursor claim path)
@@ -75,7 +75,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			FROM %[2]s m                                           -- [2] = message_log table
 			WHERE m.id > (SELECT committed FROM old_values)
 			ORDER BY m.id
-			LIMIT $3
+			LIMIT $2
 		),
 		materialized AS (
 			INSERT INTO %[1]s (consumer_group_id, message_id, status) -- [1] = delivery table
@@ -84,12 +84,12 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			WHERE (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM binding bi
+					SELECT 1 FROM %[4]s bi                         -- [4] = binding table
 					WHERE bi.consumer_group_id = $1
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
-					SELECT 1 FROM binding bi
+					SELECT 1 FROM %[4]s bi
 					WHERE bi.consumer_group_id = $1
 						AND b.routing_key ~ bi.pattern
 				)
@@ -102,16 +102,15 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 				-- keyed rows materialize a delivery only if they're compaction_head's
 				-- current pointer for their key -- O(1) lookup, no per-row scan
 				OR b.id = (
-					SELECT head_id FROM compaction_head
-					WHERE topic_id = $2
-						AND compaction_key = b.compaction_key
+					SELECT head_id FROM %[5]s                      -- [5] = compaction_head table
+					WHERE compaction_key = b.compaction_key
 				)
 			)
 			ON CONFLICT DO NOTHING
 		),
 		gate AS (
 			-- how far the mark may advance: the best head proven by THIS
-			-- statement's snapshot ($4/$5 is the fresh pair, pending_* the
+			-- statement's snapshot ($3/$4 is the fresh pair, pending_* the
 			-- stored one).
 			--
 			-- unlike the claim gate there is NO settled_head term. the mark and
@@ -124,8 +123,8 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			-- the next tick rescans -- held rows re-materialize as no-ops.
 			SELECT GREATEST(
 				o.committed,
-				CASE WHEN pg_snapshot_xmin(pg_current_snapshot()) >= $5::xid8 -- $5 is snapshotXmax
-					THEN $4 ELSE 0 END,                                         -- $4 is snapshotHead
+				CASE WHEN pg_snapshot_xmin(pg_current_snapshot()) >= $4::xid8 -- $4 is snapshotXmax
+					THEN $3 ELSE 0 END,                                         -- $3 is snapshotHead
 				CASE WHEN o.pending_xmax IS NOT NULL
 						AND pg_snapshot_xmin(pg_current_snapshot()) >= o.pending_xmax
 					THEN o.pending_head ELSE 0 END
@@ -141,30 +140,30 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			--   batch = ids 1-50, FULL -- rows 51-200 are visible but unscanned
 			--   advancing to 200 would skip them forever -> cap at LEAST(200, 50)
 			SELECT
-				CASE WHEN (SELECT COUNT(*) FROM batch) = $3                   -- $3 is limit
+				CASE WHEN (SELECT COUNT(*) FROM batch) = $2                   -- $2 is limit
 				THEN LEAST(gate.head, (SELECT MAX(id) FROM batch))
 				ELSE gate.head END
 				AS head
 			FROM gate
 		)
-		UPDATE cursor SET
+		UPDATE %[3]s c SET
 			committed = mark.head,
 			-- claimed rides along equal to committed: a fanout group hands out
 			-- work per delivery row, never through a claimed/committed window.
 			-- GREATEST for a group mistakenly claiming on BOTH paths -- its
 			-- claim frontier must never regress to the mark (overlap = double
 			-- delivery); its own committed staying monotonic is already given
-			claimed = GREATEST(cursor.claimed, mark.head),
+			claimed = GREATEST(c.claimed, mark.head),
 			-- store the fresh pair for the next tick: its txns will have
 			-- finished by then, making it the next provable head.
 			-- GREATEST so a racing peer's older pair can't overwrite a newer one
-			pending_head = GREATEST(cursor.pending_head, $4),
-			pending_xmax = GREATEST(cursor.pending_xmax, $5::xid8) -- also skips the initial NULL
+			pending_head = GREATEST(c.pending_head, $3),
+			pending_xmax = GREATEST(c.pending_xmax, $4::xid8) -- also skips the initial NULL
 		FROM mark
-		WHERE cursor.consumer_group_id = $1;
-	`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
+		WHERE c.consumer_group_id = $1;
+	`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.CursorTable(topicId), iTopic.BindingTable(topicId), iTopic.CompactionHeadTable(topicId))
 
-	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, topicId, limit, snapshotHead, snapshotXmax)
+	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return err
 	}

@@ -12,6 +12,7 @@ import (
 // the token match means a lease that expired and was taken over is never
 // released by the old holder.
 type KeyLeaseData struct {
+	TopicId         int64
 	ConsumerGroupId int64
 	CompactionKey   string
 	Token           pgtype.UUID

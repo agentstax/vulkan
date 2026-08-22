@@ -33,9 +33,9 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			c.claimed,
 			c.settled_head,
 			c.pending_head
-		FROM cursor c
+		FROM %s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.CursorTable(topicId))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
@@ -53,7 +53,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 	}
 
 	// TODO - projector could likely tracked head in a RWMutex such that it doesn't need to be calculated here
-	cursorSql := `
+	cursorSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.freshClaimMessagesWithCursor
 		WITH old_values AS ( -- PG18+ has old / new syntax in returning but we want older version compatibility so use CTE
 			SELECT
@@ -61,7 +61,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 				settled_head,
 				pending_head,
 				pending_xmax
-			FROM cursor
+			FROM %s
 			WHERE consumer_group_id = $1
 			-- must FOR UPDATE, get race if using a basic snapshot read
 			-- two same-group workers racing on one cursor row (claimed=0, head=200, limit=100):
@@ -113,7 +113,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			--                       both snapshots is still open, e.g. a long
 			--                       ProduceInTx) -- claims hold at the last proven
 			--                       head until it closes
-			--   the fresh pair   -- $4/$5, wins when everything running at
+			--   the fresh pair   -- $3/$4, wins when everything running at
 			--                       snapshotSql finished before this query ran --
 			--                       the quiet path, claims land in the same poll
 			--                       as the produce
@@ -135,23 +135,23 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			FROM old_values o
 		),
 		updated AS (
-			UPDATE cursor
+			UPDATE %s c
 			SET
 				-- advance by up to batchLimit, capped at the proven head.
-				claimed = LEAST(cursor.claimed + $2, gate.head),
+				claimed = LEAST(c.claimed + $2, gate.head),
 				-- cache this poll's proof: a later poll where neither pair
 				-- proves claims up to this instead.
 				settled_head = gate.head,
 				-- store the fresh pair for the next poll: ideally its txns will
 				-- have finished by then, making it the next provable head.
 				-- GREATEST so a racing peer's older pair can't overwrite a newer one
-				pending_head = GREATEST(cursor.pending_head, $3),
-				pending_xmax = GREATEST(cursor.pending_xmax, $4::xid8) -- also skips the initial NULL
+				pending_head = GREATEST(c.pending_head, $3),
+				pending_xmax = GREATEST(c.pending_xmax, $4::xid8) -- also skips the initial NULL
 			FROM old_values, gate
-			WHERE cursor.consumer_group_id = $1
+			WHERE c.consumer_group_id = $1
 			RETURNING
 				old_values.claimed AS low,
-				cursor.claimed AS high
+				c.claimed AS high
 		)
 		-- updated always fires when the cursor row exists (the pending columns
 		-- store unconditionally), so:
@@ -163,7 +163,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 		--                                                       snapshot read it -> error
 		--
 		SELECT u.low, u.high FROM updated u;
-	`
+	`, iTopic.CursorTable(topicId), iTopic.CursorTable(topicId))
 	cursorRows, err := tx.Query(ctx, cursorSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
@@ -196,9 +196,9 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 	}
 
 	// get new lease associated with range
-	leaseSql := `
+	leaseSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.claimMessages
-		INSERT INTO lease (consumer_group_id, low, high, until)
+		INSERT INTO %s (consumer_group_id, low, high, until)
 		VALUES (
 			$1,
 			$2,
@@ -212,7 +212,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 			high,
 			until,
 			reclaims;
-	`
+	`, iTopic.LeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err

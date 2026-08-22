@@ -2,8 +2,10 @@ package datastore
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -27,56 +29,54 @@ func (d *KeyLeaseDatastore) Claim(ctx context.Context, topicId int64, groupId in
 func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
 	// the head check gates the insert -- a superseded message never creates
 	// or locks a lease row.
-	claimSql := `
+	claimSql := fmt.Sprintf(`
 		-- vulkan: consumerbase.claim
 		WITH head AS (
 			SELECT head_id
-			FROM compaction_head
-			WHERE topic_id = $1
-				AND compaction_key = $2
+			FROM %s
+			WHERE compaction_key = $1
 		), attempt AS (
-			INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at)
-			SELECT $3, $2, $6, now() + make_interval(secs => $5)
-			WHERE EXISTS (SELECT 1 FROM head WHERE head_id = $4)
+			INSERT INTO %s AS kl (consumer_group_id, compaction_key, lease_token, expires_at)
+			SELECT $2, $1, $5, now() + make_interval(secs => $4)
+			WHERE EXISTS (SELECT 1 FROM head WHERE head_id = $3)
 			ON CONFLICT (consumer_group_id, compaction_key) DO UPDATE
 			SET
-				lease_token = $6,
-				expires_at = now() + make_interval(secs => $5)
+				lease_token = $5,
+				expires_at = now() + make_interval(secs => $4)
 			-- the token match lets a retry after an ambiguous commit re-take its
 			-- own lease instead of reading it as busy
-			WHERE key_lease.expires_at < now() OR key_lease.lease_token = $6
+			WHERE kl.expires_at < now() OR kl.lease_token = $5
 			RETURNING lease_token
 		)
 		SELECT
-			EXISTS (SELECT 1 FROM head WHERE head_id = $4),
+			EXISTS (SELECT 1 FROM head WHERE head_id = $3),
 			(SELECT lease_token FROM attempt);
-	`
+	`, iTopic.CompactionHeadTable(topicId), iTopic.KeyLeaseTable(topicId))
 
 	// the claimSql head CTE snapshot could be stale on the INSERT that
 	// follows -- this rechecks with a fresh snapshot and deletes the
 	// acquisition if the head moved. So a failed batch rolls the insert
 	// back instead of orphaning the lease.
-	recheckSql := `
+	recheckSql := fmt.Sprintf(`
 		-- vulkan: consumerbase.claim
-		DELETE FROM key_lease
-		WHERE consumer_group_id = $3
-			AND compaction_key = $2
-			AND lease_token = $5
+		DELETE FROM %s
+		WHERE consumer_group_id = $2
+			AND compaction_key = $1
+			AND lease_token = $4
 			AND NOT EXISTS (
 				SELECT 1
-				FROM compaction_head
-				WHERE topic_id = $1
-					AND compaction_key = $2
-					AND head_id = $4
+				FROM %s
+				WHERE compaction_key = $1
+					AND head_id = $3
 			);
-	`
+	`, iTopic.KeyLeaseTable(topicId), iTopic.CompactionHeadTable(topicId))
 
 	// one round trip
 	batch := &pgx.Batch{}
-	batch.Queue(claimSql, topicId, key, groupId, messageId, duration.Seconds(), token)
-	batch.Queue(recheckSql, topicId, key, groupId, messageId, token)
+	batch.Queue(claimSql, key, groupId, messageId, duration.Seconds(), token)
+	batch.Queue(recheckSql, key, groupId, messageId, token)
 
-	claim := KeyLeaseData{ConsumerGroupId: groupId, CompactionKey: key}
+	claim := KeyLeaseData{TopicId: topicId, ConsumerGroupId: groupId, CompactionKey: key}
 	var isHead bool
 
 	// claimSql
@@ -125,13 +125,13 @@ func (d *KeyLeaseDatastore) Release(ctx context.Context, claim *KeyLeaseData) (b
 }
 
 func (d *KeyLeaseDatastore) release(ctx context.Context, q datastore.Querier, claim *KeyLeaseData) (bool, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: consumerbase.release
-		DELETE FROM key_lease
+		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND compaction_key = $2
 			AND lease_token = $3;
-	`
+	`, iTopic.KeyLeaseTable(claim.TopicId))
 	tag, err := q.Exec(ctx, sql, claim.ConsumerGroupId, claim.CompactionKey, claim.Token)
 	if err != nil {
 		return false, err

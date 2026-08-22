@@ -28,15 +28,15 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 	// a single in-place UPDATE, not delete+insert -- reclaims accumulates on the
 	// SAME row instead of resetting to 0 every time. token still rotates, so a
 	// dead worker's stale commit still no-ops the same as before.
-	reclaimSql := `
+	reclaimSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.reclaimWithCursor
-		UPDATE lease
+		UPDATE %s
 		SET
 			reclaims = reclaims + 1,
 			until = now() + make_interval(secs => $2),
 			token = gen_random_uuid()
 		WHERE (token, consumer_group_id) IN (
-			SELECT token, consumer_group_id FROM lease
+			SELECT token, consumer_group_id FROM %s
 			WHERE consumer_group_id = $1
 				AND until < now()
 			LIMIT 1
@@ -49,7 +49,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 			high,
 			until,
 			reclaims;
-	`
+	`, iTopic.LeaseTable(topicId), iTopic.LeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
@@ -133,12 +133,12 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 		return err
 	}
 
-	freeSql := `
+	freeSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.quarantine
-		DELETE FROM lease
+		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`
+	`, iTopic.LeaseTable(topicId))
 	_, err := tx.Exec(ctx, freeSql, groupId, lease.Token)
 	return err
 }
@@ -146,25 +146,25 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 // ForceReclaimRange surrenders a range nobody ever started -- unlike
 // PartialCommit this expires the WHOLE lease immediately so the next
 // reclaim can pick it straight back up.
-func (d *MessageConsumerGroupDatastore) ForceReclaimRange(ctx context.Context, groupId int64, token pgtype.UUID) error {
+func (d *MessageConsumerGroupDatastore) ForceReclaimRange(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.forceReclaimRange(ctx, groupId, token)
+		return d.forceReclaimRange(ctx, topicId, groupId, token)
 	})
 }
 
-func (d *MessageConsumerGroupDatastore) forceReclaimRange(ctx context.Context, groupId int64, token pgtype.UUID) error {
+func (d *MessageConsumerGroupDatastore) forceReclaimRange(ctx context.Context, topicId int64, groupId int64, token pgtype.UUID) error {
 	// reclaims goes negative on purpose: the next reclaimWithCursor's
 	// unconditional +1 nets it back to 0 -- this must not count as a real reclaim.
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.forceReclaimRange
-		UPDATE lease
+		UPDATE %s
 		SET
 			until = now(),
 			reclaims = GREATEST(reclaims - 1, -1), -- should never go under -1
 			token = gen_random_uuid()              -- rotate token so any retry matches 0 rows instead of double decrementing
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`
+	`, iTopic.LeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupId, token)
 	if err != nil {
 		return err

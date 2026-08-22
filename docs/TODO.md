@@ -20,7 +20,7 @@ the build.
       column, PK becomes compaction_key alone, shared-table comment goes.
       cursor/binding/binding_log keep their consumer_group FKs (target is
       shared catalog, created first). binding_log index name interpolated.
-- [ ] 3. Query sweep (~50 sites, ~20 files) -- interpolate names, drop
+- [x] 3. Query sweep (~50 sites, ~20 files) -- interpolate names, drop
       topic_id predicates/columns from compaction_head queries; topicId is
       already threaded at every verified site:
       - consumergroup/controller/datastore: group.go (cursor insert, lease +

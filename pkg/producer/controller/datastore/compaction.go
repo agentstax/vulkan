@@ -27,14 +27,14 @@ func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q iD
 			COALESCE(m.routing_key, ''),
 			m.compaction_key,
 			m.compaction_rank
-		FROM compaction_head h
+		FROM %s h
 		JOIN %s m ON m.id = h.head_id
-		WHERE h.topic_id = $1 AND h.compaction_key = $2
+		WHERE h.compaction_key = $1
 		FOR UPDATE OF h;
-	`, iTopic.MessageLogTable(topicId))
+	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
 	var head HeadData
-	err := q.QueryRow(ctx, sql, topicId, compactionKey).Scan(
+	err := q.QueryRow(ctx, sql, compactionKey).Scan(
 		&head.Id,
 		&head.Payload,
 		&head.CreatedAt,

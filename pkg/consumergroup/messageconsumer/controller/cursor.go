@@ -65,12 +65,15 @@ func (c *MessageConsumerGroupController) PartialCommit(ctx context.Context, topi
 // ForceReclaimRange surrenders a range nobody ever started -- unlike
 // PartialCommit this expires the WHOLE lease immediately so the next claim can
 // pick it straight back up.
-func (c *MessageConsumerGroupController) ForceReclaimRange(ctx context.Context, groupId int64, token uuid.UUID) error {
+func (c *MessageConsumerGroupController) ForceReclaimRange(ctx context.Context, topicId int64, groupId int64, token uuid.UUID) error {
+	if topicId <= 0 {
+		return fmt.Errorf("topicId must be > 0, got %d", topicId)
+	}
 	if groupId <= 0 {
 		return fmt.Errorf("groupId must be > 0, got %d", groupId)
 	}
 
-	return c.datastore.ForceReclaimRange(ctx, groupId, toTokenData(token))
+	return c.datastore.ForceReclaimRange(ctx, topicId, groupId, toTokenData(token))
 }
 
 // ***************

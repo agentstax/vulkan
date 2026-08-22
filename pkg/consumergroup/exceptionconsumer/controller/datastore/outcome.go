@@ -251,13 +251,13 @@ func (d *ExceptionConsumerGroupDatastore) recordAndReleaseKey(ctx context.Contex
 		return err
 	}
 
-	releaseSql := `
+	releaseSql := fmt.Sprintf(`
 		-- vulkan: exceptionconsumer.recordAndReleaseKey
-		DELETE FROM key_lease
+		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND compaction_key = $2
 			AND lease_token = $3;
-	`
+	`, iTopic.KeyLeaseTable(keyClaim.TopicId))
 	releaseTag, err := tx.Exec(ctx, releaseSql, keyClaim.ConsumerGroupId, keyClaim.CompactionKey, keyClaim.Token)
 	if err != nil {
 		return err

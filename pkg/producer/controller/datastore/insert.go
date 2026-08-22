@@ -136,21 +136,21 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				RETURNING idempotency_key
 			), inserted AS (
 				INSERT INTO %s (payload, routing_key, compaction_key, compaction_rank, options)
-				SELECT $2, NULLIF($3, ''), $4, $6, $7  -- if routing_key $3 is empty string '' insert as NULL
+				SELECT $2, NULLIF($3, ''), $4, $5, $6  -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
-				INSERT INTO compaction_head (topic_id, compaction_key, head_id, compaction_rank)
-				SELECT $5, $4, id, $6 FROM inserted
-				ON CONFLICT (topic_id, compaction_key) DO UPDATE
+				INSERT INTO %s AS h (compaction_key, head_id, compaction_rank)
+				SELECT $4, id, $5 FROM inserted
+				ON CONFLICT (compaction_key) DO UPDATE
 				SET head_id = EXCLUDED.head_id, compaction_rank = EXCLUDED.compaction_rank
 				-- compare rank first, if rank equal -> head_id is compared
-				WHERE (compaction_head.compaction_rank, compaction_head.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+				WHERE (h.compaction_rank, h.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
 			)
 			SELECT id FROM inserted;
-		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId))
+		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId), iTopic.CompactionHeadTable(topicId))
 
-		args = append(args, data.CompactionKey, topicId, data.CompactionRank, data.Options) // $4, $5, $6, $7
+		args = append(args, data.CompactionKey, data.CompactionRank, data.Options) // $4, $5, $6
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.

@@ -54,12 +54,12 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM binding b
+					SELECT 1 FROM %s b
 					WHERE b.consumer_group_id = $3
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
-					SELECT 1 FROM binding b
+					SELECT 1 FROM %s b
 					WHERE b.consumer_group_id = $3
 						AND m.routing_key ~ b.pattern
 				)
@@ -72,17 +72,16 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 				-- keyed rows are eligible only if they're compaction_head's current
 				-- pointer for their key -- O(1) lookup, no per-row scan
 				OR m.id = (
-					SELECT head_id FROM compaction_head
-					WHERE topic_id = $4
-						AND compaction_key = m.compaction_key
+					SELECT head_id FROM %s
+					WHERE compaction_key = m.compaction_key
 				)
 			)
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, iTopic.MessageLogTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.BindingTable(topicId), iTopic.BindingTable(topicId), iTopic.CompactionHeadTable(topicId))
 
-	rows, err := tx.Query(ctx, sql, low, high, groupId, topicId)
+	rows, err := tx.Query(ctx, sql, low, high, groupId)
 	if err != nil {
 		return nil, err
 	}

@@ -102,11 +102,11 @@ SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint,
 		return nil, err
 	}
 
-	cursorSql := `
+	cursorSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.registerGroup
-		INSERT INTO cursor (consumer_group_id)
+		INSERT INTO %s (consumer_group_id)
 		VALUES ($1);
-	`
+	`, iTopic.CursorTable(topicId))
 	if _, err := tx.Exec(ctx, cursorSql, group.Id); err != nil {
 		return nil, err
 	}
@@ -133,15 +133,17 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	}
 	defer tx.Rollback(ctx)
 
-	// no cascade -- nothing references lease
-	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.deleteGroup
-DELETE FROM lease WHERE consumer_group_id = $1;`, groupId); err != nil {
+	// no cascade -- nothing references the per-topic lease table
+	leaseSql := fmt.Sprintf(`-- vulkan: consumergroup.deleteGroup
+DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.LeaseTable(topicId))
+	if _, err := tx.Exec(ctx, leaseSql, groupId); err != nil {
 		return err
 	}
 
-	// no cascade -- nothing references key_lease
-	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.deleteGroup
-DELETE FROM key_lease WHERE consumer_group_id = $1;`, groupId); err != nil {
+	// no cascade -- nothing references the per-topic key_lease table
+	keyLeaseSql := fmt.Sprintf(`-- vulkan: consumergroup.deleteGroup
+DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.KeyLeaseTable(topicId))
+	if _, err := tx.Exec(ctx, keyLeaseSql, groupId); err != nil {
 		return err
 	}
 

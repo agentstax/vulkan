@@ -122,13 +122,12 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 	anyKeyed := slices.ContainsFunc(swept, func(r sweptRow) bool { return r.CompactionKey != nil })
 
 	if anyKeyed {
-		orphanKeySql := `
+		orphanKeySql := fmt.Sprintf(`
 			-- vulkan: topicjanitor.sweepBatch
-			DELETE FROM compaction_head
-			WHERE topic_id = $1
-				AND head_id = ANY($2);
-		`
-		if _, err := tx.Exec(ctx, orphanKeySql, topicId, ids); err != nil {
+			DELETE FROM %s
+			WHERE head_id = ANY($1);
+		`, iTopic.CompactionHeadTable(topicId))
+		if _, err := tx.Exec(ctx, orphanKeySql, ids); err != nil {
 			return 0, err
 		}
 	}

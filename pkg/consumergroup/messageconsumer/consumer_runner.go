@@ -122,7 +122,7 @@ func (r *messageRunner[Message]) closeRange(ctx context.Context, state *rangeSta
 			fmt.Errorf("force reclaim exceeded RecordMargin (%s) for group %q topic %d", r.cfg.RecordMargin, r.Owner.Name, r.Topic.Id))
 		defer cancel()
 
-		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, common.ErrLeaseLost) {
+		if err := r.consumers.ForceReclaimRange(reclaimCtx, r.Topic.Id, r.Owner.ConsumerGroupId, state.lease.Token); err != nil && !errors.Is(err, common.ErrLeaseLost) {
 			r.Logger.WarnContext(ctx, "could not force reclaim at shutdown -- range rides out lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "low", state.lease.Low, "high", state.lease.High, "error", err)
 		}
 		return

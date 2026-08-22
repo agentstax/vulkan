@@ -1,6 +1,11 @@
 package datastore
 
-import "context"
+import (
+	"context"
+	"fmt"
+
+	iTopic "github.com/agentstax/vulkan/internal/topic"
+)
 
 // SweepExpiredKeyLeases deletes this topic's expired key_lease rows.
 // A crashed consumer leaves its expired row behind:
@@ -30,19 +35,17 @@ func (d *JanitorDatastore) sweepExpiredKeyLeases(ctx context.Context, topicId in
 // racing a consumer acquiring the same key is safe: if the delete wins, the
 // consumer's upsert inserts a fresh row instead of updating the expired one
 func (d *JanitorDatastore) sweepKeyLeasesBatch(ctx context.Context, topicId int64, batchSize int) (int, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.sweepKeyLeasesBatch
-		DELETE FROM key_lease
+		DELETE FROM %[1]s
 		WHERE (consumer_group_id, compaction_key) IN (
 			SELECT k.consumer_group_id, k.compaction_key
-			FROM key_lease k
-			JOIN consumer_group g ON g.id = k.consumer_group_id
-			WHERE g.topic_id = $1
-				AND k.expires_at < now()
-			LIMIT $2
+			FROM %[1]s k
+			WHERE k.expires_at < now()
+			LIMIT $1
 		);
-	`
-	tag, err := d.Datastore.Pool.Exec(ctx, sql, topicId, batchSize)
+	`, iTopic.KeyLeaseTable(topicId))
+	tag, err := d.Datastore.Pool.Exec(ctx, sql, batchSize)
 	if err != nil {
 		return 0, err
 	}

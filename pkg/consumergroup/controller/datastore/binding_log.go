@@ -3,10 +3,12 @@ package datastore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
@@ -15,17 +17,17 @@ import (
 // DeclareBindings states the group's full binding set in one transaction and
 // reports the end state (see classifyDeclaration). patterns must arrive
 // sorted and deduplicated -- sets are compared element-wise.
-func (d *ConsumerGroupDatastore) DeclareBindings(ctx context.Context, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
+func (d *ConsumerGroupDatastore) DeclareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
 	var outcome consumergroup.DeclarationOutcome
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		outcome, err = d.declareBindings(ctx, groupId, patterns, declaredBy, declaredAt)
+		outcome, err = d.declareBindings(ctx, topicId, groupId, patterns, declaredBy, declaredAt)
 		return err
 	})
 	return outcome, err
 }
 
-func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
+func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, topicId int64, groupId int64, patterns []string, declaredBy string, declaredAt time.Time) (consumergroup.DeclarationOutcome, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -49,7 +51,7 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId in
 		return "", err
 	}
 
-	declarations, err := d.listBindingLog(ctx, tx, groupId)
+	declarations, err := d.listTopicBindingLog(ctx, tx, topicId, groupId)
 	if err != nil {
 		return "", err
 	}
@@ -69,14 +71,14 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId in
 	case consumergroup.DeclarationJoined:
 		// the stored set already matches -- nothing to write
 	case consumergroup.DeclarationWaiting:
-		if err := d.appendDeclaration(ctx, tx, groupId, BindingLogWaiting, patterns, declaredBy, declaredAt); err != nil {
+		if err := d.appendDeclaration(ctx, tx, topicId, groupId, BindingLogWaiting, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
 	case consumergroup.DeclarationInstalled:
-		if err := d.appendDeclaration(ctx, tx, groupId, BindingLogInstalled, patterns, declaredBy, declaredAt); err != nil {
+		if err := d.appendDeclaration(ctx, tx, topicId, groupId, BindingLogInstalled, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
-		if err := d.replaceBindings(ctx, tx, groupId, patterns); err != nil {
+		if err := d.replaceBindings(ctx, tx, topicId, groupId, patterns); err != nil {
 			return "", err
 		}
 	}
@@ -111,31 +113,31 @@ func (d *ConsumerGroupDatastore) groupHasLiveInstance(ctx context.Context, tx pg
 }
 
 // appendDeclaration writes one attempt row; attempt_at is the insert's now().
-func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, groupId int64, status BindingLogStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
-	sql := `
+func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, status BindingLogStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
+	sql := fmt.Sprintf(`
 		-- vulkan: consumergroup.appendDeclaration
-		INSERT INTO binding_log (consumer_group_id, status, patterns, declared_by, declared_at)
+		INSERT INTO %s (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
-	`
+	`, iTopic.BindingLogTable(topicId))
 	_, err := tx.Exec(ctx, sql, groupId, status, patterns, declaredBy, declaredAt)
 	return err
 }
 
-func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, groupId int64, patterns []string) error {
-	deleteSql := `
+func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, patterns []string) error {
+	deleteSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.replaceBindings
-		DELETE FROM binding
+		DELETE FROM %s
 		WHERE consumer_group_id = $1;
-	`
+	`, iTopic.BindingTable(topicId))
 	if _, err := tx.Exec(ctx, deleteSql, groupId); err != nil {
 		return err
 	}
 
-	insertSql := `
+	insertSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.replaceBindings
-		INSERT INTO binding (consumer_group_id, pattern, display)
+		INSERT INTO %s (consumer_group_id, pattern, display)
 		VALUES ($1, $2, $3);
-	`
+	`, iTopic.BindingTable(topicId))
 	for _, display := range patterns {
 		expression := wildcardToRegex(display)
 		if _, err := tx.Exec(ctx, insertSql, groupId, expression, display); err != nil {
@@ -146,22 +148,40 @@ func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx,
 }
 
 // ListBindingLog reads every group's newest attempt row per declarer
-// and status, with the names a listing shows.
+// and status, with the names a listing shows -- one query per topic's
+// binding_log table.
 func (d *ConsumerGroupDatastore) ListBindingLog(ctx context.Context) ([]BindingLogData, error) {
 	var declarations []BindingLogData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		declarations, err = d.listBindingLog(ctx, d.Datastore.Pool, 0)
+		declarations, err = d.listBindingLog(ctx)
 		return err
 	})
 	return declarations, err
 }
 
-func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context, querier datastore.Querier, groupId int64) ([]BindingLogData, error) {
+func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context) ([]BindingLogData, error) {
+	topicIds, err := d.listGroupTopicIds(ctx, d.Datastore.Pool)
+	if err != nil {
+		return nil, err
+	}
+
+	var declarations []BindingLogData
+	for _, topicId := range topicIds {
+		topicDeclarations, err := d.listTopicBindingLog(ctx, d.Datastore.Pool, topicId, 0)
+		if err != nil {
+			return nil, err
+		}
+		declarations = append(declarations, topicDeclarations...)
+	}
+	return declarations, nil
+}
+
+func (d *ConsumerGroupDatastore) listTopicBindingLog(ctx context.Context, querier datastore.Querier, topicId int64, groupId int64) ([]BindingLogData, error) {
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller
-	sql := `
-		-- vulkan: consumergroup.listBindingLog
+	sql := fmt.Sprintf(`
+		-- vulkan: consumergroup.listTopicBindingLog
 		SELECT DISTINCT ON (binding_log.consumer_group_id, binding_log.status, binding_log.declared_by)
 			binding_log.id,
 			binding_log.consumer_group_id,
@@ -173,13 +193,13 @@ func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context, querier dat
 			binding_log.declared_by,
 			binding_log.declared_at,
 			binding_log.attempt_at
-		FROM binding_log
+		FROM %s binding_log
 		JOIN consumer_group ON consumer_group.id = binding_log.consumer_group_id
 		JOIN topic ON topic.id = consumer_group.topic_id
 		-- $1 = 0 -> every group
 		WHERE ($1 = 0 OR binding_log.consumer_group_id = $1)
 		ORDER BY binding_log.consumer_group_id, binding_log.status, binding_log.declared_by, binding_log.id DESC;
-	`
+	`, iTopic.BindingLogTable(topicId))
 	rows, err := querier.Query(ctx, sql, groupId)
 	if err != nil {
 		return nil, err
@@ -206,6 +226,32 @@ func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context, querier dat
 		declarations = append(declarations, declaration)
 	}
 	return declarations, rows.Err()
+}
+
+// listGroupTopicIds is every topic id with registered groups. A binding_log
+// row cascades with its group, so these topics cover every declaration.
+func (d *ConsumerGroupDatastore) listGroupTopicIds(ctx context.Context, querier datastore.Querier) ([]int64, error) {
+	sql := `
+		-- vulkan: consumergroup.listGroupTopicIds
+		SELECT DISTINCT topic_id
+		FROM consumer_group
+		ORDER BY topic_id;
+	`
+	rows, err := querier.Query(ctx, sql)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var topicIds []int64
+	for rows.Next() {
+		var topicId int64
+		if err := rows.Scan(&topicId); err != nil {
+			return nil, err
+		}
+		topicIds = append(topicIds, topicId)
+	}
+	return topicIds, rows.Err()
 }
 
 // NewestInstalledDeclaration picks the highest-id installed row -- the

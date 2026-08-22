@@ -41,20 +41,16 @@ func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64
 }
 
 // cursorFloor is the most-lagging group's committed
-// offset within this topic (nil if none exist yet). Scoped through the group
-// registry so a lagging group on another topic can't block this topic's
-// drops/sweeps.
+// offset within this topic (nil if none exist yet).
 func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier, topicId int64) (*int64, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.cursorFloor
-		SELECT MIN(c.committed)
-		FROM cursor c
-		JOIN consumer_group g ON g.id = c.consumer_group_id
-		WHERE g.topic_id = $1;
-	`
+		SELECT MIN(committed)
+		FROM %s;
+	`, iTopic.CursorTable(topicId))
 
 	var floor *int64
-	err := q.QueryRow(ctx, sql, topicId).Scan(&floor)
+	err := q.QueryRow(ctx, sql).Scan(&floor)
 	return floor, err
 }
 

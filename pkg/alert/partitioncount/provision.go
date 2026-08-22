@@ -34,7 +34,7 @@ func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.O
 	}
 
 	// a waiting outcome is fine -- the consumer retries the declaration in Consume
-	if _, err := d.consumers.DeclareBindings(ctx, group.Id, []string{JobName}, time.Now()); err != nil {
+	if _, err := d.consumers.DeclareBindings(ctx, cronTopic.Id, group.Id, []string{JobName}, time.Now()); err != nil {
 		return err
 	}
 

@@ -34,7 +34,7 @@ func (d *CompactionReadCostProvisioner) Declare(ctx context.Context, owner *comm
 	}
 
 	// a waiting outcome is fine -- the consumer retries the declaration in Consume
-	if _, err := d.consumers.DeclareBindings(ctx, group.Id, []string{JobName}, time.Now()); err != nil {
+	if _, err := d.consumers.DeclareBindings(ctx, cronTopic.Id, group.Id, []string{JobName}, time.Now()); err != nil {
 		return err
 	}
 

@@ -33,12 +33,12 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 	}
 	defer tx.Rollback(ctx)
 
-	freeSql := `
+	freeSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.commit
-		DELETE FROM lease
+		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`
+	`, iTopic.LeaseTable(topicId))
 	tag, err := tx.Exec(ctx, freeSql, groupId, token)
 	if err != nil {
 		return err
@@ -87,13 +87,13 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 	// commit's DELETE, this UPDATE doesn't consume the row -- a retry's own
 	// UPDATE still matches it, so it reaches the delivery insert again. See the
 	// recorded-anything guard below.
-	truncateSql := `
+	truncateSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.partialCommit
-		UPDATE lease
+		UPDATE %s
 		SET low = $3
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`
+	`, iTopic.LeaseTable(topicId))
 	tag, err := tx.Exec(ctx, truncateSql, groupId, token, lastProcessed)
 	if err != nil {
 		return err

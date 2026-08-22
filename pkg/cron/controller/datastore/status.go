@@ -52,19 +52,19 @@ func (d *CronJobDatastore) status(ctx context.Context, jobRequestsTopicId int64,
 // matchingGroups is every consumer group that receives the job's requests,
 // ordered by name.
 func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicId int64, name string) ([]matchingGroupData, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: cron.matchingGroups
 		SELECT cg.id, cg.name
 		FROM consumer_group cg
 		WHERE cg.topic_id = $1
 		  AND (
 			-- a group with no bindings receives every routing key
-			NOT EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = cg.id)
+			NOT EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id)
 			-- otherwise a binding must match the job's name ($2)
-			OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern)
+			OR EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern)
 		  )
 		ORDER BY cg.name;
-	`
+	`, iTopic.BindingTable(jobRequestsTopicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, jobRequestsTopicId, name)
 	if err != nil {
 		return nil, err
@@ -117,16 +117,15 @@ func (d *CronJobDatastore) jobMessageIds(ctx context.Context, jobRequestsTopicId
 
 // headId is the key's compaction_head pointer; 0 when the job has no messages.
 func (d *CronJobDatastore) headId(ctx context.Context, jobRequestsTopicId int64, compactionKey string) (int64, error) {
-	sql := `
+	sql := fmt.Sprintf(`
 		-- vulkan: cron.headId
 		SELECT head_id
-		FROM compaction_head
-		WHERE topic_id = $1
-		  AND compaction_key = $2;
-	`
+		FROM %s
+		WHERE compaction_key = $1;
+	`, iTopic.CompactionHeadTable(jobRequestsTopicId))
 
 	var headId int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, jobRequestsTopicId, compactionKey).Scan(&headId)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, compactionKey).Scan(&headId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil

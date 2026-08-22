@@ -47,6 +47,7 @@ func toKeyLeaseData(claim *keyleasecontroller.KeyLeaseClaim) *datastore.KeyLease
 		return nil
 	}
 	return &datastore.KeyLeaseData{
+		TopicId:         claim.TopicId,
 		ConsumerGroupId: claim.ConsumerGroupId,
 		CompactionKey:   claim.CompactionKey,
 		Token:           toTokenData(claim.Token),
