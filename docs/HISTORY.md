@@ -5,6 +5,21 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — migration txn steps run under lock_timeout [0579]
+
+- runStepWithTx sets `SET LOCAL lock_timeout = '2000ms'` right after
+  Begin (own ddlLockTimeout const matching the producer/janitor sites;
+  no config field), so a step queued behind live traffic gives up
+  instead of stalling the queries queued behind its DDL. A 55P03 on the
+  txn path is reclassified Transient via new declared error VK0053 and
+  the atomically rolled-back step retries under the existing
+  DatastoreRetry schedule; NoTxn steps keep fail-fast (CREATE INDEX
+  CONCURRENTLY's INVALID-index hazard). Inert until release-era ALTER
+  steps exist. Landed together: VK0053 docs page + errors index row,
+  guides/migrations.mdx behavior sentence, Migration doc comment
+  authoring-rules line. Verified: go test -race pkg/migrate,
+  tools/conventions, schemaevolutionlab + schemagatelab.
+
 ## 2026-08-22 — cross-version compatibility: MinCompatibleVersion gate + compat lab [0580]
 
 - Every migration step now declares MinCompatibleVersion (0 = additive,

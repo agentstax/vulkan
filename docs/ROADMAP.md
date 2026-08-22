@@ -16,7 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Migration LOCK TIMEOUT** [0579] — settled; expanded in TODO.md.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
