@@ -1,15 +1,20 @@
 package main
 
 // schema gate lab: a producer/consumer refuses to Register against a database
-// whose schema version is outside the range this build understands -- fail
-// fast, with a message an operator can act on, instead of running against a
-// shape it can't. The v1 gate mostly asserts "schema says v1"; the mechanism is
-// what a v1.1 binary relies on.
+// whose schema requires a newer binary -- fail fast, with a message an
+// operator can act on, instead of running against a shape it can't. The gate
+// allows min_compatible_version <= build <= current: a database migrated PAST
+// the binary by additive steps stays usable (the rolling-deploy window); a
+// step declaring MinCompatibleVersion above the build locks it out.
 //
 // Proves:
 //  1. Register succeeds at the supported schema (v1).
-//  2. a system schema ahead of the binary refuses Register (upgrade the binary).
-//  3. a topic schema ahead of the binary refuses Register (per-topic, same gate).
+//  2. additive skew: schema ahead of the binary with no breaking step ->
+//     Register still succeeds.
+//  3. a breaking step past the binary (system scope) refuses Register
+//     (upgrade the binary).
+//  4. a breaking step past ONE topic refuses that topic only -- a sibling
+//     topic still registers (per-topic skew).
 
 import (
 	"context"
@@ -45,7 +50,10 @@ func main() {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
+	siblingName := name + ".sibling"
 	topicRow, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)
+	must(err)
+	_, err = mAdmin.RegisterTopic(ctx, siblingName, topic.SchemaVersion(1), nil)
 	must(err)
 
 	controller, err := migratecontroller.NewController(ds, nil)
@@ -54,6 +62,7 @@ func main() {
 	must(err)
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, siblingName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
 	// 1. supported schema -> Register succeeds -----------------------------------
@@ -61,26 +70,36 @@ func main() {
 	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	check(err == nil, "Register accepted at v1")
 
-	// 2. system schema ahead of the binary --------------------------------------
-	section("system schema ahead of the binary -> Register refused")
-	bump(ctx, pool, sysOwner, 2)
+	// 2. additive skew: schema ahead, nothing breaking -> Register succeeds ------
+	section("system schema ahead by an additive step -> Register still succeeds")
+	bump(ctx, pool, sysOwner, 2, 0)
 	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
-	show(err)
-	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "upgrade the binary"),
-		"refused, naming the system version and the fix")
+	check(err == nil, "Register accepted at v2 with no breaking step -- the rolling-deploy window")
 	unbump(ctx, pool, sysOwner, 2)
 
-	// 3. topic schema ahead of the binary ---------------------------------------
-	section("topic schema ahead of the binary -> Register refused")
-	bump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
+	// 3. breaking step past the binary (system) -> Register refused --------------
+	section("system schema ahead by a breaking step -> Register refused")
+	bump(ctx, pool, sysOwner, 2, 2)
 	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
 	show(err)
-	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "upgrade the binary"),
-		"refused, naming the topic version and the fix")
-	unbump(ctx, pool, mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name)), 2)
+	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "min_compatible_version 2") && strings.Contains(err.Error(), "upgrade the binary"),
+		"refused, naming the system version, the requirement, and the fix")
+	unbump(ctx, pool, sysOwner, 2)
+
+	// 4. breaking step past ONE topic -> that topic refused, sibling accepted ----
+	section("breaking step past one topic -> that topic refused, sibling accepted")
+	topicOwner := mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name))
+	bump(ctx, pool, topicOwner, 2, 2)
+	_, err = newProducer(ds).Register(ctx, name, topic.SchemaVersion(1))
+	show(err)
+	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "min_compatible_version 2"),
+		"refused, naming the topic version and the requirement")
+	_, err = newProducer(ds).Register(ctx, siblingName, topic.SchemaVersion(1))
+	check(err == nil, "sibling topic still registers -- each family gates on its own rows")
+	unbump(ctx, pool, topicOwner, 2)
 
 	fmt.Println("\n✅ SCHEMA GATE LAB PASSED")
-	fmt.Println("   Register fails fast and legibly when the schema is outside the supported range.")
+	fmt.Println("   Register rides out additive skew and fails fast, legibly, on a breaking step past the build.")
 }
 
 func newProducer(ds *iDatastore.PostgresDatastore) *producer.Producer[event] {
@@ -91,8 +110,9 @@ func newProducer(ds *iDatastore.PostgresDatastore) *producer.Producer[event] {
 
 // bump records a success at ver, so the gate reads that scope as version ver
 // without any matching schema change -- a database a newer binary migrated.
-func bump(ctx context.Context, pool *pgxpool.Pool, owner *common.Owner, ver int64) {
-	_, err := pool.Exec(ctx, `INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, status) VALUES ($1, $2, $3, $4, 'success');`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver)
+// minCompatibleVersion 0 forges an additive step, ver forges a breaking one.
+func bump(ctx context.Context, pool *pgxpool.Pool, owner *common.Owner, ver int64, minCompatibleVersion int64) {
+	_, err := pool.Exec(ctx, `INSERT INTO migration_log (system_id, topic_id, consumer_group_id, migration_version, min_compatible_version, status) VALUES ($1, $2, $3, $4, $5, 'success');`, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), ver, minCompatibleVersion)
 	must(err)
 }
 

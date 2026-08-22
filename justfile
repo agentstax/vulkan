@@ -300,8 +300,9 @@ invariant-lab:
   go run examples/phase_1/invariantlab/main.go
 
 # schema gate lab: a producer/consumer refuses to Register when the db's system
-# or topic schema version is outside the range this build understands -- fail
-# fast with an operator-actionable message. The v1.1 upgrade path's tripwire.
+# or topic schema carries a breaking step past this build (additive skew is
+# allowed -- the rolling-deploy window), and each topic family gates on its own
+# rows. Fail fast with an operator-actionable message; the upgrade tripwire.
 schema-gate-lab:
   go run examples/phase_1/schemagatelab/main.go
 

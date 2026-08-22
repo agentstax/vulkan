@@ -16,8 +16,8 @@ var ErrSchemaOlderThanBuild = diagnostic.NewError("VK0022", diagnostic.Permanent
 	"schema version is older than this build requires",
 	"migrate the database up first")
 
-// ErrSchemaNewerThanBuild means the stored schema version is above what this
-// build defines -- a newer binary already migrated the database.
+// ErrSchemaNewerThanBuild means the database was migrated past this build by
+// a step whose MinCompatibleVersion is above it.
 var ErrSchemaNewerThanBuild = diagnostic.NewError("VK0023", diagnostic.Permanent,
 	"schema version is newer than this build understands",
 	"upgrade the binary")

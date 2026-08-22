@@ -6,12 +6,13 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/migrate/controller/datastore"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
 )
 
-// AssertSystemSchemaSupported gates startup for a system-owned caller: the
-// shared system schema must sit within the range this build understands.
+// AssertSystemSchemaSupported gates startup for a system-owned caller against
+// the shared system schema.
 // Too new -> upgrade the binary; too old -> migrate the database.
 func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId int64) error {
 	if systemId <= 0 {
@@ -21,13 +22,11 @@ func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId i
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
-	buildVersion := systemMigrations.Version()
-	return assertVersionInRange(common.OwnerSystem, state.Version, buildVersion, buildVersion)
+	return assertVersionSupported(common.OwnerSystem, state, systemMigrations.Version())
 }
 
 // AssertTopicSchemaSupported gates startup for a topic- or group-owned
-// caller: the shared system schema plus the topic's own schema must both sit
-// within the range this build understands.
+// caller against both the shared system schema and the topic's own schema.
 func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId int64, topicId int64) error {
 	if err := c.AssertSystemSchemaSupported(ctx, systemId); err != nil {
 		return err
@@ -40,20 +39,26 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
-	buildVersion := topicMigrations.Version()
-	return assertVersionInRange(common.OwnerTopic, state.Version, buildVersion, buildVersion)
+	return assertVersionSupported(common.OwnerTopic, state, topicMigrations.Version())
 }
 
 // ***************
 // *** HELPERS ***
 // ***************
 
-func assertVersionInRange(kind common.OwnerKind, version int64, minVersion int64, maxVersion int64) error {
+// assertVersionSupported allows a build iff
+// state.MinCompatibleVersion <= buildVersion <= state.Version, where
+// buildVersion is what this binary's registry defines
+// state.Version is what the database records
+// - database behind the build     -> ErrSchemaOlderThanBuild (migrate up)
+// - breaking step past the build  -> ErrSchemaNewerThanBuild (upgrade binary)
+// - additive steps past the build -> allowed, the rolling-deploy window
+func assertVersionSupported(kind common.OwnerKind, state *datastore.SchemaStateData, buildVersion int64) error {
 	switch {
-	case version < minVersion:
-		return migrate.ErrSchemaOlderThanBuild.With("kind", kind, "version", version, "min_version", minVersion)
-	case version > maxVersion:
-		return migrate.ErrSchemaNewerThanBuild.With("kind", kind, "version", version, "max_version", maxVersion)
+	case state.Version < buildVersion:
+		return migrate.ErrSchemaOlderThanBuild.With("kind", kind, "version", state.Version, "build_version", buildVersion)
+	case state.MinCompatibleVersion > buildVersion:
+		return migrate.ErrSchemaNewerThanBuild.With("kind", kind, "version", state.Version, "min_compatible_version", state.MinCompatibleVersion, "build_version", buildVersion)
 	}
 	return nil
 }

@@ -27,14 +27,20 @@ stays there until ship. Tasks in build order:
    reads (controller SystemVersion/TopicVersion re-shaped over them, one
    read path); the runner's own Version() read unchanged; exercised live
    via schema-gate-lab.
-5. (open) Gate predicate: allowed iff
-   `min_compatible_version <= buildVersion <= current`; VK0022/VK0023
-   attrs gain min_compatible_version / build_version; their website pages
-   update in the same change.
-6. (open) schemagatelab reshaped for floor semantics (forge
-   min_compatible_version rows for newer-than, a low current for
-   older-than) plus the per-topic skew assertion (RunOnce on topic A,
-   topic B's family gates independently).
+5. (done 2026-08-22) Gate predicate: assertVersionSupported allows iff
+   `min_compatible_version <= buildVersion <= current`; VK0023 attrs now
+   min_compatible_version + build_version (runner's raise site aligned);
+   both keys added to the CONVENTIONS attr registry; website pages
+   unchanged on purpose -- problem/recovery/fix text did not change and
+   the uniform page shape carries no attrs (floor semantics land on task
+   8's migration docs page).
+6. (done 2026-08-22) schemagatelab reshaped: additive-skew acceptance
+   (the rolling-deploy window), breaking-step refusal naming
+   min_compatible_version, and per-topic skew via a sibling topic (forged
+   breaking row on one family, sibling still registers). Older-than stays
+   unforgeable while the registries are empty (build version cannot
+   exceed the baseline) -- it gets a real assertion with the first real
+   migration.
 7. (open) tools/compat module skeleton + `just compat-lab` recipe —
    dry-runs via a replace to the same tree until two releases exist.
 8. (open) Rules & docs: CONVENTIONS ## Migrations release-era rules +

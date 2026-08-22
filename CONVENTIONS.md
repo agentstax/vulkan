@@ -552,7 +552,11 @@ the code is the line's breadcrumb to its own explanation.
       code          a declared log event's code (Event.Code)
       topic         topic name
       topic_id      topic id
-      version       schema version
+      version       schema version (on VK0022/VK0023: the scope's current
+                    migration version)
+      build_version  the migration version a build defines for a scope
+      min_compatible_version  the strictest MinCompatibleVersion among the
+                    applied migration steps
       group         consumer group name
       group_id      consumer group id
       session       consumer session id -- one Consume call's uuid
