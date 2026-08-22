@@ -28,7 +28,7 @@ func newMigrateCmd(g *globalFlags) *cobra.Command {
 	}
 
 	cmd.AddCommand(newMigrateInitCmd(g))
-	cmd.AddCommand(newMigrateVersionsCmd())
+	cmd.AddCommand(newMigrateVersionsCmd(g))
 	cmd.AddCommand(newMigrateStatusCmd(g))
 	cmd.AddCommand(newMigrateSystemCmd(g))
 	cmd.AddCommand(newMigrateTopicsCmd(g))

@@ -16,14 +16,14 @@ const (
 // JobRequestStatus is one job request's outcome for one consumer group,
 // newest request first in a CronJobRequests listing.
 type JobRequestStatus struct {
-	ConsumerGroup string
-	MessageId     int64
-	ScheduledTime time.Time
-	ProducedAt    time.Time
-	Outcome       JobRequestOutcome
+	ConsumerGroup string            `json:"group"`
+	MessageId     int64             `json:"message_id"`
+	ScheduledTime time.Time         `json:"scheduled_time"`
+	ProducedAt    time.Time         `json:"produced_at"`
+	Outcome       JobRequestOutcome `json:"outcome"`
 
 	// SupersededBy/SupersededAt - the replacing request's message id and
 	// produce time, set only when Outcome is JobRequestSuperseded.
-	SupersededBy *int64
-	SupersededAt *time.Time
+	SupersededBy *int64     `json:"superseded_by"`
+	SupersededAt *time.Time `json:"superseded_at"`
 }

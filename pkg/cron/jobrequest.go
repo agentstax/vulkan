@@ -17,11 +17,11 @@ const TopicName = common.SystemTopicPrefix + "job_requests"
 // per due scheduled time (RunCronJob on demand) to __system.job_requests with
 // the job's name as the routing key; consumers bind job names.
 type JobRequest struct {
-	CronJobId     int64
-	Name          string
-	ScheduledTime time.Time // the scheduled time this request represents, not when it was produced
-	Data          json.RawMessage
-	Metadata      json.RawMessage
+	CronJobId     int64           `json:"cron_job_id"`
+	Name          string          `json:"cron_job"`
+	ScheduledTime time.Time       `json:"scheduled_time"` // the scheduled time this request represents, not when it was produced
+	Data          json.RawMessage `json:"data"`
+	Metadata      json.RawMessage `json:"metadata"`
 }
 
 func NewJobRequest(cronJobId int64, name string, scheduledTime time.Time, data, metadata json.RawMessage) (*JobRequest, error) {

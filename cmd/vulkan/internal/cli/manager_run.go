@@ -31,6 +31,11 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 			"Stop with SIGINT or SIGTERM.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// the daemon's output is its log stream; there is no result document
+			if g.jsonOutput() {
+				return failUsage("manager run streams logs and produces no result document -- --output json does not apply")
+			}
+
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			// once a stop begins, re-arm default delivery so a second signal

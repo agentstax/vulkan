@@ -24,6 +24,11 @@ func newCronDestroyCmd(g *globalFlags) *cobra.Command {
 			name := args[0]
 			out := cmd.OutOrStdout()
 
+			// the confirmation prompt would pollute the json document stream
+			if g.jsonOutput() && !yes {
+				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", name)
+			}
+
 			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
 				return err
@@ -57,14 +62,23 @@ func newCronDestroyCmd(g *globalFlags) *cobra.Command {
 				}
 			}
 
-			fmt.Fprintf(out, "destroying %q... ", name)
+			if !g.jsonOutput() {
+				fmt.Fprintf(out, "destroying %q... ", name)
+			}
 			if err := mAdmin.DestroyCronJob(ctx, name); err != nil {
-				fmt.Fprintln(out) // end the dangling "destroying..." line
+				if !g.jsonOutput() {
+					fmt.Fprintln(out) // end the dangling "destroying..." line
+				}
 				if errors.Is(err, cron.ErrCronJobNotFound) {
 					// dropped between our check and the delete
 					return errCronJobNotFound(name)
 				}
 				return translateAdminError(err)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, cronJobDestroyedDocument{CronJob: name, CronJobId: found.Id, Destroyed: true})
+				return nil
 			}
 			fmt.Fprintln(out, "done")
 			fmt.Fprintf(out, "%s cron job %q destroyed\n", glyphOK(), name)
@@ -75,4 +89,12 @@ func newCronDestroyCmd(g *globalFlags) *cobra.Command {
 	f := cmd.Flags()
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd
+}
+
+// cronJobDestroyedDocument is cron destroy's json result: a small
+// what-happened record, never the dead row.
+type cronJobDestroyedDocument struct {
+	CronJob   string `json:"cron_job"`
+	CronJobId int64  `json:"cron_job_id"`
+	Destroyed bool   `json:"destroyed"`
 }

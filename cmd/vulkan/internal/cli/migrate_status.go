@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"text/tabwriter"
 
 	"github.com/agentstax/vulkan/pkg/migrate"
@@ -33,16 +34,14 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			sysOwner, err := controller.SystemOwner(ctx)
 			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
-					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
-					return nil
+					return migrateStatusNotInitialized(out, g)
 				}
 				return translateAdminError(err)
 			}
 			sysCurrent, err := controller.SystemVersion(ctx, sysOwner.SystemId)
 			if err != nil {
 				if errors.Is(err, migrate.ErrNotRegistered) {
-					fmt.Fprintln(out, "system schema not initialized -- run `vulkan migrate init`")
-					return nil
+					return migrateStatusNotInitialized(out, g)
 				}
 				return translateAdminError(err)
 			}
@@ -59,7 +58,7 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			// computed before anything prints.
 			type row struct {
 				name      string
-				version   string // blank for the system row -- topic rows disambiguate by version
+				version   *int64 // nil for the system row -- topic rows disambiguate by version
 				current   int64
 				available int64
 			}
@@ -69,7 +68,28 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 				if err != nil {
 					return translateAdminError(err)
 				}
-				rows = append(rows, row{name: t.Name, version: fmt.Sprintf("%d", t.SchemaVersion), current: current, available: topicAvail})
+				version := int64(t.SchemaVersion)
+				rows = append(rows, row{name: t.Name, version: &version, current: current, available: topicAvail})
+			}
+
+			if g.jsonOutput() {
+				document := migrateStatusDocument{
+					Initialized:     true,
+					SystemAvailable: sysAvail,
+					TopicAvailable:  topicAvail,
+					Schemas:         make([]migrateSchemaDocument, 0, len(rows)),
+				}
+				for _, r := range rows {
+					document.Schemas = append(document.Schemas, migrateSchemaDocument{
+						Schema:    r.name,
+						Version:   r.version,
+						Current:   r.current,
+						Available: r.available,
+						Behind:    r.current < r.available,
+					})
+				}
+				writeJSON(out, document)
+				return nil
 			}
 
 			fmt.Fprintf(out, "latest available: system %d, topic %d\n\n", sysAvail, topicAvail)
@@ -77,7 +97,11 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
 			fmt.Fprintln(tw, "SCHEMA\tVERSION\tCURRENT\tAVAILABLE")
 			for _, r := range rows {
-				fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", r.name, r.version, r.current, r.available)
+				versionCell := ""
+				if r.version != nil {
+					versionCell = fmt.Sprintf("%d", *r.version)
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", r.name, versionCell, r.current, r.available)
 			}
 			tw.Flush()
 
@@ -102,4 +126,38 @@ func newMigrateStatusCmd(g *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// migrateStatusDocument is migrate status's json result. Initialized false
+// means the control-plane schema was never created; schemas is then empty.
+type migrateStatusDocument struct {
+	Initialized     bool                    `json:"initialized"`
+	SystemAvailable int64                   `json:"system_available"`
+	TopicAvailable  int64                   `json:"topic_available"`
+	Schemas         []migrateSchemaDocument `json:"schemas"`
+}
+
+// migrateSchemaDocument is one schema row: the system schema (version null)
+// or one registered topic version.
+type migrateSchemaDocument struct {
+	Schema    string `json:"schema"`
+	Version   *int64 `json:"version"`
+	Current   int64  `json:"current"`
+	Available int64  `json:"available"`
+	Behind    bool   `json:"behind"`
+}
+
+// migrateStatusNotInitialized is the shared never-initialized result: still
+// exit 0 -- an uninitialized database is an answer, not a failure.
+func migrateStatusNotInitialized(w io.Writer, g *globalFlags) error {
+	if g.jsonOutput() {
+		writeJSON(w, migrateStatusDocument{
+			SystemAvailable: availableSystemVersion(),
+			TopicAvailable:  availableTopicVersion(),
+			Schemas:         make([]migrateSchemaDocument, 0),
+		})
+		return nil
+	}
+	fmt.Fprintln(w, "system schema not initialized -- run `vulkan migrate init`")
+	return nil
 }

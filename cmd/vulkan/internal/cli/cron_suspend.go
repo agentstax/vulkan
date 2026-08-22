@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/spf13/cobra"
@@ -32,6 +33,10 @@ func newCronSuspendCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
+			if g.jsonOutput() {
+				writeJSON(cmd.OutOrStdout(), cronJobSuspendedDocument{CronJob: name, Suspended: true})
+				return nil
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s cron job %q suspended\n", glyphOK(), name)
 			return nil
 		},
@@ -66,7 +71,20 @@ func newCronUnsuspendCmd(g *globalFlags) *cobra.Command {
 			if err != nil || job == nil {
 				// the unsuspend itself succeeded -- report that even if the
 				// follow-up read for the next-scheduled-time detail didn't cooperate
+				if g.jsonOutput() {
+					writeJSON(cmd.OutOrStdout(), cronJobSuspendedDocument{CronJob: name, Suspended: false})
+					return nil
+				}
 				fmt.Fprintf(cmd.OutOrStdout(), "%s cron job %q unsuspended\n", glyphOK(), name)
+				return nil
+			}
+
+			if g.jsonOutput() {
+				writeJSON(cmd.OutOrStdout(), cronJobSuspendedDocument{
+					CronJob:           name,
+					Suspended:         false,
+					NextScheduledTime: &job.NextScheduledTime,
+				})
 				return nil
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s cron job %q unsuspended, next scheduled time %s\n",
@@ -74,4 +92,13 @@ func newCronUnsuspendCmd(g *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// cronJobSuspendedDocument is suspend/unsuspend's json result;
+// next_scheduled_time is null while suspended, and after an unsuspend whose
+// follow-up read did not cooperate.
+type cronJobSuspendedDocument struct {
+	CronJob           string     `json:"cron_job"`
+	Suspended         bool       `json:"suspended"`
+	NextScheduledTime *time.Time `json:"next_scheduled_time"`
 }

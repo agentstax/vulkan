@@ -264,9 +264,10 @@ func classifySection(ctx context.Context) {
 	fmt.Println("  ✓ repeat republish refreshed the head silently")
 
 	// severity change: publishes immediately (still inside the interval),
-	// silently -- the head's stored severity is doctored behind the door
+	// silently -- the head's stored severity is doctored by direct SQL,
+	// bypassing the controller
 	exec(ctx, fmt.Sprintf(
-		`UPDATE message_log_%d SET payload = jsonb_set(payload, '{Severity}', '"lab-critical"') WHERE id = $1;`,
+		`UPDATE message_log_%d SET payload = jsonb_set(payload, '{severity}', '"lab-critical"') WHERE id = $1;`,
 		alertsTopic.Id), headId(ctx, key))
 	record(found, alert.RecordOutcomeActive, "severity change")
 	if got := alertMessageCount(ctx, key); got != 3 {
@@ -650,7 +651,7 @@ func headId(ctx context.Context, compactionKey string) int64 {
 // headStatus is "" when the key has no head or its payload carries no status.
 func headStatus(ctx context.Context, compactionKey string) string {
 	sql := fmt.Sprintf(`
-		SELECT m.payload->>'Status'
+		SELECT m.payload->>'status'
 		FROM compaction_head_%d h
 		JOIN message_log_%d m ON m.id = h.head_id
 		WHERE h.compaction_key = $1;

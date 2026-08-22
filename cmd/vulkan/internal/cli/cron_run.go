@@ -56,6 +56,10 @@ func newCronRunCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
+			if g.jsonOutput() {
+				writeJSON(cmd.OutOrStdout(), cronJobRunDocument{CronJob: name, MessageId: produced.Id})
+				return nil
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s produced job request for %q (message id=%d)\n",
 				glyphOK(), name, produced.Id)
 			return nil
@@ -65,4 +69,10 @@ func newCronRunCmd(g *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&concurrency, "concurrency", "", "whether the request runs while a previous one is still running, overriding the job's own policy: allow or defer (default allow)")
 
 	return cmd
+}
+
+// cronJobRunDocument is cron run's json result: the handle the run produced.
+type cronJobRunDocument struct {
+	CronJob   string `json:"cron_job"`
+	MessageId int64  `json:"message_id"`
 }

@@ -91,6 +91,41 @@ func errUnknownTopicConfigKey(key string) error {
 	return failUsage("unknown config key %q -- known keys:\n%s", key, strings.Join(known, "\n"))
 }
 
+// topicConfigDocument is topic config get's json result: each key with its
+// compiled-in default and the topic's current value, as the table renders
+// them.
+type topicConfigDocument struct {
+	Topic   string                   `json:"topic"`
+	Version int64                    `json:"version"`
+	TopicId int64                    `json:"topic_id"`
+	Keys    []topicConfigKeyDocument `json:"keys"`
+}
+
+type topicConfigKeyDocument struct {
+	Key     string `json:"key"`
+	Default string `json:"default"`
+	Value   string `json:"value"`
+}
+
+func toTopicConfigDocument(found *topic.Topic, entries []topicConfigKey) topicConfigDocument {
+	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "", 1)
+
+	keys := make([]topicConfigKeyDocument, 0, len(entries))
+	for _, entry := range entries {
+		keys = append(keys, topicConfigKeyDocument{
+			Key:     entry.key,
+			Default: entry.read(defaults),
+			Value:   entry.read(found),
+		})
+	}
+	return topicConfigDocument{
+		Topic:   found.Name,
+		Version: int64(found.SchemaVersion),
+		TopicId: found.Id,
+		Keys:    keys,
+	}
+}
+
 func printTopicConfigLines(w io.Writer, found *topic.Topic, entries []topicConfigKey) {
 	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "", 1)
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)

@@ -15,12 +15,12 @@ const (
 // DeclarationInstalled is the group's effective set.
 // DeclarationWaiting a declarer still blocked on changing effective set.
 type Declaration struct {
-	GroupName     string
-	TopicName     string
-	SchemaVersion int64
-	Status        DeclarationOutcome
-	Patterns      []string // empty = the whole topic
-	DeclaredBy    string
-	DeclaredAt    time.Time
-	AttemptAt     time.Time
+	GroupName     string             `json:"group"`
+	TopicName     string             `json:"topic"`
+	SchemaVersion int64              `json:"version"`
+	Status        DeclarationOutcome `json:"status"`
+	Patterns      []string           `json:"patterns"` // empty = the whole topic
+	DeclaredBy    string             `json:"declared_by"`
+	DeclaredAt    time.Time          `json:"declared_at"`
+	AttemptAt     time.Time          `json:"attempt_at"`
 }

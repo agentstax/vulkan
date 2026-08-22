@@ -28,8 +28,19 @@ func newMigrateInitCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
+			if g.jsonOutput() {
+				writeJSON(out, migrateInitDocument{Initialized: true, Current: 1})
+				return nil
+			}
+
 			fmt.Fprintf(out, "%s system schema initialized (version 1)\n", glyphOK())
 			return nil
 		},
 	}
+}
+
+// migrateInitDocument is migrate init's json result: the baseline exists.
+type migrateInitDocument struct {
+	Initialized bool  `json:"initialized"`
+	Current     int64 `json:"current"`
 }

@@ -22,6 +22,10 @@ func newAlertListCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
+			if quiet && g.jsonOutput() {
+				return failUsage("--quiet and --output json cannot be combined")
+			}
+
 			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
 				return err
@@ -31,6 +35,14 @@ func newAlertListCmd(g *globalFlags) *cobra.Command {
 			heads, err := mAdmin.ListAlerts(ctx)
 			if err != nil {
 				return translateAdminError(err)
+			}
+
+			if g.jsonOutput() {
+				if heads == nil {
+					heads = make([]*producer.MessageRow[alert.Alert], 0)
+				}
+				writeJSON(out, heads)
+				return nil
 			}
 
 			if quiet {

@@ -16,53 +16,12 @@ the item is removed.
 
 ## Now
 
-- **CLI `--output json`.** One flag covering results and errors together --
-  deferred from the error-anatomy work ([0550]) because a flag that
-  json-ifies only errors while results stay tables is half a feature. The
-  error object shape is already settled: the five parts + recovery as one
-  object, mirroring common.Error's LogValue fields. Design discussed
-  2026-08-22; settled directions:
-  - Flag seam: root persistent flag beside --database-url (kubectl -o
-    precedent). Each RunE splits into compute-the-result then one render
-    branch at the end -- today commands print inline mid-body, so this
-    split is the bulk of the mechanical work.
-  - Invariant (clig.dev): json mode stdout is always exactly one parseable
-    document per command, success or failure -- never silence, never prose.
-  - Errors: structured errors marshal the LogValue fields (code, problem,
-    recovery, values, cause, fix, docs) as one object on stderr, exit codes
-    unchanged. Plain failUsage/failOp and cobra parse errors emit a reduced
-    object (problem only -- omit what we don't know, exit code stays the
-    usage-vs-op discriminator). failPrinted sites (8 files) currently print
-    prose then signal exit 1 -- in json mode the failure becomes data in
-    the result document (e.g. topic get emits exists:false), exit code
-    preserved. Destroy's interactive prompt never fires in json mode:
-    --output json on a destroy requires --yes, same rule as non-TTY.
-  - Wire shapes, two independent decisions: (a) public read-models
-    (topic.Topic, admin.VersionHealth, ...) grow json tags, snake_case,
-    keys matching the log-attr registry -- a CONVENTIONS.md-worthy
-    convention on its own merits (users embedding/persisting these get
-    stable wire names); audit pgtype.UUID/pgx types in public structs
-    first, they marshal ugly by default. (b) CLI-owned result structs only
-    where output is composed or derived (topic get: GroupLag() is
-    computed, retire verdict, exists) -- where output IS one read-model
-    (topic list), the tagged struct marshals directly, no adapter.
-  - Mutations (researched kubectl/gh/aws/docker/stripe/gcloud/terraform):
-    create/trigger echoes the resource or its new id; delete emits a small
-    what-happened record (stripe {id, deleted:true} stub -- never the full
-    dead object, never empty stdout); trigger emits the handle produced
-    (gcloud operations-resource pattern). Mapped: destroys emit
-    {topic, schema_version, topic_id, destroyed:true}-shaped records;
-    cron run emits {cron_job, message_id}; rename/suspend/config alters
-    echo the get-shape, sharing the get command's result struct.
-  - migrate is terraform's streaming-events category -- out of scope:
-    emits a final summary document only (versions applied, per-scope
-    results), progress stays on stderr.
-  - -q coexists (two meanings today: names-only on the lists, exit-code-
-    only on the gets); combining -q with --output json is a usage error.
-- **Worker metadata history as append-only worker_log** — the [0570]
-  current-row-plus-log shape applied to worker metadata, deferred from the
-  topic build. The worker_log name is reserved for this ([0570]); the
-  parked failure-evidence table became worker_run_log.
+- **CLI `--output json`.** In flight -- expanded in TODO.md. Design
+  settled in [0575] (json tags on public read-models) and [0576] (the
+  flag; error, result, and mutation document shapes).
+- **Worker metadata history as append-only worker_log** — design settled
+  2026-08-22, [0577]: the [0570] current-row-plus-log shape applied to
+  worker metadata; build pending.
 - **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs
@@ -579,6 +538,10 @@ prerequisite if quorum-as-a-fraction wins.
   into drops. Benchmark-gated: create-ahead must ride the producer's
   partition self-heal, and the hot claim table takes on partitioned-table
   planner overhead.
+- **topic_log / worker_log retention** — both are unbounded today; rows
+  append only on actual config change, so growth tracks change frequency,
+  not traffic. Revisit whether they want a TTL sweep like binding_log's
+  ([0573]) once real deployments show the volume.
 - **BRIN indexes** — look into using them for different tables.
 - **DeadLetterTopic consumer** — consume on events to the DLQ.
 - **Shadow/Mirror functionality** — watch exactly the same cursor as another

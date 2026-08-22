@@ -6,7 +6,7 @@ import "github.com/agentstax/vulkan/pkg/common"
 const TopicName = common.SystemTopicPrefix + "metrics"
 
 type TopicSnapshot struct {
-	TopicId   int64
-	Compacted bool
-	Groups    []ConsumerGroupSnapshot
+	TopicId   int64                   `json:"topic_id"`
+	Compacted bool                    `json:"compacted"`
+	Groups    []ConsumerGroupSnapshot `json:"groups"`
 }

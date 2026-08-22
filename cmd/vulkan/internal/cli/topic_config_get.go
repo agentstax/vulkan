@@ -48,6 +48,11 @@ func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
 				return errTopicNotFound(name)
 			}
 
+			if g.jsonOutput() {
+				writeJSON(out, toTopicConfigDocument(found, entries))
+				return nil
+			}
+
 			fmt.Fprintf(out, "%s topic %q v%d (id=%d)\n", glyphOK(), name, found.SchemaVersion, found.Id)
 			printTopicConfigLines(out, found, entries)
 			return nil

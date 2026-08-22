@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"github.com/agentstax/vulkan/pkg/common/diagnostic"
-	"github.com/charmbracelet/fang"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -56,27 +55,59 @@ func failStructured(structuredError *diagnostic.Error, fix string) error {
 	return &cliError{code: 1, structured: structuredError, fix: fix}
 }
 
-// errorHandler is fang's error sink. A structured error renders as the block;
-// everything else lands as plain `error: <msg>` -- no styled box either way --
-// so stderr reads the same whether or not it is a TTY, and scripts parsing it
-// never branch on styling.
-func errorHandler(w io.Writer, _ fang.Styles, err error) {
+// errorObject is the json rendering of one failure: the LogValue fields of a
+// structured error. A plain error fills only Problem; absent parts drop out.
+type errorObject struct {
+	Code     string         `json:"code,omitempty"`
+	Problem  string         `json:"problem"`
+	Recovery string         `json:"recovery,omitempty"`
+	Values   map[string]any `json:"values,omitempty"`
+	Cause    string         `json:"cause,omitempty"`
+	Fix      string         `json:"fix,omitempty"`
+	Docs     string         `json:"docs,omitempty"`
+}
+
+// errorDocument wraps errorObject under the "error" key, so a failure
+// document can never be mistaken for a result document.
+type errorDocument struct {
+	Error errorObject `json:"error"`
+}
+
+// errorHandler is fang's error sink. In text mode a structured error renders
+// as the block and everything else lands as plain `error: <msg>` -- no styled
+// box either way -- so stderr reads the same whether or not it is a TTY, and
+// scripts parsing it never branch on styling. In json mode every failure is
+// one json document on stderr; a plain error carries only its problem.
+func errorHandler(w io.Writer, g *globalFlags, err error) {
 	var ce *cliError
 	if errors.As(err, &ce) {
 		if ce.printed {
 			return
 		}
 		if ce.structured != nil {
+			if g.jsonOutput() {
+				writeJSON(w, toErrorDocument(ce.structured, ce.fix))
+				return
+			}
 			renderErrorBlock(w, ce.structured, ce.fix)
 			return
 		}
 		if ce.msg == "" {
 			return
 		}
+		if g.jsonOutput() {
+			writeJSON(w, toPlainErrorDocument(ce.msg))
+			return
+		}
 		fmt.Fprintf(w, "error: %s\n", ce.msg)
 		return
 	}
+
 	// cobra's own parse/validation errors (unknown flag, missing arg).
+	if g.jsonOutput() {
+		writeJSON(w, toPlainErrorDocument(err.Error()))
+		return
+	}
 	fmt.Fprintf(w, "error: %s\n", err.Error())
 }
 
@@ -176,6 +207,38 @@ func renderMetricBlock(w io.Writer, metric *diagnostic.Metric) {
 	for _, row := range rows {
 		fmt.Fprintf(w, "  %-*s %s\n", width+1, row[0]+":", row[1])
 	}
+}
+
+// toErrorDocument is renderErrorBlock's json sibling: the same parts as one
+// document. fix is the resolved fix line ("" drops it).
+func toErrorDocument(structuredError *diagnostic.Error, fix string) errorDocument {
+	object := errorObject{
+		Code:     structuredError.Code,
+		Problem:  structuredError.Problem,
+		Recovery: string(structuredError.Recovery),
+		Fix:      fix,
+		Docs:     structuredError.Docs(),
+	}
+
+	attrs := structuredError.Values()
+	if len(attrs) > 0 {
+		object.Values = make(map[string]any, len(attrs))
+		for _, attr := range attrs {
+			object.Values[attr.Key] = jsonAttrValue(attr.Value)
+		}
+	}
+
+	if cause := structuredError.Unwrap(); cause != nil {
+		object.Cause = cause.Error()
+	}
+	return errorDocument{Error: object}
+}
+
+// toPlainErrorDocument carries a message-only failure: no code, no recovery,
+// no docs -- those parts are unknown, and the exit code stays the usage-vs-op
+// discriminator.
+func toPlainErrorDocument(message string) errorDocument {
+	return errorDocument{Error: errorObject{Problem: message}}
 }
 
 func formatAttrValue(value slog.Value) string {

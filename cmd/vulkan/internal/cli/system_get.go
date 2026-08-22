@@ -29,6 +29,11 @@ func newSystemGetCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
+			if g.jsonOutput() {
+				writeJSON(out, sys)
+				return nil
+			}
+
 			fmt.Fprintf(out, "%s system config\n", glyphOK())
 			printSystemDetail(out, sys)
 			return nil

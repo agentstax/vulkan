@@ -29,10 +29,10 @@ func (k OwnerKind) Validate() error {
 // Owner is which resource owns a row in a polymorphic table (worker,
 // cron_job, migration_log).
 type Owner struct {
-	SystemId        int64
-	TopicId         int64
-	ConsumerGroupId int64
-	Name            string
+	SystemId        int64  `json:"system_id"`
+	TopicId         int64  `json:"topic_id"`
+	ConsumerGroupId int64  `json:"group_id"`
+	Name            string `json:"owner"`
 }
 
 func NewSystemOwner(systemId int64) (*Owner, error) {

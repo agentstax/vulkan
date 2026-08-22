@@ -30,6 +30,14 @@ func newAlertBindingsCmd(g *globalFlags) *cobra.Command {
 				return translateAdminError(err)
 			}
 
+			if g.jsonOutput() {
+				if declarations == nil {
+					declarations = make([]*consumergroup.Declaration, 0)
+				}
+				writeJSON(out, declarations)
+				return nil
+			}
+
 			printDeclarationsTable(out, declarations)
 			return nil
 		},

@@ -20,6 +20,10 @@ func newCronListCmd(g *globalFlags) *cobra.Command {
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
+			if quiet && g.jsonOutput() {
+				return failUsage("--quiet and --output json cannot be combined")
+			}
+
 			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
 				return err
@@ -29,6 +33,11 @@ func newCronListCmd(g *globalFlags) *cobra.Command {
 			jobs, err := mAdmin.ListCronJobs(ctx)
 			if err != nil {
 				return translateAdminError(err)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, toCronJobDocuments(jobs))
+				return nil
 			}
 
 			if quiet {

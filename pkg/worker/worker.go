@@ -10,8 +10,8 @@ const NoInstanceTarget = -1
 
 // Worker is one row of the worker table.
 type Worker struct {
-	Id       int64
-	Name     string
-	Owner    *common.Owner
-	Metadata any // JSONB; each caller owns its shape
+	Id       int64         `json:"id"`
+	Name     string        `json:"worker"`
+	Owner    *common.Owner `json:"owner"`
+	Metadata any           `json:"metadata"` // JSONB; each caller owns its shape
 }

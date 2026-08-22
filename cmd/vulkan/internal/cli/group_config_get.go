@@ -49,16 +49,22 @@ field.`,
 			}
 
 			lines := groupConfigLines(workers)
-			if len(lines) == 0 {
-				fmt.Fprintf(out, "%s consumer group %q on topic %q\n", glyphOK(), groupName, topicName)
-				fmt.Fprintln(out, "  (no config -- the group has no consumer worker rows yet; they appear at the group's first Consume)")
-				return nil
-			}
-			if key != "" {
+			if key != "" && len(lines) > 0 {
 				lines = filterGroupConfigLines(lines, key)
 				if len(lines) == 0 {
 					return failOp("no consumer kind of group %q declares config key %q", groupName, key)
 				}
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, toGroupConfigDocument(topicName, schemaVersion, groupName, lines))
+				return nil
+			}
+
+			if len(lines) == 0 {
+				fmt.Fprintf(out, "%s consumer group %q on topic %q\n", glyphOK(), groupName, topicName)
+				fmt.Fprintln(out, "  (no config -- the group has no consumer worker rows yet; they appear at the group's first Consume)")
+				return nil
 			}
 
 			fmt.Fprintf(out, "%s consumer group %q on topic %q\n", glyphOK(), groupName, topicName)
@@ -77,6 +83,29 @@ type groupConfigLine struct {
 	key    string
 	worker string
 	value  string
+}
+
+// groupConfigDocument is group config get's json result: each declared key
+// with the worker row it came from, as the table renders them.
+type groupConfigDocument struct {
+	Topic   string                    `json:"topic"`
+	Version int64                     `json:"version"`
+	Group   string                    `json:"group"`
+	Keys    []groupConfigLineDocument `json:"keys"`
+}
+
+type groupConfigLineDocument struct {
+	Key    string `json:"key"`
+	Worker string `json:"worker"`
+	Value  string `json:"value"`
+}
+
+func toGroupConfigDocument(topicName string, schemaVersion int64, groupName string, lines []groupConfigLine) groupConfigDocument {
+	keys := make([]groupConfigLineDocument, 0, len(lines))
+	for _, line := range lines {
+		keys = append(keys, groupConfigLineDocument{Key: line.key, Worker: line.worker, Value: line.value})
+	}
+	return groupConfigDocument{Topic: topicName, Version: schemaVersion, Group: groupName, Keys: keys}
 }
 
 // groupConfigLines flattens the rows' metadata into print lines: one per key,

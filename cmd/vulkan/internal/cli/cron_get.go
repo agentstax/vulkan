@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"text/tabwriter"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/spf13/cobra"
@@ -32,6 +34,9 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 			if limit <= 0 {
 				return failUsage("--limit must be > 0, got %d", limit)
 			}
+			if quiet && g.jsonOutput() {
+				return failUsage("--quiet and --output json cannot be combined")
+			}
 
 			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
@@ -42,6 +47,32 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 			job, err := mAdmin.GetCronJob(ctx, name)
 			if err != nil {
 				return translateAdminError(err)
+			}
+
+			if g.jsonOutput() {
+				if job == nil {
+					writeJSON(out, toCronJobGetDocument(name, nil, nil, nil))
+					return failPrinted()
+				}
+
+				statuses, err := mAdmin.CronJobStatus(ctx, name)
+				if err != nil {
+					return translateAdminError(err)
+				}
+
+				var listed []*cron.JobRequestStatus
+				if requests {
+					listed, err = mAdmin.CronJobRequests(ctx, name, limit)
+					if err != nil {
+						return translateAdminError(err)
+					}
+					if listed == nil {
+						listed = make([]*cron.JobRequestStatus, 0)
+					}
+				}
+
+				writeJSON(out, toCronJobGetDocument(name, job, statuses, listed))
+				return nil
 			}
 
 			// -q is the scriptable form: no output at all, the exit code IS the
@@ -83,6 +114,76 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 	f.BoolVar(&requests, "requests", false, "also list the newest job requests, one line per (request, consumer group)")
 	f.IntVar(&limit, "limit", 20, "how many of the newest requests --requests lists")
 	return cmd
+}
+
+// cronJobDocument is one cron_job row's json shape -- the get-shape every
+// cron-job-echoing command shares. Durations render with units.
+type cronJobDocument struct {
+	CronJobId         int64           `json:"cron_job_id"`
+	SystemId          int64           `json:"system_id"`
+	TopicId           int64           `json:"topic_id"`
+	GroupId           int64           `json:"group_id"`
+	CronJob           string          `json:"cron_job"`
+	Schedule          string          `json:"schedule"`
+	Concurrency       string          `json:"concurrency"`
+	Timeout           string          `json:"timeout"`
+	Suspended         bool            `json:"suspended"`
+	Data              json.RawMessage `json:"data"`
+	Metadata          json.RawMessage `json:"metadata"`
+	NextScheduledTime time.Time       `json:"next_scheduled_time"`
+	LastScheduledTime *time.Time      `json:"last_scheduled_time"` // null until the scheduler first produces the job
+}
+
+// cronJobGetDocument is cron get's json result; the not-found case is data
+// (exists false, job null), the exit code stays 1.
+type cronJobGetDocument struct {
+	CronJob  string                   `json:"cron_job"`
+	Exists   bool                     `json:"exists"`
+	Job      *cronJobDocument         `json:"job"`
+	Groups   []*cron.GroupStatus      `json:"groups"`
+	Requests []*cron.JobRequestStatus `json:"requests"` // null unless --requests
+}
+
+func toCronJobDocument(job *cron.CronJob) cronJobDocument {
+	return cronJobDocument{
+		CronJobId:         job.Id,
+		SystemId:          job.SystemId,
+		TopicId:           job.TopicId,
+		GroupId:           job.ConsumerGroupId,
+		CronJob:           job.Name,
+		Schedule:          job.Schedule,
+		Concurrency:       string(job.Concurrency),
+		Timeout:           job.Timeout.String(),
+		Suspended:         job.Suspended,
+		Data:              job.Data,
+		Metadata:          job.Metadata,
+		NextScheduledTime: job.NextScheduledTime,
+		LastScheduledTime: job.LastScheduledTime,
+	}
+}
+
+func toCronJobDocuments(jobs []*cron.CronJob) []cronJobDocument {
+	documents := make([]cronJobDocument, 0, len(jobs))
+	for _, job := range jobs {
+		documents = append(documents, toCronJobDocument(job))
+	}
+	return documents
+}
+
+func toCronJobGetDocument(name string, job *cron.CronJob, groups []*cron.GroupStatus, requests []*cron.JobRequestStatus) cronJobGetDocument {
+	document := cronJobGetDocument{
+		CronJob:  name,
+		Exists:   job != nil,
+		Groups:   make([]*cron.GroupStatus, 0, len(groups)),
+		Requests: requests,
+	}
+	document.Groups = append(document.Groups, groups...)
+
+	if job != nil {
+		jobDocument := toCronJobDocument(job)
+		document.Job = &jobDocument
+	}
+	return document
 }
 
 func printCronJobDetail(w io.Writer, job *cron.CronJob) {

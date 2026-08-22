@@ -29,6 +29,9 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 			if system && user {
 				return failUsage("--system and --user exclude everything together; pass one or neither")
 			}
+			if quiet && g.jsonOutput() {
+				return failUsage("--quiet and --output json cannot be combined")
+			}
 
 			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
@@ -51,6 +54,11 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 					continue
 				}
 				filtered = append(filtered, head)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, filtered)
+				return nil
 			}
 
 			if quiet {

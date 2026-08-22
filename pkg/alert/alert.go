@@ -33,19 +33,19 @@ const (
 // __system.alerts topic as an ordinary message.
 type Alert struct {
 	// identity
-	Name     string        // e.g. "partition_count"
-	Owner    *common.Owner // the resource the alert is about
-	Status   Status
-	Severity Severity
+	Name     string        `json:"name"`  // e.g. "partition_count"
+	Owner    *common.Owner `json:"owner"` // the resource the alert is about
+	Status   Status        `json:"status"`
+	Severity Severity      `json:"severity"`
 
 	// prose -- Postgres MESSAGE/DETAIL/HINT
-	Message string
-	Detail  string
-	Hint    string
+	Message string `json:"message"`
+	Detail  string `json:"detail"`
+	Hint    string `json:"hint"`
 
 	// evidence -- neither map ever routes, keys, or dedups
-	Data     map[string]any // the run's measurements of the owner
-	Metadata map[string]any // context about the report itself
+	Data     map[string]any `json:"data"`     // the run's measurements of the owner
+	Metadata map[string]any `json:"metadata"` // context about the report itself
 }
 
 // AlertOptions are NewAlert's optional fields.

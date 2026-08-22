@@ -25,42 +25,42 @@ var (
 // sectioned by the store each number reads -- answers "what's true right now"
 // for state that multiple consumer processes share.
 type ConsumerGroupSnapshot struct {
-	ConsumerGroup string // whose picture this is
+	ConsumerGroup string `json:"group"` // whose picture this is
 
-	Cursor            CursorSnapshot           // the group's cursor row against the message log
-	Exceptions        ExceptionSnapshot        // the group's delivery rows counted by status
-	OpenLeases        int64                    // the group's lease rows
-	AbandonedRoutines AbandonedRoutineSnapshot // the group's abandoned/cleared events on __system.metrics
+	Cursor            CursorSnapshot           `json:"cursor"`             // the group's cursor row against the message log
+	Exceptions        ExceptionSnapshot        `json:"exceptions"`         // the group's delivery rows counted by status
+	OpenLeases        int64                    `json:"open_leases"`        // the group's lease rows
+	AbandonedRoutines AbandonedRoutineSnapshot `json:"abandoned_routines"` // the group's abandoned/cleared events on __system.metrics
 }
 
 // CursorSnapshot is the group's read/commit position against the message log.
 type CursorSnapshot struct {
-	Head      int64 // highest message id ever appended -- the log frontier
-	Claimed   int64 // cursor.claimed -- the read frontier
-	Committed int64 // cursor.committed -- everything <= this is done/dead
+	Head      int64 `json:"head"`      // highest message id ever appended -- the log frontier
+	Claimed   int64 `json:"claimed"`   // cursor.claimed -- the read frontier
+	Committed int64 `json:"committed"` // cursor.committed -- everything <= this is done/dead
 
-	Backlog  int64 // Head - Committed
-	Inflight int64 // Claimed - Committed -- claimed but not yet resolved
+	Backlog  int64 `json:"backlog"`  // Head - Committed
+	Inflight int64 `json:"inflight"` // Claimed - Committed -- claimed but not yet resolved
 }
 
 // ExceptionSnapshot is the group's delivery rows counted by status.
 type ExceptionSnapshot struct {
-	Ready    int64 // retryable, will be reclaimed
-	Inflight int64 // currently leased out to a retry attempt
-	Deferred int64 // waiting for their compaction key's key_lease to free
-	Dead     int64 // DLQ size
+	Ready    int64 `json:"ready"`    // retryable, will be reclaimed
+	Inflight int64 `json:"inflight"` // currently leased out to a retry attempt
+	Deferred int64 `json:"deferred"` // waiting for their compaction key's key_lease to free
+	Dead     int64 `json:"dead"`     // DLQ size
 
-	OldestUnresolvedAge time.Duration // age of the oldest ready/inflight/deferred row; 0 if none outstanding
+	OldestUnresolvedAge time.Duration `json:"oldest_unresolved_age"` // age of the oldest ready/inflight/deferred row; 0 if none outstanding
 }
 
 // GroupLag is a group's drain progress -- the retire-relevant distillation
 // of its snapshot.
 type GroupLag struct {
-	ConsumerGroup        string
-	Committed            int64
-	Head                 int64
-	Lag                  int64 // Head - Committed, floored at 0
-	UnresolvedExceptions int64 // delivery rows still 'ready', 'inflight', or 'deferred'
+	ConsumerGroup        string `json:"group"`
+	Committed            int64  `json:"committed"`
+	Head                 int64  `json:"head"`
+	Lag                  int64  `json:"lag"`                   // Head - Committed, floored at 0
+	UnresolvedExceptions int64  `json:"unresolved_exceptions"` // delivery rows still 'ready', 'inflight', or 'deferred'
 }
 
 func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
@@ -77,15 +77,15 @@ func (s *ConsumerGroupSnapshot) GroupLag() GroupLag {
 // memory as the work happens -- the instance's own contribution, where
 // ConsumerGroupSnapshot is the fleet-wide DB truth.
 type SessionCounters struct {
-	Claimed    int64 // messages claimed
-	Success    int64 // deliveries recorded 'success'
-	Superseded int64 // deliveries recorded 'superseded'
-	Ready      int64 // delivery rows written 'ready'
-	Deferred   int64 // delivery rows written 'deferred'
-	Dead       int64 // delivery rows written 'dead'
+	Claimed    int64 `json:"claimed_count"`    // messages claimed
+	Success    int64 `json:"success_count"`    // deliveries recorded 'success'
+	Superseded int64 `json:"superseded_count"` // deliveries recorded 'superseded'
+	Ready      int64 `json:"ready_count"`      // delivery rows written 'ready'
+	Deferred   int64 `json:"deferred_count"`   // delivery rows written 'deferred'
+	Dead       int64 `json:"dead_count"`       // delivery rows written 'dead'
 
-	Reclaimed   int64 // leases reclaimed from expired workers
-	Quarantined int64 // ranges quarantined after max reclaims
-	Abandoned   int64 // consumerFunc goroutines abandoned past the hard timeout
-	LeaseLost   int64 // commits rejected because the lease was reclaimed
+	Reclaimed   int64 `json:"reclaimed_count"`   // leases reclaimed from expired workers
+	Quarantined int64 `json:"quarantined_count"` // ranges quarantined after max reclaims
+	Abandoned   int64 `json:"abandoned_count"`   // consumerFunc goroutines abandoned past the hard timeout
+	LeaseLost   int64 `json:"lease_lost_count"`  // commits rejected because the lease was reclaimed
 }

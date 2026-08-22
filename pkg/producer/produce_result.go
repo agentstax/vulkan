@@ -8,15 +8,15 @@ type ProduceResult[Message any] struct {
 	//
 	// On a duplicate it is NOT the originally-stored payload: the idempotency
 	// table records only the key, so the original is unrecoverable by design.
-	Message *Message
+	Message *Message `json:"message"`
 
 	// Id - the stored message id; 0 when Duplicate.
-	Id int64
+	Id int64 `json:"message_id"`
 
 	// Duplicate - the idempotency claim already existed: an earlier call, or
 	// an earlier attempt of this one after an ambiguous commit, already
 	// published under the same IdempotencyKey.
-	Duplicate bool
+	Duplicate bool `json:"duplicate"`
 }
 
 func NewProduceResult[Message any](message *Message, id int64, duplicate bool) (*ProduceResult[Message], error) {

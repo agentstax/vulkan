@@ -30,13 +30,13 @@ const (
 
 // Id addresses this topic's own message_log_<id>.
 type Topic struct {
-	Id                     int64
-	SystemId               int64
-	Name                   string
-	SchemaVersion          SchemaVersion
-	PartitionSize          int64
-	RetentionTTL           time.Duration
-	AllowDropPastCommitted bool
-	IdempotencyKeyTTL      time.Duration
-	DeliveryLogMode        DeliveryLogMode
+	Id                     int64           `json:"topic_id"`
+	SystemId               int64           `json:"system_id"`
+	Name                   string          `json:"topic"`
+	SchemaVersion          SchemaVersion   `json:"version"`
+	PartitionSize          int64           `json:"partition_size"`
+	RetentionTTL           time.Duration   `json:"retention_ttl"`
+	AllowDropPastCommitted bool            `json:"allow_drop_past_committed"`
+	IdempotencyKeyTTL      time.Duration   `json:"idempotency_key_ttl"`
+	DeliveryLogMode        DeliveryLogMode `json:"delivery_log_mode"`
 }

@@ -95,6 +95,10 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				return err
 			}
 			if s == scopeTopics && len(targets) == 0 {
+				if g.jsonOutput() {
+					writeJSON(out, toMigrateResultDocument(s, targets, to, 0))
+					return nil
+				}
 				fmt.Fprintln(out, "no topics registered")
 				return nil
 			}
@@ -104,6 +108,10 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				return err
 			}
 			if moving == 0 {
+				if g.jsonOutput() {
+					writeJSON(out, toMigrateResultDocument(s, targets, to, 0))
+					return nil
+				}
 				printMigrateNoop(out, s, targets, to)
 				return nil
 			}
@@ -121,6 +129,11 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 
 			if err := runScopeMigrate(ctx, mAdmin, s, name, topic.SchemaVersion(schemaVersion), to); err != nil {
 				return migrateError(err)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, toMigrateResultDocument(s, targets, to, moving))
+				return nil
 			}
 			printMigrateResult(out, s, dir, targets, to, moving)
 			return nil
@@ -167,6 +180,23 @@ func runScopeMigrate(ctx context.Context, mAdmin *admin.MessageAdmin, s scope, n
 	default:
 		return mAdmin.MigrateTopics(ctx, to)
 	}
+}
+
+// migrateResultDocument is a migrate up/down's json result; migrated_count 0
+// means every target was already at the target version.
+type migrateResultDocument struct {
+	Scope         string `json:"scope"`           // system | topic | topics
+	Topic         string `json:"topic,omitempty"` // topic scope only
+	To            int64  `json:"to"`
+	MigratedCount int    `json:"migrated_count"`
+}
+
+func toMigrateResultDocument(s scope, targets []migrateTarget, to int64, moving int) migrateResultDocument {
+	document := migrateResultDocument{Scope: scopeNoun(s), To: to, MigratedCount: moving}
+	if s == scopeTopic {
+		document.Topic = targets[0].owner.Name
+	}
+	return document
 }
 
 func printMigrateNoop(w io.Writer, s scope, targets []migrateTarget, to int64) {

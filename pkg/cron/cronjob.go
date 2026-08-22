@@ -15,17 +15,17 @@ var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // CronJob is one row of cron_job.
 type CronJob struct {
-	Id                int64
-	SystemId          int64
-	TopicId           int64
-	ConsumerGroupId   int64
-	Name              string
-	Schedule          string
-	Concurrency       common.ConcurrencyPolicy
-	Timeout           time.Duration
-	Suspended         bool
-	Data              json.RawMessage
-	Metadata          json.RawMessage
-	NextScheduledTime time.Time
-	LastScheduledTime *time.Time
+	Id                int64                    `json:"cron_job_id"`
+	SystemId          int64                    `json:"system_id"`
+	TopicId           int64                    `json:"topic_id"`
+	ConsumerGroupId   int64                    `json:"group_id"`
+	Name              string                   `json:"cron_job"`
+	Schedule          string                   `json:"schedule"`
+	Concurrency       common.ConcurrencyPolicy `json:"concurrency"`
+	Timeout           time.Duration            `json:"timeout"`
+	Suspended         bool                     `json:"suspended"`
+	Data              json.RawMessage          `json:"data"`
+	Metadata          json.RawMessage          `json:"metadata"`
+	NextScheduledTime time.Time                `json:"next_scheduled_time"`
+	LastScheduledTime *time.Time               `json:"last_scheduled_time"`
 }

@@ -11,11 +11,11 @@ import (
 )
 
 type VersionHealth struct {
-	Topic     *topic.Topic
-	Compacted bool
-	Groups    []metrics.ConsumerGroupSnapshot
-	Safe      bool
-	Reason    string
+	Topic     *topic.Topic                    `json:"topic"`
+	Compacted bool                            `json:"compacted"`
+	Groups    []metrics.ConsumerGroupSnapshot `json:"groups"`
+	Safe      bool                            `json:"safe"`
+	Reason    string                          `json:"reason"`
 }
 
 // FamilyHealth is every topic's (name, version) registered, each with its own

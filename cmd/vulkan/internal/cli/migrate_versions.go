@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newMigrateVersionsCmd() *cobra.Command {
+func newMigrateVersionsCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "versions",
 		Short: "List the schema versions this binary knows how to reach",
@@ -16,12 +16,28 @@ func newMigrateVersionsCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
+
+			if g.jsonOutput() {
+				writeJSON(out, migrateVersionsDocument{
+					System: availableSystemVersion(),
+					Topic:  availableTopicVersion(),
+				})
+				return nil
+			}
+
 			printScopeVersions(out, "system schema versions (this binary):", availableSystemVersion())
 			fmt.Fprintln(out)
 			printScopeVersions(out, "topic schema versions (this binary):", availableTopicVersion())
 			return nil
 		},
 	}
+}
+
+// migrateVersionsDocument is the compiled-in version ceiling per scope; v1
+// (the baseline) through the ceiling is reachable.
+type migrateVersionsDocument struct {
+	System int64 `json:"system"`
+	Topic  int64 `json:"topic"`
 }
 
 // printScopeVersions lists v1 (the baseline) through the compiled ceiling. Steps

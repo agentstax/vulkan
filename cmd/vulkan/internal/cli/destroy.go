@@ -31,6 +31,11 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			name := args[0]
 			out := cmd.OutOrStdout()
 
+			// the confirmation prompt would pollute the json document stream
+			if g.jsonOutput() && !yes {
+				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", name)
+			}
+
 			mAdmin, ds, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
 				return err
@@ -85,10 +90,24 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			}
 
 			// 4. destroy.
-			fmt.Fprintf(out, "destroying %q... ", name)
+			if !g.jsonOutput() {
+				fmt.Fprintf(out, "destroying %q... ", name)
+			}
 			if err := mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(schemaVersion), admin.DestroyOptions{Force: force}); err != nil {
-				fmt.Fprintln(out) // end the dangling "destroying..." line
+				if !g.jsonOutput() {
+					fmt.Fprintln(out) // end the dangling "destroying..." line
+				}
 				return destroyError(name, err)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, topicDestroyedDocument{
+					Topic:     name,
+					Version:   int64(found.SchemaVersion),
+					TopicId:   found.Id,
+					Destroyed: true,
+				})
+				return nil
 			}
 			fmt.Fprintln(out, "done")
 			fmt.Fprintf(out, "%s topic %q v%d destroyed\n", glyphOK(), name, found.SchemaVersion)
@@ -101,6 +120,15 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 	f.BoolVar(&force, "force", false, "required to destroy a topic that still holds messages")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd
+}
+
+// topicDestroyedDocument is topic destroy's json result: a small
+// what-happened record, never the dead row.
+type topicDestroyedDocument struct {
+	Topic     string `json:"topic"`
+	Version   int64  `json:"version"`
+	TopicId   int64  `json:"topic_id"`
+	Destroyed bool   `json:"destroyed"`
 }
 
 // errTopicNotFound / errTopicNotEmpty are the two operator-facing messages

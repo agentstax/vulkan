@@ -36,6 +36,11 @@ rows are discarded).`,
 			topicName, groupName := args[0], args[1]
 			out := cmd.OutOrStdout()
 
+			// the confirmation prompt would pollute the json document stream
+			if g.jsonOutput() && !yes {
+				return failUsage("refusing to destroy %q without confirmation -- pass --yes with --output json", groupName)
+			}
+
 			mAdmin, _, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
 				return err
@@ -71,10 +76,24 @@ rows are discarded).`,
 				}
 			}
 
-			fmt.Fprintf(out, "destroying %q... ", groupName)
+			if !g.jsonOutput() {
+				fmt.Fprintf(out, "destroying %q... ", groupName)
+			}
 			if err := mAdmin.DestroyGroup(ctx, topicName, topic.SchemaVersion(schemaVersion), groupName, admin.DestroyOptions{Force: force}); err != nil {
-				fmt.Fprintln(out) // end the dangling "destroying..." line
+				if !g.jsonOutput() {
+					fmt.Fprintln(out) // end the dangling "destroying..." line
+				}
 				return groupDestroyError(topicName, groupName, err)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, groupDestroyedDocument{
+					Topic:     topicName,
+					Version:   schemaVersion,
+					Group:     groupName,
+					Destroyed: true,
+				})
+				return nil
 			}
 			fmt.Fprintln(out, "done")
 			fmt.Fprintf(out, "%s consumer group %q on topic %q destroyed\n", glyphOK(), groupName, topicName)
@@ -87,6 +106,15 @@ rows are discarded).`,
 	f.BoolVar(&force, "force", false, "destroy even while a consumer runs on the group or deliveries await an outcome")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd
+}
+
+// groupDestroyedDocument is group destroy's json result: a small
+// what-happened record, never the dead rows.
+type groupDestroyedDocument struct {
+	Topic     string `json:"topic"`
+	Version   int64  `json:"version"`
+	Group     string `json:"group"`
+	Destroyed bool   `json:"destroyed"`
 }
 
 // groupDestroyError maps a DestroyGroup failure to CLI output.

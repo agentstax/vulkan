@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -59,6 +60,48 @@ func TestRenderErrorBlockDropsAbsentParts(t *testing.T) {
 		"  docs:  https://vulkan-5ss.pages.dev/errors/VK0017\n"
 	if builder.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", builder.String(), want)
+	}
+}
+
+func TestErrorHandlerJSONStructured(t *testing.T) {
+	raised := errTestBroker.With("topic", "orders", "version", 3).Wrap(errors.New("connection refused"))
+
+	var builder strings.Builder
+	errorHandler(&builder, &globalFlags{output: "json"}, failStructured(raised, "run `vulkan broker ping`"))
+
+	var document errorDocument
+	if err := json.Unmarshal([]byte(builder.String()), &document); err != nil {
+		t.Fatalf("output is not one json document: %v\n%s", err, builder.String())
+	}
+	object := document.Error
+	if object.Code != "VK9801" || object.Problem != "could not reach the test broker" || object.Recovery != "transient" {
+		t.Fatalf("wrong parts: %+v", object)
+	}
+	if object.Values["topic"] != "orders" || object.Values["version"] != float64(3) {
+		t.Fatalf("wrong values: %+v", object.Values)
+	}
+	if object.Cause != "connection refused" || object.Fix != "run `vulkan broker ping`" {
+		t.Fatalf("wrong cause/fix: %+v", object)
+	}
+	if object.Docs != "https://vulkan-5ss.pages.dev/errors/VK9801" {
+		t.Fatalf("wrong docs: %q", object.Docs)
+	}
+}
+
+func TestErrorHandlerJSONPlainCarriesOnlyProblem(t *testing.T) {
+	var builder strings.Builder
+	errorHandler(&builder, &globalFlags{output: "json"}, failOp("topic %q not found", "orders"))
+
+	var decoded map[string]map[string]any
+	if err := json.Unmarshal([]byte(builder.String()), &decoded); err != nil {
+		t.Fatalf("output is not one json document: %v\n%s", err, builder.String())
+	}
+	object := decoded["error"]
+	if object["problem"] != `topic "orders" not found` {
+		t.Fatalf("wrong problem: %v", object)
+	}
+	if len(object) != 1 {
+		t.Fatalf("a plain error carries only problem, got: %v", object)
 	}
 }
 

@@ -40,6 +40,11 @@ messages).`,
 			ctx := cmd.Context()
 			out := cmd.OutOrStdout()
 
+			// the confirmation prompt would pollute the json document stream
+			if g.jsonOutput() && !yes {
+				return failUsage("refusing to destroy the system without confirmation -- pass --yes with --output json")
+			}
+
 			mAdmin, ds, closeAdmin, err := openAdmin(ctx, g.databaseURL)
 			if err != nil {
 				return err
@@ -124,10 +129,19 @@ messages).`,
 			}
 
 			// 4. destroy.
-			fmt.Fprintf(out, "destroying the system in %q... ", databaseName)
+			if !g.jsonOutput() {
+				fmt.Fprintf(out, "destroying the system in %q... ", databaseName)
+			}
 			if err := mAdmin.DestroySystem(ctx, admin.DestroyOptions{Force: force}); err != nil {
-				fmt.Fprintln(out) // end the dangling "destroying..." line
+				if !g.jsonOutput() {
+					fmt.Fprintln(out) // end the dangling "destroying..." line
+				}
 				return systemDestroyError(err)
+			}
+
+			if g.jsonOutput() {
+				writeJSON(out, systemDestroyedDocument{Database: databaseName, Destroyed: true})
+				return nil
 			}
 			fmt.Fprintln(out, "done")
 			fmt.Fprintf(out, "%s system destroyed -- database %q returned to its pre-register state\n", glyphOK(), databaseName)
@@ -139,6 +153,13 @@ messages).`,
 	f.BoolVar(&force, "force", false, "destroy even while workers run or topics are still registered")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd
+}
+
+// systemDestroyedDocument is system destroy's json result: the database is
+// back to its pre-register state.
+type systemDestroyedDocument struct {
+	Database  string `json:"database"`
+	Destroyed bool   `json:"destroyed"`
 }
 
 func errSystemLive(workers []string) error {

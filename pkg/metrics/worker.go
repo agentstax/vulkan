@@ -19,13 +19,13 @@ const (
 // - how many are
 // - for how long
 type WorkerSnapshot struct {
-	Owner  *common.Owner
-	Name   string
-	Status WorkerStatus
+	Owner  *common.Owner `json:"owner"`
+	Name   string        `json:"worker"`
+	Status WorkerStatus  `json:"status"`
 
-	TargetInstances int
-	LiveInstances   int
+	TargetInstances int `json:"target_instances"`
+	LiveInstances   int `json:"live_instances"`
 
-	Attempts     int           // largest consecutive-failure streak across live instances
-	UnclaimedFor time.Duration // now() - the newest expires_at, while nothing is live; 0 while claimed, and 0 if expired rows were already deleted
+	Attempts     int           `json:"attempts"`      // largest consecutive-failure streak across live instances
+	UnclaimedFor time.Duration `json:"unclaimed_for"` // now() - the newest expires_at, while nothing is live; 0 while claimed, and 0 if expired rows were already deleted
 }

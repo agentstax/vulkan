@@ -10,15 +10,15 @@ import (
 // MessageMeta is everything about a delivered message besides its payload,
 // read inside consumerFunc via MetaFromContext.
 type MessageMeta struct {
-	Id             int64
-	RoutingKey     string
-	CompactionKey  string
-	CompactionRank int64
-	CreatedAt      time.Time
+	Id             int64     `json:"message_id"`
+	RoutingKey     string    `json:"routing_key"`
+	CompactionKey  string    `json:"compaction_key"`
+	CompactionRank int64     `json:"compaction_rank"`
+	CreatedAt      time.Time `json:"created_at"`
 
 	// Options - the resolved MessageOptions this delivery runs under (bounds
 	// applied), not the message's raw request.
-	Options *common.MessageOptions
+	Options *common.MessageOptions `json:"options"`
 }
 
 type metaCtxKey struct{}

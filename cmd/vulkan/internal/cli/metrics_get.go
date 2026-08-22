@@ -68,6 +68,43 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 				matched = append(matched, head)
 			}
 
+			if g.jsonOutput() {
+				document := metricGetDocument{
+					Name:        name,
+					Exists:      len(matched) > 0,
+					Series:      make([]metricSeriesDocument, 0, len(matched)),
+					SeriesTotal: len(matched),
+				}
+				if len(matched) > 0 {
+					document.Kind = string(matched[0].Message.Kind)
+					document.Unit = string(matched[0].Message.Unit)
+				}
+
+				shown := matched
+				if len(shown) > series {
+					shown = shown[:series]
+				}
+				for _, head := range shown {
+					messages, err := mAdmin.ListMeasurementMessages(ctx, head.CompactionKey, limit)
+					if err != nil {
+						return translateAdminError(err)
+					}
+					if messages == nil {
+						messages = make([]*producer.MessageRow[metrics.Measurement], 0)
+					}
+					document.Series = append(document.Series, metricSeriesDocument{
+						Attributes:   head.Message.Attributes,
+						Measurements: messages,
+					})
+				}
+
+				writeJSON(out, document)
+				if len(matched) == 0 {
+					return failPrinted()
+				}
+				return nil
+			}
+
 			if len(matched) == 0 {
 				fmt.Fprintf(out, "%s no measurements published under %q\n", glyphNo(), name)
 				return failPrinted()
@@ -99,6 +136,24 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 	f.IntVar(&limit, "limit", 10, "how many of the newest measurements each series lists")
 	f.IntVar(&series, "series", 10, "how many attribute sets to list before truncating")
 	return cmd
+}
+
+// metricGetDocument is metrics get's json result; the not-found case is data
+// (exists false, series empty), the exit code stays 1. SeriesTotal counts
+// every matched series before --series truncation.
+type metricGetDocument struct {
+	Name        string                 `json:"name"`
+	Exists      bool                   `json:"exists"`
+	Kind        string                 `json:"kind,omitempty"`
+	Unit        string                 `json:"unit,omitempty"`
+	Series      []metricSeriesDocument `json:"series"`
+	SeriesTotal int                    `json:"series_total"`
+}
+
+// metricSeriesDocument is one attribute set's history, newest first.
+type metricSeriesDocument struct {
+	Attributes   map[string]string                           `json:"attributes"`
+	Measurements []*producer.MessageRow[metrics.Measurement] `json:"measurements"`
 }
 
 // parseAttributePairs turns repeated key=value flags into one filter map.

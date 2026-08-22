@@ -141,6 +141,11 @@ The domain layers:
 - `pkg/<x>` -- vocabulary only: pure read-models, consts, named error
   variables. Imports infrastructure only. No constructors for
   read-models, no Config types, no fields without production readers.
+- Every public read-model field carries a `json:"snake_case"` tag -- the
+  wire name is the field's contract, the json sibling of the datastore
+  `db:` rule. Keys spell the log-attr registry's name where one exists
+  (topic, version, group, message_id); otherwise the field's own name
+  snake_cased. Write shapes, configs, and instances carry no tags.
 - `pkg/<x>/controller` -- the only path to persistence: all public verbs, ALL
   input validation, `to*` adapters, schema asserts. Files: `<x>_config.go`,
   `controller_config.go`.

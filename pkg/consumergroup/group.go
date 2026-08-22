@@ -7,8 +7,8 @@ import "time"
 // carry no topic_id of their own; the topic_id FK cascade is the group's
 // lifecycle -- destroying the topic destroys it.
 type Group struct {
-	Id        int64
-	TopicId   int64
-	Name      string
-	CreatedAt time.Time
+	Id        int64     `json:"group_id"`
+	TopicId   int64     `json:"topic_id"`
+	Name      string    `json:"group"`
+	CreatedAt time.Time `json:"created_at"`
 }

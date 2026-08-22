@@ -745,7 +745,7 @@ func messageCount(ctx context.Context, compactionKey string) int64 {
 
 func producedScheduledTimes(ctx context.Context, compactionKey string) []time.Time {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(
-		`SELECT payload->>'ScheduledTime' FROM message_log_%d WHERE compaction_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
+		`SELECT payload->>'scheduled_time' FROM message_log_%d WHERE compaction_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
 	must(err)
 	defer rows.Close()
 
