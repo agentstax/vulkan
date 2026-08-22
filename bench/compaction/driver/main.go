@@ -60,6 +60,9 @@ type cellResult struct {
 
 	Produced       int64 `json:"produced"`
 	Deadlocks      int64 `json:"deadlocks"`
+	HeadFillfactor int   `json:"head_fillfactor"`
+	HeadUpdated    int64 `json:"head_updated"`
+	HeadHotUpdated int64 `json:"head_hot_updated"`
 	HeadDeadTuples int64 `json:"head_dead_tuples"`
 }
 
@@ -69,6 +72,7 @@ func main() {
 	goroutines := flag.Int("goroutines", 128, "concurrent Produce callers, split across producers")
 	warmupSeconds := flag.Int("warmup", 5, "seconds produced but not measured")
 	windowSeconds := flag.Int("window", 15, "steady measurement seconds")
+	headFillfactor := flag.Int("head-fillfactor", 0, "fillfactor for compaction_head_<id>; 0 = table default")
 	label := flag.String("label", "", "tag copied into the JSON line")
 	flag.Parse()
 
@@ -92,6 +96,14 @@ func main() {
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
+
+	// the table is empty here, so ALTER alone is enough -- every page it ever
+	// fills obeys the new fillfactor (the consume-side fillfactor audit rides
+	// this driver for its compaction_head cells)
+	if *headFillfactor > 0 {
+		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`ALTER TABLE compaction_head_%d SET (fillfactor = %d);`, registered.Id, *headFillfactor))
+		must(err)
+	}
 
 	instances := make([]*producer.ProducerInstance[benchMessage], *producers)
 	for i := range instances {
@@ -192,8 +204,9 @@ func main() {
 
 		Produced:       windowProduced.Load(),
 		Deadlocks:      deadlockCount(ctx, ds) - deadlocksBefore,
-		HeadDeadTuples: headDeadTuples(ctx, ds, registered.Id),
+		HeadFillfactor: *headFillfactor,
 	}
+	readHeadStatistics(ctx, ds, registered.Id, &result)
 	encoded, err := json.Marshal(result)
 	must(err)
 	fmt.Println(string(encoded))
@@ -211,12 +224,19 @@ func deadlockCount(ctx context.Context, ds *iDatastore.PostgresDatastore) int64 
 	return count
 }
 
-func headDeadTuples(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	var count int64
-	must(ds.Pool.QueryRow(ctx,
-		`SELECT COALESCE(MAX(n_dead_tup), 0) FROM pg_stat_user_tables WHERE relname = $1;`,
-		fmt.Sprintf("compaction_head_%d", topicId)).Scan(&count))
-	return count
+func readHeadStatistics(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, result *cellResult) {
+	must(ds.Pool.QueryRow(ctx, `
+		SELECT
+			COALESCE(MAX(n_tup_upd), 0),
+			COALESCE(MAX(n_tup_hot_upd), 0),
+			COALESCE(MAX(n_dead_tup), 0)
+		FROM pg_stat_user_tables
+		WHERE relname = $1;`,
+		fmt.Sprintf("compaction_head_%d", topicId)).Scan(
+		&result.HeadUpdated,
+		&result.HeadHotUpdated,
+		&result.HeadDeadTuples,
+	))
 }
 
 func showSetting(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) string {
