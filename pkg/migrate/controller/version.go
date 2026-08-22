@@ -13,7 +13,11 @@ func (c *Controller) SystemVersion(ctx context.Context, systemId int64) (int64, 
 	if systemId <= 0 {
 		return 0, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
-	return c.datastore.SystemVersion(ctx, systemId)
+	state, err := c.datastore.SystemSchemaState(ctx, systemId)
+	if err != nil {
+		return 0, err
+	}
+	return state.Version, nil
 }
 
 // TopicVersion reads a topic's current schema version from migration_log.
@@ -22,7 +26,11 @@ func (c *Controller) TopicVersion(ctx context.Context, topicId int64) (int64, er
 	if topicId <= 0 {
 		return 0, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
-	return c.datastore.TopicVersion(ctx, topicId)
+	state, err := c.datastore.TopicSchemaState(ctx, topicId)
+	if err != nil {
+		return 0, err
+	}
+	return state.Version, nil
 }
 
 // SystemOwner resolves the singleton system row to its owner.

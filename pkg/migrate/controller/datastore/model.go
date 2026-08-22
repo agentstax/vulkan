@@ -20,3 +20,11 @@ type Step struct {
 	Apply                func(context.Context, datastore.Querier, int64) error
 	NoTxn                bool
 }
+
+// SchemaStateData is one scope's version facts: the version the schema is
+// at, and the minimum compatible version in force -- the strictest
+// declaration among the steps at or below it.
+type SchemaStateData struct {
+	Version              int64 `db:"migration_version"`
+	MinCompatibleVersion int64 `db:"min_compatible_version"`
+}

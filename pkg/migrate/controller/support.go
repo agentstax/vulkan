@@ -17,12 +17,12 @@ func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId i
 	if systemId <= 0 {
 		return fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
-	version, err := c.datastore.SystemVersion(ctx, systemId)
+	state, err := c.datastore.SystemSchemaState(ctx, systemId)
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
 	buildVersion := systemMigrations.Version()
-	return assertVersionInRange(common.OwnerSystem, version, buildVersion, buildVersion)
+	return assertVersionInRange(common.OwnerSystem, state.Version, buildVersion, buildVersion)
 }
 
 // AssertTopicSchemaSupported gates startup for a topic- or group-owned
@@ -36,12 +36,12 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 
-	version, err := c.datastore.TopicVersion(ctx, topicId)
+	state, err := c.datastore.TopicSchemaState(ctx, topicId)
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
 	buildVersion := topicMigrations.Version()
-	return assertVersionInRange(common.OwnerTopic, version, buildVersion, buildVersion)
+	return assertVersionInRange(common.OwnerTopic, state.Version, buildVersion, buildVersion)
 }
 
 // ***************

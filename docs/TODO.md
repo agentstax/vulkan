@@ -22,9 +22,11 @@ stays there until ship. Tasks in build order:
    derived version per scope: migrations.Version() beside each Registry
    (`len(Registry) + 1`), migrate/support.go deleted; the gate passes the
    build version as both bounds until task 5's predicate lands.
-4. (open) Two-fact schema-state read — the three-CTE shape from the
-   ROADMAP item — as a named result struct with constructor; the runner's
-   own Version() read is unchanged (it needs current only).
+4. (done 2026-08-22) Two-fact schema-state read: SchemaStateData +
+   System/TopicSchemaState pairs replace the single-version datastore
+   reads (controller SystemVersion/TopicVersion re-shaped over them, one
+   read path); the runner's own Version() read unchanged; exercised live
+   via schema-gate-lab.
 5. (open) Gate predicate: allowed iff
    `min_compatible_version <= buildVersion <= current`; VK0022/VK0023
    attrs gain min_compatible_version / build_version; their website pages
