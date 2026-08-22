@@ -17,11 +17,11 @@ topic table when that work ships.
       kind renamed "janitor" -> "topic_janitor" (WorkerTopicJanitor), this
       one is "consumer_group_janitor"; SQL owners topicjanitor./
       consumergroupjanitor.
-- [ ] Chunk 2: worker package (provisioner/config/metadata/instance) on the
+- [x] Chunk 2: worker package (provisioner/config/metadata/instance) on the
       metrics-collector template -- worker kind consumer_group_janitor,
-      OwnerSystem (one worker row total), poll rate on the order of hours,
-      flat 7d TTL const, Debug swept_count line only on ticks that deleted
-      rows.
+      OwnerSystem (one worker row total), PollRate default 1h +
+      SweepBatchSize 1000 in metadata, flat 7d waitingDeclarationTTL const,
+      Debug swept_count line only on ticks that deleted rows.
 - [ ] Chunk 3: wiring (admin system declarers, systemmanager + consumer
       embedded-manager provisioner lists), lab coverage, decision record +
       HISTORY entry + ROADMAP slim, TTL const onto the hardcoded-config
