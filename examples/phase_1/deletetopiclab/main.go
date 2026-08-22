@@ -66,7 +66,7 @@ func main() {
 	step("seed a row in every topic-scoped table")
 
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
-	_, err = cd.DeclareBindings(ctx, groupId, []string{"orders.*"}, time.Now())
+	_, err = cd.DeclareBindings(ctx, tp.Id, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 
 	fn := func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -99,7 +99,7 @@ func main() {
 	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DeliveryLogMode))
 
 	for _, table := range []string{"cursor", "lease", "binding"} {
-		assertGroupRowCount(ctx, ds, table, groupId, 1, "before Destroy")
+		assertGroupRowCount(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), groupId, 1, "before Destroy")
 	}
 	assertCompactionHeadCount(ctx, ds, tp.Id, 1, "before Destroy")
 	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), true)
@@ -112,22 +112,18 @@ func main() {
 	step("Destroy the topic")
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
-	for _, table := range []string{"cursor", "lease", "binding"} {
-		assertGroupRowCount(ctx, ds, table, groupId, 0, "after Destroy")
-	}
-	assertCompactionHeadCount(ctx, ds, tp.Id, 0, "after Destroy")
 	assertGroupGone(ctx, ds, groupId)
-	assertTableExists(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), false)
-	assertTableExists(ctx, ds, fmt.Sprintf("delivery_%d", tp.Id), false)
-	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), false)
-	assertTableExists(ctx, ds, fmt.Sprintf("idempotency_key_%d", tp.Id), false)
+	for _, table := range []string{
+		"message_log", "delivery", "delivery_log", "idempotency_key",
+		"cursor", "lease", "key_lease", "compaction_head", "binding", "binding_log",
+	} {
+		assertTableExists(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), false)
+	}
 
 	fmt.Println("\n✅ DELETE TOPIC CASCADE LAB PASSED")
-	fmt.Println("   the topic's groups (and their cursor/lease/binding) die with it, compaction_head")
-	fmt.Println("   is cleaned up, the")
-	fmt.Println("   per-topic delivery/delivery_log/idempotency_key tables are all dropped")
-	fmt.Println("   outright, and neither the still-open lease nor the unclaimed delivery row")
-	fmt.Println("   survive.")
+	fmt.Println("   the topic's groups die with it via the topic_id FK cascade, and all ten")
+	fmt.Println("   per-topic tables are dropped outright -- neither the still-open lease nor")
+	fmt.Println("   the unclaimed delivery row survive.")
 }
 
 // ---- helpers ----
@@ -143,7 +139,7 @@ func assertGroupRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, 
 
 func assertCompactionHeadCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM compaction_head WHERE topic_id = $1;`, topicId).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM compaction_head_%d;`, topicId)).Scan(&count))
 	if count != want {
 		die(fmt.Sprintf("compaction_head[topic %d] has %d rows %s, want %d", topicId, count, when, want))
 	}

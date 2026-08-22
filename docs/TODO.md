@@ -46,7 +46,7 @@ the build.
       binding_log DELETE becomes one batched DELETE per topic's
       binding_log_<id> per tick -- needs a topic-id list read from the
       catalog.
-- [ ] 6. Lab sweep: ~20 labs under examples/phase_1 carry raw SQL against
+- [x] 6. Lab sweep: ~20 labs under examples/phase_1 carry raw SQL against
       the six tables (keyleaselab, compactionhead*lab, routinglab, ...) --
       update each to the interpolated names.
 - [ ] 7. Verify: build + go test -race touched packages + directly-affected

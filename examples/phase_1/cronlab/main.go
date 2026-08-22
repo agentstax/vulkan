@@ -446,8 +446,8 @@ func supersedeSection(ctx context.Context) {
 	head, err := mAdmin.RunCronJob(ctx, prefix+".supersede", nil)
 	must(err)
 
-	if got := scalarInt64(ctx, `SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = $2;`,
-		jobRequests.Id, strconv.FormatInt(job.Id, 10)); got != head.Id {
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, jobRequests.Id),
+		strconv.FormatInt(job.Id, 10)); got != head.Id {
 		die(fmt.Sprintf("the second run-now must take the compaction head, got %d want %d", got, head.Id))
 	}
 
@@ -667,7 +667,7 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	must(err)
 	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name)
 	must(err)
-	_, err = controller.DeclareBindings(ctx, group.Id, bindings, time.Now())
+	_, err = controller.DeclareBindings(ctx, jobRequests.Id, group.Id, bindings, time.Now())
 	must(err)
 	return group.Id
 }
@@ -710,7 +710,7 @@ func cleanupGroups() {
 	for _, sql := range []string{
 		fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
 		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM lease WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, prefix),
+		fmt.Sprintf(`DELETE FROM lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
 		fmt.Sprintf(`DELETE FROM consumer_group WHERE name LIKE '%s.%%';`, prefix),
 	} {
 		exec(ctx, sql)

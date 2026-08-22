@@ -425,7 +425,7 @@ func main() {
 	step("a crashed holder's expired key lease: redemption takes the key over")
 	g10 := groupId(ctx, cd, "deferlab.g10")
 	// a crashed holder's key_lease row: unexpired, never released
-	execSql(ctx, `INSERT INTO key_lease (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, g10)
+	execSql(ctx, fmt.Sprintf(`INSERT INTO key_lease_%d (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, topicId), g10)
 	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyDefer)
 	v10 := messageId(ctx, "u:10", 1)
 	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
@@ -728,7 +728,8 @@ func messageId(ctx context.Context, key string, version int) int64 {
 
 func leaseCount(ctx context.Context, groupId int64) int {
 	var n int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM key_lease WHERE consumer_group_id = $1`, groupId).Scan(&n))
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM key_lease_%d WHERE consumer_group_id = $1`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, groupId).Scan(&n))
 	return n
 }
 
