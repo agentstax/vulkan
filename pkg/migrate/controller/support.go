@@ -6,6 +6,8 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
+	topicMigrations "github.com/agentstax/vulkan/pkg/topic/migrations"
 )
 
 // AssertSystemSchemaSupported gates startup for a system-owned caller: the
@@ -19,7 +21,8 @@ func (c *Controller) AssertSystemSchemaSupported(ctx context.Context, systemId i
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
-	return assertVersionInRange(common.OwnerSystem, version, migrate.MinSystemVersion, migrate.MaxSystemVersion)
+	buildVersion := systemMigrations.Version()
+	return assertVersionInRange(common.OwnerSystem, version, buildVersion, buildVersion)
 }
 
 // AssertTopicSchemaSupported gates startup for a topic- or group-owned
@@ -37,7 +40,8 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 	if err != nil {
 		return err // ErrNotRegistered, or a real db error
 	}
-	return assertVersionInRange(common.OwnerTopic, version, migrate.MinTopicVersion, migrate.MaxTopicVersion)
+	buildVersion := topicMigrations.Version()
+	return assertVersionInRange(common.OwnerTopic, version, buildVersion, buildVersion)
 }
 
 // ***************

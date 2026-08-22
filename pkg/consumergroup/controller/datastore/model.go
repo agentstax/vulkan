@@ -20,14 +20,14 @@ const (
 // BindingLogData is one binding_log row joined to the names
 // a listing shows.
 type BindingLogData struct {
-	Id              int64                    `db:"id"`
-	ConsumerGroupId int64                    `db:"consumer_group_id"`
-	GroupName       string                   `db:"group_name"`
-	TopicName       string                   `db:"topic_name"`
-	SchemaVersion   int64                    `db:"schema_version"`
+	Id              int64            `db:"id"`
+	ConsumerGroupId int64            `db:"consumer_group_id"`
+	GroupName       string           `db:"group_name"`
+	TopicName       string           `db:"topic_name"`
+	SchemaVersion   int64            `db:"schema_version"`
 	Status          BindingLogStatus `db:"status"`
-	Patterns        []string                 `db:"patterns"`
-	DeclaredBy      string                   `db:"declared_by"`
-	DeclaredAt      time.Time                `db:"declared_at"`
-	AttemptAt       time.Time                `db:"attempt_at"`
+	Patterns        []string         `db:"patterns"`
+	DeclaredBy      string           `db:"declared_by"`
+	DeclaredAt      time.Time        `db:"declared_at"`
+	AttemptAt       time.Time        `db:"attempt_at"`
 }

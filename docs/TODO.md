@@ -18,8 +18,10 @@ stays there until ship. Tasks in build order:
    `min_compatible_version BIGINT NOT NULL DEFAULT 0`; recordSuccess
    writes the step's declaration (baseline-creation and down rows write
    0); verified by dev-DB drop+recreate.
-3. (open) Collapse the four Min/Max build constants to one derived version
-   per scope (`len(registry) + 1`).
+3. (done 2026-08-22) Collapse the four Min/Max build constants to one
+   derived version per scope: migrations.Version() beside each Registry
+   (`len(Registry) + 1`), migrate/support.go deleted; the gate passes the
+   build version as both bounds until task 5's predicate lands.
 4. (open) Two-fact schema-state read — the three-CTE shape from the
    ROADMAP item — as a named result struct with constructor; the runner's
    own Version() read is unchanged (it needs current only).

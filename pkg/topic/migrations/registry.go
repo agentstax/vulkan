@@ -11,3 +11,10 @@ import "github.com/agentstax/vulkan/pkg/migrate"
 // and appending it here -- the slice order is the truth.
 // See migrate.Migration for the authoring rules.
 var Registry = []migrate.Migration{}
+
+// Version is the topic-scope schema version this build defines: the v1
+// baseline plus one per registry step. Derived so it can never drift from
+// the registry.
+func Version() int64 {
+	return int64(len(Registry)) + 1
+}
