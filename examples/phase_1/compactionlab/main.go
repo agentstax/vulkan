@@ -262,16 +262,16 @@ func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresData
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
-				NOT EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = $3)
-				OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern)
+				NOT EXISTS (SELECT 1 FROM binding_%d b WHERE b.consumer_group_id = $3)
+				OR EXISTS (SELECT 1 FROM binding_%d b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern)
 			)
 			AND (
 				m.compaction_key IS NULL
-				OR m.id = (SELECT head_id FROM compaction_head
-					WHERE topic_id = %d AND compaction_key = m.compaction_key)
+				OR m.id = (SELECT head_id FROM compaction_head_%d
+					WHERE compaction_key = m.compaction_key)
 			)
 		ORDER BY m.id;
-	`, logTable, topicId)
+	`, logTable, topicId, topicId, topicId)
 
 	rows, err := ds.Pool.Query(ctx, sql, low, high, cursorGroupID)
 	must(err)

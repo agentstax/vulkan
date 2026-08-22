@@ -283,12 +283,12 @@ func hotCompactionKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 
 	var stale int
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT count(*) FROM compaction_head lk
+		SELECT count(*) FROM compaction_head_%d lk
 		JOIN (
 			SELECT compaction_key, max(id) AS max_id FROM message_log_%d GROUP BY compaction_key
 		) m ON m.compaction_key = lk.compaction_key
-		WHERE lk.topic_id = $1 AND lk.head_id <> m.max_id;
-	`, tp.Id), tp.Id).Scan(&stale))
+		WHERE lk.head_id <> m.max_id;
+	`, tp.Id, tp.Id)).Scan(&stale))
 	if stale != 0 {
 		die(fmt.Sprintf("%d compaction_head rows not pointing at their key's max id", stale))
 	}

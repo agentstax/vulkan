@@ -97,7 +97,7 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 	var trueMax, compactionHeadValue int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT MAX(id) FROM message_log_%d WHERE compaction_key='hot-key';`, tp.Id)).Scan(&trueMax))
-	must(ds.Pool.QueryRow(ctx, `SELECT head_id FROM compaction_head WHERE topic_id=$1 AND compaction_key='hot-key';`, tp.Id).Scan(&compactionHeadValue))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key='hot-key';`, tp.Id)).Scan(&compactionHeadValue))
 
 	assertInt64(fmt.Sprintf("compaction_head converged to the true max id across %d concurrent publishes", n), compactionHeadValue, trueMax)
 }
@@ -156,7 +156,7 @@ func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicId))
 	must(err)
-	_, err = ds.Pool.Exec(ctx, `INSERT INTO compaction_head (topic_id, compaction_key, head_id) VALUES ($1, 'stale', 1);`, topicId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO compaction_head_%d (compaction_key, head_id) VALUES ('stale', 1);`, topicId))
 	must(err)
 }
 
@@ -203,8 +203,8 @@ func explainCompactionHeadLookup(ctx context.Context, ds *iDatastore.PostgresDat
 		WHERE m.id = 1
 			AND (
 				m.compaction_key IS NULL
-				OR m.id = (SELECT head_id FROM compaction_head
-					WHERE topic_id = %d AND compaction_key = m.compaction_key)
+				OR m.id = (SELECT head_id FROM compaction_head_%d
+					WHERE compaction_key = m.compaction_key)
 			);
 	`, logTable, topicId)
 

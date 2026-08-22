@@ -186,13 +186,13 @@ func snapshot(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int
 }
 
 func committedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, `SELECT committed FROM cursor WHERE consumer_group_id=$1`, groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT committed FROM cursor_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 func claimedCol(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, `SELECT claimed FROM cursor WHERE consumer_group_id=$1`, groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT claimed FROM cursor_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 func leases(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM lease WHERE consumer_group_id=$1`, groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 func deliveries(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)

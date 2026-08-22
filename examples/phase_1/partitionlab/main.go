@@ -122,16 +122,17 @@ func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 // partitions named anywhere in the plan -- pruned partitions never appear.
 func explainReadMessages(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64, want int) {
 	logTable := fmt.Sprintf("message_log_%d", topicId)
+	bindingTable := fmt.Sprintf("binding_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
-				NOT EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = $3)
-				OR EXISTS (SELECT 1 FROM binding b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern)
+				NOT EXISTS (SELECT 1 FROM %s b WHERE b.consumer_group_id = $3)
+				OR EXISTS (SELECT 1 FROM %s b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern)
 			)
 		ORDER BY m.id;
-	`, logTable)
+	`, logTable, bindingTable, bindingTable)
 	rows, err := ds.Pool.Query(ctx, sql, low, high, 0) // no binding rows exist for group id 0 -- the NOT EXISTS arm is what the plan exercises
 	must(err)
 	defer rows.Close()

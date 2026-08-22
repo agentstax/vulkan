@@ -88,9 +88,9 @@ func main() {
 
 	// ===== bind cursorGroup and lifecycleGroup, THEN publish the rest =====
 	step("bind cursorGroup to orders.*.created, lifecycleGroup to payments.*")
-	_, err = cd.DeclareBindings(ctx, cursorGroupID, []string{"orders.*.created"}, time.Now())
+	_, err = cd.DeclareBindings(ctx, tp.Id, cursorGroupID, []string{"orders.*.created"}, time.Now())
 	must(err)
-	_, err = cd.DeclareBindings(ctx, lifecycleGroupID, []string{"payments.*"}, time.Now())
+	_, err = cd.DeclareBindings(ctx, tp.Id, lifecycleGroupID, []string{"payments.*"}, time.Now())
 	must(err)
 
 	msg2 := publish(ctx, wpInstance, "orders.us.central1.created") // deeper hierarchy, still matches (true wildcard)
@@ -168,16 +168,16 @@ func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumergr
 	for _, g := range groups {
 		gID := mustGroupID(cd.RegisterGroup(ctx, topicId, g))
 		gids[g] = gID
-		_, err := ds.Pool.Exec(ctx, `DELETE FROM lease WHERE consumer_group_id=$1`, gID)
+		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM lease_%d WHERE consumer_group_id=$1`, topicId), gID)
 		must(err)
 		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicId), gID)
 		must(err)
-		_, err = cd.DeclareBindings(ctx, gID, nil, time.Now())
+		_, err = cd.DeclareBindings(ctx, topicId, gID, nil, time.Now())
 		must(err)
 		// settled/pending must ride along -- the claim gate assumes
 		// gate >= settled >= claimed; bumping claimed alone breaks that and a
 		// poll where the fresh pair doesn't prove would regress the cursor
-		_, err = ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, gID, head)
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE cursor_%d SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), gID, head)
 		must(err)
 	}
 	return head, gids

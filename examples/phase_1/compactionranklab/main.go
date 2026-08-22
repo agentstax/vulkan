@@ -134,7 +134,7 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[RankedRe
 }
 
 func headID(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string) int64 {
-	return scalar(ctx, ds, `SELECT head_id FROM compaction_head WHERE topic_id=$1 AND compaction_key=$2;`, topicId, key)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key=$1;`, topicId), key)
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {

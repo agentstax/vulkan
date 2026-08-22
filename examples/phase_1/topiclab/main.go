@@ -118,7 +118,7 @@ func main() {
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
 	groupAID := mustGroupID(cd.RegisterGroup(ctx, topicA.Id, groupA))
-	setCursor(ctx, ds, groupAID, 5, 5)
+	setCursor(ctx, ds, topicA.Id, groupAID, 5, 5)
 
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
 	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB))
@@ -138,7 +138,7 @@ func main() {
 
 	headBefore := head(ctx, ds, topicC.Id)      // topicC is fresh, this is 0
 	publish(ctx, wpCInstance, "orders.created") // id headBefore+1, published BEFORE any binding exists
-	_, err = cd.DeclareBindings(ctx, groupRouteID, []string{"orders.*"}, time.Now())
+	_, err = cd.DeclareBindings(ctx, topicC.Id, groupRouteID, []string{"orders.*"}, time.Now())
 	must(err)
 	publish(ctx, wpCInstance, "orders.updated")  // id headBefore+2, matches, published AFTER the binding
 	publish(ctx, wpCInstance, "payments.charge") // id headBefore+3, does not match
@@ -166,9 +166,9 @@ func main() {
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
 	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX))
 	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY))
-	_, err = cd.DeclareBindings(ctx, groupXID, []string{"sliceX.*"}, time.Now())
+	_, err = cd.DeclareBindings(ctx, topicD.Id, groupXID, []string{"sliceX.*"}, time.Now())
 	must(err)
-	_, err = cd.DeclareBindings(ctx, groupYID, []string{"sliceY.*"}, time.Now())
+	_, err = cd.DeclareBindings(ctx, topicD.Id, groupYID, []string{"sliceY.*"}, time.Now())
 	must(err)
 
 	for range 4 { // 4 rows, all in sliceX -- the 4th builds partition 1 through create-ahead
@@ -228,8 +228,8 @@ func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatasto
 	return c
 }
 
-func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, `UPDATE cursor SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, groupId, claimed, committed)
+func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, claimed, committed int64) {
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
 	must(err)
 }
 

@@ -274,7 +274,7 @@ func versionHealth(all []*admin.VersionHealth, version topic.SchemaVersion) *adm
 }
 
 func distinctKeyCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, `SELECT count(*) FROM compaction_head WHERE topic_id=$1;`, topicId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM compaction_head_%d;`, topicId))
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
@@ -284,8 +284,8 @@ func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int
 func winner(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string) *V2Order {
 	var payload []byte
 	err := ds.Pool.QueryRow(ctx, fmt.Sprintf(
-		`SELECT m.payload FROM compaction_head ch JOIN message_log_%d m ON m.id = ch.head_id WHERE ch.topic_id=$1 AND ch.compaction_key=$2;`, topicId),
-		topicId, key).Scan(&payload)
+		`SELECT m.payload FROM compaction_head_%d ch JOIN message_log_%d m ON m.id = ch.head_id WHERE ch.compaction_key=$1;`, topicId, topicId),
+		key).Scan(&payload)
 	must(err)
 	var v V2Order
 	must(json.Unmarshal(payload, &v))

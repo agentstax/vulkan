@@ -526,7 +526,7 @@ func cleanup() {
 	checkKey, err := alert.CompactionKey(labCheckName, labTopicOwner)
 	must(err)
 	keys := []string{labKey, checkKey}
-	exec(ctx, `DELETE FROM compaction_head WHERE topic_id = $1 AND compaction_key = ANY($2);`, alertsTopic.Id, keys)
+	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
 	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
 
 	must(mAdmin.DestroyTopic(ctx, labTopic.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -534,7 +534,7 @@ func cleanup() {
 	for _, sql := range []string{
 		fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
 		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM lease WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, prefix),
+		fmt.Sprintf(`DELETE FROM lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
 		fmt.Sprintf(`DELETE FROM consumer_group WHERE name LIKE '%s.%%';`, prefix),
 	} {
 		exec(ctx, sql)
@@ -642,21 +642,21 @@ func alertMessageCount(ctx context.Context, compactionKey string) int64 {
 }
 
 func headId(ctx context.Context, compactionKey string) int64 {
-	return scalarInt64(ctx,
-		`SELECT head_id FROM compaction_head WHERE topic_id = $1 AND compaction_key = $2;`,
-		alertsTopic.Id, compactionKey)
+	return scalarInt64(ctx, fmt.Sprintf(
+		`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, alertsTopic.Id),
+		compactionKey)
 }
 
 // headStatus is "" when the key has no head or its payload carries no status.
 func headStatus(ctx context.Context, compactionKey string) string {
 	sql := fmt.Sprintf(`
 		SELECT m.payload->>'Status'
-		FROM compaction_head h
+		FROM compaction_head_%d h
 		JOIN message_log_%d m ON m.id = h.head_id
-		WHERE h.topic_id = $1 AND h.compaction_key = $2;
-	`, alertsTopic.Id)
+		WHERE h.compaction_key = $1;
+	`, alertsTopic.Id, alertsTopic.Id)
 	var status *string
-	err := ds.Pool.QueryRow(ctx, sql, alertsTopic.Id, compactionKey).Scan(&status)
+	err := ds.Pool.QueryRow(ctx, sql, compactionKey).Scan(&status)
 	must(err)
 	if status == nil {
 		return ""

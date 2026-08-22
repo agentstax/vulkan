@@ -117,7 +117,7 @@ func main() {
 
 	// ===== the workers actually did their jobs =====
 	step("END STATE: the coordinated workers did real work")
-	assertInt("committed reached head", scalar(ctx, ds, `SELECT c.committed FROM cursor c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1 AND g.topic_id=$2`, group, tp.Id), head)
+	assertInt("committed reached head", scalar(ctx, ds, fmt.Sprintf(`SELECT c.committed FROM cursor_%d c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1`, tp.Id), group), head)
 
 	fmt.Println("\n✅ WORKER CLAIM LAB PASSED")
 	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")

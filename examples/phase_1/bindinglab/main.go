@@ -42,6 +42,7 @@ var (
 	ds        *iDatastore.PostgresDatastore
 	mAdmin    *admin.MessageAdmin
 	topicName string
+	topicId   int64
 	groupId   int64
 )
 
@@ -60,6 +61,7 @@ func main() {
 	topicName = fmt.Sprintf("bindinglab.%d", time.Now().UnixNano())
 	registered, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
 	must(err)
+	topicId = registered.Id
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
@@ -167,7 +169,7 @@ func main() {
 	syntheticNewestId := insertSyntheticWaits(ctx)
 	beforeSweep := waitingRows(ctx)
 	_, err = ds.Pool.Exec(ctx,
-		`UPDATE binding_log SET attempt_at = attempt_at - interval '8 days' WHERE consumer_group_id = $1;`,
+		fmt.Sprintf(`UPDATE binding_log_%d SET attempt_at = attempt_at - interval '8 days' WHERE consumer_group_id = $1;`, topicId),
 		groupId)
 	must(err)
 
@@ -181,7 +183,7 @@ func main() {
 
 	var survivingSyntheticId int64
 	must(ds.Pool.QueryRow(ctx,
-		`SELECT id FROM binding_log WHERE consumer_group_id = $1 AND declared_by = 'bindinglab.dead-declarer';`,
+		fmt.Sprintf(`SELECT id FROM binding_log_%d WHERE consumer_group_id = $1 AND declared_by = 'bindinglab.dead-declarer';`, topicId),
 		groupId).Scan(&survivingSyntheticId))
 	if survivingSyntheticId != syntheticNewestId {
 		die(fmt.Sprintf("the dead declarer's newest waiting row must survive: got id %d, want %d", survivingSyntheticId, syntheticNewestId))
@@ -234,10 +236,10 @@ func waitLiveInstance(ctx context.Context) {
 func insertSyntheticWaits(ctx context.Context) int64 {
 	var newestId int64
 	for range 3 {
-		must(ds.Pool.QueryRow(ctx, `
-			INSERT INTO binding_log (consumer_group_id, status, patterns, declared_by, declared_at)
+		must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
+			INSERT INTO binding_log_%d (consumer_group_id, status, patterns, declared_by, declared_at)
 			VALUES ($1, 'waiting', '{"refunds.*"}', 'bindinglab.dead-declarer', now())
-			RETURNING id;`, groupId).Scan(&newestId))
+			RETURNING id;`, topicId), groupId).Scan(&newestId))
 	}
 	return newestId
 }
@@ -245,7 +247,7 @@ func insertSyntheticWaits(ctx context.Context) int64 {
 func installedRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM binding_log WHERE consumer_group_id = $1 AND status = 'installed';`,
+		fmt.Sprintf(`SELECT COUNT(*) FROM binding_log_%d WHERE consumer_group_id = $1 AND status = 'installed';`, topicId),
 		groupId).Scan(&count))
 	return count
 }
@@ -253,7 +255,7 @@ func installedRows(ctx context.Context) int {
 func waitingRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM binding_log WHERE consumer_group_id = $1 AND status = 'waiting';`,
+		fmt.Sprintf(`SELECT COUNT(*) FROM binding_log_%d WHERE consumer_group_id = $1 AND status = 'waiting';`, topicId),
 		groupId).Scan(&count))
 	return count
 }
@@ -261,7 +263,7 @@ func waitingRows(ctx context.Context) int {
 func bindingDisplays(ctx context.Context) string {
 	var displays string
 	must(ds.Pool.QueryRow(ctx,
-		`SELECT COALESCE(string_agg(display, ',' ORDER BY display), '') FROM binding WHERE consumer_group_id = $1;`,
+		fmt.Sprintf(`SELECT COALESCE(string_agg(display, ',' ORDER BY display), '') FROM binding_%d WHERE consumer_group_id = $1;`, topicId),
 		groupId).Scan(&displays))
 	return displays
 }
