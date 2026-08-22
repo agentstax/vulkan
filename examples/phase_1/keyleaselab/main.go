@@ -20,7 +20,7 @@
 //     message's own reclaim resolves superseded, and after release the new
 //     head acquires.
 //   - the janitor sweep removes expired rows and leaves live ones.
-//   - destroying the topic sweeps its key_lease rows.
+//   - destroying the topic drops its key_lease table.
 package main
 
 import (
@@ -271,12 +271,14 @@ func main() {
 	}
 	fmt.Println("  ✓ expired swept, live kept")
 
-	step("destroying the topic sweeps its key_lease rows")
+	step("destroying the topic drops its key_lease table")
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
-	if n := leaseCount(ctx); n != 0 {
-		die(fmt.Sprintf("destroy left %d key_lease rows behind", n))
+	var keyLeaseTable *string
+	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("key_lease_%d", topicId)).Scan(&keyLeaseTable))
+	if keyLeaseTable != nil {
+		die("destroy left the key_lease table behind")
 	}
-	fmt.Println("  ✓ destroy swept the rows")
+	fmt.Println("  ✓ destroy dropped the table")
 
 	fmt.Println("\n✅ KEY LEASE LAB PASSED")
 }

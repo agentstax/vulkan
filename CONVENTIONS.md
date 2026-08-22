@@ -274,6 +274,32 @@ The domain layers:
   pointer through an interface-typed return -- a typed nil stored in an
   interface compares non-nil, so every downstream nil guard lies.
 
+## Tables
+
+Every table is either shared control-plane schema or a member of one
+topic's family -- never both.
+
+- Shared: the catalog (system, topic, topic_log, consumer_group), the
+  fleet (worker, worker_instance, cron_job), and cross-scope history
+  (migration_log). Created by system createSystemTables.
+- Per-topic: everything else -- message_log, idempotency_key, delivery,
+  delivery_log, cursor, lease, key_lease, compaction_head, binding,
+  binding_log -- one physical table per topic, created by topic
+  createTopicTables. Library code names them ONLY through internal/topic's
+  table-name funcs; labs, which cannot import internal/, interpolate the
+  name inline.
+- A new table splits per-topic when every row has exactly one owning topic
+  (directly or through its consumer group) and no reader needs the table
+  before knowing the topic. It stays shared when rows can exist at system
+  scope with no topic at all, or when it is the catalog that resolves
+  names to topic ids.
+- A per-topic table carries no topic_id column -- the table name is the
+  scope. A cross-topic read resolves topic ids from the catalog first,
+  then loops the per-topic tables.
+- Topic destroy DROPs the family's tables outright -- cleanup never runs
+  cross-table DELETEs, and an after-destroy assertion checks table absence
+  (to_regclass), never zero rows.
+
 ## Migrations
 
 - Pre-v1, every schema change edits the baseline `CREATE TABLE` DDL in place

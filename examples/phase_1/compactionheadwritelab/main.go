@@ -105,8 +105,6 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 		must(mAdmin.DestroyTopic(ctx, manyKeysTopic, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	before := dumpTableStats(ctx, ds, "compaction_head")
-
 	oneKeyMs, oneKeyTopic := timeConcurrent(ctx, ds, "onekey", goroutines, perGoroutine, func(g, i int) string {
 		return "hot-key" // every goroutine hammers the SAME row
 	})
@@ -115,7 +113,9 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 	}()
 
 	time.Sleep(1 * time.Second) // let PG's stats collector flush before reading it
-	after := dumpTableStats(ctx, ds, "compaction_head")
+	// the one-hot-key topic's compaction_head table saw only the burst, so
+	// its absolute stats are the burst's numbers
+	stats := dumpTableStats(ctx, ds, compactionHeadTable(ctx, ds, oneKeyTopic))
 
 	total := goroutines * perGoroutine
 	fmt.Printf("  %-28s %10.3fms total  %8.4fms/op (%d ops, %d goroutines)\n", "many distinct keys", manyKeysMs, manyKeysMs/float64(total), total, goroutines)
@@ -123,10 +123,9 @@ func hotKeyContentionScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 	fmt.Printf("  -> %.1fx slower under full serialization on a single key\n", oneKeyMs/manyKeysMs)
 
 	step("dead-tuple growth from the hot-key burst")
-	fmt.Printf("  before: n_live_tup=%d n_dead_tup=%d n_tup_upd=%d\n", before.liveTup, before.deadTup, before.tupUpd)
-	fmt.Printf("  after:  n_live_tup=%d n_dead_tup=%d n_tup_upd=%d\n", after.liveTup, after.deadTup, after.tupUpd)
-	fmt.Printf("  -> %d updates against ONE row produced %d new dead tuples, pending autovacuum\n",
-		after.tupUpd-before.tupUpd, after.deadTup-before.deadTup)
+	fmt.Printf("  n_live_tup=%d n_dead_tup=%d n_tup_upd=%d\n", stats.liveTup, stats.deadTup, stats.tupUpd)
+	fmt.Printf("  -> %d updates against ONE row produced %d dead tuples, pending autovacuum\n",
+		stats.tupUpd, stats.deadTup)
 }
 
 // ---- helpers ----
@@ -190,6 +189,14 @@ type tableStats struct {
 	liveTup int64
 	deadTup int64
 	tupUpd  int64
+}
+
+// compactionHeadTable resolves a topic's compaction_head_<id> table name from
+// the catalog.
+func compactionHeadTable(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string) string {
+	var id int64
+	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic WHERE name = $1;`, topicName).Scan(&id))
+	return fmt.Sprintf("compaction_head_%d", id)
 }
 
 func dumpTableStats(ctx context.Context, ds *iDatastore.PostgresDatastore, table string) tableStats {

@@ -5,6 +5,29 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — per-topic table split: cursor, lease, key_lease, compaction_head, binding, binding_log [0571]
+
+- The six shared coordination tables became per-topic interpolated tables
+  (cursor_<id>, lease_<id>, key_lease_<id>, compaction_head_<id>,
+  binding_<id>, binding_log_<id>), applying the [0571] split rule: a topic's
+  family grows 4 -> 10 tables and the shared schema reduces to exactly
+  catalog + fleet + cross-scope history (system, topic, topic_log,
+  consumer_group, worker, worker_instance, cron_job, migration_log).
+- compaction_head_<id> dropped its topic_id column -- PK is compaction_key
+  alone. Topic destroy became a DROP TABLE loop over all ten tables,
+  deleting the three cross-table DELETEs (lease/key_lease via group-id
+  subqueries, compaction_head by topic_id); the janitor's partition-drop
+  and sweep cleanups lost their topic_id predicates the same way.
+- Three verbs gained explicit topic context: ForceReclaimRange and
+  DeclareBindings take topicId; KeyLeaseClaim/KeyLeaseData carry TopicId so
+  Release can name the claim's table.
+- The two cross-topic reads resolve topic ids from consumer_group and loop:
+  ListBindingLog (one query per topic's binding_log_<id>) and the consumer
+  group janitor's waiting-declaration sweep -- [0573]'s one batched DELETE
+  per tick became one per topic's table per tick.
+- 22 labs swept to the interpolated names; destroy assertions reshaped from
+  0-row counts to table-absence (to_regclass). 41/41 fresh-DB suite.
+
 ## 2026-08-22 — binding_log retention via the consumer group janitor [0573]
 
 - Waiting declaration rows older than a flat 7d TTL are swept in one

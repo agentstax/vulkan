@@ -16,57 +16,6 @@ the item is removed.
 
 ## Now
 
-- **System-table churn evaluation** — reconsider whether compaction_head
-  should be per-topic compaction_head_(topic_id) (high update churn from
-  many topics), and evaluate all system tables: cursor / lease / binding /
-  topic / compaction_head.
-  - compaction_head: split per-topic (direction settled 2026-08-22). The
-    DDL comment's shared-table rationale reasons about size (distinct-key
-    count), but update churn scales with keyed publish volume across all
-    topics. The sharpest win is the bulk-delete paths: topic destroy and
-    janitor sweeps run DELETE ... WHERE topic_id through the shared table;
-    per-topic makes destroy a DROP TABLE and shrinks the PK to
-    compaction_key alone. Table interpolation machinery already exists
-    (message_log_<id>, idempotency_key_<id>).
-  - Remaining tables: evaluate through the logical-grouping lens, not
-    churn — churn alone doesn't force a split (cursor updates are
-    HOT-eligible, lease churn is per-group, binding/topic are
-    near-static). The question per table is whether per-topic grouping
-    fits the mental model; the machinery to create and manage per-topic
-    tables already exists, so the extra code is cheap.
-  - Logical-grouping audit (settled 2026-08-22). The rule: a table
-    splits per-topic when every row has exactly one owning topic
-    (directly or through its consumer group) and no reader needs the
-    table before knowing the topic; it stays shared when rows can exist
-    at system scope with no topic at all, or when it is the catalog that
-    resolves names to topic ids.
-    - Split: cursor, lease, key_lease (with compaction_head). Cursor and
-      lease values are message_log_<id> ids; key_lease mirrors
-      compaction_head's key vocabulary. Every reader verified group- or
-      topic-scoped (the metrics snapshot already takes topicId and
-      interpolates message_log_<id> in the same query). Topic destroy
-      becomes DROP TABLE; per-topic fillfactor tuning becomes possible.
-      Cursor's ON DELETE CASCADE FK to consumer_group survives the
-      split; lease/key_lease already have no FKs.
-    - Split: binding and binding_log, together — they are one mechanism
-      (declareBindings appends the log row and rewrites binding rows in
-      one transaction) with identical ownership, and no reader lacks
-      topic context. Amends the shipped binding_log retention sweep
-      ([0573]): the consumer group janitor stays one OwnerSystem worker
-      but runs one batched DELETE per topic's table per tick instead of
-      one total.
-    - Keep shared: worker, worker_instance, cron_job, migration_log
-      (their CHECK num_nonnulls(...) = 1 rows can be system-scoped — no
-      per-topic home — and their primary readers are single cross-scope
-      queries: fleet listWorkers, cron due-walk); system, topic,
-      topic_log, consumer_group (the catalog: name -> topic_id
-      resolution has to run before any per-topic table can be named, and
-      topic_log is the catalog's own history, written in its
-      register/rename transactions ([0570])).
-    - End state: a topic's family grows 3 -> 9 interpolated tables
-      (message_log, idempotency_key, delivery_log + cursor, lease,
-      key_lease, compaction_head, binding, binding_log); the shared
-      schema reduces to exactly catalog + fleet + cross-scope history.
 - **Compaction-key deadlock evaluation** — test compaction key with default
   produce and determine whether deadlock contention from reverse-ordered
   transactions is a real problem: at what (extreme or not) example does it
