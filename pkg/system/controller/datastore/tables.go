@@ -233,8 +233,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS worker_system_name ON worker (name, system_id)
 			topic_id BIGINT REFERENCES topic (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group (id) ON DELETE CASCADE,
 			migration_version BIGINT NOT NULL,
-			status TEXT NOT NULL,         -- 'success' | 'failure' (extensible)
-			error TEXT,                   -- populated when status = 'failure'
+			min_compatible_version BIGINT NOT NULL DEFAULT 0, -- the step's MinCompatibleVersion; 0 on baseline and down rows
+			status TEXT NOT NULL,                             -- 'success' | 'failure' (extensible)
+			error TEXT,                                       -- populated when status = 'failure'
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1)
 		);

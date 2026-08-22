@@ -6,10 +6,6 @@ docs/decisions/.
 
 ## Cross-version compatibility matrix (14c)
 
-OWNED BY A SEPARATE SESSION (compat-matrix session, started 2026-08-22).
-Other sessions: leave this section's content unchanged — it is edited only
-by its owning session.
-
 Design settled 2026-08-22; the full shape lives in ROADMAP.md's item and
 stays there until ship. Tasks in build order:
 
@@ -18,10 +14,10 @@ stays there until ship. Tasks in build order:
    everyone older); Validate gains `0 <= MinCompatibleVersion <= Version`;
    the doc comment's authoring rules gain the declaration rule and the
    no-op-bump rule.
-2. (open) migration_log baseline DDL gains `min_compatible_version BIGINT
-   NOT NULL DEFAULT 0`; recordSuccess writes the step's declaration
-   (baseline-creation and down rows write 0); verify by dev-DB
-   drop+recreate.
+2. (done 2026-08-22) migration_log baseline DDL gains
+   `min_compatible_version BIGINT NOT NULL DEFAULT 0`; recordSuccess
+   writes the step's declaration (baseline-creation and down rows write
+   0); verified by dev-DB drop+recreate.
 3. (open) Collapse the four Min/Max build constants to one derived version
    per scope (`len(registry) + 1`).
 4. (open) Two-fact schema-state read — the three-CTE shape from the

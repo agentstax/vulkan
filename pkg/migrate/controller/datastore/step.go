@@ -12,6 +12,7 @@ import (
 // version is where the DB lands after step is complete.
 func NewStep(
 	version int64,
+	minCompatibleVersion int64,
 	validate func(context.Context, datastore.Querier, int64) error,
 	apply func(context.Context, datastore.Querier, int64) error,
 	noTxn bool,
@@ -19,15 +20,19 @@ func NewStep(
 	if version < 1 {
 		return nil, fmt.Errorf("step version must be >= 1, got %d", version)
 	}
+	if minCompatibleVersion < 0 || minCompatibleVersion > version {
+		return nil, fmt.Errorf("step minCompatibleVersion must be between 0 and %d, got %d", version, minCompatibleVersion)
+	}
 	if apply == nil {
 		return nil, fmt.Errorf("step to version %d has no apply func", version)
 	}
 
 	return &Step{
-		Version:  version,
-		Validate: validate,
-		Apply:    apply,
-		NoTxn:    noTxn,
+		Version:              version,
+		MinCompatibleVersion: minCompatibleVersion,
+		Validate:             validate,
+		Apply:                apply,
+		NoTxn:                noTxn,
 	}, nil
 }
 
@@ -63,7 +68,7 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 	if err := step.Apply(ctx, tx, owner.TopicId); err != nil {
 		return err
 	}
-	if err := d.recordSuccess(ctx, tx, owner, step.Version); err != nil {
+	if err := d.recordSuccess(ctx, tx, owner, step.Version, step.MinCompatibleVersion); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -79,5 +84,5 @@ func (d *MigrateDatastore) runStepWithoutTx(ctx context.Context, conn *pgxpool.C
 	if err := step.Apply(ctx, conn, owner.TopicId); err != nil {
 		return err
 	}
-	return d.recordSuccess(ctx, conn, owner, step.Version)
+	return d.recordSuccess(ctx, conn, owner, step.Version, step.MinCompatibleVersion)
 }

@@ -36,12 +36,13 @@ func toStep(migration *migrate.Migration, stepType datastore.StepType, targetVer
 		if migration.Up == nil {
 			return nil, fmt.Errorf("version %d has no Up defined", migration.Version)
 		}
-		return datastore.NewStep(targetVersion, migration.ValidateUp, migration.Up, migration.NoTxn)
+		return datastore.NewStep(targetVersion, migration.MinCompatibleVersion, migration.ValidateUp, migration.Up, migration.NoTxn)
 	case datastore.StepDown:
 		if migration.Down == nil {
 			return nil, fmt.Errorf("version %d has no Down defined -- migration is irreversible", migration.Version)
 		}
-		return datastore.NewStep(targetVersion, migration.ValidateDown, migration.Down, migration.NoTxn)
+		// a down row records no requirement
+		return datastore.NewStep(targetVersion, 0, migration.ValidateDown, migration.Down, migration.NoTxn)
 	default:
 		return nil, fmt.Errorf("step type must be %q or %q, got %q", datastore.StepUp, datastore.StepDown, stepType)
 	}
