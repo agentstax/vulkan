@@ -19,23 +19,148 @@ the item is removed.
 - **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs
-  plain additive). The other direction (binary N, database N-1) should fail
-  fast at Register's schema gate — that clean error is itself an assertion.
-  Mechanics: a small test module whose go.mod pins the prior released
-  version, run against a database migrated by HEAD.
+  plain additive). The other direction (binary N, database N-1) fails fast
+  at Register's schema gate — that clean error is itself an assertion.
+  Design settled in discussion 2026-08-22; notes below are the whole shape.
+  - The hole this closes: one stored number was serving two facts — "what
+    schema is this" and "who may run against it". As shipped, ANY version
+    bump locks every N-1 binary out at Register (stored > MaxVersion ->
+    ErrSchemaNewerThanBuild), even for a purely additive step, so rolling
+    deploys were impossible by construction. The fix splits the facts: the
+    database carries its current version AND the minimum compatible version
+    in force; a build carries one version per scope.
+  - Naming research (2026-08-22): industry converges on "minimum compatible
+    version" — HDFS minCompatibleLayoutVersion (declared PER FEATURE; "if
+    the feature cannot satisfy compatibility with any prior version, set it
+    to itself" — structurally identical to this design), Delta Lake
+    minReaderVersion/minWriterVersion, Elasticsearch
+    minimum_index_compatibility_version, CockroachDB
+    binaryMinSupportedVersion (the binary-side mirror). So: field
+    Migration.MinCompatibleVersion, column min_compatible_version.
+    CompatibleSince rejected — reads temporally, like a timestamp.
+  - Each Migration declares `MinCompatibleVersion int64` — the oldest build
+    schema version whose SQL still runs correctly against the schema this
+    step produces. 0 = additive (every older binary survives); == Version =
+    breaking for everyone older. migrate.Validate gains
+    `0 <= MinCompatibleVersion <= Version`. A bool marker was rejected:
+    expand/contract column removal (the sanctioned removal path, see
+    ## SQL) has a middle release whose binaries tolerate the drop while
+    older ones don't — only a number can point at it.
+  - The no-op-bump rule that makes the number work: a release that changes
+    compatibility posture without changing schema (the expand half — e.g.
+    binaries stop reading a column) ships a version-bump step with empty
+    Up/Down, so the following DROP step can declare MinCompatibleVersion =
+    that version. Same trick recovers a misclassified step: shipped steps
+    are immutable, so a wrongly-additive step is corrected by a new no-op
+    step with MinCompatibleVersion set.
+  - The four Min/Max build constants collapse to one derived version per
+    scope — `len(registry) + 1` — so the constant can never drift from the
+    registry.
+  - migration_log gains `min_compatible_version BIGINT NOT NULL DEFAULT 0`;
+    recordSuccess writes the step's declaration; baseline-creation and down
+    rows write 0. MUST ship in the v1.0 baseline DDL — v1.0 binaries cannot
+    be retrofitted to read a column they don't know, so shipping it later
+    starts the whole scheme one release late.
+  - The gate predicate, one line: allowed iff
+    `min_compatible_version <= buildVersion <= current`. Below range ->
+    ErrSchemaOlderThanBuild; min_compatible_version above the build ->
+    ErrSchemaNewerThanBuild (attrs gain min_compatible_version and
+    build_version); current above the build with min_compatible_version at
+    or below it is the additive rolling-deploy window — allowed, silent.
+    Both codes and fix lines survive unchanged.
+  - The read: one query per scope returning both facts, three CTEs each
+    stating one sentence of the mental model — the scope's success rows;
+    current = latest-by-id, not MAX [0343] (a downgrade records a lower
+    version); compatibility = MAX(min_compatible_version) among steps at or
+    below current (a step rolled back below current no longer binds — the
+    downgrade case costs nothing extra). No COALESCE: the current row
+    itself always satisfies the <= filter, so the aggregate never sees an
+    empty set. Settled shape:
+
+        WITH scope AS (
+            SELECT id, migration_version, min_compatible_version
+            FROM migration_log
+            WHERE <owner columns> AND status = 'success'
+        ),
+        current AS (
+            SELECT migration_version FROM scope ORDER BY id DESC LIMIT 1
+        ),
+        compatibility AS (
+            SELECT MAX(scope.min_compatible_version) AS min_compatible_version
+            FROM scope, current
+            WHERE scope.migration_version <= current.migration_version
+        )
+        SELECT current.migration_version, compatibility.min_compatible_version
+        FROM current, compatibility;
+
+  - Gate coverage is Register-only (producer/consumer/worker Register) —
+    live N-1 binaries during a breaking migration never re-pass it and fail
+    on their own SQL instead. The mitigation is procedural, as in every
+    system researched: breaking releases document "stop old binaries
+    first". The floor protects restarts and scale-ups.
+  - The lab's real assertion is "declared compatibility matches observed
+    compatibility": the driver computes the expected verdict from HEAD's
+    own registry (any step above the pinned build's version declaring
+    MinCompatibleVersion beyond it -> expect ErrSchemaNewerThanBuild at
+    Register; otherwise -> expect a full round-trip) and asserts the
+    observed outcome matches. This catches the dangerous lie — a step
+    declared additive that breaks the old binary. The reverse lie
+    (declared breaking, actually harmless) is unobservable — the gate
+    correctly refuses before the experiment can run — and is safe-side,
+    accepted.
+  - Placement: tools/compat, its own nested go.mod (it pins a different
+    vulkan than the tree it sits in), never tagged, kept OUT of go.work —
+    the workspace would resolve vulkan to the local tree and silently
+    defeat the pin. Repo root stays clean; the CONVENTIONS tools/ wording
+    widens to "dev-only modules" when this ships. Inside, an
+    examples/-style lab main using ONLY the public API — the compatibility
+    surface IS the public surface.
+  - Driver flow (`just compat-lab`, release checkpoints only): resolve the
+    latest semver tag, `git worktree add` it, `go mod edit -replace` in
+    tools/compat/go.mod (a plain require of the published tag works too
+    once tags are public); then against fresh databases: (a) the pinned
+    build bootstraps its own baseline, HEAD Register against it asserts
+    ErrSchemaOlderThanBuild — before migrating; (b) HEAD migrates, the
+    pinned module runs the real lifecycle — producer Register/produce,
+    consumer Register/consume, admin reads — asserted against the computed
+    expectation; (c) additive releases only: the pinned consumer keeps
+    consuming WHILE HEAD migrates underneath it, the truest rolling-deploy
+    shape. Breaking releases skip (c) — the answer there is procedural
+    (stop old binaries first), nothing mechanical to assert.
+  - The matrix rows: (1) binary N / db N — the normal suite; (2) binary N /
+    db N-1 — ErrSchemaOlderThanBuild at Register; (3) binary N-1 / db N,
+    additive — full round-trip, both a fresh start after migration AND a
+    consumer kept running while HEAD migrates underneath it (the truest
+    rolling-deploy shape); (4) binary N-1 / db N, breaking —
+    ErrSchemaNewerThanBuild at fresh Register; (5) per-topic skew mid-
+    RunAll [0344] — migrated families keep working while unmigrated ones
+    gate on their own rows. A posture-only release that forgot its no-op
+    bump surfaces here as a pinned-module failure — worth its own
+    assertion.
+  - Per-topic skew (row 5) is HEAD-only — RunOnce on topic A, assert topic
+    B's family gates independently — so it lives in the reshaped
+    schemagatelab, which the floor semantics force to change anyway (forge
+    min_compatible_version rows for newer-than, a low current for
+    older-than). Pre-v1 sibling work alongside the gate itself.
+  - The empirical record: a hand-written per-release compatibility table
+    on the website migration docs page (release, schema version per scope,
+    minimum compatible version) — never generated, kept honest by the lab;
+    HISTORY.md's release entry cites the lab outcome. Shipping this adds a
+    short release checklist to AGENTS.md (run `just compat-lab`, update
+    the compatibility table, cite the outcome in HISTORY.md) so neither
+    the lab nor the table is forgotten at tag time.
+  - Sequencing: declaration field + column + gate predicate + read are
+    pre-v1 work (the v1.0-baseline requirement above); the pinned lab only
+    becomes runnable once two releases exist — the skeleton can dry-run
+    earlier with a replace to the same tree.
+  - Documentation lands in four places, each for a different reader: the
+    Migration doc comment's authoring rules (MinCompatibleVersion rule +
+    no-op bump); CONVENTIONS.md ## Migrations (the release-era rules, when
+    this ships); the decision record; the website migration docs page (the
+    same page as the LOCK TIMEOUT item below) plus a sentence on the
+    VK0022/VK0023 error pages, whose attrs change.
 - **Migration docs:** should use LOCK TIMEOUT for any ALTER migration
   commands (likely just needs documenting).
-- **Fillfactor audit** — audit every table for whether a lower fillfactor
-  (page slack that keeps update chains HOT — same-page rewrites that skip
-  index maintenance) improves steady-state top-end throughput, at the cost
-  of larger tables. Prime candidates are the tables whose updates touch
-  only non-indexed columns: cursor (claimed / committed / settled_head /
-  pending_head bump constantly), compaction_head (head_id /
-  compaction_rank on every keyed publish), lease, key_lease. Findings must
-  be confirmed by live benchmarks — sustained-throughput runs before and
-  after per table — not reasoning alone.
-  - Measured input for compaction_head ([0574], bench/compaction): one hot
-    head row accrued 36k dead tuples in 15s at 3 producers, sync=on.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -47,8 +172,9 @@ the item is removed.
   published number is the adoption gate for always-on capture ([0559]).
   - When this lands, fold the existing ad-hoc benches into the standard it
     sets — one method/env/recording shape across bench/: bench/idempotency,
-    bench/scale, bench/trigger_fanout, and the compaction hot-key
-    serialization bench (bench/compaction, [0574]).
+    bench/scale, bench/trigger_fanout, the compaction hot-key
+    serialization bench (bench/compaction, [0574]), and the consume-side
+    fillfactor bench (bench/fillfactor, [0578]).
 - **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
   fix). An idle deployment pays per worker row per poll: winner's claim
   UPDATE + no-op work each tick, and — the growing term — every replica's
@@ -65,13 +191,6 @@ the item is removed.
   ~1k rows, rung 2 well past 10k, rung 3 never earns it.
 
 ## Next
-
-
-
-## Later
-
-Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
-documentation; the latter want a surface that has stopped moving.
 
 **The 14b cleanup / public API design pass** — naming, shape, comments, and
 internal cleanup; no new behavior. Locks the surface before v1.
@@ -173,6 +292,11 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     Default constructors get built against that observed pattern rather
     than guessed.
   - DDL table design diagram.
+
+## Later
+
+Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
+documentation; the latter want a surface that has stopped moving.
 
 - **Marketing** I know there are other kafka in sql projects out there
   why did they fail? Was it product or marketing related? what can we learn

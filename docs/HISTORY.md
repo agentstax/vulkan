@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — fillfactor audit closed: adopt nothing [0578]
+
+- Static pass classified every table's update paths (cursor /
+  compaction_head / delivery the real candidates; lease, key_lease,
+  worker_instance, cron_job ruled out structurally), then live
+  benchmarks confirmed all three were already ~100% HOT at default
+  fillfactor — throughput identical within noise, [0574]'s 36k dead
+  tuples revealed as HOT-chain tuples pruned in place. Baseline DDL
+  untouched.
+- New bench/fillfactor consume-side harness (pre-fill a fresh topic,
+  drain through real ConsumerInstance.Consume calls; failure-rate flag
+  cycles the exception window for delivery churn; per-cell
+  pg_stat_user_tables HOT-ratio evidence). bench/compaction's driver
+  gained -head-fillfactor plus head HOT/update stats for the
+  compaction_head cells.
+
 ## 2026-08-22 — worker metadata history as append-only worker_log [0577]
 
 - worker_log completes [0570]'s reservation: a full-snapshot row (name

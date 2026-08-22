@@ -19,22 +19,37 @@ import (
 //     that may change under them.
 //   - NoTxn steps can't roll back, so they carry their own partial-state check.
 //   - Down is a deliberate rollback, not crash recovery.
+//   - Empty steps are fine -- sometimes the version number is the whole
+//     point. If MinCompatibleVersion needs to be updated or changed, ship an
+//     empty step with the new value.
 type Migration struct {
-	Version      int64                                                               // version this step moves to (Up) / from (Down)
+	Version int64 // version this step moves to (Up) / from (Down)
+
+	// MinCompatibleVersion is the oldest build schema version whose SQL still
+	// runs correctly against the schema this step produces:
+	//   0       -> additive, every older binary survives
+	//   Version -> breaking, no older binary survives
+	MinCompatibleVersion int64
+
 	ValidateUp   func(ctx context.Context, q datastore.Querier, topicId int64) error // preconditions; nil = none
 	Up           func(ctx context.Context, q datastore.Querier, topicId int64) error // idempotent -- a retry may re-run it
 	ValidateDown func(ctx context.Context, q datastore.Querier, topicId int64) error
 	Down         func(ctx context.Context, q datastore.Querier, topicId int64) error
-	NoTxn        bool // e.g. CREATE INDEX CONCURRENTLY -- runs on the pool, not a tx
+
+	NoTxn bool // e.g. CREATE INDEX CONCURRENTLY -- runs on the pool, not a tx
 }
 
 // Validate requires versions to be contiguous in slice order starting at 2 (v1
 // is every scope's baseline) -- position i holds version i+2. That one rule
-// rejects gaps, duplicates, and misordering. Empty is valid.
+// rejects gaps, duplicates, and misordering. Empty is valid. Each step's
+// MinCompatibleVersion must sit between 0 and the step's own version.
 func Validate(registry []Migration) error {
 	for i, m := range registry {
 		if want := int64(i + 2); m.Version != want {
 			return fmt.Errorf("migration registry: position %d has version %d, want %d -- versions must be contiguous starting at 2 (v1 is the baseline)", i, m.Version, want)
+		}
+		if m.MinCompatibleVersion < 0 || m.MinCompatibleVersion > m.Version {
+			return fmt.Errorf("migration registry: version %d has MinCompatibleVersion %d, want 0 through %d -- 0 is additive, the step's own version locks out every older build", m.Version, m.MinCompatibleVersion, m.Version)
 		}
 	}
 	return nil

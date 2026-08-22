@@ -29,3 +29,28 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMinCompatibleVersion(t *testing.T) {
+	tests := []struct {
+		name          string
+		minCompatible int64
+		wantErr       bool
+	}{
+		{"zero is additive", 0, false},
+		{"below own version", 2, false},
+		{"own version is breaking", 3, false},
+		{"negative", -1, true},
+		{"above own version", 4, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := []Migration{
+				{Version: 2},
+				{Version: 3, MinCompatibleVersion: tt.minCompatible},
+			}
+			if err := Validate(registry); (err != nil) != tt.wantErr {
+				t.Fatalf("Validate(MinCompatibleVersion=%d) error = %v, wantErr %v", tt.minCompatible, err, tt.wantErr)
+			}
+		})
+	}
+}
