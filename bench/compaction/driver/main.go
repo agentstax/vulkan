@@ -1,0 +1,267 @@
+package main
+
+// One measurement cell of the compaction hot-key serialization benchmark:
+// hammers the real batched Produce path (ProducerInstance.Produce, no
+// caller idempotency key -> the batcher) at one compaction-key cardinality
+// and emits one JSON line on stdout.
+//
+// The batcher's ascending-key sort and batch sharing ARE the thing under
+// test, so this drives the library, never a SQL mirror of its statements.
+//
+// Flags: -cardinality (0 = unkeyed baseline), -producers, -goroutines,
+// -warmup, -window, -label. Connection via PGHOST/PGPORT/PGUSER/
+// PGPASSWORD/PGDATABASE (defaults match env.sh: bench@localhost:5433).
+// The caller owns synchronous_commit (ALTER DATABASE before the cell);
+// the driver reports the value it actually saw.
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/admin"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/topic"
+)
+
+type benchMessage struct {
+	Note string
+}
+
+const (
+	phaseWarmup int32 = iota
+	phaseMeasure
+	phaseDone
+)
+
+type cellResult struct {
+	Label       string `json:"label"`
+	Cardinality int    `json:"cardinality"`
+	Producers   int    `json:"producers"`
+	Goroutines  int    `json:"goroutines"`
+	Sync        string `json:"sync"`
+	WarmupSecs  int    `json:"warmup_secs"`
+	WindowSecs  int    `json:"window_secs"`
+
+	MsgsPerSecMed float64 `json:"msgs_per_sec_med"`
+	MsgsPerSecP10 float64 `json:"msgs_per_sec_p10"`
+	MsgsPerSecP90 float64 `json:"msgs_per_sec_p90"`
+	LatencyP50Ms  float64 `json:"latency_p50_ms"`
+	LatencyP95Ms  float64 `json:"latency_p95_ms"`
+	LatencyP99Ms  float64 `json:"latency_p99_ms"`
+
+	Produced       int64 `json:"produced"`
+	Deadlocks      int64 `json:"deadlocks"`
+	HeadDeadTuples int64 `json:"head_dead_tuples"`
+}
+
+func main() {
+	cardinality := flag.Int("cardinality", 1, "distinct compaction keys; 0 = unkeyed baseline")
+	producers := flag.Int("producers", 3, "producer instances (each its own batcher)")
+	goroutines := flag.Int("goroutines", 128, "concurrent Produce callers, split across producers")
+	warmupSeconds := flag.Int("warmup", 5, "seconds produced but not measured")
+	windowSeconds := flag.Int("window", 15, "steady measurement seconds")
+	label := flag.String("label", "", "tag copied into the JSON line")
+	flag.Parse()
+
+	ctx := context.Background()
+	ds, err := iDatastore.NewPostgresDatastore(ctx, envOr("PGUSER", "bench"), envOr("PGHOST", "localhost"), envOr("PGDATABASE", "bench"), &iDatastore.PostgresConnectionConfig{
+		Pass:     envOr("PGPASSWORD", "bench"),
+		Port:     envInt("PGPORT", 5433),
+		MaxConns: *producers*4 + 8,
+	})
+	must(err)
+	defer ds.Close()
+
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	must(err)
+	must(mAdmin.RegisterSystem(ctx, nil))
+
+	// fresh topic per cell -- clean tables, no cross-cell contamination
+	topicName := fmt.Sprintf("compactionbench.%d", time.Now().UnixNano())
+	registered, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
+	must(err)
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
+
+	instances := make([]*producer.ProducerInstance[benchMessage], *producers)
+	for i := range instances {
+		wp, err := producer.NewProducer[benchMessage](ds, nil)
+		must(err)
+		instance, err := wp.Register(ctx, topicName, topic.SchemaVersion(1))
+		must(err)
+		instances[i] = instance
+	}
+
+	keys := make([]string, *cardinality)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("key-%05d", i)
+	}
+
+	deadlocksBefore := deadlockCount(ctx, ds)
+
+	var phase atomic.Int32
+	var windowProduced atomic.Int64
+	var errOnce sync.Once
+	var firstErr error
+	record := func(err error) { errOnce.Do(func() { firstErr = err }) }
+
+	// per-goroutine latency slices -- merged after the run, no shared lock
+	latencies := make([][]time.Duration, *goroutines)
+	var wg sync.WaitGroup
+	for i := range *goroutines {
+		wg.Add(1)
+		go func(instance *producer.ProducerInstance[benchMessage], offset int) {
+			defer wg.Done()
+			mine := make([]time.Duration, 0, 4096)
+			for produced := 0; phase.Load() != phaseDone; produced++ {
+				options := producer.ProduceOptions{}
+				if len(keys) > 0 {
+					// rotate the pool from a per-goroutine offset -- maximal
+					// reverse-order pressure at enqueue, the sort's job to absorb
+					compaction, err := producer.NewCompactionOptions(keys[(offset+produced)%len(keys)], 0)
+					if err != nil {
+						record(err)
+						return
+					}
+					options.Compaction = compaction
+				}
+
+				started := time.Now()
+				if _, err := instance.Produce(ctx, &benchMessage{Note: "bench"}, options); err != nil {
+					record(err)
+					return
+				}
+				if phase.Load() == phaseMeasure {
+					mine = append(mine, time.Since(started))
+					windowProduced.Add(1)
+				}
+			}
+			latencies[offset] = mine
+		}(instances[i%*producers], i)
+	}
+
+	time.Sleep(time.Duration(*warmupSeconds) * time.Second)
+	phase.Store(phaseMeasure)
+	windowProduced.Store(0)
+
+	// per-second throughput samples over the steady window
+	samples := make([]float64, 0, *windowSeconds)
+	previous := int64(0)
+	for range *windowSeconds {
+		time.Sleep(time.Second)
+		current := windowProduced.Load()
+		samples = append(samples, float64(current-previous))
+		previous = current
+	}
+	phase.Store(phaseDone)
+	wg.Wait()
+	must(firstErr)
+
+	merged := make([]time.Duration, 0, 256*1024)
+	for _, mine := range latencies {
+		merged = append(merged, mine...)
+	}
+	sort.Slice(merged, func(a, b int) bool { return merged[a] < merged[b] })
+	sort.Float64s(samples)
+
+	result := cellResult{
+		Label:       *label,
+		Cardinality: *cardinality,
+		Producers:   *producers,
+		Goroutines:  *goroutines,
+		Sync:        showSetting(ctx, ds, "synchronous_commit"),
+		WarmupSecs:  *warmupSeconds,
+		WindowSecs:  *windowSeconds,
+
+		MsgsPerSecMed: percentileFloat(samples, 50),
+		MsgsPerSecP10: percentileFloat(samples, 10),
+		MsgsPerSecP90: percentileFloat(samples, 90),
+		LatencyP50Ms:  milliseconds(percentileDuration(merged, 50)),
+		LatencyP95Ms:  milliseconds(percentileDuration(merged, 95)),
+		LatencyP99Ms:  milliseconds(percentileDuration(merged, 99)),
+
+		Produced:       windowProduced.Load(),
+		Deadlocks:      deadlockCount(ctx, ds) - deadlocksBefore,
+		HeadDeadTuples: headDeadTuples(ctx, ds, registered.Id),
+	}
+	encoded, err := json.Marshal(result)
+	must(err)
+	fmt.Println(string(encoded))
+
+	if result.Deadlocks != 0 {
+		must(fmt.Errorf("deadlocks raised during the cell: %d -- the absence claim broke under this load", result.Deadlocks))
+	}
+}
+
+func deadlockCount(ctx context.Context, ds *iDatastore.PostgresDatastore) int64 {
+	// settle so per-backend pg_stat flushes land before the read
+	time.Sleep(2 * time.Second)
+	var count int64
+	must(ds.Pool.QueryRow(ctx, `SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();`).Scan(&count))
+	return count
+}
+
+func headDeadTuples(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
+	var count int64
+	must(ds.Pool.QueryRow(ctx,
+		`SELECT COALESCE(MAX(n_dead_tup), 0) FROM pg_stat_user_tables WHERE relname = $1;`,
+		fmt.Sprintf("compaction_head_%d", topicId)).Scan(&count))
+	return count
+}
+
+func showSetting(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) string {
+	var value string
+	must(ds.Pool.QueryRow(ctx, `SELECT current_setting($1);`, name).Scan(&value))
+	return value
+}
+
+func percentileFloat(sorted []float64, p int) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	return sorted[(p*(len(sorted)-1))/100]
+}
+
+func percentileDuration(sorted []time.Duration, p int) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	return sorted[(p*(len(sorted)-1))/100]
+}
+
+func milliseconds(duration time.Duration) float64 {
+	return float64(duration.Microseconds()) / 1000
+}
+
+func envOr(name string, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func envInt(name string, fallback int) int {
+	if value := os.Getenv(name); value != "" {
+		parsed, err := strconv.Atoi(value)
+		must(err)
+		return parsed
+	}
+	return fallback
+}
+
+func must(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL: "+err.Error())
+		os.Exit(1)
+	}
+}

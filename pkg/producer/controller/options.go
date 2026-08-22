@@ -26,7 +26,8 @@ type ProduceOptions struct {
 	// Default: nil (not part of a compacted stream; delivered independently,
 	// never superseded).
 	//
-	// A hot key caps batched throughput: same-key batches commit one after another.
+	// A hot key caps batched throughput: same-key batches commit one after
+	// another, and adding producer processes makes a hot key slower, not faster.
 	Compaction *CompactionOptions
 
 	// IdempotencyKey - protects a retried AppendMessage (after a blip) from double-publishing.

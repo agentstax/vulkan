@@ -215,9 +215,10 @@ part most likely to get skipped or faked wrong.
 ### Directly triggerable against the live dev Postgres (admin SQL, no extra infra)
 
 #### RETRY-40P01 -- deadlock_detected
-Setup: two `ProduceInTx` callers, each taking locks on two `CompactionKey`s' `latest_key` rows in REVERSE order of each other (`ProduceInTx` doesn't get the batch path's lock-order sort -- that's the one place a real deadlock can still happen, per `ProduceInTx`'s own doc comment).
+Setup: two `InTransaction` callers, each producing to the same two compaction keys' `compaction_head` rows in REVERSE order of each other (`ProduceInTx` doesn't get the batch path's lock-order sort -- the one place a real deadlock can happen, [0574]).
 Action: run both concurrently.
-Assert: Postgres deadlocks one of them (`40P01`); `Wrap` retries it; both callers eventually succeed; `latest_key` ends up pointing at whichever committed last.
+Assert: Postgres deadlocks one of them (`40P01`); the error classifies transient (`common.IsTransientPgError`) but `InTransaction` never retries -- the caller's own rerun of the closure lands both; each key's head ends at its max id.
+Implemented: `examples/phase_1/compactiondeadlocklab` (`just compaction-deadlock-lab`).
 
 #### RETRY-53300 -- too_many_connections
 Setup: a `PostgresDatastore` with `MaxConns: 1`; hold that one connection open manually via `pool.Acquire` (don't release it yet).

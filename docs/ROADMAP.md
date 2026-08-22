@@ -16,17 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Compaction-key deadlock evaluation** — test compaction key with default
-  produce and determine whether deadlock contention from reverse-ordered
-  transactions is a real problem: at what (extreme or not) example does it
-  truly hurt users, or does the system self-heal through retries. ProduceFunc
-  is the escape hatch either way; this is about knowing.
-  - Picked up 2026-08-22 — expanded in TODO.md (three claims: batcher-path
-    deadlock absence, hot-key serialization cost, ProduceInTx self-heal).
-  - For the decision record/docs when this settles: a caller producing
-    multiple compaction keys in one transaction should order its ProduceInTx
-    calls by compaction key — same global ascending order the batcher sorts
-    into, so mixed traffic can't cycle.
 - **CLI `--output json`.** One flag covering results and errors together --
   deferred from the error-anatomy work ([0550]) because a flag that
   json-ifies only errors while results stay tables is half a feature. The
@@ -92,6 +81,8 @@ the item is removed.
   compaction_rank on every keyed publish), lease, key_lease. Findings must
   be confirmed by live benchmarks — sustained-throughput runs before and
   after per table — not reasoning alone.
+  - Measured input for compaction_head ([0574], bench/compaction): one hot
+    head row accrued 36k dead tuples in 15s at 3 producers, sync=on.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -104,8 +95,7 @@ the item is removed.
   - When this lands, fold the existing ad-hoc benches into the standard it
     sets — one method/env/recording shape across bench/: bench/idempotency,
     bench/scale, bench/trigger_fanout, and the compaction hot-key
-    serialization bench (bench/compaction, from the deadlock-evaluation Now
-    item).
+    serialization bench (bench/compaction, [0574]).
 - **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
   fix). An idle deployment pays per worker row per poll: winner's claim
   UPDATE + no-op work each tick, and — the growing term — every replica's

@@ -5,6 +5,21 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — compaction-key deadlock evaluation [0574]
+
+- Batched Produce proven cycle-free: the batcher's ascending-key sort is one
+  global lock order, confirmed by the new compactiondeadlocklab
+  (`just compaction-deadlock-lab`) and zero deadlocks across every
+  bench/compaction cell.
+- ProduceInTx confirmed as the one deadlock site; the 40P01 classifies
+  transient and the caller's closure rerun lands both sides. Library-side
+  retry rejected — guidance is to order ProduceInTx calls by compaction key.
+- Hot-key serialization measured (bench/compaction/RESULTS.md): one hot key
+  = ~50% of unkeyed throughput as a flat floor, not a cliff; the hurt case
+  is hot key × many producer processes. ProduceOptions.Compaction and
+  ProduceInTx doc comments updated; dead-tuple findings feed the
+  fillfactor audit.
+
 ## 2026-08-22 — per-topic table split: cursor, lease, key_lease, compaction_head, binding, binding_log [0571]
 
 - The six shared coordination tables became per-topic interpolated tables
