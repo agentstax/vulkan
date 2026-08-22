@@ -16,14 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Cross-version compatibility matrix** (14c) — [0580]: every migration
-  step declares MinCompatibleVersion; the schema gate admits
-  `min_compatible_version <= build <= current`, making additive skew the
-  rolling-deploy window; tools/compat + `just compat-lab` is the
-  release-checkpoint check that declared compatibility matches observed.
-  BUILT 2026-08-22 (task ledger in docs/TODO.md) — remaining: close-out
-  once reviewed, and the lab's first real pinned run once two releases
-  exist.
 - **Migration LOCK TIMEOUT** [0579] — machinery, not docs-only.
   runStepWithTx sets `SET LOCAL lock_timeout = 2s` right after Begin
   (migrate datastore declares its own ddlLockTimeout const, matching the

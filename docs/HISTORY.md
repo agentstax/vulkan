@@ -5,6 +5,24 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — cross-version compatibility: MinCompatibleVersion gate + compat lab [0580]
+
+- Every migration step now declares MinCompatibleVersion (0 = additive,
+  own version = breaking; empty steps bump the version for
+  compatibility-only releases), stored per migration_log row in the v1.0
+  baseline DDL. The schema gate reads both facts in one query and admits
+  a build iff `min_compatible_version <= build <= current` — additive
+  skew is the rolling-deploy window, a breaking step past the build
+  refuses at Register (VK0023 attrs now min_compatible_version +
+  build_version). Build versions derive from the registries
+  (`len(Registry) + 1`); the four Min/Max constants are gone.
+  schemagatelab reshaped (additive window, breaking refusal, per-topic
+  skew via a sibling topic); tools/compat nested module + `just
+  compat-lab` dry-run green (pins the working tree until two releases
+  exist); CONVENTIONS ## Migrations release-era rules, website
+  guides/migrations.mdx with the compatibility table, and the AGENTS.md
+  release checklist landed in the same change.
+
 ## 2026-08-22 — fillfactor audit closed: adopt nothing [0578]
 
 - Static pass classified every table's update paths (cursor /
