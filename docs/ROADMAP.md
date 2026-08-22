@@ -16,21 +16,7 @@ the item is removed.
 
 ## Now
 
-- **Migration LOCK TIMEOUT** [0579] — machinery, not docs-only.
-  runStepWithTx sets `SET LOCAL lock_timeout = 2s` right after Begin
-  (migrate datastore declares its own ddlLockTimeout const, matching the
-  producer/janitor sites; no config field) — one site covers Up/Down,
-  Validate, and recordSuccess. A 55P03 on the txn step path is
-  reclassified Transient via a new declared error (next VK serial, docs
-  page same change) so the atomically rolled-back step retries under the
-  existing DatastoreRetry schedule. NoTxn steps keep fail-fast: no cap
-  (a lock_timeout expiry mid CREATE INDEX CONCURRENTLY leaves an INVALID
-  index, and a session-level SET would leak to the pool at Release).
-  Build pre-v1 — inert until release-era ALTER steps exist. Docs: one
-  authoring-rules line in the Migration doc comment ("txn steps run
-  under a 2s lock_timeout; a wait past it retries — NoTxn steps get no
-  cap") plus the website migration page shared with the compat-matrix
-  item above.
+- **Migration LOCK TIMEOUT** [0579] — settled; expanded in TODO.md.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high

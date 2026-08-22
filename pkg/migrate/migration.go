@@ -17,6 +17,8 @@ import (
 //     never an edit.
 //   - Steps are self-contained SQL, FROZEN IN TIME -- never call library code
 //     that may change under them.
+//   - Txn steps run under a 2s lock_timeout -- a lock wait past it rolls the
+//     step back and retries. NoTxn steps get no cap.
 //   - NoTxn steps can't roll back, so they carry their own partial-state check.
 //   - Down is a deliberate rollback, not crash recovery.
 //   - Empty steps are fine -- sometimes the version number is the whole

@@ -3,10 +3,14 @@ package datastore
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const ddlLockTimeout = 2 * time.Second
 
 // NewStep checks a step's shape.
 // version is where the DB lands after step is complete.
@@ -46,10 +50,16 @@ func (d *MigrateDatastore) RunStep(ctx context.Context, conn *pgxpool.Conn, owne
 }
 
 func (d *MigrateDatastore) runStep(ctx context.Context, conn *pgxpool.Conn, owner *common.Owner, step *Step) error {
+	// If a NoTxn step gets a lock timeout error -> it stays permanent
 	if step.NoTxn {
 		return d.runStepWithoutTx(ctx, conn, owner, step)
 	}
-	return d.runStepWithTx(ctx, conn, owner, step)
+
+	err := d.runStepWithTx(ctx, conn, owner, step)
+	if isLockNotAvailable(err) {
+		return errStepLockTimeout.With("version", step.Version).Wrap(err)
+	}
+	return err
 }
 
 // txn step does all three atomically
@@ -59,6 +69,15 @@ func (d *MigrateDatastore) runStepWithTx(ctx context.Context, conn *pgxpool.Conn
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	// cap every lock-queue wait in the step
+	lockSql := fmt.Sprintf(`
+		-- vulkan: migrate.runStepWithTx
+		SET LOCAL lock_timeout = '%dms';
+	`, ddlLockTimeout.Milliseconds())
+	if _, err := tx.Exec(ctx, lockSql); err != nil {
+		return err
+	}
 
 	if step.Validate != nil {
 		if err := step.Validate(ctx, tx, owner.TopicId); err != nil {
