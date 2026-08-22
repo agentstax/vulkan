@@ -26,11 +26,18 @@ metadata, so the trail must not record restarts.
 - target_instances is in the snapshot though only creation sets it today:
   the snapshot is the full declared state, so a future suspend/alter verb
   appends to the same log with no schema change.
-- Both write sites are inside registerWorker's existing transaction: the
-  create path appends after the INSERT's RETURNING id; the replace path
-  appends only when the UPDATE's RETURNING says the metadata changed
-  (stored.metadata IS DISTINCT FROM w.metadata). A no-change redeclare
-  writes no log row — log volume tracks config change, never restarts.
+- The create path appends the log row after the INSERT's RETURNING id,
+  same transaction. The replace path takes topic replaceConfig's shape —
+  decide before writing: on conflict, read the stored row with the
+  comparison computed server-side (jsonb equality, so Go never compares
+  raw bytes against jsonb's normalized form); equal means return with no
+  write at all, different means one transaction of UPDATE plus log
+  append. registerWorker's single-statement stored-alias UPDATE goes
+  away. A no-change redeclare writes nothing — no log row, no dead
+  tuple; log volume tracks config change, never restarts.
+- The read-then-write race is tolerated exactly as replaceConfig
+  tolerates it: newest declaration wins. A row the read found but the
+  UPDATE misses raises ErrDeclarationInterrupted, unchanged.
 - declared_by = common.ProcessIdentity, passed by the controller as
   topic's Register does; RegisterWorker gains a declaredBy param.
 - Machinery never reads worker_log; it exists for operators. No retention
@@ -38,9 +45,7 @@ metadata, so the trail must not record restarts.
   and topic_log is parked in ROADMAP.
 
 **Consequences.** Worker config history becomes queryable — when a value
-changed and which process declared it — with no second read path and no
-new transaction. The replace path's UPDATE still runs on no-change
-redeclares (one dead tuple per worker row per process start; negligible,
-per-start not per-tick) — gating it needs a follow-up read to keep
-ErrDeclarationInterrupted honest, left out of scope. Completes [0570]'s
+changed and which process declared it — with no second read path. The
+replace path stops writing on no-change redeclares, ending today's one
+dead tuple per worker row per process start. Completes [0570]'s
 reservation; worker_run_log (failure evidence, parked) is unrelated.

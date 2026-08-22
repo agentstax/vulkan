@@ -16,12 +16,11 @@ the item is removed.
 
 ## Now
 
-- **CLI `--output json`.** In flight -- expanded in TODO.md. Design
-  settled in [0575] (json tags on public read-models) and [0576] (the
-  flag; error, result, and mutation document shapes).
 - **Worker metadata history as append-only worker_log** — design settled
   2026-08-22, [0577]: the [0570] current-row-plus-log shape applied to
-  worker metadata; build pending.
+  worker metadata, with registerWorker's replace path restructured onto
+  replaceConfig's decide-before-writing shape (no-change redeclares write
+  nothing at all); build pending.
 - **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs

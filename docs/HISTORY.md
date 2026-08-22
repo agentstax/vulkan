@@ -5,6 +5,30 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — CLI --output json + json tags on public read-models [0575][0576]
+
+- `--output <text|json>` root persistent flag: json stdout is exactly one
+  parseable document per command, success or failure. Errors render on
+  stderr as `{"error": {...}}` mirroring diagnostic.Error's LogValue parts
+  (a plain failUsage/failOp error reduces to problem only); exit codes
+  unchanged. failPrinted failures became result-document data
+  (exists:false, exit 1 kept), so json stdout never carries prose.
+- Every public read-model gained `json:"snake_case"` tags spelling the
+  log-attr registry's keys (topic, version, group, message_id, *_count) --
+  new CONVENTIONS.md rule under ## Package layout, the json sibling of the
+  `db:` tag rule. JobRequest and Alert are stored payloads, so their
+  stored key shape changed (pre-v1); the two lab mirrors reading old keys
+  via SQL (cronlab, alertlab) swept.
+- Durations render as unit-carrying strings, so composed or
+  duration-carrying shapes got CLI-owned *Document structs beside their
+  command; duration-free tagged read-models marshal directly.
+- Mutations follow the surveyed conventions (kubectl/gh/aws/docker/stripe/
+  gcloud): destroys emit small what-happened records and require --yes in
+  json mode; cron run emits {cron_job, message_id}; rename echoes the
+  get-shape; migrate emits summary documents; manager run rejects the
+  flag; -q with --output json is a usage error.
+- 42/42 fresh-DB labs (suite grew by compactiondeadlocklab, [0574]).
+
 ## 2026-08-22 — compaction-key deadlock evaluation [0574]
 
 - Batched Produce proven cycle-free: the batcher's ascending-key sort is one
