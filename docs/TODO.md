@@ -42,7 +42,7 @@ the build.
       list 4 -> 10 incl. partitions' parent). system delete.go: check how
       per-topic tables are dropped at system scope today and extend the
       same way.
-- [ ] 5. consumer_group_janitor sweep ([0573] amend): the one global
+- [x] 5. consumer_group_janitor sweep ([0573] amend): the one global
       binding_log DELETE becomes one batched DELETE per topic's
       binding_log_<id> per tick -- needs a topic-id list read from the
       catalog.
