@@ -21,11 +21,59 @@ the item is removed.
   transactions is a real problem: at what (extreme or not) example does it
   truly hurt users, or does the system self-heal through retries. ProduceFunc
   is the escape hatch either way; this is about knowing.
+  - Picked up 2026-08-22 — expanded in TODO.md (three claims: batcher-path
+    deadlock absence, hot-key serialization cost, ProduceInTx self-heal).
+  - For the decision record/docs when this settles: a caller producing
+    multiple compaction keys in one transaction should order its ProduceInTx
+    calls by compaction key — same global ascending order the batcher sorts
+    into, so mixed traffic can't cycle.
 - **CLI `--output json`.** One flag covering results and errors together --
   deferred from the error-anatomy work ([0550]) because a flag that
   json-ifies only errors while results stay tables is half a feature. The
   error object shape is already settled: the five parts + recovery as one
-  object, mirroring common.Error's LogValue fields.
+  object, mirroring common.Error's LogValue fields. Design discussed
+  2026-08-22; settled directions:
+  - Flag seam: root persistent flag beside --database-url (kubectl -o
+    precedent). Each RunE splits into compute-the-result then one render
+    branch at the end -- today commands print inline mid-body, so this
+    split is the bulk of the mechanical work.
+  - Invariant (clig.dev): json mode stdout is always exactly one parseable
+    document per command, success or failure -- never silence, never prose.
+  - Errors: structured errors marshal the LogValue fields (code, problem,
+    recovery, values, cause, fix, docs) as one object on stderr, exit codes
+    unchanged. Plain failUsage/failOp and cobra parse errors emit a reduced
+    object (problem only -- omit what we don't know, exit code stays the
+    usage-vs-op discriminator). failPrinted sites (8 files) currently print
+    prose then signal exit 1 -- in json mode the failure becomes data in
+    the result document (e.g. topic get emits exists:false), exit code
+    preserved. Destroy's interactive prompt never fires in json mode:
+    --output json on a destroy requires --yes, same rule as non-TTY.
+  - Wire shapes, two independent decisions: (a) public read-models
+    (topic.Topic, admin.VersionHealth, ...) grow json tags, snake_case,
+    keys matching the log-attr registry -- a CONVENTIONS.md-worthy
+    convention on its own merits (users embedding/persisting these get
+    stable wire names); audit pgtype.UUID/pgx types in public structs
+    first, they marshal ugly by default. (b) CLI-owned result structs only
+    where output is composed or derived (topic get: GroupLag() is
+    computed, retire verdict, exists) -- where output IS one read-model
+    (topic list), the tagged struct marshals directly, no adapter.
+  - Mutations (researched kubectl/gh/aws/docker/stripe/gcloud/terraform):
+    create/trigger echoes the resource or its new id; delete emits a small
+    what-happened record (stripe {id, deleted:true} stub -- never the full
+    dead object, never empty stdout); trigger emits the handle produced
+    (gcloud operations-resource pattern). Mapped: destroys emit
+    {topic, schema_version, topic_id, destroyed:true}-shaped records;
+    cron run emits {cron_job, message_id}; rename/suspend/config alters
+    echo the get-shape, sharing the get command's result struct.
+  - migrate is terraform's streaming-events category -- out of scope:
+    emits a final summary document only (versions applied, per-scope
+    results), progress stays on stderr.
+  - -q coexists (two meanings today: names-only on the lists, exit-code-
+    only on the gets); combining -q with --output json is a usage error.
+- **Worker metadata history as append-only worker_log** — the [0570]
+  current-row-plus-log shape applied to worker metadata, deferred from the
+  topic build. The worker_log name is reserved for this ([0570]); the
+  parked failure-evidence table became worker_run_log.
 - **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs
@@ -53,6 +101,11 @@ the item is removed.
   is still open. Also measure the debug buffer's overhead here
   (WithLogBuffer + BufferLogger cost per operation, healthy path) — a
   published number is the adoption gate for always-on capture ([0559]).
+  - When this lands, fold the existing ad-hoc benches into the standard it
+    sets — one method/env/recording shape across bench/: bench/idempotency,
+    bench/scale, bench/trigger_fanout, and the compaction hot-key
+    serialization bench (bench/compaction, from the deadlock-evaluation Now
+    item).
 - **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
   fix). An idle deployment pays per worker row per poll: winner's claim
   UPDATE + no-op work each tick, and — the growing term — every replica's
@@ -70,10 +123,7 @@ the item is removed.
 
 ## Next
 
-- **Worker metadata history as append-only worker_log** — the [0570]
-  current-row-plus-log shape applied to worker metadata, deferred from the
-  topic build. The worker_log name is reserved for this ([0570]); the
-  parked failure-evidence table became worker_run_log.
+
 
 ## Later
 

@@ -195,6 +195,14 @@ compaction-head-retention-lab:
 compaction-head-write-lab:
   go run examples/phase_1/compactionheadwritelab/main.go
 
+# compaction-key deadlock lab: concurrent batched Produce over one hot key
+# pool raises zero deadlocks (the batcher's ascending key sort holds across
+# batchers), while two reverse-ordered InTransaction callers raise exactly
+# one 40P01 -- classified transient, landed by the caller-side rerun the
+# InTransaction docs require. Heads converge to the max id either way.
+compaction-deadlock-lab:
+  go run examples/phase_1/compactiondeadlocklab/main.go
+
 # idempotency_keys lab: does AppendMessage's retry-safety claim gate actually
 # prevent a double-publish, and does its cleanup actually drain it? Covers a
 # retried AppendMessage under the same key (must land exactly once), distinct
