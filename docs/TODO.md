@@ -14,7 +14,7 @@ the build.
 - [x] 1. internal/topic/tables.go: six new table-name funcs (CursorTable,
       LeaseTable, KeyLeaseTable, CompactionHeadTable, BindingTable,
       BindingLogTable).
-- [ ] 2. DDL move: delete the six CREATE TABLE blocks (plus the binding_log
+- [x] 2. DDL move: delete the six CREATE TABLE blocks (plus the binding_log
       index) from system createSystemTables; add interpolated creates to
       topic createTopicTables. compaction_head_<id> drops the topic_id
       column, PK becomes compaction_key alone, shared-table comment goes.
