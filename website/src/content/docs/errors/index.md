@@ -34,6 +34,7 @@ block; paste the message text or code into search to land on its page.
 | [VK0023](/errors/VK0023) | schema version is newer than this build understands | permanent |
 | [VK0024](/errors/VK0024) | could not finish the worker declaration | transient |
 | [VK0025](/errors/VK0025) | could not finish the cron job declaration | transient |
+| [VK0053](/errors/VK0053) | could not take a lock needed by the migration step | transient |
 
 Log events share the same `VK` code space: a Warn- or Error-level line
 that is operator-actionable carries its code in the line's `code` attr,

@@ -55,8 +55,10 @@ The gate refuses old binaries that try to start after the migration, but a
 binary already running is past its gate — stopping it first is your job, not
 the machinery's.
 
-Migration steps run under a bounded `lock_timeout`, so a step queued behind
-your traffic gives up and retries instead of stalling queries behind it.
+Transactional migration steps run under a 2-second `lock_timeout`, so a step
+queued behind your traffic gives up and retries instead of stalling the
+queries queued behind it. When contention outlasts the retries, the run
+stops with `VK0053` naming the blocking session as the thing to clear.
 
 ## Compatibility table
 

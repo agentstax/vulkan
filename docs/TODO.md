@@ -17,9 +17,9 @@ docs/decisions/.
    - Migration doc comment (pkg/migrate/migration.go) gains the
      authoring-rules line: txn steps run under a 2s lock_timeout, a wait
      past it retries; NoTxn steps get no cap.
-2. Docs:
+2. Docs — DONE 2026-08-22:
    - website/src/content/docs/errors/VK0053.md, headed by the verbatim
      problem text.
    - guides/migrations.mdx: state the lock_timeout behavior.
-3. Verify: build, `go test -race` on pkg/migrate/..., schemaevolutionlab +
-   schemagatelab.
+3. Verify — DONE 2026-08-22: build, `go test -race` on pkg/migrate/...
+   (15 passed), tools/conventions, schemaevolutionlab + schemagatelab.
