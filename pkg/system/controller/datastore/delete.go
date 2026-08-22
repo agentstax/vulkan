@@ -33,7 +33,7 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		"migration_log",
 		"cron_job",
 		"compaction_head",
-		"binding_declaration",
+		"binding_log",
 		"binding",
 		"worker_instance",
 		"worker",
@@ -41,6 +41,7 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		"lease",
 		"cursor",
 		"consumer_group",
+		"topic_log",
 		"topic",
 		"system",
 	} {

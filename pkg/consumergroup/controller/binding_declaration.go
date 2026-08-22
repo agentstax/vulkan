@@ -36,7 +36,7 @@ func (c *ConsumerGroupController) DeclareBindings(ctx context.Context, groupId i
 // ListDeclarations returns every group's effective declaration followed by
 // its still-waiting declarers, ordered by topic then group.
 func (c *ConsumerGroupController) ListDeclarations(ctx context.Context) ([]*consumergroup.Declaration, error) {
-	data, err := c.datastore.ListBindingDeclarations(ctx)
+	data, err := c.datastore.ListBindingLog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +72,8 @@ func normalizePatterns(patterns []string) []string {
 	return slices.Compact(normalized)
 }
 
-func groupByConsumerGroup(rows []datastore.BindingDeclarationData) map[int64][]datastore.BindingDeclarationData {
-	groups := make(map[int64][]datastore.BindingDeclarationData)
+func groupByConsumerGroup(rows []datastore.BindingLogData) map[int64][]datastore.BindingLogData {
+	groups := make(map[int64][]datastore.BindingLogData)
 	for _, row := range rows {
 		groups[row.ConsumerGroupId] = append(groups[row.ConsumerGroupId], row)
 	}
@@ -81,11 +81,11 @@ func groupByConsumerGroup(rows []datastore.BindingDeclarationData) map[int64][]d
 }
 
 // openWaiters finds the waiting rows whose declarer is still blocked.
-func openWaiters(rows []datastore.BindingDeclarationData, effective *datastore.BindingDeclarationData) []datastore.BindingDeclarationData {
-	var waiters []datastore.BindingDeclarationData
+func openWaiters(rows []datastore.BindingLogData, effective *datastore.BindingLogData) []datastore.BindingLogData {
+	var waiters []datastore.BindingLogData
 	for i := range rows {
 		row := &rows[i]
-		if row.Status != datastore.BindingDeclarationWaiting {
+		if row.Status != datastore.BindingLogWaiting {
 			continue
 		}
 		if declarerInstalledAfter(row, rows) {
@@ -101,9 +101,9 @@ func openWaiters(rows []datastore.BindingDeclarationData, effective *datastore.B
 
 // declarerInstalledAfter reports whether the waiting row's declarer went on
 // to install -- an ended wait leaves its waiting row behind.
-func declarerInstalledAfter(waiting *datastore.BindingDeclarationData, rows []datastore.BindingDeclarationData) bool {
+func declarerInstalledAfter(waiting *datastore.BindingLogData, rows []datastore.BindingLogData) bool {
 	for i := range rows {
-		if rows[i].Status == datastore.BindingDeclarationInstalled &&
+		if rows[i].Status == datastore.BindingLogInstalled &&
 			rows[i].DeclaredBy == waiting.DeclaredBy &&
 			rows[i].Id > waiting.Id {
 			return true

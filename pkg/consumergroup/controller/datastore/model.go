@@ -9,23 +9,23 @@ type GroupData struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-// BindingDeclarationStatus is the binding_declaration.status column's value set.
-type BindingDeclarationStatus string
+// BindingLogStatus is the binding_log.status column's value set.
+type BindingLogStatus string
 
 const (
-	BindingDeclarationInstalled BindingDeclarationStatus = "installed" // a set change that took effect
-	BindingDeclarationWaiting   BindingDeclarationStatus = "waiting"   // an attempt blocked by a live instance's different set
+	BindingLogInstalled BindingLogStatus = "installed" // a set change that took effect
+	BindingLogWaiting   BindingLogStatus = "waiting"   // an attempt blocked by a live instance's different set
 )
 
-// BindingDeclarationData is one binding_declaration row joined to the names
+// BindingLogData is one binding_log row joined to the names
 // a listing shows.
-type BindingDeclarationData struct {
+type BindingLogData struct {
 	Id              int64                    `db:"id"`
 	ConsumerGroupId int64                    `db:"consumer_group_id"`
 	GroupName       string                   `db:"group_name"`
 	TopicName       string                   `db:"topic_name"`
 	SchemaVersion   int64                    `db:"schema_version"`
-	Status          BindingDeclarationStatus `db:"status"`
+	Status          BindingLogStatus `db:"status"`
 	Patterns        []string                 `db:"patterns"`
 	DeclaredBy      string                   `db:"declared_by"`
 	DeclaredAt      time.Time                `db:"declared_at"`

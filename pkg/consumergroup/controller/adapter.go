@@ -14,7 +14,7 @@ func toGroup(data *datastore.GroupData) *consumergroup.Group {
 	}
 }
 
-func toDeclaration(data *datastore.BindingDeclarationData) *consumergroup.Declaration {
+func toDeclaration(data *datastore.BindingLogData) *consumergroup.Declaration {
 	return &consumergroup.Declaration{
 		GroupName:     data.GroupName,
 		TopicName:     data.TopicName,

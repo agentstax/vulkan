@@ -34,6 +34,7 @@ import (
 var controlPlaneTables = []string{
 	"system",
 	"topic",
+	"topic_log",
 	"consumer_group",
 	"cursor",
 	"lease",
@@ -41,7 +42,7 @@ var controlPlaneTables = []string{
 	"worker",
 	"worker_instance",
 	"binding",
-	"binding_declaration",
+	"binding_log",
 	"compaction_head",
 	"cron_job",
 	"migration_log",

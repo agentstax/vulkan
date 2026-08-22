@@ -198,7 +198,7 @@ func waitLiveInstance(ctx context.Context) {
 func installedRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM binding_declaration WHERE consumer_group_id = $1 AND status = 'installed';`,
+		`SELECT COUNT(*) FROM binding_log WHERE consumer_group_id = $1 AND status = 'installed';`,
 		groupId).Scan(&count))
 	return count
 }
@@ -206,7 +206,7 @@ func installedRows(ctx context.Context) int {
 func waitingRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM binding_declaration WHERE consumer_group_id = $1 AND status = 'waiting';`,
+		`SELECT COUNT(*) FROM binding_log WHERE consumer_group_id = $1 AND status = 'waiting';`,
 		groupId).Scan(&count))
 	return count
 }

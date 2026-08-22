@@ -78,7 +78,7 @@ func (c *TopicController) Register(ctx context.Context, systemId int64, name str
 		return nil, err
 	}
 
-	registered, err := c.datastore.Register(ctx, toTopicData(systemId, name, version, cfg))
+	registered, err := c.datastore.Register(ctx, toTopicData(systemId, name, version, cfg), common.ProcessIdentity)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (c *TopicController) Rename(ctx context.Context, oldName string, newName st
 		return nil, fmt.Errorf("new name must match %s, got %q", topic.SlugPattern, newName)
 	}
 
-	renamed, err := c.datastore.Rename(ctx, oldName, newName)
+	renamed, err := c.datastore.Rename(ctx, oldName, newName, common.ProcessIdentity)
 	if err != nil || renamed == nil {
 		return nil, err
 	}

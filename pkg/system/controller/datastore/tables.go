@@ -48,6 +48,37 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		return err
 	}
 
+	// topic_log: one full-snapshot row appended in the same transaction as
+	// every topic create, config replace, and rename -- never updated or
+	// deleted. The topic row is the truth; this trail is for operators.
+	createTopicLogSql := `
+		-- vulkan: system.createSystemTables
+		CREATE TABLE IF NOT EXISTS topic_log (
+			id BIGSERIAL PRIMARY KEY,
+			topic_id BIGINT NOT NULL REFERENCES topic (id) ON DELETE CASCADE,
+			name TEXT NOT NULL,                          -- the topic's name as of this declaration
+			partition_size BIGINT NOT NULL,
+			retention_ttl_ns BIGINT NOT NULL,
+			allow_drop_past_committed BOOLEAN NOT NULL,
+			idempotency_key_ttl_ns BIGINT NOT NULL,
+			delivery_log_mode TEXT NOT NULL,
+			declared_by TEXT NOT NULL,                   -- hostname:pid:<random> of the declaring process, display only
+			declared_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+	`
+	if _, err := tx.Exec(ctx, createTopicLogSql); err != nil {
+		return err
+	}
+
+	// the one lookup shape: a topic's rows in change order
+	createTopicLogIndexSql := `
+		-- vulkan: system.createSystemTables
+		CREATE INDEX IF NOT EXISTS topic_log_topic ON topic_log (topic_id, id);
+	`
+	if _, err := tx.Exec(ctx, createTopicLogIndexSql); err != nil {
+		return err
+	}
+
 	// consumer_group table provides:
 	// - lifcycle management for child ownershipt model (cursor, binding, maintainence)
 	createConsumerGroupSql := `
@@ -167,10 +198,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS worker_system_name ON worker (name, system_id)
 
 	// the two hot lookups: live instances per worker, expired rows
 	for _, indexSql := range []string{
-		`-- vulkan: system.createSystemTables
-CREATE INDEX IF NOT EXISTS worker_instance_worker ON worker_instance (worker_id);`,
-		`-- vulkan: system.createSystemTables
-CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at);`,
+		`
+			-- vulkan: system.createSystemTables
+			CREATE INDEX IF NOT EXISTS worker_instance_worker ON worker_instance (worker_id);
+		`,
+		`
+			-- vulkan: system.createSystemTables
+			CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at);
+		`,
 	} {
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err
@@ -194,14 +229,14 @@ CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at
 		return err
 	}
 
-	// binding_declaration: one row appended per declaration attempt, never
+	// binding_log: one row appended per declaration attempt, never
 	// updated or deleted.
 	// newest installed row per group -> the effective set's declaration
 	// newest waiting row per declarer -> its latest still-blocked retry
 	// Claims never read this table; the effective set stays in binding rows.
-	createBindingDeclarationSql := `
+	createBindingLogSql := `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS binding_declaration (
+		CREATE TABLE IF NOT EXISTS binding_log (
 			id BIGSERIAL PRIMARY KEY,
 			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
 			status TEXT NOT NULL,                          -- 'installed' | 'waiting'
@@ -211,15 +246,17 @@ CREATE INDEX IF NOT EXISTS worker_instance_expiry ON worker_instance (expires_at
 			attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when this attempt ran; an installed row's declared_at -> attempt_at is the wait it ended
 		);
 	`
-	if _, err := tx.Exec(ctx, createBindingDeclarationSql); err != nil {
+	if _, err := tx.Exec(ctx, createBindingLogSql); err != nil {
 		return err
 	}
 
 	// helps listDeclarations so it doesn't have to sequential
 	// scan a long wait's appended retry rows
-	createBindingDeclarationIndexSql := `-- vulkan: system.createSystemTables
-CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (consumer_group_id, status, declared_by, id);`
-	if _, err := tx.Exec(ctx, createBindingDeclarationIndexSql); err != nil {
+	createBindingLogIndexSql := `
+		-- vulkan: system.createSystemTables
+		CREATE INDEX IF NOT EXISTS binding_log_group ON binding_log (consumer_group_id, status, declared_by, id);
+	`
+	if _, err := tx.Exec(ctx, createBindingLogIndexSql); err != nil {
 		return err
 	}
 
@@ -269,8 +306,10 @@ CREATE INDEX IF NOT EXISTS binding_declaration_group ON binding_declaration (con
 		return err
 	}
 
-	createCronJobDueIndexSql := `-- vulkan: system.createSystemTables
-CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;`
+	createCronJobDueIndexSql := `
+		-- vulkan: system.createSystemTables
+		CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;
+	`
 	if _, err := tx.Exec(ctx, createCronJobDueIndexSql); err != nil {
 		return err
 	}

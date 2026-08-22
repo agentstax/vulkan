@@ -127,11 +127,11 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 // Register resolves declared's (name, schema_version) to its row, creating
 // it (and its per-topic tables) if it doesn't exist. An existing row takes
 // declared's mutable config; its partition_size must match.
-func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData) (*TopicData, error) {
+func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData, declaredBy string) (*TopicData, error) {
 	var registered *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		registered, err = d.register(ctx, declared)
+		registered, err = d.register(ctx, declared, declaredBy)
 		return err
 	})
 	return registered, err
@@ -139,14 +139,14 @@ func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData) (*To
 
 // register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *TopicDatastore) register(ctx context.Context, declared *TopicData) (*TopicData, error) {
+func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, declaredBy string) (*TopicData, error) {
 	// private get, not Get -- otherwise would have nested retries.
 	found, err := d.get(ctx, d.Datastore.Pool, declared.Name, declared.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, declared, declaredBy)
 	}
 
 	tx, err := d.Datastore.Pool.Begin(ctx)
@@ -167,7 +167,7 @@ SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err !=
 		return nil, err
 	}
 	if found != nil {
-		return d.replaceConfig(ctx, found, declared)
+		return d.replaceConfig(ctx, found, declared, declaredBy)
 	}
 
 	insertSql := `
@@ -179,6 +179,10 @@ SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err !=
 	created := *declared
 	if err := tx.QueryRow(ctx, insertSql, declared.SystemId, declared.Name, declared.SchemaVersion, declared.PartitionSize, declared.RetentionTTLNs, declared.AllowDropPastCommitted, declared.IdempotencyKeyTTLNs, declared.DeliveryLogMode).
 		Scan(&created.Id, &created.CreatedAt, &created.UpdatedAt); err != nil {
+		return nil, err
+	}
+
+	if err := d.appendTopicLog(ctx, tx, &created, declaredBy); err != nil {
 		return nil, err
 	}
 
@@ -204,20 +208,27 @@ SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err !=
 	return &created, nil
 }
 
-// Rename moves every version under oldName to newName in one statement.
+// Rename moves every version under oldName to newName in one transaction,
+// appending each version's topic_log row beside the update.
 // Returns (nil, nil) if no version is registered under oldName
 // ErrTopicNameTaken if newName already has any (name, version) registered.
-func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
+func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string, declaredBy string) ([]TopicData, error) {
 	var topics []TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topics, err = d.rename(ctx, oldName, newName)
+		topics, err = d.rename(ctx, oldName, newName, declaredBy)
 		return err
 	})
 	return topics, err
 }
 
-func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string) ([]TopicData, error) {
+func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string, declaredBy string) ([]TopicData, error) {
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
 	sql := `
 		-- vulkan: topic.rename
 		UPDATE topic
@@ -236,7 +247,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 			created_at,
 			updated_at;
 	`
-	rows, err := d.Datastore.Pool.Query(ctx, sql, oldName, newName)
+	rows, err := tx.Query(ctx, sql, oldName, newName)
 	if err != nil {
 		return nil, err
 	}
@@ -258,12 +269,35 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 		}
 		return nil, err
 	}
+	rows.Close()
 	if len(topics) == 0 {
 		return nil, nil
 	}
 
+	for _, data := range topics {
+		if err := d.appendTopicLog(ctx, tx, &data, declaredBy); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
 	d.Logger.InfoContext(ctx, "topic family renamed", "topic", oldName, "new_name", newName, "version_count", len(topics))
 	return topics, nil
+}
+
+// appendTopicLog writes data's full snapshot as one topic_log row, inside
+// the transaction that changed the topic row.
+func (d *TopicDatastore) appendTopicLog(ctx context.Context, q datastore.Querier, data *TopicData, declaredBy string) error {
+	sql := `
+		-- vulkan: topic.appendTopicLog
+		INSERT INTO topic_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+	`
+	_, err := q.Exec(ctx, sql, data.Id, data.Name, data.PartitionSize, data.RetentionTTLNs, data.AllowDropPastCommitted, data.IdempotencyKeyTTLNs, data.DeliveryLogMode, declaredBy)
+	return err
 }
 
 // scanTopicData scans a row shaped like getTopic's SELECT -- the column list

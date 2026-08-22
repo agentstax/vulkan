@@ -1,10 +1,15 @@
 ---
-status: accepted
+status: superseded
 date: 2026-08-15
 phase: "14"
 ---
 
 # 0519 — Topic config lives in append-only declaration rows; topic keeps identity only
+
+Superseded by [0570]: the build showed the cost of truth-in-declarations
+(newest-row joins in every reader, procedural uniqueness locks); truth
+returns to the topic row and the append-only rows become a display-only
+topic_log, the binding [0511] shape.
 
 **Context.** [0518] makes code the only config writer and the latest write the
 truth, which trades away the mismatch error's conflict detection: two apps

@@ -2,13 +2,14 @@ package main
 
 // register idempotency lab: re-registering a topic resolves to the same row,
 // and the newest declaration's mutable config replaces what is stored -- guarding
-// registerTopic's found path (replaceTopicConfig).
+// registerTopic's found path (replaceConfig).
 //
 // Confirms:
-//  1. first Register creates the topic and stamps created_at == updated_at.
+//  1. first Register creates the topic and appends its first topic_log row.
 //  2. re-registering the SAME config resolves to the same topic, no error and
-//     no write.
-//  3. re-registering DIFFERENT mutable config keeps the id and replaces the values.
+//     no write -- topic_log gains nothing.
+//  3. re-registering DIFFERENT mutable config keeps the id, replaces the
+//     values, and appends the new snapshot to topic_log.
 //  4. re-registering a different PartitionSize returns ErrTopicConfigMismatch:
 //     message_log's partition boundaries are derived from it.
 
@@ -44,7 +45,10 @@ func main() {
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
-	fmt.Printf("  ✓ created id=%d\n", created.Id)
+	if count := topicLogCount(ctx, ds, created.Id); count != 1 {
+		die(fmt.Sprintf("topic_log rows after create = %d, want 1", count))
+	}
+	fmt.Printf("  ✓ created id=%d, first topic_log row appended\n", created.Id)
 
 	step("re-register SAME config is idempotent, not a mismatch")
 	// Fresh Config with the identical caller-set field -- RegisterTopic mutates
@@ -56,7 +60,10 @@ func main() {
 	if again.Id != created.Id {
 		die(fmt.Sprintf("re-register resolved a different id: got %d, want %d", again.Id, created.Id))
 	}
-	fmt.Printf("  ✓ re-register resolved same id=%d, no mismatch\n", again.Id)
+	if count := topicLogCount(ctx, ds, created.Id); count != 1 {
+		die(fmt.Sprintf("topic_log rows after a no-change register = %d, want 1", count))
+	}
+	fmt.Printf("  ✓ re-register resolved same id=%d, no mismatch, nothing appended\n", again.Id)
 
 	step("re-register DIFFERENT config replaces the stored mutable config")
 	redeclared, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour})
@@ -67,7 +74,10 @@ func main() {
 	if redeclared.RetentionTTL != 168*time.Hour {
 		die(fmt.Sprintf("re-declared RetentionTTL = %v, want 168h", redeclared.RetentionTTL))
 	}
-	fmt.Printf("  ✓ newest declaration won: retention now %v on the same id=%d\n", redeclared.RetentionTTL, redeclared.Id)
+	if count := topicLogCount(ctx, ds, created.Id); count != 2 {
+		die(fmt.Sprintf("topic_log rows after a config change = %d, want 2", count))
+	}
+	fmt.Printf("  ✓ newest declaration won: retention now %v on the same id=%d, snapshot appended\n", redeclared.RetentionTTL, redeclared.Id)
 
 	step("re-register DIFFERENT PartitionSize is rejected")
 	_, err = mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: 168 * time.Hour, PartitionSize: created.PartitionSize + 1})
@@ -77,6 +87,14 @@ func main() {
 	fmt.Printf("  ✓ changed PartitionSize rejected with ErrTopicConfigMismatch\n")
 
 	fmt.Printf("\n✅ register idempotency lab PASSED\n")
+}
+
+// topicLogCount reads the topic's trail directly -- machinery never reads
+// topic_log, so the lab asserts on the table itself.
+func topicLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int {
+	var count int
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic_log WHERE topic_id = $1;`, topicId).Scan(&count))
+	return count
 }
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }

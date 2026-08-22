@@ -16,18 +16,8 @@ the item is removed.
 
 ## Now
 
-- **Topic config as append-only declaration rows.** Design settled in [0519];
-  build deferred so the config surface from [0518] settles first. topic keeps
-  identity only (id, system_id, schema_version, created_at); a
-  topic_declaration table holds name, partition_size and the four mutable
-  config fields with declared_by/declared_at, newest row by MAX(id), full
-  snapshots,
-  appended only on change. Two details that carry the work: uniqueness of
-  (name, schema_version) goes procedural, so renameTopic gains registerTopic's
-  per-name advisory lock (both keys, sorted) and ErrTopicNameTaken comes from
-  a check rather than 23505; and partition_size's immutability is enforced at
-  append. Worker metadata takes the same shape afterwards.
-- **binding_declaration retention** — the ledger is append-only ([0511]):
+- **binding_log retention** — the ledger is append-only ([0511]; table
+  renamed from binding_declaration by [0570]):
   waiting retries append attempt rows, so a long-blocked group grows the
   table without bound. Add time-based cleanup of superseded attempt rows
   (append-then-prune like message_log; off the register path, never touching
@@ -57,6 +47,49 @@ the item is removed.
   should be per-topic compaction_head_(topic_id) (high update churn from
   many topics), and evaluate all system tables: cursor / lease / binding /
   topic / compaction_head.
+  - compaction_head: split per-topic (direction settled 2026-08-22). The
+    DDL comment's shared-table rationale reasons about size (distinct-key
+    count), but update churn scales with keyed publish volume across all
+    topics. The sharpest win is the bulk-delete paths: topic destroy and
+    janitor sweeps run DELETE ... WHERE topic_id through the shared table;
+    per-topic makes destroy a DROP TABLE and shrinks the PK to
+    compaction_key alone. Table interpolation machinery already exists
+    (message_log_<id>, idempotency_key_<id>).
+  - Remaining tables: evaluate through the logical-grouping lens, not
+    churn — churn alone doesn't force a split (cursor updates are
+    HOT-eligible, lease churn is per-group, binding/topic are
+    near-static). The question per table is whether per-topic grouping
+    fits the mental model; the machinery to create and manage per-topic
+    tables already exists, so the extra code is cheap.
+  - Logical-grouping audit (2026-08-22). The rule: a table splits
+    per-topic when its rows address the topic's own data (message_log
+    ids, compaction keys), every reader already has topic context, and
+    the rows die with the topic; it stays shared when it is the catalog,
+    the fleet, or append-only history — those are read across topics by
+    design.
+    - Split: cursor, lease, key_lease (with compaction_head). Cursor and
+      lease values are message_log_<id> ids; key_lease mirrors
+      compaction_head's key vocabulary. Every reader verified group- or
+      topic-scoped (the metrics snapshot already takes topicId and
+      interpolates message_log_<id> in the same query). Topic destroy
+      becomes DROP TABLE; per-topic fillfactor tuning becomes possible.
+      Cursor's ON DELETE CASCADE FK to consumer_group survives the
+      split; lease/key_lease already have no FKs.
+    - Keep shared: worker, worker_instance, cron_job (rows exist at
+      system/topic/group scope — no per-topic home — and their primary
+      readers are single cross-scope queries: fleet listWorkers, cron
+      due-walk); topic, topic_log, consumer_group, system (the
+      catalog defines the grouping key); migration_log,
+      binding_log (append-only history, system-scope readers —
+      the planned pruner sweeps all groups at once).
+    - binding: the one judgment call — data-plane read but near-static
+      config, no cross-topic reader. Lean split so all of a group's
+      runtime state lives in its topic's table family; keeping it beside
+      binding_log is defensible. Decide when the split work is
+      picked up.
+    - End state if splits land: a topic's family grows 3 -> 7
+      interpolated tables; the shared schema reduces to exactly catalog
+      + fleet + history.
 - **Compaction-key deadlock evaluation** — test compaction key with default
   produce and determine whether deadlock contention from reverse-ordered
   transactions is a real problem: at what (extreme or not) example does it
@@ -76,26 +109,15 @@ the item is removed.
   version, run against a database migrated by HEAD.
 - **Migration docs:** should use LOCK TIMEOUT for any ALTER migration
   commands (likely just needs documenting).
-
-## Next
-
-## Later
-
-Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
-documentation; the latter want a surface that has stopped moving.
-
-**The 14b cleanup / public API design pass** — naming, shape, comments, and
-internal cleanup; no new behavior. Locks the surface before v1.
-
-Ordered: internal restructuring first, public-surface decisions late so they
-stay revisable, text polish (naming/errors/logging/comments) last.
-
-- **Potential project rename away from "vulkan".** No candidate yet; decide
-  before v1 -- after v1 the name is public API. A rename ripples through the
-  module path, the CLI binary, the docs site (docsBaseURL const in
-  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
-  plus every declared code -- codes never renumber after v1, so the prefix
-  must be final first).
+- **Fillfactor audit** — audit every table for whether a lower fillfactor
+  (page slack that keeps update chains HOT — same-page rewrites that skip
+  index maintenance) improves steady-state top-end throughput, at the cost
+  of larger tables. Prime candidates are the tables whose updates touch
+  only non-indexed columns: cursor (claimed / committed / settled_head /
+  pending_head bump constantly), compaction_head (head_id /
+  compaction_rank on every keyed publish), lease, key_lease. Findings must
+  be confirmed by live benchmarks — sustained-throughput runs before and
+  after per table — not reasoning alone.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -119,6 +141,32 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   by the producer's partition self-heal; (3) LISTEN/NOTIFY-woken workers —
   real complexity, only if (2) measurably fails. Prior: rung 1 carries to
   ~1k rows, rung 2 well past 10k, rung 3 never earns it.
+
+## Next
+
+- **Worker metadata history as append-only worker_log** — the [0570]
+  current-row-plus-log shape applied to worker metadata, deferred from the
+  topic build. The worker_log name is reserved for this ([0570]); the
+  parked failure-evidence table became worker_run_log.
+
+## Later
+
+Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
+documentation; the latter want a surface that has stopped moving.
+
+**The 14b cleanup / public API design pass** — naming, shape, comments, and
+internal cleanup; no new behavior. Locks the surface before v1.
+
+Ordered: internal restructuring first, public-surface decisions late so they
+stay revisable, text polish (naming/errors/logging/comments) last.
+
+- **Potential project rename away from "vulkan".** No candidate yet; decide
+  before v1 -- after v1 the name is public API. A rename ripples through the
+  module path, the CLI binary, the docs site (docsBaseURL const in
+  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
+  plus every declared code -- codes never renumber after v1, so the prefix
+  must be final first).
+
 - **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
   recorded there are Setup/Action/Assert prose from a scratch harness;
   implement as a real pkg/producer/pkg/consumer test suite once the API
@@ -206,6 +254,10 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     Default constructors get built against that observed pattern rather
     than guessed.
   - DDL table design diagram.
+
+- **Marketing** I know there are other kafka in sql projects out there
+  why did they fail? Was it product or marketing related? what can we learn
+  from those failures?
 
 - **Circuit breaker implementation** (Phase 16, post-v1; two-tier design
   settled in Phase 13 — per-instance trip unit, quorum globalization,
@@ -507,12 +559,14 @@ prerequisite if quorum-as-a-fraction wins.
     https://packagemain.tech/p/golang-optimizations-for-highvolume — mine
     for the actual hot paths (claim, produce, janitor loops), don't apply
     speculatively.
-  - worker_log failure-evidence table (design settled under the old
-    maintenance-tier names; rides the worker backoff's fenced failure
-    UPDATE): one SHARED append-only table, failed worker runs only —
-    `worker_log (id BIGSERIAL PK, worker, topic_id, consumer_group, error
-    TEXT, attempts INT, created_at)`; NO success/recovery rows (absence IS
-    success). The write rides the backoff UPDATE's fence as one
+  - worker_run_log failure-evidence table (renamed from worker_log by
+    [0570], which reserves that name for worker metadata history; design
+    settled under the old maintenance-tier names; rides the worker
+    backoff's fenced failure UPDATE): one SHARED append-only table, failed
+    worker runs only —
+    `worker_run_log (id BIGSERIAL PK, worker, topic_id, consumer_group,
+    error TEXT, attempts INT, created_at)`; NO success/recovery rows
+    (absence IS success). The write rides the backoff UPDATE's fence as one
     data-modifying CTE, so an instance that lost its claim mid-run can't
     write noise. Retention: the janitor sweeps rows past ~7d in its
     existing pass. Surfacing: worker snapshots join the latest log row per

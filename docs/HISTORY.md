@@ -5,6 +5,32 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — Topic config history as append-only topic_log [0570]
+
+- The topic row stays the enforced truth (UNIQUE (name, schema_version),
+  plain reads, rename = one UPDATE with 23505 -> ErrTopicNameTaken);
+  topic_log records a full snapshot (name, partition_size, config,
+  declared_by = common.ProcessIdentity, declared_at) in the SAME
+  transaction as every create, config replace, and rename (one row per
+  schema_version). Machinery never reads it — the binding [0511]
+  current-table-plus-trail shape, now one pattern across both.
+- Supersedes [0519], whose truth-in-declarations build was completed,
+  lab-verified, then rolled back uncommitted: newest-row lateral joins
+  leaked into every reader and (name, schema_version) uniqueness went
+  procedural with advisory locks on every name write. A single
+  append-only table with a stable topic id was evaluated and rejected —
+  a repeating id cannot be a foreign-key target.
+- `_log` confirmed as the append-only-history suffix:
+  binding_declaration renamed binding_log (index binding_log_group; Go
+  surface BindingLogData/BindingLogStatus/ListBindingLog; Declare*
+  verbs and declared_by/declared_at stay); the parked failure-evidence
+  table becomes worker_run_log, reserving worker_log for worker
+  metadata history (ROADMAP Next).
+- registeridempotencylab now asserts the trail (1 row on create, none
+  on a no-change register, 2 after a config change);
+  destroysystemlab's table list gains topic_log. 41/41 fresh-DB labs,
+  `just verify` green.
+
 ## 2026-08-21 — Stop line as session summary [0567][0568][0569]
 
 - The consumer stopped line is the session summary: bound identity,

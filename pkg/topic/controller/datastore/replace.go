@@ -9,9 +9,10 @@ import (
 )
 
 // replaceConfig overwrites an already-registered topic's mutable config
-// with declared's: the newest declaration wins.
+// with declared's -- the newest declaration wins -- and appends the new
+// snapshot to topic_log in the same transaction.
 // partition_size is not mutable config.
-func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData) (*TopicData, error) {
+func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData, declaredBy string) (*TopicData, error) {
 	if found.PartitionSize != declared.PartitionSize {
 		return nil, topic.ErrTopicConfigMismatch.With(
 			"topic", found.Name, "version", found.SchemaVersion,
@@ -23,6 +24,12 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
 		return found, nil
 	}
+
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
 
 	sql := `
 		-- vulkan: topic.replaceConfig
@@ -47,7 +54,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 			created_at,
 			updated_at;
 	`
-	row := d.Datastore.Pool.QueryRow(ctx, sql,
+	row := tx.QueryRow(ctx, sql,
 		found.Id,
 		declared.RetentionTTLNs,
 		declared.AllowDropPastCommitted,
@@ -60,6 +67,14 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 	}
 	if updated == nil {
 		return nil, topic.ErrTopicDeclarationInterrupted.With("topic", found.Name, "version", found.SchemaVersion)
+	}
+
+	if err := d.appendTopicLog(ctx, tx, updated, declaredBy); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 
 	// the only signal that two services declare this topic differently

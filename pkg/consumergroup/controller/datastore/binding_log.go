@@ -49,7 +49,7 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId in
 		return "", err
 	}
 
-	declarations, err := d.listBindingDeclarations(ctx, tx, groupId)
+	declarations, err := d.listBindingLog(ctx, tx, groupId)
 	if err != nil {
 		return "", err
 	}
@@ -69,11 +69,11 @@ func (d *ConsumerGroupDatastore) declareBindings(ctx context.Context, groupId in
 	case consumergroup.DeclarationJoined:
 		// the stored set already matches -- nothing to write
 	case consumergroup.DeclarationWaiting:
-		if err := d.appendDeclaration(ctx, tx, groupId, BindingDeclarationWaiting, patterns, declaredBy, declaredAt); err != nil {
+		if err := d.appendDeclaration(ctx, tx, groupId, BindingLogWaiting, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
 	case consumergroup.DeclarationInstalled:
-		if err := d.appendDeclaration(ctx, tx, groupId, BindingDeclarationInstalled, patterns, declaredBy, declaredAt); err != nil {
+		if err := d.appendDeclaration(ctx, tx, groupId, BindingLogInstalled, patterns, declaredBy, declaredAt); err != nil {
 			return "", err
 		}
 		if err := d.replaceBindings(ctx, tx, groupId, patterns); err != nil {
@@ -111,10 +111,10 @@ func (d *ConsumerGroupDatastore) groupHasLiveInstance(ctx context.Context, tx pg
 }
 
 // appendDeclaration writes one attempt row; attempt_at is the insert's now().
-func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, groupId int64, status BindingDeclarationStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
+func (d *ConsumerGroupDatastore) appendDeclaration(ctx context.Context, tx pgx.Tx, groupId int64, status BindingLogStatus, patterns []string, declaredBy string, declaredAt time.Time) error {
 	sql := `
 		-- vulkan: consumergroup.appendDeclaration
-		INSERT INTO binding_declaration (consumer_group_id, status, patterns, declared_by, declared_at)
+		INSERT INTO binding_log (consumer_group_id, status, patterns, declared_by, declared_at)
 		VALUES ($1, $2, $3, $4, $5);
 	`
 	_, err := tx.Exec(ctx, sql, groupId, status, patterns, declaredBy, declaredAt)
@@ -145,40 +145,40 @@ func (d *ConsumerGroupDatastore) replaceBindings(ctx context.Context, tx pgx.Tx,
 	return nil
 }
 
-// ListBindingDeclarations reads every group's newest attempt row per declarer
+// ListBindingLog reads every group's newest attempt row per declarer
 // and status, with the names a listing shows.
-func (d *ConsumerGroupDatastore) ListBindingDeclarations(ctx context.Context) ([]BindingDeclarationData, error) {
-	var declarations []BindingDeclarationData
+func (d *ConsumerGroupDatastore) ListBindingLog(ctx context.Context) ([]BindingLogData, error) {
+	var declarations []BindingLogData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		declarations, err = d.listBindingDeclarations(ctx, d.Datastore.Pool, 0)
+		declarations, err = d.listBindingLog(ctx, d.Datastore.Pool, 0)
 		return err
 	})
 	return declarations, err
 }
 
-func (d *ConsumerGroupDatastore) listBindingDeclarations(ctx context.Context, querier datastore.Querier, groupId int64) ([]BindingDeclarationData, error) {
+func (d *ConsumerGroupDatastore) listBindingLog(ctx context.Context, querier datastore.Querier, groupId int64) ([]BindingLogData, error) {
 	// DISTINCT ON keeps newest-per-declarer in SQL -- a long wait's appended
 	// retry rows never ship to the caller
 	sql := `
-		-- vulkan: consumergroup.listBindingDeclarations
-		SELECT DISTINCT ON (binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by)
-			binding_declaration.id,
-			binding_declaration.consumer_group_id,
+		-- vulkan: consumergroup.listBindingLog
+		SELECT DISTINCT ON (binding_log.consumer_group_id, binding_log.status, binding_log.declared_by)
+			binding_log.id,
+			binding_log.consumer_group_id,
 			consumer_group.name,
 			topic.name,
 			topic.schema_version,
-			binding_declaration.status,
-			binding_declaration.patterns,
-			binding_declaration.declared_by,
-			binding_declaration.declared_at,
-			binding_declaration.attempt_at
-		FROM binding_declaration
-		JOIN consumer_group ON consumer_group.id = binding_declaration.consumer_group_id
+			binding_log.status,
+			binding_log.patterns,
+			binding_log.declared_by,
+			binding_log.declared_at,
+			binding_log.attempt_at
+		FROM binding_log
+		JOIN consumer_group ON consumer_group.id = binding_log.consumer_group_id
 		JOIN topic ON topic.id = consumer_group.topic_id
 		-- $1 = 0 -> every group
-		WHERE ($1 = 0 OR binding_declaration.consumer_group_id = $1)
-		ORDER BY binding_declaration.consumer_group_id, binding_declaration.status, binding_declaration.declared_by, binding_declaration.id DESC;
+		WHERE ($1 = 0 OR binding_log.consumer_group_id = $1)
+		ORDER BY binding_log.consumer_group_id, binding_log.status, binding_log.declared_by, binding_log.id DESC;
 	`
 	rows, err := querier.Query(ctx, sql, groupId)
 	if err != nil {
@@ -186,9 +186,9 @@ func (d *ConsumerGroupDatastore) listBindingDeclarations(ctx context.Context, qu
 	}
 	defer rows.Close()
 
-	var declarations []BindingDeclarationData
+	var declarations []BindingLogData
 	for rows.Next() {
-		var declaration BindingDeclarationData
+		var declaration BindingLogData
 		if err := rows.Scan(
 			&declaration.Id,
 			&declaration.ConsumerGroupId,
@@ -210,10 +210,10 @@ func (d *ConsumerGroupDatastore) listBindingDeclarations(ctx context.Context, qu
 
 // NewestInstalledDeclaration picks the highest-id installed row -- the
 // effective set's declaration.
-func NewestInstalledDeclaration(declarations []BindingDeclarationData) (*BindingDeclarationData, bool) {
-	var newest *BindingDeclarationData
+func NewestInstalledDeclaration(declarations []BindingLogData) (*BindingLogData, bool) {
+	var newest *BindingLogData
 	for i := range declarations {
-		if declarations[i].Status != BindingDeclarationInstalled {
+		if declarations[i].Status != BindingLogInstalled {
 			continue
 		}
 		if newest == nil || declarations[i].Id > newest.Id {
