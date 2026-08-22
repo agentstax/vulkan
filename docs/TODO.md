@@ -47,7 +47,12 @@ stays there until ship. Tasks in build order:
    nested go.work shielding it from the root workspace (no GOWORK=off
    needed), the pinned-side lab with -expect=round-trip|refused, dry-run
    green against the dev DB.
-8. (open) Rules & docs: CONVENTIONS ## Migrations release-era rules +
-   tools/ wording widened to "dev-only modules"; website migration docs
-   page with the per-release compatibility table; AGENTS.md release
-   checklist; decision record.
+8. (done 2026-08-22) Rules & docs: CONVENTIONS ## Migrations release-era
+   rules + tools/ wording widened to "dev-only modules"; website
+   guides/migrations.mdx (two counters, the gate, rolling-deploy
+   contract, compatibility table with its pre-1.0 row); AGENTS.md ##
+   Releases checklist; decision record [0580] + index line; ROADMAP item
+   slimmed to a pointer.
+
+All eight tasks done 2026-08-22. Close-out on review: HISTORY.md entry,
+then this section and the ROADMAP pointer come out.

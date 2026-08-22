@@ -131,10 +131,12 @@ root or a domain controller. What only your own tree imports nests freely
 them). The placement law: a worker package lives under the domain whose
 tables it maintains, never under its assembler.
 
-Developer tooling lives in the dev-only `tools/` module (own go.mod,
+Developer tooling lives in dev-only modules under `tools/` (own go.mod,
 never tagged, outside the root test surface) -- the machine-checkable
 rules of this file run as tests in `tools/conventions`, via `just
-verify`. Production code never imports anything under tools/.
+verify`; `tools/compat` is its own nested module so its go.mod can pin a
+prior vulkan release. Production code never imports anything under
+tools/.
 
 The domain layers:
 
@@ -310,6 +312,21 @@ topic's family -- never both.
 - Pre-v1, every schema change edits the baseline `CREATE TABLE` DDL in place
   -- no ALTER/DROP trail. Removed tables' DDL is deleted outright. Verify by
   drop+recreate of the dev DB.
+- Release-era changes are registry steps, and every step declares
+  MinCompatibleVersion -- the oldest build schema version whose SQL still
+  runs against the schema the step produces: 0 = additive, the step's own
+  version = breaking. The gate admits a build iff
+  `min_compatible_version <= build <= current`, so additive steps never lock
+  out older binaries (the rolling-deploy window) and a breaking release
+  means stopping older binaries before migrating. [0580]
+- A release that changes only what binaries read still ships a step -- an
+  empty version bump -- so later steps have a version to name. Column
+  removal is the two-release shape: first a release whose binaries stop
+  reading the column, shipping an empty bump; then the DROP step declaring
+  MinCompatibleVersion = that bump's version.
+- `just compat-lab` (tools/compat) is the empirical check at release
+  checkpoints: the pinned prior release must match the registry's declared
+  verdict.
 
 ## SQL
 

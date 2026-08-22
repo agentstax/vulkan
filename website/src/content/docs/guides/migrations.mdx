@@ -1,0 +1,74 @@
+---
+title: Upgrades & Migrations
+description: How schema versions work, what a rolling deploy can rely on, and the compatibility table for every release.
+---
+
+Vulkan's tables live in your Postgres database, so upgrading Vulkan can mean
+migrating schema. This page is the contract for how that works: what a
+version is, which upgrades are safe to roll, and how a binary refuses —
+early and legibly — when it can't run against what it finds.
+
+## Two version counters
+
+The schema versions in two independent scopes, both starting at v1:
+
+- **System scope** — the shared control-plane tables (the topic catalog, the
+  worker fleet). One counter for the whole database.
+- **Topic scope** — the per-topic table families (message log, deliveries,
+  cursors, leases). Each topic carries its own counter, so topics can sit at
+  different versions mid-migration without breaking each other.
+
+These are Vulkan's internal DDL versions. They are unrelated to your topics'
+`SchemaVersion`, which versions *your message payloads* — a payload-breaking
+change means registering a new topic version, and no Vulkan migration ever
+touches your payloads.
+
+## The gate
+
+Every producer, consumer, and worker checks both scopes at `Register` and
+refuses to start rather than run against a shape it doesn't understand:
+
+- **Database older than the binary** — the binary requires schema the
+  database doesn't have yet: `schema version is older than this build
+  requires — migrate the database up first` (`VK0022`).
+- **Database migrated past what the binary tolerates** — a newer release
+  applied a breaking migration: `schema version is newer than this build
+  understands — upgrade the binary` (`VK0023`).
+
+## Rolling deploys: the minimum compatible version
+
+Every migration step declares its **minimum compatible version** — the
+oldest release whose SQL still runs correctly against the schema the step
+produces. Most steps are additive (a new column, a new table) and declare no
+requirement at all; a breaking step names the floor it raises.
+
+The gate admits a binary when no applied step requires anything newer than
+it. That is what makes the standard rolling upgrade safe:
+
+1. Migrate the database with the new release.
+2. Roll binaries at your own pace — old instances keep producing and
+   consuming through the window, because every step past them is additive.
+
+When a release *does* carry a breaking step, its notes say so, and the order
+inverts: **stop the old binaries first**, migrate, then start the new ones.
+The gate refuses old binaries that try to start after the migration, but a
+binary already running is past its gate — stopping it first is your job, not
+the machinery's.
+
+Migration steps run under a bounded `lock_timeout`, so a step queued behind
+your traffic gives up and retries instead of stalling queries behind it.
+
+## Compatibility table
+
+One row per release that changes schema, kept current with every release
+and verified mechanically (a compatibility harness drives the prior
+release's binaries against a freshly migrated database before a release
+ships).
+
+| Release | System schema | Topic schema | Minimum compatible release | Notes |
+| ------- | ------------- | ------------ | -------------------------- | ----- |
+| pre-1.0 | v1            | v1           | —                          | Pre-release: schema changes edit the baseline in place; recreate the database on upgrade. |
+
+Until v1.0 ships there is no migration trail: each pre-release build defines
+the baseline schema outright, and upgrading means recreating the database.
+The table starts earning rows with the first post-v1.0 schema change.

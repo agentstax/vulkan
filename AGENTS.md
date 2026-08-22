@@ -37,6 +37,17 @@ covers session workflow only; the two are a set.
 - Full fresh-DB lab suite only at review-ready checkpoints or on request,
   never background-per-change.
 
+## Releases
+
+At a release checkpoint, after the full fresh-DB suite:
+
+- Run `just compat-lab` with tools/compat pinned to the prior tag (pin
+  flow in its go.mod comment), passing the verdict the migration registry
+  declares.
+- Update the compatibility table in
+  website/src/content/docs/guides/migrations.mdx.
+- Cite the lab outcome in the release's HISTORY.md entry.
+
 ## Docs & record-keeping
 
 The record-keeping surface is fixed -- never create doc files outside it.
