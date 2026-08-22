@@ -48,7 +48,7 @@ func (c *WorkerController) RegisterWorker(ctx context.Context, name string, owne
 		return err
 	}
 
-	return c.datastore.RegisterWorker(ctx, name, owner, cfg.Metadata, cfg.TargetInstances)
+	return c.datastore.RegisterWorker(ctx, name, owner, cfg.Metadata, cfg.TargetInstances, common.ProcessIdentity)
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain -- a

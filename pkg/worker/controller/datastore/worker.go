@@ -7,21 +7,22 @@ import (
 	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/jackc/pgx/v5"
 )
 
 // RegisterWorker creates the (name, owner) worker row, or writes metadata onto
-// the existing one -- the newest declaration wins. targetInstances is set at
-// creation only: 0 is how a worker is suspended, and a redeclaration would
-// resume it.
-func (d *WorkerDatastore) RegisterWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
+// the existing one -- the newest declaration wins -- appending a worker_log
+// snapshot in the same transaction. targetInstances is set at creation
+// only: 0 is how a worker is suspended, and a redeclaration would resume it.
+func (d *WorkerDatastore) RegisterWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int, declaredBy string) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.registerWorker(ctx, name, owner, metadata, targetInstances)
+		return d.registerWorker(ctx, name, owner, metadata, targetInstances, declaredBy)
 	})
 }
 
-func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int) error {
+func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int, declaredBy string) error {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -40,6 +41,9 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	var createdId int64
 	err = tx.QueryRow(ctx, insertSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances).Scan(&createdId)
 	if err == nil {
+		if err := d.appendWorkerLog(ctx, tx, createdId, declaredBy); err != nil {
+			return err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
@@ -50,27 +54,42 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 		return err
 	}
 
-	// the stored alias reads the row as it was before the SET, so the same
-	// statement writes the declaration and returns both sides of the change
+	// do metadata comparision in db as it is normalized there
+	// if we compared go marshaled bytes we could report false changes
+	readSql := `
+		-- vulkan: worker.registerWorker
+		SELECT id, metadata, metadata = COALESCE($5, '{}'::jsonb) AS unchanged
+		FROM worker
+		WHERE name = $4
+			AND system_id IS NOT DISTINCT FROM $1
+			AND topic_id IS NOT DISTINCT FROM $2
+			AND consumer_group_id IS NOT DISTINCT FROM $3;
+	`
+	var workerId int64
+	var storedMetadata json.RawMessage
+	var unchanged bool
+	err = tx.QueryRow(ctx, readSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).
+		Scan(&workerId, &storedMetadata, &unchanged)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return worker.ErrDeclarationInterrupted.With("worker", name)
+	}
+	if err != nil {
+		return err
+	}
+	if unchanged {
+		d.Logger.InfoContext(ctx, "worker declared (already existed)", "worker", name, "owner", owner.Name)
+		return nil
+	}
+
 	updateSql := `
 		-- vulkan: worker.registerWorker
-		UPDATE worker w
-		SET metadata = COALESCE($5, '{}'::jsonb)
-		FROM worker stored
-		WHERE stored.id = w.id
-			AND w.name = $4
-			AND w.system_id IS NOT DISTINCT FROM $1
-			AND w.topic_id IS NOT DISTINCT FROM $2
-			AND w.consumer_group_id IS NOT DISTINCT FROM $3
-		RETURNING
-			stored.metadata IS DISTINCT FROM w.metadata,
-			stored.metadata,
-			w.metadata;
+		UPDATE worker
+		SET metadata = COALESCE($2, '{}'::jsonb)
+		WHERE id = $1
+		RETURNING metadata;
 	`
-	var changed bool
-	var storedMetadata, declaredMetadata json.RawMessage
-	err = tx.QueryRow(ctx, updateSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata).
-		Scan(&changed, &storedMetadata, &declaredMetadata)
+	var declaredMetadata json.RawMessage
+	err = tx.QueryRow(ctx, updateSql, workerId, metadata).Scan(&declaredMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return worker.ErrDeclarationInterrupted.With("worker", name)
 	}
@@ -78,18 +97,37 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 		return err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := d.appendWorkerLog(ctx, tx, workerId, declaredBy); err != nil {
 		return err
 	}
-	if !changed {
-		d.Logger.InfoContext(ctx, "worker declared (already existed)", "worker", name, "owner", owner.Name)
-		return nil
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 
 	// the only signal that two services declare this worker differently
 	d.Logger.InfoContext(ctx, "worker declared (config replaced)", "worker", name, "owner", owner.Name,
 		"metadata", replaced(string(storedMetadata), string(declaredMetadata)))
 	return nil
+}
+
+// appendWorkerLog writes the worker row's full snapshot as one worker_log
+// row, inside the transaction that changed the worker row.
+func (d *WorkerDatastore) appendWorkerLog(ctx context.Context, q datastore.Querier, workerId int64, declaredBy string) error {
+	sql := `
+		-- vulkan: worker.appendWorkerLog
+		INSERT INTO worker_log (worker_id, name, metadata, target_instances, declared_by)
+		SELECT
+			id,
+			name,
+			metadata,
+			target_instances,
+			$2
+		FROM worker
+		WHERE id = $1;
+	`
+	_, err := q.Exec(ctx, sql, workerId, declaredBy)
+	return err
 }
 
 // ListWorkers lists the worker rows owned anywhere on owner's chain; a

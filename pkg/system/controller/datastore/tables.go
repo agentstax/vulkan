@@ -128,6 +128,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS worker_system_name ON worker (name, system_id)
 		}
 	}
 
+	// worker_log: one full-snapshot row appended in the same transaction as
+	// every worker create and metadata replace.
+	// The worker row is the truth; this trail is for operators.
+	createWorkerLogSql := `
+		-- vulkan: system.createSystemTables
+		CREATE TABLE IF NOT EXISTS worker_log (
+			id BIGSERIAL PRIMARY KEY,
+			worker_id BIGINT NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
+			name TEXT NOT NULL,                          -- copied from the worker row so operators scan without a join
+			metadata JSONB NOT NULL,
+			target_instances INT NOT NULL,
+			declared_by TEXT NOT NULL,                   -- hostname:pid:<random> of the declaring process, display only
+			declared_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+	`
+	if _, err := tx.Exec(ctx, createWorkerLogSql); err != nil {
+		return err
+	}
+
+	// the one lookup shape: a worker's rows in change order
+	createWorkerLogIndexSql := `
+		-- vulkan: system.createSystemTables
+		CREATE INDEX IF NOT EXISTS worker_log_worker ON worker_log (worker_id, id);
+	`
+	if _, err := tx.Exec(ctx, createWorkerLogIndexSql); err != nil {
+		return err
+	}
+
 	// worker instances: one row per live copy of a worker
 	createWorkerInstanceSql := `
 		-- vulkan: system.createSystemTables
