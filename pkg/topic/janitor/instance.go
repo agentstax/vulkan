@@ -31,7 +31,7 @@ func newJanitorInstance(janitor *JanitorProvisioner, current *topic.Topic, claim
 		return nil, errors.New("metadata must not be nil")
 	}
 
-	logger := logging.NewPipelineLogger(janitor.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", WorkerJanitor, "topic_id", current.Id, "version", current.SchemaVersion}})
+	logger := logging.NewPipelineLogger(janitor.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", WorkerTopicJanitor, "topic_id", current.Id, "version", current.SchemaVersion}})
 	runner, err := controller.NewInstanceTickRunner(janitor.workers, claimed, metadata.PollRate, &controller.InstanceTickRunnerConfig{
 		InstanceTTL:    janitor.Config.InstanceTTL,
 		JitterFraction: janitor.Config.JitterFraction,

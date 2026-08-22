@@ -14,7 +14,7 @@ import (
 // existingPartitions lists surviving message_log_<topic_id>_<n> partition numbers.
 func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64) ([]int64, error) {
 	sql := fmt.Sprintf(`
-		-- vulkan: janitor.existingPartitions
+		-- vulkan: topicjanitor.existingPartitions
 		SELECT REPLACE(c.relname, '%s_', '')::bigint AS n
 		FROM pg_inherits i
 		JOIN pg_class c ON c.oid = i.inhrelid
@@ -46,7 +46,7 @@ func (d *JanitorDatastore) existingPartitions(ctx context.Context, topicId int64
 // drops/sweeps.
 func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier, topicId int64) (*int64, error) {
 	sql := `
-		-- vulkan: janitor.cursorFloor
+		-- vulkan: topicjanitor.cursorFloor
 		SELECT MIN(c.committed)
 		FROM cursor c
 		JOIN consumer_group g ON g.id = c.consumer_group_id
@@ -61,7 +61,7 @@ func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier,
 // partitionExpired reports whether a partition's newest row is past ttl.
 func (d *JanitorDatastore) partitionExpired(ctx context.Context, topicId int64, n int64, ttl time.Duration) (bool, error) {
 	sql := fmt.Sprintf(`
-		-- vulkan: janitor.partitionExpired
+		-- vulkan: topicjanitor.partitionExpired
 		SELECT created_at FROM %s
 		ORDER BY id DESC -- rides the PK index; id order approx time order, no created_at index needed
 		LIMIT 1;

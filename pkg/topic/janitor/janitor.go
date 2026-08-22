@@ -12,7 +12,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-const WorkerJanitor = "janitor"
+const WorkerTopicJanitor = "topic_janitor"
 
 type JanitorProvisioner struct {
 	Config *JanitorConfig
@@ -63,7 +63,7 @@ func NewJanitorProvisioner(ds *iDatastore.PostgresDatastore, cfg *JanitorConfig)
 		return nil, err
 	}
 
-	definition, err := worker.NewDefinition(WorkerJanitor, common.OwnerTopic, defaultJanitorMetadata())
+	definition, err := worker.NewDefinition(WorkerTopicJanitor, common.OwnerTopic, defaultJanitorMetadata())
 	if err != nil {
 		return nil, err
 	}

@@ -42,7 +42,7 @@ const (
 // the target-1 rows on the group's chain; the manager rows are unbounded by
 // design, and the system's cron_scheduler is shared state outside this
 // lab's topic
-var exclusive = []string{"janitor", "cursor_advancer"}
+var exclusive = []string{"topic_janitor", "cursor_advancer"}
 
 func main() {
 	ctx := context.Background()

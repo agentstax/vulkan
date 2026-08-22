@@ -48,7 +48,7 @@ func (d *JanitorDatastore) sweepExpiredIdempotencyKeys(ctx context.Context, topi
 // server-assigned timestamp is trustworthy for this.
 func (d *JanitorDatastore) sweepIdempotencyKeysBatch(ctx context.Context, topicId int64, cutoff time.Time, batchSize int) (int, error) {
 	sql := fmt.Sprintf(`
-		-- vulkan: janitor.sweepIdempotencyKeysBatch
+		-- vulkan: topicjanitor.sweepIdempotencyKeysBatch
 		DELETE FROM %s
 		WHERE idempotency_key IN (
 			SELECT idempotency_key FROM %s

@@ -21,7 +21,7 @@ func (d *JanitorProvisioner) Declare(ctx context.Context, owner *common.Owner) e
 func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.Worker) (worker.Execution, error) {
 	// the owner is read before the claim (topic resolution below), so its check
 	// cannot wait for RegisterInstance's
-	if err := controller.ValidateOwner(declared.Owner, common.OwnerTopic, WorkerJanitor); err != nil {
+	if err := controller.ValidateOwner(declared.Owner, common.OwnerTopic, WorkerTopicJanitor); err != nil {
 		return nil, err
 	}
 	parsed, err := controller.ParseMetadata[janitorMetadata](declared.Metadata)
@@ -41,7 +41,7 @@ func (d *JanitorProvisioner) Provision(ctx context.Context, declared *worker.Wor
 	if current == nil {
 		return nil, topic.ErrTopicNotFound.With("topic_id", declared.Owner.TopicId)
 	}
-	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerTopic, WorkerJanitor, d.Config.InstanceTTL)
+	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerTopic, WorkerTopicJanitor, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}

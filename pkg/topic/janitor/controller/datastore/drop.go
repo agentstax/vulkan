@@ -32,7 +32,7 @@ func (d *JanitorDatastore) dropExpiredPartitions(ctx context.Context, topicId in
 	}
 
 	headSql := fmt.Sprintf(`
-		-- vulkan: janitor.dropExpiredPartitions
+		-- vulkan: topicjanitor.dropExpiredPartitions
 		SELECT COALESCE(MAX(id), 0) FROM %s;
 	`, iTopic.MessageLogTable(topicId))
 	var head int64
@@ -82,7 +82,7 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	defer tx.Rollback(ctx)
 
 	// also cap the orphan DELETEs' row-lock waits
-	if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: janitor.dropPartition
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: topicjanitor.dropPartition
 SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 		return false, err
 	}
@@ -104,7 +104,7 @@ SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 	// otherwise these delivery rows (mostly 'dead' DLQ, since live ones are
 	// already floor-protected) would join to nothing and sit there forever.
 	orphanSql := fmt.Sprintf(`
-		-- vulkan: janitor.dropPartition
+		-- vulkan: topicjanitor.dropPartition
 		DELETE FROM %s
 		WHERE message_id >= $1
 			AND message_id < $2;
@@ -115,7 +115,7 @@ SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 
 	if deliveryLogMode != topic.DeliveryLogModeOff {
 		orphanLogSql := fmt.Sprintf(`
-			-- vulkan: janitor.dropPartition
+			-- vulkan: topicjanitor.dropPartition
 			DELETE FROM %s
 			WHERE message_id >= $1
 				AND message_id < $2;
@@ -128,7 +128,7 @@ SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 	// a dropped partition holding a key's latest row is a dormant key expiring
 	// drop the now-dangling pointer rather than leave it forever
 	orphanKeySql := `
-		-- vulkan: janitor.dropPartition
+		-- vulkan: topicjanitor.dropPartition
 		DELETE FROM compaction_head
 		WHERE topic_id = $1
 			AND head_id >= $2
@@ -139,7 +139,7 @@ SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 	}
 
 	dropSql := fmt.Sprintf(`
-		-- vulkan: janitor.dropPartition
+		-- vulkan: topicjanitor.dropPartition
 		DROP TABLE IF EXISTS %s;
 	`, iTopic.MessageLogPartitionTable(topicId, n))
 

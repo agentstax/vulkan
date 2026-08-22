@@ -39,10 +39,6 @@ the item is removed.
   - TTL stays a flat const for now — add to the hardcoded-config audit. No
     new index: the sweep keeps the table small enough that its own scan is
     noise.
-- **Append-only tables think-through** — making all tables append-only would
-  be Cassandra-like, give audit/debuggability for all operations, and enable
-  partition-based drops everywhere; trade-off is complexity and hot-path
-  read throughput.
 - **System-table churn evaluation** — reconsider whether compaction_head
   should be per-topic compaction_head_(topic_id) (high update churn from
   many topics), and evaluate all system tables: cursor / lease / binding /
@@ -61,12 +57,12 @@ the item is removed.
     near-static). The question per table is whether per-topic grouping
     fits the mental model; the machinery to create and manage per-topic
     tables already exists, so the extra code is cheap.
-  - Logical-grouping audit (2026-08-22). The rule: a table splits
-    per-topic when its rows address the topic's own data (message_log
-    ids, compaction keys), every reader already has topic context, and
-    the rows die with the topic; it stays shared when it is the catalog,
-    the fleet, or append-only history — those are read across topics by
-    design.
+  - Logical-grouping audit (settled 2026-08-22). The rule: a table
+    splits per-topic when every row has exactly one owning topic
+    (directly or through its consumer group) and no reader needs the
+    table before knowing the topic; it stays shared when rows can exist
+    at system scope with no topic at all, or when it is the catalog that
+    resolves names to topic ids.
     - Split: cursor, lease, key_lease (with compaction_head). Cursor and
       lease values are message_log_<id> ids; key_lease mirrors
       compaction_head's key vocabulary. Every reader verified group- or
@@ -75,21 +71,24 @@ the item is removed.
       becomes DROP TABLE; per-topic fillfactor tuning becomes possible.
       Cursor's ON DELETE CASCADE FK to consumer_group survives the
       split; lease/key_lease already have no FKs.
-    - Keep shared: worker, worker_instance, cron_job (rows exist at
-      system/topic/group scope — no per-topic home — and their primary
-      readers are single cross-scope queries: fleet listWorkers, cron
-      due-walk); topic, topic_log, consumer_group, system (the
-      catalog defines the grouping key); migration_log,
-      binding_log (append-only history, system-scope readers —
-      the planned pruner sweeps all groups at once).
-    - binding: the one judgment call — data-plane read but near-static
-      config, no cross-topic reader. Lean split so all of a group's
-      runtime state lives in its topic's table family; keeping it beside
-      binding_log is defensible. Decide when the split work is
-      picked up.
-    - End state if splits land: a topic's family grows 3 -> 7
-      interpolated tables; the shared schema reduces to exactly catalog
-      + fleet + history.
+    - Split: binding and binding_log, together — they are one mechanism
+      (declareBindings appends the log row and rewrites binding rows in
+      one transaction) with identical ownership, and no reader lacks
+      topic context. Amends the settled binding_log retention design
+      above: the pruner stays one OwnerSystem worker but runs one
+      batched DELETE per topic's table per tick instead of one total.
+    - Keep shared: worker, worker_instance, cron_job, migration_log
+      (their CHECK num_nonnulls(...) = 1 rows can be system-scoped — no
+      per-topic home — and their primary readers are single cross-scope
+      queries: fleet listWorkers, cron due-walk); system, topic,
+      topic_log, consumer_group (the catalog: name -> topic_id
+      resolution has to run before any per-topic table can be named, and
+      topic_log is the catalog's own history, written in its
+      register/rename transactions ([0570])).
+    - End state: a topic's family grows 3 -> 9 interpolated tables
+      (message_log, idempotency_key, delivery_log + cursor, lease,
+      key_lease, compaction_head, binding, binding_log); the shared
+      schema reduces to exactly catalog + fleet + cross-scope history.
 - **Compaction-key deadlock evaluation** — test compaction key with default
   produce and determine whether deadlock contention from reverse-ordered
   transactions is a real problem: at what (extreme or not) example does it
@@ -606,6 +605,12 @@ prerequisite if quorum-as-a-fraction wins.
   ourselves); the merge itself never touches values, so digit-strings pass
   through lossless. Do it as one audited sweep of every such path, not a spot
   fix — pre-v1 the realistic values sit far below the threshold.
+- **Partition delivery_<id> + delivery_log_<id> by message_id range** on
+  message_log's bounds ([0572]) — the janitor's partition-drop cleanup runs
+  range DELETEs through both tables today; aligned partitions turn those
+  into drops. Benchmark-gated: create-ahead must ride the producer's
+  partition self-heal, and the hot claim table takes on partitioned-table
+  planner overhead.
 - **BRIN indexes** — look into using them for different tables.
 - **DeadLetterTopic consumer** — consume on events to the DLQ.
 - **Shadow/Mirror functionality** — watch exactly the same cursor as another

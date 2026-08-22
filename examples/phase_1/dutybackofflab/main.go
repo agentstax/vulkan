@@ -61,7 +61,7 @@ func main() {
 	// the lab's own fast tick
 	owner, err := common.NewTopicOwner(tp.SystemId, tp.Id, tp.Name)
 	must(err)
-	row, err := workers.GetWorker(ctx, janitor.WorkerJanitor, owner)
+	row, err := workers.GetWorker(ctx, janitor.WorkerTopicJanitor, owner)
 	must(err)
 	row.Metadata = map[string]any{
 		"poll_rate":        int64(pollRate),
@@ -126,7 +126,7 @@ func main() {
 	must(err)
 	found := false
 	for _, s := range snapshots {
-		if s.Owner.Name == topicName && s.Name == janitor.WorkerJanitor {
+		if s.Owner.Name == topicName && s.Name == janitor.WorkerTopicJanitor {
 			found = true
 			if s.Attempts == 0 {
 				die("expected WorkerSnapshot.Attempts > 0 for the failing janitor")
