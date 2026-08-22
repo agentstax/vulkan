@@ -16,11 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Worker metadata history as append-only worker_log** — design settled
-  2026-08-22, [0577]: the [0570] current-row-plus-log shape applied to
-  worker metadata, with registerWorker's replace path restructured onto
-  replaceConfig's decide-before-writing shape (no-change redeclares write
-  nothing at all); build pending.
 - **Cross-version compatibility matrix** (14c) — producer/consumer built
   against release N-1 on a database migrated by N (what a rolling deploy
   produces; the empirical definition of which schema changes are BREAKING vs

@@ -5,6 +5,23 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — worker metadata history as append-only worker_log [0577]
+
+- worker_log completes [0570]'s reservation: a full-snapshot row (name
+  copied for join-free operator scans, metadata, target_instances,
+  declared_by = ProcessIdentity, declared_at) appended in the same
+  transaction as every worker create and metadata replace; machinery
+  never reads it, no retention (worker_log/topic_log TTL revisit parked).
+- registerWorker's replace path restructured onto replaceConfig's
+  decide-before-writing shape: on insert conflict it reads the row with
+  the comparison computed server-side (jsonb equality — Go never compares
+  marshaled bytes against the normalized column) and returns without
+  writing when the declaration matches. No-change redeclares stop writing
+  entirely, ending the dead tuple per worker row per process start.
+- Verified on a fresh DB: workerclaimlab's three consumers left exactly
+  one log row per worker; a driven replace appended one row and a same-
+  metadata redeclare appended none.
+
 ## 2026-08-22 — CLI --output json + json tags on public read-models [0575][0576]
 
 - `--output <text|json>` root persistent flag: json stdout is exactly one
