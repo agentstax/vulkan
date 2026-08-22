@@ -30,6 +30,19 @@ the item is removed.
     bench/scale, bench/trigger_fanout, the compaction hot-key
     serialization bench (bench/compaction, [0574]), and the consume-side
     fillfactor bench (bench/fillfactor, [0578]).
+  - Design round 2026-08-22 (tabled pending the documentation-first pass):
+    method + recording shape drafted in repo-root bench-methodology.html
+    (generic 14-rule method, sourced) and bench-design.md (vulkan record
+    schema, harness shape, fold-in inventory, first-build scope options —
+    scope not yet settled). Settled in the round: two tiers (go test
+    -bench + benchstat for CPU paths; shared harness for Postgres-bound
+    benches), git-tracked append-only cells.jsonl, hdrhistogram-go dep in
+    the bench module, no regression detection yet (record keyed so a
+    loader/Otava can ingest later). Decision records written when design
+    closes. [0565] note: the [0559] gate now measures NewPipelineLogger
+    Buffer on/off, BufferLogger no longer exists.
+  - Documentation drives this work: the methodology page becomes a doc-site
+    page and the user-facing spec is written before the harness is built.
 - **Idle-fleet worker-load benchmark** (14c; measure BEFORE building any
   fix). An idle deployment pays per worker row per poll: winner's claim
   UPDATE + no-op work each tick, and — the growing term — every replica's

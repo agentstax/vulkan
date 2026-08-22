@@ -1,0 +1,626 @@
+<title>Honest Numbers</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #F7F9F8;
+    --ink: #17211F;
+    --muted: #5A6B68;
+    --accent: #0E7A6C;
+    --accent-soft: #0E7A6C1A;
+    --warn: #B4552D;
+    --hairline: #D9E1DF;
+    --card: #FFFFFF;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #101614;
+      --ink: #E3EAE8;
+      --muted: #92A5A0;
+      --accent: #3BB89F;
+      --accent-soft: #3BB89F21;
+      --warn: #E08055;
+      --hairline: #26322E;
+      --card: #16201D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #101614;
+    --ink: #E3EAE8;
+    --muted: #92A5A0;
+    --accent: #3BB89F;
+    --accent-soft: #3BB89F21;
+    --warn: #E08055;
+    --hairline: #26322E;
+    --card: #16201D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+  }
+  .wrap {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+  .col { max-width: 700px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  header.hero { padding: 72px 0 40px; border-bottom: 1px solid var(--hairline); }
+  h1 {
+    font-family: "Spectral", Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(40px, 6vw, 58px);
+    line-height: 1.05;
+    margin: 10px 0 20px;
+    text-wrap: balance;
+  }
+  .lede {
+    font-family: "Spectral", Georgia, serif;
+    font-size: 21px;
+    line-height: 1.5;
+    max-width: 640px;
+    margin: 0;
+  }
+  .lede em { color: var(--accent); font-style: italic; }
+
+  h2 {
+    font-family: "Spectral", Georgia, serif;
+    font-weight: 600;
+    font-size: 30px;
+    line-height: 1.2;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: "Spectral", Georgia, serif;
+    font-weight: 600;
+    font-size: 20px;
+    margin: 0 0 6px;
+  }
+  section { padding: 56px 0 8px; }
+  section + section { border-top: 1px solid var(--hairline); margin-top: 48px; }
+  .section-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px; }
+  p { margin: 0 0 16px; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+  a:hover, a:focus-visible { border-bottom-color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.88em;
+    background: var(--accent-soft);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  sup.cite {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 0;
+    letter-spacing: 0.02em;
+  }
+  sup.cite a { border-bottom: none; padding: 0 1px; }
+
+  /* references */
+  .refs ol { margin: 20px 0 0; padding-left: 28px; font-size: 14.5px; color: var(--muted); display: flex; flex-direction: column; gap: 9px; line-height: 1.55; }
+  .refs li { padding-left: 6px; }
+  .refs li::marker { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--accent); }
+  .refs li a { color: var(--ink); font-weight: 600; }
+  .refs li a:hover { color: var(--accent); }
+  .refs li:target { background: var(--accent-soft); border-radius: 4px; }
+
+  /* stat band */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    margin: 36px 0 0;
+  }
+  .stat { background: var(--card); padding: 22px 22px 18px; }
+  .stat .num {
+    font-family: "Spectral", Georgia, serif;
+    font-weight: 600;
+    font-size: 40px;
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .cap { font-size: 14px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+
+  /* diagram */
+  figure.flow { margin: 28px 0 8px; }
+  .flow-scroll { overflow-x: auto; }
+  .flow svg { min-width: 900px; width: 100%; height: auto; display: block; color: var(--ink); }
+  figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; max-width: 700px; }
+
+  /* rules */
+  .rule-group { margin: 0 0 36px; }
+  .rule-group > .grp {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px; font-weight: 500;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  ol.rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
+  ol.rules li { display: grid; grid-template-columns: 52px 1fr; gap: 14px; }
+  .rnum {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 14px; font-weight: 500;
+    color: var(--accent);
+    padding-top: 2px;
+  }
+  .rbody .claim { font-weight: 600; }
+  .rbody .why { font-size: 15px; color: var(--muted); margin-top: 3px; }
+  .rbody .why b { color: var(--warn); font-weight: 600; }
+
+  /* failure catalog */
+  .table-scroll { overflow-x: auto; margin: 24px 0 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 15px; }
+  th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    text-align: left; color: var(--muted);
+    padding: 0 16px 10px 0;
+    border-bottom: 1px solid var(--ink);
+  }
+  td { padding: 12px 16px 12px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; line-height: 1.5; }
+  td.sin { font-weight: 600; white-space: nowrap; color: var(--warn); }
+  td.rules-ref { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; white-space: nowrap; color: var(--accent); }
+
+  /* credibility checklist */
+  .signals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 14px 32px;
+    margin-top: 26px;
+  }
+  .signal { display: grid; grid-template-columns: 22px 1fr; gap: 10px; }
+  .tick { color: var(--accent); font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .signal .s-title { font-weight: 600; }
+  .signal .s-sub { font-size: 14px; color: var(--muted); }
+
+  /* lineage */
+  .lineage { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 26px 40px; margin-top: 8px; }
+  .lineage h3 { font-size: 17px; }
+  .lineage ul { list-style: none; margin: 0; padding: 0; font-size: 15px; }
+  .lineage li { padding: 5px 0; border-bottom: 1px solid var(--hairline); }
+  .lineage li span { color: var(--muted); }
+
+  footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--hairline); font-size: 14px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Benchmark Methodology</div>
+  <h1>Honest Numbers</h1>
+  <p class="lede">How we benchmark a messaging system built on a general-purpose database — so that every number we publish is <em>rerunnable, explained, and honest about what it cost.</em></p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="num">~99%</div>
+      <div class="cap">False-positive rate of threshold-based regression alerts at MongoDB before they moved to change-point detection — the fate of every naive tracking pipeline.<sup class="cite"><a href="#ref-1">1</a></sup></div>
+    </div>
+    <div class="stat">
+      <div class="num">2</div>
+      <div class="cap">Vendors who ran the <i>same benchmark suite on the same hardware</i> and published opposite conclusions (Kafka vs. Redpanda) — config and workload choice decided everything.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-3">3</a></sup></div>
+    </div>
+    <div class="stat">
+      <div class="num">&le;43%</div>
+      <div class="cap">Share of benchmarks that ever reach a stable steady state (Barrett et&nbsp;al., OOPSLA&nbsp;'17). Warmup must be verified, never assumed.<sup class="cite"><a href="#ref-4">4</a></sup></div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">01 · Position</div>
+    <h2>Benchmarks are claims, and most claims don't survive an audit</h2>
+  </div>
+  <div class="col">
+    <p>The messaging space has a credibility problem. The public record of the last decade — the Kafka/Redpanda war,<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-3">3</a></sup> the Kafka/Pulsar durability dispute,<sup class="cite"><a href="#ref-5">5</a>,<a href="#ref-6">6</a></sup> databases benchmarked with persistence off<sup class="cite"><a href="#ref-7">7</a></sup> — shows the same handful of sins repeating: acks that mean "in memory" compared against acks that mean "on disk", latency quoted from saturated runs, single workload points presented as generality, load generators benchmarking themselves.</p>
+    <p>This document is our defense. It fixes the method before any number exists: how a workload is defined, what environment it runs in, what gets measured, what makes a result valid, and how results are recorded so regressions are visible over time. It applies to any system in our category — a durable message queue built on a general-purpose database — where the database's own rhythms (checkpoints, vacuum, WAL flushes) are part of the system under test, not noise to be excluded.</p>
+    <p>The bar for publishing a number is that a skeptical engineer can rerun it with one command, see the raw data it came from, and read <i>why</i> it is what it is.</p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">02 · Pipeline</div>
+    <h2>Every result travels the same path</h2>
+  </div>
+
+  <figure class="flow">
+    <div class="flow-scroll">
+    <svg viewBox="0 0 1100 330" role="img" aria-label="Benchmark pipeline: a defined workload runs in a pinned environment through two run modes — saturation runs that find sustainable max, and fixed-rate runs that measure latency — then passes a validation gate before being recorded append-only; records feed both the human report and long-term tracking. Cells that fail validation are flagged and never averaged in.">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor"/>
+        </marker>
+        <marker id="arrAcc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <!-- Define -->
+      <rect x="10" y="103" width="132" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="76" y="129" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">define</text>
+      <text x="76" y="148" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">workload spec</text>
+
+      <!-- Pin -->
+      <rect x="176" y="103" width="132" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="242" y="129" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">pin</text>
+      <text x="242" y="148" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">env + fingerprint</text>
+
+      <!-- Saturation runs -->
+      <rect x="352" y="26" width="160" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="432" y="52" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">saturation runs</text>
+      <text x="432" y="71" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">throughput only</text>
+
+      <!-- Fixed-rate runs -->
+      <rect x="352" y="180" width="160" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="432" y="206" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">fixed-rate runs</text>
+      <text x="432" y="225" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">open loop · latency</text>
+
+      <!-- Validate -->
+      <rect x="556" y="99" width="140" height="72" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+      <text x="626" y="127" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">validate</text>
+      <text x="626" y="145" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">guards · warmup ·</text>
+      <text x="626" y="159" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">limiter named</text>
+
+      <!-- Flagged -->
+      <rect x="556" y="252" width="140" height="52" rx="4" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="5 4"/>
+      <text x="626" y="274" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)" font-family="'Source Sans 3',sans-serif">flagged</text>
+      <text x="626" y="291" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">never averaged in</text>
+
+      <!-- Record -->
+      <rect x="740" y="103" width="150" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="815" y="129" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">record</text>
+      <text x="815" y="148" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">append-only · raw</text>
+
+      <!-- Report -->
+      <rect x="934" y="26" width="156" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="1012" y="52" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">report</text>
+      <text x="1012" y="71" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">writeup cites raw records</text>
+
+      <!-- Track -->
+      <rect x="934" y="180" width="156" height="64" rx="4" fill="var(--card)" stroke="currentColor" stroke-width="1.2"/>
+      <text x="1012" y="206" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor" font-family="'Source Sans 3',sans-serif">track</text>
+      <text x="1012" y="225" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">series · regressions</text>
+
+      <!-- arrows -->
+      <line x1="142" y1="135" x2="168" y2="135" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+
+      <!-- pin -> saturation (elbow up) -->
+      <polyline points="308,120 330,120 330,58 344,58" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <!-- pin -> fixed-rate (elbow down) -->
+      <polyline points="308,150 330,150 330,212 344,212" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+
+      <!-- saturation -> fixed-rate -->
+      <line x1="432" y1="90" x2="432" y2="172" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <text x="444" y="136" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">sets the rate ladder</text>
+
+      <!-- saturation -> validate -->
+      <polyline points="512,58 534,58 534,117 548,117" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <!-- fixed-rate -> validate -->
+      <polyline points="512,212 534,212 534,153 548,153" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+
+      <!-- validate -> record (pass) -->
+      <line x1="696" y1="135" x2="732" y2="135" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrAcc)"/>
+      <text x="714" y="124" text-anchor="middle" font-size="11" fill="var(--accent)" font-family="'IBM Plex Mono',monospace">pass</text>
+
+      <!-- validate -> flagged -->
+      <line x1="626" y1="171" x2="626" y2="244" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+      <text x="638" y="212" font-size="11" fill="var(--muted)" font-family="'IBM Plex Mono',monospace">guard failed</text>
+
+      <!-- record -> report -->
+      <polyline points="890,120 912,120 912,58 926,58" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <!-- record -> track -->
+      <polyline points="890,150 912,150 912,212 926,212" fill="none" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+    </svg>
+    </div>
+    <figcaption>The pipeline. Saturation runs establish the sustainable maximum; fixed-rate runs measure latency below it. Nothing reaches the record without passing validation, and nothing reaches a reader except through the record.</figcaption>
+  </figure>
+
+  <div class="col">
+    <p class="muted">The two run modes exist because throughput and latency cannot come from the same run: at saturation, measured "latency" is just queue growth multiplied by run length.<sup class="cite"><a href="#ref-8">8</a></sup> The validation gate exists because a plausible-looking number from an invalid run is worse than no number — it gets believed.</p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">03 · Method</div>
+    <h2>Fourteen rules</h2>
+  </div>
+  <div class="col">
+    <p>Each rule exists because someone, publicly and expensively, got burned without it. The failure it prevents is named beside it.</p>
+  </div>
+
+  <div class="rule-group">
+    <div class="grp">Workload</div>
+    <ol class="rules">
+      <li><span class="rnum">R1</span><div class="rbody">
+        <div class="claim">Benchmark the public API — the code users actually run.</div>
+        <div class="why"><b>Prevents:</b> hand-copied SQL mirrors that silently go stale, and benchmark-only fast paths nobody would ship (the arms race that killed the TechEmpower leaderboard).<sup class="cite"><a href="#ref-9">9</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R2</span><div class="rbody">
+        <div class="claim">Declare the workload completely, and sweep every axis you claim generality over.</div>
+        <div class="why"><b>Prevents:</b> single-point cherry-picking — the 4-producer, keyless, fresh-disk configuration that flips to a loss at 50 producers with keys.<sup class="cite"><a href="#ref-2">2</a></sup></div>
+      </div></li>
+    </ol>
+  </div>
+
+  <div class="rule-group">
+    <div class="grp">Environment</div>
+    <ol class="rules">
+      <li><span class="rnum">R3</span><div class="rbody">
+        <div class="claim">One pinned environment: same database image, same configuration, same resource caps for every bench; environment changes are versioned like code.</div>
+        <div class="why"><b>Prevents:</b> config drift read as performance change — kernel updates, image bumps, and default-config differences have all been published as "regressions".<sup class="cite"><a href="#ref-10">10</a>,<a href="#ref-11">11</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R4</span><div class="rbody">
+        <div class="claim">Fingerprint every run: library commit, runtime and database versions, host facts — and the durability setting read back from the server, not echoed from the script.</div>
+        <div class="why"><b>Prevents:</b> uninterpretable year-old numbers, and the canonical messaging-benchmark foul — durability asymmetry, where an ack meaning "in page cache" is compared against an ack meaning "on disk".<sup class="cite"><a href="#ref-5">5</a>,<a href="#ref-6">6</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R5</span><div class="rbody">
+        <div class="claim">Prove generator headroom: the load generator's own utilization is part of the result.</div>
+        <div class="why"><b>Prevents:</b> publishing the client's ceiling as the server's — the oldest mistake in the book, warned against by pgbench's own documentation.<sup class="cite"><a href="#ref-12">12</a></sup></div>
+      </div></li>
+    </ol>
+  </div>
+
+  <div class="rule-group">
+    <div class="grp">Measurement</div>
+    <ol class="rules">
+      <li><span class="rnum">R6</span><div class="rbody">
+        <div class="claim">Two run modes, never conflated: saturation runs report throughput only; latency comes only from fixed-rate, open-loop runs below sustainable max.</div>
+        <div class="why"><b>Prevents:</b> latency-at-saturation, which measures queue depth times patience, not the system.<sup class="cite"><a href="#ref-8">8</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R7</span><div class="rbody">
+        <div class="claim">Sustainable max is operational: the highest rate on a stepped ladder at which the backlog stays bounded for the entire window.</div>
+        <div class="why"><b>Prevents:</b> burst-into-buffer "peak throughput" that no deployment can hold.<sup class="cite"><a href="#ref-5">5</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R8</span><div class="rbody">
+        <div class="claim">Measure latency from the intended send time; compute percentiles only from merged histograms; always show p50 through p99.9 and the max.</div>
+        <div class="why"><b>Prevents:</b> coordinated omission — a stalled system pausing its own measurement — and averaged percentiles, which are mathematically meaningless and systematically optimistic.<sup class="cite"><a href="#ref-8">8</a>,<a href="#ref-13">13</a>,<a href="#ref-14">14</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R9</span><div class="rbody">
+        <div class="claim">Measurement windows span the database's maintenance rhythms — at least one checkpoint cycle, with vacuum active — and record their counters as before/after deltas.</div>
+        <div class="why"><b>Prevents:</b> honeymoon runs measured before the first checkpoint storm, vacuum pass, or retention kick-in — where TPS is known to halve when the bill arrives.<sup class="cite"><a href="#ref-12">12</a>,<a href="#ref-15">15</a>,<a href="#ref-2">2</a></sup></div>
+      </div></li>
+    </ol>
+  </div>
+
+  <div class="rule-group">
+    <div class="grp">Validation</div>
+    <ol class="rules">
+      <li><span class="rnum">R10</span><div class="rbody">
+        <div class="claim">Every run asserts its own premise, and warmup is verified from the recorded time series — a failed guard or an unstable window flags the run's record instead of averaging it in.</div>
+        <div class="why"><b>Prevents:</b> summarizing a run that never reached steady state — which careful measurement shows is the majority case, not the exception.<sup class="cite"><a href="#ref-4">4</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R11</span><div class="rbody">
+        <div class="claim">Every number names its limiter — the saturated resource, proven by counters captured during the run. No limiter, no publication.</div>
+        <div class="why"><b>Prevents:</b> "benchmarking A, measuring B, concluding C" — the passive-benchmarking trap. A number you can't explain is a number you can't trust.<sup class="cite"><a href="#ref-16">16</a></sup></div>
+      </div></li>
+    </ol>
+  </div>
+
+  <div class="rule-group">
+    <div class="grp">Recording &amp; tracking</div>
+    <ol class="rules">
+      <li><span class="rnum">R12</span><div class="rbody">
+        <div class="claim">Records are append-only and self-describing: raw per-interval samples, full parameters, and the fingerprint travel together in one record. Summaries are computed by tools, never by hand.</div>
+        <div class="why"><b>Prevents:</b> the one-number-per-run dead end — every pipeline that flattened results early foreclosed all later analysis; every one that kept raw samples could improve its statistics retroactively.<sup class="cite"><a href="#ref-17">17</a>,<a href="#ref-18">18</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R13</span><div class="rbody">
+        <div class="claim">Repeat at the execution level: headline claims need at least three fresh executions; A/B claims interleave both arms in one session on one machine.</div>
+        <div class="why"><b>Prevents:</b> fictional error bars from a single lucky run, and slow environment drift masquerading as an effect.<sup class="cite"><a href="#ref-19">19</a>,<a href="#ref-20">20</a>,<a href="#ref-21">21</a></sup></div>
+      </div></li>
+      <li><span class="rnum">R14</span><div class="rbody">
+        <div class="claim">The published writeup cites the raw records, prints the durability posture beside every number, and includes the workloads where we lose.</div>
+        <div class="why"><b>Prevents:</b> benchmarketing. Publishing the losing workload is the single strongest credibility signal a vendor can send.<sup class="cite"><a href="#ref-2">2</a>,<a href="#ref-22">22</a></sup></div>
+      </div></li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">04 · Failure catalog</div>
+    <h2>The named mistakes we design against</h2>
+  </div>
+  <div class="col">
+    <p>Every entry below has a public body count. The defense column cites the rules above.</p>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Mistake</th><th>How the number lies</th><th>Defense</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="sin">Coordinated omission</td>
+          <td>A closed-loop generator pauses whenever the system stalls, deleting exactly the worst samples before any percentile is computed. Tails come out orders of magnitude optimistic.<sup class="cite"><a href="#ref-8">8</a>,<a href="#ref-13">13</a></sup></td>
+          <td class="rules-ref">R8</td>
+        </tr>
+        <tr>
+          <td class="sin">Latency at saturation</td>
+          <td>Latency quoted from a max-throughput run measures queue growth times run length — a function of the test, not the system.<sup class="cite"><a href="#ref-8">8</a>,<a href="#ref-5">5</a></sup></td>
+          <td class="rules-ref">R6 · R7</td>
+        </tr>
+        <tr>
+          <td class="sin">Averaged percentiles</td>
+          <td>Per-interval or per-worker p99s averaged into a "global p99" — mathematically meaningless, always flattering.<sup class="cite"><a href="#ref-8">8</a></sup></td>
+          <td class="rules-ref">R8</td>
+        </tr>
+        <tr>
+          <td class="sin">The honeymoon run</td>
+          <td>A window shorter than the database's checkpoint cycle, before vacuum debt or storage garbage collection comes due. Throughput can halve when it does.<sup class="cite"><a href="#ref-12">12</a>,<a href="#ref-15">15</a>,<a href="#ref-2">2</a></sup></td>
+          <td class="rules-ref">R9</td>
+        </tr>
+        <tr>
+          <td class="sin">Durability asymmetry</td>
+          <td>Comparing an ack that means "in memory" against an ack that means "fsynced" — the axis behind every major messaging-benchmark war.<sup class="cite"><a href="#ref-3">3</a>,<a href="#ref-5">5</a>,<a href="#ref-6">6</a></sup></td>
+          <td class="rules-ref">R4 · R14</td>
+        </tr>
+        <tr>
+          <td class="sin">Generator as bottleneck</td>
+          <td>The load generator saturates first and its ceiling is published as the server's.<sup class="cite"><a href="#ref-12">12</a></sup></td>
+          <td class="rules-ref">R5</td>
+        </tr>
+        <tr>
+          <td class="sin">Single-point cherry-pick</td>
+          <td>One workload configuration — the one where you win — presented as general truth.<sup class="cite"><a href="#ref-2">2</a></sup></td>
+          <td class="rules-ref">R2 · R14</td>
+        </tr>
+        <tr>
+          <td class="sin">Assumed warmup</td>
+          <td>A fixed discard prefix hides runs that never stabilized — or were actively degrading when the window closed.<sup class="cite"><a href="#ref-4">4</a></sup></td>
+          <td class="rules-ref">R10</td>
+        </tr>
+        <tr>
+          <td class="sin">The lucky run</td>
+          <td>Best-of-N reported, no spread, no repetition at the level where variance actually lives.<sup class="cite"><a href="#ref-19">19</a></sup></td>
+          <td class="rules-ref">R12 · R13</td>
+        </tr>
+        <tr>
+          <td class="sin">Unexplained numbers</td>
+          <td>A result with no bottleneck analysis — you benchmarked A, measured B, and concluded C.<sup class="cite"><a href="#ref-16">16</a></sup></td>
+          <td class="rules-ref">R11</td>
+        </tr>
+        <tr>
+          <td class="sin">Threshold alert floods</td>
+          <td>Naive "&gt;10% vs. baseline" regression gates produce ~99% false positives, then alert fatigue, then ignored real regressions.<sup class="cite"><a href="#ref-1">1</a></sup></td>
+          <td class="rules-ref">R12 · R13</td>
+        </tr>
+        <tr>
+          <td class="sin">Gamed benchmarks</td>
+          <td>Benchmark-only code paths and tuning nobody would ship, optimizing the leaderboard instead of the product.<sup class="cite"><a href="#ref-9">9</a></sup></td>
+          <td class="rules-ref">R1</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">05 · Credibility</div>
+    <h2>What every published result carries</h2>
+  </div>
+  <div class="col">
+    <p>These are the signals engineers consistently cite when they call a benchmark honest — and their absence is what they cite when they call one marketing.</p>
+  </div>
+
+  <div class="signals">
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">One-command rerun</div><div class="s-sub">From a clean machine to the same table, with the harness in the repo.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">Raw data in the repo</div><div class="s-sub">The records behind every chart, not just the chart.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">Full environment disclosure</div><div class="s-sub">Hardware, versions, and every non-default database setting, verbatim.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">Durability posture beside the number</div><div class="s-sub">What an ack survives, stated in the same table as the throughput.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">The time series, not just the aggregate</div><div class="s-sub">The checkpoint sawtooth and the vacuum dip are findings, not noise.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">A named limiter per number</div><div class="s-sub">The saturated resource, proven with counters from the run.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">Losing workloads included</div><div class="s-sub">The region of the workload space where we're slow, mapped honestly.</div></div></div>
+    <div class="signal"><span class="tick">✓</span><div><div class="s-title">Dated, versioned, append-only results</div><div class="s-sub">Claims expire; numbers are re-run per release, history is never rewritten.</div></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div class="eyebrow">06 · Lineage</div>
+    <h2>Who we learned from</h2>
+  </div>
+  <div class="col">
+    <p>None of this is invented here. The method distills what the best pipelines converged on — and what the public failures taught everyone else.</p>
+  </div>
+
+  <div class="lineage">
+    <div>
+      <h3>Tracking pipelines</h3>
+      <ul>
+        <li><a href="https://go.dev/wiki/PerformanceMonitoring">Go: benchfmt / benchstat / perf.golang.org</a> <span>— the standard result format; ratio-based noise defense</span></li>
+        <li><a href="https://github.com/rust-lang/rustc-perf">rustc-perf</a> <span>— per-benchmark noise-derived thresholds; the best long-range tracker running</span></li>
+        <li><a href="https://conbench.github.io/conbench/">Conbench (Apache Arrow)</a> <span>— identity-vs-informational metadata split; raw samples stored</span></li>
+        <li><a href="https://arxiv.org/abs/2003.00584">MongoDB's change-point paper</a> <span>— why thresholds fail: the ~99% false-positive number</span></li>
+        <li><a href="https://github.com/apache/otava">Hunter / Apache Otava</a> <span>— E-divisive change-point detection over results stored in a SQL database</span></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measurement methodology</h3>
+      <ul>
+        <li><a href="https://github.com/giltene/wrk2">Gil Tene</a> <span>— coordinated omission; HdrHistogram; "how not to measure latency"</span></li>
+        <li><a href="https://www.brendangregg.com/activebenchmarking.html">Brendan Gregg</a> <span>— active benchmarking; the USE method; name the limiter</span></li>
+        <li><a href="https://arxiv.org/abs/1602.00602">Barrett et&nbsp;al.</a> <span>— "VM Warmup Blows Hot and Cold": steady state must be verified</span></li>
+        <li><a href="https://kar.kent.ac.uk/33611/45/p63-kaliber.pdf">Kalibera &amp; Jones</a> <span>— repetition at the level where variance lives</span></li>
+        <li><a href="https://www.sigplan.org/Resources/EmpiricalEvaluation/">SIGPLAN guidelines</a> <span>— the empirical-evaluation checklist</span></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Domain practice &amp; cautionary tales</h3>
+      <ul>
+        <li><a href="https://openmessaging.cloud/docs/benchmarks/">OpenMessaging Benchmark</a> <span>— the workload-spec vocabulary; the wars fought in its forks</span></li>
+        <li><a href="https://jack-vanlightly.com/blog/2023/5/15/kafka-vs-redpanda-performance-do-the-claims-add-up">Kafka vs. Redpanda</a> <span>— same tool, same hardware, opposite conclusions</span></li>
+        <li><a href="https://www.postgresql.org/docs/current/pgbench.html">pgbench good practices</a> <span>— short runs lie; scale vs. clients; rate mode done right</span></li>
+        <li><a href="https://github.com/ClickHouse/ClickBench">ClickBench</a> <span>— one-script reproduction; tuned entries labeled; limitations self-declared</span></li>
+        <li><a href="https://docs.tigerbeetle.com/concepts/performance/">TigerBeetle</a> <span>— the benchmark ships in the product; numbers as consequences of design</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="refs">
+  <div class="section-head">
+    <div class="eyebrow">07 · References</div>
+    <h2>Sources</h2>
+  </div>
+  <div class="col">
+    <p>Every claim above traces to one of these. The lineage section credits the systems we imitate; this list carries the specific evidence behind the numbers and the named failures.</p>
+  </div>
+
+  <ol>
+    <li id="ref-1"><a href="https://arxiv.org/abs/2003.00584">"The Use of Change Point Detection to Identify Software Performance Regressions in a Continuous Integration System"</a> — Daly, Brown, Ingo, O'Leary &amp; Bradford, ICPE 2020. Threshold-based alerting at roughly 1% actionability (2,393 tickets in five months in one project); change-point detection raised actionability to ~67%.</li>
+    <li id="ref-2"><a href="https://jack-vanlightly.com/blog/2023/5/15/kafka-vs-redpanda-performance-do-the-claims-add-up">"Kafka vs Redpanda Performance — Do the claims add up?"</a> — J. Vanlightly, 2023. The teardown: producer-count cherry-picking, fresh-SSD honeymoon (p99.99 rising to 26s after 12h as drive GC kicked in), message keys flipping results, backlog-drain failure — and where each side wins.</li>
+    <li id="ref-3"><a href="https://www.redpanda.com/blog/redpanda-faster-safer-than-kafka">"Redpanda vs. Kafka"</a> — Redpanda, 2022. The opposing methodology post: 30-minute warmups, hour-long measured runs, full hardware disclosure — and the Kafka fsync configuration later disputed.</li>
+    <li id="ref-4"><a href="https://arxiv.org/abs/1602.00602">"Virtual Machine Warmup Blows Hot and Cold"</a> — Barrett, Bolz-Tereick, Killick, Mount &amp; Tratt, OOPSLA 2017. Under extreme environment control, only ~30–43.5% of (VM, benchmark) pairs consistently reached a steady state of peak performance; steady state is detected per-run with changepoint analysis, never assumed.</li>
+    <li id="ref-5"><a href="https://www.confluent.io/blog/kafka-fastest-messaging-system/">"Benchmarking Apache Kafka, Apache Pulsar, and RabbitMQ: Which Is the Fastest?"</a> — Confluent, 2020. Source of the fixed-rate latency methodology and the operational definition of sustainable throughput; its durability configuration was itself disputed in [6].</li>
+    <li id="ref-6"><a href="https://streamnative.io/blog/perspective-on-pulsars-performance-compared-to-kafka">"Benchmarking Pulsar and Kafka: A More Accurate Perspective on Pulsar's Performance"</a> — StreamNative, 2020. The durability-matched re-run that reversed several of [5]'s results.</li>
+    <li id="ref-7"><a href="https://www.infoq.com/news/2011/11/MongoDB-Criticism/">"MongoDB Criticism Roundup"</a> — InfoQ, 2011. Early MongoDB defaults: unacknowledged writes benchmarked as if durable.</li>
+    <li id="ref-8"><a href="https://www.youtube.com/watch?v=lJ8ydIuPFeU">"How NOT to Measure Latency"</a> and the <a href="https://github.com/giltene/wrk2">wrk2 README</a> — G. Tene. Coordinated omission, measuring from the intended send time, why latency at saturation is meaningless, and "you can't average percentiles — period."</li>
+    <li id="ref-9"><a href="https://news.ycombinator.com/item?id=47497763">TechEmpower Framework Benchmarks sunsetting discussion</a> — 2026. Benchmark-specialized non-idiomatic implementations and maintenance burden cited in the project's wind-down.</li>
+    <li id="ref-10"><a href="https://codspeed.io/blog/unrelated-benchmark-regression">"Tracing an unrelated benchmark regression"</a> — CodSpeed engineering blog. A flagged "regression" traced to a glibc difference between CI runner images, not code.</li>
+    <li id="ref-11"><a href="https://arxiv.org/abs/2510.11310">Change-point-detection evaluation on MooBench</a> — arXiv:2510.11310, 2025. A detected change point traced to a kernel version change on GitHub-hosted runners.</li>
+    <li id="ref-12"><a href="https://www.postgresql.org/docs/current/pgbench.html">pgbench documentation, "Good Practices"</a> — PostgreSQL. Runs must last minutes to hours for reproducibility; pgbench itself can be the bottleneck; <code>-R</code> schedules transactions and measures latency from the scheduled start time.</li>
+    <li id="ref-13"><a href="https://www.usenix.org/legacy/event/nsdi06/tech/full_papers/schroeder/schroeder.pdf">"Open Versus Closed: A Cautionary Tale"</a> — Schroeder, Wierman &amp; Harchol-Balter, NSDI 2006. Open and closed workload models of the same system produce vastly different response-time behavior.</li>
+    <li id="ref-14"><a href="https://github.com/HdrHistogram/HdrHistogram">HdrHistogram</a> — G. Tene. Mergeable, full-fidelity latency histograms; the structure that makes honest percentiles possible.</li>
+    <li id="ref-15"><a href="https://www.pgedge.com/blog/checkpoints-write-storms-and-you">"Checkpoints, Write Storms, and You"</a> — pgEdge. Checkpoint write storms saturating disk within seconds when shared buffers hold many dirty pages.</li>
+    <li id="ref-16"><a href="https://www.brendangregg.com/activebenchmarking.html">"Active Benchmarking"</a> — B. Gregg. Passive benchmarking yields "you benchmark A, but actually measure B, and conclude you've measured C"; profile while the benchmark runs and name the limiter.</li>
+    <li id="ref-17"><a href="https://conbench.github.io/conbench/">Conbench documentation</a> — Apache Arrow's benchmarking framework. Raw per-repetition samples stored with summaries computed server-side; identity-forming vs. informational metadata split.</li>
+    <li id="ref-18"><a href="https://github.com/rust-lang/rustc-perf/blob/master/docs/comparison-analysis.md">rustc-perf comparison analysis</a> — Rust. Per-benchmark significance thresholds derived from each series' own recent noise; per-iteration results stored raw.</li>
+    <li id="ref-19"><a href="https://kar.kent.ac.uk/33611/45/p63-kaliber.pdf">"Rigorous Benchmarking in Reasonable Time"</a> — Kalibera &amp; Jones, ISMM 2013. Variance lives at multiple levels (iteration, execution, build); repeat at the level that dominates or the error bars are fiction.</li>
+    <li id="ref-20"><a href="https://pkg.go.dev/golang.org/x/perf/cmd/benchstat">benchstat</a> — golang.org/x/perf. Median summaries, Mann-Whitney U comparison, ≥10 runs recommended, and "~" printed instead of a statistically unsupported delta.</li>
+    <li id="ref-21"><a href="https://users.cs.northwestern.edu/~robby/courses/322-2013-spring/mytkowicz-wrong-data.pdf">"Producing Wrong Data Without Doing Anything Obviously Wrong!"</a> — Mytkowicz, Diwan, Hauswirth &amp; Sweeney, ASPLOS 2009. Link order and environment size alone swing measured performance by up to ±10% — more than many published effects.</li>
+    <li id="ref-22"><a href="https://github.com/ClickHouse/ClickBench">ClickBench</a> — ClickHouse. One-script reproduction from a clean VM, tuned entries labeled separately, and a self-declared limitations section.</li>
+  </ol>
+</section>
+
+<footer>
+  Methodology document · design round, August 2026. The companion design notes map these rules onto the concrete harness, record schema, and existing benches.
+</footer>
+
+</div>
