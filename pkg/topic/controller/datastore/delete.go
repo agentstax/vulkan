@@ -46,54 +46,30 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 	}
 	defer tx.Rollback(ctx)
 
-	leaseSql := `
-		-- vulkan: topic.delete
-		DELETE FROM lease
-		WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE topic_id = $1);
-	`
-	if _, err := tx.Exec(ctx, leaseSql, topicId); err != nil {
-		return err
-	}
-
-	keyLeaseSql := `
-		-- vulkan: topic.delete
-		DELETE FROM key_lease
-		WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE topic_id = $1);
-	`
-	if _, err := tx.Exec(ctx, keyLeaseSql, topicId); err != nil {
-		return err
-	}
-
 	if _, err := tx.Exec(ctx, `-- vulkan: topic.delete
 DELETE FROM topic WHERE id = $1;`, topicId); err != nil {
 		return err
 	}
 
-	if _, err := tx.Exec(ctx, `-- vulkan: topic.delete
-DELETE FROM compaction_head WHERE topic_id = $1;`, topicId); err != nil {
-		return err
-	}
-
-	// the now-empty parent, delivery_<id>, and idempotency_key_<id>
-	dropTableSql := fmt.Sprintf(`-- vulkan: topic.delete
-DROP TABLE IF EXISTS %s;`, iTopic.MessageLogTable(topicId))
-	if _, err := tx.Exec(ctx, dropTableSql); err != nil {
-		return err
-	}
-	dropDeliverySql := fmt.Sprintf(`-- vulkan: topic.delete
-DROP TABLE IF EXISTS %s;`, iTopic.DeliveryTable(topicId))
-	if _, err := tx.Exec(ctx, dropDeliverySql); err != nil {
-		return err
-	}
-	dropDeliveryLogSql := fmt.Sprintf(`-- vulkan: topic.delete
-DROP TABLE IF EXISTS %s;`, iTopic.DeliveryLogTable(topicId))
-	if _, err := tx.Exec(ctx, dropDeliveryLogSql); err != nil {
-		return err
-	}
-	dropIdempotencyKeySql := fmt.Sprintf(`-- vulkan: topic.delete
-DROP TABLE IF EXISTS %s;`, iTopic.IdempotencyKeyTable(topicId))
-	if _, err := tx.Exec(ctx, dropIdempotencyKeySql); err != nil {
-		return err
+	// the now-empty message_log parent and every other per-topic table
+	for _, table := range []string{
+		iTopic.MessageLogTable(topicId),
+		iTopic.DeliveryTable(topicId),
+		iTopic.DeliveryLogTable(topicId),
+		iTopic.IdempotencyKeyTable(topicId),
+		iTopic.CursorTable(topicId),
+		iTopic.LeaseTable(topicId),
+		iTopic.KeyLeaseTable(topicId),
+		iTopic.CompactionHeadTable(topicId),
+		iTopic.BindingTable(topicId),
+		iTopic.BindingLogTable(topicId),
+	} {
+		dropSql := fmt.Sprintf(`
+			-- vulkan: topic.delete
+			DROP TABLE IF EXISTS %s;`, table)
+		if _, err := tx.Exec(ctx, dropSql); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

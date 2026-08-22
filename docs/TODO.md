@@ -37,7 +37,7 @@ the build.
       - alert/compactionreadcost/.../datastore: compaction
       - cron/.../datastore: status
       - topic/janitor/.../datastore: keylease, sweep, drop
-- [ ] 4. Destroy paths: topic delete.go replaces its lease/key_lease/
+- [x] 4. Destroy paths: topic delete.go replaces its lease/key_lease/
       compaction_head DELETEs with DROP TABLE of the six new tables (drop
       list 4 -> 10 incl. partitions' parent). system delete.go: check how
       per-topic tables are dropped at system scope today and extend the
