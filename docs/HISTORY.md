@@ -5,6 +5,21 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-22 — binding_log retention via the consumer group janitor [0573]
+
+- Waiting declaration rows older than a flat 7d TTL are swept in one
+  batched DELETE per tick, keeping each declarer's newest waiting row so
+  dead waiters stay visible in listings; installed rows are kept forever
+  as the set-change audit. New OwnerSystem worker kind
+  consumer_group_janitor under pkg/consumergroup/janitor -- hourly poll,
+  Debug swept_count line only on ticks that deleted rows -- declared at
+  RegisterSystem, provisioned by the system manager and every consumer's
+  embedded manager.
+- Naming pattern settled: each domain's cleanup worker is its janitor;
+  the topic kind renamed "janitor" -> "topic_janitor".
+- bindinglab extended with the sweep step (superseded rows deleted, each
+  declarer's newest waiting row and all installed rows kept).
+
 ## 2026-08-22 — Topic config history as append-only topic_log [0570]
 
 - The topic row stays the enforced truth (UNIQUE (name, schema_version),

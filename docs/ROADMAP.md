@@ -16,29 +16,6 @@ the item is removed.
 
 ## Now
 
-- **binding_log retention** — the ledger is append-only ([0511]; table
-  renamed from binding_declaration by [0570]):
-  waiting retries append attempt rows, so a long-blocked group grows the
-  table without bound. Add time-based cleanup of superseded attempt rows
-  (append-then-prune like message_log; off the register path, never touching
-  the newest installed row or a declarer's newest waiting row).
-  - Design settled 2026-08-21: batched DELETE of waiting rows past a flat 7d
-    TTL, excluding each declarer's newest waiting row (kept even past TTL —
-    dead waiters stay visible in listings; growth bounded by declarer count
-    in practice). Installed rows out of scope entirely: set-change audit is
-    kept forever, one row per real change.
-  - A live waiter is never touchable regardless — it re-appends every
-    BindingRetryInterval (10s), so its newest row sits far inside the TTL.
-    classifyDeclaration reads only installed rows, so declareBindings is
-    unaffected; no lock coordination (rows past TTL can't race an insert).
-  - Runs as a new worker kind under pkg/consumergroup at OwnerSystem scope
-    (one worker row total, slow poll rate on the order of hours), one
-    batched DELETE per tick; Debug line with swept_count only on ticks that
-    deleted rows. Riding the cursor advancer rejected (per-group rows
-    multiply idle-fleet cost; pruning isn't cursor work).
-  - TTL stays a flat const for now — add to the hardcoded-config audit. No
-    new index: the sweep keeps the table small enough that its own scan is
-    noise.
 - **System-table churn evaluation** — reconsider whether compaction_head
   should be per-topic compaction_head_(topic_id) (high update churn from
   many topics), and evaluate all system tables: cursor / lease / binding /
@@ -74,9 +51,10 @@ the item is removed.
     - Split: binding and binding_log, together — they are one mechanism
       (declareBindings appends the log row and rewrites binding rows in
       one transaction) with identical ownership, and no reader lacks
-      topic context. Amends the settled binding_log retention design
-      above: the pruner stays one OwnerSystem worker but runs one
-      batched DELETE per topic's table per tick instead of one total.
+      topic context. Amends the shipped binding_log retention sweep
+      ([0573]): the consumer group janitor stays one OwnerSystem worker
+      but runs one batched DELETE per topic's table per tick instead of
+      one total.
     - Keep shared: worker, worker_instance, cron_job, migration_log
       (their CHECK num_nonnulls(...) = 1 rows can be system-scoped — no
       per-topic home — and their primary readers are single cross-scope
@@ -338,7 +316,8 @@ prerequisite if quorum-as-a-fraction wins.
   becomes a Config field (WithDefaults keeps today's value) or stays fixed
   with the rationale recorded. Known candidates: logging's
   logBufferMaxRecords (64) and suppressionWindow (1 minute); the cron
-  snapshot's flat 10-minute overdue threshold; expect more.
+  snapshot's flat 10-minute overdue threshold; the consumer group
+  janitor's waitingDeclarationTTL (7d, [0573]); expect more.
 - **Mechanical enforcement of checkable conventions** — a `just vet`
   analyzer (or lab-suite test) that fails on the CONVENTIONS.md rules a
   machine can check: `SELECT *` anywhere incl. CTEs, banned words in error

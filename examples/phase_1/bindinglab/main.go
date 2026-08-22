@@ -13,7 +13,9 @@ package main
 // declaration listing shows the effective row and the open waiter; stopping
 // the incumbent (the rolling deploy's kill) lets the waiter install, swap the
 // binding rows, and consume messages routed to its set; the ended wait
-// disappears from the listing.
+// disappears from the listing; the consumer group janitor's sweep deletes
+// superseded waiting rows past the TTL while keeping each declarer's newest
+// waiting row and every installed row.
 
 import (
 	"context"
@@ -24,6 +26,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
+	consumergroupjanitorcontroller "github.com/agentstax/vulkan/pkg/consumergroup/janitor/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -159,6 +162,36 @@ func main() {
 	must(<-divergentDone)
 	fmt.Println("  ✓ consumed a message routed to the new set, stopped clean")
 
+	// ===== retention: the janitor sweeps superseded waiting rows =====
+	step("the consumer group janitor sweeps superseded waiting rows, keeping each declarer's newest")
+	syntheticNewestId := insertSyntheticWaits(ctx)
+	beforeSweep := waitingRows(ctx)
+	_, err = ds.Pool.Exec(ctx,
+		`UPDATE binding_log SET attempt_at = attempt_at - interval '8 days' WHERE consumer_group_id = $1;`,
+		groupId)
+	must(err)
+
+	sweepController, err := consumergroupjanitorcontroller.NewJanitorController(ds, nil)
+	must(err)
+	swept, err := sweepController.SweepExpiredWaitingDeclarations(ctx, 7*24*time.Hour, 1000)
+	must(err)
+	assertInt("swept superseded waiting rows", int(swept), beforeSweep-2)
+	assertInt("one waiting row per declarer survives past the TTL", waitingRows(ctx), 2)
+	assertInt("installed rows untouched", installedRows(ctx), 2)
+
+	var survivingSyntheticId int64
+	must(ds.Pool.QueryRow(ctx,
+		`SELECT id FROM binding_log WHERE consumer_group_id = $1 AND declared_by = 'bindinglab.dead-declarer';`,
+		groupId).Scan(&survivingSyntheticId))
+	if survivingSyntheticId != syntheticNewestId {
+		die(fmt.Sprintf("the dead declarer's newest waiting row must survive: got id %d, want %d", survivingSyntheticId, syntheticNewestId))
+	}
+
+	swept, err = sweepController.SweepExpiredWaitingDeclarations(ctx, 7*24*time.Hour, 1000)
+	must(err)
+	assertInt("a second sweep deletes nothing", int(swept), 0)
+	fmt.Println("  ✓ superseded rows swept; each declarer's newest waiting row and all installed rows kept")
+
 	fmt.Println("\n✅ BINDING LAB PASSED")
 }
 
@@ -193,6 +226,20 @@ func waitLiveInstance(ctx context.Context) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// insertSyntheticWaits appends three waiting rows for a declarer whose
+// process is gone -- the dead waiter the sweep must keep visible. Returns
+// the newest row's id.
+func insertSyntheticWaits(ctx context.Context) int64 {
+	var newestId int64
+	for range 3 {
+		must(ds.Pool.QueryRow(ctx, `
+			INSERT INTO binding_log (consumer_group_id, status, patterns, declared_by, declared_at)
+			VALUES ($1, 'waiting', '{"refunds.*"}', 'bindinglab.dead-declarer', now())
+			RETURNING id;`, groupId).Scan(&newestId))
+	}
+	return newestId
 }
 
 func installedRows(ctx context.Context) int {

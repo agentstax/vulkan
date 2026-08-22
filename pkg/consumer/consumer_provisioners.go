@@ -5,10 +5,11 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
+	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
-	"github.com/agentstax/vulkan/pkg/topic/janitor"
+	topicjanitor "github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
 )
@@ -81,7 +82,15 @@ func (i *ConsumerInstance[Message]) newGroupProvisioners(ctx context.Context, co
 }
 
 func (i *ConsumerInstance[Message]) newTopicProvisioners() ([]worker.Provisioner, error) {
-	janitorProvisioner, err := janitor.NewJanitorProvisioner(i.ds, &janitor.JanitorConfig{
+	topicJanitorProvisioner, err := topicjanitor.NewJanitorProvisioner(i.ds, &topicjanitor.JanitorConfig{
+		Logger: i.Logger,
+		Retry:  i.Config.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	consumerGroupJanitorProvisioner, err := consumergroupjanitor.NewJanitorProvisioner(i.ds, &consumergroupjanitor.JanitorConfig{
 		Logger: i.Logger,
 		Retry:  i.Config.Retry,
 	})
@@ -105,5 +114,5 @@ func (i *ConsumerInstance[Message]) newTopicProvisioners() ([]worker.Provisioner
 		return nil, err
 	}
 
-	return []worker.Provisioner{cronSchedulerProvisioner, metricsCollectorProvisioner, janitorProvisioner}, nil
+	return []worker.Provisioner{cronSchedulerProvisioner, metricsCollectorProvisioner, topicJanitorProvisioner, consumerGroupJanitorProvisioner}, nil
 }

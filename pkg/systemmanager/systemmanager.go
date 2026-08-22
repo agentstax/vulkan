@@ -9,11 +9,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumergroup/cursoradvancer"
+	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
 	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
-	"github.com/agentstax/vulkan/pkg/topic/janitor"
+	topicjanitor "github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
 )
@@ -48,7 +49,15 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 
 	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
 
-	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{
+	topicJanitorProvisioner, err := topicjanitor.NewJanitorProvisioner(ds, &topicjanitor.JanitorConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	consumerGroupJanitorProvisioner, err := consumergroupjanitor.NewJanitorProvisioner(ds, &consumergroupjanitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -97,7 +106,7 @@ func NewSystemManager(ds *datastore.PostgresDatastore, cfg *SystemManagerConfig)
 		return nil, err
 	}
 
-	provisioners := []worker.Provisioner{janitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner, cursorAdvancerProvisioner, partitionCountProvisioner, compactionReadCostProvisioner}
+	provisioners := []worker.Provisioner{topicJanitorProvisioner, consumerGroupJanitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner, cursorAdvancerProvisioner, partitionCountProvisioner, compactionReadCostProvisioner}
 	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,

@@ -6,6 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/cron/scheduler"
@@ -17,7 +18,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/agentstax/vulkan/pkg/topic/janitor"
+	topicjanitor "github.com/agentstax/vulkan/pkg/topic/janitor"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 	"github.com/agentstax/vulkan/pkg/worker/manager"
@@ -57,7 +58,15 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{
+	topicJanitorProvisioner, err := topicjanitor.NewJanitorProvisioner(ds, &topicjanitor.JanitorConfig{
+		Logger: cfg.Logger,
+		Retry:  cfg.Retry,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	consumerGroupJanitorProvisioner, err := consumergroupjanitor.NewJanitorProvisioner(ds, &consumergroupjanitor.JanitorConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -77,7 +86,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner)
+	}, topicJanitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +94,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, cronSchedulerProvisioner, metricsCollectorProvisioner, managerProvisioner)
+	}, cronSchedulerProvisioner, metricsCollectorProvisioner, consumerGroupJanitorProvisioner, managerProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +102,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	topicController, err := topiccontroller.NewTopicController(ds, &topiccontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, janitorProvisioner)
+	}, topicJanitorProvisioner)
 	if err != nil {
 		return nil, err
 	}
