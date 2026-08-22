@@ -159,8 +159,21 @@ the item is removed.
     this ships); the decision record; the website migration docs page (the
     same page as the LOCK TIMEOUT item below) plus a sentence on the
     VK0022/VK0023 error pages, whose attrs change.
-- **Migration docs:** should use LOCK TIMEOUT for any ALTER migration
-  commands (likely just needs documenting).
+- **Migration LOCK TIMEOUT** [0579] — machinery, not docs-only.
+  runStepWithTx sets `SET LOCAL lock_timeout = 2s` right after Begin
+  (migrate datastore declares its own ddlLockTimeout const, matching the
+  producer/janitor sites; no config field) — one site covers Up/Down,
+  Validate, and recordSuccess. A 55P03 on the txn step path is
+  reclassified Transient via a new declared error (next VK serial, docs
+  page same change) so the atomically rolled-back step retries under the
+  existing DatastoreRetry schedule. NoTxn steps keep fail-fast: no cap
+  (a lock_timeout expiry mid CREATE INDEX CONCURRENTLY leaves an INVALID
+  index, and a session-level SET would leak to the pool at Release).
+  Build pre-v1 — inert until release-era ALTER steps exist. Docs: one
+  authoring-rules line in the Migration doc comment ("txn steps run
+  under a 2s lock_timeout; a wait past it retries — NoTxn steps get no
+  cap") plus the website migration page shared with the compat-matrix
+  item above.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -204,11 +217,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
   plus every declared code -- codes never renumber after v1, so the prefix
   must be final first).
-
-- **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
-  recorded there are Setup/Action/Assert prose from a scratch harness;
-  implement as a real pkg/producer/pkg/consumer test suite once the API
-  stops moving.
 
 - **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
   decide and document. Weigh Go 1.27's new generics/type-inference features
@@ -269,7 +277,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
 
-
 - **Documentation** (Phase 15, deliberately last):
   - After the next `just site-deploy`: confirm the deployed /errors/ pages
     resolve at the Docs() URLs (exact-case /errors/VK0005), then drop the
@@ -292,6 +299,11 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     Default constructors get built against that observed pattern rather
     than guessed.
   - DDL table design diagram.
+
+- **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
+  recorded there are Setup/Action/Assert prose from a scratch harness;
+  implement as a real pkg/producer/pkg/consumer test suite once the API
+  stops moving.
 
 ## Later
 

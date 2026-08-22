@@ -13,6 +13,18 @@ verify:
   cd bench && go build ./...
   cd tools && go test -race ./...
 
+# compat lab (release checkpoints only, needs the dev DB): drives the PINNED
+# prior release's public API against a database the working tree migrated --
+# the empirical check that declared compatibility matches observed. Until two
+# releases exist, tools/compat/go.mod replaces vulkan with the working tree,
+# so this is a dry-run of the harness itself (pinned == working tree, verdict
+# round-trip). At a checkpoint: `git worktree add` the prior tag, repoint the
+# replace (see tools/compat/go.mod), and pass expect from the working tree's
+# registry verdict: round-trip when every step past the pinned build declares
+# MinCompatibleVersion <= it, refused otherwise.
+compat-lab expect="round-trip":
+  cd tools/compat && go run . -expect={{ expect }}
+
 ### DATABASE ###
 
 database-up:

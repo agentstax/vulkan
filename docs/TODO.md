@@ -41,8 +41,12 @@ stays there until ship. Tasks in build order:
    unforgeable while the registries are empty (build version cannot
    exceed the baseline) -- it gets a real assertion with the first real
    migration.
-7. (open) tools/compat module skeleton + `just compat-lab` recipe —
-   dry-runs via a replace to the same tree until two releases exist.
+7. (done 2026-08-22) tools/compat module skeleton + `just compat-lab`
+   recipe: nested go.mod pinning vulkan (replace -> working tree until two
+   releases exist; checkpoint flow documented in the go.mod comment), a
+   nested go.work shielding it from the root workspace (no GOWORK=off
+   needed), the pinned-side lab with -expect=round-trip|refused, dry-run
+   green against the dev DB.
 8. (open) Rules & docs: CONVENTIONS ## Migrations release-era rules +
    tools/ wording widened to "dev-only modules"; website migration docs
    page with the per-release compatibility table; AGENTS.md release
