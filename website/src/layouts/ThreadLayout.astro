@@ -53,8 +53,13 @@ const returnTrail = [
 			{next !== null && <a href={next.href}>View next thread</a>}
 		</div>
 	</div>
-	<ThreadTitleBand title={title} editHref={editHref} />
-	<ThreadPost author="brandon" role="Site Admin" header={{ postedDate, reportHref }} postCount={postCount}>
+	<ThreadTitleBand title={title} code={null} solved={false} editHref={editHref} />
+	<ThreadPost
+		author="brandon"
+		role="Site Admin"
+		header={{ kind: 'posted', postedDate, reportHref }}
+		postCount={postCount}
+	>
 		<div class="thread-body">
 			<slot />
 		</div>

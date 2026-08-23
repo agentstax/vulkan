@@ -20,6 +20,26 @@
 	font-size: 10px;
 }
 
+.post-header[data-accepted='true'] {
+	background: var(--color-solved-ground);
+	border-bottom: 1px solid var(--border-solved);
+}
+
+.accepted-label {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	color: var(--color-solved);
+	font-weight: 700;
+	letter-spacing: 0.5px;
+}
+
+.accepted-mark {
+	width: 8px;
+	height: 8px;
+	background: var(--color-solved);
+}
+
 .posted {
 	font-variant-numeric: tabular-nums;
 }

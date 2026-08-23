@@ -1,0 +1,27 @@
+.search-strip {
+	border: 1px solid var(--border-section);
+	background: var(--color-chrome-pale);
+	padding: 11px 14px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.prompt {
+	font-family: var(--font-content);
+	font-size: 12px;
+	color: var(--color-chrome-pale-text);
+	flex-shrink: 0;
+}
+
+.example {
+	flex-grow: 1;
+	background: var(--color-surface);
+	border: 1px solid var(--border-outer);
+	padding: 4px 10px;
+	font-family: var(--font-database);
+	font-size: 11px;
+	color: var(--color-console-null);
+	white-space: nowrap;
+	overflow: hidden;
+}

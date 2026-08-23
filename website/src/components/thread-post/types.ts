@@ -1,4 +1,3 @@
-export type PostHeader = {
-	postedDate: string;
-	reportHref: string;
-};
+export type PostHeader =
+	| { kind: 'posted'; postedDate: string; reportHref: string }
+	| { kind: 'accepted'; postedDate: string };

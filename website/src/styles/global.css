@@ -71,6 +71,9 @@
 		--console-header-blue: #dee7ef;
 		--null-gray: #97a6b2;
 		--surface-veil: rgba(255, 255, 255, 0.88);
+		--solved-green: #1e7b3c;
+		--solved-green-pale: #eaf4ec;
+		--solved-green-border: #cbe3d2;
 
 		/* semantic -- what components consume */
 		--color-page: var(--page-blue-gray);
@@ -143,6 +146,9 @@
 		--color-progress-veil: var(--surface-veil);
 		--color-progress-track: var(--stripe-blue-dark);
 		--color-progress-fill: var(--amber);
+		--color-solved: var(--solved-green);
+		--color-solved-ground: var(--solved-green-pale);
+		--border-solved: var(--solved-green-border);
 		--flag-body: var(--amber-dark);
 		--flag-face: var(--amber);
 		--flag-highlight: var(--amber-light);

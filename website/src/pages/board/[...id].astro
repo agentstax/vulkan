@@ -2,24 +2,24 @@
 import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
 import { getCollection, render } from 'astro:content';
 import ThreadLayout from '../../layouts/ThreadLayout.astro';
-import { boards } from '../_board/boards';
+import { boards, isErrorThread } from '../_board/boards';
 import { boardEntries } from '../_board/rows';
 import { threadData } from '../_thread/thread';
 
 export const getStaticPaths = (async () => {
 	const docs = await getCollection('docs');
 
-	// every board thread except the error threads -- those get the
-	// [SOLVED] variant in the next slice
+	// every board thread except the error threads -- those render
+	// through board/errors/[code].astro
 	return boards
 		.flatMap((board) => boardEntries(board, docs))
-		.filter((entry) => !entry.id.startsWith('errors/'))
+		.filter((entry) => !isErrorThread(entry.id))
 		.map((entry) => ({ params: { id: entry.id }, props: { entry } }));
 }) satisfies GetStaticPaths;
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>;
 
-const { entry } = Astro.props as Props;
+const { entry } = Astro.props;
 const docs = await getCollection('docs');
 const { Content } = await render(entry);
 const thread = threadData(entry, docs);

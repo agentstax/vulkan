@@ -1,0 +1,18 @@
+.log-line {
+	margin: 0;
+	max-width: 680px;
+	box-sizing: border-box;
+	padding: 12px 16px;
+	background: var(--color-console-sql-bg);
+	border: 1px solid var(--border-row);
+	font-family: var(--font-database);
+	font-size: 12.5px;
+	line-height: 1.65;
+	color: var(--color-text);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.log-line[data-kind='error'] {
+	border-left: 3px solid var(--color-pin);
+}

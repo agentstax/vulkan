@@ -24,6 +24,7 @@
 	name="FramedWithHeader"
 	args={{
 		header: {
+			kind: 'posted',
 			postedDate: '2026-08-22',
 			reportHref: 'https://github.com/agentstax/vulkan/issues/new',
 		},
@@ -33,6 +34,17 @@
 	{#snippet template(args)}
 		<ThreadPost {...args}>
 			<p>A framed post carries its own border, the posted-date strip, and the author's count.</p>
+		</ThreadPost>
+	{/snippet}
+</Story>
+
+<Story
+	name="AcceptedAnswer"
+	args={{ header: { kind: 'accepted', postedDate: '2026-08-20' }, postCount: 74 }}
+>
+	{#snippet template(args)}
+		<ThreadPost {...args}>
+			<p><strong>register it with MessageAdmin.RegisterTopic first</strong></p>
 		</ThreadPost>
 	{/snippet}
 </Story>

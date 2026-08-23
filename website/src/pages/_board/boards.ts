@@ -42,8 +42,7 @@ export const boards: Board[] = [
 		href: '/errors/',
 		description: 'every VK error code and log event, one thread each',
 		// error threads read in code order
-		threads: (ids) =>
-			ids.filter((id) => id.startsWith('errors/') && id !== 'errors/index').sort(),
+		threads: (ids) => ids.filter(isErrorThread).sort(),
 	},
 	{
 		title: 'Compare',
@@ -54,3 +53,15 @@ export const boards: Board[] = [
 ];
 
 export const stickyIds = ['quickstart', 'why-vulkan'];
+
+export function isErrorThread(id: string): boolean {
+	return id.startsWith('errors/') && id !== 'errors/index';
+}
+
+export function threadCode(id: string): string {
+	const code = id.split('/')[1];
+	if (code === undefined) {
+		throw new Error(`thread "${id}" carries no code segment`);
+	}
+	return code;
+}

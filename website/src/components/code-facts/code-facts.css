@@ -1,0 +1,14 @@
+.code-facts {
+	background: var(--color-chrome-pale);
+	border: 1px solid var(--border-section);
+	padding: 6px 14px;
+	font-family: var(--font-database);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	color: var(--color-chrome-pale-text);
+}
+
+.classification {
+	font-weight: 600;
+	color: var(--color-text);
+}

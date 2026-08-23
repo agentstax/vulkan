@@ -1,0 +1,15 @@
+svg {
+	image-rendering: pixelated;
+}
+
+.pin {
+	fill: var(--color-pin);
+}
+
+.pin-light {
+	fill: var(--color-pin-light);
+}
+
+.pin-dark {
+	fill: var(--color-pin-dark);
+}

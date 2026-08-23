@@ -16,10 +16,17 @@
 
 <div class="thread-post" data-framed={header !== null}>
 	{#if header !== null}
-		<div class="post-header">
-			<span class="posted">Posted: {header.postedDate}</span>
-			<a href={header.reportHref}>Report this thread</a>
-		</div>
+		{#if header.kind === 'accepted'}
+			<div class="post-header" data-accepted="true">
+				<span class="accepted-label"><span class="accepted-mark"></span>ACCEPTED ANSWER</span>
+				<span class="posted">Posted: {header.postedDate}</span>
+			</div>
+		{:else}
+			<div class="post-header">
+				<span class="posted">Posted: {header.postedDate}</span>
+				<a href={header.reportHref}>Report this thread</a>
+			</div>
+		{/if}
 	{/if}
 	<div class="post-columns">
 		<div class="author">

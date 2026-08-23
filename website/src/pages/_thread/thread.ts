@@ -3,7 +3,7 @@ import { lastCommitDate } from '../../helpers/last-commit-date';
 import { repositoryUrl } from '../../site';
 import type { ThreadLink } from '../../components/prev-next/types';
 import { boards } from '../_board/boards';
-import { boardEntries, entryFilePath } from '../_board/rows';
+import { boardEntries, entryFilePath, threadTitle } from '../_board/rows';
 import type { ThreadData } from './model';
 
 type DocsEntry = CollectionEntry<'docs'>;
@@ -39,5 +39,5 @@ function toThreadLink(entry: DocsEntry | undefined): ThreadLink | null {
 	if (entry === undefined) {
 		return null;
 	}
-	return { title: entry.data.title, href: `/${entry.id}/` };
+	return { title: threadTitle(entry), href: `/${entry.id}/` };
 }

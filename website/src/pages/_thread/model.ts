@@ -10,3 +10,15 @@ export type ThreadData = {
 	previous: ThreadLink | null;
 	next: ThreadLink | null;
 };
+
+export type CodeThreadData = {
+	code: string;
+	kind: 'error' | 'event' | 'metric';
+	solved: boolean;
+	classification: string;
+	rank: string;
+	introduction: string;
+	logLine: string;
+	consequence: string;
+	fix: string | null;
+};

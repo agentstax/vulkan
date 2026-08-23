@@ -448,10 +448,36 @@ Invented interactive machinery for the site; user verdicts so far:
      the build. Verified: build 92 pages, eslint, vitest 3/3,
      storybook build, quickstart screenshot (steps + both asides +
      tab conversion + Go dialect).
-  3. error thread variant: green tokens, [SOLVED] chip, VK-as-poster,
-     registry strip, search-strip shell; the 25 hand-written error
-     pages gain zod-enforced structured frontmatter (problem/
-     recovery/fix) BY HAND — no generation (settled rule).
+  3. error thread variant — BUILT 2026-08-23 (awaiting review): all
+     53 code pages render at /board/errors/VKxxxx/ via
+     ErrorThreadLayout + board/errors/[code].astro. THREE kinds, not
+     two (the pages revealed 10 metric pages beside 26 errors + 17
+     events): frontmatter migrated BY-SCRIPT-RESHAPE of each page's
+     own hand-written body (no generation from Go) — kind: error |
+     event | metric, recovery (errors), level (events), consequence
+     (verbatim, all), fix (errors; VK0003/18/19 legitimately
+     fixless); zod extend on docsSchema with .describe() prose;
+     _thread/code.ts codeThreadData validates presence per kind and
+     derives the strings. Honesty rule fell out naturally: [SOLVED]
+     chip + green ACCEPTED ANSWER post appear ONLY when a fix is
+     declared. OP = the code as poster (mono red name, rank =
+     Permanent/Transient error | Log event at <level> | Metric,
+     pixel-exclamation avatar — one red mark for all kinds, the rank
+     line carries the classification); log-line block composes from
+     parts (error: "title -- fix [code]", event: level=WARN
+     msg="title" code=VKxxxx, metric: the series name; red left edge
+     on errors only); page body prose renders in the OP under the
+     line (events/metrics have real bodies). New components (each
+     with stories): pixel-exclamation, code-facts (registry strip),
+     error-post, log-line, search-strip (inert Search until
+     Pagefind, example = the composed line). Extended: thread-title-
+     band (+code | null, +solved), thread-post PostHeader now a
+     posted/accepted discriminated union (green strip); solved-green
+     token family added. Copy-error-text buttons deferred with the
+     other clipboard wiring. Vocabulary fix in passing: two "sit in
+     the DLQ" lines (VK0041/VK0047) -> "sit dead-lettered". Verified:
+     build 145 pages, eslint, vitest, storybook build, screenshots
+     VK0005 (solved) + VK0028 (warn event).
   4. the swap: board at /, threads at final URLs, Starlight removed,
      Pagefind standalone, old-URL redirects, deep-link visit
      recording lands free (every page rides BoardLayout). Full

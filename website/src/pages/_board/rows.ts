@@ -1,7 +1,7 @@
 import type { CollectionEntry } from 'astro:content';
 import { lastCommitDate } from '../../helpers/last-commit-date';
 import type { BoardRowData, StickyRowData } from './model';
-import { boards, stickyIds, type Board } from './boards';
+import { boards, stickyIds, isErrorThread, threadCode, type Board } from './boards';
 
 type DocsEntry = CollectionEntry<'docs'>;
 
@@ -18,7 +18,7 @@ export function boardRows(docs: DocsEntry[]): BoardRowData[] {
 			href: board.href,
 			description: board.description,
 			threadCount: entries.length,
-			lastPostTitle: newest.entry.data.title,
+			lastPostTitle: threadTitle(newest.entry),
 			lastPostHref: `/${newest.entry.id}/`,
 			lastPostDate: newest.date,
 			// visiting any of these pages counts as visiting the board
@@ -52,6 +52,15 @@ export function boardEntries(board: Board, docs: DocsEntry[]): DocsEntry[] {
 		}
 		return entry;
 	});
+}
+
+// an error thread's display title carries its code, everywhere the board
+// names it
+export function threadTitle(entry: DocsEntry): string {
+	if (isErrorThread(entry.id)) {
+		return `${entry.data.title} [${threadCode(entry.id)}]`;
+	}
+	return entry.data.title;
 }
 
 export function entryFilePath(entry: DocsEntry): string {
