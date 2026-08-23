@@ -14,7 +14,7 @@ export const boards: Board[] = [
 		title: 'Getting Started',
 		slug: 'getting-started',
 		description: 'install, migrate init, first produce and consume — and where Vulkan is going',
-		threads: () => ['why-vulkan', 'demo', 'quickstart', 'cloud', 'roadmap'],
+		threads: () => ['why-vulkan', 'demo', 'quickstart', 'roadmap'],
 	},
 	{
 		title: 'Concepts',
