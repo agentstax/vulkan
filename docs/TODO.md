@@ -524,12 +524,48 @@ Invented interactive machinery for the site; user verdicts so far:
      recording, errors-index next=VK0001, "topic not found" -> 3
      hits first = VK0005 thread, bare "VK0028" query hits its
      thread), screenshots home/search/VK0005/404.
+     Review-round fixes (2026-08-23): (a) ?q= prefill moved $effect
+     -> onMount — search() reads state.query, so the tracked scope
+     re-ran per keystroke and reverted the input (CDP: typed query
+     sticks, resubmits); (b) console first-Run "Unable to preload
+     CSS" — Vite wrote its preload helper into the island chunk, so
+     the PGlite chunk imported the island and its preload list named
+     the island's css by its PRE-MERGE name (Astro merges island css
+     into page css; file never emitted -> 404 -> import throws;
+     second click passes because the dead <link> already exists).
+     Fix = rollupOptions manualChunks pins vite/preload-helper to
+     its own chunk, killing the edge; inlineStylesheets untouched
+     (tried 'never' first — wrong lever, reverted). Verified: no JS
+     chunk names any css asset, first Run = 3 rows · 0.8 ms with
+     zero preload console errors, search island regression green.
+     BOARD LISTING PAGES added same round (USER 2026-08-23: board
+     click should show the thread list, no canvas round needed):
+     /boards/<slug>/ = the viewforum page — BoardSection band ("N
+     threads") over thread-row rows (folder + title + updated date,
+     stripes; new thread-row/thread-rows components, container
+     mirrors sticky-rows: scope = the thread's own href). Board type:
+     href field REPLACED by slug + boardHref() (one home; hand-picked
+     landing threads retired). Everything that used board.href now
+     lands on the listing: homepage board titles, thread breadcrumbs,
+     jump-to, nav Troubleshooting (aria-current lit via navCurrent =
+     board.title). Troubleshooting listing = 54 rows, Error codes
+     index first. Pagefind unaffected (no body region on listings).
+     Verified: build 80pp, lint, vitest, storybook, CDP (homepage ->
+     /boards/concepts/ in reading order, row click records visit,
+     breadcrumb -> listing, troubleshooting 54/index-first/nav lit)
+     + 2 screenshots.
   5. Astro 6->7 after (already sequenced below).
   "Show what's new" wiring rides a later slice.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
     @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
     0.40 pins Astro 6; ripping it out first makes the upgrade a
-    clean two-dep bump (astro + @astrojs/svelte).
+    clean bump (astro + @astrojs/svelte + @astrojs/mdx@7).
+    MUST RE-TEST after the bump (USER 2026-08-23): the console
+    first-Run preload fix — run console-first-run-test.mjs (first
+    click Run, zero "Unable to preload CSS" console errors) and
+    re-check whether the manualChunks vite/preload-helper pin in
+    astro.config.mjs is still needed; if Astro 7 emits sane preload
+    lists (no JS chunk naming a non-emitted css), delete the pin.
   - [x] Component css moved to sibling files (USER 2026-08-23,
     supersedes styles-stay-inline): <style src="./<name>.css"> via
     svelte-preprocess (typescript: false — vitePreprocess keeps

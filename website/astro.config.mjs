@@ -6,15 +6,21 @@ import svelte from '@astrojs/svelte';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://vulkan-5ss.pages.dev',
-	build: {
-		// 'auto' inlines small component styles and drops their css assets,
-		// but dynamic chunks (the console's database import) still preload
-		// those assets by name -- the 404 fails the first Run
-		inlineStylesheets: 'never',
-	},
 	vite: {
 		// PGlite locates its wasm assets itself; pre-bundling breaks the paths
 		optimizeDeps: { exclude: ['@electric-sql/pglite'] },
+		build: {
+			rollupOptions: {
+				output: {
+					// without this, Vite writes its module-preload helper into the
+					// console island's chunk; the PGlite chunk then imports that
+					// chunk for the helper alone, and the preload list names the
+					// island's css by its pre-merge name -- a file Astro never
+					// emits, so the console's first Run 404s and fails
+					manualChunks: (id) => (id.includes('vite/preload-helper') ? 'preload-helper' : undefined),
+				},
+			},
+		},
 	},
 	markdown: {
 		shikiConfig: {

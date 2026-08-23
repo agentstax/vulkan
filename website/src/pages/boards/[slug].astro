@@ -1,0 +1,37 @@
+---
+import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
+import { getCollection } from 'astro:content';
+import BoardLayout from '../../layouts/BoardLayout.astro';
+import Breadcrumb from '../../components/breadcrumb/breadcrumb.svelte';
+import BoardSection from '../../components/board-section/board-section.svelte';
+import ThreadRows from '../../components/thread-rows/thread-rows.svelte';
+import JumpTo from '../../components/jump-to/jump-to.svelte';
+import { boards, jumpTargets } from '../_board/boards';
+import { threadRows } from '../_board/rows';
+
+export const getStaticPaths = (() => {
+	return boards.map((board) => ({ params: { slug: board.slug }, props: { board } }));
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { board } = Astro.props;
+const docs = await getCollection('docs');
+const rows = threadRows(board, docs);
+
+// a board title that matches a nav label (Troubleshooting) lights that link
+const navCurrent = board.title;
+---
+
+<BoardLayout title={board.title} description={board.description} navCurrent={navCurrent}>
+	<Breadcrumb
+		trail={[
+			{ label: 'Board Index', href: '/' },
+			{ label: board.title, href: null },
+		]}
+	/>
+	<BoardSection title={board.title} columnLabels={null} threadCount={rows.length}>
+		<ThreadRows client:idle rows={rows} />
+	</BoardSection>
+	<JumpTo client:idle targets={jumpTargets} />
+</BoardLayout>

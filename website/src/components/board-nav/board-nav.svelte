@@ -15,7 +15,7 @@
 
 	const links: NavLink[] = [
 		{ label: 'Board Index', href: '/' },
-		{ label: 'Troubleshooting', href: '/errors/' },
+		{ label: 'Troubleshooting', href: '/boards/troubleshooting/' },
 		{ label: 'Search', href: '/search/' },
 		{ label: 'GitHub', href: repositoryUrl },
 	];

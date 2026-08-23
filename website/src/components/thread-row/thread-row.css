@@ -1,0 +1,28 @@
+.thread-row {
+	display: grid;
+	grid-template-columns: var(--grid-board-columns);
+	gap: 10px;
+	align-items: center;
+	padding: 11px 14px;
+	border-top: 1px solid var(--border-row);
+}
+
+.thread-row[data-stripe='a'] {
+	background: var(--color-row-stripe-a);
+}
+
+.thread-row[data-stripe='b'] {
+	background: var(--color-row-stripe-b);
+}
+
+.thread-row-title {
+	font-family: var(--font-content);
+	font-weight: 600;
+	font-size: 14px;
+}
+
+.thread-row-date {
+	color: var(--color-text-faint);
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+}

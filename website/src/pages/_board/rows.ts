@@ -1,7 +1,7 @@
 import type { CollectionEntry } from 'astro:content';
 import { lastCommitDate } from '../../helpers/last-commit-date';
-import type { BoardRowData, StickyRowData } from './model';
-import { boards, stickyIds, isErrorThread, threadCode, type Board } from './boards';
+import type { BoardRowData, StickyRowData, ThreadRowData } from './model';
+import { boards, boardHref, stickyIds, isErrorThread, threadCode, type Board } from './boards';
 
 type DocsEntry = CollectionEntry<'docs'>;
 
@@ -15,14 +15,14 @@ export function boardRows(docs: DocsEntry[]): BoardRowData[] {
 
 		return {
 			title: board.title,
-			href: board.href,
+			href: boardHref(board),
 			description: board.description,
 			threadCount: entries.length,
 			lastPostTitle: threadTitle(newest.entry),
 			lastPostHref: `/${newest.entry.id}/`,
 			lastPostDate: newest.date,
 			// visiting any of these pages counts as visiting the board
-			scopeHrefs: [...new Set([board.href, ...entries.map((entry) => `/${entry.id}/`)])],
+			scopeHrefs: [boardHref(board), ...entries.map((entry) => `/${entry.id}/`)],
 		};
 	});
 }
@@ -40,6 +40,14 @@ export function stickyRows(docs: DocsEntry[]): StickyRowData[] {
 			lastUpdatedDate: lastCommitDate(entryFilePath(entry)),
 		};
 	});
+}
+
+export function threadRows(board: Board, docs: DocsEntry[]): ThreadRowData[] {
+	return boardEntries(board, docs).map((entry) => ({
+		title: threadTitle(entry),
+		href: `/${entry.id}/`,
+		lastUpdatedDate: lastCommitDate(entryFilePath(entry)),
+	}));
 }
 
 export function boardEntries(board: Board, docs: DocsEntry[]): DocsEntry[] {

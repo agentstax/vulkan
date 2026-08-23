@@ -9,6 +9,12 @@ export type BoardRowData = {
 	scopeHrefs: string[];
 };
 
+export type ThreadRowData = {
+	title: string;
+	href: string;
+	lastUpdatedDate: string;
+};
+
 export type StickyRowData = {
 	title: string;
 	href: string;
