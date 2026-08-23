@@ -1,0 +1,15 @@
+export type BoardRowData = {
+	title: string;
+	href: string;
+	description: string;
+	threadCount: number;
+	lastPostTitle: string;
+	lastPostHref: string;
+	lastPostDate: string;
+};
+
+export type StickyRowData = {
+	title: string;
+	href: string;
+	lastUpdatedDate: string;
+};

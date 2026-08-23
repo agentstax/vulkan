@@ -65,6 +65,13 @@ beside one:
 - A component used by one route lives beside it in that route's
   `_components/` directory, not in `src/components/` (the placement
   law).
+- A page's data logic lives in a route-local `_<page>/` folder,
+  one concern per file: `model.ts` holds the typed row shapes the
+  page renders (the sibling of a datastore's model.go), the hand-
+  curated content that feeds them gets its own named file
+  (`boards.ts`), and the functions that build rows from the
+  collection live in `rows.ts`. The `.astro` frontmatter is
+  fetch-call-render only.
 - A component's styles live in its sibling `<name>.css`, reached ONLY
   through the one-line `<style src="./<name>.css"></style>` tag --
   svelte-preprocess inlines the file before the compiler runs, so

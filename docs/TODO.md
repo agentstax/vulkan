@@ -250,6 +250,15 @@ Invented interactive machinery for the site; user verdicts so far:
   ramp. Design's "pinned by brandon" flavor line NOT used — both
   rows show the real updated date. Build + storybook + eslint green,
   screenshot verified.
+  PAGE-LOGIC SPLIT DONE 2026-08-23 (user pulled it forward, then
+  asked for finer file organization): board.astro frontmatter is
+  fetch-call-render only; route-local src/pages/_board/ holds one
+  concern per file — model.ts (BoardRowData/StickyRowData row
+  shapes, the model.go sibling), boards.ts (Board type + boards
+  array + stickyIds curation), rows.ts (boardRows/stickyRows +
+  entryFilePath helper). Rule recorded in website/CONVENTIONS.md
+  ## Components. New page derivations (stats box etc.) land in
+  _board/, never back in the frontmatter.
   NEXT SLICES: the console (island); announcements (pixel flag) +
   stats + legend; breadcrumb with the content-area pass;
   read-tracking .svelte.ts module; then index swap + Starlight
