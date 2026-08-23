@@ -1,0 +1,111 @@
+@layer reset, tokens, base, compositions, utilities;
+
+@layer reset {
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+
+	body {
+		margin: 0;
+	}
+}
+
+@layer tokens {
+	:root {
+		/* primitives -- the settled board palette */
+		--band-blue-start: #2166a0;
+		--band-blue-end: #184e7c;
+		--band-meta-blue: #a9c9e2;
+		--page-blue-gray: #c7d1dc;
+		--page-dot-blue-gray: #b4c1d0;
+		--ink: #22303c;
+		--ink-muted: #54687a;
+		--ink-faint: #7c8b98;
+		--border-blue-outer: #8fa3b5;
+		--border-blue-section: #a9bccb;
+		--border-blue-row: #d8e1e9;
+		--stripe-blue-light: #f3f6f9;
+		--stripe-blue-dark: #e9eff4;
+		--link-blue: #0b62a4;
+		--link-orange: #d96e1e;
+		--link-purple: #7a4fa3;
+		--amber: #f2a33c;
+		--amber-dark: #b97516;
+		--amber-light: #f8c97e;
+		--amber-shade: #db8b20;
+		--folder-gray: #9faeba;
+		--folder-gray-face: #dce3e9;
+		--folder-gray-light: #f0f4f7;
+		--folder-gray-shade: #c3cdd6;
+
+		/* semantic -- what components consume */
+		--color-page: var(--page-blue-gray);
+		--color-page-dot: var(--page-dot-blue-gray);
+		--color-surface: #ffffff;
+		--color-text: var(--ink);
+		--color-text-muted: var(--ink-muted);
+		--color-text-faint: var(--ink-faint);
+		--color-link: var(--link-blue);
+		--color-link-hover: var(--link-orange);
+		--color-link-visited: var(--link-purple);
+		--color-focus-ring: var(--amber);
+		--band-gradient: linear-gradient(180deg, var(--band-blue-start) 0%, var(--band-blue-end) 100%);
+		--color-band-title: #ffffff;
+		--color-band-meta: var(--band-meta-blue);
+		--border-outer: var(--border-blue-outer);
+		--border-section: var(--border-blue-section);
+		--border-row: var(--border-blue-row);
+		--color-row-stripe-a: var(--stripe-blue-light);
+		--color-row-stripe-b: var(--stripe-blue-dark);
+		--folder-updated-body: var(--amber-dark);
+		--folder-updated-face: var(--amber);
+		--folder-updated-highlight: var(--amber-light);
+		--folder-updated-shade: var(--amber-shade);
+		--folder-updated-glow: rgba(242, 163, 60, 0.75);
+		--folder-read-body: var(--folder-gray);
+		--folder-read-face: var(--folder-gray-face);
+		--folder-read-highlight: var(--folder-gray-light);
+		--folder-read-shade: var(--folder-gray-shade);
+		--lacquer: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+		--shadow-page-frame:
+			inset 0 0 0 1px #ffffff,
+			0 3px 14px rgba(31, 58, 84, 0.2);
+		--grid-board-columns: 34px 1fr 80px 210px;
+
+		--font-chrome: Verdana, Geneva, sans-serif;
+		--font-band: 'Trebuchet MS', Verdana, sans-serif;
+		--font-content: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+		--font-database: 'IBM Plex Mono', 'Courier New', monospace;
+	}
+}
+
+@layer base {
+	body {
+		background-color: var(--color-page);
+		background-image: radial-gradient(var(--color-page-dot) 1px, transparent 1px);
+		background-size: 14px 14px;
+		color: var(--color-text);
+		font-family: var(--font-chrome);
+	}
+
+	a {
+		color: var(--color-link);
+		text-decoration: none;
+	}
+
+	a:visited {
+		color: var(--color-link-visited);
+	}
+
+	a:hover {
+		color: var(--color-link-hover);
+		text-decoration: underline;
+	}
+
+	a:focus-visible {
+		outline: 2px solid var(--color-focus-ring);
+		outline-offset: 2px;
+	}
+}

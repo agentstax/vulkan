@@ -55,16 +55,22 @@ beside one:
 
 - One folder per component under `src/components/<name>/`,
   kebab-case files: `thread-row/thread-row.svelte` +
-  `thread-row.stories.svelte`, plus `types.ts` and a
-  `<name>.svelte.ts` state module when the component is stateful. No
-  index.ts barrels -- callers import the file directly.
+  `thread-row.css` + `thread-row.stories.svelte`, plus `types.ts`
+  and a `<name>.svelte.ts` state module when the component is
+  stateful. No index.ts barrels -- callers import the file directly.
 - A component used by one route lives beside it in that route's
   `_components/` directory, not in `src/components/` (the placement
   law).
-- Styles live INSIDE the .svelte file -- scoping is the mechanism
-  that replaces class-name discipline, and it only applies there. An
-  oversized style block splits the component, never into an external
-  stylesheet.
+- A component's styles live in its sibling `<name>.css`, reached ONLY
+  through the one-line `<style src="./<name>.css"></style>` tag --
+  svelte-preprocess inlines the file before the compiler runs, so
+  scoping is identical to an inline block. A `.css` file is never
+  imported (the ESLint no-restricted-imports guard bans it -- an
+  imported stylesheet is global css in disguise); the global
+  stylesheet's sanctioned import sites are the layout and the
+  Storybook preview. An oversized style file splits the component,
+  never escapes scoping. `.astro` scaffolding keeps its few styles in
+  its own scoped `<style>` block.
 - Stateful vs presentational is a file split: logic is a runes class
   in `<name>.svelte.ts`, the .svelte file is a thin renderer.
 - `$derived` over `$effect` -- `$effect` is for real side effects

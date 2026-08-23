@@ -196,10 +196,45 @@ Invented interactive machinery for the site; user verdicts so far:
   the Go lowercase-file habit; PascalCase was the alternative), and
   nanostores DROPPED — one Svelte-only site needs no store library,
   shared state = .svelte.ts runes modules (one mechanism per fact).
-  NEXT: first vertical slice in website/ — remove Starlight,
-  BoardLayout.astro, token stylesheet, one real component folder
-  (thread-row + story) — small on purpose so the user can react
-  before building wide.
+  FIRST SLICE BUILT 2026-08-23 (awaiting user reaction): the Board
+  Index section serves at /board BESIDE Starlight (removing Starlight
+  would break the 74 live pages; it goes when the board build
+  replaces the index). Files: src/styles/global.css (layer decl +
+  only the tokens this chunk uses, two-tier), layouts/BoardLayout.astro
+  (page frame + ground only — no banner/nav/ritual bars yet),
+  components/pixel-folder + board-row + board-section (each with
+  .stories.svelte), pages/board.astro (real data: thread counts +
+  last-post from the docs collection, dates =
+  helpers/last-commit-date.ts git fallback mtime), svelte.config.js,
+  .storybook/. All rows render read-state folders — honest until the
+  read-tracking island exists. Real-beats-mock: Troubleshooting = 53
+  threads (mock said 25). Astro build 75 pages green; zero JS shipped
+  for the slice (Svelte server-rendered; lone script = Starlight
+  prefetch); headless-Chrome screenshot verified.
+  Version pins forced by Astro 6: @astrojs/svelte@^8 (v9 wants Astro
+  7), storybook@^10 + addon-svelte-csf@^5 +
+  @sveltejs/vite-plugin-svelte@^6 (matching Astro's) + vite@^6.
+  Storybook gotcha SOLVED: an Astro project has no vite.config.ts so
+  nothing gives Storybook's builder vite-plugin-svelte — .storybook/
+  main.ts viteFinal prepends svelte(); without it every plugin
+  parses raw .svelte as JS ("Expression expected" from docgen/addon).
+  NEXT SLICES: banner + nav + ritual bars; Start Here stickies; the
+  console (island); announcements + stats + legend; read-tracking
+  .svelte.ts module; then index swap + Starlight removal.
+  - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
+    @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
+    0.40 pins Astro 6; ripping it out first makes the upgrade a
+    clean two-dep bump (astro + @astrojs/svelte).
+  - [x] Component css moved to sibling files (USER 2026-08-23,
+    supersedes styles-stay-inline): <style src="./<name>.css"> via
+    svelte-preprocess (typescript: false — vitePreprocess keeps
+    scripts), inlined pre-compile so scoping is identical (verified:
+    hash-scoped selectors in dist, pixel-identical screenshot);
+    ESLint floor added (eslint + typescript-eslint +
+    eslint-plugin-svelte, `npm run lint`) with no-restricted-imports
+    banning any .css import (.storybook/preview.ts exempt; .astro
+    files unlinted until eslint-plugin-astro lands with the full
+    verify stack); website/CONVENTIONS.md components rule amended.
   Lazy-loading approach (SETTLED 2026-08-23, user's initial-load
   concern): homepage ships static HTML/CSS only — every island
   declares its trigger (client:visible or client:idle), client:load

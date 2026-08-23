@@ -1,0 +1,50 @@
+---
+import '../styles/global.css';
+
+type Props = {
+	title: string;
+	description: string;
+};
+
+const { title, description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			rel="stylesheet"
+			href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+		/>
+	</head>
+	<body>
+		<div class="page-frame">
+			<slot />
+		</div>
+		<p class="powered-by">Powered by Vulkan on Postgres</p>
+	</body>
+</html>
+
+<style>
+	.page-frame {
+		width: min(1020px, calc(100% - 32px));
+		margin: 32px auto 0;
+		background: var(--color-surface);
+		border: 1px solid var(--border-outer);
+		box-shadow: var(--shadow-page-frame);
+	}
+
+	.powered-by {
+		width: min(1020px, calc(100% - 32px));
+		margin: 10px auto 32px;
+		text-align: center;
+		font-size: 10px;
+		color: var(--color-text-faint);
+	}
+</style>

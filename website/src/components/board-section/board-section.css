@@ -1,0 +1,34 @@
+.board-section {
+	border: 1px solid var(--border-section);
+}
+
+.band {
+	background: var(--band-gradient);
+	box-shadow: var(--lacquer);
+	padding: 8px 14px;
+}
+
+.band[data-columns='true'] {
+	display: grid;
+	grid-template-columns: var(--grid-board-columns);
+	gap: 10px;
+	align-items: center;
+}
+
+.band-title {
+	margin: 0;
+	font-family: var(--font-band);
+	color: var(--color-band-title);
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 1px;
+}
+
+.column-label {
+	color: var(--color-band-meta);
+	font-size: 10px;
+}
+
+.column-label[data-align='center'] {
+	text-align: center;
+}

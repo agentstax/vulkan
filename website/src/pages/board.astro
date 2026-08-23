@@ -1,0 +1,105 @@
+---
+import { getCollection } from 'astro:content';
+import BoardLayout from '../layouts/BoardLayout.astro';
+import BoardSection from '../components/board-section/board-section.svelte';
+import BoardRow from '../components/board-row/board-row.svelte';
+import { lastCommitDate } from '../helpers/last-commit-date';
+
+type Board = {
+	title: string;
+	href: string;
+	description: string;
+	contains: (id: string) => boolean;
+};
+
+const boards: Board[] = [
+	{
+		title: 'Getting Started',
+		href: '/quickstart/',
+		description: 'install, migrate init, first produce and consume',
+		contains: (id) => ['quickstart', 'why-vulkan', 'demo', 'cloud'].includes(id),
+	},
+	{
+		title: 'Concepts',
+		href: '/concepts/queue-and-log/',
+		description: 'queue & log, lifecycle, ordering, routing, fan-out, architecture',
+		contains: (id) => id.startsWith('concepts/'),
+	},
+	{
+		title: 'Guides',
+		href: '/guides/transactional-produce/',
+		description: 'transactional produce, dead letters, replay, migrations',
+		contains: (id) => id.startsWith('guides/'),
+	},
+	{
+		title: 'Troubleshooting',
+		href: '/errors/',
+		description: 'every VK error code and log event, one thread each',
+		contains: (id) => id.startsWith('errors/') && id !== 'errors/index',
+	},
+	{
+		title: 'Compare',
+		href: '/compare/kafka/',
+		description: 'Kafka · RabbitMQ & SQS — shipped behavior only, no wishful checkmarks',
+		contains: (id) => id.startsWith('compare/'),
+	},
+];
+
+const docs = await getCollection('docs');
+
+const rows = boards.map((board) => {
+	const entries = docs.filter((entry) => board.contains(entry.id));
+	if (entries.length === 0) {
+		throw new Error(`board "${board.title}" matches no docs entries`);
+	}
+
+	const dated = entries.map((entry) => {
+		if (entry.filePath === undefined) {
+			throw new Error(`docs entry "${entry.id}" carries no filePath`);
+		}
+		return { entry, date: lastCommitDate(entry.filePath) };
+	});
+	dated.sort((a, b) => b.date.localeCompare(a.date));
+	const newest = dated[0];
+
+	return {
+		title: board.title,
+		href: board.href,
+		description: board.description,
+		threadCount: entries.length,
+		lastPostTitle: newest.entry.data.title,
+		lastPostHref: `/${newest.entry.id}/`,
+		lastPostDate: newest.date,
+	};
+});
+---
+
+<BoardLayout
+	title="Vulkan Board Index"
+	description="The message platform forged in Postgres. Queue, event log, and router in one system."
+>
+	<div class="board-index">
+		<BoardSection title="Board" columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}>
+			{
+				rows.map((row, index) => (
+					<BoardRow
+						index={index}
+						title={row.title}
+						href={row.href}
+						description={row.description}
+						threadCount={row.threadCount}
+						lastPostTitle={row.lastPostTitle}
+						lastPostHref={row.lastPostHref}
+						lastPostDate={row.lastPostDate}
+					/>
+				))
+			}
+		</BoardSection>
+	</div>
+</BoardLayout>
+
+<style>
+	.board-index {
+		padding: 18px 20px;
+	}
+</style>

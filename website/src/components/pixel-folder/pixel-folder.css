@@ -1,0 +1,39 @@
+svg {
+	image-rendering: pixelated;
+}
+
+svg[data-updated='true'] {
+	filter: drop-shadow(0 0 2px var(--folder-updated-glow));
+}
+
+.body {
+	fill: var(--folder-read-body);
+}
+
+.face {
+	fill: var(--folder-read-face);
+}
+
+.highlight {
+	fill: var(--folder-read-highlight);
+}
+
+.shade {
+	fill: var(--folder-read-shade);
+}
+
+svg[data-updated='true'] .body {
+	fill: var(--folder-updated-body);
+}
+
+svg[data-updated='true'] .face {
+	fill: var(--folder-updated-face);
+}
+
+svg[data-updated='true'] .highlight {
+	fill: var(--folder-updated-highlight);
+}
+
+svg[data-updated='true'] .shade {
+	fill: var(--folder-updated-shade);
+}
