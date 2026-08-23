@@ -3,7 +3,7 @@ title: Fan-out, Retention & Replay
 description: Messages are facts. Retain them, fan them out to independent consumer groups, and let new consumers read history — without a Kafka cluster.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 A Vulkan topic is a named, append-only message log. Producing appends;
 consuming never deletes. That single decision — *retain instead of
@@ -50,13 +50,14 @@ For a **new** group, replay is the default behavior above. For an
 **existing** group — "re-run Tuesday's window through the fixed
 handler" — Vulkan has no rewind verb today:
 
-<Aside type="note" title="Proposed: rewinding an existing group">
+<ThreadAside label="PROPOSED" title="Rewinding an existing group">
 Moving a group's cursor backwards (to an id or a timestamp) is a
 proposed capability. The [replay guide](/guides/replay/) is written as
 the proposal spec — what the verbs would look like and what they'd
 cost. Until it ships, the shipped workaround is registering a fresh
 group with the fixed handler and letting it read history.
-</Aside>
+
+</ThreadAside>
 
 ## Lag: the one health metric
 
@@ -91,7 +92,7 @@ janitor drops whole id-range partitions whose newest row has expired —
 a `DROP TABLE`, not a million-row `DELETE` — and sweeps the slow tail
 that never fills a partition.
 
-<Aside type="tip" title="The retention cliff, defused by default">
+<ThreadAside label="TIP" title="The retention cliff, defused by default">
 The classic log-world failure is a slow consumer falling off the log:
 retention deletes history the group never read. Vulkan's default is the
 opposite — **retention never drops past the slowest group's committed
@@ -100,4 +101,5 @@ blocks cleanup instead of losing data, and the growing backlog is
 visible in the lag query above. Set `AllowDropPastCommitted: true` per
 topic when staleness beats unbounded disk — Kafka's behavior, opted
 into knowingly.
-</Aside>
+
+</ThreadAside>

@@ -2,7 +2,8 @@ export type Board = {
 	title: string;
 	href: string;
 	description: string;
-	contains: (id: string) => boolean;
+	// the board's threads in reading order, chosen from the site's page ids
+	threads: (ids: string[]) => string[];
 };
 
 export const boards: Board[] = [
@@ -10,31 +11,45 @@ export const boards: Board[] = [
 		title: 'Getting Started',
 		href: '/quickstart/',
 		description: 'install, migrate init, first produce and consume',
-		contains: (id) => ['quickstart', 'why-vulkan', 'demo', 'cloud'].includes(id),
+		threads: () => ['why-vulkan', 'demo', 'quickstart', 'cloud'],
 	},
 	{
 		title: 'Concepts',
 		href: '/concepts/queue-and-log/',
 		description: 'queue & log, lifecycle, ordering, routing, fan-out, architecture',
-		contains: (id) => id.startsWith('concepts/'),
+		threads: () => [
+			'concepts/queue-and-log',
+			'concepts/architecture',
+			'concepts/lifecycle',
+			'concepts/fan-out',
+			'concepts/routing',
+			'concepts/ordering',
+		],
 	},
 	{
 		title: 'Guides',
 		href: '/guides/transactional-produce/',
 		description: 'transactional produce, dead letters, replay, migrations',
-		contains: (id) => id.startsWith('guides/'),
+		threads: () => [
+			'guides/transactional-produce',
+			'guides/replay',
+			'guides/dead-letters',
+			'guides/migrations',
+		],
 	},
 	{
 		title: 'Troubleshooting',
 		href: '/errors/',
 		description: 'every VK error code and log event, one thread each',
-		contains: (id) => id.startsWith('errors/') && id !== 'errors/index',
+		// error threads read in code order
+		threads: (ids) =>
+			ids.filter((id) => id.startsWith('errors/') && id !== 'errors/index').sort(),
 	},
 	{
 		title: 'Compare',
 		href: '/compare/kafka/',
 		description: 'Kafka · RabbitMQ & SQS — shipped behavior only, no wishful checkmarks',
-		contains: (id) => id.startsWith('compare/'),
+		threads: () => ['compare/kafka', 'compare/rabbitmq-sqs', 'compare/job-queues'],
 	},
 ];
 

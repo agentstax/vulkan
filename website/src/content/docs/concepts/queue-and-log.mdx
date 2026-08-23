@@ -3,7 +3,7 @@ title: Queues, Logs & the Fusion
 description: The one mental model behind Vulkan — and behind every messaging system you've ever used.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Every messaging system you've ever used — Kafka, RabbitMQ, SQS, NATS,
 Pulsar — is built from two primitives:
@@ -53,14 +53,15 @@ backoff, dead-lettering, per group. You don't pick "queue semantics or
 log semantics" per topic; the design gives you log economics for
 success and queue lifecycle for failure, simultaneously.
 
-<Aside type="tip" title="The aha">
+<ThreadAside label="TIP" title="The aha">
 You can have retention, fan-out, and history **and** per-message
 retry/dead-letter state simultaneously — by separating the immutable
 record of *what happened* from the mutable record of *who has handled
 it*, and only materializing the second where something actually went
 wrong. That separation is the entire trick, and Postgres's
 transactional engine is what makes it cheap to build on.
-</Aside>
+
+</ThreadAside>
 
 ## Why Postgres specifically
 

@@ -3,7 +3,7 @@ title: Routing
 description: Producers attach a routing key. Consumer groups declare binding patterns. Nobody addresses anybody.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 The mark of a healthy message architecture: **producers don't know
 consumers exist.** A producer states what happened, tagged with a routing
@@ -82,12 +82,13 @@ Inspect where every group stands:
 vulkan alert bindings
 ```
 
-<Aside type="note" title="Binding changes are forward-only">
+<ThreadAside label="NOTE" title="Binding changes are forward-only">
 The pattern is evaluated when a message fans out to the group, and the
 fan-out position only moves forward — so a binding added today applies
 to messages produced after it installs. Messages already routed (or
 skipped) keep the outcome they had.
-</Aside>
+
+</ThreadAside>
 
 ## It's all rows
 

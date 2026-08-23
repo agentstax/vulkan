@@ -3,16 +3,17 @@ title: "The Demo: Try to Lose a Message"
 description: A proposed one-command chaos demo — kill consumers, crash mid-commit, restart the database, and watch the loss counter stay at zero.
 ---
 
-import { Aside, Steps } from '@astrojs/starlight/components';
+import ThreadAside from '../../components/thread-aside/thread-aside.svelte';
 import ChaosDiagram from '../../components/ChaosDiagram.astro';
 
-<Aside type="note" title="Status: proposed">
+<ThreadAside label="PROPOSED" title="vulkan demo does not ship yet">
 `vulkan demo` does not ship yet. This page is the product proposal for
 it — and it's a thin one, because the attacks below are the
 failure-injection labs the engine is *actually developed against*
 (kill -9 mid-process, crash mid-commit, expired-lease reclaim). The
 demo is those labs, packaged so you can run them yourself.
-</Aside>
+
+</ThreadAside>
 
 Every messaging system claims durability. Claims are cheap. The demo's
 entire purpose is to let you **attack** Vulkan — because durability is
@@ -34,7 +35,6 @@ is to make `lost` read anything but zero.
 
 ## The attacks
 
-<Steps>
 
 1. **Kill a consumer instance mid-message.**
 
@@ -113,7 +113,6 @@ is to make `lost` read anything but zero.
    discovering it in production.
    [At-least-once, and proud of it →](/concepts/lifecycle/)
 
-</Steps>
 
 ## The finale: three groups, one log
 
@@ -153,12 +152,13 @@ either ran clean or sits in `dead` with its error recorded. "Lost"
 would be a message the cursor passed with neither — and the demo's
 assertion, like the labs', is that there are none.
 
-<Aside type="tip" title="Now ask the uncomfortable question">
+<ThreadAside label="TIP" title="Now ask the uncomfortable question">
 Run this attack list against your current stack — the `kill -9`, the
 crash-after-N, the broker restart. How many messages does your setup
 lose, duplicate silently, or strand somewhere you can't inspect? If you
 don't know, that's the answer.
-</Aside>
+
+</ThreadAside>
 
 Convinced enough to wire it into real code?
 [Quickstart →](/quickstart/)

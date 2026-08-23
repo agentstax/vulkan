@@ -3,7 +3,7 @@ title: Dead Letters & Recovery
 description: Where failed messages go, how to triage them with SQL — and the redrive verb that's still a proposal.
 ---
 
-import { Aside, Steps } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Some messages will fail every retry. A malformed payload, a handler
 bug, a downstream API that 404s a deleted resource. The question that
@@ -51,7 +51,6 @@ instead of paging through an opaque console one message at a time.
 
 ## The recovery loop
 
-<Steps>
 
 1. **Watch.** The dead count per group ships as a metric
    (`vulkan.consumer.exceptions.dead`, via `vulkan metrics list` or the
@@ -66,21 +65,20 @@ instead of paging through an opaque console one message at a time.
 
 4. **Redrive** — the step that is honestly not shipped yet:
 
-   <Aside type="note" title="Proposed: a redrive verb">
+   <ThreadAside label="PROPOSED" title="A redrive verb">
    The proposed shape: reset a group's dead rows to `ready` with a
    fresh attempt budget — all of them, or a subset filtered by error
    text — as a library verb and a CLI command. Today no such verb
    exists, and hand-editing Vulkan's tables is not a supported path.
    Dead rows keep their full record while they wait; the messages they
    point at are retained per the topic's retention policy.
-   </Aside>
+   </ThreadAside>
 
 5. **Confirm.** The same triage query, trending to zero for new
    traffic once the fixed handler is live.
 
-</Steps>
 
-<Aside type="caution" title="Poison pills don't block the line">
+<ThreadAside label="CAUTION" title="Poison pills don't block the line">
 A message that fails forever never blocks the messages behind it —
 failed deliveries back off and dead-letter individually, and a `dead`
 row doesn't hold back the group's committed cursor. This is the
@@ -88,7 +86,8 @@ per-message failure state that log-only systems can't express: in
 Kafka, a poison message at offset N means choosing between stalling the
 partition at N or skipping data. In Vulkan it means one row in `dead`
 and an otherwise unremarkable Tuesday.
-</Aside>
+
+</ThreadAside>
 
 ## Per-group isolation
 

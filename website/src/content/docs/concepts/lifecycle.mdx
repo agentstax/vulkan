@@ -3,7 +3,7 @@ title: Message Lifecycle
 description: Success leaves no per-message state at all. Failure gets a state machine — retries, backoff, leases, and dead-lettered messages you can SELECT.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Vulkan's consumer is built on an asymmetry worth understanding: **a
 message that succeeds never gets its own row.** Consumer instances claim
@@ -86,7 +86,7 @@ Two kinds cover the two tiers:
 No heartbeat protocol, no session state, no rebalancing storm. Expired
 leases are reclaimed by the same claim queries that do the normal work.
 
-<Aside type="caution" title="At-least-once, and proud of it">
+<ThreadAside label="CAUTION" title="At-least-once, and proud of it">
 Leases mean a slow-but-alive handler and a reclaim can occasionally both
 process the same message — the same trade SQS, Pulsar, and every real
 queue makes. Vulkan is honest about being **at-least-once**: write
@@ -94,7 +94,8 @@ idempotent handlers. `consumergroup.MetaFromContext(ctx)` gives you the
 message id inside your handler — a natural idempotency key. Systems that
 promise exactly-once delivery are selling you exactly-once *something
 else*.
-</Aside>
+
+</ThreadAside>
 
 ## Dead-lettered messages are a query
 
@@ -114,12 +115,13 @@ No separate dead-letter queue to provision per consumer, and nothing
 expires behind your back — dead rows live until the retention drop that
 removes their message log rows.
 
-<Aside type="note" title="Proposed: a redrive verb">
+<ThreadAside label="PROPOSED" title="A redrive verb">
 Today there is no API to reset dead rows to `ready` after you fix the
 bug — a first-class redrive verb is a proposed capability, not a shipped
 one. The [dead-letters guide](/guides/dead-letters/) covers the triage
 workflow that exists now.
-</Aside>
+
+</ThreadAside>
 
 ## Why this matters
 

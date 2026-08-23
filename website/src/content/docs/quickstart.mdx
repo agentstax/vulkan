@@ -3,7 +3,7 @@ title: Quickstart
 description: Produce and consume your first message on the Postgres you already run — every line of code on this page compiles against the shipped library.
 ---
 
-import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../components/thread-aside/thread-aside.svelte';
 
 Vulkan runs against the Postgres you already have — no broker, no new
 infrastructure. This page takes you from an empty database to producing,
@@ -16,13 +16,13 @@ you own: the connection pool, the admin surface, the retry policy, the
 consumer group. Nothing on this page is pseudocode; every sample compiles
 against the shipped library.
 
-<Aside type="note">
+<ThreadAside label="NOTE" title="Prerequisites">
 You need a Postgres connection and Go 1.26+. Vulkan's test suite runs
 against Postgres 17. Tables are created in your database's default schema
 by Vulkan itself — there is no SQL migration file to apply by hand.
-</Aside>
 
-<Steps>
+</ThreadAside>
+
 
 1. **Install the library and CLI**
 
@@ -205,33 +205,35 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    Say it returned `1`. Then (make your handler return an error and
    produce a few messages first, if you want something to watch):
 
-   <Tabs>
-   <TabItem label="Your messages">
+   **Your messages**
+
    ```sql
    SELECT id, payload, created_at FROM message_log_1 ORDER BY id;
    ```
-   </TabItem>
-   <TabItem label="Delivery status">
+
+   **Delivery status**
+
    ```sql
    SELECT g.name AS consumer_group, d.status, count(*), max(d.attempts) AS attempts
    FROM delivery_1 d JOIN consumer_group g ON g.id = d.consumer_group_id
    GROUP BY 1, 2;
    ```
-   </TabItem>
-   <TabItem label="Dead-lettered">
+
+   **Dead-lettered**
+
    ```sql
    SELECT d.message_id, m.payload, d.attempts, d.last_error
    FROM delivery_1 d JOIN message_log_1 m ON m.id = d.message_id
    WHERE d.status = 'dead';
    ```
-   </TabItem>
-   <TabItem label="Attempt history">
+
+   **Attempt history**
+
    ```sql
    SELECT message_id, attempt, status, error, attempted_at
    FROM delivery_log_1 ORDER BY message_id, attempt;
    ```
-   </TabItem>
-   </Tabs>
+
 
    Watch `attempts` climb and `can_run_after` push into the future with
    backoff; after the retry budget is spent the row's status becomes
@@ -266,14 +268,14 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    producing holds a lock on consumer progress for the topic until commit,
    so the produce should be the shortest-held thing in the transaction.
 
-</Steps>
 
-<Aside type="caution" title="One more thing for real deployments">
+<ThreadAside label="CAUTION" title="One more thing for real deployments">
 Topic upkeep — creating partitions ahead, enforcing retention, advancing
 the committed cursor — runs while a consumer is running, or under the
 standalone manager: `vulkan manager run`. A deployment that only produces
 should run the manager alongside it.
-</Aside>
+
+</ThreadAside>
 
 ## Where next
 

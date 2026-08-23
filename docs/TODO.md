@@ -420,9 +420,34 @@ Invented interactive machinery for the site; user verdicts so far:
      edit/report GitHub URLs. Verified: build 76pp, eslint, vitest
      3/3, storybook build, screenshots (preview page vs artboard +
      Starlight collateral check).
-  2. generalize to all non-error pages: route generation from the
-     docs collection, real sidebar order -> prev/next + breadcrumbs,
-     still preview URLs.
+  2. generalize to all non-error pages — BUILT 2026-08-23 (awaiting
+     review): boards.ts RESHAPED — Board.contains(id) replaced by
+     Board.threads(ids) returning member ids IN READING ORDER (the
+     one source for membership, counts, scopeHrefs, and now
+     prev/next; curated boards list ids explicitly — a missing id
+     fails the build via boardEntries; Troubleshooting derives +
+     sorts by code). threadData gains previous/next: ThreadLink |
+     null from board position. pages/board/[...id].astro
+     (getStaticPaths over board members, errors excluded until the
+     variant slice) replaced the hand-placed ordering.astro — 17
+     thread previews at /board/<id>/. index + roadmap belong to NO
+     board: no thread page; roadmap's home = swap-slice decision.
+     STARLIGHT COMPONENT SWEEP (all 15 board pages + ordering):
+     proposed-aside RENAMED thread-aside with required label prop
+     (chips NOTE/TIP/CAUTION/PROPOSED, one chrome treatment) — all
+     20 Asides converted, "Proposed:" titles fold into the PROPOSED
+     chip; Steps wrappers unwrapped to plain ordered lists;
+     quickstart Tabs -> bold-labeled SQL blocks (a tabs island is
+     undesigned era chrome — revisit on demand); cloud CardGrid ->
+     h3 sections (content untouched — cloud copy is the open user
+     decision; NOTE for that pass: cloud prose still says DLQ/
+     stream/offset/partition key against ## Vocabulary). Only
+     index.mdx + roadmap.mdx still import Starlight components
+     (non-board; die at swap). Gotcha: an aside inside a list item
+     must keep the closing tag at the item's indent or MDX fails
+     the build. Verified: build 92 pages, eslint, vitest 3/3,
+     storybook build, quickstart screenshot (steps + both asides +
+     tab conversion + Go dialect).
   3. error thread variant: green tokens, [SOLVED] chip, VK-as-poster,
      registry strip, search-strip shell; the 25 hand-written error
      pages gain zod-enforced structured frontmatter (problem/

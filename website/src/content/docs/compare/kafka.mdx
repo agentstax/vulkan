@@ -3,7 +3,7 @@ title: Vulkan vs. Kafka
 description: Kafka's log semantics without Kafka's cluster — and an honest account of when you really do need Kafka.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Kafka is a magnificent piece of engineering for a problem most teams
 don't have. The pattern we see constantly: a team adopts Kafka for
@@ -67,14 +67,15 @@ ripped out angrily. Reach for Kafka (or Redpanda) when:
   your architecture is stream processing, Kafka is its native soil.
 - **Cross-org pipelines** where "Kafka topic" is the contract.
 
-<Aside type="tip" title="The graduation path">
+<ThreadAside label="TIP" title="The graduation path">
 Because Vulkan topics are durable and ordered, the day you outgrow one,
 a relay consumer group can forward it to a Kafka topic — with the
 cutover happening per-topic, gradually, while transactional produce
 keeps working on the Postgres side. Adopting Vulkan first doesn't paint
 you into a corner; it defers a big decision until you have the data to
 make it.
-</Aside>
+
+</ThreadAside>
 
 ## The decision in one question
 

@@ -3,7 +3,7 @@ title: Why Vulkan
 description: The case for one Postgres-native messaging platform instead of three brokers.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../components/thread-aside/thread-aside.svelte';
 
 ## The dead-end problem
 
@@ -70,12 +70,13 @@ produced, err := instance.ProduceFunc(ctx,
 	}, producer.ProduceOptions{})
 ```
 
-<Aside type="tip" title="This is the headline feature">
+<ThreadAside label="TIP" title="This is the headline feature">
 Producing in your own transaction isn't a nice-to-have — it deletes an
 entire class of consistency bugs that teams otherwise spend years
 patching with retries, reconciliation jobs, and incident reviews.
 [Read the full guide →](/guides/transactional-produce/)
-</Aside>
+
+</ThreadAside>
 
 ## What you get by being *in* the database
 

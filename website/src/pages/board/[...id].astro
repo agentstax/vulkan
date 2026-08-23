@@ -1,0 +1,41 @@
+---
+import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
+import { getCollection, render } from 'astro:content';
+import ThreadLayout from '../../layouts/ThreadLayout.astro';
+import { boards } from '../_board/boards';
+import { boardEntries } from '../_board/rows';
+import { threadData } from '../_thread/thread';
+
+export const getStaticPaths = (async () => {
+	const docs = await getCollection('docs');
+
+	// every board thread except the error threads -- those get the
+	// [SOLVED] variant in the next slice
+	return boards
+		.flatMap((board) => boardEntries(board, docs))
+		.filter((entry) => !entry.id.startsWith('errors/'))
+		.map((entry) => ({ params: { id: entry.id }, props: { entry } }));
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { entry } = Astro.props as Props;
+const docs = await getCollection('docs');
+const { Content } = await render(entry);
+const thread = threadData(entry, docs);
+---
+
+<ThreadLayout
+	title={entry.data.title}
+	description={entry.data.description ?? entry.data.title}
+	boardTitle={thread.board.title}
+	boardHref={thread.board.href}
+	editHref={thread.editHref}
+	postedDate={thread.postedDate}
+	reportHref={thread.reportHref}
+	postCount={thread.postCount}
+	previous={thread.previous}
+	next={thread.next}
+>
+	<Content />
+</ThreadLayout>

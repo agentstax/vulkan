@@ -3,7 +3,7 @@ title: Vulkan vs. Job Queues
 description: River, pgmq, and friends proved Postgres queues work. Vulkan is what comes after that proof.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 We owe this category a debt. River, pgmq, graphile-worker, Oban,
 pg-boss, and Solid Queue spent years proving the thesis Vulkan is built
@@ -72,9 +72,10 @@ Hatchet's case). Different layer of the stack: a workflow engine needs
 a durable message platform underneath it; a message platform doesn't
 need a workflow engine. Vulkan is the platform layer.
 
-<Aside type="tip" title="Coming from River or pgmq">
+<ThreadAside label="TIP" title="Coming from River or pgmq">
 The concepts map directly — claim, retry, dead-letter — and it runs in
 the same database. A topic consumed by a single group is semantically a
 superset of a job queue, so the migration shape is a table-to-table
 copy and a handler swap.
-</Aside>
+
+</ThreadAside>

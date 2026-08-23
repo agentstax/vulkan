@@ -3,7 +3,7 @@ title: Vulkan vs. RabbitMQ & SQS
 description: Everything the queue world does well — plus the history it throws away.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 RabbitMQ and SQS are the workhorses of the queue world, and Vulkan
 borrows their best ideas shamelessly: per-message retries,
@@ -69,13 +69,14 @@ One reading note that shows the design: this query returns only
 group that processed it cleanly wrote no row at all; its committed
 cursor past the message's id *is* the receipt.
 
-<Aside type="note" title="And the dual write, again">
+<ThreadAside label="NOTE" title="And the dual write, again">
 Like Kafka, both are external systems — so every "save then send" is an
 unsafe [dual write](/guides/transactional-produce/). SQS's own docs
 recommend the outbox pattern for exactly this. The outbox is a Postgres
 table. Vulkan is what happens when you take that hint to its
 conclusion.
-</Aside>
+
+</ThreadAside>
 
 ## When they're still the right call
 

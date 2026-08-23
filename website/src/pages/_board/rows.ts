@@ -1,16 +1,13 @@
 import type { CollectionEntry } from 'astro:content';
 import { lastCommitDate } from '../../helpers/last-commit-date';
 import type { BoardRowData, StickyRowData } from './model';
-import { boards, stickyIds } from './boards';
+import { boards, stickyIds, type Board } from './boards';
 
 type DocsEntry = CollectionEntry<'docs'>;
 
 export function boardRows(docs: DocsEntry[]): BoardRowData[] {
 	return boards.map((board) => {
-		const entries = docs.filter((entry) => board.contains(entry.id));
-		if (entries.length === 0) {
-			throw new Error(`board "${board.title}" matches no docs entries`);
-		}
+		const entries = boardEntries(board, docs);
 
 		const dated = entries.map((entry) => ({ entry, date: lastCommitDate(entryFilePath(entry)) }));
 		dated.sort((a, b) => b.date.localeCompare(a.date));
@@ -45,7 +42,19 @@ export function stickyRows(docs: DocsEntry[]): StickyRowData[] {
 	});
 }
 
-function entryFilePath(entry: DocsEntry): string {
+export function boardEntries(board: Board, docs: DocsEntry[]): DocsEntry[] {
+	const ids = docs.map((entry) => entry.id);
+
+	return board.threads(ids).map((id) => {
+		const entry = docs.find((candidate) => candidate.id === id);
+		if (entry === undefined) {
+			throw new Error(`board "${board.title}" names thread "${id}" but no docs entry matches`);
+		}
+		return entry;
+	});
+}
+
+export function entryFilePath(entry: DocsEntry): string {
 	if (entry.filePath === undefined) {
 		throw new Error(`docs entry "${entry.id}" carries no filePath`);
 	}

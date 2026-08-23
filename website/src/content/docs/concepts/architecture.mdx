@@ -3,7 +3,7 @@ title: Architecture
 description: No broker process, no daemons — a control plane, one table family per topic, and a worker fleet that runs inside your own processes.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Vulkan has no broker process. The "server" is your Postgres database;
 the "clients" are your own application processes running the Vulkan
@@ -90,13 +90,14 @@ key against stored patterns ([routing →](/concepts/routing/)).
    Instance crashed? Its lease expires and the range is reclaimed —
    recovery is a property of the data, not of any process that can die.
 
-<Aside type="note" title="Consumers poll — by design, for now">
+<ThreadAside label="NOTE" title="Consumers poll — by design, for now">
 There is no `LISTEN/NOTIFY` anywhere in the library. Claims poll
 (`ClaimPollRate`, default 5s), which keeps the mechanism to one moving
 part and covers backoff-delayed work for free. Produce-triggered
 wake-ups with a fallback poll are a designed proposal, deliberately
 deferred until polling latency is a *measured* problem.
-</Aside>
+
+</ThreadAside>
 
 ## The maintenance fleet
 

@@ -3,18 +3,19 @@ title: Replaying History
 description: What history-reading ships today, and the proposed rewind verb for re-running an existing group — written up as the spec.
 ---
 
-import { Aside, Steps } from '@astrojs/starlight/components';
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Replay is the feature that quietly changes how you build. When history
 is retained and cursors are cheap, "reprocess everything since Tuesday"
 stops being a war-room project. This page is honest about which half of
 that ships today.
 
-<Aside type="note" title="Status: partly shipped, partly proposed">
+<ThreadAside label="NOTE" title="Partly shipped, partly proposed">
 Reading history with a **new** consumer group works today — it's the
 default. Rewinding an **existing** group is a proposed capability; the
 sections below marked *proposed* are the spec for it, not shipped API.
-</Aside>
+
+</ThreadAside>
 
 ## Shipped today: bootstrap a new service from history
 
@@ -45,7 +46,6 @@ from scratch, then retiring the old group.
 Tuesday 09:14: a deploy ships a bug in `warehouse-sync` that silently
 mis-handles EU orders. Wednesday: you notice. The proposed loop:
 
-<Steps>
 
 1. Deploy the corrected handler.
 
@@ -62,7 +62,6 @@ mis-handles EU orders. Wednesday: you notice. The proposed loop:
    had to be — [at-least-once delivery](/concepts/lifecycle/)), so
    re-processing messages it had handled correctly is harmless.
 
-</Steps>
 
 Spec questions the proposal has to answer before it ships — recorded
 here so the eventual design is reviewable against them:
