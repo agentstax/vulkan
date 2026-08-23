@@ -259,10 +259,35 @@ Invented interactive machinery for the site; user verdicts so far:
   entryFilePath helper). Rule recorded in website/CONVENTIONS.md
   ## Components. New page derivations (stats box etc.) land in
   _board/, never back in the frontmatter.
-  NEXT SLICES: the console (island); announcements (pixel flag) +
-  stats + legend; breadcrumb with the content-area pass;
-  read-tracking .svelte.ts module; then index swap + Starlight
-  removal.
+  HOMEPAGE-COMPLETE SLICE BUILT 2026-08-23 (awaiting user review):
+  USER RESEQUENCED — the working PGlite/CM6 console moves to the END
+  of main-page work; this slice templates it statically and lands
+  every remaining homepage section. New components: thread-post
+  (author column: name/3 stars/role/volcano avatar + body snippet),
+  sql-console STATIC shell (presentational Props label/sql/columns/
+  rows; keyword highlight via sqlSegments token renderer — no
+  {@html}, svelte/no-at-html-tags stays on; Run inert; status shows
+  row count ONLY — no ms claim, no "nothing leaves your browser",
+  no "it actually runs" copy until PGlite is real), pixel-flag,
+  announcement-row, board-stats (real computed stats: threads =
+  docs.length, error and event codes = errors/ count, decision
+  records = fs count of ../docs/decisions; legend + purple note),
+  jump-to (inert era furniture); breadcrumb inline in board.astro.
+  _board gains announcements.ts (3 real milestones w/ HISTORY.md
+  dates + real hrefs), console.ts (template SQL/rows — replaced by
+  the live console later), stats.ts, SiteStats in model.ts. New
+  tokens: console set (title/button gradients, sql pale, header
+  blue, null gray, amber edge, shadow), author column, avatar,
+  rank star, flag = amber ramp. PGlite + CodeMirror deps INSTALLED
+  but unused yet (settled stack; the console slice consumes them).
+  Build + eslint + storybook green; full-page screenshot verified.
+  NEXT SLICES: read-tracking .svelte.ts module (lights amber
+  folders, visit bar, "Show what's new"); THEN the real console
+  island (PGlite + CM6, per settled lazy approach — schema/produce
+  literals verbatim from tables.go/insert.go, build-time shell run;
+  restores the ms timing + "nothing leaves your browser" + try-it
+  links + live copy); then index swap + Starlight removal; then
+  Astro 6->7.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
     @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
     0.40 pins Astro 6; ripping it out first makes the upgrade a

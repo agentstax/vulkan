@@ -1,14 +1,24 @@
 ---
 import { getCollection } from 'astro:content';
 import BoardLayout from '../layouts/BoardLayout.astro';
+import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
 import BoardSection from '../components/board-section/board-section.svelte';
 import BoardRow from '../components/board-row/board-row.svelte';
 import StickyRow from '../components/sticky-row/sticky-row.svelte';
+import ThreadPost from '../components/thread-post/thread-post.svelte';
+import SqlConsole from '../components/sql-console/sql-console.svelte';
+import AnnouncementRow from '../components/announcement-row/announcement-row.svelte';
+import BoardStats from '../components/board-stats/board-stats.svelte';
+import JumpTo from '../components/jump-to/jump-to.svelte';
 import { boardRows, stickyRows } from './_board/rows';
+import { announcements } from './_board/announcements';
+import { siteStats } from './_board/stats';
+import { consoleLabel, consoleSql, consoleColumns, consoleRows } from './_board/console';
 
 const docs = await getCollection('docs');
 const rows = boardRows(docs);
 const stickies = stickyRows(docs);
+const stats = siteStats(docs);
 ---
 
 <BoardLayout
@@ -16,48 +26,63 @@ const stickies = stickyRows(docs);
 	description="The message platform forged in Postgres. Queue, event log, and router in one system."
 	navCurrent="Board Index"
 >
-	<div class="board-index">
-		<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
-			{
-				stickies.map((sticky) => (
-					<StickyRow
-						title={sticky.title}
-						href={sticky.href}
-						updated={false}
-						lastUpdatedDate={sticky.lastUpdatedDate}
-					/>
-				))
-			}
-		</BoardSection>
-		<BoardSection
-			title="Board"
-			columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}
-			threadCount={null}
-		>
-			{
-				rows.map((row, index) => (
-					<BoardRow
-						index={index}
-						title={row.title}
-						href={row.href}
-						description={row.description}
-						threadCount={row.threadCount}
-						lastPostTitle={row.lastPostTitle}
-						lastPostHref={row.lastPostHref}
-						lastPostDate={row.lastPostDate}
-						updated={false}
-					/>
-				))
-			}
-		</BoardSection>
-	</div>
+	<Breadcrumb trail={[{ label: 'Board Index', href: '/board/' }]} />
+	<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
+		{
+			stickies.map((sticky) => (
+				<StickyRow
+					title={sticky.title}
+					href={sticky.href}
+					updated={false}
+					lastUpdatedDate={sticky.lastUpdatedDate}
+				/>
+			))
+		}
+		<ThreadPost author="brandon" role="Site Admin">
+			<p>
+				Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
+				tables below are the ones the library creates.
+			</p>
+			<SqlConsole label={consoleLabel} sql={consoleSql} columns={consoleColumns} rows={consoleRows} />
+		</ThreadPost>
+	</BoardSection>
+	<BoardSection
+		title="Board"
+		columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}
+		threadCount={null}
+	>
+		{
+			rows.map((row, index) => (
+				<BoardRow
+					index={index}
+					title={row.title}
+					href={row.href}
+					description={row.description}
+					threadCount={row.threadCount}
+					lastPostTitle={row.lastPostTitle}
+					lastPostHref={row.lastPostHref}
+					lastPostDate={row.lastPostDate}
+					updated={false}
+				/>
+			))
+		}
+	</BoardSection>
+	<BoardSection title="Announcements" columnLabels={null} threadCount={null}>
+		{
+			announcements.map((announcement, index) => (
+				<AnnouncementRow
+					index={index}
+					title={announcement.title}
+					href={announcement.href}
+					date={announcement.date}
+				/>
+			))
+		}
+	</BoardSection>
+	<BoardStats
+		threadCount={stats.threadCount}
+		codeCount={stats.codeCount}
+		decisionRecordCount={stats.decisionRecordCount}
+	/>
+	<JumpTo />
 </BoardLayout>
-
-<style>
-	.board-index {
-		padding: 18px 20px;
-		display: flex;
-		flex-direction: column;
-		gap: 20px;
-	}
-</style>

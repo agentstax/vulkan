@@ -33,7 +33,9 @@ const { title, description, navCurrent } = Astro.props;
 			<BoardBanner />
 			<BoardNav current={navCurrent} />
 			<VisitBar lastVisitDate={null} />
-			<slot />
+			<div class="page-content">
+				<slot />
+			</div>
 			<BoardFooter />
 		</div>
 		<p class="powered-by">Powered by Vulkan on Postgres</p>
@@ -47,6 +49,13 @@ const { title, description, navCurrent } = Astro.props;
 		background: var(--color-surface);
 		border: 1px solid var(--border-outer);
 		box-shadow: var(--shadow-page-frame);
+	}
+
+	.page-content {
+		padding: 18px 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
 	}
 
 	.powered-by {

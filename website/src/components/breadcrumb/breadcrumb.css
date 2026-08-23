@@ -1,0 +1,15 @@
+.breadcrumb {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 10px;
+}
+
+.breadcrumb a {
+	color: var(--color-text-faint);
+	font-size: 10px;
+}
+
+.separator {
+	color: var(--color-text-faint);
+}

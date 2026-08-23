@@ -80,8 +80,11 @@ beside one:
   imported stylesheet is global css in disguise); the global
   stylesheet's sanctioned import sites are the layout and the
   Storybook preview. An oversized style file splits the component,
-  never escapes scoping. `.astro` scaffolding keeps its few styles in
-  its own scoped `<style>` block.
+  never escapes scoping. Astro cannot scope an external stylesheet
+  (a css import in `.astro` is global), so a page carries NO
+  `<style>` block at all -- page styling belongs to components, and
+  the shared content frame to the layout. The layout alone keeps
+  one small scoped block.
 - Stateful vs presentational is a file split: logic is a runes class
   in `<name>.svelte.ts`, the .svelte file is a thin renderer.
 - `$derived` over `$effect` -- `$effect` is for real side effects

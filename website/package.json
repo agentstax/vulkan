@@ -15,6 +15,13 @@
   "dependencies": {
     "@astrojs/starlight": "^0.40.0",
     "@astrojs/svelte": "^8.1.2",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.9",
+    "@electric-sql/pglite": "^0.5.6",
+    "@lezer/highlight": "^1.2.3",
     "astro": "^6.4.5",
     "sharp": "^0.34.5",
     "svelte": "^5.56.10"

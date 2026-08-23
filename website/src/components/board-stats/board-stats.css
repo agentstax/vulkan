@@ -1,0 +1,47 @@
+.board-stats {
+	border: 1px solid var(--border-section);
+	background: var(--color-chrome-pale);
+	padding: 12px 14px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 24px;
+}
+
+.stats {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.stats-line {
+	font-family: var(--font-database);
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--color-text);
+	font-variant-numeric: tabular-nums;
+}
+
+.stats-note {
+	font-family: var(--font-content);
+	font-size: 11px;
+	color: var(--color-text-muted);
+}
+
+.legend {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 10px;
+	color: var(--color-chrome-pale-text);
+}
+
+.legend-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.legend-visited {
+	color: var(--color-link-visited);
+}

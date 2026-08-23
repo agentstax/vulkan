@@ -60,6 +60,16 @@
 		--pin-red: #c0392b;
 		--pin-red-light: #e2695a;
 		--pin-red-dark: #96281b;
+		--author-pale-blue: #edf3f8;
+		--avatar-ground-blue: #dce7f0;
+		--avatar-border-blue: #c2d0dc;
+		--console-pale-1: #e7eef4;
+		--console-pale-2: #d6e1ea;
+		--button-face-1: #f9fbfc;
+		--button-face-2: #d9e2ea;
+		--console-sql-pale: #f6f9fb;
+		--console-header-blue: #dee7ef;
+		--null-gray: #97a6b2;
 
 		/* semantic -- what components consume */
 		--color-page: var(--page-blue-gray);
@@ -112,6 +122,26 @@
 		--color-pin: var(--pin-red);
 		--color-pin-light: var(--pin-red-light);
 		--color-pin-dark: var(--pin-red-dark);
+		--color-author-column: var(--author-pale-blue);
+		--color-avatar-ground: var(--avatar-ground-blue);
+		--border-avatar: var(--avatar-border-blue);
+		--color-rank-star: var(--amber);
+		--console-title-gradient: linear-gradient(
+			180deg,
+			var(--console-pale-1) 0%,
+			var(--console-pale-2) 100%
+		);
+		--button-gradient: linear-gradient(180deg, var(--button-face-1) 0%, var(--button-face-2) 100%);
+		--color-console-edge: var(--amber);
+		--color-console-sql-bg: var(--console-sql-pale);
+		--color-console-keyword: var(--band-blue-end);
+		--color-console-result-header: var(--console-header-blue);
+		--color-console-null: var(--null-gray);
+		--shadow-console: 0 4px 14px rgba(31, 58, 84, 0.18);
+		--flag-body: var(--amber-dark);
+		--flag-face: var(--amber);
+		--flag-highlight: var(--amber-light);
+		--flag-shade: var(--amber-shade);
 		--lacquer: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 		--lacquer-dim: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 		--shadow-page-frame:

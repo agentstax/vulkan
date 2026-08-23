@@ -1,0 +1,19 @@
+svg {
+	image-rendering: pixelated;
+}
+
+.body {
+	fill: var(--flag-body);
+}
+
+.face {
+	fill: var(--flag-face);
+}
+
+.highlight {
+	fill: var(--flag-highlight);
+}
+
+.shade {
+	fill: var(--flag-shade);
+}

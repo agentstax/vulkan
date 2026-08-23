@@ -13,3 +13,9 @@ export type StickyRowData = {
 	href: string;
 	lastUpdatedDate: string;
 };
+
+export type SiteStats = {
+	threadCount: number;
+	codeCount: number;
+	decisionRecordCount: number;
+};
