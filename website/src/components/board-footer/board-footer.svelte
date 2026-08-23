@@ -1,6 +1,10 @@
+<script lang="ts">
+	import { repositoryUrl } from '../../site';
+</script>
+
 <div class="board-footer">
 	<div class="footer-links">
-		<a href="https://github.com/agentstax/vulkan/graphs/contributors">The team</a>
+		<a href="{repositoryUrl}/graphs/contributors">The team</a>
 		<!-- inert until the read-tracking module owns the stored visit record -->
 		<button type="button">Delete board cookies</button>
 	</div>

@@ -13,3 +13,7 @@
 .separator {
 	color: var(--color-text-faint);
 }
+
+.current {
+	color: var(--color-text);
+}

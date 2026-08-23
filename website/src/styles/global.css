@@ -192,4 +192,122 @@
 		outline: 2px solid var(--color-focus-ring);
 		outline-offset: 2px;
 	}
+
+	/* the rendered-MDX dialect: a thread's body is classless HTML inside
+	   one .thread-body wrapper -- the sanctioned base-layer MDX styling */
+	.thread-body {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		font-family: var(--font-content);
+		font-size: 14px;
+		line-height: 1.7;
+		color: var(--color-text);
+	}
+
+	.thread-body :where(p, ul, ol) {
+		margin: 0;
+		max-width: 680px;
+	}
+
+	.thread-body :where(ul, ol) {
+		padding-left: 22px;
+	}
+
+	.thread-body :where(h2) {
+		margin: 8px 0 0;
+		max-width: 680px;
+		font-size: 19px;
+		font-weight: 700;
+		letter-spacing: -0.2px;
+		padding-bottom: 6px;
+		border-bottom: 1px solid var(--border-row);
+	}
+
+	.thread-body :where(h3) {
+		margin: 4px 0 0;
+		max-width: 680px;
+		font-size: 15px;
+		font-weight: 700;
+	}
+
+	.thread-body :where(:not(pre) > code) {
+		font-family: var(--font-database);
+		font-size: 12px;
+		background: var(--color-console-sql-bg);
+		border: 1px solid var(--border-row);
+		padding: 0 5px;
+	}
+
+	.thread-body :where(pre) {
+		margin: 0;
+		max-width: 680px;
+		box-sizing: border-box;
+		padding: 13px 16px;
+		background: var(--color-console-sql-bg);
+		border: 1px solid var(--border-row);
+		font-size: 12.5px;
+		line-height: 1.65;
+		overflow-x: auto;
+		tab-size: 4;
+	}
+
+	/* Starlight's markdown pipeline injects heading anchor links; board
+	   headings carry no anchor furniture -- delete this with Starlight */
+	.thread-body :where(a.sl-anchor-link) {
+		display: none;
+	}
+
+	.thread-body :where(pre code) {
+		font-family: var(--font-database);
+	}
+
+	.thread-body :where(table) {
+		max-width: 680px;
+		border: 1px solid var(--border-section);
+		border-collapse: collapse;
+		font-size: 12.5px;
+		line-height: 1.5;
+	}
+
+	.thread-body :where(th) {
+		background: var(--color-chrome-pale);
+		color: var(--color-chrome-pale-text);
+		font-size: 11.5px;
+		text-align: left;
+	}
+
+	.thread-body :where(th, td) {
+		padding: 6px 10px;
+		border-bottom: 1px solid var(--border-row);
+	}
+
+	.thread-body :where(tbody td:first-child) {
+		font-weight: 600;
+	}
+
+	.thread-body :where(tbody tr:nth-child(odd)) {
+		background: var(--color-row-stripe-a);
+	}
+}
+
+@layer utilities {
+	/* the era button face -- shared by Go, Edit this page, and prev/next */
+	.era-button {
+		background: var(--button-gradient);
+		box-shadow: var(--lacquer-bright);
+		border: 1px solid var(--border-outer);
+		font-family: var(--font-chrome);
+		font-size: 10px;
+		font-weight: 700;
+		color: var(--color-text);
+		text-decoration: none;
+		padding: 3px 12px;
+		cursor: pointer;
+	}
+
+	.era-button:focus-visible {
+		outline: 2px solid var(--color-focus-ring);
+		outline-offset: 2px;
+	}
 }

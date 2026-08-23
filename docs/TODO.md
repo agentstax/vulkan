@@ -326,7 +326,7 @@ Invented interactive machinery for the site; user verdicts so far:
   - deferred to later slices: try-it links (state class makes a
     link = set sql + run()), wasm asset prefetch on idle,
     transition:persist once navigations exist.
-  READ-TRACKING SLICE BUILT (2026-08-23; design user-settled:
+  READ-TRACKING SLICE BUILT + USER-ACCEPTED (2026-08-23; design user-settled:
   sticky scope = its own thread; "Show what's new" button stays
   inert this slice; first visit = all amber):
   - storage model USER-REDESIGNED same day (replaces the first
@@ -368,8 +368,70 @@ Invented interactive machinery for the site; user verdicts so far:
     fresh profile all amber + "Welcome" -> click Concepts ->
     return: Concepts gray, others amber, stickies amber, bar
     shows the date; mixed-state screenshot taken.
-  NEXT SLICES: index swap + Starlight removal (inner board-styled
-  pages, page-load visit recording, board at /); then Astro 6->7;
+  THREAD-PAGE DESIGN ROUND 6 USER-ACCEPTED 2026-08-23 as starting
+  point (canvas page "Round 6 — thread pages"): a doc page = ONE post
+  by the site, era author column (150px, brandon/Site Admin/Posts: 74
+  real count) beside the rendered MDX; prose capped ~680px; H2 = Plex
+  Sans 19px hairline underline; code blocks on console pale, Go
+  keywords = the SQL keyword blue #184E7C, strings one quiet red
+  #B03A2E; proposed asides = quote-box with outlined PROPOSED chip
+  (chrome-colored, never amber/checkmark); title band = section
+  gradient + "Edit this page"; era prev/next links top, named buttons
+  bottom (real sidebar neighbors). Error threads: OP = the error
+  itself (author VK000x, pixel-exclamation avatar, rank "Permanent
+  error", verbatim log line with 3px pin-red left edge), declared fix
+  = ACCEPTED ANSWER post by brandon (new green family #1E7B3C/#EAF4EC/
+  #CBE3D2), [SOLVED] pale-green chip in the band, registry facts =
+  one mono strip, paste-your-log-line search strip below. Every era
+  button real: Edit -> GitHub edit URL, Report this thread ->
+  prefilled GitHub issue, Copy link/error text -> clipboard.
+  USER VERDICTS: no in-page TOC (revisit if a long page needs one);
+  author column scrolls away (never sticky); VK-as-poster approved.
+  NEXT SLICES (user-approved sequence 2026-08-23, homepage-style
+  incremental — Starlight keeps serving the 74 pages until slice 4):
+  1. prose dialect + ONE real thread — BUILT 2026-08-23 (awaiting
+     review): /board/concepts/ordering/ renders the real MDX through
+     layouts/ThreadLayout.astro (nests BoardLayout; owns the top row
+     breadcrumb + era "View previous/next thread" links and the
+     return row). New components (each with stories):
+     thread-title-band (h1 + Edit this page -> GitHub edit URL),
+     prev-next (ThreadLink | null both sides — ordering is LAST in
+     Concepts so next=null, real order beats the artboard's guess),
+     proposed-aside (PROPOSED chip quote-box; ordering.mdx now
+     imports it instead of Starlight's Aside — scoped styles render
+     fine on the live Starlight page too). thread-post EXTENDED
+     (header: PostHeader | null = posted strip + Report this thread
+     -> prefilled GitHub issue + frame border via data-framed;
+     postCount: number | null = real docs.length); breadcrumb items
+     now href: string | null (null = current page, plain text).
+     MDX dialect = .thread-body block in global.css base layer
+     (the sanctioned base-layer MDX styling): p/h2/h3/lists capped
+     680px, inline code + pre on console pale, striped bordered
+     tables, tab-size 4; sl-anchor-link hidden (Starlight-injected,
+     dies with Starlight). CODE FENCES: Starlight expressiveCode
+     DISABLED, markdown.shikiConfig = inline "vulkan-board" textmate
+     theme (keyword families blue-bold #184E7C — keyword.operator
+     stays ink, strings #B03A2E, comments faint italic) — the
+     mechanism that survives the swap; Starlight pages pick it up
+     light-on-pale (fine in light, mismatched in Starlight dark mode
+     — temporary). .era-button utility added (3 call sites: jump-to
+     Go converted, Edit this page, prev/next). thread.ts route-local
+     facts (_thread/): board lookup, lastCommitDate, docs.length,
+     edit/report GitHub URLs. Verified: build 76pp, eslint, vitest
+     3/3, storybook build, screenshots (preview page vs artboard +
+     Starlight collateral check).
+  2. generalize to all non-error pages: route generation from the
+     docs collection, real sidebar order -> prev/next + breadcrumbs,
+     still preview URLs.
+  3. error thread variant: green tokens, [SOLVED] chip, VK-as-poster,
+     registry strip, search-strip shell; the 25 hand-written error
+     pages gain zod-enforced structured frontmatter (problem/
+     recovery/fix) BY HAND — no generation (settled rule).
+  4. the swap: board at /, threads at final URLs, Starlight removed,
+     Pagefind standalone, old-URL redirects, deep-link visit
+     recording lands free (every page rides BoardLayout). Full
+     verification checkpoint here.
+  5. Astro 6->7 after (already sequenced below).
   "Show what's new" wiring rides a later slice.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
     @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight

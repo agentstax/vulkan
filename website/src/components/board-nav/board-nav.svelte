@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { repositoryUrl } from '../../site';
+
 	type NavLink = {
 		label: string;
 		href: string;
@@ -15,7 +17,7 @@
 		{ label: 'Board Index', href: '/board/' },
 		{ label: 'Docs', href: '/' },
 		{ label: 'Troubleshooting', href: '/errors/' },
-		{ label: 'GitHub', href: 'https://github.com/agentstax/vulkan' },
+		{ label: 'GitHub', href: repositoryUrl },
 		{ label: 'Search', href: '#' },
 	];
 </script>

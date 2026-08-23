@@ -7,7 +7,7 @@
 			<path d="M0 0 L4 5 L8 0 z" />
 		</svg>
 	</span>
-	<button type="button" class="go-button">Go</button>
+	<button type="button" class="era-button">Go</button>
 </div>
 
 <style src="./jump-to.css"></style>

@@ -5,7 +5,7 @@
 	const { Story } = defineMeta({
 		title: 'Board/ThreadPost',
 		component: ThreadPost,
-		args: { author: 'brandon', role: 'Site Admin' },
+		args: { author: 'brandon', role: 'Site Admin', header: null, postCount: null },
 	});
 </script>
 
@@ -16,6 +16,23 @@
 				Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
 				tables below are the ones the library creates.
 			</p>
+		</ThreadPost>
+	{/snippet}
+</Story>
+
+<Story
+	name="FramedWithHeader"
+	args={{
+		header: {
+			postedDate: '2026-08-22',
+			reportHref: 'https://github.com/agentstax/vulkan/issues/new',
+		},
+		postCount: 74,
+	}}
+>
+	{#snippet template(args)}
+		<ThreadPost {...args}>
+			<p>A framed post carries its own border, the posted-date strip, and the author's count.</p>
 		</ThreadPost>
 	{/snippet}
 </Story>

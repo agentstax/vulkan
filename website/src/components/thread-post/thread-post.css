@@ -1,5 +1,30 @@
 .thread-post {
 	border-top: 1px solid var(--border-section);
+}
+
+.thread-post[data-framed='true'] {
+	border: 1px solid var(--border-section);
+}
+
+.post-header {
+	background: var(--color-chrome-pale);
+	border-bottom: 1px solid var(--border-row);
+	padding: 6px 14px;
+	display: flex;
+	justify-content: space-between;
+	font-size: 10px;
+	color: var(--color-chrome-pale-text);
+}
+
+.post-header a {
+	font-size: 10px;
+}
+
+.posted {
+	font-variant-numeric: tabular-nums;
+}
+
+.post-columns {
 	display: flex;
 }
 
@@ -41,6 +66,11 @@
 	background: var(--color-avatar-ground);
 	padding: 6px 6px 0;
 	margin-top: 4px;
+}
+
+.post-count {
+	margin-top: 6px;
+	font-variant-numeric: tabular-nums;
 }
 
 .post-body {

@@ -21,19 +21,3 @@
 	fill: var(--color-chrome-pale-text);
 }
 
-.go-button {
-	background: var(--button-gradient);
-	box-shadow: inset 0 1px 0 var(--color-surface);
-	border: 1px solid var(--border-outer);
-	font-family: var(--font-chrome);
-	font-size: 10px;
-	font-weight: 700;
-	color: var(--color-text);
-	padding: 3px 12px;
-	cursor: pointer;
-}
-
-.go-button:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 2px;
-}

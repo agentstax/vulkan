@@ -1,0 +1,42 @@
+.proposed-aside {
+	border: 1px solid var(--border-section);
+	max-width: 680px;
+}
+
+.aside-header {
+	background: var(--color-chrome-pale);
+	border-bottom: 1px solid var(--border-row);
+	padding: 6px 12px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.proposed-chip {
+	border: 1px solid var(--border-outer);
+	background: var(--color-surface);
+	font-family: var(--font-chrome);
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 1px;
+	color: var(--color-chrome-pale-text);
+	padding: 2px 7px;
+}
+
+.aside-title {
+	font-family: var(--font-content);
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--color-chrome-pale-text);
+}
+
+.aside-body {
+	padding: 11px 13px;
+	font-family: var(--font-content);
+	font-size: 13px;
+	line-height: 1.65;
+	color: var(--color-text);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}

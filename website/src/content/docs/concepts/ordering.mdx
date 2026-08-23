@@ -3,7 +3,7 @@ title: Ordering & Concurrency
 description: What order Vulkan actually guarantees, the per-key exclusivity you can opt into today, and the strict FIFO that's still a proposal.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ProposedAside from '../../../components/proposed-aside/proposed-aside.svelte';
 
 Ordering and concurrency are fundamentally at odds: if message B must
 wait for message A, no amount of consumer instances makes B faster.
@@ -56,7 +56,8 @@ Same-key produces commit one after another, and adding producer
 processes makes a hot key slower, not faster — that's what you opted
 into.
 
-<Aside type="note" title="Proposed: strict per-key FIFO">
+<ProposedAside title="Strict per-key FIFO">
+
 "Every message with this key, in order, one at a time" — a separate
 partition key beside the compaction key, with claim-time lanes and
 order preserved through retries — is a designed-but-unbuilt proposal
@@ -64,7 +65,8 @@ order preserved through retries — is a designed-but-unbuilt proposal
 not the same knob as compaction: compaction answers "what's current,"
 FIFO answers "don't reorder history." If your workload needs the
 second, today Vulkan doesn't ship it.
-</Aside>
+
+</ProposedAside>
 
 ## Compared to the neighbors
 

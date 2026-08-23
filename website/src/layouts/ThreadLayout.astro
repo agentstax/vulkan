@@ -1,0 +1,92 @@
+---
+import BoardLayout from './BoardLayout.astro';
+import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
+import ThreadTitleBand from '../components/thread-title-band/thread-title-band.svelte';
+import ThreadPost from '../components/thread-post/thread-post.svelte';
+import PrevNext from '../components/prev-next/prev-next.svelte';
+import JumpTo from '../components/jump-to/jump-to.svelte';
+import type { ThreadLink } from '../components/prev-next/types';
+
+type Props = {
+	title: string;
+	description: string;
+	boardTitle: string;
+	boardHref: string;
+	editHref: string;
+	postedDate: string;
+	reportHref: string;
+	postCount: number;
+	previous: ThreadLink | null;
+	next: ThreadLink | null;
+};
+
+const {
+	title,
+	description,
+	boardTitle,
+	boardHref,
+	editHref,
+	postedDate,
+	reportHref,
+	postCount,
+	previous,
+	next,
+} = Astro.props;
+
+const trail = [
+	{ label: 'Board Index', href: '/board/' },
+	{ label: boardTitle, href: boardHref },
+	{ label: title, href: null },
+];
+const returnTrail = [
+	{ label: 'Board Index', href: '/board/' },
+	{ label: boardTitle, href: boardHref },
+];
+---
+
+<BoardLayout title={title} description={description} navCurrent="Docs">
+	<div class="thread-top">
+		<Breadcrumb trail={trail} />
+		<div class="adjacent-links">
+			{previous !== null && <a href={previous.href}>View previous thread</a>}
+			{previous !== null && next !== null && <span>::</span>}
+			{next !== null && <a href={next.href}>View next thread</a>}
+		</div>
+	</div>
+	<ThreadTitleBand title={title} editHref={editHref} />
+	<ThreadPost author="brandon" role="Site Admin" header={{ postedDate, reportHref }} postCount={postCount}>
+		<div class="thread-body">
+			<slot />
+		</div>
+	</ThreadPost>
+	<PrevNext previous={previous} next={next} />
+	<div class="thread-return">
+		<Breadcrumb trail={returnTrail} />
+		<JumpTo />
+	</div>
+</BoardLayout>
+
+<style>
+	.thread-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+	}
+
+	.adjacent-links {
+		font-size: 10px;
+		color: var(--color-text-faint);
+		display: flex;
+		gap: 6px;
+	}
+
+	.adjacent-links a {
+		font-size: 10px;
+	}
+
+	.thread-return {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+</style>

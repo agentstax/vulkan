@@ -1,0 +1,19 @@
+.thread-title-band {
+	background: var(--band-gradient);
+	box-shadow: var(--lacquer);
+	border: 1px solid var(--border-section);
+	padding: 9px 14px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+}
+
+.thread-title {
+	margin: 0;
+	font-family: var(--font-band);
+	color: var(--color-band-title);
+	font-size: 17px;
+	font-weight: 700;
+	letter-spacing: 0.5px;
+}

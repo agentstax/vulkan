@@ -30,7 +30,7 @@ const shell = await consoleShell();
 	<Breadcrumb trail={[{ label: 'Board Index', href: '/board/' }]} />
 	<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
 		<StickyRows client:idle stickies={stickies} />
-		<ThreadPost author="brandon" role="Site Admin">
+		<ThreadPost author="brandon" role="Site Admin" header={null} postCount={null}>
 			<p>
 				Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
 				tables below are the ones the library creates, seeded through its own produce statement.
