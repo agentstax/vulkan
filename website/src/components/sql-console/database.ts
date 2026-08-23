@@ -3,10 +3,10 @@
 // module runs in Node at build time -- the static shell's rows are this
 // database's real output -- and in the browser on the console's first Run.
 import type { PGlite } from '@electric-sql/pglite';
-import { createSystemTablesStatements } from './vulkan-sql/create-system-tables/statements';
-import { createTopicTablesStatements } from './vulkan-sql/create-topic-tables/statements';
-import { protectedInsertKeylessSql } from './vulkan-sql/protected-insert-keyless';
-import { protectedInsertKeyedSql } from './vulkan-sql/protected-insert-keyed';
+import { createSystemTablesStatements } from './sql/create-system-tables/statements';
+import { createTopicTablesStatements } from './sql/create-topic-tables/statements';
+import { protectedInsertKeylessSql } from './sql/protected-insert-keyless';
+import { protectedInsertKeyedSql } from './sql/protected-insert-keyed';
 
 // the seeded demo topic: id 1, the library's default partition size
 const demoTopicId = 1;
