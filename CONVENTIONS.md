@@ -19,8 +19,9 @@ each func param has explicit type, never combined
 ## Naming & terminology
 
 - Never coin shorthand for a mechanism -- not in code, comments, or names.
-  Describe things as the row/column/status/action they literally are
-  (banned examples: park, give-back, IOU, slot, ack/nack, settle, cede).
+  Describe things as the row/column/status/action they literally are.
+  The ## Vocabulary table is the registry of banned terms and their
+  replacements.
 - Name a new method after the verb the codebase already uses for the same
   concept (Record*/Claim* pairs), not an outside domain's jargon.
 - Design-round vocabulary (analogies, research jargon like "exclusive arc")
@@ -46,6 +47,33 @@ each func param has explicit type, never combined
   the receiver matches the initial of the type's FINAL word -- `d` on
   `*TopicDatastore`, `c` on `*ControllerConfig`, `i` on `*JanitorInstance`,
   `d` on every `*Definition`. A single letter never holds a domain value.
+
+## Vocabulary
+
+One registry of banned terms for the whole repo -- code identifiers,
+comments, log messages, and all user-facing prose including the doc site.
+A term is banned when it hides the mechanism behind borrowed or coined
+language; the replacement is the system's own noun in its plainest form,
+understandable to a developer who has never seen Vulkan. A new banned
+term or approved alternative adds its row in the same change that
+surfaces it.
+
+| Banned | Why | Use instead |
+| --- | --- | --- |
+| stream (Vulkan's noun) | a second name for what the API calls a topic | topic |
+| event (Vulkan's rows) | the system's noun is message; "event" smuggles in event-sourcing expectations | message; the message log |
+| offset | Kafka's position model; Vulkan positions are ids and cursors | message id; cursor |
+| enqueue, publish | extra names for the API's one verb | produce |
+| subscribe | not the API's verb | consume; declare the consumer group |
+| job (the unit a consumer processes) | job-queue framing for what is a message; cron jobs keep their name | message |
+| worker (a consuming process) | collides with Vulkan's own worker fleet | consumer instance; "worker" only for Vulkan's maintenance workers |
+| ack, nack | protocol jargon for a protocol Vulkan doesn't have | the handler succeeds / returns an error; the delivery is recorded |
+| reaper | vivid coinage for lease reclaim | "expired leases are reclaimed" |
+| visibility timeout | SQS's term for what Vulkan calls a lease | lease; lease expiry |
+| DLQ, dead-letter queue (as a place) | dead is a delivery status, not a separate queue | dead-lettered messages; delivery status dead |
+| door | coinage for the controller layer | API package; "the controller -- the only path to persistence" |
+| sentinel | coinage for a declared error value | named error variable; error value |
+| park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
 
 ## Structure
 
@@ -662,3 +690,16 @@ trailing `help` attr, so the line itself points at its explanation.
 - A lab that hand-copies a production query (EXPLAIN demos) goes silently
   stale when the real query changes -- grep labs for mirrors whenever a
   production query moves. Prefer driving the real datastore method.
+
+## Documentation
+
+Rules for the doc site (website/) and all user-facing prose.
+
+- Docs describe the real API only: every code sample compiles against the
+  shipped library. A capability that does not exist yet is marked as
+  proposed, never shown as current.
+- No performance number without a benchmark record behind it. The site
+  cites bench/ records; a comparison table scores shipped behavior only --
+  a proposed capability is never a checkmark.
+- Docs speak the API's own nouns in their plainest form. The ## Vocabulary
+  registry governs docs prose exactly as it governs code.

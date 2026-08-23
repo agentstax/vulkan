@@ -1,18 +1,25 @@
 ---
 title: Quickstart
-description: Durable background jobs in five minutes — then the upgrade no job queue could ever make.
+description: Produce and consume your first message on the Postgres you already run — every line of code on this page compiles against the shipped library.
 ---
 
 import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
-Five minutes to reliable background jobs on the Postgres you already have —
-then two more to see the thing no job queue could ever do. No Redis, no SQS,
-no new infrastructure.
+Vulkan runs against the Postgres you already have — no broker, no new
+infrastructure. This page takes you from an empty database to producing,
+consuming, and inspecting messages, ending with the headline: producing a
+message in the same transaction as your own writes.
+
+Vulkan's constructors are deliberately explicit. You will write a few more
+lines than a one-call facade would need — and every one of them is a seam
+you own: the connection pool, the admin surface, the retry policy, the
+consumer group. Nothing on this page is pseudocode; every sample compiles
+against the shipped library.
 
 <Aside type="note">
-All you need is a Postgres connection string. Local Docker, RDS, Neon,
-Railway, Supabase — anything ≥ Postgres 14 works. (Want to see it survive
-`kill -9` before writing any code? [Run the chaos demo first →](/demo/))
+You need a Postgres connection and Go 1.26+. Vulkan's test suite runs
+against Postgres 17. Tables are created in your database's default schema
+by Vulkan itself — there is no SQL migration file to apply by hand.
 </Aside>
 
 <Steps>
@@ -24,148 +31,258 @@ Railway, Supabase — anything ≥ Postgres 14 works. (Want to see it survive
    go install github.com/agentstax/vulkan/cmd/vulkan@latest
    ```
 
-2. **Run the migrations**
+   The CLI is a separate module, so cobra and friends never enter your
+   application's dependency graph.
 
-   Vulkan keeps its tables in their own schema, out of your way:
+2. **Create the control-plane schema**
 
    ```sh
-   vulkan migrate --database-url $DATABASE_URL
+   export VULKAN_ADMIN_DATABASE_URL='postgres://app_user:secret@localhost:5432/app_db'
+   vulkan migrate init
    ```
 
-   ```
-   ✓ created schema  vulkan
-   ✓ created table   vulkan.events       (the log)
-   ✓ created table   vulkan.deliveries   (per-consumer lifecycle)
-   ✓ created table   vulkan.consumers    (cursors)
-   ✓ created table   vulkan.bindings     (routing)
-   ```
+   `migrate init` creates the shared control-plane tables (the topic
+   catalog, the worker fleet) at their baseline. It is idempotent — a no-op
+   against a database that already has them. The same thing happens in code
+   via `RegisterSystem` below, so the CLI step is a convenience, not a
+   requirement.
 
-3. **Your first queue: the welcome email**
+3. **Register a topic and produce a message**
 
-   The classic Day-1 problem — do something after signup, reliably:
+   A topic is registered once with a name and a schema version; producing
+   is then a typed call. Your payload type is a plain Go struct, stored as
+   JSONB.
 
    ```go
    package main
 
    import (
-       "context"
-       "os"
-       "time"
+   	"context"
+   	"fmt"
+   	"os"
 
-       "github.com/agentstax/vulkan"
+   	"github.com/agentstax/vulkan/pkg/admin"
+   	"github.com/agentstax/vulkan/pkg/datastore"
+   	"github.com/agentstax/vulkan/pkg/producer"
+   	"github.com/agentstax/vulkan/pkg/topic"
+   	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
    )
 
    type WelcomeEmail struct {
-       UserID string `json:"user_id"`
+   	UserId string `json:"user_id"`
    }
 
    func main() {
-       ctx := context.Background()
-       client, _ := vulkan.Connect(ctx, os.Getenv("DATABASE_URL"))
-       defer client.Close()
+   	ctx := context.Background()
 
-       queue := vulkan.Queue[WelcomeEmail](client, "emails")
+   	ds, err := datastore.NewPostgresDatastore(ctx, "app_user", "localhost", "app_db",
+   		&datastore.PostgresConnectionConfig{Pass: os.Getenv("PGPASSWORD")})
+   	must(err)
+   	defer ds.Close()
 
-       // In your signup handler — same transaction as the user INSERT,
-       // so the job exists if and only if the user does:
-       client.Tx(ctx, func(tx vulkan.Tx) error {
-           if err := users.Insert(ctx, tx, user); err != nil {
-               return err
-           }
-           return queue.EnqueueTx(ctx, tx, &WelcomeEmail{UserID: user.ID})
-       })
+   	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+   	must(err)
+   	must(messageAdmin.RegisterSystem(ctx, nil))
 
-       // The worker — run it here or in a separate binary:
-       queue.Work(ctx, func(ctx context.Context, job vulkan.Message[WelcomeEmail]) error {
-           return mailer.SendWelcome(ctx, job.Payload)
-       },
-           vulkan.WithRetries(5),
-           vulkan.WithBackoff(vulkan.Exponential(time.Second)),
-       )
+   	registered, err := messageAdmin.RegisterTopic(ctx, "signup.welcome-email",
+   		topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+   	must(err)
+
+   	emailProducer, err := producer.NewProducer[WelcomeEmail](ds, nil)
+   	must(err)
+   	instance, err := emailProducer.Register(ctx, registered.Name, topic.SchemaVersion(1))
+   	must(err)
+
+   	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, producer.ProduceOptions{})
+   	must(err)
+   	fmt.Printf("produced message id=%d\n", produced.Id)
+   }
+
+   func must(err error) {
+   	if err != nil {
+   		fmt.Println(err.Error())
+   		os.Exit(1)
+   	}
    }
    ```
 
-   That's a production-grade job queue: atomic claiming across any number of
-   workers, retries with exponential backoff — and because the enqueue is in
-   *your* transaction, the email can never fire for a signup that rolled
-   back, or get lost for one that committed.
-   [Why no external queue can do that →](/guides/transactional-enqueue/)
+   `RegisterTopic` is idempotent, and it creates the topic's own physical
+   tables — its message log, delivery, and cursor tables — in the same
+   call. Registering the system first is required; a topic cannot exist
+   without the control plane it rides on.
 
-4. **Watch a job fail its way to the dead-letter queue**
+4. **Consume it**
 
-   Make the handler fail (return an error unconditionally, or unplug your
-   mail API key) and enqueue a few jobs. Then look inside — your queue is
-   rows, so debugging is `psql`, not a broker console:
+   Consumption is a consumer group: an independent reader with its own
+   cursor, its own retry budget, and its own dead-lettered messages. The
+   handler receives your typed payload; returning an error schedules a
+   retry with exponential backoff.
+
+   ```go
+   package main
+
+   import (
+   	"context"
+   	"fmt"
+   	"os"
+   	"time"
+
+   	"github.com/agentstax/vulkan/pkg/admin"
+   	"github.com/agentstax/vulkan/pkg/common"
+   	"github.com/agentstax/vulkan/pkg/consumer"
+   	"github.com/agentstax/vulkan/pkg/datastore"
+   	"github.com/agentstax/vulkan/pkg/topic"
+   )
+
+   type WelcomeEmail struct {
+   	UserId string `json:"user_id"`
+   }
+
+   func main() {
+   	ctx, stop := common.LifecycleContext(nil)
+   	defer stop()
+
+   	ds, err := datastore.NewPostgresDatastore(ctx, "app_user", "localhost", "app_db",
+   		&datastore.PostgresConnectionConfig{Pass: os.Getenv("PGPASSWORD")})
+   	must(err)
+   	defer ds.Close()
+
+   	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
+   	must(err)
+   	must(messageAdmin.RegisterSystem(ctx, nil))
+
+   	registered, err := messageAdmin.GetTopic(ctx, "signup.welcome-email", topic.SchemaVersion(1))
+   	must(err)
+   	if registered == nil {
+   		fmt.Println("topic not registered -- run the producer first")
+   		os.Exit(1)
+   	}
+
+   	emailConsumer, err := consumer.NewConsumer[WelcomeEmail](ds, &consumer.ConsumerConfig{
+   		Message: &common.MessageOptions{
+   			Timeout: 5 * time.Second,
+   			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: time.Second},
+   		},
+   	})
+   	must(err)
+
+   	instance, err := emailConsumer.Register(ctx, "email-sender", registered.Name, topic.SchemaVersion(1), nil)
+   	must(err)
+
+   	must(instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
+   		fmt.Printf("sending welcome email to %s\n", email.UserId)
+   		return nil
+   	}))
+   }
+
+   func must(err error) {
+   	if err != nil {
+   		fmt.Println(err.Error())
+   		os.Exit(1)
+   	}
+   }
+   ```
+
+   Two things here are load-bearing:
+
+   - `common.LifecycleContext` wires SIGINT/SIGTERM into the context.
+     `Consume` requires a cancellable context — it refuses
+     `context.Background()` — because graceful shutdown is part of the
+     contract, not an option. Ctrl-C drains cleanly.
+   - The `nil` last argument to `Register` is the group's binding set:
+     `nil` means the whole topic. Handlers should be idempotent —
+     redelivery after a crash or timeout is normal at-least-once behavior.
+
+5. **Look inside with psql**
+
+   Everything is rows in your database. Each topic owns its physical
+   tables, named by the topic's id — resolve it once from the catalog:
+
+   ```sql
+   SELECT id FROM topic WHERE name = 'signup.welcome-email' AND schema_version = 1;
+   ```
+
+   Say it returned `1`. Then (make your handler return an error and
+   produce a few messages first, if you want something to watch):
 
    <Tabs>
-   <TabItem label="Queue health">
+   <TabItem label="Your messages">
    ```sql
-   SELECT status, count(*), max(attempts) AS attempts
-   FROM vulkan.deliveries
-   GROUP BY 1;
+   SELECT id, payload, created_at FROM message_log_1 ORDER BY id;
    ```
    </TabItem>
-   <TabItem label="Dead letters">
+   <TabItem label="Delivery status">
    ```sql
-   SELECT e.payload, d.attempts, d.last_error
-   FROM vulkan.deliveries d
-   JOIN vulkan.events e ON e."offset" = d.event_offset
+   SELECT g.name AS consumer_group, d.status, count(*), max(d.attempts) AS attempts
+   FROM delivery_1 d JOIN consumer_group g ON g.id = d.consumer_group_id
+   GROUP BY 1, 2;
+   ```
+   </TabItem>
+   <TabItem label="Dead-lettered">
+   ```sql
+   SELECT d.message_id, m.payload, d.attempts, d.last_error
+   FROM delivery_1 d JOIN message_log_1 m ON m.id = d.message_id
    WHERE d.status = 'dead';
+   ```
+   </TabItem>
+   <TabItem label="Attempt history">
+   ```sql
+   SELECT message_id, attempt, status, error, attempted_at
+   FROM delivery_log_1 ORDER BY message_id, attempt;
    ```
    </TabItem>
    </Tabs>
 
-   Watch `attempts` climb, watch retries push into the future with backoff,
-   and after five failures watch the job land in `dead` — payload and error
-   history intact, waiting for you to fix the bug and
-   [redrive it](/guides/dead-letters/). Nothing expires behind your back.
+   Watch `attempts` climb and `can_run_after` push into the future with
+   backoff; after the retry budget is spent the row's status becomes
+   `dead`, with the payload and `last_error` intact — nothing expires
+   behind your back. One honesty note: a delivery that *succeeds* is
+   deleted, not kept — the delivery table shows in-flight and failed work,
+   while every failed attempt is preserved in the `delivery_log_1` audit
+   trail.
 
-5. **The reveal: your queue was a stream all along**
+6. **The headline: produce inside your own transaction**
 
-   Months from now, product wants an in-app activity feed driven by the same
-   signups. With any job queue, those messages are gone — consumed and
-   deleted. In Vulkan, a queue is just a stream with one consumer group, so
-   adding a second, fully independent consumer is one line:
-
-   ```go
-   vulkan.Subscribe(client, "emails", "activity-feed",
-       func(ctx context.Context, msg vulkan.Message[WelcomeEmail]) error {
-           return feed.RecordSignup(ctx, msg.Payload)
-       },
-   )
-   ```
-
-   Run it next to your email worker. Each group has its own cursor, its own
-   retries, its own dead letters; the email worker never notices. Re-run the
-   queue-health query — you'll see two `consumer_group`s working the same
-   events. This is the moment that separates Vulkan from every job queue:
-   the upgrade was *additive*, not a migration.
-
-6. **One more: replay history**
-
-   The activity feed shouldn't start empty — point it at the beginning of
-   retained history and it bootstraps itself, processing every signup it
-   missed, then seamlessly catches up to live:
+   The closure you pass to `ProduceFunc` runs inside the message's own
+   transaction. Your business write and the message commit together, or
+   neither does — the message can never exist for a rolled-back signup,
+   and never be lost for a committed one.
 
    ```go
-   vulkan.Subscribe(client, "emails", "activity-feed",
-       recordSignup,
-       vulkan.FromOffset(0),
-   )
+   import "github.com/google/uuid"
+
+   produced, err := instance.ProduceFunc(ctx,
+   	func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*WelcomeEmail, error) {
+   		if _, err := tx.Exec(ctx, `INSERT INTO users (id) VALUES ($1)`, "user-123"); err != nil {
+   			return nil, err
+   		}
+   		return &WelcomeEmail{UserId: "user-123"}, nil
+   	}, producer.ProduceOptions{})
    ```
 
-   No hand-written backfill, no consistency scramble. Deleted-on-consume
-   systems structurally cannot do this. [Why replay matters →](/guides/replay/)
+   To produce to several topics atomically, `producer.InTransaction` opens
+   one transaction and hands your closure a `Tx` that each instance's
+   `ProduceInTx` accepts. Do your own statements first and produce last:
+   producing holds a lock on consumer progress for the topic until commit,
+   so the produce should be the shortest-held thing in the transaction.
 
 </Steps>
 
+<Aside type="caution" title="One more thing for real deployments">
+Topic upkeep — creating partitions ahead, enforcing retention, advancing
+the committed cursor — runs while a consumer is running, or under the
+standalone manager: `vulkan manager run`. A deployment that only produces
+should run the manager alongside it.
+</Aside>
+
 ## Where next
 
-- [Try to lose a message](/demo/) — `kill -9` the workers, restart Postgres,
-  watch the loss counter stay at zero.
 - [Concepts: Queues, Logs & the Fusion](/concepts/queue-and-log/) — the
-  mental model behind the reveal in step 5.
-- [Routing](/concepts/routing/) and [FIFO](/concepts/ordering/) — the rest of
-  the growth path, when you need it.
-- [Vulkan Cloud](/cloud/) — all of the above with dashboards, alerts, and
-  nothing to operate.
+  mental model: one immutable message log, per-group delivery state.
+- [Message Lifecycle](/concepts/lifecycle/) — retries, leases, and
+  dead-lettered messages in detail.
+- [Upgrades & Migrations](/guides/migrations/) — what a rolling deploy can
+  rely on.
+- `vulkan explain` — every Vulkan error and log event has a code and an
+  offline explanation; `vulkan topic list --output json` and friends cover
+  inspection.

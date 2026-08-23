@@ -1,80 +1,112 @@
 ---
 title: Routing
-description: Producers publish facts with attributes. Bindings decide who receives. Nobody addresses anybody.
+description: Producers attach a routing key. Consumer groups declare binding patterns. Nobody addresses anybody.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-The mark of a healthy event architecture: **producers don't know consumers
-exist.** A producer publishes what happened, annotated with attributes; the
-platform decides who receives it. In Vulkan, that decision is a **binding** —
-a stored predicate evaluated at fan-out time.
+The mark of a healthy message architecture: **producers don't know
+consumers exist.** A producer states what happened, tagged with a routing
+key; each consumer group declares which keys it cares about. In Vulkan
+that declaration is a **binding** — a stored pattern matched against the
+message's routing key when the group's deliveries materialize.
 
-## Topic-style routing
-
-Publish with a routing key:
-
-```go
-stream.Publish(ctx, &OrderCreated{...},
-    vulkan.WithRoutingKey("orders.eu.created"))
-```
-
-Bind groups with wildcard patterns (`*` matches one segment, `>` matches the
-rest):
+## Produce with a routing key
 
 ```go
-// Receipts care about every created order, anywhere.
-vulkan.Bind(client, "email-receipts", "orders.*.created")
-
-// The EU compliance service wants everything EU, any event type.
-vulkan.Bind(client, "eu-compliance", "orders.eu.>")
-
-// US warehouse only ships US orders.
-vulkan.Bind(client, "us-warehouse", "orders.us.>")
+produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
+	producer.ProduceOptions{RoutingKey: "orders.eu.created"})
 ```
 
-Publish `orders.eu.created` → `email-receipts` and `eu-compliance` get
-delivery rows; `us-warehouse` hears nothing. The producer changed zero lines
-when `eu-compliance` came online last month.
+The key is optional. A message produced without one is received only by
+groups that declared no bindings — it carries nothing for a pattern to
+match.
 
-## Header-style routing
+## Declare the group's bindings
 
-When routing depends on message *content* rather than a hierarchy, match on
-headers:
+A group's bindings are declared as a whole set, in `Register`'s last
+argument — there is no separate bind verb to call one pattern at a time:
 
 ```go
-stream.Publish(ctx, &OrderCreated{...},
-    vulkan.WithHeaders(vulkan.H{"tier": "enterprise", "amount_band": "high"}))
+// Receipts care about created orders.
+receipts, err := emailConsumer.Register(ctx, "email-receipts",
+	registered.Name, topic.SchemaVersion(1), []string{"orders.*.created"})
 
-// Concierge team only sees high-value enterprise orders.
-vulkan.BindHeaders(client, "concierge-review",
-    vulkan.H{"tier": "enterprise", "amount_band": "high"})
+// EU compliance wants everything EU.
+compliance, err := auditConsumer.Register(ctx, "eu-compliance",
+	registered.Name, topic.SchemaVersion(1), []string{"orders.eu.*"})
+
+// The analytics group passes nil: no bindings, the whole topic.
+analytics, err := statsConsumer.Register(ctx, "order-analytics",
+	registered.Name, topic.SchemaVersion(1), nil)
 ```
 
-Under the hood this is JSONB containment (`headers @> pattern`) — indexed,
-fast, and visible in `EXPLAIN` like everything else in Vulkan.
+Produce `orders.eu.created` → `email-receipts`, `eu-compliance`, and
+`order-analytics` all receive it; a `us-warehouse` group bound to
+`orders.us.*` hears nothing. The producer changes zero lines when a new
+group comes online.
 
-## Why route at fan-out time
+## The pattern language: one wildcard, honestly scoped
 
-A binding could in principle be checked at publish time or at claim time.
-Vulkan evaluates it at **fan-out** — when delivery rows materialize — which
-buys a property the broker world can't match:
+`*` matches **any run of characters** — including dots. The pattern is
+anchored at both ends; everything else is literal:
 
-<Aside type="tip" title="Retroactive routing">
-Because the log is retained, a binding added *today* can be applied to events
-published *last month* — just create the binding and rewind the group. In
-RabbitMQ, a message that matched no binding at publish time is gone forever.
-In Vulkan, routing is a predicate over durable facts, so re-deciding is
-always on the table.
+| Pattern | `orders.eu.created` | `orders.us.central1.created` | `orders.eu.updated` |
+| --- | --- | --- | --- |
+| `orders.*.created` | matches | matches — `*` crosses depth | no |
+| `orders.eu.*` | matches | no | matches |
+| `orders.*` | matches | matches | matches |
+
+Note the second column: `*` is a true wildcard, so a pattern cannot pin
+an exact segment depth ("exactly one segment here"). If you need to keep
+hierarchies apart, make the literal parts distinctive. A NATS-style
+one-segment wildcard is a possible future refinement, not a shipped
+behavior.
+
+## How a set change lands
+
+Bindings are per-group state that many deployed instances declare, so
+declaration has explicit outcomes rather than last-writer-wins:
+
+- **installed** — the declared set is now the group's effective set (the
+  first declarer, or nothing live disagrees).
+- **joined** — the declared set was already stored; nothing to change.
+- **waiting** — a live instance still declares a *different* set. The
+  waiting instance retries (every `BindingRetryInterval`, default 10s)
+  until the disagreeing instances go away — a deploy rolling out a new
+  binding set converges as the old instances stop.
+
+Inspect where every group stands:
+
+```sh
+vulkan alert bindings
+```
+
+<Aside type="note" title="Binding changes are forward-only">
+The pattern is evaluated when a message fans out to the group, and the
+fan-out position only moves forward — so a binding added today applies
+to messages produced after it installs. Messages already routed (or
+skipped) keep the outcome they had.
 </Aside>
 
-## The model in one sentence
+## It's all rows
 
-RabbitMQ made routing famous with exchanges; NATS with subject wildcards.
-Vulkan's version: **an exchange is just a table of predicates, and a
-predicate over retained facts beats a predicate over fly-by messages.**
+Each topic owns a physical binding table, named by the topic's id. The
+`display` column keeps the pattern as you wrote it:
 
 ```sql
--- Your entire routing topology. No management UI required (but Cloud has one).
-SELECT consumer_group, pattern FROM vulkan.bindings ORDER BY 1;
+SELECT g.name AS consumer_group, b.display AS pattern
+FROM binding_1 b JOIN consumer_group g ON g.id = b.consumer_group_id
+ORDER BY 1;
 ```
+
+Every declaration attempt — installed and waiting alike — is also
+appended to the topic's `binding_log` table with who declared it and
+when, so "who changed the routing and when" is a query, not a mystery.
+
+## What routing is not (yet)
+
+Matching is on the routing key only. Header or content matching
+("`region=eu` AND `tier=gold`" over a JSONB attribute set) is a designed
+follow-up that waits for a real workload — today, encode what you route
+on into the key.

@@ -16,6 +16,21 @@ the item is removed.
 
 ## Now
 
+- **Documentation-driven pass** (picked up 2026-08-22; working window in
+  TODO.md). Documentation drives implementation: the doc-site page is the
+  proposal, written and reviewed before code. Settled: all site pages
+  rewrite to the REAL API — the site's invented surface (vulkan.Queue /
+  Subscribe / functional options / shared vulkan.events schema) is
+  discarded; vocabulary governed by CONVENTIONS.md ## Vocabulary (one
+  banned / why / use-instead registry for code, comments, AND docs,
+  growing); no performance number
+  without a benchmark record. Site triage of all 19 non-error pages done
+  2026-08-22 — verdicts in TODO.md. After the rewrites: per-page status
+  markers (shipped vs proposed). Feeds and is fed by: the quickstart
+  rewrite surfaces the startup friction that shapes
+  DefaultProducer/DefaultConsumer (see Documentation — remaining items in
+  Next); the benchmark methodology page (14c, tabled) lands as a doc-site
+  section.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -132,7 +147,8 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
 
-- **Documentation** (Phase 15, deliberately last):
+- **Documentation — remaining items** (the docs-driven pass itself moved to
+  Now, 2026-08-22; these ride along with it):
   - After the next `just site-deploy`: confirm the deployed /errors/ pages
     resolve at the Docs() URLs (exact-case /errors/VK0005), then drop the
     placeholder TODO comment on docsBaseURL in pkg/common/error.go.
@@ -164,6 +180,11 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
+
+- **Vocabulary walker** — enforce the CONVENTIONS.md ## Vocabulary registry
+  mechanically: a tools/conventions test that greps code, comments, and
+  website/ prose for banned terms (allowlisting the registry itself and
+  historical docs), so the table is enforced, not advisory.
 
 - **Marketing** I know there are other kafka in sql projects out there
   why did they fail? Was it product or marketing related? what can we learn

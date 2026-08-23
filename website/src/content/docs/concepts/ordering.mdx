@@ -1,70 +1,81 @@
 ---
-title: Ordering & FIFO
-description: Strict per-key ordering exactly where you opt in — full parallelism everywhere else.
+title: Ordering & Concurrency
+description: What order Vulkan actually guarantees, the per-key exclusivity you can opt into today, and the strict FIFO that's still a proposal.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Ordering and concurrency are fundamentally at odds: if message B must wait for
-message A, no amount of workers makes B faster. Systems that pretend otherwise
-either serialize everything (slow) or order nothing (wrong). Vulkan's answer
-is the same as Kafka's and SQS FIFO's — **order within a key** — but opt-in
-per message rather than baked into stream topology.
+Ordering and concurrency are fundamentally at odds: if message B must
+wait for message A, no amount of consumer instances makes B faster.
+Systems that pretend otherwise either serialize everything (slow) or
+order nothing (wrong). This page says exactly which trade Vulkan ships
+today — and which one is still a proposal.
 
-## Partition keys
+## What's guaranteed by default
 
-Tag messages that must be ordered relative to each other with a key:
+Messages are appended with strictly increasing ids, and a group's claims
+scan the log **in id order** — work is handed out oldest-first. But
+handed out is not finished: with `MessageConcurrency` above 1, multiple
+consumer instances, or a retry in the mix, *completion* order is not
+guaranteed. The default is full parallelism, honestly labeled.
+
+## Opt-in: one in-flight delivery per key
+
+For messages that carry a compaction key, `ConcurrencyDefer` gives you
+per-key mutual exclusion within a consumer group:
 
 ```go
-// All events for one account process in order…
-stream.Publish(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
-    vulkan.WithPartitionKey("acct-42"))
-
-// …while unkeyed messages parallelize across every worker.
-stream.Publish(ctx, &EmailRequested{To: "x@example.com"})
+compaction, err := producer.NewCompactionOptions("acct-42", 0)
+if err != nil {
+	return err
+}
+produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
+	producer.ProduceOptions{
+		Compaction: compaction,
+		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
+	})
 ```
 
-The guarantee: **within a consumer group, at most one message per partition
-key is in flight at a time, claimed in log order.** Messages with different
-keys — and messages with no key — run fully parallel. Fifty workers can chew
-through a stream while `acct-42`'s events march through single-file.
+The guarantee: **at most one delivery per compaction key is in flight
+at a time, per consumer group.** Under the hood it's a `key_lease` row —
+a same-key message arriving while the key is busy is recorded `deferred`
+and picked up later; messages with different keys, and messages with no
+key, run fully parallel.
 
-Under the hood it's one predicate in the claim query: *skip rows whose key
-already has an in-flight delivery in this group*. No partition count to
-choose up front, no rebalancing, no "we picked 12 partitions in 2024 and now
-we're stuck with them."
+The subtlety that makes this *not* FIFO: compaction semantics apply.
+When the key frees, the key's **current head** runs — the latest
+version, not every version ever written. If three updates to `acct-42`
+land while the first is processing, the middle one is superseded and
+only the newest runs. That's "process each key's current state, one at
+a time" — exactly right for state-shaped messages (a user record, a
+session, a device's latest reading), and exactly wrong for "apply every
+delta in sequence."
 
-## The hot-key trade, made visible
+The hot-key trade comes with it, visibly: a hot key serializes itself.
+Same-key produces commit one after another, and adding producer
+processes makes a hot key slower, not faster — that's what you opted
+into.
 
-A hot key serializes itself — that's not a bug, it's what you asked for.
-If one account produces 80% of your traffic, that account processes at
-single-worker speed while everything else saturates the pool:
-
-```sql
--- Who's hot right now?
-SELECT e.partition_key, count(*) AS backlog
-FROM vulkan.deliveries d
-JOIN vulkan.events e ON e."offset" = d.event_offset
-WHERE d.status = 'ready' AND e.partition_key IS NOT NULL
-GROUP BY 1 ORDER BY 2 DESC LIMIT 10;
-```
-
-(Vulkan Cloud charts this and alerts when a key starts dragging group
-latency.)
-
-<Aside type="caution" title="Retries bend ordering — by design">
-If `acct-42`'s message #3 fails and backs off, should #4 wait? Vulkan's
-default is **strict**: the key stays blocked until #3 resolves (succeeds or
-dead-letters), preserving order through retries. If you'd rather skip ahead,
-opt the group into `vulkan.OrderBestEffort()` — looser, faster, and honest
-about it. Both behaviors are explicit; neither happens to you by surprise.
+<Aside type="note" title="Proposed: strict per-key FIFO">
+"Every message with this key, in order, one at a time" — a separate
+partition key beside the compaction key, with claim-time lanes and
+order preserved through retries — is a designed-but-unbuilt proposal
+(the SQS `MessageGroupId` / Kafka partition shape). It's deliberately
+not the same knob as compaction: compaction answers "what's current,"
+FIFO answers "don't reorder history." If your workload needs the
+second, today Vulkan doesn't ship it.
 </Aside>
 
 ## Compared to the neighbors
 
-| | Kafka | SQS FIFO | Vulkan |
+Scored on shipped behavior only:
+
+| | Kafka | SQS FIFO | Vulkan today |
 | --- | --- | --- | --- |
-| Ordering unit | partition (fixed count) | MessageGroupId | partition key |
-| Choose order per message? | ❌ topic-wide topology | ✅ | ✅ |
-| Unordered fast path on same stream | ❌ | ❌ separate queue | ✅ null key |
-| Reshard pain | repartitioning project | n/a | none — keys are just values |
+| Ordering unit | partition (count fixed up front) | MessageGroupId | compaction key |
+| Guarantee | per-partition order | per-group order | per-key exclusivity, latest version wins |
+| Choose per message? | no — topic topology | yes | yes |
+| Unordered fast path on the same topic | no | no — separate queue | yes — messages without a key |
+
+Strict per-key FIFO would move Vulkan's guarantee column next to SQS
+FIFO's; until it ships, it's a proposal, not a checkmark.

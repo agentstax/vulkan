@@ -5,65 +5,76 @@ description: The one mental model behind Vulkan — and behind every messaging s
 
 import { Aside } from '@astrojs/starlight/components';
 
-Every messaging system you've ever used — Kafka, RabbitMQ, SQS, NATS, Pulsar —
-is built from two primitives:
+Every messaging system you've ever used — Kafka, RabbitMQ, SQS, NATS,
+Pulsar — is built from two primitives:
 
 - A **queue** treats messages as *work*: something claims each message,
-  processes it, and it's gone. The interesting state is per-message — claimed
-  by whom, attempted how many times, failed why.
-- A **log** treats messages as *facts*: append-only, retained, re-readable.
-  Nothing is consumed; consumers just remember *how far they've read* — a
-  single cursor.
+  processes it, and it's gone. The interesting state is per-message —
+  claimed by whom, attempted how many times, failed why.
+- A **log** treats messages as *facts*: append-only, retained,
+  re-readable. Nothing is consumed; consumers just remember *how far
+  they've read* — a single cursor.
 
 Each shape is great at what the other can't do:
 
 | | Queue (SQS, RabbitMQ) | Log (Kafka, Kinesis) |
 | --- | --- | --- |
-| Retries, backoff, dead letters | ✅ per-message state | ❌ a cursor can't say "5 failed but 6–8 are done" |
-| Replay history | ❌ consumed = gone | ✅ rewind the cursor |
-| Many independent consumers | ❌ one consumer wins | ✅ cursor per consumer |
-| "Handle this one bad message" | ✅ | ❌ skip it or stall the partition |
+| Retries, backoff, dead-lettering | per-message state, yes | no — a cursor can't say "5 failed but 6–8 are done" |
+| Read history again | no — consumed means gone | yes — read from an older position |
+| Many independent consumers | no — one consumer wins | yes — cursor per consumer |
+| "Handle this one bad message" | yes | no — skip it or stall the partition |
 
 This is why you end up running both — Kafka *and* SQS, or Kafka *and*
-RabbitMQ — and bolting on workarounds where each one falls short (Kafka's
-"retry topics" are a queue impersonation; SQS's 14-day retention is a log
-impersonation).
+RabbitMQ — and bolting on workarounds where each falls short (Kafka's
+"retry topics" are a queue impersonation; SQS's 14-day retention is a
+log impersonation).
 
 ## The fusion
 
-Vulkan's design move is to stop choosing. It separates the two concerns into
-two tables:
+Vulkan's design move is to stop choosing. Each topic keeps the two
+concerns in separate tables:
 
-- **`vulkan.events`** — the immutable, append-only **log**. Facts, retained,
-  ordered by offset. Retention, replay, routing, and partitions live here.
-- **`vulkan.deliveries`** — mutable, per-`(consumer group, message)`
-  **lifecycle** state. Claims, attempts, backoff, dead letters live here.
+- **The message log** (`message_log_<topic id>`) — immutable,
+  append-only facts, ordered by id. Retention, fan-out, and routing
+  live here.
+- **Per-group delivery state** (`delivery_<topic id>`, one row per
+  *failed* message per group) — claims, attempts, backoff,
+  dead-lettering live here.
+- **Per-group cursors** (`cursor_<topic id>`) — how far each group has
+  read and resolved.
 
-A consumer group that needs full lifecycle gets delivery rows. A consumer that
-just wants to read the firehose (analytics, replication, replay) gets a bare
-cursor and skips the bookkeeping entirely. **Per stream, you choose the
-semantics — without changing systems.**
+And the load-bearing detail: every consumer group gets **both**, with
+the split falling exactly where the cost is. The cursor sweeps the
+happy path — a message that succeeds never gets its own row, so a
+million clean messages cost one advancing integer, not a million state
+rows. A message that *fails* materializes its own delivery row and
+enters the full [state machine](/concepts/lifecycle/) — retries,
+backoff, dead-lettering, per group. You don't pick "queue semantics or
+log semantics" per topic; the design gives you log economics for
+success and queue lifecycle for failure, simultaneously.
 
 <Aside type="tip" title="The aha">
-You can have retention, replay, and fan-out **and** per-message
-ack/retry/dead-letter simultaneously — by separating the immutable record of
-*what happened* from the mutable record of *who has handled it*. That single
-separation is the entire trick, and Postgres's transactional engine is what
-makes it cheap to build on.
+You can have retention, fan-out, and history **and** per-message
+retry/dead-letter state simultaneously — by separating the immutable
+record of *what happened* from the mutable record of *who has handled
+it*, and only materializing the second where something actually went
+wrong. That separation is the entire trick, and Postgres's
+transactional engine is what makes it cheap to build on.
 </Aside>
 
 ## Why Postgres specifically
 
-Three properties make Postgres an unusually good substrate for this fusion:
+Three properties make Postgres an unusually good substrate for this
+fusion:
 
-1. **`FOR UPDATE SKIP LOCKED`** — competing consumers in one SQL clause. Two
-   workers run the same claim query at the same instant and get *different*
-   rows. A crashed worker needs zero recovery code; transaction rollback *is*
-   the recovery.
-2. **Transactions that reach your data.** The log lives next to your business
-   tables, so publishing an event in the same transaction as a business write
-   is just… a transaction. No broker can offer this.
-   [The dual-write problem →](/guides/transactional-enqueue/)
+1. **`FOR UPDATE SKIP LOCKED`** — competing consumers in one SQL
+   clause. Two instances run the same claim at the same instant and get
+   *different* rows. A crashed instance needs zero recovery code;
+   transaction rollback plus an expiring lease *is* the recovery.
+2. **Transactions that reach your data.** The log lives next to your
+   business tables, so producing a message in the same transaction as a
+   business write is just… a transaction. No broker can offer this.
+   [The dual-write problem →](/guides/transactional-produce/)
 3. **It's already there.** Already deployed, already backed up, already
    monitored, already trusted with your most important data.
 
@@ -72,10 +83,12 @@ Three properties make Postgres an unusually good substrate for this fusion:
 Once you have the queue/log lens, the whole landscape snaps into focus:
 
 - **SQS / RabbitMQ** — queues. Lifecycle-rich, history-poor.
-- **Kafka** — a log. History-rich, lifecycle-poor (a committed offset is the
-  *only* per-consumer state).
-- **Pulsar** — the closest existing fusion (per-subscription cursors *plus*
-  individual acks), at the cost of running BookKeeper + ZooKeeper + brokers.
-- **Vulkan** — the same fusion as tables, in the database you already run.
+- **Kafka** — a log. History-rich, lifecycle-poor (a committed offset
+  is the *only* per-consumer state).
+- **Pulsar** — the closest existing fusion (per-subscription cursors
+  *plus* individual message state), at the cost of running BookKeeper +
+  ZooKeeper + brokers.
+- **Vulkan** — the same fusion as tables, in the database you already
+  run.
 
 Next: [how the tables actually fit together →](/concepts/architecture/)

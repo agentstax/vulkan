@@ -37,6 +37,7 @@ var controlPlaneTables = []string{
 	"topic_log",
 	"consumer_group",
 	"worker",
+	"worker_log",
 	"worker_instance",
 	"cron_job",
 	"migration_log",

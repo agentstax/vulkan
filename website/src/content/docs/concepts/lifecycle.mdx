@@ -1,91 +1,131 @@
 ---
 title: Message Lifecycle
-description: Every message is a state machine — retries, backoff, leases, and dead letters you can SELECT.
+description: Success leaves no per-message state at all. Failure gets a state machine — retries, backoff, leases, and dead-lettered messages you can SELECT.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-In a log system, a message is just *present*. In Vulkan, for every consumer
-group that opts in, a message has a **state machine**:
+Vulkan's consumer is built on an asymmetry worth understanding: **a
+message that succeeds never gets its own row.** Consumer instances claim
+contiguous *ranges* of the message log under the group's cursor, run your
+handler over each message, and the cursor sweeps past everything that
+went cleanly — zero per-message bookkeeping on the happy path.
+
+State materializes exactly when something goes wrong. A handler error
+writes the message its own **delivery row**, and that row is a state
+machine:
 
 ```
-                       attempts < max
-            ┌────────── (backoff) ◀─────────┐
-            ▼                               │ failure
-  ┌───────┐     claim      ┌────────────┐   │
-  │ ready │ ─────────────▶ │ processing │ ──┤
-  └───────┘                └────────────┘   │ success
-      ▲                          │          ▼
-      │ lease expired            │      ┌──────┐
-      └────── (reaper) ◀─────────┘      │ done │
-                                        └──────┘
-                       attempts = max
-            failure ────────────────▶  ┌──────┐
-                                        │ dead │  ◀─ your DLQ, as rows
-                                        └──────┘
+  handler returns an error
+            │  the message gets its own delivery row
+            ▼
+        ┌───────┐    claimed, attempts + 1     ┌──────────┐
+        │ ready │ ───────────────────────────▶ │ inflight │
+        └───────┘                              └──────────┘
+            ▲                                   │        │
+            │ lease expired — reclaimed         │        │ retry succeeds
+            ├───────────────────────────────────┤        ▼
+            │ retry fails, attempts left        │    row DELETED
+            └─── can_run_after = now + backoff ◀┤
+                                                │ retry fails, attempts spent
+                                                ▼
+                                            ┌──────┐   dead-lettered: payload,
+                                            │ dead │   attempts, and last_error
+                                            └──────┘   all kept, all queryable
 ```
 
-Each transition is recorded with attempts, timestamps, and the last error —
-**per consumer group**. Group A dead-lettering message 5 doesn't affect group
-B sailing through it.
+All of it is **per consumer group**. Group A dead-lettering message 5
+doesn't affect group B — for group B the message never even had a row.
+And a `dead` row never blocks the group's cursor: the rest of the topic
+keeps flowing past it.
+
+Every transition is also appended to the topic's `delivery_log` audit
+trail — by default every outcome except success (the topic's
+`DeliveryLogMode` can widen that to successes too, or turn it off).
 
 ## Retries & backoff
 
+The retry budget and curve are ordinary config — set once on the
+consumer, or requested per message at produce time (messages *request*,
+consumers *clamp*):
+
 ```go
-vulkan.Subscribe(client, "orders", "fraud-screening", screen,
-    vulkan.WithRetries(5),
-    vulkan.WithBackoff(vulkan.Exponential(2*time.Second)), // 2s, 4s, 8s…
-)
+fraudConsumer, err := consumer.NewConsumer[OrderCreated](ds, &consumer.ConsumerConfig{
+	Message: &common.MessageOptions{
+		Timeout: 30 * time.Second,
+		Retry:   &common.RetryPolicy{MaxRetries: 5, BaseDelay: 2 * time.Second},
+	},
+})
 ```
 
-A failed message isn't retried by anyone *waiting* — its `run_at` is pushed
-into the future and it simply becomes claimable again when the time comes.
-Backoff is a timestamp, not a timer in a process that might die.
+The delay before attempt *n* is `BaseDelay × Exponent^n`, capped at
+`MaxDelay` (defaults: exponent 2, cap 5 minutes, 3 retries, 30s
+timeout). And backoff is a **timestamp, not a timer**: a failed retry
+writes `can_run_after` into the future and the row simply becomes
+claimable again when the time comes. Nothing is waiting in a process
+that might die.
 
-## Leases: surviving dead workers
+## Leases: surviving dead consumers
 
-When a worker claims a message, it takes a **lease** (`locked_at`), not a
-database lock. If the worker finishes, it resolves the message. If the worker
-*vanishes* — OOM-killed, deploy, kernel panic — the lease expires and a reaper
-flips the message back to `ready`. No heartbeat protocol, no session state,
-no rebalancing storm. The message is simply work that becomes claimable again.
+A claim takes a **lease** — a row with an expiry, not a database lock.
+Two kinds cover the two tiers:
+
+- **Range leases** cover healthy claims. A consumer instance that
+  vanishes — OOM-killed, deploy, kernel panic — leaves its range's lease
+  to expire; the next claim by any instance reclaims crashed ranges
+  *before* taking fresh work, so those messages drain first. A range
+  reclaimed too many times (3 by default) is **quarantined** into
+  individual delivery rows instead of handed out again — one poison
+  message can't crash-loop a whole range forever.
+- **Per-row leases** cover retries. An `inflight` row whose lease
+  expired is claimable again. And as a backstop, an expired row that is
+  *also* out of attempts is marked `dead` with
+  `[killed: crash-loop hit max attempts]` appended to its error — a
+  handler that kills its process every time can't loop forever.
+
+No heartbeat protocol, no session state, no rebalancing storm. Expired
+leases are reclaimed by the same claim queries that do the normal work.
 
 <Aside type="caution" title="At-least-once, and proud of it">
-Leases mean a slow-but-alive worker and a reaper can occasionally both process
-the same message — the same trade SQS, Pulsar, and every real queue makes.
-Vulkan is honest about being **at-least-once**: write idempotent handlers
-(Vulkan gives you `msg.Offset` and `msg.ID` as natural idempotency keys).
-Systems that promise exactly-once delivery are selling you exactly-once
-*something else*.
+Leases mean a slow-but-alive handler and a reclaim can occasionally both
+process the same message — the same trade SQS, Pulsar, and every real
+queue makes. Vulkan is honest about being **at-least-once**: write
+idempotent handlers. `consumergroup.MetaFromContext(ctx)` gives you the
+message id inside your handler — a natural idempotency key. Systems that
+promise exactly-once delivery are selling you exactly-once *something
+else*.
 </Aside>
 
-## The dead-letter queue is a query
+## Dead-lettered messages are a query
 
-After max attempts, messages land in `dead` — with their full payload, attempt
-count, and final error, still joined to the log:
+After the retry budget is spent, the row's status is `dead` — with the
+payload still joined to the log, the attempt count, and the final error:
 
 ```sql
-SELECT e.payload, d.attempts, d.last_error, d.updated_at
-FROM vulkan.deliveries d
-JOIN vulkan.events e ON e."offset" = d.event_offset
-WHERE d.consumer_group = 'fraud-screening' AND d.status = 'dead'
+SELECT m.payload, d.attempts, d.last_error, d.updated_at
+FROM delivery_1 d
+JOIN message_log_1 m ON m.id = d.message_id
+JOIN consumer_group g ON g.id = d.consumer_group_id
+WHERE g.name = 'fraud-screening' AND d.status = 'dead'
 ORDER BY d.updated_at DESC;
 ```
 
-No redrive policies to configure, no separate DLQ queues to wire per consumer,
-no expiring messages you never got to look at. Fix the bug, then:
+No separate dead-letter queue to provision per consumer, and nothing
+expires behind your back — dead rows live until the retention drop that
+removes their message log rows.
 
-```go
-// Redrive everything dead for this group — or pass a filter.
-client.Redrive(ctx, "orders", "fraud-screening", vulkan.DeadOnly())
-```
-
-[Full dead-letter guide →](/guides/dead-letters/)
+<Aside type="note" title="Proposed: a redrive verb">
+Today there is no API to reset dead rows to `ready` after you fix the
+bug — a first-class redrive verb is a proposed capability, not a shipped
+one. The [dead-letters guide](/guides/dead-letters/) covers the triage
+workflow that exists now.
+</Aside>
 
 ## Why this matters
 
-This per-message lifecycle is precisely what the log world can't express — a
-Kafka consumer's *only* state is "I have read up to offset N." One poison
-message and your choices are: stall the partition, skip and lose it, or build
-a parallel retry-topic system by hand. In Vulkan, lifecycle is native, and it
-coexists with [replay and fan-out](/concepts/streams/) on the same stream.
+This per-message failure lifecycle is precisely what the log world can't
+express — a Kafka consumer's *only* state is "I have read up to offset
+N." One poison message and your choices are: stall the partition, skip
+and lose it, or build a parallel retry-topic system by hand. Vulkan's
+answer is a cursor for the 99.9% that succeeds and a state machine for
+the 0.1% that doesn't — native, per group, and visible in `psql`.

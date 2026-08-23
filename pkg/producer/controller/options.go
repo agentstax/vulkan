@@ -14,7 +14,8 @@ import (
 type ProduceOptions struct {
 	// RoutingKey - matched against a consumer group's bindings to decide
 	// whether that group receives this message at all.
-	// Default: "" (no routing key; every group receives it regardless of binding).
+	// Default: "" (no routing key; a keyless message matches no binding, so
+	// only groups with no bindings receive it).
 	//
 	// "" is stored as no routing key, not an empty-string match.
 	// Ex: "orders.created", "billing.invoice.paid"

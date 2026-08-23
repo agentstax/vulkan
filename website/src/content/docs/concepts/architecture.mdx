@@ -1,95 +1,131 @@
 ---
 title: Architecture
-description: Four tables, no daemons — how Vulkan turns Postgres into a message platform.
+description: No broker process, no daemons — a control plane, one table family per topic, and a worker fleet that runs inside your own processes.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Vulkan has no broker process. The "server" is your Postgres database plus a
-schema; the "clients" are your own application processes running the Vulkan
+Vulkan has no broker process. The "server" is your Postgres database;
+the "clients" are your own application processes running the Vulkan
 library. Everything below is rows.
 
 ```
-                       ┌──────────────────────────────────────────────┐
-                       │                   POSTGRES                    │
-  producers            │                                              │   consumers
-                       │   vulkan.events            (immutable log)  │
-  app ──publish──────▶ │   ─ offset, topic, routing_key,             │
-  app ──publish-in-tx▶ │     partition_key, headers, payload          │
-                       │                  │                           │
-                       │                  │ fan-out via bindings      │
-                       │                  ▼                           │
-                       │   vulkan.bindings          (routing rules)  │
-                       │   ─ consumer_group, pattern                  │
-                       │                  │                           │
-                       │                  ▼                           │
-                       │   vulkan.deliveries   (per-group lifecycle) │ ◀─claim/ack── worker
-                       │   ─ (group, offset) → status, attempts,     │ ◀─claim/ack── worker
-                       │     run_at, locked_at, last_error            │
-                       │                                              │
-                       │   vulkan.consumers         (bare cursors)   │ ◀─read at cursor─ replayer
-                       │   ─ name → position                          │
-                       └──────────────────────────────────────────────┘
+                     ┌──────────────────────────────────────────────────┐
+                     │                     POSTGRES                     │
+  producers          │                                                  │      consumers
+                     │  shared control plane:                           │
+  app ──produce────▶ │    topic · consumer_group · worker · cron_job    │
+  app ──produce────▶ │                                                  │
+    (in your txn)    │  one table family per topic (suffix = topic id): │
+                     │    message_log_1  immutable log, id-partitioned  │ ◀──claim ranges── instance
+                     │    cursor_1       per-group claimed / committed  │ ◀──claim ranges── instance
+                     │    binding_1      routing patterns               │
+                     │    delivery_1     per-group failure lifecycle    │ ◀──retry claims── instance
+                     │    delivery_log_1 per-attempt audit trail        │
+                     │    lease_1 · key_lease_1 · compaction_head_1     │
+                     │    idempotency_key_1                             │
+                     └──────────────────────────────────────────────────┘
 ```
 
-## The four tables
+## Two kinds of table
 
-**`events` — the log.** Append-only, never mutated by consumption. The
-`offset` (a bigserial) is the global position. Retention is enforced by
-time-partitioning, so expiring old history is a partition `DROP`, not a
-million-row `DELETE`.
+**The shared control plane** — created once by `RegisterSystem` (or
+`vulkan migrate init`): the topic catalog (`system`, `topic`,
+`topic_log`, `consumer_group`), the worker fleet (`worker`,
+`worker_log`, `worker_instance`, `cron_job`), and migration history
+(`migration_log`).
 
-**`deliveries` — the lifecycle.** One row per `(consumer_group, event)` for
-groups that opt into full lifecycle. The status state machine
-(`ready → processing → done | dead`, with retry loops) lives here. Workers
-claim rows with `FOR UPDATE SKIP LOCKED`, so any number of workers compete
-safely with zero coordination. A partial index on ready rows keeps the claim
-query fast no matter how much history accumulates.
+**One physical family per topic** — created by `RegisterTopic`, named
+by the topic's id. A per-topic table carries no `topic_id` column; the
+table name *is* the scope. The split is deliberate, not decorative:
 
-**`consumers` — the cursors.** For groups that don't need per-message
-lifecycle (analytics readers, replicators, replays), consumption is just
-"read events past my position, advance my position." One integer per group.
-Fan-out costs nothing because the log is shared and positions are private.
+- Retention drops wait on every cursor in a table — shared tables would
+  let one lagging group on topic A block cleanup for unrelated topic B.
+- A failure outage churns `delivery` with inserts and deletes — shared,
+  that churn would slow every other topic's claims.
+- Destroying a topic is `DROP TABLE` on its family, not a cross-table
+  `DELETE` sweep.
 
-**`bindings` — the routing.** Which groups receive which events, decided at
-fan-out time by matching `routing_key` patterns (`orders.*.created`) or
-header predicates (JSONB containment). Producers never address consumers.
+The core of the family:
+
+**`message_log_<id>` — the log.** Append-only, never mutated by
+consumption; the bigserial `id` is the position. It is **partitioned by
+id range** (`PartitionSize` rows per partition, default 1M): the
+producer creates the next partition ahead as the current one fills, and
+retention expires whole partitions with a `DROP` — no million-row
+deletes, no vacuum debt.
+
+**`cursor_<id>` — the happy path.** One row per consumer group:
+`claimed` (the read frontier) and `committed` (everything at or below
+it is resolved). Consumer instances claim contiguous *ranges* of the
+log under a lease; messages that succeed are simply swept past. Fan-out
+to another group costs one more cursor row, and per-group **lag** is
+`max(id) - committed`.
+
+**`delivery_<id>` — the failure lifecycle.** One row per *failed*
+message per group: status, attempts, backoff timestamp, last error,
+lease. The [state machine](/concepts/lifecycle/) lives here, claimed
+with `FOR UPDATE SKIP LOCKED` so any number of instances compete
+safely. `delivery_log_<id>` keeps the per-attempt audit trail beside
+it.
+
+**`binding_<id>` — the routing.** Which groups receive which messages,
+decided when deliveries materialize, by matching the message's routing
+key against stored patterns ([routing →](/concepts/routing/)).
 
 ## The flow of one message
 
-1. **Publish.** `INSERT INTO vulkan.events ...` — optionally inside *your*
-   transaction, next to your business writes. Commit makes the message
+1. **Produce.** One `INSERT` into the topic's message log — optionally
+   inside *your* transaction, next to your business writes
+   ([the headline →](/guides/transactional-produce/)). Commit makes it
    durable and visible, atomically.
-2. **Fan-out.** Delivery rows materialize for each lifecycle group whose
-   binding matches. Cursor groups need nothing materialized at all.
-3. **Claim.** A worker grabs ready deliveries with `SKIP LOCKED`, marks them
-   `processing`, commits the claim instantly, and runs your handler unlocked —
-   a ten-minute job never holds a database lock.
-4. **Resolve.** Success → `done`. Failure → re-`ready` with exponential
-   backoff, until attempts exhaust → `dead`. Worker crashed? A reaper returns
-   leases that expired, automatically.
+2. **Claim.** A consumer instance advances the group's `claimed` cursor
+   over a range and takes a lease on it; bindings and compaction filter
+   what the range hands the handler. The claim commits instantly and
+   the handler runs unlocked — a ten-minute handler never holds a
+   database lock.
+3. **Resolve.** Success: nothing to write; the committed cursor sweeps
+   past. Failure: a delivery row materializes and retries with backoff
+   until it succeeds (row deleted) or exhausts its budget (`dead`).
+   Instance crashed? Its lease expires and the range is reclaimed —
+   recovery is a property of the data, not of any process that can die.
 
-<Aside type="note" title="Two kinds of claim, deliberately">
-The instantaneous **lock** (`FOR UPDATE`) is only held while claiming. The
-durable **lease** (`status` + `locked_at`) is data, and survives anything —
-including the worker evaporating. This separation is what lets Vulkan handle
-long-running handlers without long-running transactions, which is the classic
-failure mode of naive Postgres queues.
+<Aside type="note" title="Consumers poll — by design, for now">
+There is no `LISTEN/NOTIFY` anywhere in the library. Claims poll
+(`ClaimPollRate`, default 5s), which keeps the mechanism to one moving
+part and covers backoff-delayed work for free. Produce-triggered
+wake-ups with a fallback poll are a designed proposal, deliberately
+deferred until polling latency is a *measured* problem.
 </Aside>
 
-## Write amplification, honestly
+## The maintenance fleet
 
-Lifecycle costs writes: 1,000 events fanned out to 5 lifecycle groups means
-5,000 delivery rows (cursor groups: zero). That's the same trade Pulsar makes
-with per-subscription cursors and Kafka *refuses* to make (hence its retry-topic
-contortions). Vulkan makes it **per-stream optional**: pay for lifecycle where
-you need acks and dead letters, use free cursors where you don't.
+Upkeep runs as **workers** — rows in the `worker` table, claimed and
+executed by whatever processes are around. Every `Consume` embeds a
+manager that runs the fleet; a deployment that only produces runs
+`vulkan manager run` instead. Replicas coordinate through worker
+claims, so running N copies is safe.
 
-## Performance posture
+| Worker | Maintains |
+| --- | --- |
+| `topic_janitor` | drops/sweeps expired partitions, idempotency keys, key leases |
+| `cursor_advancer` | advances each group's `committed` behind resolved work |
+| `consumer_group_janitor` | sweeps superseded binding declarations |
+| `cron_scheduler` | produces one request per due cron job |
+| `metrics_collector` | snapshots lag, backlog, and delivery state as metrics |
+| `alert.*` checks | publish operator warnings to the `__system.alerts` topic |
 
-- Claim path: one indexed `UPDATE … SKIP LOCKED` round-trip per batch.
-- `LISTEN/NOTIFY` wakes idle workers instantly; a fallback poll catches
-  delayed messages and missed notifies.
-- Sustained tens of thousands of messages/second on ordinary Postgres
-  hardware — with batching, well beyond most products' lifetime peak.
-  When you genuinely outgrow that, [you'll know](/compare/kafka/).
+## Costs, honestly
+
+Failure costs writes: a message that fails gets a delivery row, a log
+row per attempt, and updates per retry. Success costs almost nothing
+per message — the cursor advance amortizes over the whole range. That
+inverts the usual per-subscription trade (Pulsar pays per-message
+per-subscriber always; Kafka never pays and therefore can't express
+per-message state).
+
+Throughput and latency numbers are deliberately absent from this page:
+the benchmark pipeline that will back them is
+[in progress](/roadmap/), and until a number has a recorded run behind
+it, we don't print it. Postgres compatibility: the test suite runs
+against Postgres 17, and PG-18-only syntax is deliberately avoided.

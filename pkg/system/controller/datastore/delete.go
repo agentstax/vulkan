@@ -33,6 +33,7 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		"migration_log",
 		"cron_job",
 		"worker_instance",
+		"worker_log",
 		"worker",
 		"consumer_group",
 		"topic_log",

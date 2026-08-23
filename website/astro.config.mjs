@@ -27,7 +27,11 @@ export default defineConfig({
 					label: 'Start Here',
 					items: [
 						{ label: 'Why Vulkan', slug: 'why-vulkan' },
-						{ label: 'The Demo: Try to Lose a Message', slug: 'demo' },
+						{
+							label: 'The Demo: Try to Lose a Message',
+							slug: 'demo',
+							badge: { text: 'Proposed', variant: 'caution' },
+						},
 						{ label: 'Quickstart', slug: 'quickstart' },
 						{ label: 'Vulkan Cloud', slug: 'cloud' },
 					],
@@ -38,17 +42,22 @@ export default defineConfig({
 						{ label: 'Queues, Logs & the Fusion', slug: 'concepts/queue-and-log' },
 						{ label: 'Architecture', slug: 'concepts/architecture' },
 						{ label: 'Message Lifecycle', slug: 'concepts/lifecycle' },
-						{ label: 'Streams, Replay & Fan-out', slug: 'concepts/streams' },
+						{ label: 'Fan-out, Retention & Replay', slug: 'concepts/fan-out' },
 						{ label: 'Routing', slug: 'concepts/routing' },
-						{ label: 'Ordering & FIFO', slug: 'concepts/ordering' },
+						{ label: 'Ordering & Concurrency', slug: 'concepts/ordering' },
 					],
 				},
 				{
 					label: 'Guides',
 					items: [
-						{ label: 'Transactional Enqueue', slug: 'guides/transactional-enqueue' },
-						{ label: 'Replaying History', slug: 'guides/replay' },
+						{ label: 'Transactional Produce', slug: 'guides/transactional-produce' },
+						{
+							label: 'Replaying History',
+							slug: 'guides/replay',
+							badge: { text: 'Partly proposed', variant: 'caution' },
+						},
 						{ label: 'Dead Letters & Recovery', slug: 'guides/dead-letters' },
+						{ label: 'Upgrades & Migrations', slug: 'guides/migrations' },
 					],
 				},
 				{

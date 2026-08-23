@@ -1,0 +1,103 @@
+---
+title: Fan-out, Retention & Replay
+description: Messages are facts. Retain them, fan them out to independent consumer groups, and let new consumers read history — without a Kafka cluster.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A Vulkan topic is a named, append-only message log. Producing appends;
+consuming never deletes. That single decision — *retain instead of
+consume* — is what unlocks everything on this page.
+
+## Fan-out: consumers are independent by construction
+
+The log is shared; each consumer group holds only its own cursor (and
+its own delivery rows for failures). Adding a group is invisible to
+every other group:
+
+```go
+// Three teams, three groups, one topic — zero coordination.
+receipts, err := emailConsumer.Register(ctx, "email-receipts",
+	registered.Name, topic.SchemaVersion(1), nil)
+screening, err := fraudConsumer.Register(ctx, "fraud-screening",
+	registered.Name, topic.SchemaVersion(1), nil)
+warehouse, err := syncConsumer.Register(ctx, "warehouse-sync",
+	registered.Name, topic.SchemaVersion(1), nil)
+```
+
+- A slow group falls behind **alone**; nobody else feels it.
+- Each group has its own retry budget and its own dead-lettered
+  messages ([lifecycle →](/concepts/lifecycle/)).
+- A group can declare [bindings](/concepts/routing/) to receive only a
+  slice of the topic.
+
+And the part queue-world fan-out can't do: **a new group starts at the
+beginning of retained history.** Its cursor starts at zero, so the
+consumer you add tomorrow *can* see yesterday — it chews through
+history at its own pace and arrives at live traffic. In SQS or
+RabbitMQ, the moment a message was consumed it was gone; the fourth
+queue you bind next quarter receives only what's published after it
+exists.
+
+(The flip side, honestly: there is no "start from now" option today. A
+new group on a topic with deep retention will read all of it — register
+the group early, or keep retention matched to what you'd want a new
+consumer to replay.)
+
+## Replay
+
+For a **new** group, replay is the default behavior above. For an
+**existing** group — "re-run Tuesday's window through the fixed
+handler" — Vulkan has no rewind verb today:
+
+<Aside type="note" title="Proposed: rewinding an existing group">
+Moving a group's cursor backwards (to an id or a timestamp) is a
+proposed capability. The [replay guide](/guides/replay/) is written as
+the proposal spec — what the verbs would look like and what they'd
+cost. Until it ships, the shipped workaround is registering a fresh
+group with the fixed handler and letting it read history.
+</Aside>
+
+## Lag: the one health metric
+
+Every group's health is one subtraction — how far its committed cursor
+trails the head of the log:
+
+```sql
+SELECT g.name AS consumer_group, c.claimed, c.committed,
+       (SELECT max(id) FROM message_log_1) - c.committed AS backlog
+FROM cursor_1 c JOIN consumer_group g ON g.id = c.consumer_group_id;
+```
+
+The same numbers ship as metrics — head, claimed, committed, backlog,
+in-flight per group — collected by the metrics worker and readable via
+`vulkan metrics list`, because lag is the early warning for every
+consumer failure mode: a stuck handler, an under-provisioned fleet, a
+poison-pill loop.
+
+## Retention
+
+Retention is per-topic config, set at registration:
+
+```go
+registered, err := messageAdmin.RegisterTopic(ctx, "orders",
+	topic.SchemaVersion(1), &topiccontroller.TopicConfig{
+		RetentionTTL: 30 * 24 * time.Hour,
+	})
+```
+
+The default is `0` — keep everything forever. With a TTL set, the topic
+janitor drops whole id-range partitions whose newest row has expired —
+a `DROP TABLE`, not a million-row `DELETE` — and sweeps the slow tail
+that never fills a partition.
+
+<Aside type="tip" title="The retention cliff, defused by default">
+The classic log-world failure is a slow consumer falling off the log:
+retention deletes history the group never read. Vulkan's default is the
+opposite — **retention never drops past the slowest group's committed
+cursor** (`AllowDropPastCommitted: false`). A badly lagging group
+blocks cleanup instead of losing data, and the growing backlog is
+visible in the lag query above. Set `AllowDropPastCommitted: true` per
+topic when staleness beats unbounded disk — Kafka's behavior, opted
+into knowingly.
+</Aside>

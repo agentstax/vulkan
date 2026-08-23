@@ -5,59 +5,80 @@ description: Where Vulkan is, where it's going, and what we want your opinion on
 
 import { Aside } from '@astrojs/starlight/components';
 
-Vulkan is early, in the open, and being built in deliberate layers — each one
-proven against failure-injection labs (kill -9 mid-process, crash mid-commit,
-zombie workers) before the next goes on top. This page is the honest state of
-the world.
+Vulkan is early, in the open, and built in deliberate layers — each one
+proven against failure-injection labs (kill -9 mid-process, crash
+mid-commit, expired-lease reclaim) before the next goes on top. This page
+is the honest state of the world: what ships today, what's in flight, and
+what waits for a real workload to demand it.
 
-## Now: the core engine
+## Built: the engine
 
-The durable foundation — append + atomic claim, transactional enqueue, and
-the per-message lifecycle state machine (retries, backoff, leases, dead
-letters). The Go SDK's shape: typed generics over JSONB payloads
-(`vulkan.Stream[OrderCreated]`), handler funcs, and explicit configuration.
+The core described throughout these docs is shipped, not planned:
 
-Built alongside it from day one: the **failure-injection harness** behind
-[the chaos demo](/demo/) — `--fail-rate`, `--crash-after`, kill-mid-process
-labs. Every layer of the engine has to survive the harness before the next
-layer goes on top. The demo isn't marketing bolted onto the product; it's the
-test suite wearing a nice shirt.
+- **One immutable message log per topic, per-group delivery state beside
+  it** — the architectural keystone. Retention, independent fan-out, and
+  per-group dead-lettered messages all fall out of that split.
+- **Transactional produce** — your business writes and the message in one
+  `COMMIT`. [The full guide →](/guides/transactional-produce/)
+- **The message lifecycle** — claims, leases, retries with backoff,
+  dead-lettering, and a per-attempt audit trail
+  ([lifecycle →](/concepts/lifecycle/)).
+- **Routing-key bindings** — a consumer group declares which messages it
+  receives ([routing →](/concepts/routing/)).
+- **Log compaction** — opt a message into a key whose claims only ever
+  see the latest version.
+- **Partition-based retention** — the message log is partitioned by id
+  range; expiry is a `DROP`, not a million-row `DELETE`.
+- **The maintenance fleet** — partition upkeep, cursor advancement,
+  expired-lease reclaim, cron jobs, and default alerts run embedded in
+  every consumer, or standalone via `vulkan manager run`.
+- **Diagnostics as a system** — every error and operator-facing log event
+  carries a `VK` code with a docs page; `vulkan explain` works offline;
+  the CLI speaks `--output json` throughout.
+- **A migration compatibility gate** — every schema step declares the
+  oldest library version that can run against it, checked at migration
+  time ([upgrades →](/guides/migrations/)).
 
-## Next: the log/queue split
+## Now: honest numbers
 
-The architectural keystone described throughout these docs: separating the
-immutable `events` log from per-group `deliveries` — which unlocks retention,
-replay, independent fan-out, and per-group dead letters simultaneously. Then
-routing bindings (topic + header matchers) and opt-in per-key FIFO on top.
+The current work is a benchmark methodology and recording pipeline —
+repeatable method, append-only records, regressions visible over time.
+Until it lands, these docs quote **no** throughput or latency numbers;
+when it lands, every number on this site will cite a recorded run. The
+docs themselves are mid-rewrite to that standard.
 
-## Then: the operational layer
+## Next: the v1 surface
 
-Partition-based retention with `DROP`-cheap expiry, `LISTEN/NOTIFY` wake-ups
-with fallback polling, and the four golden metrics (depth, lag per group, DLQ
-size, oldest unacked age) exposed natively — surfaced in
-[**Vulkan Cloud**](/cloud/): live dashboard, replay console, DLQ triage with
-one-click redrive, and queue-aware alerting.
+A deliberate public-API design pass before anything is frozen: naming and
+shape review across the whole surface, a `DefaultProducer` /
+`DefaultConsumer` short path for quickstarts (today's constructors are
+explicit on purpose, but the first program shouldn't need six of them),
+and finished doc comments. v1 means the surface stops moving.
 
-## Later: layers on the platform
+## Later: what a workload has to earn
 
-- **Durable workflows** — a code-first, multi-step workflow API
-  (`workflow.Run` / `step.Run`) where every step transition is a message on
-  the platform: transactional, retried, replayable, observable in SQL. The
-  Temporal/Hatchet capability, as a thin layer over primitives you can
-  already inspect.
-- **More SDKs** — TypeScript and Python clients over the same schema; the
-  wire protocol is Postgres, so any language with a driver is most of the way
-  there.
-- **Webhooks in/out** — HTTP ingestion endpoints and delivery-with-retries as
-  built-in stream endpoints (Cloud).
-- **Schema registry, lite** — optional payload schemas with
-  compatibility checks at publish time.
+These are designed-but-not-built, picked up when a real deployment
+demands them rather than on speculation:
+
+- **Circuit breaker** — per-instance trip with group-wide coordination,
+  so a dead downstream doesn't dead-letter a backlog.
+- **FIFO partitions** — strict per-key ordering as an opt-in claim gate.
+  (Today's guarantee is [narrower →](/concepts/ordering/).)
+- **Header routing** — attribute-set matching (`region=eu AND tier=gold`)
+  beside the routing key.
+- **Producer wake-ups via LISTEN/NOTIFY** — today consumers poll;
+  wake-on-produce is designed but waits for polling latency to be a
+  measured problem.
+- **Lease heartbeats** — progress-based lease renewal for handlers whose
+  legitimate runtime exceeds the work timeout.
+- **An HTTP API** — produce via POST, consume via SSE, for languages
+  without a Postgres driver in hand.
 
 <Aside type="note" title="What stays open source">
-Every semantic capability — transactions, lifecycle, replay, fan-out,
-routing, FIFO, workflows — ships in the open-source engine.
-Cloud sells operations (dashboards, alerting, managed Postgres), never
-capabilities. [The promise, in writing →](/cloud/)
+Every semantic capability — transactions, lifecycle, fan-out, routing,
+compaction, ordering — ships in the open-source engine. If a managed
+offering ever exists, it sells operations (dashboards, alerting, managed
+Postgres), never capabilities.
 </Aside>
 
 ## What we want from you
@@ -66,13 +87,14 @@ This site exists to collect opinions, and the questions we're actively
 weighing:
 
 1. **Would you adopt this for a new project?** If not, what's the missing
-   piece — a language SDK, a benchmark, a migration path, a managed offer?
+   piece — a language SDK, a benchmark, a migration path, a managed
+   offer?
 2. **Which pitch lands harder:** "a job queue you'll never outgrow," or
-   "transactional enqueue kills your worst class of bugs"?
-3. **Where's your line for Postgres-as-queue?** What throughput or retention
-   number would make you reach for Kafka anyway?
-4. **Cloud:** would you pay for operations-on-top-of-open-source, or do you
-   only trust fully managed (database included)?
+   "producing in your own transaction kills your worst class of bugs"?
+3. **Where's your line for Postgres-as-queue?** What throughput or
+   retention number would make you reach for Kafka anyway?
+4. **A managed offering:** would you pay for operations on top of open
+   source, or do you only trust fully managed (database included)?
 
 Open an issue, or just reply to whoever sent you this link — they'll make
 sure it reaches us.

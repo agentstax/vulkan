@@ -1,0 +1,211 @@
+---
+title: Transactional Produce
+description: Produce a message in the same transaction as your business write. The dual-write problem, solved by refusing to have two systems — every sample compiles against the shipped library.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This is Vulkan's headline feature, so let's earn it properly.
+
+## The bug you've definitely shipped
+
+Here's the innocent-looking code at the heart of a thousand incident
+reviews — a database and a broker, each written separately:
+
+```go
+// ❌ The dual write. One of these will betray you.
+func CreateOrder(ctx context.Context, order Order) error {
+    if err := db.Insert(ctx, order); err != nil {      // write 1: database
+        return err
+    }
+    return broker.Publish(ctx, OrderCreated{order.Id}) // write 2: broker
+}
+```
+
+Two writes, two systems, no shared transaction. Walk the failure cases:
+
+- **DB commits, the broker write fails** (broker blip, network, deploy):
+  the order exists, the message doesn't. No receipt, no fraud check, no
+  warehouse pick. Silent.
+- **Swap the order — broker first, then the DB write fails**: now there's
+  a message for an order that doesn't exist. The receipt sends; the
+  warehouse ships air.
+- **Retry the broker write?** If the *first* attempt actually succeeded
+  and only the response got lost, you send twice. If your process dies
+  before the retry, you're back to case one.
+
+There is no ordering and no retry policy that closes this. The two
+systems can each be perfectly reliable and the *seam between them* still
+loses or fabricates messages. The industry's accepted fix — the
+**transactional outbox pattern** — is to write the message into a
+database table inside your transaction, then relay it to the broker
+afterwards. Which is an admission: the only trustworthy way to produce
+a message is an `INSERT` in your own transaction.
+
+Vulkan's position: keep the insert, **skip the relay and the broker.**
+The outbox table *is* the message platform.
+
+## The fix
+
+The closure you pass to `ProduceFunc` runs inside the message's own
+transaction. Run your business writes on the `tx` it hands you and
+return the payload; both commit together, or neither does.
+
+```go
+func CreateOrder(ctx context.Context, instance *producer.ProducerInstance[OrderCreated], order Order) error {
+	_, err := instance.ProduceFunc(ctx,
+		func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderCreated, error) {
+			if _, err := tx.Exec(ctx,
+				`INSERT INTO orders (id, total) VALUES ($1, $2)`, order.Id, order.Total); err != nil {
+				return nil, err
+			}
+			return &OrderCreated{OrderId: order.Id}, nil
+		}, producer.ProduceOptions{})
+	return err
+}
+```
+
+There is no failure window because there is no seam — it's one `COMMIT`,
+and Postgres has spent thirty years making sure `COMMIT` means what it
+says. Returning an error from the closure rolls everything back:
+your writes and the message together.
+
+Three details about the closure's arguments:
+
+- `tx producer.Tx` runs `Exec`, `Query`, `QueryRow`, `SendBatch`, and
+  `CopyFrom` — the statement surface of a pgx transaction. For anything
+  beyond that, `tx.Raw()` returns the underlying `pgx.Tx` (an escape
+  hatch, not the default path).
+- The `uuid.UUID` argument is the idempotency key this produce will
+  dedup on. Persist it alongside your work if you plan to retry across
+  a crash — more on that [below](#retries-are-yours-to-own).
+- The payload comes back from the closure, not from a captured
+  variable — so it can be built from what your own statements returned
+  (a generated id, a computed total).
+
+You also get the converse guarantee free, from transaction isolation:
+**no consumer can observe the message before your transaction commits.**
+No more "the handler ran before the row it referenced was visible" — a
+race so common that job-queue docs have a standard name for the
+workaround (enqueue-after-commit hooks, with their own failure window).
+
+## Prove it to yourself
+
+<Steps>
+
+1. Write the business row, return the payload — then **force a
+   rollback** by returning an error:
+
+   ```go
+   _, err := instance.ProduceFunc(ctx,
+   	func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*OrderCreated, error) {
+   		if _, err := tx.Exec(ctx, `INSERT INTO orders (id) VALUES ($1)`, "order-9"); err != nil {
+   			return nil, err
+   		}
+   		return nil, errors.New("rollback on purpose")
+   	}, producer.ProduceOptions{})
+   ```
+
+2. Check both tables — **neither** row exists. Resolve the topic's id
+   from the catalog once (each topic owns its physical tables, named by
+   that id; say it returned `1`):
+
+   ```sql
+   SELECT id FROM topic WHERE name = 'orders.created' AND schema_version = 1;
+
+   SELECT count(*) FROM orders;        -- 0
+   SELECT count(*) FROM message_log_1; -- 0
+   ```
+
+3. Run it again returning the payload instead of the error: both rows
+   exist, and a consumer picks the message up — but only *after* the
+   commit. While the transaction is open, consumers can't see it.
+   Atomicity on your side, isolation on theirs, composing for free.
+
+</Steps>
+
+## Several topics, one commit
+
+To produce to more than one topic atomically, `producer.InTransaction`
+opens one transaction and hands your closure a `Tx` that every
+instance's `ProduceInTx` accepts:
+
+```go
+err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
+	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId); err != nil {
+		return err
+	}
+
+	// produce LAST -- see the lock note below
+	if _, err := invoices.ProduceInTx(ctx, tx,
+		func(context.Context, producer.Tx, uuid.UUID) (*InvoicePaid, error) {
+			return &InvoicePaid{OrderId: orderId}, nil
+		}, producer.ProduceOptions{}); err != nil {
+		return err
+	}
+	_, err := receipts.ProduceInTx(ctx, tx,
+		func(context.Context, producer.Tx, uuid.UUID) (*ReceiptRequested, error) {
+			return &ReceiptRequested{OrderId: orderId}, nil
+		}, producer.ProduceOptions{})
+	return err
+})
+```
+
+<Aside type="caution" title="Do your own statements first; produce last">
+Producing effectively takes a lock on consumer progress for the whole
+topic: consumers cannot claim past your message until the transaction
+commits, and every statement you run *after* the produce extends how
+long that lock is held. Keep the produce the shortest-held thing in
+the transaction.
+</Aside>
+
+## Retries are yours to own
+
+`InTransaction` never retries your closure — a transient blip or an
+ambiguous commit failure surfaces to you as-is, because only you know
+what's safe to rerun. If you wrap your own retry loop around it, make
+the rerun dedup-safe by supplying your own idempotency key: unset keys
+mint fresh per call, so a naive rerun produces the message twice.
+
+```go
+key, err := uuid.NewV7()
+if err != nil {
+	return err
+}
+
+// persist key alongside the work before the first attempt
+produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
+	producer.ProduceOptions{IdempotencyKey: key})
+if err != nil {
+	return err
+}
+if produced.Duplicate {
+	fmt.Println("an earlier attempt already landed -- nothing produced twice")
+}
+```
+
+`Duplicate == true` means an earlier call — or an earlier attempt of
+this one, after a commit whose outcome you never learned — already
+produced under the same key. Prefer time-ordered keys (UUIDv7): random
+v4 keys slow throughput down considerably. A caller-supplied key also
+locks that key for the length of the transaction it runs in, so keep
+transactions that reuse keys short.
+
+<Aside type="note" title="Need to reach external systems too?">
+If some messages must also flow to systems outside Postgres (another
+org's Kafka, a partner webhook), your Vulkan topic already *is* a
+transactional outbox — add a relay consumer group that forwards
+downstream, with retries and dead-lettered messages for the flaky
+remote end. The hard half (atomic capture) is done; the relay is just
+another consumer.
+</Aside>
+
+## Why brokers can't follow you here
+
+This isn't a missing feature Kafka could ship next quarter — it's
+structural. A broker is a *separate system*; your database transaction
+boundary physically cannot extend into it (two-phase commit exists, and
+nobody's on-call rotation has ever been improved by it). Every
+broker-centric architecture eventually grows an outbox table, a relay,
+and a reconciliation job. Vulkan is what you get by taking that endpoint
+seriously and designing for it from the start.
