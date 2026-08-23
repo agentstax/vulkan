@@ -1,11 +1,12 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 	import ThreadPost from './thread-post.svelte';
+	import CopyButton from '../copy-button/copy-button.svelte';
 
 	const { Story } = defineMeta({
 		title: 'Board/ThreadPost',
 		component: ThreadPost,
-		args: { author: 'brandon', role: 'Site Admin', header: null, postCount: null },
+		args: { author: 'brandon', role: 'Site Admin', header: null, postCount: null, actions: null },
 	});
 </script>
 
@@ -33,6 +34,9 @@
 >
 	{#snippet template(args)}
 		<ThreadPost {...args}>
+			{#snippet actions()}
+				<CopyButton label="Copy link" text="https://vulkan-5ss.pages.dev/concepts/ordering/" />
+			{/snippet}
 			<p>A framed post carries its own border, the posted-date strip, and the author's count.</p>
 		</ThreadPost>
 	{/snippet}

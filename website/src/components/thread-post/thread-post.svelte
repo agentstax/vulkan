@@ -8,10 +8,13 @@
 		role: string;
 		header: PostHeader | null;
 		postCount: number | null;
+		// header-strip controls beside the report link; Astro call sites pass
+		// null as the attribute and the "actions" slot overrides it when set
+		actions: Snippet | null;
 		children: Snippet;
 	};
 
-	let { author, role, header, postCount, children }: Props = $props();
+	let { author, role, header, postCount, actions, children }: Props = $props();
 </script>
 
 <div class="thread-post" data-framed={header !== null}>
@@ -24,7 +27,13 @@
 		{:else}
 			<div class="post-header" data-pagefind-ignore>
 				<span class="posted">Posted: {header.postedDate}</span>
-				<a href={header.reportHref}>Report this thread</a>
+				<span class="header-links">
+					{#if actions !== null}
+						{@render actions()}
+						<span>&middot;</span>
+					{/if}
+					<a href={header.reportHref}>Report this thread</a>
+				</span>
 			</div>
 		{/if}
 	{/if}

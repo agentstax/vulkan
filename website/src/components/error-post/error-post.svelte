@@ -6,16 +6,25 @@
 		code: string;
 		rank: string;
 		reportHref: string;
+		// header-strip controls beside the report link; Astro call sites pass
+		// null as the attribute and the "actions" slot overrides it when set
+		actions: Snippet | null;
 		children: Snippet;
 	};
 
-	let { code, rank, reportHref, children }: Props = $props();
+	let { code, rank, reportHref, actions, children }: Props = $props();
 </script>
 
 <div class="error-post">
 	<div class="post-header" data-pagefind-ignore>
 		<span>the log line</span>
-		<a href={reportHref}>Report this thread</a>
+		<span class="header-links">
+			{#if actions !== null}
+				{@render actions()}
+				<span>&middot;</span>
+			{/if}
+			<a href={reportHref}>Report this thread</a>
+		</span>
 	</div>
 	<div class="post-columns">
 		<div class="author">

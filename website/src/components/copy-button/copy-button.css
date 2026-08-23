@@ -1,0 +1,23 @@
+.copy-button {
+	border: none;
+	background: none;
+	padding: 0;
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-link);
+	cursor: pointer;
+}
+
+.copy-button:hover {
+	color: var(--color-link-hover);
+	text-decoration: underline;
+}
+
+.copy-button[data-phase='copied'] {
+	color: var(--color-solved);
+	font-weight: 700;
+}
+
+.copy-button[data-phase='failed'] {
+	color: var(--color-console-error);
+}

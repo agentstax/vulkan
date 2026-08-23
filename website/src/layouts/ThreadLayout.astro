@@ -3,6 +3,7 @@ import BoardLayout from './BoardLayout.astro';
 import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
 import ThreadTitleBand from '../components/thread-title-band/thread-title-band.svelte';
 import ThreadPost from '../components/thread-post/thread-post.svelte';
+import CopyButton from '../components/copy-button/copy-button.svelte';
 import PrevNext from '../components/prev-next/prev-next.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
 import { jumpTargets } from '../pages/_board/boards';
@@ -43,6 +44,7 @@ const returnTrail = [
 	{ label: 'Board Index', href: '/' },
 	{ label: boardTitle, href: boardHref },
 ];
+const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
 <BoardLayout title={title} description={description} navCurrent={null}>
@@ -62,7 +64,9 @@ const returnTrail = [
 			role="Site Admin"
 			header={{ kind: 'posted', postedDate, reportHref }}
 			postCount={postCount}
+			actions={null}
 		>
+			<CopyButton client:idle slot="actions" label="Copy link" text={threadUrl} />
 			<div class="thread-body">
 				<slot />
 			</div>
