@@ -703,3 +703,6 @@ Rules for the doc site (website/) and all user-facing prose.
   a proposed capability is never a checkmark.
 - Docs speak the API's own nouns in their plainest form. The ## Vocabulary
   registry governs docs prose exactly as it governs code.
+- The website/ tree carries its own rule file, website/CONVENTIONS.md --
+  this file's sibling for frontend code. Its preamble names the sections
+  here that bind there by reference; it never restates them.

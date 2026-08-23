@@ -68,8 +68,10 @@ file) and README/CLAUDE.md stay at root:
   changing a decision means a new record plus flipping the old one's status
   to superseded, linked both ways. A new record takes the next number after
   the current max.
-- CONVENTIONS.md (code rules) and AGENTS.md (this file) hold the binding
-  CURRENT rules -- never infer today's rules by replaying decision history.
+- CONVENTIONS.md (code rules), website/CONVENTIONS.md (frontend code
+  rules, loaded via website/CLAUDE.md when working in that tree), and
+  AGENTS.md (this file) hold the binding CURRENT rules -- never infer
+  today's rules by replaying decision history.
 
 Lifecycle of a piece of work: idea -> ROADMAP (Later/parking lot) ->
 promoted to Now -> expanded in TODO.md when picked up -> design settles ->
