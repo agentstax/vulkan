@@ -556,16 +556,21 @@ Invented interactive machinery for the site; user verdicts so far:
      + 2 screenshots.
   5. Astro 6->7 after (already sequenced below).
   "Show what's new" wiring rides a later slice.
-  - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
-    @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
-    0.40 pins Astro 6; ripping it out first makes the upgrade a
-    clean bump (astro + @astrojs/svelte + @astrojs/mdx@7).
-    MUST RE-TEST after the bump (USER 2026-08-23): the console
-    first-Run preload fix — run console-first-run-test.mjs (first
-    click Run, zero "Unable to preload CSS" console errors) and
-    re-check whether the manualChunks vite/preload-helper pin in
-    astro.config.mjs is still needed; if Astro 7 emits sane preload
-    lists (no JS chunk naming a non-emitted css), delete the pin.
+  - [x] Astro 6 -> 7 upgrade — DONE 2026-08-23 (slice 5, awaiting
+    review): astro@7.2.4 + @astrojs/svelte@9.0.1 + @astrojs/mdx@7.0.7
+    in one bump; zero code changes needed (glob loader, mdx, shiki
+    theme, islands all carried over). Mandated re-test RAN: Astro 7
+    bundles via rolldown, which emits its own preload-helper chunk —
+    with our manualChunks pin removed, NO JS chunk names any css
+    asset and the console first-Run test passes with zero preload
+    errors, so the pin is DELETED (astro.config vite block is back
+    to optimizeDeps only). Storybook/vitest stack untouched (own
+    vite@6 devDep; nested vite@8 serves astro). Full checkpoint on
+    the new build: 80pp + pagefind 72, eslint, vitest 9/9, storybook
+    build, all four CDP suites green (console first-run, board
+    pages, search edit, swap suite — one stale expectation in the
+    swap suite updated: jump-to now lands on /boards/concepts/,
+    the board-listing change).
   - [x] Component css moved to sibling files (USER 2026-08-23,
     supersedes styles-stay-inline): <style src="./<name>.css"> via
     svelte-preprocess (typescript: false — vitePreprocess keeps
