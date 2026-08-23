@@ -3,8 +3,8 @@ import { getCollection } from 'astro:content';
 import BoardLayout from '../layouts/BoardLayout.astro';
 import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
 import BoardSection from '../components/board-section/board-section.svelte';
-import BoardRow from '../components/board-row/board-row.svelte';
-import StickyRow from '../components/sticky-row/sticky-row.svelte';
+import BoardRows from '../components/board-rows/board-rows.svelte';
+import StickyRows from '../components/sticky-rows/sticky-rows.svelte';
 import ThreadPost from '../components/thread-post/thread-post.svelte';
 import SqlConsole from '../components/sql-console/sql-console.svelte';
 import AnnouncementRow from '../components/announcement-row/announcement-row.svelte';
@@ -29,16 +29,7 @@ const shell = await consoleShell();
 >
 	<Breadcrumb trail={[{ label: 'Board Index', href: '/board/' }]} />
 	<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
-		{
-			stickies.map((sticky) => (
-				<StickyRow
-					title={sticky.title}
-					href={sticky.href}
-					updated={false}
-					lastUpdatedDate={sticky.lastUpdatedDate}
-				/>
-			))
-		}
+		<StickyRows client:idle stickies={stickies} />
 		<ThreadPost author="brandon" role="Site Admin">
 			<p>
 				Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
@@ -60,21 +51,7 @@ const shell = await consoleShell();
 		columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}
 		threadCount={null}
 	>
-		{
-			rows.map((row, index) => (
-				<BoardRow
-					index={index}
-					title={row.title}
-					href={row.href}
-					description={row.description}
-					threadCount={row.threadCount}
-					lastPostTitle={row.lastPostTitle}
-					lastPostHref={row.lastPostHref}
-					lastPostDate={row.lastPostDate}
-					updated={false}
-				/>
-			))
-		}
+		<BoardRows client:idle rows={rows} />
 	</BoardSection>
 	<BoardSection title="Announcements" columnLabels={null} threadCount={null}>
 		{

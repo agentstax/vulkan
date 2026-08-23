@@ -11,6 +11,7 @@
 		lastPostHref: string;
 		lastPostDate: string;
 		updated: boolean;
+		onVisit: (visitedHref: string) => void;
 	};
 
 	let {
@@ -23,6 +24,7 @@
 		lastPostHref,
 		lastPostDate,
 		updated,
+		onVisit,
 	}: Props = $props();
 
 	const stripe = $derived(index % 2 === 0 ? 'a' : 'b');
@@ -31,12 +33,12 @@
 <div class="board-row" data-stripe={stripe}>
 	<PixelFolder {updated} pinned={false} width={18} />
 	<div class="board-name">
-		<a class="board-title" {href}>{title}</a>
+		<a class="board-title" {href} onclick={() => onVisit(href)}>{title}</a>
 		<span class="board-description">{description}</span>
 	</div>
 	<span class="thread-count">{threadCount}</span>
 	<div class="last-post">
-		<a href={lastPostHref}>{lastPostTitle}</a>
+		<a href={lastPostHref} onclick={() => onVisit(lastPostHref)}>{lastPostTitle}</a>
 		<span class="last-post-date">{lastPostDate}</span>
 	</div>
 </div>

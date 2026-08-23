@@ -326,9 +326,51 @@ Invented interactive machinery for the site; user verdicts so far:
   - deferred to later slices: try-it links (state class makes a
     link = set sql + run()), wasm asset prefetch on idle,
     transition:persist once navigations exist.
-  NEXT SLICES: read-tracking .svelte.ts module (lights amber
-  folders, visit bar, "Show what's new"); then index swap +
-  Starlight removal; then Astro 6->7.
+  READ-TRACKING SLICE BUILT (2026-08-23; design user-settled:
+  sticky scope = its own thread; "Show what's new" button stays
+  inert this slice; first visit = all amber):
+  - storage model USER-REDESIGNED same day (replaces the first
+    per-scope-map build): ONE append-only page-visit log in
+    localStorage vulkan-board:visits — entries {href, visitedAt},
+    the page the visitor is on. Everything derives from the log:
+    visit bar = stamp at the END (captured before this load
+    appends); scope visited = last matching entry scanning from
+    the end (append-only = chronological, NO sort — the map
+    model needed one because spread keeps a re-visited key's old
+    position); amber = change date > that stamp, or no match.
+    Cap 200 entries = TRUE front pop (slice(-max)) on record and
+    load; ~12KB bound; evicted scopes read as unread again.
+  - amber dims ONLY by visiting the scope (user requirement):
+    rows carry build-time scopeHrefs (board.href + every member
+    thread href, from the same boards.ts contains()); clicks
+    record the DESTINATION page (onVisit(href) on board-row);
+    sticky scope = [its own href]; tracked-visit-bar records
+    location.pathname on mount — so inner pages start recording
+    automatically once they ride BoardLayout (index-swap slice);
+    until then deep links don't record (known gap).
+  - container islands (wiring only — no stories; presentational
+    children keep theirs): board-rows/, sticky-rows/,
+    tracked-visit-bar/; board-row/sticky-row gained required
+    onVisit callback props; board.astro loops ->
+    <BoardRows client:idle>/<StickyRows client:idle>; SSR renders
+    folders gray, hydration lights amber.
+  - storage guarded behind typeof window (Node 25 ships its own
+    warning localStorage global); timestamps via
+    helpers/now-iso.ts nowIso() — a plain-TS home so
+    svelte/prefer-svelte-reactivity doesn't flag new Date() in
+    the .svelte.ts (user removed the inline disables).
+  - CDP-verified: behavior test (all amber first visit -> visit
+    Concepts -> only it dims) + cap invariant test (200 seeded +
+    N appends evict exactly the N oldest; click lands at the
+    end; page-load append recorded). One clean load appends
+    exactly once.
+  - verified: lint/build/storybook green; CDP behavior test =
+    fresh profile all amber + "Welcome" -> click Concepts ->
+    return: Concepts gray, others amber, stickies amber, bar
+    shows the date; mixed-state screenshot taken.
+  NEXT SLICES: index swap + Starlight removal (inner board-styled
+  pages, page-load visit recording, board at /); then Astro 6->7;
+  "Show what's new" wiring rides a later slice.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
     @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
     0.40 pins Astro 6; ripping it out first makes the upgrade a

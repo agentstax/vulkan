@@ -24,6 +24,8 @@ export function boardRows(docs: DocsEntry[]): BoardRowData[] {
 			lastPostTitle: newest.entry.data.title,
 			lastPostHref: `/${newest.entry.id}/`,
 			lastPostDate: newest.date,
+			// visiting any of these pages counts as visiting the board
+			scopeHrefs: [...new Set([board.href, ...entries.map((entry) => `/${entry.id}/`)])],
 		};
 	});
 }

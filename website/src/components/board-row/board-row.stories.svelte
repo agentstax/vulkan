@@ -15,6 +15,7 @@
 			lastPostHref: '/concepts/ordering/',
 			lastPostDate: '2026-08-22',
 			updated: false,
+			onVisit: () => {},
 		},
 		argTypes: { index: { control: 'number', min: 0, step: 1 } },
 	});

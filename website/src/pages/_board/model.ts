@@ -6,6 +6,7 @@ export type BoardRowData = {
 	lastPostTitle: string;
 	lastPostHref: string;
 	lastPostDate: string;
+	scopeHrefs: string[];
 };
 
 export type StickyRowData = {

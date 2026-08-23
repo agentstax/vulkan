@@ -10,6 +10,7 @@
 			href: '/quickstart/',
 			updated: false,
 			lastUpdatedDate: '2026-08-22',
+			onVisit: () => {},
 		},
 	});
 </script>

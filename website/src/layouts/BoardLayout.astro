@@ -2,7 +2,7 @@
 import '../styles/global.css';
 import BoardBanner from '../components/board-banner/board-banner.svelte';
 import BoardNav from '../components/board-nav/board-nav.svelte';
-import VisitBar from '../components/visit-bar/visit-bar.svelte';
+import TrackedVisitBar from '../components/tracked-visit-bar/tracked-visit-bar.svelte';
 import BoardFooter from '../components/board-footer/board-footer.svelte';
 
 type Props = {
@@ -32,7 +32,7 @@ const { title, description, navCurrent } = Astro.props;
 		<div class="page-frame">
 			<BoardBanner />
 			<BoardNav current={navCurrent} />
-			<VisitBar lastVisitDate={null} />
+			<TrackedVisitBar client:idle />
 			<div class="page-content">
 				<slot />
 			</div>
