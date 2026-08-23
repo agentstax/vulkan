@@ -1,0 +1,30 @@
+---
+import { getCollection } from 'astro:content';
+import BoardLayout from '../layouts/BoardLayout.astro';
+import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
+import BoardSection from '../components/board-section/board-section.svelte';
+import WhatsNewRows from '../components/whats-new-rows/whats-new-rows.svelte';
+import JumpTo from '../components/jump-to/jump-to.svelte';
+import { jumpTargets } from './_board/boards';
+import { whatsNewRows } from './_board/rows';
+
+const docs = await getCollection('docs');
+const rows = whatsNewRows(docs);
+---
+
+<BoardLayout
+	title="What's new"
+	description="Threads that changed since your last visit."
+	navCurrent={null}
+>
+	<Breadcrumb
+		trail={[
+			{ label: 'Board Index', href: '/' },
+			{ label: "What's new", href: null },
+		]}
+	/>
+	<BoardSection title="What's new" columnLabels={null} threadCount={null}>
+		<WhatsNewRows client:idle rows={rows} />
+	</BoardSection>
+	<JumpTo client:idle targets={jumpTargets} />
+</BoardLayout>

@@ -11,7 +11,7 @@
 		<span>Welcome — this is your first visit</span>
 	{:else}
 		<span class="visit-date">You last visited on {lastVisitDate}</span>
-		<button type="button">Show what's new since then</button>
+		<a href="/whats-new/">Show what's new since then</a>
 	{/if}
 </div>
 

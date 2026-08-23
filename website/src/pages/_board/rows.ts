@@ -50,6 +50,16 @@ export function threadRows(board: Board, docs: DocsEntry[]): ThreadRowData[] {
 	}));
 }
 
+// every thread on the board, newest change first -- the /whats-new/ page
+// filters this against the visitor's own visit log at hydration
+export function whatsNewRows(docs: DocsEntry[]): ThreadRowData[] {
+	const rows = boards.flatMap((board) => threadRows(board, docs));
+	rows.sort(
+		(a, b) => b.lastUpdatedDate.localeCompare(a.lastUpdatedDate) || a.title.localeCompare(b.title),
+	);
+	return rows;
+}
+
 export function boardEntries(board: Board, docs: DocsEntry[]): DocsEntry[] {
 	const ids = docs.map((entry) => entry.id);
 

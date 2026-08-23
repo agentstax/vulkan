@@ -13,22 +13,11 @@
 	font-variant-numeric: tabular-nums;
 }
 
-button {
-	border: 0;
-	padding: 0;
-	background: none;
-	font-family: var(--font-chrome);
+a {
 	font-size: 10px;
-	color: var(--color-link);
-	cursor: pointer;
 }
 
-button:hover {
-	color: var(--color-link-hover);
-	text-decoration: underline;
-}
-
-button:focus-visible {
+a:focus-visible {
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 2px;
 }
