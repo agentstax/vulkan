@@ -5,3 +5,4 @@ randomized cookie popup on doc site that mocks cookies being used for a doc site
 need AGPLv3 liscense
 website layered error handling - try / catch with modal popup, user friendly messages, backup broken page if all else fails
 mobile friendly docsite
+make sure we add our ./doc/decisions into the site can call it (regrets)
