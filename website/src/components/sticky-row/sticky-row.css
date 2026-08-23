@@ -1,0 +1,34 @@
+.sticky-row {
+	display: grid;
+	grid-template-columns: var(--grid-board-columns);
+	gap: 10px;
+	align-items: center;
+	padding: 11px 14px;
+	background: var(--color-sticky-row);
+	border-top: 1px solid var(--border-sticky-row);
+}
+
+.sticky-name {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.sticky-label {
+	color: var(--color-sticky-label);
+	font-weight: 700;
+	font-size: 10px;
+	letter-spacing: 0.5px;
+}
+
+.sticky-title {
+	font-family: var(--font-content);
+	font-weight: 600;
+	font-size: 14px;
+}
+
+.sticky-date {
+	color: var(--color-text-faint);
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+}

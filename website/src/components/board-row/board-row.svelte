@@ -29,7 +29,7 @@
 </script>
 
 <div class="board-row" data-stripe={stripe}>
-	<PixelFolder {updated} width={18} />
+	<PixelFolder {updated} pinned={false} width={18} />
 	<div class="board-name">
 		<a class="board-title" {href}>{title}</a>
 		<span class="board-description">{description}</span>

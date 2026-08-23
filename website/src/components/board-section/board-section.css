@@ -6,6 +6,9 @@
 	background: var(--band-gradient);
 	box-shadow: var(--lacquer);
 	padding: 8px 14px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
 }
 
 .band[data-columns='true'] {
@@ -31,4 +34,10 @@
 
 .column-label[data-align='center'] {
 	text-align: center;
+}
+
+.thread-total {
+	color: var(--color-band-meta);
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
 }

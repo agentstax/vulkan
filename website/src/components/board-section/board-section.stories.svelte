@@ -2,11 +2,12 @@
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 	import BoardSection from './board-section.svelte';
 	import BoardRow from '../board-row/board-row.svelte';
+	import StickyRow from '../sticky-row/sticky-row.svelte';
 
 	const { Story } = defineMeta({
 		title: 'Board/BoardSection',
 		component: BoardSection,
-		args: { title: 'Board' },
+		args: { title: 'Board', columnLabels: null, threadCount: null },
 	});
 </script>
 
@@ -38,7 +39,15 @@
 		</BoardSection>
 	{/snippet}
 </Story>
-<Story name="Title only" args={{ title: 'Announcements', columnLabels: null }}>
+<Story name="With thread total" args={{ title: 'Start Here', threadCount: 2 }}>
+	{#snippet template(args)}
+		<BoardSection {...args}>
+			<StickyRow title="Quickstart" href="/quickstart/" updated={false} lastUpdatedDate="2026-08-22" />
+			<StickyRow title="Why Vulkan" href="/why-vulkan/" updated={false} lastUpdatedDate="2026-08-22" />
+		</BoardSection>
+	{/snippet}
+</Story>
+<Story name="Title only" args={{ title: 'Announcements' }}>
 	{#snippet template(args)}
 		<BoardSection {...args}>
 			<div style="padding: 12px 14px; font-size: 12px;">rows go here</div>

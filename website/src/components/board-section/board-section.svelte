@@ -4,10 +4,11 @@
 	type Props = {
 		title: string;
 		columnLabels: { threadCount: string; lastPost: string } | null;
+		threadCount: number | null;
 		children: Snippet;
 	};
 
-	let { title, columnLabels, children }: Props = $props();
+	let { title, columnLabels, threadCount, children }: Props = $props();
 </script>
 
 <section class="board-section">
@@ -21,6 +22,9 @@
 	{:else}
 		<header class="band">
 			<h2 class="band-title">{title}</h2>
+			{#if threadCount !== null}
+				<span class="thread-total">{threadCount} {threadCount === 1 ? 'thread' : 'threads'}</span>
+			{/if}
 		</header>
 	{/if}
 	{@render children()}

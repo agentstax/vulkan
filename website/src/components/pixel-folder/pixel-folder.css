@@ -37,3 +37,15 @@ svg[data-updated='true'] .highlight {
 svg[data-updated='true'] .shade {
 	fill: var(--folder-updated-shade);
 }
+
+.pin {
+	fill: var(--color-pin);
+}
+
+.pin-light {
+	fill: var(--color-pin-light);
+}
+
+.pin-dark {
+	fill: var(--color-pin-dark);
+}

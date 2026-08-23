@@ -237,10 +237,23 @@ Invented interactive machinery for the site; user verdicts so far:
   shadow, volcano shadow, --z-raised (closed z-index scale started).
   Build 75 pages + Storybook build + eslint green; screenshot
   verified; still zero client JS.
-  NEXT SLICES: Start Here stickies (pin-badge folder variant); the
-  console (island); announcements (pixel flag) + stats + legend;
-  breadcrumb with the content-area pass; read-tracking .svelte.ts
-  module; then index swap + Starlight removal.
+  STICKIES SLICE BUILT 2026-08-23 (awaiting user review): Start Here
+  section above the Board section. pixel-folder gained required
+  `pinned` prop (viewBox 17x15, folder rects translate(0 1), red pin
+  rects on top; glow still only from `updated`); new sticky-row
+  component (cream row, STICKY label, board grid, real title + git
+  date); board-section gained `threadCount: number | null` (band
+  right-side "N threads", singular handled); board.astro stickies =
+  quickstart + why-vulkan resolved from the docs collection (throws
+  on a miss), folders read-gray + no glow honestly until
+  read-tracking. New tokens: sticky cream/border/label-red + pin red
+  ramp. Design's "pinned by brandon" flavor line NOT used — both
+  rows show the real updated date. Build + storybook + eslint green,
+  screenshot verified.
+  NEXT SLICES: the console (island); announcements (pixel flag) +
+  stats + legend; breadcrumb with the content-area pass;
+  read-tracking .svelte.ts module; then index swap + Starlight
+  removal.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
     @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
     0.40 pins Astro 6; ripping it out first makes the upgrade a

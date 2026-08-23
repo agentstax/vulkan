@@ -3,6 +3,7 @@ import { getCollection } from 'astro:content';
 import BoardLayout from '../layouts/BoardLayout.astro';
 import BoardSection from '../components/board-section/board-section.svelte';
 import BoardRow from '../components/board-row/board-row.svelte';
+import StickyRow from '../components/sticky-row/sticky-row.svelte';
 import { lastCommitDate } from '../helpers/last-commit-date';
 
 type Board = {
@@ -47,6 +48,23 @@ const boards: Board[] = [
 
 const docs = await getCollection('docs');
 
+const stickyIds = ['quickstart', 'why-vulkan'];
+const stickies = stickyIds.map((id) => {
+	const entry = docs.find((candidate) => candidate.id === id);
+	if (entry === undefined) {
+		throw new Error(`sticky "${id}" matches no docs entry`);
+	}
+	if (entry.filePath === undefined) {
+		throw new Error(`docs entry "${id}" carries no filePath`);
+	}
+
+	return {
+		title: entry.data.title,
+		href: `/${id}/`,
+		lastUpdatedDate: lastCommitDate(entry.filePath),
+	};
+});
+
 const rows = boards.map((board) => {
 	const entries = docs.filter((entry) => board.contains(entry.id));
 	if (entries.length === 0) {
@@ -80,7 +98,23 @@ const rows = boards.map((board) => {
 	navCurrent="Board Index"
 >
 	<div class="board-index">
-		<BoardSection title="Board" columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}>
+		<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
+			{
+				stickies.map((sticky) => (
+					<StickyRow
+						title={sticky.title}
+						href={sticky.href}
+						updated={false}
+						lastUpdatedDate={sticky.lastUpdatedDate}
+					/>
+				))
+			}
+		</BoardSection>
+		<BoardSection
+			title="Board"
+			columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}
+			threadCount={null}
+		>
 			{
 				rows.map((row, index) => (
 					<BoardRow
@@ -103,5 +137,8 @@ const rows = boards.map((board) => {
 <style>
 	.board-index {
 		padding: 18px 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
 	}
 </style>

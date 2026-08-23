@@ -54,6 +54,12 @@
 		--volcano-rock-4: #405264;
 		--volcano-rock-5: #374858;
 		--volcano-rock-6: #2e3d4c;
+		--sticky-cream: #fdf3dd;
+		--sticky-cream-border: #ebd9ae;
+		--sticky-label-red: #b03a2e;
+		--pin-red: #c0392b;
+		--pin-red-light: #e2695a;
+		--pin-red-dark: #96281b;
 
 		/* semantic -- what components consume */
 		--color-page: var(--page-blue-gray);
@@ -100,6 +106,12 @@
 		--volcano-lava-bright: var(--amber);
 		--volcano-lava-mid: var(--lava-orange);
 		--volcano-lava-deep: var(--lava-ember);
+		--color-sticky-row: var(--sticky-cream);
+		--border-sticky-row: var(--sticky-cream-border);
+		--color-sticky-label: var(--sticky-label-red);
+		--color-pin: var(--pin-red);
+		--color-pin-light: var(--pin-red-light);
+		--color-pin-dark: var(--pin-red-dark);
 		--lacquer: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 		--lacquer-dim: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 		--shadow-page-frame:
