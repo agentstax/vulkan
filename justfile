@@ -374,6 +374,10 @@ lag topic_id:
 site-dev:
   cd website && npm run dev
 
+# build + serve the built site (search needs the built Pagefind index)
+site-preview:
+  cd website && npm run build && npm run preview
+
 site-storybook:
   cd website && ./node_modules/.bin/storybook dev -p 6006
 

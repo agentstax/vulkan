@@ -7,18 +7,17 @@
 	};
 
 	type Props = {
-		current: string;
+		// null on a page no nav link names (a thread, the 404 page)
+		current: string | null;
 	};
 
 	let { current }: Props = $props();
 
-	// Search stays inert until the Pagefind island exists
 	const links: NavLink[] = [
-		{ label: 'Board Index', href: '/board/' },
-		{ label: 'Docs', href: '/' },
+		{ label: 'Board Index', href: '/' },
 		{ label: 'Troubleshooting', href: '/errors/' },
+		{ label: 'Search', href: '/search/' },
 		{ label: 'GitHub', href: repositoryUrl },
-		{ label: 'Search', href: '#' },
 	];
 </script>
 

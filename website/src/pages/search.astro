@@ -1,0 +1,17 @@
+---
+import BoardLayout from '../layouts/BoardLayout.astro';
+import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
+import BoardSection from '../components/board-section/board-section.svelte';
+import BoardSearch from '../components/board-search/board-search.svelte';
+---
+
+<BoardLayout
+	title="Search the board"
+	description="Search every thread — a VK code, a log line, or any phrase from a page."
+	navCurrent="Search"
+>
+	<Breadcrumb trail={[{ label: 'Board Index', href: '/' }, { label: 'Search', href: null }]} />
+	<BoardSection title="Search" columnLabels={null} threadCount={null}>
+		<BoardSearch client:visible />
+	</BoardSection>
+</BoardLayout>

@@ -7,17 +7,17 @@
 	color: var(--color-chrome-pale-text);
 }
 
-.board-select {
-	background: var(--color-surface);
-	border: 1px solid var(--border-outer);
-	padding: 3px 10px;
+.jump-to label {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+}
+
+.jump-to select {
+	background: var(--color-surface);
+	border: 1px solid var(--border-outer);
+	padding: 3px 6px;
+	font-family: var(--font-chrome);
+	font-size: 10px;
 	color: var(--color-text);
 }
-
-.board-select path {
-	fill: var(--color-chrome-pale-text);
-}
-

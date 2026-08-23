@@ -3,7 +3,7 @@ title: Roadmap
 description: Where Vulkan is, where it's going, and what we want your opinion on.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import ThreadAside from '../../components/thread-aside/thread-aside.svelte';
 
 Vulkan is early, in the open, and built in deliberate layers — each one
 proven against failure-injection labs (kill -9 mid-process, crash
@@ -74,12 +74,12 @@ demands them rather than on speculation:
 - **An HTTP API** — produce via POST, consume via SSE, for languages
   without a Postgres driver in hand.
 
-<Aside type="note" title="What stays open source">
+<ThreadAside label="NOTE" title="What stays open source">
 Every semantic capability — transactions, lifecycle, fan-out, routing,
 compaction, ordering — ships in the open-source engine. If a managed
 offering ever exists, it sells operations (dashboards, alerting, managed
 Postgres), never capabilities.
-</Aside>
+</ThreadAside>
 
 ## What we want from you
 

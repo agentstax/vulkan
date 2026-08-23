@@ -258,12 +258,6 @@
 		tab-size: 4;
 	}
 
-	/* Starlight's markdown pipeline injects heading anchor links; board
-	   headings carry no anchor furniture -- delete this with Starlight */
-	.thread-body :where(a.sl-anchor-link) {
-		display: none;
-	}
-
 	.thread-body :where(pre code) {
 		font-family: var(--font-database);
 	}

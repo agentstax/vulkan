@@ -1,0 +1,24 @@
+---
+import BoardLayout from '../layouts/BoardLayout.astro';
+import Breadcrumb from '../components/breadcrumb/breadcrumb.svelte';
+import BoardSection from '../components/board-section/board-section.svelte';
+import ThreadPost from '../components/thread-post/thread-post.svelte';
+---
+
+<BoardLayout
+	title="Page not found"
+	description="No thread lives at this address."
+	navCurrent={null}
+>
+	<Breadcrumb
+		trail={[{ label: 'Board Index', href: '/' }, { label: 'Page not found', href: null }]}
+	/>
+	<BoardSection title="Information" columnLabels={null} threadCount={null}>
+		<ThreadPost author="brandon" role="Site Admin" header={null} postCount={null}>
+			<p>
+				No thread lives at this address. <a href="/">Return to the Board Index</a> or
+				<a href="/search/">search the board</a> — every page and VK code has a thread.
+			</p>
+		</ThreadPost>
+	</BoardSection>
+</BoardLayout>

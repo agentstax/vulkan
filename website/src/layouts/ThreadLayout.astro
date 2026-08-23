@@ -5,6 +5,7 @@ import ThreadTitleBand from '../components/thread-title-band/thread-title-band.s
 import ThreadPost from '../components/thread-post/thread-post.svelte';
 import PrevNext from '../components/prev-next/prev-next.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
+import { jumpTargets } from '../pages/_board/boards';
 import type { ThreadLink } from '../components/prev-next/types';
 
 type Props = {
@@ -34,17 +35,17 @@ const {
 } = Astro.props;
 
 const trail = [
-	{ label: 'Board Index', href: '/board/' },
+	{ label: 'Board Index', href: '/' },
 	{ label: boardTitle, href: boardHref },
 	{ label: title, href: null },
 ];
 const returnTrail = [
-	{ label: 'Board Index', href: '/board/' },
+	{ label: 'Board Index', href: '/' },
 	{ label: boardTitle, href: boardHref },
 ];
 ---
 
-<BoardLayout title={title} description={description} navCurrent="Docs">
+<BoardLayout title={title} description={description} navCurrent={null}>
 	<div class="thread-top">
 		<Breadcrumb trail={trail} />
 		<div class="adjacent-links">
@@ -53,21 +54,24 @@ const returnTrail = [
 			{next !== null && <a href={next.href}>View next thread</a>}
 		</div>
 	</div>
-	<ThreadTitleBand title={title} code={null} solved={false} editHref={editHref} />
-	<ThreadPost
-		author="brandon"
-		role="Site Admin"
-		header={{ kind: 'posted', postedDate, reportHref }}
-		postCount={postCount}
-	>
-		<div class="thread-body">
-			<slot />
-		</div>
-	</ThreadPost>
+	<!-- Pagefind indexes only elements marked data-pagefind-body -->
+	<div class="search-region" data-pagefind-body>
+		<ThreadTitleBand title={title} code={null} solved={false} editHref={editHref} />
+		<ThreadPost
+			author="brandon"
+			role="Site Admin"
+			header={{ kind: 'posted', postedDate, reportHref }}
+			postCount={postCount}
+		>
+			<div class="thread-body">
+				<slot />
+			</div>
+		</ThreadPost>
+	</div>
 	<PrevNext previous={previous} next={next} />
 	<div class="thread-return">
 		<Breadcrumb trail={returnTrail} />
-		<JumpTo />
+		<JumpTo client:idle targets={jumpTargets} />
 	</div>
 </BoardLayout>
 
@@ -93,5 +97,12 @@ const returnTrail = [
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+	}
+
+	/* mirrors the page-content gap so the wrapper is invisible in the flow */
+	.search-region {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
 	}
 </style>

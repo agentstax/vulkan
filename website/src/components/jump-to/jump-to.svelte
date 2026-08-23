@@ -1,13 +1,33 @@
-<!-- inert era furniture until the board pages exist to jump between -->
+<script lang="ts">
+	import type { JumpTarget } from './types';
+
+	type Props = {
+		targets: JumpTarget[];
+	};
+
+	let { targets }: Props = $props();
+
+	let selectedHref = $state('');
+
+	function go(): void {
+		if (selectedHref === '') {
+			return;
+		}
+		window.location.assign(selectedHref);
+	}
+</script>
+
 <div class="jump-to">
-	<span>Jump to:</span>
-	<span class="board-select">
-		Select a board
-		<svg width="7" height="5" viewBox="0 0 8 5" aria-hidden="true">
-			<path d="M0 0 L4 5 L8 0 z" />
-		</svg>
-	</span>
-	<button type="button" class="era-button">Go</button>
+	<label>
+		Jump to:
+		<select bind:value={selectedHref}>
+			<option value="">Select a board</option>
+			{#each targets as target (target.href)}
+				<option value={target.href}>{target.label}</option>
+			{/each}
+		</select>
+	</label>
+	<button type="button" class="era-button" onclick={go}>Go</button>
 </div>
 
 <style src="./jump-to.css"></style>

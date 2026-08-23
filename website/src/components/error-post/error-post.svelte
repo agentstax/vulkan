@@ -13,7 +13,7 @@
 </script>
 
 <div class="error-post">
-	<div class="post-header">
+	<div class="post-header" data-pagefind-ignore>
 		<span>the log line</span>
 		<a href={reportHref}>Report this thread</a>
 	</div>

@@ -10,6 +10,7 @@ import SqlConsole from '../components/sql-console/sql-console.svelte';
 import AnnouncementRow from '../components/announcement-row/announcement-row.svelte';
 import BoardStats from '../components/board-stats/board-stats.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
+import { jumpTargets } from './_board/boards';
 import { boardRows, stickyRows } from './_board/rows';
 import { announcements } from './_board/announcements';
 import { siteStats } from './_board/stats';
@@ -27,7 +28,7 @@ const shell = await consoleShell();
 	description="The message platform forged in Postgres. Queue, event log, and router in one system."
 	navCurrent="Board Index"
 >
-	<Breadcrumb trail={[{ label: 'Board Index', href: '/board/' }]} />
+	<Breadcrumb trail={[{ label: 'Board Index', href: '/' }]} />
 	<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
 		<StickyRows client:idle stickies={stickies} />
 		<ThreadPost author="brandon" role="Site Admin" header={null} postCount={null}>
@@ -70,5 +71,5 @@ const shell = await consoleShell();
 		codeCount={stats.codeCount}
 		decisionRecordCount={stats.decisionRecordCount}
 	/>
-	<JumpTo />
+	<JumpTo client:idle targets={jumpTargets} />
 </BoardLayout>

@@ -478,10 +478,52 @@ Invented interactive machinery for the site; user verdicts so far:
      the DLQ" lines (VK0041/VK0047) -> "sit dead-lettered". Verified:
      build 145 pages, eslint, vitest, storybook build, screenshots
      VK0005 (solved) + VK0028 (warn event).
-  4. the swap: board at /, threads at final URLs, Starlight removed,
-     Pagefind standalone, old-URL redirects, deep-link visit
-     recording lands free (every page rides BoardLayout). Full
-     verification checkpoint here.
+  4. the swap — BUILT 2026-08-23 (awaiting review): Starlight
+     UNINSTALLED; board serves the whole site. Routes: board.astro ->
+     index.astro (/), board/[...id] -> [...id] (threads at /<id>/),
+     board/errors/[code] -> errors/[code] (/errors/VKxxxx/ — ids keep
+     the file's casing via a custom glob generateId, so deployed
+     Starlight URLs match exactly, no case redirects). content.config
+     = astro glob loader + own zod schema (docsSchema gone);
+     @astrojs/mdx@6 replaces Starlight's bundled MDX (Astro-6 pair;
+     slice 5 bumps both). DECIDED (delegated): roadmap = LAST thread
+     of Getting Started (arc ends "where it's going"; Aside ->
+     ThreadAside); errors/index.md RENAMED errors.md = FIRST thread
+     of Troubleshooting (keeps /errors/, prev/next chains into
+     VK0001, isErrorThread drops its dead exclusion clause; stats.ts
+     now uses isErrorThread). DELETED: index.mdx (board replaces the
+     splash), custom.css, assets/logo.svg, sl-anchor-link hide.
+     Pagefind: build = `astro build && pagefind --site dist`;
+     data-pagefind-body region wrappers in both thread layouts (72
+     thread pages indexed; homepage/search/404 excluded), band h1 =
+     data-pagefind-meta title (error titles index as "title
+     [VKxxxx]"), data-pagefind-ignore on era chrome (edit link, post
+     headers, brandon author column; the CODE author column stays
+     indexed — code + rank are searchable facts). /search/ page:
+     board-search container island (client:visible) +
+     board-search-state.svelte.ts (runtime-opaque import of
+     /pagefind/pagefind.js — literal specifiers break Rollup even
+     with @vite-ignore; 'unavailable' phase when index missing =
+     dev), presentational search-result rows (mark segments, no
+     {@html}) fed by helpers/excerpt-segments.ts pure parser
+     (entity-decode + <mark> split, 6 vitest cases); ?q= deep link
+     runs on arrival, submits replaceState the query. Era buttons
+     went real: nav Search + search-strip -> /search/; jump-to now a
+     live select island (targets = jumpTargets from boards.ts) at
+     all 3 call sites. Nav: Board Index /, Troubleshooting, Search,
+     GitHub ("Docs" row died with Starlight; navCurrent now
+     string | null — thread pages pass null). 404.astro = phpBB
+     "Information" box via ThreadPost header=null. public/_redirects
+     (CF Pages): transactional-enqueue->produce, streams->fan-out,
+     /board/* -> /:splat. BoardLayout gains favicon link. Deep-link
+     visit recording CONFIRMED free (CDP: fresh profile, direct
+     /errors/VK0005/ load lands in vulkan-board:visits).
+     VERIFIED (full checkpoint): build 75 pages + pagefind 72
+     indexed, eslint, vitest 9/9 (drift 3 + excerpt 6), storybook
+     build, CDP script (nav labels, jump-to Go navigates, deep-link
+     recording, errors-index next=VK0001, "topic not found" -> 3
+     hits first = VK0005 thread, bare "VK0028" query hits its
+     thread), screenshots home/search/VK0005/404.
   5. Astro 6->7 after (already sequenced below).
   "Show what's new" wiring rides a later slice.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for

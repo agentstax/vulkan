@@ -9,6 +9,7 @@ import ThreadPost from '../components/thread-post/thread-post.svelte';
 import SearchStrip from '../components/search-strip/search-strip.svelte';
 import PrevNext from '../components/prev-next/prev-next.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
+import { jumpTargets } from '../pages/_board/boards';
 import type { ThreadLink } from '../components/prev-next/types';
 import type { CodeThreadData } from '../pages/_thread/model';
 
@@ -41,12 +42,12 @@ const {
 } = Astro.props;
 
 const trail = [
-	{ label: 'Board Index', href: '/board/' },
+	{ label: 'Board Index', href: '/' },
 	{ label: boardTitle, href: boardHref },
 	{ label: `${title} [${codeThread.code}]`, href: null },
 ];
 const returnTrail = [
-	{ label: 'Board Index', href: '/board/' },
+	{ label: 'Board Index', href: '/' },
 	{ label: boardTitle, href: boardHref },
 ];
 ---
@@ -60,38 +61,46 @@ const returnTrail = [
 			{next !== null && <a href={next.href}>View next thread</a>}
 		</div>
 	</div>
-	<ThreadTitleBand title={title} code={codeThread.code} solved={codeThread.solved} editHref={editHref} />
-	<CodeFacts
-		code={codeThread.code}
-		classification={codeThread.classification}
-		consequence={codeThread.consequence}
-	/>
-	<ErrorPost code={codeThread.code} rank={codeThread.rank} reportHref={reportHref}>
-		<p>{codeThread.introduction}</p>
-		<LogLine text={codeThread.logLine} kind={codeThread.kind} />
-		<div class="thread-body">
-			<slot />
-		</div>
-	</ErrorPost>
-	{
-		codeThread.fix !== null && (
-			<ThreadPost
-				author="brandon"
-				role="Site Admin"
-				header={{ kind: 'accepted', postedDate }}
-				postCount={postCount}
-			>
-				<p>
-					<strong>{codeThread.fix}</strong>
-				</p>
-			</ThreadPost>
-		)
-	}
+	<!-- Pagefind indexes only elements marked data-pagefind-body -->
+	<div class="search-region" data-pagefind-body>
+		<ThreadTitleBand
+			title={title}
+			code={codeThread.code}
+			solved={codeThread.solved}
+			editHref={editHref}
+		/>
+		<CodeFacts
+			code={codeThread.code}
+			classification={codeThread.classification}
+			consequence={codeThread.consequence}
+		/>
+		<ErrorPost code={codeThread.code} rank={codeThread.rank} reportHref={reportHref}>
+			<p>{codeThread.introduction}</p>
+			<LogLine text={codeThread.logLine} kind={codeThread.kind} />
+			<div class="thread-body">
+				<slot />
+			</div>
+		</ErrorPost>
+		{
+			codeThread.fix !== null && (
+				<ThreadPost
+					author="brandon"
+					role="Site Admin"
+					header={{ kind: 'accepted', postedDate }}
+					postCount={postCount}
+				>
+					<p>
+						<strong>{codeThread.fix}</strong>
+					</p>
+				</ThreadPost>
+			)
+		}
+	</div>
 	<SearchStrip exampleText={codeThread.logLine} />
 	<PrevNext previous={previous} next={next} />
 	<div class="thread-return">
 		<Breadcrumb trail={returnTrail} />
-		<JumpTo />
+		<JumpTo client:idle targets={jumpTargets} />
 	</div>
 </BoardLayout>
 
@@ -117,5 +126,12 @@ const returnTrail = [
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+	}
+
+	/* mirrors the page-content gap so the wrapper is invisible in the flow */
+	.search-region {
+		display: flex;
+		flex-direction: column;
+		gap: 20px;
 	}
 </style>

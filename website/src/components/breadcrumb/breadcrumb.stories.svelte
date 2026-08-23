@@ -8,12 +8,12 @@
 	});
 </script>
 
-<Story name="Board index" args={{ trail: [{ label: 'Board Index', href: '/board/' }] }} />
+<Story name="Board index" args={{ trail: [{ label: 'Board Index', href: '/' }] }} />
 <Story
 	name="Thread trail"
 	args={{
 		trail: [
-			{ label: 'Board Index', href: '/board/' },
+			{ label: 'Board Index', href: '/' },
 			{ label: 'Concepts', href: '/concepts/queue-and-log/' },
 			{ label: 'Ordering & Concurrency', href: '/concepts/ordering/' },
 		],

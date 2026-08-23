@@ -14,11 +14,11 @@
 	{#if solved}
 		<span class="solved-chip">[SOLVED]</span>
 	{/if}
-	<h1 class="thread-title">
+	<h1 class="thread-title" data-pagefind-meta="title">
 		{title}
 		{#if code !== null}<span class="thread-code">[{code}]</span>{/if}
 	</h1>
-	<a class="era-button" href={editHref}>Edit this page</a>
+	<a class="era-button" href={editHref} data-pagefind-ignore>Edit this page</a>
 </div>
 
 <style src="./thread-title-band.css"></style>

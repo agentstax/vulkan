@@ -1,0 +1,30 @@
+.search-result {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border-row);
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.search-result:nth-child(odd) {
+	background: var(--color-row-stripe-a);
+}
+
+.result-title {
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.result-excerpt {
+	margin: 0;
+	font-family: var(--font-content);
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--color-text-faint);
+}
+
+.result-excerpt mark {
+	background: var(--color-chrome-pale);
+	color: var(--color-text);
+	font-weight: 600;
+}

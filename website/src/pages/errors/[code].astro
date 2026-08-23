@@ -1,10 +1,10 @@
 ---
 import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
 import { getCollection, render } from 'astro:content';
-import ErrorThreadLayout from '../../../layouts/ErrorThreadLayout.astro';
-import { isErrorThread, threadCode } from '../../_board/boards';
-import { threadData } from '../../_thread/thread';
-import { codeThreadData } from '../../_thread/code';
+import ErrorThreadLayout from '../../layouts/ErrorThreadLayout.astro';
+import { isErrorThread, threadCode } from '../_board/boards';
+import { threadData } from '../_thread/thread';
+import { codeThreadData } from '../_thread/code';
 
 export const getStaticPaths = (async () => {
 	const docs = await getCollection('docs');

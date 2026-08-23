@@ -1,16 +1,16 @@
 ---
 import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
 import { getCollection, render } from 'astro:content';
-import ThreadLayout from '../../layouts/ThreadLayout.astro';
-import { boards, isErrorThread } from '../_board/boards';
-import { boardEntries } from '../_board/rows';
-import { threadData } from '../_thread/thread';
+import ThreadLayout from '../layouts/ThreadLayout.astro';
+import { boards, isErrorThread } from './_board/boards';
+import { boardEntries } from './_board/rows';
+import { threadData } from './_thread/thread';
 
 export const getStaticPaths = (async () => {
 	const docs = await getCollection('docs');
 
 	// every board thread except the error threads -- those render
-	// through board/errors/[code].astro
+	// through errors/[code].astro
 	return boards
 		.flatMap((board) => boardEntries(board, docs))
 		.filter((entry) => !isErrorThread(entry.id))

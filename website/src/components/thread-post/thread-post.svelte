@@ -17,19 +17,19 @@
 <div class="thread-post" data-framed={header !== null}>
 	{#if header !== null}
 		{#if header.kind === 'accepted'}
-			<div class="post-header" data-accepted="true">
+			<div class="post-header" data-accepted="true" data-pagefind-ignore>
 				<span class="accepted-label"><span class="accepted-mark"></span>ACCEPTED ANSWER</span>
 				<span class="posted">Posted: {header.postedDate}</span>
 			</div>
 		{:else}
-			<div class="post-header">
+			<div class="post-header" data-pagefind-ignore>
 				<span class="posted">Posted: {header.postedDate}</span>
 				<a href={header.reportHref}>Report this thread</a>
 			</div>
 		{/if}
 	{/if}
 	<div class="post-columns">
-		<div class="author">
+		<div class="author" data-pagefind-ignore>
 			<span class="author-name">{author}</span>
 			<span class="stars">
 				{#each [0, 1, 2] as star (star)}

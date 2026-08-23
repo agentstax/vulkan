@@ -8,11 +8,11 @@
 		argTypes: {
 			current: {
 				control: 'select',
-				options: ['Board Index', 'Docs', 'Troubleshooting', 'GitHub', 'Search'],
+				options: ['Board Index', 'Troubleshooting', 'Search', 'GitHub', null],
 			},
 		},
 	});
 </script>
 
 <Story name="On the board index" args={{ current: 'Board Index' }} />
-<Story name="On a docs thread" args={{ current: 'Docs' }} />
+<Story name="On a thread" args={{ current: null }} />

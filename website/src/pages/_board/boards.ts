@@ -1,3 +1,5 @@
+import type { JumpTarget } from '../../components/jump-to/types';
+
 export type Board = {
 	title: string;
 	href: string;
@@ -10,8 +12,8 @@ export const boards: Board[] = [
 	{
 		title: 'Getting Started',
 		href: '/quickstart/',
-		description: 'install, migrate init, first produce and consume',
-		threads: () => ['why-vulkan', 'demo', 'quickstart', 'cloud'],
+		description: 'install, migrate init, first produce and consume — and where Vulkan is going',
+		threads: () => ['why-vulkan', 'demo', 'quickstart', 'cloud', 'roadmap'],
 	},
 	{
 		title: 'Concepts',
@@ -41,8 +43,8 @@ export const boards: Board[] = [
 		title: 'Troubleshooting',
 		href: '/errors/',
 		description: 'every VK error code and log event, one thread each',
-		// error threads read in code order
-		threads: (ids) => ids.filter(isErrorThread).sort(),
+		// the code index leads, then the code threads in code order
+		threads: (ids) => ['errors', ...ids.filter(isErrorThread).sort()],
 	},
 	{
 		title: 'Compare',
@@ -54,8 +56,14 @@ export const boards: Board[] = [
 
 export const stickyIds = ['quickstart', 'why-vulkan'];
 
+// the Jump to select navigates to each board's landing thread
+export const jumpTargets: JumpTarget[] = boards.map((board) => ({
+	label: board.title,
+	href: board.href,
+}));
+
 export function isErrorThread(id: string): boolean {
-	return id.startsWith('errors/') && id !== 'errors/index';
+	return id.startsWith('errors/');
 }
 
 export function threadCode(id: string): string {

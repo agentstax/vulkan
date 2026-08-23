@@ -1,6 +1,5 @@
 ---
 title: Error codes
-slug: errors
 ---
 
 Every Vulkan error carries a stable `VK` code. The code renders at the
