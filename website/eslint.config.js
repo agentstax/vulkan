@@ -8,8 +8,14 @@ export default ts.config(
 	...ts.configs.recommended,
 	...svelte.configs.recommended,
 	{
-		files: ['**/*.svelte'],
+		files: ['**/*.svelte', '**/*.svelte.ts'],
 		languageOptions: { parserOptions: { parser: ts.parser } },
+	},
+	{
+		// TypeScript already errors on unknown identifiers; eslint's no-undef
+		// has no type awareness and false-flags browser globals and type names
+		files: ['**/*.ts', '**/*.svelte', '**/*.svelte.ts'],
+		rules: { 'no-undef': 'off' },
 	},
 	{
 		rules: {

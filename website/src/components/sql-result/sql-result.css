@@ -1,0 +1,37 @@
+.result {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: var(--font-database);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.result th {
+	background: var(--color-console-result-header);
+	font-weight: 600;
+	color: var(--color-chrome-pale-text);
+	text-align: left;
+	padding: 5px 10px;
+}
+
+.result td {
+	padding: 5px 10px;
+}
+
+.result tbody tr:nth-child(even) {
+	background: var(--color-row-stripe-a);
+}
+
+.null-value {
+	color: var(--color-console-null);
+}
+
+.status-bar {
+	padding: 5px 10px;
+	background: var(--color-chrome-pale);
+	border-top: 1px solid var(--border-row);
+	color: var(--color-text-muted);
+	font-family: var(--font-database);
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+}

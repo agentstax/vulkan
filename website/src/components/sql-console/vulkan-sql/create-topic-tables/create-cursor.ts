@@ -1,0 +1,23 @@
+// verbatim from pkg/topic/controller/datastore/tables.go createTopicTables -- the
+// template is drift-checked byte-exact; the function mirrors the fmt.Sprintf call
+import { interpolate } from '../interpolate';
+import { cursorTable } from '../table-names';
+
+export const createCursorSqlTemplate = `
+		-- vulkan: topic.createTopicTables
+		CREATE TABLE IF NOT EXISTS %s (
+			id BIGSERIAL PRIMARY KEY,
+			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group (id) ON DELETE CASCADE,
+			claimed BIGINT NOT NULL DEFAULT 0,      -- the read frontier 'inflight' work
+			committed BIGINT NOT NULL DEFAULT 0,    -- every message id > committed is in an end state done / dead
+			-- the snapshot fence: claims stop at settled_head, not the raw MAX(id),
+			-- MAX(id) can sit above uncommitted lower ids -- see FreshClaimMessagesWithCursor
+			settled_head BIGINT NOT NULL DEFAULT 0, -- highest id proven to have nothing uncommitted at or below it
+			pending_head BIGINT NOT NULL DEFAULT 0, -- candidate head awaiting that proof
+			pending_xmax XID8                       -- txid fence read in the same snapshot as pending_head
+		);
+	`;
+
+export function createCursorSql(topicId: number): string {
+	return interpolate(createCursorSqlTemplate, cursorTable(topicId));
+}

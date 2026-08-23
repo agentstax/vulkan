@@ -6,6 +6,10 @@ import svelte from '@astrojs/svelte';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://vulkan-5ss.pages.dev',
+	vite: {
+		// PGlite locates its wasm assets itself; pre-bundling breaks the paths
+		optimizeDeps: { exclude: ['@electric-sql/pglite'] },
+	},
 	integrations: [
 		svelte(),
 		starlight({

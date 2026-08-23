@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { sqlSegments } from './highlight';
+	import { onMount } from 'svelte';
+	import type { EditorView } from '@codemirror/view';
+	import { ConsoleState } from './sql-console-state.svelte';
+	import HighlightedSql from '../highlighted-sql/highlighted-sql.svelte';
+	import SqlResult from '../sql-result/sql-result.svelte';
+	import ConsoleProgress from '../console-progress/console-progress.svelte';
 
 	type Props = {
 		label: string;
@@ -10,45 +15,86 @@
 
 	let { label, sql, columns, rows }: Props = $props();
 
-	const segments = $derived(sqlSegments(sql));
+	const consoleState = new ConsoleState(sql, columns, rows);
+	const runDisabled = $derived(
+		consoleState.phase === 'shell' ||
+			consoleState.phase === 'connecting' ||
+			consoleState.phase === 'running',
+	);
+	let editorHost: HTMLDivElement | undefined = $state(undefined);
+
+	// on idle, dynamic-import CodeMirror and swap it in over the static shell
+	// (enabling Run) -- neither editor nor database rides the initial payload
+	onMount(() => {
+		let editorView: EditorView | null = null;
+		let cancelled = false;
+
+		// Safari gained requestIdleCallback in 18; elsewhere the next timer
+		// tick keeps the same "later, not now" effect
+		function requestIdle(callback: () => void): void {
+			if (typeof window.requestIdleCallback === 'function') {
+				window.requestIdleCallback(callback);
+			} else {
+				window.setTimeout(callback, 1);
+			}
+		}
+
+		requestIdle(() => {
+			void (async () => {
+				const { createEditor } = await import('./editor');
+
+				if (cancelled || editorHost === undefined) return;
+
+				editorView = createEditor(editorHost, consoleState.sql, (nextSql) => {
+					consoleState.sql = nextSql;
+				});
+				consoleState.editorReady();
+
+				// warm the database chunk so first Run only pays the wasm start
+				requestIdle(() => void import('./database'));
+			})();
+		});
+
+		return () => {
+			cancelled = true;
+			editorView?.destroy();
+		};
+	});
 </script>
 
 <div class="sql-console">
 	<div class="title-bar">
 		<span class="console-label">{label}</span>
 		<span class="console-meta">postgres 18 · wasm · local to this tab</span>
-		<!-- inert until the PGlite island lands -->
-		<button type="button" class="run-button">Run ▸</button>
+		<button
+			type="button"
+			class="run-button"
+			disabled={runDisabled}
+			onclick={() => void consoleState.run()}
+		>
+			Run ▸
+		</button>
 	</div>
-	<pre class="sql">{#each segments as segment, index (index)}{#if segment.keyword}<span
-				class="sql-keyword">{segment.text}</span>{:else}{segment.text}{/if}{/each}</pre>
-	<table class="result">
-		<thead>
-			<tr>
-				{#each columns as column (column)}
-					<th>{column}</th>
-				{/each}
-			</tr>
-		</thead>
-		<tbody>
-			{#each rows as row, index (index)}
-				<tr>
-					{#each row as cell, cellIndex (cellIndex)}
-						<td>
-							{#if cell === null}
-								<span class="null-value">NULL</span>
-							{:else}
-								{cell}
-							{/if}
-						</td>
-					{/each}
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-	<div class="status-bar">
-		{rows.length}
-		{rows.length === 1 ? 'row' : 'rows'}
+	<div class="editor-area">
+		<!-- static SQL text holds this spot until onMount's idle callback puts
+		     the CodeMirror editor in editorHost -- identically sized, so the
+		     swap causes no layout shift; leaving phase 'shell' unmounts the text -->
+		{#if consoleState.phase === 'shell'}
+			<HighlightedSql sql={consoleState.sql} />
+		{/if}
+		<div class="editor-host" bind:this={editorHost}></div>
+	</div>
+	<div class="result-area">
+		{#if consoleState.phase === 'error' && consoleState.errorMessage !== null}
+			<div class="error-panel" role="alert">{consoleState.errorMessage}</div>
+		{:else}
+			<SqlResult result={consoleState.result} />
+		{/if}
+		{#if consoleState.phase === 'connecting' && consoleState.stage !== null}
+			<div class="progress-overlay">
+				<ConsoleProgress stage={consoleState.stage} />
+			</div>
+		{/if}
 	</div>
 </div>
 

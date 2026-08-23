@@ -60,8 +60,10 @@ beside one:
 - One folder per component under `src/components/<name>/`,
   kebab-case files: `thread-row/thread-row.svelte` +
   `thread-row.css` + `thread-row.stories.svelte`, plus `types.ts`
-  and a `<name>.svelte.ts` state module when the component is
-  stateful. No index.ts barrels -- callers import the file directly.
+  and a `<name>-state.svelte.ts` state module when the component is
+  stateful (the `-state` suffix keeps the module from colliding with
+  `<name>.svelte` in import resolution). No index.ts barrels --
+  callers import the file directly.
 - A component used by one route lives beside it in that route's
   `_components/` directory, not in `src/components/` (the placement
   law).
@@ -86,7 +88,7 @@ beside one:
   the shared content frame to the layout. The layout alone keeps
   one small scoped block.
 - Stateful vs presentational is a file split: logic is a runes class
-  in `<name>.svelte.ts`, the .svelte file is a thin renderer.
+  in `<name>-state.svelte.ts`, the .svelte file is a thin renderer.
 - `$derived` over `$effect` -- `$effect` is for real side effects
   (DOM, storage), never for deriving state (lint-enforced,
   `svelte/prefer-writable-derived`).

@@ -1,0 +1,14 @@
+.sql {
+	margin: 0;
+	padding: 12px 14px;
+	font-family: var(--font-database);
+	font-size: 12.5px;
+	line-height: 1.6;
+	color: var(--color-text);
+	overflow-x: auto;
+}
+
+.sql-keyword {
+	color: var(--color-console-keyword);
+	font-weight: 600;
+}

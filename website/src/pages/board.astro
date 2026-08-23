@@ -13,12 +13,13 @@ import JumpTo from '../components/jump-to/jump-to.svelte';
 import { boardRows, stickyRows } from './_board/rows';
 import { announcements } from './_board/announcements';
 import { siteStats } from './_board/stats';
-import { consoleLabel, consoleSql, consoleColumns, consoleRows } from './_board/console';
+import { consoleLabel, consoleShell } from './_board/console';
 
 const docs = await getCollection('docs');
 const rows = boardRows(docs);
 const stickies = stickyRows(docs);
 const stats = siteStats(docs);
+const shell = await consoleShell();
 ---
 
 <BoardLayout
@@ -41,9 +42,17 @@ const stats = siteStats(docs);
 		<ThreadPost author="brandon" role="Site Admin">
 			<p>
 				Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
-				tables below are the ones the library creates.
+				tables below are the ones the library creates, seeded through its own produce statement.
+				Edit the SQL and press Run: the database runs in this tab, and nothing leaves your
+				browser.
 			</p>
-			<SqlConsole label={consoleLabel} sql={consoleSql} columns={consoleColumns} rows={consoleRows} />
+			<SqlConsole
+				client:visible
+				label={consoleLabel}
+				sql={shell.sql}
+				columns={shell.columns}
+				rows={shell.rows}
+			/>
 		</ThreadPost>
 	</BoardSection>
 	<BoardSection

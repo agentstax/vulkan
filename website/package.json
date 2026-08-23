@@ -10,7 +10,8 @@
     "astro": "astro",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.40.0",
@@ -38,6 +39,7 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
     "vite": "^6.4.3",
+    "vitest": "^4.1.11",
     "wrangler": "^4.100.0"
   }
 }

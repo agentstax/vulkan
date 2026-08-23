@@ -1,15 +1,19 @@
-// Template content for the static console shell. The live PGlite console
-// replaces this module: the SQL becomes the editor's starting document and
-// the rows come from a real query against the browser database.
+// The static shell's content is a real run: the same database module the
+// browser console uses is created here in Node at every build, so the shell
+// rows are actual query output and a broken statement fails the build.
+import { createVulkanDatabase, exampleSql } from '../../components/sql-console/database';
+
 export const consoleLabel = 'your queue, selected';
 
-export const consoleSql = `SELECT id, routing_key, payload
-FROM message_log_1
-ORDER BY id DESC;`;
+export type ConsoleShell = {
+	sql: string;
+	columns: string[];
+	rows: (string | null)[][];
+};
 
-export const consoleColumns = ['id', 'routing_key', 'payload'];
-
-export const consoleRows: (string | null)[][] = [
-	['2', null, '{"order_id": 43, "amount_cents": 250}'],
-	['1', 'orders.eu.created', '{"order_id": 42, "amount_cents": 1999}'],
-];
+export async function consoleShell(): Promise<ConsoleShell> {
+	const database = await createVulkanDatabase(() => {});
+	const result = await database.run(exampleSql);
+	await database.close();
+	return { sql: exampleSql, columns: result.columns, rows: result.rows };
+}

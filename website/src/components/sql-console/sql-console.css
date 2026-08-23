@@ -8,7 +8,7 @@
 
 .title-bar {
 	background: var(--console-title-gradient);
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+	box-shadow: var(--lacquer-bright);
 	padding: 6px 12px;
 	display: flex;
 	align-items: center;
@@ -40,60 +40,39 @@
 	cursor: pointer;
 }
 
+.run-button:disabled {
+	color: var(--color-text-faint);
+	cursor: default;
+}
+
 .run-button:focus-visible {
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 2px;
 }
 
-.sql {
-	margin: 0;
-	padding: 12px 14px;
+.editor-area {
 	background: var(--color-console-sql-bg);
 	border-bottom: 1px solid var(--border-row);
-	font-family: var(--font-database);
-	font-size: 12.5px;
-	line-height: 1.6;
-	color: var(--color-text);
-	overflow-x: auto;
 }
 
-.sql-keyword {
-	color: var(--color-console-keyword);
-	font-weight: 600;
+.result-area {
+	position: relative;
 }
 
-.result {
-	width: 100%;
-	border-collapse: collapse;
+.progress-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--color-progress-veil);
+	z-index: var(--z-raised);
+}
+
+.error-panel {
+	padding: 12px 14px;
 	font-size: 11.5px;
-	font-variant-numeric: tabular-nums;
-}
-
-.result th {
-	background: var(--color-console-result-header);
-	font-weight: 600;
-	color: var(--color-chrome-pale-text);
-	text-align: left;
-	padding: 5px 10px;
-}
-
-.result td {
-	padding: 5px 10px;
-}
-
-.result tbody tr:nth-child(even) {
-	background: var(--color-row-stripe-a);
-}
-
-.null-value {
-	color: var(--color-console-null);
-}
-
-.status-bar {
-	padding: 5px 10px;
-	background: var(--color-chrome-pale);
-	border-top: 1px solid var(--border-row);
-	color: var(--color-text-muted);
-	font-size: 10.5px;
-	font-variant-numeric: tabular-nums;
+	line-height: 1.6;
+	color: var(--color-console-error);
+	white-space: pre-wrap;
 }
