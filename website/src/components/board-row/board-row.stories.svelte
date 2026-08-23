@@ -14,6 +14,7 @@
 			lastPostTitle: 'Ordering & Concurrency',
 			lastPostHref: '/concepts/ordering/',
 			lastPostDate: '2026-08-22',
+			updated: false,
 		},
 		argTypes: { index: { control: 'number', min: 0, step: 1 } },
 	});

@@ -196,7 +196,8 @@ Invented interactive machinery for the site; user verdicts so far:
   the Go lowercase-file habit; PascalCase was the alternative), and
   nanostores DROPPED — one Svelte-only site needs no store library,
   shared state = .svelte.ts runes modules (one mechanism per fact).
-  FIRST SLICE BUILT 2026-08-23 (awaiting user reaction): the Board
+  FIRST SLICE BUILT 2026-08-23, USER-ACCEPTED ("this looks good",
+  incl. the sibling-css conversion): the Board
   Index section serves at /board BESIDE Starlight (removing Starlight
   would break the 74 live pages; it goes when the board build
   replaces the index). Files: src/styles/global.css (layer decl +
@@ -218,9 +219,28 @@ Invented interactive machinery for the site; user verdicts so far:
   nothing gives Storybook's builder vite-plugin-svelte — .storybook/
   main.ts viteFinal prepends svelte(); without it every plugin
   parses raw .svelte as JS ("Expression expected" from docgen/addon).
-  NEXT SLICES: banner + nav + ritual bars; Start Here stickies; the
-  console (island); announcements + stats + legend; read-tracking
-  .svelte.ts module; then index swap + Starlight removal.
+  CHROME SLICE BUILT 2026-08-23 (awaiting user review): banner + nav
+  strip + last-visit bar + bottom bar wired into BoardLayout.astro.
+  New components (each folder: .svelte + sibling .css + .stories):
+  pixel-volcano (rect ramp tokens --volcano-rock-1..6 +
+  --volcano-lava-*), board-banner (gradient #235684->#1B4569 — its
+  own tokens, NOT the section band gradient; mark overhangs via
+  margin-bottom -34px + --z-raised), board-nav (current prop ->
+  aria-current styling; GitHub/Docs/Troubleshooting real hrefs,
+  Search inert until Pagefind), visit-bar (lastVisitDate: string |
+  null — layout passes null, the honest first-visit state until the
+  read-tracking module; "Show what's new" is a button, appears only
+  in the returning-visitor story), board-footer ("The team" ->
+  GitHub contributors, "Delete board cookies" inert button, style
+  chip inert). New tokens: chrome-bar #163C5E (+link/meta),
+  chrome-pale #EAF1F7 (+text #45596B), lacquer-dim 0.12, wordmark
+  shadow, volcano shadow, --z-raised (closed z-index scale started).
+  Build 75 pages + Storybook build + eslint green; screenshot
+  verified; still zero client JS.
+  NEXT SLICES: Start Here stickies (pin-badge folder variant); the
+  console (island); announcements (pixel flag) + stats + legend;
+  breadcrumb with the content-area pass; read-tracking .svelte.ts
+  module; then index swap + Starlight removal.
   - [ ] Astro 6 -> 7 upgrade (USER 2026-08-23): wanted for
     @astrojs/svelte@9, sequenced AFTER Starlight removal — Starlight
     0.40 pins Astro 6; ripping it out first makes the upgrade a

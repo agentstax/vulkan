@@ -3,7 +3,7 @@
 
 	type Props = {
 		title: string;
-		columnLabels?: { threadCount: string; lastPost: string };
+		columnLabels: { threadCount: string; lastPost: string } | null;
 		children: Snippet;
 	};
 
@@ -11,7 +11,7 @@
 </script>
 
 <section class="board-section">
-	{#if columnLabels}
+	{#if columnLabels !== null}
 		<header class="band" data-columns="true">
 			<span></span>
 			<h2 class="band-title">{title}</h2>

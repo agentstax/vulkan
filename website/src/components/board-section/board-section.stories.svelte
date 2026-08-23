@@ -33,11 +33,12 @@
 				lastPostTitle="Transactional Produce"
 				lastPostHref="/guides/transactional-produce/"
 				lastPostDate="2026-08-22"
+				updated={false}
 			/>
 		</BoardSection>
 	{/snippet}
 </Story>
-<Story name="Title only" args={{ title: 'Announcements' }}>
+<Story name="Title only" args={{ title: 'Announcements', columnLabels: null }}>
 	{#snippet template(args)}
 		<BoardSection {...args}>
 			<div style="padding: 12px 14px; font-size: 12px;">rows go here</div>

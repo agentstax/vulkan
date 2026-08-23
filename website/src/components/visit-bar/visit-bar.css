@@ -1,0 +1,34 @@
+.visit-bar {
+	background: var(--color-chrome-pale);
+	border-bottom: 1px solid var(--border-row);
+	padding: 7px 24px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 10px;
+	color: var(--color-chrome-pale-text);
+}
+
+.visit-date {
+	font-variant-numeric: tabular-nums;
+}
+
+button {
+	border: 0;
+	padding: 0;
+	background: none;
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-link);
+	cursor: pointer;
+}
+
+button:hover {
+	color: var(--color-link-hover);
+	text-decoration: underline;
+}
+
+button:focus-visible {
+	outline: 2px solid var(--color-focus-ring);
+	outline-offset: 2px;
+}

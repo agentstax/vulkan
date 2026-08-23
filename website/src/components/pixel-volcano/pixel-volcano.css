@@ -1,0 +1,40 @@
+svg {
+	image-rendering: pixelated;
+	filter: var(--shadow-volcano);
+}
+
+.lava-bright {
+	fill: var(--volcano-lava-bright);
+}
+
+.lava-mid {
+	fill: var(--volcano-lava-mid);
+}
+
+.lava-deep {
+	fill: var(--volcano-lava-deep);
+}
+
+.rock-1 {
+	fill: var(--volcano-rock-1);
+}
+
+.rock-2 {
+	fill: var(--volcano-rock-2);
+}
+
+.rock-3 {
+	fill: var(--volcano-rock-3);
+}
+
+.rock-4 {
+	fill: var(--volcano-rock-4);
+}
+
+.rock-5 {
+	fill: var(--volcano-rock-5);
+}
+
+.rock-6 {
+	fill: var(--volcano-rock-6);
+}

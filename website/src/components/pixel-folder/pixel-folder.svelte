@@ -1,10 +1,10 @@
 <script lang="ts">
 	type Props = {
-		updated?: boolean;
-		width?: number;
+		updated: boolean;
+		width: number;
 	};
 
-	let { updated = false, width = 18 }: Props = $props();
+	let { updated, width }: Props = $props();
 
 	const height = $derived(Math.round(width * (14 / 16)));
 </script>

@@ -41,9 +41,13 @@ beside one:
 - `any` is a lint error (`@typescript-eslint/no-explicit-any`); a
   genuine unknown is `unknown`, narrowed at the boundary.
 - Every component declares one named Props type; every field has an
-  explicit type. Required fields are bare; optional fields carry
-  their default inline in the `$props()` destructuring -- the sibling
-  of required-params-inline / optional-in-config.
+  explicit type and is required -- no `?` fields, no fallback inside
+  the component: the caller states every fact, defaults included
+  (`width={18}` at the call site; a story file's shared values live
+  in its meta `args`). Expected absence of a fact is an explicit
+  `| null` union -- the caller passes `null` and the compiler forces
+  both branches. Never `?: T | null`, and never an empty-value
+  stand-in for null.
 - Extending a platform type (`HTMLButtonAttributes & {...}`) is the
   one sanctioned answer to attribute explosion -- never a loose index
   signature.

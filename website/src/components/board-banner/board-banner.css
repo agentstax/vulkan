@@ -1,0 +1,41 @@
+.board-banner {
+	background: var(--banner-gradient);
+	box-shadow: var(--lacquer);
+	padding: 34px 32px 26px;
+	display: flex;
+	align-items: center;
+	gap: 24px;
+}
+
+/* the mark hangs over the banner's bottom edge into the nav strip */
+.mark {
+	flex-shrink: 0;
+	position: relative;
+	z-index: var(--z-raised);
+	margin-bottom: -34px;
+}
+
+.identity {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.wordmark {
+	margin: 0;
+	font-family: var(--font-band);
+	color: var(--color-band-title);
+	font-size: 42px;
+	font-weight: 700;
+	letter-spacing: 4px;
+	line-height: 1;
+	text-shadow: var(--shadow-wordmark);
+}
+
+.tagline {
+	margin: 0;
+	font-family: var(--font-content);
+	color: var(--color-banner-tagline);
+	font-size: 14px;
+	font-weight: 500;
+}

@@ -374,5 +374,8 @@ lag topic_id:
 site-dev:
   cd website && npm run dev
 
+site-storybook:
+  cd website && ./node_modules/.bin/storybook dev -p 6006
+
 site-deploy:
   cd website && npm run build && ./node_modules/.bin/wrangler pages deploy dist --project-name vulkan --branch main

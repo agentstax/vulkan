@@ -5,6 +5,7 @@
 	const { Story } = defineMeta({
 		title: 'Board/PixelFolder',
 		component: PixelFolder,
+		args: { updated: false, width: 18 },
 		argTypes: { width: { control: 'number', min: 10, max: 64, step: 1 } },
 	});
 </script>

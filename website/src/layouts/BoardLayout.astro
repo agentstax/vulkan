@@ -1,12 +1,17 @@
 ---
 import '../styles/global.css';
+import BoardBanner from '../components/board-banner/board-banner.svelte';
+import BoardNav from '../components/board-nav/board-nav.svelte';
+import VisitBar from '../components/visit-bar/visit-bar.svelte';
+import BoardFooter from '../components/board-footer/board-footer.svelte';
 
 type Props = {
 	title: string;
 	description: string;
+	navCurrent: string;
 };
 
-const { title, description } = Astro.props;
+const { title, description, navCurrent } = Astro.props;
 ---
 
 <!doctype html>
@@ -25,7 +30,11 @@ const { title, description } = Astro.props;
 	</head>
 	<body>
 		<div class="page-frame">
+			<BoardBanner />
+			<BoardNav current={navCurrent} />
+			<VisitBar lastVisitDate={null} />
 			<slot />
+			<BoardFooter />
 		</div>
 		<p class="powered-by">Powered by Vulkan on Postgres</p>
 	</body>

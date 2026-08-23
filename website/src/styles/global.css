@@ -39,6 +39,21 @@
 		--folder-gray-face: #dce3e9;
 		--folder-gray-light: #f0f4f7;
 		--folder-gray-shade: #c3cdd6;
+		--banner-blue-start: #235684;
+		--banner-blue-end: #1b4569;
+		--banner-shadow-navy: #122c44;
+		--chrome-bar-blue: #163c5e;
+		--chrome-bar-meta-blue: #7fa3c2;
+		--chrome-pale-blue: #eaf1f7;
+		--ink-slate: #45596b;
+		--lava-orange: #e8842b;
+		--lava-ember: #c4522a;
+		--volcano-rock-1: #5e7488;
+		--volcano-rock-2: #54697c;
+		--volcano-rock-3: #4a5e70;
+		--volcano-rock-4: #405264;
+		--volcano-rock-5: #374858;
+		--volcano-rock-6: #2e3d4c;
 
 		/* semantic -- what components consume */
 		--color-page: var(--page-blue-gray);
@@ -68,11 +83,32 @@
 		--folder-read-face: var(--folder-gray-face);
 		--folder-read-highlight: var(--folder-gray-light);
 		--folder-read-shade: var(--folder-gray-shade);
+		--banner-gradient: linear-gradient(
+			180deg,
+			var(--banner-blue-start) 0%,
+			var(--banner-blue-end) 100%
+		);
+		--color-banner-tagline: var(--band-meta-blue);
+		--shadow-wordmark: 0 2px 0 var(--banner-shadow-navy);
+		--shadow-volcano: drop-shadow(0 4px 8px rgba(18, 44, 68, 0.45));
+		--color-chrome-bar: var(--chrome-bar-blue);
+		--color-chrome-bar-link: var(--band-meta-blue);
+		--color-chrome-bar-link-current: #ffffff;
+		--color-chrome-bar-meta: var(--chrome-bar-meta-blue);
+		--color-chrome-pale: var(--chrome-pale-blue);
+		--color-chrome-pale-text: var(--ink-slate);
+		--volcano-lava-bright: var(--amber);
+		--volcano-lava-mid: var(--lava-orange);
+		--volcano-lava-deep: var(--lava-ember);
 		--lacquer: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+		--lacquer-dim: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 		--shadow-page-frame:
 			inset 0 0 0 1px #ffffff,
 			0 3px 14px rgba(31, 58, 84, 0.2);
 		--grid-board-columns: 34px 1fr 80px 210px;
+
+		/* z-index scale -- closed; a new layer adds its named step here */
+		--z-raised: 2;
 
 		--font-chrome: Verdana, Geneva, sans-serif;
 		--font-band: 'Trebuchet MS', Verdana, sans-serif;

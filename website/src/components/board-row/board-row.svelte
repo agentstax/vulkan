@@ -10,7 +10,7 @@
 		lastPostTitle: string;
 		lastPostHref: string;
 		lastPostDate: string;
-		updated?: boolean;
+		updated: boolean;
 	};
 
 	let {
@@ -22,14 +22,14 @@
 		lastPostTitle,
 		lastPostHref,
 		lastPostDate,
-		updated = false,
+		updated,
 	}: Props = $props();
 
 	const stripe = $derived(index % 2 === 0 ? 'a' : 'b');
 </script>
 
 <div class="board-row" data-stripe={stripe}>
-	<PixelFolder {updated} />
+	<PixelFolder {updated} width={18} />
 	<div class="board-name">
 		<a class="board-title" {href}>{title}</a>
 		<span class="board-description">{description}</span>
