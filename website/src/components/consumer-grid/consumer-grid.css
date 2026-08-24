@@ -1,0 +1,19 @@
+/* minmax(0, 1fr), never 1fr: a card holding a long unbroken line would
+   otherwise widen its track and push the console out of the section box */
+.consumer-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 9px;
+}
+
+@media (max-width: 700px) {
+	.consumer-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 460px) {
+	.consumer-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

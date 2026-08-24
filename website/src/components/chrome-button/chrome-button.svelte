@@ -1,13 +1,16 @@
 <script lang="ts">
+	import type { ChromeButtonTone } from './types';
+
 	type Props = {
 		label: string;
+		tone: ChromeButtonTone;
 		disabled: boolean;
 		onclick: () => void;
 	};
 
-	let { label, disabled, onclick }: Props = $props();
+	let { label, tone, disabled, onclick }: Props = $props();
 </script>
 
-<button type="button" class="chrome-button" {disabled} {onclick}>{label}</button>
+<button type="button" class="chrome-button" data-tone={tone} {disabled} {onclick}>{label}</button>
 
 <style src="./chrome-button.css"></style>

@@ -1,0 +1,76 @@
+.consumer-card {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--border-section);
+	background: var(--color-surface);
+}
+
+.card-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 6px;
+	padding: 4px 8px;
+	background: var(--color-author-column);
+	border-bottom: 1px solid var(--border-row);
+}
+
+.consumer-name {
+	font-family: var(--font-chrome);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--color-link);
+}
+
+.consumer-group {
+	font-family: var(--font-database);
+	font-size: 10px;
+	color: var(--color-text-muted);
+}
+
+/* a fixed height, not a max: three cards holding different numbers of lines
+   still line their feet up across the row */
+.card-out {
+	flex: 1;
+	height: 78px;
+	overflow-y: auto;
+	padding: 6px 8px;
+	background: var(--color-console-sql-bg);
+	font-family: var(--font-database);
+	font-size: 10.5px;
+	line-height: 1.5;
+}
+
+.out-line {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+}
+
+/* a note carries its own newlines */
+.out-text {
+	white-space: pre-wrap;
+}
+
+.out-line[data-kind='claim'] .out-text,
+.out-line[data-kind='note'] .out-text {
+	color: var(--color-text-faint);
+}
+
+.out-status[data-status='ok'] {
+	color: var(--color-solved);
+}
+
+.out-status[data-status='error'] {
+	color: var(--color-console-error);
+}
+
+.card-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 6px;
+	padding: 4px 8px;
+	border-top: 1px solid var(--border-row);
+}

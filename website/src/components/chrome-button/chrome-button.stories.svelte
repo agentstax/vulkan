@@ -7,6 +7,7 @@
 		component: ChromeButton,
 		args: {
 			label: 'Run ▸',
+			tone: 'primary',
 			disabled: false,
 			onclick: () => {},
 		},
@@ -15,3 +16,5 @@
 
 <Story name="Enabled" />
 <Story name="Disabled" args={{ disabled: true }} />
+<Story name="Quiet" args={{ label: 'Remove', tone: 'quiet' }} />
+<Story name="Quiet disabled" args={{ label: 'Remove', tone: 'quiet', disabled: true }} />

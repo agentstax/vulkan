@@ -23,7 +23,7 @@
 		value={text}
 		oninput={(event) => ontext(event.currentTarget.value)}
 	/>
-	<ChromeButton label="Produce ▸" disabled={false} onclick={() => {}} />
+	<ChromeButton label="Produce ▸" tone="primary" disabled={false} onclick={() => {}} />
 </div>
 
 <style src="./produce-strip.css"></style>

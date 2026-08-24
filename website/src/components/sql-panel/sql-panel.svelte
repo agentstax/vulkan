@@ -73,7 +73,12 @@
 	<div class="panel-bar">
 		<span class="panel-name">{panelState.table}</span>
 		<span class="panel-chip">auto re-runs</span>
-		<ChromeButton label="Run ▸" disabled={runDisabled} onclick={() => void panelState.run()} />
+		<ChromeButton
+			label="Run ▸"
+			tone="primary"
+			disabled={runDisabled}
+			onclick={() => void panelState.run()}
+		/>
 	</div>
 	<div class="editor-area">
 		<!-- static SQL text holds this spot until the idle callback puts the

@@ -39,12 +39,19 @@
 	gap: 10px;
 	padding: 10px;
 	background: var(--color-console-sql-bg);
+	border-bottom: 1px solid var(--border-row);
 }
 
 @media (max-width: 760px) {
 	.panels {
 		grid-template-columns: minmax(0, 1fr);
 	}
+}
+
+/* no tinted ground here -- the cards sit on the console's own surface, which
+   is what separates them from the panels above */
+.consumers {
+	padding: 10px;
 }
 
 .progress-overlay {

@@ -10,6 +10,12 @@
 	cursor: pointer;
 }
 
+.chrome-button[data-tone='quiet'] {
+	font-weight: 400;
+	color: var(--color-text-muted);
+	padding: 2px 8px;
+}
+
 .chrome-button:disabled {
 	color: var(--color-text-faint);
 	cursor: default;
