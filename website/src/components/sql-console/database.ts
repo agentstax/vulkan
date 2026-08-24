@@ -61,6 +61,17 @@ export class VulkanDatabase {
 		};
 	}
 
+	// the reader's own message, produced through the same statement the seed
+	// uses -- a fresh idempotency key every time, so every click lands a row
+	async produce(text: string): Promise<void> {
+		await this.db.query(protectedInsertKeylessSql(demoTopicId), [
+			crypto.randomUUID(),
+			JSON.stringify({ text }),
+			'',
+			null,
+		]);
+	}
+
 	async close(): Promise<void> {
 		await this.db.close();
 	}

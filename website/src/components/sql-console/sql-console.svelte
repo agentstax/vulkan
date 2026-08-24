@@ -20,6 +20,8 @@
 	let { label, topic, messages, cursors }: Props = $props();
 
 	let produceText = $state('restock the ovens');
+	let produceError: string | null = $state(null);
+	let producing = $state(false);
 
 	// example cards -- no consumer runs yet, and nothing here reads the database
 	const consumers: Consumer[] = [
@@ -67,6 +69,21 @@
 	onMount(() => {
 		void databaseState.connect().catch(() => {});
 	});
+
+	// the row lands immediately; re-reading message_log_1 is still the panel's
+	// own Run
+	async function produce(): Promise<void> {
+		producing = true;
+
+		try {
+			await databaseState.produce(produceText);
+			produceError = null;
+		} catch (caught) {
+			produceError = caught instanceof Error ? caught.message : String(caught);
+		} finally {
+			producing = false;
+		}
+	}
 </script>
 
 <div class="sql-console">
@@ -77,7 +94,14 @@
 		     from the seed is not wired up -->
 		<ChromeButton label="Reset sandbox ↻" tone="primary" disabled={busy} onclick={() => {}} />
 	</div>
-	<ProduceStrip {topic} text={produceText} ontext={(next) => (produceText = next)} />
+	<ProduceStrip
+		{topic}
+		text={produceText}
+		errorMessage={produceError}
+		disabled={busy || producing}
+		ontext={(next) => (produceText = next)}
+		onproduce={() => void produce()}
+	/>
 	<div class="panels">
 		<SqlPanel {databaseState} panelShell={messages} editable={true} />
 		<SqlPanel {databaseState} panelShell={cursors} editable={false} />

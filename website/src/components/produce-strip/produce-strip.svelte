@@ -4,10 +4,13 @@
 	type Props = {
 		topic: string;
 		text: string;
+		errorMessage: string | null;
+		disabled: boolean;
 		ontext: (next: string) => void;
+		onproduce: () => void;
 	};
 
-	let { topic, text, ontext }: Props = $props();
+	let { topic, text, errorMessage, disabled, ontext, onproduce }: Props = $props();
 
 	const fieldId = $props.id();
 </script>
@@ -23,7 +26,10 @@
 		value={text}
 		oninput={(event) => ontext(event.currentTarget.value)}
 	/>
-	<ChromeButton label="Produce ▸" tone="primary" disabled={false} onclick={() => {}} />
+	<ChromeButton label="Produce ▸" tone="primary" {disabled} onclick={onproduce} />
 </div>
+{#if errorMessage !== null}
+	<div class="produce-error" role="alert">{errorMessage}</div>
+{/if}
 
 <style src="./produce-strip.css"></style>

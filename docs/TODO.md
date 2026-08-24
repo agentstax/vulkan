@@ -65,15 +65,14 @@ delete it once the sandbox ships and the page IS the mockup.
 Visuals first, then integration. Placeholder data is FINE inside phase 1 --
 it is corrected in phase 2, before anything stands as finished.
 
-**Phase 0 -- claim-path spike, headless (do this before drawing).** Prove
-one produce -> claim -> commit round trip against PGlite in Node. The risk
-is real: freshClaimMessagesWithCursor only advances `claimed` to a head it
-can PROVE, taking a (head, xmax) snapshot before the transaction's first
-write and requiring pg_snapshot_xmin to have passed it -- machinery built
-for many concurrent backends, running here on one. If the gate never
-proves, Tick does nothing and the consumer card's narration has to change.
+**Phase 0 -- claim-path spike, headless. DONE 2026-08-24 [0585].** The gate
+proves on the first poll, so Tick runs the real claim path unchanged. A
+produce lands in the NEXT claim (no wait-a-tick caveat), two claims on one
+cursor come back disjoint, caught up reads low == high. The fence can be
+explained on the page but never shown firing -- staging it needs a second
+backend holding a write open.
 
-**Phase 1 -- visuals.**
+**Phase 1 -- visuals. DONE 2026-08-24.**
 
 - Producer strip inside the console frame.
 - cursor_1 panel BESIDE the existing message_log_1 panel -- the console
@@ -81,6 +80,13 @@ proves, Tick does nothing and the consumer card's narration has to change.
   it. Its honest default is the empty state: no groups, no cursor rows.
 - Consumer cards, three across.
 - Add / remove consumer widgets (new group or join an existing one).
+
+Landed with it, beyond the drawing: each panel owns a PanelState and runs
+its own SQL against one shared DatabaseState (ConsoleState deleted, the
+console holds the singleton inline); a per-panel Run button; ChromeButton
+gained a `tone` (primary | quiet). Still visual: Tick, Remove, Add,
+Produce and Reset all take no-op handlers, and the `auto re-runs` chip
+claims something nothing does yet.
 
 **Phase 2 -- integration, in dependency order.** A cursor row does not
 exist until a group does, so the group work precedes the cursor panel

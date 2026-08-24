@@ -30,6 +30,16 @@
 	color: var(--color-text);
 }
 
+.produce-error {
+	padding: 6px 10px;
+	background: var(--color-chrome-pale);
+	border-bottom: 1px solid var(--border-row);
+	font-family: var(--font-database);
+	font-size: 11.5px;
+	color: var(--color-console-error);
+	white-space: pre-wrap;
+}
+
 .produce-field:focus-visible {
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 1px;

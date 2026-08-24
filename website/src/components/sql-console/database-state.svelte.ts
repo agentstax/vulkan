@@ -28,6 +28,11 @@ export class DatabaseState {
 		return database.run(sql);
 	}
 
+	async produce(text: string): Promise<void> {
+		const database = await this.connect();
+		await database.produce(text);
+	}
+
 	private async create(): Promise<VulkanDatabase> {
 		this.status = 'connecting';
 		this.stage = 'downloading';
