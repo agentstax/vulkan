@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import ConsoleProgress from '../console-progress/console-progress.svelte';
+	import type { Consumer } from '../consumer-card/types';
+	import ConsumerGrid from '../consumer-grid/consumer-grid.svelte';
 	import ProduceStrip from '../produce-strip/produce-strip.svelte';
 	import SqlPanel from '../sql-panel/sql-panel.svelte';
 	import { DatabaseState } from './database-state.svelte';
@@ -17,6 +19,40 @@
 	let { label, topic, messages, cursors }: Props = $props();
 
 	let produceText = $state('restock the ovens');
+
+	// example cards -- no consumer runs yet, and nothing here reads the database
+	const consumers: Consumer[] = [
+		{
+			name: 'consumer 1',
+			group: 'billing',
+			lines: [
+				{ kind: 'claim', text: 'claim (0, 1]' },
+				{ kind: 'handled', text: '"ship order 4471"', status: 'ok' },
+				{ kind: 'claim', text: 'claim (1, 2]' },
+				{ kind: 'handled', text: '"refund order 4468"', status: 'ok' },
+			],
+		},
+		{
+			name: 'consumer 2',
+			group: 'billing',
+			lines: [
+				{
+					kind: 'note',
+					text: 'same group as consumer 1.\nits next tick claims (2, 3] —\nranges never overlap.',
+				},
+			],
+		},
+		{
+			name: 'consumer 3',
+			group: 'search',
+			lines: [
+				{
+					kind: 'note',
+					text: 'its own cursor, still at 0 —\nits first tick reads all three\nmessages billing handled.',
+				},
+			],
+		},
+	];
 
 	const databaseState = new DatabaseState();
 	const busy = $derived(databaseState.status === 'connecting');
@@ -35,7 +71,7 @@
 		<span class="console-meta">postgres 18 · wasm · local to this tab</span>
 		<!-- the click does nothing yet: dropping the database and rebuilding it
 		     from the seed is not wired up -->
-		<ChromeButton label="Reset sandbox ↻" disabled={busy} onclick={() => {}} />
+		<ChromeButton label="Reset sandbox ↻" tone="primary" disabled={busy} onclick={() => {}} />
 	</div>
 	<ProduceStrip {topic} text={produceText} ontext={(next) => (produceText = next)} />
 	<div class="panels">
@@ -46,6 +82,11 @@
 				<ConsoleProgress stage={databaseState.stage} />
 			</div>
 		{/if}
+	</div>
+	<div class="consumers">
+		<!-- the clicks do nothing yet: a tick claiming, handling and committing
+		     one message is not wired up -->
+		<ConsumerGrid {consumers} ontick={() => {}} onremove={() => {}} />
 	</div>
 </div>
 

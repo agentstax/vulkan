@@ -97,6 +97,11 @@ going live:
    WITH this step, not after it.
 6. Regenerate the build-time shell from the new seed, so the
    server-rendered state is real query output again.
+7. Rename what the build outgrew, once the shape has settled: the
+   `sql-console` component is the sandbox, `produce-strip` produces a
+   message rather than a strip of anything, and `_board/console.ts`
+   feeds both panels. Names, folders, stories and the `consoleLabel` /
+   `ConsoleShell` vocabulary move together.
 
 **Phase 3 -- details.**
 
