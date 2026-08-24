@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import AddConsumer from '../add-consumer/add-consumer.svelte';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import ConsoleProgress from '../console-progress/console-progress.svelte';
 	import type { Consumer } from '../consumer-card/types';
@@ -54,6 +55,9 @@
 		},
 	];
 
+	// the groups a new consumer can join are the ones the cards already name
+	const groups = [...new Set(consumers.map((consumer) => consumer.group))];
+
 	const databaseState = new DatabaseState();
 	const busy = $derived(databaseState.status === 'connecting');
 
@@ -85,8 +89,9 @@
 	</div>
 	<div class="consumers">
 		<!-- the clicks do nothing yet: a tick claiming, handling and committing
-		     one message is not wired up -->
+		     one message is not wired up, and neither is registering a group -->
 		<ConsumerGrid {consumers} ontick={() => {}} onremove={() => {}} />
+		<AddConsumer {groups} onadd={() => {}} />
 	</div>
 </div>
 

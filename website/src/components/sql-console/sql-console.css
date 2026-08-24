@@ -51,6 +51,9 @@
 /* no tinted ground here -- the cards sit on the console's own surface, which
    is what separates them from the panels above */
 .consumers {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
 	padding: 10px;
 }
 

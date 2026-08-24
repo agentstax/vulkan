@@ -1,0 +1,36 @@
+/* the dashed rule is the widget's own separator from whatever it follows;
+   the space above it belongs to the parent */
+.add-consumer {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding-top: 9px;
+	border-top: 1px dashed var(--border-row);
+}
+
+.add-prompt {
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-text-muted);
+}
+
+.group-select {
+	padding: 2px 5px;
+	border: 1px solid var(--border-outer);
+	background: var(--color-surface);
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-text);
+}
+
+.group-select:focus-visible {
+	outline: 2px solid var(--color-focus-ring);
+	outline-offset: 1px;
+}
+
+.add-hint {
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-text-faint);
+}
