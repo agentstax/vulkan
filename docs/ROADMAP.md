@@ -16,6 +16,115 @@ the item is removed.
 
 ## Now
 
+- **Documentation — remaining items** (the rewrite-to-the-real-API pass
+  shipped 2026-08-22 [0581], the board rebuild 2026-08-23
+  [0582] [0583] [0584]; these are what is left):
+  - Interactive mechanisms the user committed to, none built yet:
+    - Paste-your-log-line on code threads — parse a pasted line's attrs
+      and interpolate the reader's own values into the declared fix
+      command, and into the declared diagnose queries once those exist
+      (the diagnose item below owns that field — build it first, or this
+      page has only the fix to interpolate). The search strip below each
+      code thread is the placeholder.
+    - Compat verdict widget — pick a build version and a target version,
+      get the real MinCompatibleVersion gate answer ([0580]); the gate is
+      never reimplemented in TS, a build-time Go → JSON export of the
+      migration registry feeds it.
+    - Inline "why?" toggles expanding the decision record behind a claim
+      (liked, unscoped).
+    - Consumer-flow sandbox thread (picked up 2026-08-24; working window
+      in TODO.md) — produce a message, watch groups claim it, read the
+      message/cursor/delivery tables, all driven by the library's own
+      claim and commit statements in PGlite.
+      - Deferred out of the first build (user, 2026-08-24): a per-consumer
+        "fail the next message" toggle, so a delivery row materializes at
+        ready -> inflight -> dead while the cursor moves past it. This is
+        the sharpest demonstration the site can make of "success writes no
+        row" — build it once the happy path is real.
+  - Board-site open pool (board build + parked-items round done
+    2026-08-23; each independent, pick up any order):
+    - Spacing token scale + sweep — website/CONVENTIONS.md declares
+      spacing a closed token scale but component css still uses raw px;
+      define --space-* tokens, sweep every component css, then add the
+      spacing properties to the stylelint declaration-strict-value list
+      (colors/fonts/z-index/shadows are already enforced).
+    - Playwright initial-JS ceiling — the one settled Playwright test:
+      homepage initial JS under a declared byte ceiling, failing build
+      on regress. Playwright not yet installed.
+    - Console try-it links — ConsoleState makes a link = set sql +
+      run(); lets doc pages deep-link example queries into the console.
+    - PGlite wasm prefetch — requestIdleCallback fetch of the ~5.2MB
+      wasm+data chunk after interactive, so the first console Run is
+      near-instant.
+    - transition:persist on the console — keep the live PGlite instance
+      across navigations (ClientRouter view transitions; cost once per
+      session).
+    - Per-page example attr values on error/event threads — compose
+      richer example log lines (real attr keys per code) instead of the
+      minimal composed line.
+    - Dark mode as a "Board style" dropdown (palette donor picked during
+      the design rounds), not a system toggle.
+  - After the next `just site-deploy` (always ask before deploying):
+    confirm the deployed /errors/ pages resolve at the Docs() URLs
+    (exact-case /errors/VK0005), then drop the placeholder TODO comment
+    on docsBaseURL in pkg/common/error.go.
+  - Doc site: worked example of the transactional-outbox side-effect footgun
+    (calling sendEmailConfirmation() before a Produce/multi-target closure is
+    known to commit fires the email even if a later step rolls back) — pair
+    with the outbox framing already on the site.
+  - Doc comments on the public API surfaces 13/14b finalized.
+  - Document the "consumerFunc hard timeout, goroutine abandoned" error
+    (CallSafely in pkg/consumer/base/consumer.go): what it means, how to
+    prevent it — handle ctx.Done() inside consumerFunc or raise
+    TimeoutGrace; rare, but the abandoned goroutine is a real side effect.
+  - Quick Start documentation — might require CLI work.
+  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
+    comments and maybe a log statement recommending not to use in prod.
+    Sequenced after the quickstart docs on purpose: writing them surfaces
+    the real startup friction (today ~6 constructor/register steps —
+    datastore, admin, system, topic, producer/consumer + Register), and the
+    Default constructors get built against that observed pattern rather
+    than guessed.
+    - The friction the quickstart rewrite actually observed ([0581]): a
+      consumer needs a MessageAdmin and RegisterSystem just to GetTopic;
+      `topic.SchemaVersion(1)` is repeated three times per program;
+      Consume's cancellable-ctx requirement is a context.Background()
+      trap; ConsumerConfig.Retry and Message.Retry are confusable;
+      produce-only deployments silently get no upkeep unless someone runs
+      `vulkan manager run`; RegisterTopic wants an
+      `&topiccontroller.TopicConfig{}` (an import plus an empty struct for
+      the common case — whether nil works is unverified); pkg/common and
+      pkg/topic invite aliasing in user code.
+  - DDL table design diagram.
+
+- **A diagnose part on diagnostic declarations** (a 14b surface change,
+  pulled into Now because the documentation item above consumes it) — the
+  queries that show an operator the state behind a condition, declared
+  once and surfaced everywhere. Today a declaration carries code,
+  recovery, problem, fix (plus consequence on events); the fix says what
+  to change, nothing says what to LOOK at. Vulkan's answer is unusual and cheap: the state is
+  rows, so the diagnosis is SQL. Pre-v1 is when the struct can still grow
+  a part.
+  - Surfaces, all fed by the one declaration: the Go doc comment on the
+    Err*/Event variable, `vulkan explain VKxxxx`, and the code thread's
+    page. The CLI error block stays tight — it points at explain.
+  - Shape to settle: one labeled query or a small ordered set (most
+    conditions want "is the row there?" then "what does its state say?");
+    where the text lives given that ## SQL puts all SQL in datastores —
+    this SQL is documentation the library never executes, so it is a
+    const beside the declaration, not a datastore method.
+  - Per-topic tables are the interesting part: a query naming
+    `delivery_<id>` needs the reader's topic id, and the log-attr registry
+    already carries topic_id/group/message_id — so the declared query is a
+    template whose holes are attr names. That is what makes the
+    paste-your-log-line page (the documentation item above) able to hand
+    back runnable SQL instead of generic advice.
+  - Not every condition earns one; constructor/config guards have nothing
+    to look at. Absence is honest — no diagnose section renders.
+  - Follow-on worth weighing at the same time: `vulkan explain --run`
+    (or a `vulkan diagnose` verb) executing the declared queries against
+    the operator's own database, since the CLI already holds a connection.
+
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -95,32 +204,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
   - A new consumer group has no "start from now" option — its cursor
     starts at 0, so on a deep-retention topic every new group reads the
     full history before it sees live traffic.
-- **A diagnose part on diagnostic declarations** — the queries that show an
-  operator the state behind a condition, declared once and surfaced
-  everywhere. Today a declaration carries code, recovery, problem, fix
-  (plus consequence on events); the fix says what to change, nothing says
-  what to LOOK at. Vulkan's answer is unusual and cheap: the state is
-  rows, so the diagnosis is SQL. Pre-v1 is when the struct can still grow
-  a part.
-  - Surfaces, all fed by the one declaration: the Go doc comment on the
-    Err*/Event variable, `vulkan explain VKxxxx`, and the code thread's
-    page. The CLI error block stays tight — it points at explain.
-  - Shape to settle: one labeled query or a small ordered set (most
-    conditions want "is the row there?" then "what does its state say?");
-    where the text lives given that ## SQL puts all SQL in datastores —
-    this SQL is documentation the library never executes, so it is a
-    const beside the declaration, not a datastore method.
-  - Per-topic tables are the interesting part: a query naming
-    `delivery_<id>` needs the reader's topic id, and the log-attr registry
-    already carries topic_id/group/message_id — so the declared query is a
-    template whose holes are attr names. That is what makes the
-    paste-your-log-line page (Documentation — remaining items) able to
-    hand back runnable SQL instead of generic advice.
-  - Not every condition earns one; constructor/config guards have nothing
-    to look at. Absence is honest — no diagnose section renders.
-  - Follow-on worth weighing at the same time: `vulkan explain --run`
-    (or a `vulkan diagnose` verb) executing the declared queries against
-    the operator's own database, since the CLI already holds a connection.
 - **Public surface trim** (decisions settled 2026-08-01, recorded in
   _public-surface.md; build pending — deliberately late so the decisions get
   re-confirmed after living with the surface through the passes above):
@@ -166,78 +249,6 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     it must be ONE codebase-wide sweep so the files stay identical, never a
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
-
-- **Documentation — remaining items** (the rewrite-to-the-real-API pass
-  shipped 2026-08-22 [0581], the board rebuild 2026-08-23
-  [0582] [0583] [0584]; these are what is left):
-  - Interactive mechanisms the user committed to, none built yet:
-    - Paste-your-log-line on code threads — parse a pasted line's attrs
-      and interpolate the reader's own values into the declared fix
-      command, and into the declared diagnose queries once those exist
-      (the declaration item in this section's 14b list owns that field —
-      build it first, or this page has only the fix to interpolate). The
-      search strip below each code thread is the placeholder.
-    - Compat verdict widget — pick a build version and a target version,
-      get the real MinCompatibleVersion gate answer ([0580]); the gate is
-      never reimplemented in TS, a build-time Go → JSON export of the
-      migration registry feeds it.
-    - Inline "why?" toggles expanding the decision record behind a claim
-      (liked, unscoped).
-  - Board-site open pool (board build + parked-items round done
-    2026-08-23; each independent, pick up any order):
-    - Spacing token scale + sweep — website/CONVENTIONS.md declares
-      spacing a closed token scale but component css still uses raw px;
-      define --space-* tokens, sweep every component css, then add the
-      spacing properties to the stylelint declaration-strict-value list
-      (colors/fonts/z-index/shadows are already enforced).
-    - Playwright initial-JS ceiling — the one settled Playwright test:
-      homepage initial JS under a declared byte ceiling, failing build
-      on regress. Playwright not yet installed.
-    - Console try-it links — ConsoleState makes a link = set sql +
-      run(); lets doc pages deep-link example queries into the console.
-    - PGlite wasm prefetch — requestIdleCallback fetch of the ~5.2MB
-      wasm+data chunk after interactive, so the first console Run is
-      near-instant.
-    - transition:persist on the console — keep the live PGlite instance
-      across navigations (ClientRouter view transitions; cost once per
-      session).
-    - Per-page example attr values on error/event threads — compose
-      richer example log lines (real attr keys per code) instead of the
-      minimal composed line.
-    - Dark mode as a "Board style" dropdown (palette donor picked during
-      the design rounds), not a system toggle.
-  - After the next `just site-deploy` (always ask before deploying):
-    confirm the deployed /errors/ pages resolve at the Docs() URLs
-    (exact-case /errors/VK0005), then drop the placeholder TODO comment
-    on docsBaseURL in pkg/common/error.go.
-  - Doc site: worked example of the transactional-outbox side-effect footgun
-    (calling sendEmailConfirmation() before a Produce/multi-target closure is
-    known to commit fires the email even if a later step rolls back) — pair
-    with the outbox framing already on the site.
-  - Doc comments on the public API surfaces 13/14b finalized.
-  - Document the "consumerFunc hard timeout, goroutine abandoned" error
-    (CallSafely in pkg/consumer/base/consumer.go): what it means, how to
-    prevent it — handle ctx.Done() inside consumerFunc or raise
-    TimeoutGrace; rare, but the abandoned goroutine is a real side effect.
-  - Quick Start documentation — might require CLI work.
-  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
-    comments and maybe a log statement recommending not to use in prod.
-    Sequenced after the quickstart docs on purpose: writing them surfaces
-    the real startup friction (today ~6 constructor/register steps —
-    datastore, admin, system, topic, producer/consumer + Register), and the
-    Default constructors get built against that observed pattern rather
-    than guessed.
-    - The friction the quickstart rewrite actually observed ([0581]): a
-      consumer needs a MessageAdmin and RegisterSystem just to GetTopic;
-      `topic.SchemaVersion(1)` is repeated three times per program;
-      Consume's cancellable-ctx requirement is a context.Background()
-      trap; ConsumerConfig.Retry and Message.Retry are confusable;
-      produce-only deployments silently get no upkeep unless someone runs
-      `vulkan manager run`; RegisterTopic wants an
-      `&topiccontroller.TopicConfig{}` (an import plus an empty struct for
-      the common case — whether nil works is unverified); pkg/common and
-      pkg/topic invite aliasing in user code.
-  - DDL table design diagram.
 
 - **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
   recorded there are Setup/Action/Assert prose from a scratch harness;
