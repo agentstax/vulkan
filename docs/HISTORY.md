@@ -5,6 +5,58 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-23 — the doc site rebuilt as a message board [0582] [0583] [0584]
+
+- Starlight uninstalled; the board serves the whole site. Astro core
+  carries it — glob loader with this project's own zod schema, Pagefind,
+  @astrojs/mdx — and the loader's generateId keeps each file's casing, so
+  the deployed URLs survived the swap unchanged. Astro 6 → 7 (rolldown)
+  landed on top with no code changes. Islands are Svelte 5, CSS is
+  vanilla CUBE with a sibling stylesheet per component, page-derived
+  facts live in route-local `_<page>/` directories, and `client:load` is
+  banned so the homepage ships static HTML/CSS.
+- A page is a thread: board index at `/`, thread lists at
+  `/boards/<slug>/`, threads at `/<id>/`, code threads at
+  `/errors/VKxxxx/` where the OP is the code itself and a declared fix
+  renders as the ACCEPTED ANSWER post. Read state comes from one
+  append-only localStorage page-visit log feeding the visit bar, the
+  amber folders and the new `/whats-new/` page alike. Search is Pagefind
+  behind a board-styled island (`/search/`, `?q=` deep links).
+- The homepage SQL console runs Postgres in the browser (PGlite) against
+  the library's own statements: 33 files extracted byte-exact from the Go
+  sources, a vitest drift test holding them verbatim, and build-time
+  shell rows produced by running the same statements in Node.
+- Frontend rules got their own file, `website/CONVENTIONS.md`, loaded via
+  `website/CLAUDE.md` and enforced by `just site-verify` — prettier,
+  eslint, stylelint (declaration-strict-value), astro check at strictest,
+  svelte-check, remark-lint, Vale carrying the ## Vocabulary registry,
+  vitest. Storybook covers every component.
+- Vulkan Cloud removed site-wide in the same round (its page, its
+  component, and the why-vulkan section it fed); no redirects, the site
+  had no users.
+- Verified: 80 pages built with 72 indexed, the full verify chain green,
+  vitest 9/9, Storybook build, and four CDP browser suites (console first
+  run, board navigation, search, copy/whats-new).
+
+## 2026-08-22 — doc site rewritten to the real API [0581]
+
+- Every non-error page now documents behavior that ships. The site's
+  invented surface (vulkan.Queue, Subscribe, functional options,
+  FromOffset, partition keys, replay/redrive verbs) is gone; each page's
+  Go samples were compiled and vetted against the working tree before it
+  landed; unshipped capabilities carry Proposed badges or asides and are
+  never checkmarked in the comparison tables; every unsourced performance
+  number was stripped and points at the benchmark pipeline instead.
+- The ## Vocabulary registry now governs prose, titles and slugs:
+  `guides/transactional-enqueue` → `transactional-produce`,
+  `concepts/streams` → `concepts/fan-out` ("Fan-out, Retention &
+  Replay"), `concepts/ordering` → "Ordering & Concurrency".
+- Two code bugs the rewrite surfaced were fixed with it: the RoutingKey
+  doc comment claimed a keyless message reaches every group (it reaches
+  only groups with no bindings), and deleteSystemTables omitted
+  worker_log, whose FK would have broken the drop — added there and to
+  destroysystemlab's assertions, lab green.
+
 ## 2026-08-22 — migration txn steps run under lock_timeout [0579]
 
 - runStepWithTx sets `SET LOCAL lock_timeout = '2000ms'` right after

@@ -16,21 +16,6 @@ the item is removed.
 
 ## Now
 
-- **Documentation-driven pass** (picked up 2026-08-22; working window in
-  TODO.md). Documentation drives implementation: the doc-site page is the
-  proposal, written and reviewed before code. Settled: all site pages
-  rewrite to the REAL API — the site's invented surface (vulkan.Queue /
-  Subscribe / functional options / shared vulkan.events schema) is
-  discarded; vocabulary governed by CONVENTIONS.md ## Vocabulary (one
-  banned / why / use-instead registry for code, comments, AND docs,
-  growing); no performance number
-  without a benchmark record. Site triage of all 19 non-error pages done
-  2026-08-22 — verdicts in TODO.md. After the rewrites: per-page status
-  markers (shipped vs proposed). Feeds and is fed by: the quickstart
-  rewrite surfaces the startup friction that shapes
-  DefaultProducer/DefaultConsumer (see Documentation — remaining items in
-  Next); the benchmark methodology page (14c, tabled) lands as a doc-site
-  section.
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -45,7 +30,8 @@ the item is removed.
     bench/scale, bench/trigger_fanout, the compaction hot-key
     serialization bench (bench/compaction, [0574]), and the consume-side
     fillfactor bench (bench/fillfactor, [0578]).
-  - Design round 2026-08-22 (tabled pending the documentation-first pass):
+  - Design round 2026-08-22 (tabled for the documentation-first pass, which
+    closed 2026-08-23 — this is now the front of Now):
     method + recording shape drafted in repo-root bench-methodology.html
     (generic 14-rule method, sourced) and bench-design.md (vulkan record
     schema, harness shape, fold-in inventory, first-build scope options —
@@ -101,6 +87,40 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     payload-arg + context MessageMeta — the typed row moved to pkg/common
     2026-08-13, so both sides could share it; the consumer's raw internal
     row (payload + options columns) stays its own struct either way.
+- **Two ergonomics gaps the docs pass recorded** ([0581]) — decide in this
+  pass whether either earns surface:
+  - `ProduceInTx` accepts only a ProducerFunc, so a static payload inside
+    a caller-owned transaction costs an inline three-arg closure per
+    topic. No value-taking form exists.
+  - A new consumer group has no "start from now" option — its cursor
+    starts at 0, so on a deep-retention topic every new group reads the
+    full history before it sees live traffic.
+- **A diagnose part on diagnostic declarations** — the queries that show an
+  operator the state behind a condition, declared once and surfaced
+  everywhere. Today a declaration carries code, recovery, problem, fix
+  (plus consequence on events); the fix says what to change, nothing says
+  what to LOOK at. Vulkan's answer is unusual and cheap: the state is
+  rows, so the diagnosis is SQL. Pre-v1 is when the struct can still grow
+  a part.
+  - Surfaces, all fed by the one declaration: the Go doc comment on the
+    Err*/Event variable, `vulkan explain VKxxxx`, and the code thread's
+    page. The CLI error block stays tight — it points at explain.
+  - Shape to settle: one labeled query or a small ordered set (most
+    conditions want "is the row there?" then "what does its state say?");
+    where the text lives given that ## SQL puts all SQL in datastores —
+    this SQL is documentation the library never executes, so it is a
+    const beside the declaration, not a datastore method.
+  - Per-topic tables are the interesting part: a query naming
+    `delivery_<id>` needs the reader's topic id, and the log-attr registry
+    already carries topic_id/group/message_id — so the declared query is a
+    template whose holes are attr names. That is what makes the
+    paste-your-log-line page (Documentation — remaining items) able to
+    hand back runnable SQL instead of generic advice.
+  - Not every condition earns one; constructor/config guards have nothing
+    to look at. Absence is honest — no diagnose section renders.
+  - Follow-on worth weighing at the same time: `vulkan explain --run`
+    (or a `vulkan diagnose` verb) executing the declared queries against
+    the operator's own database, since the CLI already holds a connection.
 - **Public surface trim** (decisions settled 2026-08-01, recorded in
   _public-surface.md; build pending — deliberately late so the decisions get
   re-confirmed after living with the surface through the passes above):
@@ -147,8 +167,22 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
 
-- **Documentation — remaining items** (the docs-driven pass itself moved to
-  Now, 2026-08-22; these ride along with it):
+- **Documentation — remaining items** (the rewrite-to-the-real-API pass
+  shipped 2026-08-22 [0581], the board rebuild 2026-08-23
+  [0582] [0583] [0584]; these are what is left):
+  - Interactive mechanisms the user committed to, none built yet:
+    - Paste-your-log-line on code threads — parse a pasted line's attrs
+      and interpolate the reader's own values into the declared fix
+      command, and into the declared diagnose queries once those exist
+      (the declaration item in this section's 14b list owns that field —
+      build it first, or this page has only the fix to interpolate). The
+      search strip below each code thread is the placeholder.
+    - Compat verdict widget — pick a build version and a target version,
+      get the real MinCompatibleVersion gate answer ([0580]); the gate is
+      never reimplemented in TS, a build-time Go → JSON export of the
+      migration registry feeds it.
+    - Inline "why?" toggles expanding the decision record behind a claim
+      (liked, unscoped).
   - Board-site open pool (board build + parked-items round done
     2026-08-23; each independent, pick up any order):
     - Spacing token scale + sweep — website/CONVENTIONS.md declares
@@ -170,9 +204,12 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     - Per-page example attr values on error/event threads — compose
       richer example log lines (real attr keys per code) instead of the
       minimal composed line.
-  - After the next `just site-deploy`: confirm the deployed /errors/ pages
-    resolve at the Docs() URLs (exact-case /errors/VK0005), then drop the
-    placeholder TODO comment on docsBaseURL in pkg/common/error.go.
+    - Dark mode as a "Board style" dropdown (palette donor picked during
+      the design rounds), not a system toggle.
+  - After the next `just site-deploy` (always ask before deploying):
+    confirm the deployed /errors/ pages resolve at the Docs() URLs
+    (exact-case /errors/VK0005), then drop the placeholder TODO comment
+    on docsBaseURL in pkg/common/error.go.
   - Doc site: worked example of the transactional-outbox side-effect footgun
     (calling sendEmailConfirmation() before a Produce/multi-target closure is
     known to commit fires the email even if a later step rolls back) — pair
@@ -190,6 +227,16 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     datastore, admin, system, topic, producer/consumer + Register), and the
     Default constructors get built against that observed pattern rather
     than guessed.
+    - The friction the quickstart rewrite actually observed ([0581]): a
+      consumer needs a MessageAdmin and RegisterSystem just to GetTopic;
+      `topic.SchemaVersion(1)` is repeated three times per program;
+      Consume's cancellable-ctx requirement is a context.Background()
+      trap; ConsumerConfig.Retry and Message.Retry are confusable;
+      produce-only deployments silently get no upkeep unless someone runs
+      `vulkan manager run`; RegisterTopic wants an
+      `&topiccontroller.TopicConfig{}` (an import plus an empty struct for
+      the common case — whether nil works is unverified); pkg/common and
+      pkg/topic invite aliasing in user code.
   - DDL table design diagram.
 
 - **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
@@ -253,6 +300,18 @@ Post-v1, unordered. Pick up only if a real workload demands it. Known
 dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
+
+- **Doc-site mechanisms considered and not taken** (2026-08-23 brainstorm;
+  revive only if the site needs them): a Vulkan-powered real forum behind
+  the board skin (deferred as premature — the board is a static skin
+  [0583]); tier 2 of the SQL console, running Go wasm against PGlite
+  through a pgconn DialFunc bridge on one flagship page ([0584]); the
+  quickstart as a verifiable psql transcript; a retry-curve slider
+  playground (judged not unique). Rejected outright: a your-deployment
+  context panel and a schema atlas (an interactive column-level map of the
+  schema — scrapped 2026-08-24). The log-line-to-investigation-kit idea
+  was revived the same day in its declared form: see the diagnose part in
+  Next.
 
 - **Gauge metric declarations** ([0567] chunk-5 follow-on) — convert the
   remaining bare vulkan.* metric name consts (the collector's gauges in

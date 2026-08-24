@@ -27,6 +27,10 @@ covers session workflow only; the two are a set.
   propose BEFORE writing code. Working-code-that-passes-tests is not the bar.
 - Trace consequences user-side before proposing: silent behavior changes need
   an observability answer, not a docs answer.
+- Documentation drives implementation on public-surface work: the doc-site
+  page IS the proposal -- write it, review it with the user, then build. The
+  site documents shipped behavior only; anything ahead of the library is
+  labeled Proposed and doubles as that work's spec [0581].
 - Plan wording about mechanisms is intent, not implementation mandate --
   satisfy the invariant with the smallest delta to existing code.
 
