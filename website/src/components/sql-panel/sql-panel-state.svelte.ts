@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import type { RunResult } from '../sql-console/database';
 import type { DatabaseState } from '../sql-console/database-state.svelte';
 import type { PanelShell } from '../sql-console/types';
@@ -19,6 +20,8 @@ export class PanelState {
 
 	private database: DatabaseState;
 
+	private lastRevision = -1;
+
 	constructor(database: DatabaseState, shell: PanelShell) {
 		this.database = database;
 		this.table = shell.table;
@@ -30,6 +33,17 @@ export class PanelState {
 			durationMs: null,
 			statementCount: 1,
 		};
+	}
+
+	// The caller passes the revision so that ITS effect is what subscribes to
+	// the write count. Running is untracked on purpose: run() reads this.sql,
+	// and a tracked read would re-run the query on every keystroke in the
+	// editor.
+	runAt(revision: number): void {
+		if (revision === this.lastRevision) return;
+
+		this.lastRevision = revision;
+		untrack(() => void this.run());
 	}
 
 	// a boot failure arrives here too, so the panel that asked is the one that

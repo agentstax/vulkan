@@ -12,6 +12,10 @@ export class DatabaseState {
 	status: DatabaseStatus = $state('idle');
 	stage: DatabaseStage | null = $state(null);
 
+	// bumped once per statement that WRITES, never by a panel's own read. A
+	// panel watches it to learn its last result is stale.
+	revision = $state(0);
+
 	// the panels mount together and each asks to run: the first call owns the
 	// boot and the rest await the same promise
 	private connecting: Promise<VulkanDatabase> | null = null;
@@ -31,6 +35,7 @@ export class DatabaseState {
 	async produce(text: string): Promise<void> {
 		const database = await this.connect();
 		await database.produce(text);
+		this.revision += 1;
 	}
 
 	private async create(): Promise<VulkanDatabase> {

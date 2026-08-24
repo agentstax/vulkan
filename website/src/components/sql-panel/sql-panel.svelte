@@ -25,11 +25,14 @@
 	const panelState = new PanelState(databaseState, panelShell);
 	const runDisabled = $derived(databaseState.status === 'connecting' || panelState.running);
 
-	onMount(() => {
-		// the panel runs itself against the console's database; the seeded shell
-		// rows hold the table until that first result lands
-		void panelState.run();
+	// the panel's own read of the database: once when it mounts, and again each
+	// time a write bumps the revision. The seeded shell rows hold the table
+	// until that first result lands.
+	$effect(() => {
+		panelState.runAt(databaseState.revision);
+	});
 
+	onMount(() => {
 		if (!editable) return;
 
 		let editorView: EditorView | null = null;
