@@ -3,22 +3,38 @@
 // rows are actual query output and a broken statement fails the build.
 import {
 	createVulkanDatabase,
+	cursorSql,
 	demoTopicName,
-	exampleSql,
+	messageLogSql,
 } from '../../components/sql-console/database';
+import type { VulkanDatabase } from '../../components/sql-console/database';
+import type { PanelShell } from '../../components/sql-console/types';
 
 export const consoleLabel = 'your queue, selected';
 export const consoleTopic = demoTopicName;
 
 export type ConsoleShell = {
-	sql: string;
-	columns: string[];
-	rows: (string | null)[][];
+	messages: PanelShell;
+	cursors: PanelShell;
 };
 
 export async function consoleShell(): Promise<ConsoleShell> {
 	const database = await createVulkanDatabase(() => {});
-	const result = await database.run(exampleSql);
+	const messages = await panelShell(database, 'message_log_1', messageLogSql);
+	const cursors = await panelShell(database, 'cursor_1', cursorSql);
 	await database.close();
-	return { sql: exampleSql, columns: result.columns, rows: result.rows };
+	return { messages, cursors };
+}
+
+// ***************
+// *** HELPERS ***
+// ***************
+
+async function panelShell(
+	database: VulkanDatabase,
+	table: string,
+	sql: string,
+): Promise<PanelShell> {
+	const result = await database.run(sql);
+	return { table, sql, columns: result.columns, rows: result.rows };
 }

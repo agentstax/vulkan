@@ -14,9 +14,13 @@ const demoPartitionSize = 1_000_000;
 
 export const demoTopicName = 'orders';
 
-export const exampleSql = `SELECT id, routing_key, payload
+export const messageLogSql = `SELECT id, routing_key, payload
 FROM message_log_1
 ORDER BY id DESC;`;
+
+export const cursorSql = `SELECT g.name, c.claimed
+FROM cursor_1 c
+JOIN consumer_group g ON g.id = c.consumer_group_id;`;
 
 export type DatabaseStage = 'downloading' | 'starting postgres' | 'creating tables';
 
@@ -110,6 +114,46 @@ async function seed(db: PGlite): Promise<void> {
 		crypto.randomUUID(),
 		'{"order_id": 43, "amount_cents": 250}',
 		'',
+		null,
+	]);
+	await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [
+		crypto.randomUUID(),
+		'{"order_id": 42, "status": "paid"}',
+		'orders.eu.updated',
+		'order-42',
+		0,
+		null,
+	]);
+	await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [
+		crypto.randomUUID(),
+		'{"order_id": 42, "status": "paid"}',
+		'orders.eu.updated',
+		'order-42',
+		0,
+		null,
+	]);
+	await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [
+		crypto.randomUUID(),
+		'{"order_id": 42, "status": "paid"}',
+		'orders.eu.updated',
+		'order-42',
+		0,
+		null,
+	]);
+	await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [
+		crypto.randomUUID(),
+		'{"order_id": 42, "status": "paid"}',
+		'orders.eu.updated',
+		'order-42',
+		0,
+		null,
+	]);
+	await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [
+		crypto.randomUUID(),
+		'{"order_id": 42, "status": "paid"}',
+		'orders.eu.updated',
+		'order-42',
+		0,
 		null,
 	]);
 	await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [

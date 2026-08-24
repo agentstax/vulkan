@@ -1,0 +1,59 @@
+.sql-panel {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--border-section);
+	background: var(--color-surface);
+}
+
+.panel-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 3px 8px;
+	background: var(--color-console-result-header);
+	border-bottom: 1px solid var(--border-section);
+}
+
+/* pushes the chip and the Run button to the far edge -- scoped styles cannot
+   reach into the button's own component to give it margin-left: auto */
+.panel-name {
+	margin-right: auto;
+	font-family: var(--font-database);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--color-text-muted);
+}
+
+.panel-chip {
+	font-family: var(--font-chrome);
+	font-size: 9px;
+	padding: 1px 5px;
+	border: 1px solid var(--border-row);
+	background: var(--color-chrome-pale);
+	color: var(--color-text-faint);
+}
+
+.editor-area {
+	overflow-x: auto;
+	background: var(--color-console-sql-bg);
+	border-bottom: 1px solid var(--border-row);
+}
+
+/* space-between pins the status bar to the panel's foot, so two panels
+   returning different row counts still line their status bars up */
+.result-area {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	min-height: 0;
+}
+
+.error-panel {
+	padding: 12px 14px;
+	font-size: 11.5px;
+	line-height: 1.6;
+	color: var(--color-console-error);
+	white-space: pre-wrap;
+}

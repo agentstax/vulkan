@@ -21,30 +21,32 @@
 </script>
 
 {#if result.columns.length > 0}
-	<table class="result">
-		<thead>
-			<tr>
-				{#each result.columns as column, index (index)}
-					<th>{column}</th>
-				{/each}
-			</tr>
-		</thead>
-		<tbody>
-			{#each result.rows as row, index (index)}
+	<div class="result-scroll">
+		<table class="result">
+			<thead>
 				<tr>
-					{#each row as cell, cellIndex (cellIndex)}
-						<td>
-							{#if cell === null}
-								<span class="null-value">NULL</span>
-							{:else}
-								{cell}
-							{/if}
-						</td>
+					{#each result.columns as column, index (index)}
+						<th>{column}</th>
 					{/each}
 				</tr>
-			{/each}
-		</tbody>
-	</table>
+			</thead>
+			<tbody>
+				{#each result.rows as row, index (index)}
+					<tr>
+						{#each row as cell, cellIndex (cellIndex)}
+							<td>
+								{#if cell === null}
+									<span class="null-value">NULL</span>
+								{:else}
+									{cell}
+								{/if}
+							</td>
+						{/each}
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 {/if}
 <div class="status-bar">{statusText}</div>
 

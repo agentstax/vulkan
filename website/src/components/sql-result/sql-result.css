@@ -1,3 +1,11 @@
+/* a query returning thousands of rows would otherwise grow the panel without
+   limit; only the rows scroll, so the header and the status bar below stay in
+   view at any row count */
+.result-scroll {
+	overflow: auto;
+	max-height: 140px;
+}
+
 .result {
 	width: 100%;
 	border-collapse: collapse;
@@ -7,6 +15,8 @@
 }
 
 .result th {
+	position: sticky;
+	top: 0;
 	background: var(--color-console-result-header);
 	font-weight: 600;
 	color: var(--color-chrome-pale-text);

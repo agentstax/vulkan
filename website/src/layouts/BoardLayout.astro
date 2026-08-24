@@ -39,13 +39,12 @@ const { title, description, navCurrent } = Astro.props;
 			</div>
 			<BoardFooter />
 		</div>
-		<p class="powered-by">Powered by Vulkan on Postgres</p>
 	</body>
 </html>
 
 <style>
 	.page-frame {
-		width: min(1020px, calc(100% - 32px));
+		width: min(1080px, calc(100% - 32px));
 		margin: 32px auto 0;
 		background: var(--color-surface);
 		border: 1px solid var(--border-outer);
@@ -57,13 +56,5 @@ const { title, description, navCurrent } = Astro.props;
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
-	}
-
-	.powered-by {
-		width: min(1020px, calc(100% - 32px));
-		margin: 10px auto 32px;
-		text-align: center;
-		font-size: 10px;
-		color: var(--color-text-faint);
 	}
 </style>

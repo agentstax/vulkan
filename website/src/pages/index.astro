@@ -41,9 +41,8 @@ const shell = await consoleShell();
 				client:visible
 				label={consoleLabel}
 				topic={consoleTopic}
-				sql={shell.sql}
-				columns={shell.columns}
-				rows={shell.rows}
+				messages={shell.messages}
+				cursors={shell.cursors}
 			/>
 		</ThreadPost>
 	</BoardSection>

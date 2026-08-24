@@ -6,6 +6,12 @@
 		title: 'Board/SqlResult',
 		component: SqlResult,
 	});
+
+	const manyRows: (string | null)[][] = Array.from({ length: 40 }, (_, index) => [
+		String(index + 1),
+		index % 3 === 0 ? null : 'orders.eu.created',
+		`{"order_id": ${index + 1}, "amount_cents": ${(index + 1) * 25}}`,
+	]);
 </script>
 
 <Story
@@ -46,6 +52,18 @@
 			rows: [],
 			affectedRows: 1,
 			durationMs: 2.8,
+			statementCount: 1,
+		},
+	}}
+/>
+<Story
+	name="Rows past the scroll ceiling"
+	args={{
+		result: {
+			columns: ['id', 'routing_key', 'payload'],
+			rows: manyRows,
+			affectedRows: null,
+			durationMs: 11.4,
 			statementCount: 1,
 		},
 	}}
