@@ -7,3 +7,4 @@ website layered error handling - try / catch with modal popup, user friendly mes
 mobile friendly docsite
 make sure we add our ./doc/decisions into the site can call it (regrets)
 should make more use of vale for standardized writing style its an interesting idea
+make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
