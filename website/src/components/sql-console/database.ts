@@ -49,7 +49,7 @@ export class VulkanDatabase {
 		return {
 			columns,
 			rows,
-			affectedRows: columns.length === 0 ? last.affectedRows ?? 0 : null,
+			affectedRows: columns.length === 0 ? (last.affectedRows ?? 0) : null,
 			durationMs,
 			statementCount: results.length,
 		};
@@ -60,7 +60,9 @@ export class VulkanDatabase {
 	}
 }
 
-export async function createVulkanDatabase(onStage: (stage: DatabaseStage) => void): Promise<VulkanDatabase> {
+export async function createVulkanDatabase(
+	onStage: (stage: DatabaseStage) => void,
+): Promise<VulkanDatabase> {
 	onStage('downloading');
 	const { PGlite } = await import('@electric-sql/pglite');
 
@@ -90,7 +92,10 @@ async function seed(db: PGlite): Promise<void> {
 		`INSERT INTO topic (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
 		[1, 'orders', 1, demoPartitionSize],
 	);
-	await db.query(`INSERT INTO consumer_group (topic_id, name) VALUES ($1, $2)`, [demoTopicId, 'billing']);
+	await db.query(`INSERT INTO consumer_group (topic_id, name) VALUES ($1, $2)`, [
+		demoTopicId,
+		'billing',
+	]);
 
 	type ProducedRow = { id: number };
 	await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [

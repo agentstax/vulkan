@@ -72,7 +72,7 @@ declaration has explicit outcomes rather than last-writer-wins:
   first declarer, or nothing live disagrees).
 - **joined** — the declared set was already stored; nothing to change.
 - **waiting** — a live instance still declares a *different* set. The
-  waiting instance retries (every `BindingRetryInterval`, default 10s)
+  waiting instance retries (every `BindingRetryInterval`, default `10s`)
   until the disagreeing instances go away — a deploy rolling out a new
   binding set converges as the old instances stop.
 

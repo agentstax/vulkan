@@ -11,7 +11,10 @@ import ThreadPost from '../components/thread-post/thread-post.svelte';
 	navCurrent={null}
 >
 	<Breadcrumb
-		trail={[{ label: 'Board Index', href: '/' }, { label: 'Page not found', href: null }]}
+		trail={[
+			{ label: 'Board Index', href: '/' },
+			{ label: 'Page not found', href: null },
+		]}
 	/>
 	<BoardSection title="Information" columnLabels={null} threadCount={null}>
 		<ThreadPost author="brandon" role="Site Admin" header={null} postCount={null} actions={null}>

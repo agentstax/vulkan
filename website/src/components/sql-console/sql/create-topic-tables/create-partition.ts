@@ -11,5 +11,10 @@ export const createPartitionSqlTemplate = `
 	`;
 
 export function createPartitionSql(topicId: number, partitionSize: number): string {
-	return interpolate(createPartitionSqlTemplate, messageLogPartitionTable(topicId, 0), messageLogTable(topicId), partitionSize);
+	return interpolate(
+		createPartitionSqlTemplate,
+		messageLogPartitionTable(topicId, 0),
+		messageLogTable(topicId),
+		partitionSize,
+	);
 }

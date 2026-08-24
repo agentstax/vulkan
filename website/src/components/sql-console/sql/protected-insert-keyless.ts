@@ -21,5 +21,9 @@ export const protectedInsertKeylessSqlTemplate = `
 		`;
 
 export function protectedInsertKeylessSql(topicId: number): string {
-	return interpolate(protectedInsertKeylessSqlTemplate, idempotencyKeyTable(topicId), messageLogTable(topicId));
+	return interpolate(
+		protectedInsertKeylessSqlTemplate,
+		idempotencyKeyTable(topicId),
+		messageLogTable(topicId),
+	);
 }

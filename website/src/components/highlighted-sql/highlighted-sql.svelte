@@ -12,7 +12,8 @@
 
 <!-- whitespace inside pre is content, so tags stay glued and the
      line break hides inside the span's opening tag -->
-<pre class="sql">{#each segments as segment, index (index)}<span
-		class:sql-keyword={segment.keyword}>{segment.text}</span>{/each}</pre>
+<pre class="sql">{#each segments as segment, index (index)}<span class:sql-keyword={segment.keyword}
+			>{segment.text}</span
+		>{/each}</pre>
 
 <style src="./highlighted-sql.css"></style>

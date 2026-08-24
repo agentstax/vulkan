@@ -81,9 +81,8 @@ number without a benchmark record.
 
 ### OPEN — deferred
 
-- [ ] cloud page — USER 2026-08-22: resolve in the details as the site
-  work proceeds, not as a standalone decision now (index/why-vulkan say
-  "planned" when linking to it).
+- [x] cloud page — RESOLVED 2026-08-23, USER-KILLED: Vulkan Cloud removed
+  from the site entirely (see the parked-items round below).
 - Standing gate (not a task, user-confirmed 2026-08-22): site deploy
   (`just site-deploy`) — always ask first.
 - SETTLED 2026-08-22 (user): the per-topic cursor-vs-lifecycle-choice
@@ -555,7 +554,85 @@ Invented interactive machinery for the site; user verdicts so far:
      breadcrumb -> listing, troubleshooting 54/index-first/nav lit)
      + 2 screenshots.
   5. Astro 6->7 after (already sequenced below).
-  "Show what's new" wiring rides a later slice.
+  "Show what's new" wiring rides a later slice — DONE in the
+  parked-items round below.
+  - [x] Parked-items round — DONE 2026-08-23 (post-slice-5, the five
+    deferred items, one by one):
+    1. icons pass: pixel-volcano geometry redesigned on the same 16x16
+       grid and tokens — crater pool spills one cell past the rim,
+       short bright plume, stepped 1px flank streaks (asymmetric);
+       the old full-height 2px lava column read as an amber tower at
+       banner size. Folders/flag/exclamation judged fine as-is.
+       Iteration sheet: scratchpad volcano-iterations.html (C picked).
+    2. clipboard wiring: new copy-button/ island (state class:
+       ready -> Copied 1.6s -> ready; denial -> "could not copy";
+       generation counter kills stale timers) rendered in both post
+       header strips as "Copy link · Report this thread", copying the
+       canonical Astro.site URL. USER-KILLED "Copy error text" (no
+       real job — the paste-your-log-line flow runs the other way);
+       USER then chose Copy link on error threads for consistency.
+       Mechanism: thread-post/error-post gained actions: Snippet |
+       null; Astro call sites pass actions={null} and the "actions"
+       slot overrides it (@astrojs/svelte server.js spreads
+       renderProps after props — verified). CDP suite
+       copy-button-test.mjs (grants clipboard permission, asserts
+       both canonical URLs + feedback cycle; waits for the island's
+       ssr attr to drop before clicking).
+    3. "Show what's new since then" = real link -> NEW /whats-new/
+       page: whatsNewRows (every thread, newest change first)
+       filtered at hydration by readTracking.isUpdated per thread —
+       the same call the amber folders make, so the two can never
+       disagree; visiting a listed thread drops it on return. Status
+       line "N threads have changed since your last visit" /
+       "nothing has changed…"; SSR/no-JS fallback = full list.
+       Pagefind excludes it (no body region). visit-bar button ->
+       <a>, dead button css deleted. CDP suite whats-new-test.mjs.
+    4. Vulkan Cloud REMOVED site-wide (USER): cloud.mdx +
+       CloudDashboard.astro deleted (ChaosDiagram stays — demo's);
+       why-vulkan section rewritten as "Open source, no asterisk"
+       linking /roadmap/; Getting Started = 4 threads, site = 71
+       threads/80 pages (stats/pagefind/prev-next all recomputed
+       from boards.ts). roadmap.mdx's hypothetical managed-offering
+       wording KEPT (demand question, not a product). USER: no
+       redirect upkeep — the site never had real users;
+       public/_redirects DELETED outright (the slice-4 file had
+       silently gone missing anyway — never committed; flagged).
+    5. verify stack: `npm run verify` + `just site-verify` =
+       prettier --check (svelte+astro plugins; ALL *.md excluded —
+       prettier parses CONVENTIONS.md's mid-prose "## Section"
+       references as headings and mangles the file; prose belongs
+       to vale/remark) -> eslint (+eslint-plugin-astro;
+       BoardLayout.astro joins the sanctioned global-css import
+       list; no-unused-vars ignoreRestSiblings for the story
+       omission destructure) -> stylelint +
+       declaration-strict-value (colors/background/fill/font-
+       family/z-index/box-shadow tokens-only; one violation fixed:
+       run-button inset -> var(--lacquer-bright); SPACING SCALE
+       STILL OPEN — enforcing it needs a spacing token sheet +
+       project sweep) -> astro check (tsconfig strict -> strictest
+       + verbatimModuleSyntax per website/CONVENTIONS.md; excludes
+       storybook-static — the checker SIGABRTs scanning its
+       minified bundles; 3 noUncheckedIndexedAccess guards added in
+       rows.ts) -> svelte-check 0 errors 0 warnings (stories:
+       {children: _children, ...storyProps} spread omission;
+       board-section stories got their missing onVisit props;
+       sql-console state_referenced_locally ignored with a
+       why-comment — props seed the state once) -> remark-lint
+       (remark-mdx + frontmatter, first-heading-level 2 +
+       heading-increment; all 71 pages clean, .md error pages parse
+       under mdx) -> vale --minAlertLevel=error (@vvago/vale npm
+       binary + mdx2vast; Google package synced and committed under
+       website/.vale/styles; Vulkan/Coinages.yml = error-level
+       substitutions for pure coinages, Vulkan/Vocabulary.yml =
+       suggestion-level for terms legitimate when naming other
+       systems — a human judges those 11 hits; Google.EmDash = NO,
+       spaced em-dash is the site's deliberate voice; real catches
+       fixed: enqueue-after-commit -> send-after-commit hooks,
+       roadmap pitch-question punctuation, `10s`/`30s` backticked,
+       "404s a resource" -> "returns 404 for") -> vitest. Full
+       chain exits 0; site build 80pp + storybook + 3 CDP suites
+       re-verified after the format pass. Playwright initial-JS
+       ceiling stays deferred (not in this round's scope).
   - [x] Astro 6 -> 7 upgrade — DONE 2026-08-23 (slice 5, awaiting
     review): astro@7.2.4 + @astrojs/svelte@9.0.1 + @astrojs/mdx@7.0.7
     in one bump; zero code changes needed (glob loader, mdx, shiki

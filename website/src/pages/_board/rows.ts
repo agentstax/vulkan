@@ -12,6 +12,9 @@ export function boardRows(docs: DocsEntry[]): BoardRowData[] {
 		const dated = entries.map((entry) => ({ entry, date: lastCommitDate(entryFilePath(entry)) }));
 		dated.sort((a, b) => b.date.localeCompare(a.date));
 		const newest = dated[0];
+		if (newest === undefined) {
+			throw new Error(`board "${board.title}" lists no threads`);
+		}
 
 		return {
 			title: board.title,

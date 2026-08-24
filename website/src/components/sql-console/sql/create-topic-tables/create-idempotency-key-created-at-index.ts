@@ -9,5 +9,9 @@ export const createIdempotencyKeyCreatedAtIndexSqlTemplate = `
 	`;
 
 export function createIdempotencyKeyCreatedAtIndexSql(topicId: number): string {
-	return interpolate(createIdempotencyKeyCreatedAtIndexSqlTemplate, idempotencyKeyTable(topicId), idempotencyKeyTable(topicId));
+	return interpolate(
+		createIdempotencyKeyCreatedAtIndexSqlTemplate,
+		idempotencyKeyTable(topicId),
+		idempotencyKeyTable(topicId),
+	);
 }

@@ -1,0 +1,12 @@
+{
+	"plugins": ["stylelint-declaration-strict-value"],
+	"rules": {
+		"scale-unlimited/declaration-strict-value": [
+			["/color$/", "color", "background", "fill", "stroke", "font-family", "z-index", "box-shadow"],
+			{
+				"ignoreValues": ["currentColor", "transparent", "inherit", "none"],
+				"message": "raw values live in the tokens layer; components consume semantic tokens only"
+			}
+		]
+	}
+}

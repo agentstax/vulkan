@@ -11,12 +11,13 @@
 
 <Story name="Proposed">
 	{#snippet template(args)}
+		{@const { children: _children, ...storyProps } = args}
 		<div class="thread-body">
-			<ThreadAside {...args}>
+			<ThreadAside {...storyProps}>
 				<p>
-					"Every message with this key, in order, one at a time" — a separate partition key
-					beside the compaction key — is a designed-but-unbuilt proposal. If your workload needs
-					it, today Vulkan doesn't ship it.
+					"Every message with this key, in order, one at a time" — a separate partition key beside
+					the compaction key — is a designed-but-unbuilt proposal. If your workload needs it, today
+					Vulkan doesn't ship it.
 				</p>
 			</ThreadAside>
 		</div>
@@ -25,10 +26,13 @@
 
 <Story name="Caution" args={{ label: 'CAUTION', title: 'At-least-once, and proud of it' }}>
 	{#snippet template(args)}
+		{@const { children: _children, ...storyProps } = args}
 		<div class="thread-body">
-			<ThreadAside {...args}>
-				<p>A crash after your handler succeeds but before the delivery is recorded means the
-					message runs again — make handlers idempotent.</p>
+			<ThreadAside {...storyProps}>
+				<p>
+					A crash after your handler succeeds but before the delivery is recorded means the message
+					runs again — make handlers idempotent.
+				</p>
 			</ThreadAside>
 		</div>
 	{/snippet}

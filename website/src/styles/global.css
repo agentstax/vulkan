@@ -156,9 +156,7 @@
 		--lacquer: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 		--lacquer-dim: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 		--lacquer-bright: inset 0 1px 0 rgba(255, 255, 255, 0.6);
-		--shadow-page-frame:
-			inset 0 0 0 1px #ffffff,
-			0 3px 14px rgba(31, 58, 84, 0.2);
+		--shadow-page-frame: inset 0 0 0 1px #ffffff, 0 3px 14px rgba(31, 58, 84, 0.2);
 		--grid-board-columns: 34px 1fr 80px 210px;
 
 		/* z-index scale -- closed; a new layer adds its named step here */

@@ -27,5 +27,10 @@ export const protectedInsertKeyedSqlTemplate = `
 		`;
 
 export function protectedInsertKeyedSql(topicId: number): string {
-	return interpolate(protectedInsertKeyedSqlTemplate, idempotencyKeyTable(topicId), messageLogTable(topicId), compactionHeadTable(topicId));
+	return interpolate(
+		protectedInsertKeyedSqlTemplate,
+		idempotencyKeyTable(topicId),
+		messageLogTable(topicId),
+		compactionHeadTable(topicId),
+	);
 }

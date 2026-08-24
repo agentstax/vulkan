@@ -6,7 +6,7 @@ description: Where failed messages go, how to triage them with SQL — and the r
 import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Some messages will fail every retry. A malformed payload, a handler
-bug, a downstream API that 404s a deleted resource. The question that
+bug, a downstream API that returns 404 for a deleted resource. The question that
 separates production-grade messaging from toys is: **where do those
 messages go, and how do you get them back?**
 

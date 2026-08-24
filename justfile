@@ -374,6 +374,11 @@ lag topic_id:
 site-dev:
   cd website && npm run dev
 
+# the site's sibling of `just verify`: prettier, eslint, stylelint,
+# astro check + svelte-check, remark-lint, vale, vitest
+site-verify:
+  cd website && npm run verify
+
 # build + serve the built site (search needs the built Pagefind index)
 site-preview:
   cd website && npm run build && npm run preview

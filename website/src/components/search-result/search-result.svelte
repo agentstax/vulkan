@@ -11,10 +11,10 @@
 </script>
 
 <div class="search-result">
-	<a class="result-title" href={href}>{title}</a>
+	<a class="result-title" {href}>{title}</a>
 	<p class="result-excerpt">
 		{#each excerpt as segment, index (index)}{#if segment.marked}<mark>{segment.text}</mark
-			>{:else}{segment.text}{/if}{/each}
+				>{:else}{segment.text}{/if}{/each}
 	</p>
 </div>
 

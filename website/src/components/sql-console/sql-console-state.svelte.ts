@@ -12,7 +12,13 @@ export class ConsoleState {
 	phase: ConsolePhase = $state('shell');
 	stage: DatabaseStage | null = $state(null);
 	errorMessage: string | null = $state(null);
-	result: RunResult = $state({ columns: [], rows: [], affectedRows: null, durationMs: null, statementCount: 1 });
+	result: RunResult = $state({
+		columns: [],
+		rows: [],
+		affectedRows: null,
+		durationMs: null,
+		statementCount: 1,
+	});
 	private database: VulkanDatabase | null = null;
 
 	constructor(sql: string, columns: string[], rows: (string | null)[][]) {

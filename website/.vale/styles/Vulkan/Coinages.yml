@@ -1,0 +1,11 @@
+extends: substitution
+message: "write '%s' -- '%s' hides the mechanism behind coined language"
+level: error
+ignorecase: true
+# pure coinages from CONVENTIONS.md ## Vocabulary -- no other system claims
+# these words, so a match is always a violation
+swap:
+  enqueue: produce
+  reaper: "expired leases are reclaimed"
+  "door(?:way)? package": API package
+  "sentinel error": named error variable

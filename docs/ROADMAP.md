@@ -149,6 +149,27 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 
 - **Documentation — remaining items** (the docs-driven pass itself moved to
   Now, 2026-08-22; these ride along with it):
+  - Board-site open pool (board build + parked-items round done
+    2026-08-23; each independent, pick up any order):
+    - Spacing token scale + sweep — website/CONVENTIONS.md declares
+      spacing a closed token scale but component css still uses raw px;
+      define --space-* tokens, sweep every component css, then add the
+      spacing properties to the stylelint declaration-strict-value list
+      (colors/fonts/z-index/shadows are already enforced).
+    - Playwright initial-JS ceiling — the one settled Playwright test:
+      homepage initial JS under a declared byte ceiling, failing build
+      on regress. Playwright not yet installed.
+    - Console try-it links — ConsoleState makes a link = set sql +
+      run(); lets doc pages deep-link example queries into the console.
+    - PGlite wasm prefetch — requestIdleCallback fetch of the ~5.2MB
+      wasm+data chunk after interactive, so the first console Run is
+      near-instant.
+    - transition:persist on the console — keep the live PGlite instance
+      across navigations (ClientRouter view transitions; cost once per
+      session).
+    - Per-page example attr values on error/event threads — compose
+      richer example log lines (real attr keys per code) instead of the
+      minimal composed line.
   - After the next `just site-deploy`: confirm the deployed /errors/ pages
     resolve at the Docs() URLs (exact-case /errors/VK0005), then drop the
     placeholder TODO comment on docsBaseURL in pkg/common/error.go.

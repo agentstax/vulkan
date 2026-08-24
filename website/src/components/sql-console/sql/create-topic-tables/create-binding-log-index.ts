@@ -9,5 +9,9 @@ export const createBindingLogIndexSqlTemplate = `
 	`;
 
 export function createBindingLogIndexSql(topicId: number): string {
-	return interpolate(createBindingLogIndexSqlTemplate, bindingLogTable(topicId), bindingLogTable(topicId));
+	return interpolate(
+		createBindingLogIndexSqlTemplate,
+		bindingLogTable(topicId),
+		bindingLogTable(topicId),
+	);
 }

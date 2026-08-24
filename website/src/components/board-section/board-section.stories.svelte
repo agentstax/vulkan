@@ -11,9 +11,13 @@
 	});
 </script>
 
-<Story name="With column labels" args={{ columnLabels: { threadCount: 'Threads', lastPost: 'Last post' } }}>
+<Story
+	name="With column labels"
+	args={{ columnLabels: { threadCount: 'Threads', lastPost: 'Last post' } }}
+>
 	{#snippet template(args)}
-		<BoardSection {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<BoardSection {...storyProps}>
 			<BoardRow
 				index={0}
 				title="Concepts"
@@ -24,6 +28,7 @@
 				lastPostHref="/concepts/ordering/"
 				lastPostDate="2026-08-22"
 				updated
+				onVisit={() => {}}
 			/>
 			<BoardRow
 				index={1}
@@ -35,21 +40,36 @@
 				lastPostHref="/guides/transactional-produce/"
 				lastPostDate="2026-08-22"
 				updated={false}
+				onVisit={() => {}}
 			/>
 		</BoardSection>
 	{/snippet}
 </Story>
 <Story name="With thread total" args={{ title: 'Start Here', threadCount: 2 }}>
 	{#snippet template(args)}
-		<BoardSection {...args}>
-			<StickyRow title="Quickstart" href="/quickstart/" updated={false} lastUpdatedDate="2026-08-22" />
-			<StickyRow title="Why Vulkan" href="/why-vulkan/" updated={false} lastUpdatedDate="2026-08-22" />
+		{@const { children: _children, ...storyProps } = args}
+		<BoardSection {...storyProps}>
+			<StickyRow
+				title="Quickstart"
+				href="/quickstart/"
+				updated={false}
+				lastUpdatedDate="2026-08-22"
+				onVisit={() => {}}
+			/>
+			<StickyRow
+				title="Why Vulkan"
+				href="/why-vulkan/"
+				updated={false}
+				lastUpdatedDate="2026-08-22"
+				onVisit={() => {}}
+			/>
 		</BoardSection>
 	{/snippet}
 </Story>
 <Story name="Title only" args={{ title: 'Announcements' }}>
 	{#snippet template(args)}
-		<BoardSection {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<BoardSection {...storyProps}>
 			<div style="padding: 12px 14px; font-size: 12px;">rows go here</div>
 		</BoardSection>
 	{/snippet}

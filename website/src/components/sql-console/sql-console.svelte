@@ -15,6 +15,9 @@
 
 	let { label, sql, columns, rows }: Props = $props();
 
+	// the props seed the state once -- after that the editor owns the SQL
+	// and runs own the result, so capturing initial values is the intent
+	// svelte-ignore state_referenced_locally
 	const consoleState = new ConsoleState(sql, columns, rows);
 	const runDisabled = $derived(
 		consoleState.phase === 'shell' ||

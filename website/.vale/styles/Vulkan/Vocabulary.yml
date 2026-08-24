@@ -1,0 +1,16 @@
+extends: substitution
+message: "write '%s' -- for Vulkan's own mechanism, '%s' is banned vocabulary"
+level: suggestion
+ignorecase: true
+# context-dependent rows from CONVENTIONS.md ## Vocabulary: legitimate when
+# naming ANOTHER system's concept (Kafka offsets, SQS visibility timeout),
+# banned when describing Vulkan's own -- a human judges each hit
+swap:
+  ack: the delivery is recorded
+  nack: the handler returns an error
+  "dead-letter queue": dead-lettered messages
+  DLQ: dead-lettered messages
+  offset: message id; cursor
+  publish: produce
+  subscribe: consume
+  "visibility timeout": lease

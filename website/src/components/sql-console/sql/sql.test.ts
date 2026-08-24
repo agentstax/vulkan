@@ -36,10 +36,16 @@ const createTopicTablesTemplates = [
 	createBindingLogIndexSqlTemplate,
 ];
 
-const protectedInsertTemplates = [protectedInsertKeyedSqlTemplate, protectedInsertKeylessSqlTemplate];
+const protectedInsertTemplates = [
+	protectedInsertKeyedSqlTemplate,
+	protectedInsertKeylessSqlTemplate,
+];
 
 function goSource(repoPath: string): string {
-	return readFileSync(fileURLToPath(new URL(`../../../../../${repoPath}`, import.meta.url)), 'utf8');
+	return readFileSync(
+		fileURLToPath(new URL(`../../../../../${repoPath}`, import.meta.url)),
+		'utf8',
+	);
 }
 
 // backticks in Go comments produce bogus segments; every real statement
@@ -56,7 +62,11 @@ function goLiterals(source: string): string[] {
 
 describe('embedded SQL matches the Go source byte-exact', () => {
 	const cases: [string, string, string[]][] = [
-		['createSystemTables', 'pkg/system/controller/datastore/tables.go', createSystemTablesStatements],
+		[
+			'createSystemTables',
+			'pkg/system/controller/datastore/tables.go',
+			createSystemTablesStatements,
+		],
 		['createTopicTables', 'pkg/topic/controller/datastore/tables.go', createTopicTablesTemplates],
 		['protectedInsertSQL', 'pkg/producer/controller/datastore/insert.go', protectedInsertTemplates],
 	];

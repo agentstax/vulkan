@@ -1,0 +1,9 @@
+dist/
+.astro/
+storybook-static/
+node_modules/
+package-lock.json
+src/content/docs/
+.vale/styles/
+*.md
+**/*.md

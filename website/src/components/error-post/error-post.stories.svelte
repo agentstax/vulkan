@@ -17,7 +17,8 @@
 
 <Story name="Post">
 	{#snippet template(args)}
-		<ErrorPost {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<ErrorPost {...storyProps}>
 			<p>As it arrives in your log or error chain — the values are your call's own.</p>
 		</ErrorPost>
 	{/snippet}
@@ -25,7 +26,8 @@
 
 <Story name="WithCopyLink">
 	{#snippet template(args)}
-		<ErrorPost {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<ErrorPost {...storyProps}>
 			{#snippet actions()}
 				<CopyButton label="Copy link" text="https://vulkan-5ss.pages.dev/errors/VK0005/" />
 			{/snippet}

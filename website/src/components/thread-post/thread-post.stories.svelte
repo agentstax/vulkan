@@ -12,7 +12,8 @@
 
 <Story name="Post">
 	{#snippet template(args)}
-		<ThreadPost {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<ThreadPost {...storyProps}>
 			<p>
 				Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
 				tables below are the ones the library creates.
@@ -33,7 +34,8 @@
 	}}
 >
 	{#snippet template(args)}
-		<ThreadPost {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<ThreadPost {...storyProps}>
 			{#snippet actions()}
 				<CopyButton label="Copy link" text="https://vulkan-5ss.pages.dev/concepts/ordering/" />
 			{/snippet}
@@ -47,7 +49,8 @@
 	args={{ header: { kind: 'accepted', postedDate: '2026-08-20' }, postCount: 74 }}
 >
 	{#snippet template(args)}
-		<ThreadPost {...args}>
+		{@const { children: _children, ...storyProps } = args}
+		<ThreadPost {...storyProps}>
 			<p><strong>register it with MessageAdmin.RegisterTopic first</strong></p>
 		</ThreadPost>
 	{/snippet}

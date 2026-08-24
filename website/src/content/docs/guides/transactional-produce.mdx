@@ -87,7 +87,7 @@ You also get the converse guarantee free, from transaction isolation:
 **no consumer can observe the message before your transaction commits.**
 No more "the handler ran before the row it referenced was visible" — a
 race so common that job-queue docs have a standard name for the
-workaround (enqueue-after-commit hooks, with their own failure window).
+workaround (send-after-commit hooks, with their own failure window).
 
 ## Prove it to yourself
 

@@ -54,7 +54,11 @@ const returnTrail = [
 const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
-<BoardLayout title={`${title} [${codeThread.code}]`} description={description} navCurrent="Troubleshooting">
+<BoardLayout
+	title={`${title} [${codeThread.code}]`}
+	description={description}
+	navCurrent="Troubleshooting"
+>
 	<div class="thread-top">
 		<Breadcrumb trail={trail} />
 		<div class="adjacent-links">

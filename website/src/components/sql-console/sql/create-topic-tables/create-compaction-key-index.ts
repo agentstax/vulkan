@@ -10,5 +10,9 @@ export const createCompactionKeyIndexSqlTemplate = `
 	`;
 
 export function createCompactionKeyIndexSql(topicId: number): string {
-	return interpolate(createCompactionKeyIndexSqlTemplate, messageLogTable(topicId), messageLogTable(topicId));
+	return interpolate(
+		createCompactionKeyIndexSqlTemplate,
+		messageLogTable(topicId),
+		messageLogTable(topicId),
+	);
 }

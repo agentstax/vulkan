@@ -12,7 +12,10 @@ export const collections = {
 		}),
 		schema: z.object({
 			title: z.string().describe('the thread title; the H1 the page renders under'),
-			description: z.string().optional().describe('the meta description; title stands in when absent'),
+			description: z
+				.string()
+				.optional()
+				.describe('the meta description; title stands in when absent'),
 			kind: z
 				.enum(['error', 'event', 'metric'])
 				.optional()
