@@ -14,7 +14,7 @@ import { jumpTargets } from './_board/boards';
 import { boardRows, stickyRows } from './_board/rows';
 import { announcements } from './_board/announcements';
 import { siteStats } from './_board/stats';
-import { consoleLabel, consoleShell } from './_board/console';
+import { consoleLabel, consoleShell, consoleTopic } from './_board/console';
 
 const docs = await getCollection('docs');
 const rows = boardRows(docs);
@@ -40,6 +40,7 @@ const shell = await consoleShell();
 			<SqlConsole
 				client:visible
 				label={consoleLabel}
+				topic={consoleTopic}
 				sql={shell.sql}
 				columns={shell.columns}
 				rows={shell.rows}

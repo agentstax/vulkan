@@ -5,15 +5,18 @@
 	import HighlightedSql from '../highlighted-sql/highlighted-sql.svelte';
 	import SqlResult from '../sql-result/sql-result.svelte';
 	import ConsoleProgress from '../console-progress/console-progress.svelte';
+	import ChromeButton from '../chrome-button/chrome-button.svelte';
+	import ProduceStrip from '../produce-strip/produce-strip.svelte';
 
 	type Props = {
 		label: string;
+		topic: string;
 		sql: string;
 		columns: string[];
 		rows: (string | null)[][];
 	};
 
-	let { label, sql, columns, rows }: Props = $props();
+	let { label, topic, sql, columns, rows }: Props = $props();
 
 	// the props seed the state once -- after that the editor owns the SQL
 	// and runs own the result, so capturing initial values is the intent
@@ -69,15 +72,13 @@
 	<div class="title-bar">
 		<span class="console-label">{label}</span>
 		<span class="console-meta">postgres 18 · wasm · local to this tab</span>
-		<button
-			type="button"
-			class="run-button"
-			disabled={runDisabled}
-			onclick={() => void consoleState.run()}
-		>
-			Run ▸
-		</button>
+		<ChromeButton label="Run ▸" disabled={runDisabled} onclick={() => void consoleState.run()} />
 	</div>
+	<ProduceStrip
+		{topic}
+		text={consoleState.produceText}
+		ontext={(next) => (consoleState.produceText = next)}
+	/>
 	<div class="editor-area">
 		<!-- static SQL text holds this spot until onMount's idle callback puts
 		     the CodeMirror editor in editorHost -- identically sized, so the

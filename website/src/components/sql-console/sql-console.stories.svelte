@@ -7,6 +7,7 @@
 		component: SqlConsole,
 		args: {
 			label: 'your queue, selected',
+			topic: 'orders',
 			sql: 'SELECT id, routing_key, payload\nFROM message_log_1\nORDER BY id DESC;',
 			columns: ['id', 'routing_key', 'payload'],
 			rows: [

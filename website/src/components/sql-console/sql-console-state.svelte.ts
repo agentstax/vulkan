@@ -9,6 +9,7 @@ export type ConsolePhase = 'shell' | 'ready' | 'connecting' | 'running' | 'ran' 
 
 export class ConsoleState {
 	sql = $state('');
+	produceText = $state('restock the ovens');
 	phase: ConsolePhase = $state('shell');
 	stage: DatabaseStage | null = $state(null);
 	errorMessage: string | null = $state(null);

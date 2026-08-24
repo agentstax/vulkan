@@ -1,9 +1,14 @@
 // The static shell's content is a real run: the same database module the
 // browser console uses is created here in Node at every build, so the shell
 // rows are actual query output and a broken statement fails the build.
-import { createVulkanDatabase, exampleSql } from '../../components/sql-console/database';
+import {
+	createVulkanDatabase,
+	demoTopicName,
+	exampleSql,
+} from '../../components/sql-console/database';
 
 export const consoleLabel = 'your queue, selected';
+export const consoleTopic = demoTopicName;
 
 export type ConsoleShell = {
 	sql: string;

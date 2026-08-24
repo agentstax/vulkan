@@ -12,6 +12,8 @@ import { protectedInsertKeyedSql } from './sql/protected-insert-keyed';
 const demoTopicId = 1;
 const demoPartitionSize = 1_000_000;
 
+export const demoTopicName = 'orders';
+
 export const exampleSql = `SELECT id, routing_key, payload
 FROM message_log_1
 ORDER BY id DESC;`;
@@ -90,7 +92,7 @@ async function seed(db: PGlite): Promise<void> {
 	await db.query(`INSERT INTO system DEFAULT VALUES`);
 	await db.query(
 		`INSERT INTO topic (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
-		[1, 'orders', 1, demoPartitionSize],
+		[1, demoTopicName, 1, demoPartitionSize],
 	);
 	await db.query(`INSERT INTO consumer_group (topic_id, name) VALUES ($1, $2)`, [
 		demoTopicId,
