@@ -7,6 +7,8 @@
 		component: AddConsumer,
 		args: {
 			groups: ['billing', 'search'],
+			errorMessage: null,
+			disabled: false,
 			onadd: () => {},
 		},
 	});
@@ -14,6 +16,8 @@
 
 <Story name="Groups to join" />
 <Story name="No groups yet" args={{ groups: [] }} />
+<Story name="Registering" args={{ disabled: true }} />
+<Story name="Register failed" args={{ errorMessage: 'could not reach the database' }} />
 <Story
 	name="Many groups"
 	args={{ groups: ['billing', 'search', 'audit', 'shipping', 'analytics'] }}

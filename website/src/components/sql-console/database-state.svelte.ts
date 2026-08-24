@@ -38,6 +38,18 @@ export class DatabaseState {
 		this.revision += 1;
 	}
 
+	// a group is a write: its cursor row is what the cursor panel reads
+	async registerGroup(name: string): Promise<void> {
+		const database = await this.connect();
+		await database.registerGroup(name);
+		this.revision += 1;
+	}
+
+	async listGroups(): Promise<string[]> {
+		const database = await this.connect();
+		return database.listGroups();
+	}
+
 	private async create(): Promise<VulkanDatabase> {
 		this.status = 'connecting';
 		this.stage = 'downloading';

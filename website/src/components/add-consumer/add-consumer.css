@@ -34,3 +34,9 @@
 	font-size: 10px;
 	color: var(--color-text-faint);
 }
+
+.add-error {
+	font-family: var(--font-database);
+	font-size: 10px;
+	color: var(--color-console-error);
+}

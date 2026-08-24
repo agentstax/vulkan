@@ -24,6 +24,9 @@ JOIN consumer_group g ON g.id = c.consumer_group_id;`;
 
 export type DatabaseStage = 'downloading' | 'starting postgres' | 'creating tables';
 
+type GroupRow = { id: number; topic_id: number; name: string; created_at: Date };
+type GroupNameRow = { name: string };
+
 export type RunResult = {
 	columns: string[];
 	rows: (string | null)[][];
@@ -72,6 +75,40 @@ export class VulkanDatabase {
 		]);
 	}
 
+	// registerGroup's own shape: the advisory lock, the re-check under it, the
+	// group insert and the cursor row, all in one transaction. The cursor row
+	// is why a new group replays -- it starts at claimed 0.
+	async registerGroup(name: string): Promise<void> {
+		await this.db.transaction(async (tx) => {
+			await tx.query(
+				`SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint, $2::text)));`,
+				[demoTopicId, name],
+			);
+
+			const found = await tx.query<GroupRow>(
+				`SELECT id, topic_id, name, created_at FROM consumer_group WHERE topic_id = $1 AND name = $2;`,
+				[demoTopicId, name],
+			);
+			if (found.rows.length > 0) return;
+
+			const inserted = await tx.query<GroupRow>(
+				`INSERT INTO consumer_group (topic_id, name) VALUES ($1, $2) RETURNING id, topic_id, name, created_at;`,
+				[demoTopicId, name],
+			);
+			await tx.query(`INSERT INTO cursor_${demoTopicId} (consumer_group_id) VALUES ($1);`, [
+				inserted.rows[0]!.id,
+			]);
+		});
+	}
+
+	async listGroups(): Promise<string[]> {
+		const groups = await this.db.query<GroupNameRow>(
+			`SELECT name FROM consumer_group WHERE topic_id = $1 ORDER BY id;`,
+			[demoTopicId],
+		);
+		return groups.rows.map((group) => group.name);
+	}
+
 	async close(): Promise<void> {
 		await this.db.close();
 	}
@@ -93,8 +130,14 @@ export async function createVulkanDatabase(
 	for (const statement of createTopicTablesStatements(demoTopicId, demoPartitionSize)) {
 		await db.exec(statement);
 	}
+	const database = new VulkanDatabase(db);
 	await seed(db);
-	return new VulkanDatabase(db);
+
+	// the demo group goes through the same verb the reader's Add uses, so it
+	// gets the cursor row a plain catalog INSERT leaves out -- and registering
+	// it after the messages is the replay case: its cursor starts at 0
+	await database.registerGroup('billing');
+	return database;
 }
 
 // ***************
@@ -109,10 +152,6 @@ async function seed(db: PGlite): Promise<void> {
 		`INSERT INTO topic (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
 		[1, demoTopicName, 1, demoPartitionSize],
 	);
-	await db.query(`INSERT INTO consumer_group (topic_id, name) VALUES ($1, $2)`, [
-		demoTopicId,
-		'billing',
-	]);
 
 	type ProducedRow = { id: number };
 	await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [

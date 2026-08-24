@@ -23,42 +23,27 @@
 	let produceError: string | null = $state(null);
 	let producing = $state(false);
 
-	// example cards -- no consumer runs yet, and nothing here reads the database
-	const consumers: Consumer[] = [
+	// consumer 1 comes with the page so the mechanism has an object to act on;
+	// every other card is one the reader added
+	let consumers: Consumer[] = $state([
 		{
 			name: 'consumer 1',
 			group: 'billing',
 			lines: [
-				{ kind: 'claim', text: 'claim (0, 1]' },
-				{ kind: 'handled', text: '"ship order 4471"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (1, 2]' },
-				{ kind: 'handled', text: '"refund order 4468"', status: 'ok' },
-			],
-		},
-		{
-			name: 'consumer 2',
-			group: 'billing',
-			lines: [
 				{
 					kind: 'note',
-					text: 'same group as consumer 1.\nits next tick claims (2, 3] —\nranges never overlap.',
+					text: "billing's cursor is at 0 \u2014\nits first tick claims from the\nstart of the log.",
 				},
 			],
 		},
-		{
-			name: 'consumer 3',
-			group: 'search',
-			lines: [
-				{
-					kind: 'note',
-					text: 'its own cursor, still at 0 —\nits first tick reads all three\nmessages billing handled.',
-				},
-			],
-		},
-	];
+	]);
+	let groups: string[] = $state([]);
+	let addError: string | null = $state(null);
+	let adding = $state(false);
 
-	// the groups a new consumer can join are the ones the cards already name
-	const groups = [...new Set(consumers.map((consumer) => consumer.group))];
+	// never the card count: removing consumer 2 and adding again would reuse the
+	// name, and the grid keys its cards by it
+	let nextConsumer = 2;
 
 	const databaseState = new DatabaseState();
 	const busy = $derived(databaseState.status === 'connecting');
@@ -68,10 +53,19 @@
 	// every panel through its own run, which is where it is reported
 	onMount(() => {
 		void databaseState.connect().catch(() => {});
+		void refreshGroups();
 	});
 
-	// the row lands immediately; re-reading message_log_1 is still the panel's
-	// own Run
+	// the groups a consumer can join are whatever the catalog holds -- the
+	// seeded one plus every group Add has registered since
+	async function refreshGroups(): Promise<void> {
+		try {
+			groups = await databaseState.listGroups();
+		} catch {
+			// a database that never came up already says so in both panels
+		}
+	}
+
 	async function produce(): Promise<void> {
 		producing = true;
 
@@ -83,6 +77,46 @@
 		} finally {
 			producing = false;
 		}
+	}
+
+	// a new group is a write -- registerGroup is what creates the cursor row it
+	// replays from. Joining an existing group only adds a card: that group's
+	// cursor is already there, and the two consumers claim off it in turn.
+	async function addConsumer(group: string | null): Promise<void> {
+		adding = true;
+
+		try {
+			const target = group ?? `group ${groups.length + 1}`;
+			if (group === null) {
+				await databaseState.registerGroup(target);
+				await refreshGroups();
+			}
+
+			consumers.push({
+				name: `consumer ${nextConsumer}`,
+				group: target,
+				lines: [{ kind: 'note', text: joinNote(group, target) }],
+			});
+			nextConsumer += 1;
+			addError = null;
+		} catch (caught) {
+			addError = caught instanceof Error ? caught.message : String(caught);
+		} finally {
+			adding = false;
+		}
+	}
+
+	function joinNote(group: string | null, target: string): string {
+		if (group === null) {
+			return `its own cursor, still at 0 —\nits first tick reads everything\nproduced so far.`;
+		}
+		return `shares ${target}'s cursor —\nits ticks claim ranges the\nothers have not.`;
+	}
+
+	// the group and its cursor outlive the card: a group with no consumers
+	// still holds its place in the log
+	function removeConsumer(name: string): void {
+		consumers = consumers.filter((consumer) => consumer.name !== name);
 	}
 </script>
 
@@ -112,10 +146,15 @@
 		{/if}
 	</div>
 	<div class="consumers">
-		<!-- the clicks do nothing yet: a tick claiming, handling and committing
-		     one message is not wired up, and neither is registering a group -->
-		<ConsumerGrid {consumers} ontick={() => {}} onremove={() => {}} />
-		<AddConsumer {groups} onadd={() => {}} />
+		<!-- Tick does nothing yet: claiming, handling and committing one message
+		     is not wired up -->
+		<ConsumerGrid {consumers} ontick={() => {}} onremove={removeConsumer} />
+		<AddConsumer
+			{groups}
+			errorMessage={addError}
+			disabled={busy || adding}
+			onadd={(group) => void addConsumer(group)}
+		/>
 	</div>
 </div>
 

@@ -3,10 +3,12 @@
 
 	type Props = {
 		groups: string[];
+		errorMessage: string | null;
+		disabled: boolean;
 		onadd: (group: string | null) => void;
 	};
 
-	let { groups, onadd }: Props = $props();
+	let { groups, errorMessage, disabled, onadd }: Props = $props();
 
 	// null is a group that does not exist yet; a name joins the group that does
 	let selected: string | null = $state(null);
@@ -31,10 +33,13 @@
 			<option value={group}>group {group}</option>
 		{/each}
 	</select>
-	<ChromeButton label="Add" tone="quiet" disabled={false} onclick={() => onadd(selected)} />
+	<ChromeButton label="Add" tone="quiet" {disabled} onclick={() => onadd(selected)} />
 	<span class="add-hint">
 		New group = its own cursor, reads everything. Existing group = one cursor, disjoint ranges.
 	</span>
+	{#if errorMessage !== null}
+		<span class="add-error" role="alert">{errorMessage}</span>
+	{/if}
 </div>
 
 <style src="./add-consumer.css"></style>
