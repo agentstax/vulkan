@@ -34,6 +34,13 @@
 	color: var(--color-text-faint);
 }
 
+/* a write landed that this panel's edited query has not been run against, so
+   the rows below are behind the database until Run */
+.panel-chip[data-state='behind'] {
+	border-color: var(--border-panel-behind);
+	color: var(--color-panel-behind-text);
+}
+
 .editor-area {
 	overflow-x: auto;
 	background: var(--color-console-sql-bg);

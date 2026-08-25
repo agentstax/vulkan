@@ -143,6 +143,8 @@
 		--color-console-null: var(--null-gray);
 		--shadow-console: 0 4px 14px rgba(31, 58, 84, 0.18);
 		--color-console-error: var(--pin-red);
+		--border-panel-behind: var(--amber);
+		--color-panel-behind-text: var(--amber-dark);
 		--color-progress-veil: var(--surface-veil);
 		--color-progress-track: var(--stripe-blue-dark);
 		--color-progress-fill: var(--amber);

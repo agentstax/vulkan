@@ -74,6 +74,25 @@ export class DatabaseState {
 		return claimed;
 	}
 
+	// Reset sandbox: the current Postgres is closed and a fresh one is built from
+	// the seed. The wasm chunk is already in memory, so only the boot repeats --
+	// and the bump is what sends both panels back to the database.
+	async reset(): Promise<void> {
+		const current = this.connecting;
+		this.connecting = null;
+		this.status = 'connecting';
+
+		// a database that never came up has nothing to close, and its failure is
+		// already the thing being reset away from
+		await current?.then(
+			(database) => database.close(),
+			() => {},
+		);
+
+		await this.connect();
+		this.revision += 1;
+	}
+
 	async listGroups(): Promise<string[]> {
 		const database = await this.connect();
 		return database.listGroups();

@@ -11,10 +11,9 @@
 	type Props = {
 		databaseState: DatabaseState;
 		panelShell: PanelShell;
-		editable: boolean;
 	};
 
-	let { databaseState, panelShell, editable }: Props = $props();
+	let { databaseState, panelShell }: Props = $props();
 
 	let editorHost: HTMLDivElement | undefined = $state(undefined);
 	let editorMounted = $state(false);
@@ -25,6 +24,12 @@
 	const panelState = new PanelState(databaseState, panelShell);
 	const runDisabled = $derived(databaseState.status === 'connecting' || panelState.running);
 
+	// what the panel promises about its own results: it re-runs itself until the
+	// visitor edits the query, and then says so rather than going quiet
+	const chip = $derived(
+		!panelState.edited ? 'auto re-runs' : panelState.stale ? 'edited · behind' : 'edited',
+	);
+
 	// the panel's own read of the database: once when it mounts, and again each
 	// time a write bumps the revision. The seeded shell rows hold the table
 	// until that first result lands.
@@ -33,8 +38,6 @@
 	});
 
 	onMount(() => {
-		if (!editable) return;
-
 		let editorView: EditorView | null = null;
 		let cancelled = false;
 
@@ -60,7 +63,7 @@
 
 				if (cancelled || editorHost === undefined) return;
 
-				editorView = createEditor(editorHost, initialSql, (next) => (panelState.sql = next));
+				editorView = createEditor(editorHost, initialSql, (next) => panelState.setSql(next));
 				editorMounted = true;
 			})();
 		});
@@ -75,7 +78,7 @@
 <div class="sql-panel">
 	<div class="panel-bar">
 		<span class="panel-name">{panelState.table}</span>
-		<span class="panel-chip">auto re-runs</span>
+		<span class="panel-chip" data-state={panelState.stale ? 'behind' : 'current'}>{chip}</span>
 		<ChromeButton
 			label="Run ▸"
 			tone="primary"

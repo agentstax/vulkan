@@ -38,12 +38,10 @@
 		args: {
 			databaseState,
 			panelShell: messageLog,
-			editable: false,
 		},
 	});
 </script>
 
 <Story name="Rows" />
-<Story name="Editable" args={{ editable: true }} />
 <Story name="No rows" args={{ panelShell: cursors }} />
 <Story name="Query error" args={{ panelShell: missingTable }} />

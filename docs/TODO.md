@@ -122,12 +122,36 @@ going live:
 
 **Phase 3 -- details.**
 
-- Panel SQL editing (CM6 in each panel, reusing the sandbox's editor.ts
-  chunk) and the edited-query-never-clobbered rule.
-- Reset sandbox re-seeds.
-- Stories per component, `just site-verify`, a browser run (produce ->
-  tick -> cursor advances), and a look at the homepage's initial JS now
-  that the island is bigger.
+- Panel SQL editing + the edited-query-never-clobbered rule. **DONE
+  2026-08-24.** Both panels mount CM6 off the one editor.ts chunk, so
+  `editable` is gone from SqlPanel's props. PanelState gained `edited`
+  (the doc differs from the query the panel shipped with) and `stale` (a
+  write landed that this panel did not run). `runAt` marks stale instead
+  of running once edited; typing back to the default resumes auto re-runs.
+  The chip reads `auto re-runs` / `edited` / `edited · behind`, the last
+  in amber via two new tokens (`--border-panel-behind`,
+  `--color-panel-behind-text`).
+- Reset sandbox re-seeds. **DONE 2026-08-24.** `DatabaseState.reset()`
+  closes the handle, drops the single-flight promise, rebuilds and bumps
+  the revision; the sandbox puts the cards back to the one seeded card
+  and re-reads the groups. It deliberately does NOT touch the editors --
+  rebuilding the database does not invalidate a query the visitor wrote,
+  and an edited panel simply goes `behind` until they Run. Proved
+  headlessly: 9 rows / 2 groups / billing at 1 -> 8 rows / billing only /
+  cursor 0, and the fresh database ticks.
+- Homepage initial JS. **DONE 2026-08-24.** 60.5 KB raw / 22.4 KB
+  gzipped, of which 40.1 KB is the shared Svelte 5 runtime -- the sandbox
+  island itself is 13.5 KB / 4.9 KB gz. PGlite (588 KB js + 9.8 MB wasm +
+  6.1 MB data) and CodeMirror (309 KB) are dynamic-only and appear
+  nowhere in index.html, which two editors did not change.
+- STILL OPEN: a browser run (produce -> tick -> cursor advances, then
+  Reset). Everything below the UI is proved headlessly, but nothing has
+  driven the actual page.
+- STILL OPEN: the `edited` and `edited · behind` chip states have no
+  story -- they are only reachable by typing into a CM6 editor that
+  mounts on idle. Adding a prop to force them would be a field with no
+  production reader, so the gap is deliberate; a Playwright flow is the
+  right home if the stack ever gains one.
 - Whatever phase 1 and 2 surface.
 - Not in scope, tracked in ROADMAP: auto-run on a timer, the delivery_1
   panel, the fail-the-next-message toggle.

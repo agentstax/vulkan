@@ -26,29 +26,19 @@
 
 	// consumer 1 comes with the page so the mechanism has an object to act on;
 	// every other card is one the reader added
-	let consumers: Consumer[] = $state([
-		{
-			name: 'consumer 1',
-			group: 'billing',
-			lines: [
-				{
-					kind: 'note',
-					text: "billing's cursor is at 0 \u2014\nits first tick claims from the\nstart of the log.",
-				},
-			],
-		},
-	]);
+	let consumers: Consumer[] = $state([seededConsumer()]);
 	let groups: string[] = $state([]);
 	let addError: string | null = $state(null);
 	let adding = $state(false);
 	let ticking = $state(false);
+	let resetting = $state(false);
 
 	// never the card count: removing consumer 2 and adding again would reuse the
 	// name, and the grid keys its cards by it
 	let nextConsumer = 2;
 
 	const databaseState = new DatabaseState();
-	const busy = $derived(databaseState.status === 'connecting');
+	const busy = $derived(databaseState.status === 'connecting' || resetting);
 
 	// the database starts booting as soon as the sandbox is on screen, so a
 	// panel's first run only waits on the statement; a boot failure reaches
@@ -57,6 +47,40 @@
 		void databaseState.connect().catch(() => {});
 		void refreshGroups();
 	});
+
+	// a page control, not an API verb: the database is dropped and rebuilt from
+	// the seed, and the cards go with it -- their lines describe ticks against a
+	// database that no longer exists.
+	async function reset(): Promise<void> {
+		resetting = true;
+
+		try {
+			await databaseState.reset();
+			consumers = [seededConsumer()];
+			nextConsumer = 2;
+			produceError = null;
+			addError = null;
+			await refreshGroups();
+		} catch {
+			// a database that could not be rebuilt reports itself in both panels,
+			// through the run each one makes on the revision the reset bumped
+		} finally {
+			resetting = false;
+		}
+	}
+
+	function seededConsumer(): Consumer {
+		return {
+			name: 'consumer 1',
+			group: 'billing',
+			lines: [
+				{
+					kind: 'note',
+					text: "billing's cursor is at 0 —\nits first tick claims from the\nstart of the log.",
+				},
+			],
+		};
+	}
 
 	// the groups a consumer can join are whatever the catalog holds -- the
 	// seeded one plus every group Add has registered since
@@ -176,9 +200,12 @@
 	<div class="title-bar">
 		<span class="sandbox-label">{label}</span>
 		<span class="sandbox-meta">postgres 18 · wasm · local to this tab</span>
-		<!-- the click does nothing yet: dropping the database and rebuilding it
-		     from the seed is not wired up -->
-		<ChromeButton label="Reset sandbox ↻" tone="primary" disabled={busy} onclick={() => {}} />
+		<ChromeButton
+			label="Reset sandbox ↻"
+			tone="primary"
+			disabled={busy}
+			onclick={() => void reset()}
+		/>
 	</div>
 	<ProduceMessage
 		{topic}
@@ -189,8 +216,8 @@
 		onproduce={() => void produce()}
 	/>
 	<div class="panels">
-		<SqlPanel {databaseState} panelShell={messages} editable={true} />
-		<SqlPanel {databaseState} panelShell={cursors} editable={false} />
+		<SqlPanel {databaseState} panelShell={messages} />
+		<SqlPanel {databaseState} panelShell={cursors} />
 		{#if databaseState.status === 'connecting' && databaseState.stage !== null}
 			<div class="progress-overlay">
 				<DatabaseProgress stage={databaseState.stage} />

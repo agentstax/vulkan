@@ -18,7 +18,18 @@ export class PanelState {
 	errorMessage: string | null = $state(null);
 	running = $state(false);
 
+	// the visitor changed the query the panel shipped with. Auto re-runs stop
+	// here: running their SQL on every produce and tick is the panel deciding
+	// when their query executes.
+	edited = $state(false);
+
+	// a write landed that this panel did not run, so its result is behind the
+	// database. Only reachable while edited.
+	stale = $state(false);
+
 	private database: DatabaseState;
+
+	private defaultSql: string;
 
 	private lastRevision = -1;
 
@@ -26,6 +37,7 @@ export class PanelState {
 		this.database = database;
 		this.table = shell.table;
 		this.sql = shell.sql;
+		this.defaultSql = shell.sql;
 		this.result = {
 			columns: shell.columns,
 			rows: shell.rows,
@@ -43,7 +55,20 @@ export class PanelState {
 		if (revision === this.lastRevision) return;
 
 		this.lastRevision = revision;
+		if (this.edited) {
+			this.stale = true;
+			return;
+		}
+
 		untrack(() => void this.run());
+	}
+
+	// every keystroke arrives here from the editor; a document typed back to the
+	// query the panel shipped with is not an edit, so auto re-runs resume
+	setSql(next: string): void {
+		this.sql = next;
+		this.edited = next !== this.defaultSql;
+		if (!this.edited) this.stale = false;
 	}
 
 	// a boot failure arrives here too, so the panel that asked is the one that
@@ -54,6 +79,7 @@ export class PanelState {
 		try {
 			this.result = await this.database.run(this.sql);
 			this.errorMessage = null;
+			this.stale = false;
 		} catch (caught) {
 			this.errorMessage = caught instanceof Error ? caught.message : String(caught);
 		} finally {
