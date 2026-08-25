@@ -38,6 +38,13 @@ const messageCount = 5
 type event struct{ Sequence int }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	expect := flag.String("expect", "round-trip", `declared verdict: "round-trip" | "refused"`)
 	flag.Parse()
 
@@ -45,47 +52,61 @@ func main() {
 	defer cancel()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
-	must(err)
+	if err != nil {
+		return err
+	}
 	defer ds.Close()
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
-	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
+	if err != nil {
+		return err
+	}
+	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
+		return err
+	}
 
 	name := fmt.Sprintf("compat.lab.%d", time.Now().UnixNano())
-	_, err = mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil)
-	must(err)
+	if _, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil); err != nil {
+		return err
+	}
 
 	switch *expect {
 	case "round-trip":
-		roundTrip(ctx, ds, mAdmin, name)
+		return roundTrip(ctx, ds, mAdmin, name)
 	case "refused":
-		refused(ctx, ds, name)
-	default:
-		fmt.Fprintf(os.Stderr, "-expect must be \"round-trip\" or \"refused\", got %q\n", *expect)
-		os.Exit(1)
+		return refused(ctx, ds, name)
 	}
+	return fmt.Errorf("-expect must be \"round-trip\" or \"refused\", got %q", *expect)
 }
 
 // roundTrip is the additive verdict: the pinned build must live a full
 // lifecycle against the newer database.
-func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, name string) {
+func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, name string) error {
 	section("pinned producer registers and produces")
 	p, err := producer.NewProducer[event](ds, nil)
-	must(err)
+	if err != nil {
+		return err
+	}
 	pInstance, err := p.Register(ctx, name, topic.SchemaVersion(1))
-	check(err == nil, "producer Register accepted", err)
+	if problem := check(err == nil, "producer Register accepted", err); problem != nil {
+		return problem
+	}
 	for i := 1; i <= messageCount; i++ {
-		_, err = pInstance.Produce(ctx, &event{Sequence: i}, producer.ProduceOptions{})
-		must(err)
+		if _, err := pInstance.Produce(ctx, &event{Sequence: i}, producer.ProduceOptions{}); err != nil {
+			return fmt.Errorf("message %d: %w", i, err)
+		}
 	}
 	fmt.Printf("  ✓ produced %d messages\n", messageCount)
 
 	section("pinned consumer registers and consumes them back")
 	c, err := consumer.NewConsumer[event](ds, nil)
-	must(err)
+	if err != nil {
+		return err
+	}
 	cInstance, err := c.Register(ctx, "compat.lab.group", name, topic.SchemaVersion(1), nil)
-	check(err == nil, "consumer Register accepted", err)
+	if problem := check(err == nil, "consumer Register accepted", err); problem != nil {
+		return problem
+	}
 
 	consumeCtx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -96,45 +117,56 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 		}
 		return nil
 	})
-	check(consumed.Load() == messageCount, fmt.Sprintf("consumed all %d messages", messageCount), err)
+	if problem := check(consumed.Load() == messageCount, fmt.Sprintf("consumed all %d messages", messageCount), err); problem != nil {
+		return problem
+	}
 
 	section("pinned admin reads and destroys the topic")
 	row, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
-	check(err == nil && row != nil, "GetTopic returns the row", err)
-	must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	if problem := check(err == nil && row != nil, "GetTopic returns the row", err); problem != nil {
+		return problem
+	}
+	if err := mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}); err != nil {
+		return err
+	}
 	fmt.Println("  ✓ topic destroyed")
 
 	fmt.Println("\n✅ COMPAT LAB PASSED (round-trip)")
 	fmt.Println("   The pinned build lives a full lifecycle against the migrated database.")
+	return nil
 }
 
 // refused is the breaking verdict: the gate must lock the pinned build out.
 // No cleanup -- a checkpoint runs against a throwaway database.
-func refused(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) {
+func refused(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) error {
 	section("pinned producer Register must be refused")
 	p, err := producer.NewProducer[event](ds, nil)
-	must(err)
+	if err != nil {
+		return err
+	}
 	_, err = p.Register(ctx, name, topic.SchemaVersion(1))
 	fmt.Printf("  error: %v\n", err)
-	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild), "refused with ErrSchemaNewerThanBuild", err)
+	if problem := check(errors.Is(err, migrate.ErrSchemaNewerThanBuild), "refused with ErrSchemaNewerThanBuild", err); problem != nil {
+		return problem
+	}
 
 	fmt.Println("\n✅ COMPAT LAB PASSED (refused)")
 	fmt.Println("   The gate locks the pinned build out, as the registry declares it must.")
+	return nil
 }
 
 func section(title string) { fmt.Printf("\n--- %s ---\n", title) }
 
-func check(cond bool, msg string, err error) {
+// check prints the claim when it holds and returns it as an error when it does
+// not. err is the value the claim was made about -- nil when the claim is
+// about something else, so it is reported only when there is one.
+func check(cond bool, claim string, err error) error {
 	if !cond {
-		fmt.Printf("  ✗ %s (error: %v)\n", msg, err)
-		os.Exit(1)
+		if err != nil {
+			return fmt.Errorf("claim did not hold -- %s: %w", claim, err)
+		}
+		return errors.New("claim did not hold -- " + claim)
 	}
-	fmt.Printf("  ✓ %s\n", msg)
-}
-
-func must(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	fmt.Printf("  ✓ %s\n", claim)
+	return nil
 }
