@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import AddConsumer from '../add-consumer/add-consumer.svelte';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import DatabaseProgress from '../database-progress/database-progress.svelte';
@@ -7,6 +7,7 @@
 	import ConsumerGrid from '../consumer-grid/consumer-grid.svelte';
 	import ProduceMessage from '../produce-message/produce-message.svelte';
 	import SqlPanel from '../sql-panel/sql-panel.svelte';
+	import { AutoRunner } from './auto-run';
 	import type { ClaimedMessage } from './database';
 	import { DatabaseState } from './database-state.svelte';
 	import type { PanelShell } from './types';
@@ -34,7 +35,6 @@
 	let groups: string[] = $state([]);
 	let addError: string | null = $state(null);
 	let adding = $state(false);
-	let ticking = $state(false);
 	let resetting = $state(false);
 
 	// never the card count: removing consumer 2 and adding again would reuse the
@@ -42,15 +42,25 @@
 	let nextConsumer = 2;
 
 	const databaseState = new DatabaseState();
+	const autoRunner = new AutoRunner(tickConsumer);
 	const busy = $derived(databaseState.status === 'connecting' || resetting);
 
 	// the database starts booting as soon as the sandbox is on screen, so a
 	// panel's first run only waits on the statement; a boot failure reaches
-	// every panel through its own run, which is where it is reported
+	// every panel through its own run, which is where it is reported.
+	// The seeded card's clock starts here too -- its first tick lands about a
+	// second in, which the boot it awaits has usually beaten.
 	onMount(() => {
-		void databaseState.connect().catch(() => {});
-		void refreshGroups();
+		databaseState.connect()
+      .then(() => {
+        refreshGroups();
+		    autoRunner.start(consumers[0]!.name);
+      })
+      .catch(() => {});
 	});
+
+	// the island goes away on a view transition; its timers would not
+	onDestroy(() => autoRunner.stopAll());
 
 	// a page control, not an API verb: the database is dropped and rebuilt from
 	// the seed, and the cards go with it -- their lines describe ticks against a
@@ -58,12 +68,17 @@
 	async function reset(): Promise<void> {
 		resetting = true;
 
+		// every clock stops before the handle is dropped: a tick landing inside
+		// the rebuild would claim against a database being closed underneath it
+		autoRunner.stopAll();
+
 		try {
 			await databaseState.reset();
 			consumers = [seededConsumer()];
 			nextConsumer = 2;
 			produceError = null;
 			addError = null;
+			autoRunner.start(consumers[0]!.name);
 			await refreshGroups();
 		} catch {
 			// a database that could not be rebuilt reports itself in both panels,
@@ -77,6 +92,7 @@
 		return {
 			name: 'consumer 1',
 			group: 'billing',
+			autoRun: true,
 			lines: [
 				{
 					kind: 'note',
@@ -123,12 +139,15 @@
 				await refreshGroups();
 			}
 
+			const name = `consumer ${nextConsumer}`;
 			consumers.push({
-				name: `consumer ${nextConsumer}`,
+				name,
 				group: target,
+				autoRun: true,
 				lines: [{ kind: 'note', text: joinNote(group, target) }],
 				status: noTicksYet,
 			});
+			autoRunner.start(name);
 			nextConsumer += 1;
 			addError = null;
 		} catch (caught) {
@@ -148,11 +167,10 @@
 	// one tick: claim a range off the group's cursor, hand each message inside it
 	// to the handler, free the lease. The handler is this page's -- it succeeds
 	// on every message and its only work is the line it writes to the card.
+	// Nothing calls this but the consumer's own clock.
 	async function tickConsumer(name: string): Promise<void> {
 		const consumer = consumers.find((candidate) => candidate.name === name);
 		if (consumer === undefined) return;
-
-		ticking = true;
 
 		try {
 			const handled: ConsumerLine[] = [];
@@ -171,13 +189,27 @@
 			};
 			consumer.lines.unshift(...handled);
 		} catch (caught) {
+			// a clock that keeps firing against a database that never came up
+			// rewrites the same error every second and never gets past it, so
+			// the consumer stops itself -- the unpressed toggle says it did
+			setAutoRun(name, false);
 			consumer.status = {
 				text: caught instanceof Error ? caught.message : String(caught),
 				tone: 'error',
 			};
-		} finally {
-			ticking = false;
 		}
+	}
+
+	function setAutoRun(name: string, on: boolean): void {
+		const consumer = consumers.find((candidate) => candidate.name === name);
+		if (consumer === undefined) return;
+
+		consumer.autoRun = on;
+		if (on) {
+			autoRunner.start(name);
+			return;
+		}
+		autoRunner.stop(name);
 	}
 
 	// the range is the cursor's, the count is what came back inside it: a keyed
@@ -198,6 +230,7 @@
 	// the group and its cursor outlive the card: a group with no consumers
 	// still holds its place in the log
 	function removeConsumer(name: string): void {
+		autoRunner.stop(name);
 		consumers = consumers.filter((consumer) => consumer.name !== name);
 	}
 </script>
@@ -210,6 +243,7 @@
 			label="Reset sandbox ↻"
 			ariaLabel="Reset the sandbox"
 			tone="primary"
+			pressed={null}
 			disabled={busy}
 			onclick={() => void reset()}
 		/>
@@ -233,12 +267,7 @@
 	</div>
 	<section class="consumer-region" aria-label="Consumers">
 		<div class="consumers">
-			<ConsumerGrid
-				{consumers}
-				disabled={busy || ticking}
-				ontick={(name) => void tickConsumer(name)}
-				onremove={removeConsumer}
-			/>
+			<ConsumerGrid {consumers} disabled={busy} onautorun={setAutoRun} onremove={removeConsumer} />
 			<AddConsumer
 				{groups}
 				errorMessage={addError}

@@ -30,6 +30,7 @@
 		label="Produce ▸"
 		ariaLabel="Produce a message"
 		tone="primary"
+		pressed={null}
 		{disabled}
 		onclick={onproduce}
 	/>

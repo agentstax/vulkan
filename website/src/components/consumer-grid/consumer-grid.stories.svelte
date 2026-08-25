@@ -6,6 +6,7 @@
 	const billingOne: Consumer = {
 		name: 'consumer 1',
 		group: 'billing',
+		autoRun: true,
 		lines: [
 			{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
 			{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
@@ -16,6 +17,7 @@
 	const billingTwo: Consumer = {
 		name: 'consumer 2',
 		group: 'billing',
+		autoRun: true,
 		lines: [
 			{
 				kind: 'note',
@@ -28,6 +30,7 @@
 	const search: Consumer = {
 		name: 'consumer 3',
 		group: 'search',
+		autoRun: false,
 		lines: [
 			{
 				kind: 'note',
@@ -43,7 +46,7 @@
 		args: {
 			consumers: [billingOne, billingTwo, search],
 			disabled: false,
-			ontick: () => {},
+			onautorun: () => {},
 			onremove: () => {},
 		},
 	});
@@ -52,7 +55,7 @@
 <Story name="Three across" />
 <Story name="One consumer" args={{ consumers: [billingOne] }} />
 <Story name="No consumers" args={{ consumers: [] }} />
-<Story name="Tick in flight" args={{ disabled: true }} />
+<Story name="Database busy" args={{ disabled: true }} />
 <Story
 	name="Past one row"
 	args={{

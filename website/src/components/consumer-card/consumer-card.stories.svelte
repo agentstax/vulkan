@@ -9,6 +9,7 @@
 			consumer: {
 				name: 'consumer 1',
 				group: 'billing',
+				autoRun: true,
 				lines: [
 					{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
 					{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
@@ -16,7 +17,7 @@
 				status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
 			},
 			disabled: false,
-			ontick: () => {},
+			onautorun: () => {},
 			onremove: () => {},
 		},
 	});
@@ -24,11 +25,27 @@
 
 <Story name="Ticked twice" />
 <Story
+	name="Auto-run off"
+	args={{
+		consumer: {
+			name: 'consumer 1',
+			group: 'billing',
+			autoRun: false,
+			lines: [
+				{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
+				{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+			],
+			status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
+		},
+	}}
+/>
+<Story
 	name="Before its first run"
 	args={{
 		consumer: {
 			name: 'consumer 2',
 			group: 'billing',
+			autoRun: true,
 			lines: [
 				{
 					kind: 'note',
@@ -45,6 +62,7 @@
 		consumer: {
 			name: 'consumer 3',
 			group: 'search',
+			autoRun: true,
 			lines: [
 				{
 					kind: 'note',
@@ -61,6 +79,7 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
+			autoRun: true,
 			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'error' }],
 			status: { text: 'claim (2, 3] · 1 message', tone: 'plain' },
 		},
@@ -72,6 +91,7 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
+			autoRun: true,
 			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
 			status: { text: 'caught up · nothing to claim', tone: 'plain' },
 		},
@@ -83,6 +103,7 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
+			autoRun: true,
 			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
 			status: { text: 'claim (4, 5] · 0 messages', tone: 'plain' },
 		},
@@ -94,18 +115,20 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
+			autoRun: false,
 			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
 			status: { text: 'lease lost to another consumer', tone: 'error' },
 		},
 	}}
 />
-<Story name="Tick in flight" args={{ disabled: true }} />
+<Story name="Database busy" args={{ disabled: true }} />
 <Story
 	name="Output past the card height"
 	args={{
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
+			autoRun: true,
 			lines: [
 				{ kind: 'handled', text: '#8 "ship order 4475"', status: 'ok' },
 				{ kind: 'handled', text: '#7 "refund order 4474"', status: 'ok' },

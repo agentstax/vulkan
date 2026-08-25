@@ -5,11 +5,11 @@
 	type Props = {
 		consumer: Consumer;
 		disabled: boolean;
-		ontick: () => void;
+		onautorun: (on: boolean) => void;
 		onremove: () => void;
 	};
 
-	let { consumer, disabled, ontick, onremove }: Props = $props();
+	let { consumer, disabled, onautorun, onremove }: Props = $props();
 </script>
 
 <div class="consumer-card">
@@ -17,16 +17,18 @@
 		<span class="consumer-name">{consumer.name}</span>
 		<span class="consumer-group">({consumer.group})</span>
 		<ChromeButton
-			label="Run ▸"
-			ariaLabel="Run {consumer.name}"
+			label="auto-run"
+			ariaLabel="Auto-run {consumer.name}"
 			tone="primary"
+			pressed={consumer.autoRun}
 			{disabled}
-			onclick={ontick}
+			onclick={() => onautorun(!consumer.autoRun)}
 		/>
 		<ChromeButton
 			label="✕"
 			ariaLabel="Remove {consumer.name}"
 			tone="close"
+			pressed={null}
 			{disabled}
 			onclick={onremove}
 		/>

@@ -47,8 +47,10 @@ the sandbox itself, so `npm run build` and a browser are the check.
   (Proposed on the replay thread). Reading it all again = declare a new
   group. Reset sandbox re-seeds the database and is labeled a page
   control, not an API.
-- Consumers run STEP-BY-STEP: one tick = one claim, one handler call, one
-  commit. No timer.
+- One tick = one claim, one handler call, one commit. Consumers ran
+  step-by-step off a per-card Run button until 2026-08-24, when the user
+  replaced that button outright with an auto-run toggle [0587]; the tick
+  itself is unchanged, only what calls it.
 - Each panel owns a default query and re-runs it after any produce or tick
   ONLY while the visitor has not edited it; once edited it marks itself
   stale and waits.
@@ -144,14 +146,24 @@ going live:
   island itself is 13.5 KB / 4.9 KB gz. PGlite (588 KB js + 9.8 MB wasm +
   6.1 MB data) and CodeMirror (309 KB) are dynamic-only and appear
   nowhere in index.html, which two editors did not change.
-- STILL OPEN: a browser run (produce -> tick -> cursor advances, then
-  Reset). Everything below the UI is proved headlessly, but nothing has
-  driven the actual page.
+- Auto-run replaces the manual Run button. **DONE 2026-08-24 [0587].**
+  Every consumer starts with auto-run on and ticks about once a second
+  (`1000ms ± 150ms`, the next run scheduled after the previous resolves).
+  `AutoRunner` is plain TS -- no reactive state, so vitest can load it,
+  unlike a `.svelte.ts` module -- and carries fake-timer tests including
+  stop-mid-run. `ChromeButton` gained `pressed: boolean | null`; the
+  on-state is muted amber off `[aria-pressed='true']`, no second `data-`
+  attribute. The global in-flight lock is gone: a card's `disabled` now
+  means the database is unavailable, nothing else.
+- STILL OPEN: a browser run (produce -> the clocks claim it -> cursor
+  advances, then Reset). Everything below the UI is proved headlessly, but
+  nothing has driven the actual page.
 - STILL OPEN: the `edited` and `edited · behind` chip states have no
   story -- they are only reachable by typing into a CM6 editor that
   mounts on idle. Adding a prop to force them would be a field with no
   production reader, so the gap is deliberate; a Playwright flow is the
   right home if the stack ever gains one.
 - Whatever phase 1 and 2 surface.
-- Not in scope, tracked in ROADMAP: auto-run on a timer, the delivery_1
-  panel, the fail-the-next-message toggle.
+- Not in scope, tracked in ROADMAP: the delivery_1 panel, the
+  fail-the-next-message toggle, declaring a binding so routing_key
+  selects.

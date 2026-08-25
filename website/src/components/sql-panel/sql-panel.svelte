@@ -83,6 +83,7 @@
 			label="Run ▸"
 			ariaLabel="Run this panel's query"
 			tone="primary"
+			pressed={null}
 			disabled={runDisabled}
 			onclick={() => void panelState.run()}
 		/>

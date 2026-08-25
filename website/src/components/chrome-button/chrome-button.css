@@ -26,6 +26,18 @@
 	line-height: 1;
 }
 
+/* a toggle that is on. The state selector is aria-pressed rather than this
+   file's usual data- attribute because the button already carries it: two
+   attributes for one fact is two places to keep true. Amber at ground
+   strength -- the board spends amber on new-or-act, and a card grid full of
+   saturated ones would read as a row of warnings */
+.chrome-button[aria-pressed='true'] {
+	background: var(--color-toggle-on);
+	box-shadow: var(--lacquer-dim);
+	border-color: var(--border-toggle-on);
+	color: var(--color-toggle-on-text);
+}
+
 .chrome-button:disabled {
 	color: var(--color-text-faint);
 	cursor: default;

@@ -9,6 +9,7 @@
 			label: 'Run ▸',
 			ariaLabel: 'Run the query',
 			tone: 'primary',
+			pressed: null,
 			disabled: false,
 			onclick: () => {},
 		},
@@ -26,4 +27,16 @@
 <Story
 	name="Close box disabled"
 	args={{ label: '✕', ariaLabel: 'Remove consumer 1', tone: 'close', disabled: true }}
+/>
+<Story
+	name="Toggle on"
+	args={{ label: 'auto-run', ariaLabel: 'Auto-run consumer 1', pressed: true }}
+/>
+<Story
+	name="Toggle off"
+	args={{ label: 'auto-run', ariaLabel: 'Auto-run consumer 1', pressed: false }}
+/>
+<Story
+	name="Toggle on, disabled"
+	args={{ label: 'auto-run', ariaLabel: 'Auto-run consumer 1', pressed: true, disabled: true }}
 />

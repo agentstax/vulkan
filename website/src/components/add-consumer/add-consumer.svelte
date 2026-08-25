@@ -37,6 +37,7 @@
 		label="Add"
 		ariaLabel="Add a consumer"
 		tone="quiet"
+		pressed={null}
 		{disabled}
 		onclick={() => onadd(selected)}
 	/>

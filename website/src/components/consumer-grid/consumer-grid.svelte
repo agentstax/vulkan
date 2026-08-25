@@ -5,11 +5,11 @@
 	type Props = {
 		consumers: Consumer[];
 		disabled: boolean;
-		ontick: (name: string) => void;
+		onautorun: (name: string, on: boolean) => void;
 		onremove: (name: string) => void;
 	};
 
-	let { consumers, disabled, ontick, onremove }: Props = $props();
+	let { consumers, disabled, onautorun, onremove }: Props = $props();
 </script>
 
 <div class="consumer-grid">
@@ -17,7 +17,7 @@
 		<ConsumerCard
 			{consumer}
 			{disabled}
-			ontick={() => ontick(consumer.name)}
+			onautorun={(on) => onautorun(consumer.name, on)}
 			onremove={() => onremove(consumer.name)}
 		/>
 	{/each}

@@ -14,12 +14,18 @@ export type ConsumerStatus = { text: string; tone: 'plain' | 'error' };
 // A consumer instance and the group whose cursor it claims from. Several
 // consumers naming the same group share that one cursor.
 //
+// autoRun on means the consumer ticks about once a second on its own clock,
+// which is the state a card starts in -- a consumer instance that polls is what
+// the library runs, and a card that only moves when clicked reads as though a
+// claim were a manual verb. Off, the consumer sits where its last tick left it.
+//
 // lines are NEWEST FIRST, the same end message_log_1 puts its newest row: a
 // tick prepends the messages it read, so the card needs no scrolling to show
 // what just happened.
 export type Consumer = {
 	name: string;
 	group: string;
+	autoRun: boolean;
 	lines: ConsumerLine[];
 	status: ConsumerStatus;
 };
