@@ -19,10 +19,10 @@
 		lines: [
 			{
 				kind: 'note',
-				text: 'same group as consumer 1.\nits next tick claims (2, 3] —\nranges never overlap.',
+				text: 'same group as consumer 1.\nits next run claims (2, 3] —\nranges never overlap.',
 			},
 		],
-		status: { text: 'no ticks yet', tone: 'plain' },
+		status: { text: 'no runs yet', tone: 'plain' },
 	};
 
 	const search: Consumer = {
@@ -31,10 +31,10 @@
 		lines: [
 			{
 				kind: 'note',
-				text: 'its own cursor, still at 0 —\nits first tick reads all three\nmessages billing handled.',
+				text: 'its own cursor, still at 0 —\nits first run reads all three\nmessages billing handled.',
 			},
 		],
-		status: { text: 'no ticks yet', tone: 'plain' },
+		status: { text: 'no runs yet', tone: 'plain' },
 	};
 
 	const { Story } = defineMeta({

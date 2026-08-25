@@ -17,8 +17,8 @@
 		<span class="consumer-name">{consumer.name}</span>
 		<span class="consumer-group">({consumer.group})</span>
 		<ChromeButton
-			label="Tick ▸"
-			ariaLabel="Tick {consumer.name}"
+			label="Run ▸"
+			ariaLabel="Run {consumer.name}"
 			tone="primary"
 			{disabled}
 			onclick={ontick}

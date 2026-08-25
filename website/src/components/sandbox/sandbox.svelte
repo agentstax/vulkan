@@ -22,7 +22,7 @@
 
 	// what a card's status bar reads before its first tick, the sibling of a
 	// query panel showing 0 rows before its first run
-	const noTicksYet: ConsumerStatus = { text: 'no ticks yet', tone: 'plain' };
+	const noTicksYet: ConsumerStatus = { text: 'no runs yet', tone: 'plain' };
 
 	let produceText = $state('restock the ovens');
 	let produceError: string | null = $state(null);
@@ -80,7 +80,7 @@
 			lines: [
 				{
 					kind: 'note',
-					text: "billing's cursor is at 0 —\nits first tick claims from the\nstart of the log.",
+					text: "billing's cursor is at 0 —\nits first run claims from the\nstart of the log.",
 				},
 			],
 			status: noTicksYet,
@@ -140,9 +140,9 @@
 
 	function joinNote(group: string | null, target: string): string {
 		if (group === null) {
-			return `its own cursor, still at 0 —\nits first tick reads everything\nproduced so far.`;
+			return `its own cursor, still at 0 —\nits first run reads everything\nproduced so far.`;
 		}
-		return `shares ${target}'s cursor —\nits ticks claim ranges the\nothers have not.`;
+		return `shares ${target}'s cursor —\nits runs claim ranges the\nothers have not.`;
 	}
 
 	// one tick: claim a range off the group's cursor, hand each message inside it
