@@ -37,7 +37,10 @@
 	max-height: 140px;
 	overflow-y: auto;
 	padding: 6px 8px;
-	background: var(--color-console-sql-bg);
+
+	/* NOT the panels' --color-console-sql-bg: a card wearing the SQL ground is
+	   what made two cards across read as two more query panels */
+	background: var(--color-surface);
 	font-family: var(--font-database);
 	font-size: 10.5px;
 	line-height: 1.5;

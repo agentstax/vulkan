@@ -231,20 +231,22 @@
 			</div>
 		{/if}
 	</div>
-	<div class="consumers">
-		<ConsumerGrid
-			{consumers}
-			disabled={busy || ticking}
-			ontick={(name) => void tickConsumer(name)}
-			onremove={removeConsumer}
-		/>
-		<AddConsumer
-			{groups}
-			errorMessage={addError}
-			disabled={busy || adding}
-			onadd={(group) => void addConsumer(group)}
-		/>
-	</div>
+	<section class="consumer-region" aria-label="Consumers">
+		<div class="consumers">
+			<ConsumerGrid
+				{consumers}
+				disabled={busy || ticking}
+				ontick={(name) => void tickConsumer(name)}
+				onremove={removeConsumer}
+			/>
+			<AddConsumer
+				{groups}
+				errorMessage={addError}
+				disabled={busy || adding}
+				onadd={(group) => void addConsumer(group)}
+			/>
+		</div>
+	</section>
 </div>
 
 <style src="./sandbox.css"></style>

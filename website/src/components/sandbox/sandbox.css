@@ -48,13 +48,22 @@
 	}
 }
 
-/* no tinted ground here -- the cards sit on the sandbox's own surface, which
-   is what separates them from the panels above */
+/* the panels sit on the dark SQL ground and the cards on this pale one: two
+   cards across otherwise read as a second row of query panels, and inverting
+   the grounds is what tells them apart at a glance */
 .consumers {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
 	padding: 10px;
+	background: var(--color-chrome-pale);
+}
+
+.consumers-note {
+	margin: 0;
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-text-muted);
 }
 
 .progress-overlay {
