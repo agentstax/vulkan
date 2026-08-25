@@ -59,13 +59,6 @@
 	background: var(--color-chrome-pale);
 }
 
-.consumers-note {
-	margin: 0;
-	font-family: var(--font-chrome);
-	font-size: 10px;
-	color: var(--color-text-muted);
-}
-
 .progress-overlay {
 	position: absolute;
 	inset: 0;
