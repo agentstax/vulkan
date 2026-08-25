@@ -38,9 +38,9 @@ export class DatabaseState {
 		return database.run(sql);
 	}
 
-	async produce(text: string): Promise<void> {
+	async produce(description: string): Promise<void> {
 		const database = await this.connect();
-		await database.produce(text);
+		await database.produce(description);
 		this.revision += 1;
 	}
 

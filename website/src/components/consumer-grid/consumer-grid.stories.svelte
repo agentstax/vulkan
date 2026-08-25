@@ -8,8 +8,8 @@
 		group: 'billing',
 		autoRun: true,
 		lines: [
-			{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-			{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+			{ kind: 'handled', text: '#2 {"order_id": 4002, "desc": "refund card"}', status: 'ok' },
+			{ kind: 'handled', text: '#1 {"order_id": 4001, "desc": "ship pallet"}', status: 'ok' },
 		],
 		status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
 	};

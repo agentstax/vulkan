@@ -155,6 +155,18 @@ going live:
   on-state is muted amber off `[aria-pressed='true']`, no second `data-`
   attribute. The global in-flight lock is gone: a card's `disabled` now
   means the database is unavailable, nothing else.
+- One payload shape everywhere. **DONE 2026-08-25.** Seed and produce both
+  write `{"order_id": <id>, "desc": <text>}`; order numbers run 4001.. from
+  a `seedOrders` array of eight short descriptions and continue from there
+  on every produce (`VulkanDatabase.nextOrderId`, which a Reset rebuilds
+  along with the database). Four digits so the order number never reads as
+  a second spelling of the message id. The card prints the whole payload --
+  the `text`-field unwrap is gone.
+  GOTCHA: jsonb has no key order. Postgres sorts object keys by LENGTH then
+  bytes, so `desc` (4) comes back before `order_id` (8) no matter how the
+  literal was written. The card names the two fields when it renders, which
+  is why it leads with `order_id` while the message_log_1 panel -- showing
+  the raw column -- leads with `desc`.
 - STILL OPEN: a browser run (produce -> the clocks claim it -> cursor
   advances, then Reset). Everything below the UI is proved headlessly, but
   nothing has driven the actual page.

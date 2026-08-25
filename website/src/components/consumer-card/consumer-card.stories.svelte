@@ -11,8 +11,8 @@
 				group: 'billing',
 				autoRun: true,
 				lines: [
-					{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-					{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+					{ kind: 'handled', text: '#2 {"order_id": 4002, "desc": "refund card"}', status: 'ok' },
+					{ kind: 'handled', text: '#1 {"order_id": 4001, "desc": "ship pallet"}', status: 'ok' },
 				],
 				status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
 			},
@@ -32,8 +32,8 @@
 			group: 'billing',
 			autoRun: false,
 			lines: [
-				{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-				{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+				{ kind: 'handled', text: '#2 {"order_id": 4002, "desc": "refund card"}', status: 'ok' },
+				{ kind: 'handled', text: '#1 {"order_id": 4001, "desc": "ship pallet"}', status: 'ok' },
 			],
 			status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
 		},
@@ -80,7 +80,9 @@
 			name: 'consumer 1',
 			group: 'billing',
 			autoRun: true,
-			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'error' }],
+			lines: [
+				{ kind: 'handled', text: '#3 {"order_id": 4003, "desc": "pack crate"}', status: 'error' },
+			],
 			status: { text: 'claim (2, 3] · 1 message', tone: 'plain' },
 		},
 	}}
@@ -92,7 +94,9 @@
 			name: 'consumer 1',
 			group: 'billing',
 			autoRun: true,
-			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
+			lines: [
+				{ kind: 'handled', text: '#3 {"order_id": 4003, "desc": "pack crate"}', status: 'ok' },
+			],
 			status: { text: 'caught up · nothing to claim', tone: 'plain' },
 		},
 	}}
@@ -104,7 +108,9 @@
 			name: 'consumer 1',
 			group: 'billing',
 			autoRun: true,
-			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
+			lines: [
+				{ kind: 'handled', text: '#3 {"order_id": 4003, "desc": "pack crate"}', status: 'ok' },
+			],
 			status: { text: 'claim (4, 5] · 0 messages', tone: 'plain' },
 		},
 	}}
@@ -116,7 +122,9 @@
 			name: 'consumer 1',
 			group: 'billing',
 			autoRun: false,
-			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
+			lines: [
+				{ kind: 'handled', text: '#3 {"order_id": 4003, "desc": "pack crate"}', status: 'ok' },
+			],
 			status: { text: 'lease lost to another consumer', tone: 'error' },
 		},
 	}}
@@ -130,14 +138,14 @@
 			group: 'billing',
 			autoRun: true,
 			lines: [
-				{ kind: 'handled', text: '#8 "ship order 4475"', status: 'ok' },
-				{ kind: 'handled', text: '#7 "refund order 4474"', status: 'ok' },
-				{ kind: 'handled', text: '#6 "ship order 4473"', status: 'ok' },
-				{ kind: 'handled', text: '#5 "restock the ovens"', status: 'ok' },
-				{ kind: 'handled', text: '#4 "ship order 4472"', status: 'ok' },
-				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' },
-				{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-				{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+				{ kind: 'handled', text: '#8 {"order_id": 4008, "desc": "reprint label"}', status: 'ok' },
+				{ kind: 'handled', text: '#7 {"order_id": 4007, "desc": "hold for pickup"}', status: 'ok' },
+				{ kind: 'handled', text: '#6 {"order_id": 4006, "desc": "split shipment"}', status: 'ok' },
+				{ kind: 'handled', text: '#5 {"order_id": 4005, "desc": "void invoice"}', status: 'ok' },
+				{ kind: 'handled', text: '#4 {"order_id": 4004, "desc": "restock shelf"}', status: 'ok' },
+				{ kind: 'handled', text: '#3 {"order_id": 4003, "desc": "pack crate"}', status: 'ok' },
+				{ kind: 'handled', text: '#2 {"order_id": 4002, "desc": "refund card"}', status: 'ok' },
+				{ kind: 'handled', text: '#1 {"order_id": 4001, "desc": "ship pallet"}', status: 'ok' },
 			],
 			status: { text: 'claim (7, 8] · 1 message', tone: 'plain' },
 		},

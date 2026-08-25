@@ -25,7 +25,7 @@
 	// query panel showing 0 rows before its first run
 	const noTicksYet: ConsumerStatus = { text: 'no runs yet', tone: 'plain' };
 
-	let produceText = $state('restock the ovens');
+	let produceDescription = $state('expedite shipping');
 	let produceError: string | null = $state(null);
 	let producing = $state(false);
 
@@ -51,12 +51,13 @@
 	// The seeded card's clock starts here too -- its first tick lands about a
 	// second in, which the boot it awaits has usually beaten.
 	onMount(() => {
-		databaseState.connect()
-      .then(() => {
-        refreshGroups();
-		    autoRunner.start(consumers[0]!.name);
-      })
-      .catch(() => {});
+		databaseState
+			.connect()
+			.then(() => {
+				refreshGroups();
+				autoRunner.start(consumers[0]!.name);
+			})
+			.catch(() => {});
 	});
 
 	// the island goes away on a view transition; its timers would not
@@ -117,7 +118,7 @@
 		producing = true;
 
 		try {
-			await databaseState.produce(produceText);
+			await databaseState.produce(produceDescription);
 			produceError = null;
 		} catch (caught) {
 			produceError = caught instanceof Error ? caught.message : String(caught);
@@ -218,13 +219,9 @@
 		return `claim (${low}, ${high}] · ${count} ${count === 1 ? 'message' : 'messages'}`;
 	}
 
-	// the payload's own text field when it has one -- the reader typed it into
-	// the produce strip -- and the whole payload otherwise
 	function handledText(message: ClaimedMessage): string {
 		const payload = message.payload;
-		const text =
-			typeof payload === 'object' && payload !== null && 'text' in payload ? payload.text : payload;
-		return `#${message.id} ${JSON.stringify(text)}`;
+		return `#${message.id} ${JSON.stringify(payload)}`;
 	}
 
 	// the group and its cursor outlive the card: a group with no consumers
@@ -250,10 +247,10 @@
 	</div>
 	<ProduceMessage
 		{topic}
-		text={produceText}
+		text={produceDescription}
 		errorMessage={produceError}
 		disabled={busy || producing}
-		ontext={(next) => (produceText = next)}
+		ontext={(next) => (produceDescription = next)}
 		onproduce={() => void produce()}
 	/>
 	<div class="panels">

@@ -7,7 +7,7 @@
 		component: ProduceMessage,
 		args: {
 			topic: 'orders',
-			text: 'restock the ovens',
+			text: 'expedite shipping',
 			errorMessage: null,
 			disabled: false,
 			ontext: () => {},

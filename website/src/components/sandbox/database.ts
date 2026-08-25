@@ -11,7 +11,6 @@ import { createTopicTablesStatements } from './sql/create-topic-tables/statement
 import { freeLeaseSql } from './sql/free-lease';
 import { getGroupSql } from './sql/get-group';
 import { protectedInsertKeylessSql } from './sql/protected-insert-keyless';
-import { protectedInsertKeyedSql } from './sql/protected-insert-keyed';
 import { readMessagesSql } from './sql/read-messages';
 import { registerGroupCursorSql } from './sql/register-group-cursor';
 import { registerGroupInsertSql } from './sql/register-group-insert';
@@ -28,6 +27,24 @@ const batchLimit = 1;
 // what consumer_runner claims with under the library's defaults: MessageMax
 // Timeout 30s + TimeoutGrace 100ms + QueueMargin 5s + RecordMargin 2s
 const leaseSeconds = 37.1;
+
+// the seeded log, one order per message. The first two go through the keyless
+// produce statement and the rest through the keyed one -- both are the
+// library's own, and the sandbox runs both.
+const seedOrders = [
+  'ship pallet',
+  'refund card',
+  'pack crate',
+  'restock shelf',
+  'void invoice',
+  'split shipment',
+  'hold for pickup',
+  'reprint label',
+];
+
+// order numbers are the payload's own counter, not a second spelling of the
+// message id -- four digits so the two never read as the same number
+const firstOrderId = 4001;
 
 export const demoTopicName = 'orders';
 
@@ -51,33 +68,38 @@ type GroupRow = { id: number; topic_id: number; name: string; created_at: Date }
 type GroupNameRow = { name: string };
 
 type SnapshotRow = {
-	head: number;
-	xmax: string;
-	claimed: number;
-	settled_head: number;
-	pending_head: number;
+  head: number;
+  xmax: string;
+  claimed: number;
+  settled_head: number;
+  pending_head: number;
 };
 
 type CursorRow = { low: number; high: number };
 
 type LeaseRow = {
-	token: string;
-	consumer_group_id: number;
-	low: number;
-	high: number;
-	until: Date;
-	reclaims: number;
+  token: string;
+  consumer_group_id: number;
+  low: number;
+  high: number;
+  until: Date;
+  reclaims: number;
 };
 
 type MessageRow = {
-	id: number;
-	payload: unknown;
-	created_at: Date;
-	routing_key: string;
-	compaction_key: string;
-	compaction_rank: number;
-	options: unknown;
+  id: number;
+  payload: unknown;
+  created_at: Date;
+  routing_key: string;
+  compaction_key: string;
+  compaction_rank: number;
+  options: unknown;
 };
+
+// what every message on the sandbox topic carries, the seed's and the reader's
+// alike. Postgres hands it back with the keys sorted by length -- jsonb has no
+// order of its own -- so a caller that prints it names the two fields.
+export type OrderPayload = { order_id: number; desc: string };
 
 // one message the claim's range made readable -- the keyed rows a newer message
 // on their compaction key replaced never reach this. The payload is jsonb, so
@@ -87,193 +109,198 @@ export type ClaimedMessage = { id: number; payload: unknown };
 // the range claimed, the lease held over it, and the rows inside it. Committing
 // gives the token back, which is why it travels with the range.
 export type ClaimedRange = {
-	groupId: number;
-	token: string;
-	low: number;
-	high: number;
-	messages: ClaimedMessage[];
+  groupId: number;
+  token: string;
+  low: number;
+  high: number;
+  messages: ClaimedMessage[];
 };
 
 export type RunResult = {
-	columns: string[];
-	rows: (string | null)[][];
-	affectedRows: number | null;
-	durationMs: number | null;
-	statementCount: number;
+  columns: string[];
+  rows: (string | null)[][];
+  affectedRows: number | null;
+  durationMs: number | null;
+  statementCount: number;
 };
 
 export class VulkanDatabase {
-	private db: PGlite;
+  private db: PGlite;
 
-	constructor(db: PGlite) {
-		this.db = db;
-	}
+  // order numbers continue where the seed left off, so a produced message is
+  // the next order rather than one that restarts the count
+  private nextOrderId = firstOrderId + seedOrders.length;
 
-	async run(sql: string): Promise<RunResult> {
-		const start = performance.now();
-		const results = await this.db.exec(sql);
-		const durationMs = performance.now() - start;
+  constructor(db: PGlite) {
+    this.db = db;
+  }
 
-		const last = results.at(-1);
-		if (last === undefined) {
-			return { columns: [], rows: [], affectedRows: 0, durationMs, statementCount: 0 };
-		}
+  async run(sql: string): Promise<RunResult> {
+    const start = performance.now();
+    const results = await this.db.exec(sql);
+    const durationMs = performance.now() - start;
 
-		const columns = last.fields.map((field) => field.name);
-		const resultRows = last.rows as Record<string, unknown>[];
-		const rows = resultRows.map((row) => last.fields.map((field) => toCell(row[field.name])));
-		return {
-			columns,
-			rows,
-			affectedRows: columns.length === 0 ? (last.affectedRows ?? 0) : null,
-			durationMs,
-			statementCount: results.length,
-		};
-	}
+    const last = results.at(-1);
+    if (last === undefined) {
+      return { columns: [], rows: [], affectedRows: 0, durationMs, statementCount: 0 };
+    }
 
-	// the reader's own message, produced through the same statement the seed
-	// uses -- a fresh idempotency key every time, so every click lands a row
-	async produce(text: string): Promise<void> {
-		await this.db.query(protectedInsertKeylessSql(demoTopicId), [
-			crypto.randomUUID(),
-			JSON.stringify({ text }),
-			'',
-			null,
-		]);
-	}
+    const columns = last.fields.map((field) => field.name);
+    const resultRows = last.rows as Record<string, unknown>[];
+    const rows = resultRows.map((row) => last.fields.map((field) => toCell(row[field.name])));
+    return {
+      columns,
+      rows,
+      affectedRows: columns.length === 0 ? (last.affectedRows ?? 0) : null,
+      durationMs,
+      statementCount: results.length,
+    };
+  }
 
-	// registerGroup's own shape, statement for statement: the look-up, the
-	// advisory lock, the re-check under it, the group insert and the cursor row,
-	// all in one transaction. The cursor row is why a new group replays -- it
-	// starts at claimed 0. One backend never contends the lock, so the re-check
-	// is here for fidelity, not for a race this page can have.
-	async registerGroup(name: string): Promise<void> {
-		await this.db.transaction(async (tx) => {
-			if ((await this.getGroup(tx, name)) !== null) return;
+  // the reader's own message, produced through the same statement the seed
+  // uses -- a fresh idempotency key every time, so every click lands a row
+  async produce(description: string): Promise<void> {
+    await this.db.query(protectedInsertKeylessSql(demoTopicId), [
+      crypto.randomUUID(),
+      orderPayload(this.nextOrderId, description),
+      'orders.eu.created',
+      null,
+    ]);
+    this.nextOrderId += 1;
+  }
 
-			await tx.query(registerGroupLockSql, [demoTopicId, name]);
-			if ((await this.getGroup(tx, name)) !== null) return;
+  // registerGroup's own shape, statement for statement: the look-up, the
+  // advisory lock, the re-check under it, the group insert and the cursor row,
+  // all in one transaction. The cursor row is why a new group replays -- it
+  // starts at claimed 0. One backend never contends the lock, so the re-check
+  // is here for fidelity, not for a race this page can have.
+  async registerGroup(name: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      if ((await this.getGroup(tx, name)) !== null) return;
 
-			const inserted = await tx.query<GroupRow>(registerGroupInsertSql, [demoTopicId, name]);
-			await tx.query(registerGroupCursorSql(demoTopicId), [inserted.rows[0]!.id]);
-		});
-	}
+      await tx.query(registerGroupLockSql, [demoTopicId, name]);
+      if ((await this.getGroup(tx, name)) !== null) return;
 
-	// ClaimMessagesWithCursor's fresh-claim path: the snapshot pair, the gate
-	// that proves it, the lease over the range it opens, and the rows inside it.
-	// The reclaim path the library tries first is skipped -- commit frees the
-	// lease in the same tick that took it, so none is ever left to expire.
-	async claim(groupName: string): Promise<ClaimedRange | null> {
-		const group = await this.getGroup(this.db, groupName);
-		if (group === null) {
-			throw new Error(`consumer group not found: ${JSON.stringify(groupName)}`);
-		}
+      const inserted = await tx.query<GroupRow>(registerGroupInsertSql, [demoTopicId, name]);
+      await tx.query(registerGroupCursorSql(demoTopicId), [inserted.rows[0]!.id]);
+    });
+  }
 
-		return this.db.transaction(async (tx) => {
-			// a pure SELECT, so this transaction still holds no txid when it reads
-			// xmax -- the whole gate below depends on that
-			const snapshot = await tx.query<SnapshotRow>(claimSnapshotSql(demoTopicId), [group.id]);
-			const pair = snapshot.rows[0];
-			if (pair === undefined) throw noCursor(group.id);
+  // ClaimMessagesWithCursor's fresh-claim path: the snapshot pair, the gate
+  // that proves it, the lease over the range it opens, and the rows inside it.
+  // The reclaim path the library tries first is skipped -- commit frees the
+  // lease in the same tick that took it, so none is ever left to expire.
+  async claim(groupName: string): Promise<ClaimedRange | null> {
+    const group = await this.getGroup(this.db, groupName);
+    if (group === null) {
+      throw new Error(`consumer group not found: ${JSON.stringify(groupName)}`);
+    }
 
-			// this snapshot saw the head already proven and fully claimed: the gate
-			// never runs, so the tick writes nothing at all
-			if (
-				pair.head === pair.pending_head &&
-				pair.pending_head === pair.settled_head &&
-				pair.claimed === pair.settled_head
-			) {
-				return null;
-			}
+    return this.db.transaction(async (tx) => {
+      // a pure SELECT, so this transaction still holds no txid when it reads
+      // xmax -- the whole gate below depends on that
+      const snapshot = await tx.query<SnapshotRow>(claimSnapshotSql(demoTopicId), [group.id]);
+      const pair = snapshot.rows[0];
+      if (pair === undefined) throw noCursor(group.id);
 
-			const advanced = await tx.query<CursorRow>(claimCursorSql(demoTopicId), [
-				group.id,
-				batchLimit,
-				pair.head,
-				pair.xmax,
-			]);
-			const range = advanced.rows[0];
-			if (range === undefined) throw noCursor(group.id);
+      // this snapshot saw the head already proven and fully claimed: the gate
+      // never runs, so the tick writes nothing at all
+      if (
+        pair.head === pair.pending_head &&
+        pair.pending_head === pair.settled_head &&
+        pair.claimed === pair.settled_head
+      ) {
+        return null;
+      }
 
-			// low === high is caught up: the cursor's proof columns moved, but
-			// claimed did not, so there is no range to lease
-			if (range.low === range.high) return null;
+      const advanced = await tx.query<CursorRow>(claimCursorSql(demoTopicId), [
+        group.id,
+        batchLimit,
+        pair.head,
+        pair.xmax,
+      ]);
+      const range = advanced.rows[0];
+      if (range === undefined) throw noCursor(group.id);
 
-			const lease = await tx.query<LeaseRow>(claimLeaseSql(demoTopicId), [
-				group.id,
-				range.low,
-				range.high,
-				leaseSeconds,
-			]);
-			const messages = await tx.query<MessageRow>(readMessagesSql(demoTopicId), [
-				range.low,
-				range.high,
-				group.id,
-			]);
+      // low === high is caught up: the cursor's proof columns moved, but
+      // claimed did not, so there is no range to lease
+      if (range.low === range.high) return null;
 
-			return {
-				groupId: group.id,
-				token: lease.rows[0]!.token,
-				low: range.low,
-				high: range.high,
-				messages: messages.rows.map((row) => ({ id: row.id, payload: row.payload })),
-			};
-		});
-	}
+      const lease = await tx.query<LeaseRow>(claimLeaseSql(demoTopicId), [
+        group.id,
+        range.low,
+        range.high,
+        leaseSeconds,
+      ]);
+      const messages = await tx.query<MessageRow>(readMessagesSql(demoTopicId), [
+        range.low,
+        range.high,
+        group.id,
+      ]);
 
-	// Commit frees the range's lease and nothing else. The handler above succeeds
-	// on every message, and under the demo topic's delivery_log_mode -- the
-	// library default 'failures' -- a successful outcome is never collected, so
-	// commit's batch is empty: no delivery_1 row and no delivery_log_1 row.
-	async commit(groupId: number, token: string): Promise<void> {
-		const freed = await this.db.query(freeLeaseSql(demoTopicId), [groupId, token]);
-		if (freed.affectedRows === 0) {
-			throw new Error('lease lost to another consumer');
-		}
-	}
+      return {
+        groupId: group.id,
+        token: lease.rows[0]!.token,
+        low: range.low,
+        high: range.high,
+        messages: messages.rows.map((row) => ({ id: row.id, payload: row.payload })),
+      };
+    });
+  }
 
-	async listGroups(): Promise<string[]> {
-		const groups = await this.db.query<GroupNameRow>(
-			`SELECT name FROM consumer_group WHERE topic_id = $1 ORDER BY id;`,
-			[demoTopicId],
-		);
-		return groups.rows.map((group) => group.name);
-	}
+  // Commit frees the range's lease and nothing else. The handler above succeeds
+  // on every message, and under the demo topic's delivery_log_mode -- the
+  // library default 'failures' -- a successful outcome is never collected, so
+  // commit's batch is empty: no delivery_1 row and no delivery_log_1 row.
+  async commit(groupId: number, token: string): Promise<void> {
+    const freed = await this.db.query(freeLeaseSql(demoTopicId), [groupId, token]);
+    if (freed.affectedRows === 0) {
+      throw new Error('lease lost to another consumer');
+    }
+  }
 
-	private async getGroup(q: Querier, name: string): Promise<GroupRow | null> {
-		const found = await q.query<GroupRow>(getGroupSql, [demoTopicId, name]);
-		return found.rows[0] ?? null;
-	}
+  async listGroups(): Promise<string[]> {
+    const groups = await this.db.query<GroupNameRow>(
+      `SELECT name FROM consumer_group WHERE topic_id = $1 ORDER BY id;`,
+      [demoTopicId],
+    );
+    return groups.rows.map((group) => group.name);
+  }
 
-	async close(): Promise<void> {
-		await this.db.close();
-	}
+  private async getGroup(q: Querier, name: string): Promise<GroupRow | null> {
+    const found = await q.query<GroupRow>(getGroupSql, [demoTopicId, name]);
+    return found.rows[0] ?? null;
+  }
+
+  async close(): Promise<void> {
+    await this.db.close();
+  }
 }
 
 export async function createVulkanDatabase(
-	onStage: (stage: DatabaseStage) => void,
+  onStage: (stage: DatabaseStage) => void,
 ): Promise<VulkanDatabase> {
-	onStage('downloading');
-	const { PGlite } = await import('@electric-sql/pglite');
+  onStage('downloading');
+  const { PGlite } = await import('@electric-sql/pglite');
 
-	onStage('starting postgres');
-	const db = await PGlite.create();
+  onStage('starting postgres');
+  const db = await PGlite.create();
 
-	onStage('creating tables');
-	for (const statement of createSystemTablesStatements) {
-		await db.exec(statement);
-	}
-	for (const statement of createTopicTablesStatements(demoTopicId, demoPartitionSize)) {
-		await db.exec(statement);
-	}
-	const database = new VulkanDatabase(db);
-	await seed(db);
+  onStage('creating tables');
+  for (const statement of createSystemTablesStatements) {
+    await db.exec(statement);
+  }
+  for (const statement of createTopicTablesStatements(demoTopicId, demoPartitionSize)) {
+    await db.exec(statement);
+  }
+  const database = new VulkanDatabase(db);
+  await seed(db);
 
-	// the demo group goes through the same verb the reader's Add uses, so it
-	// gets the cursor row a plain catalog INSERT leaves out -- and registering
-	// it after the messages is the replay case: its cursor starts at 0
-	await database.registerGroup('billing');
-	return database;
+  // the demo group goes through the same verb the reader's Add uses, so it
+  // gets the cursor row a plain catalog INSERT leaves out -- and registering
+  // it after the messages is the replay case: its cursor starts at 0
+  await database.registerGroup('billing');
+  return database;
 }
 
 // ***************
@@ -283,51 +310,39 @@ export async function createVulkanDatabase(
 // the library's own wording for a group whose cursor row is missing -- the one
 // state that makes a consumer poll forever while messages pile up
 function noCursor(groupId: number): Error {
-	return new Error(
-		`no cursor for group ${groupId} on topic ${demoTopicId} -- was Register called?`,
-	);
+  return new Error(
+    `no cursor for group ${groupId} on topic ${demoTopicId} -- was Register called?`,
+  );
 }
 
 // catalog rows are plain setup inserts; the messages go through the library's
 // own produce statement -- that path is the page's claim, so it stays verbatim
 async function seed(db: PGlite): Promise<void> {
-	await db.query(`INSERT INTO system DEFAULT VALUES`);
-	await db.query(
-		`INSERT INTO topic (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
-		[1, demoTopicName, 1, demoPartitionSize],
-	);
+  await db.query(`INSERT INTO system DEFAULT VALUES`);
+  await db.query(
+    `INSERT INTO topic (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
+    [1, demoTopicName, 1, demoPartitionSize],
+  );
 
-	type ProducedRow = { id: number };
-	await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [
-		crypto.randomUUID(),
-		'{"order_id": 42, "status": "broke boy"}',
-		'orders.eu.created',
-		null,
-	]);
-	await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [
-		crypto.randomUUID(),
-		'{"order_id": 43, "status": "broke boy"}',
-		'',
-		null,
-	]);
-	// the keyed produce path, one compaction key per order. Orders sharing a key
-	// would leave only the newest of them readable, and every seeded message
-	// should reach a claim.
-	for (const orderId of [42, 43, 44, 45, 46, 47]) {
-		await db.query<ProducedRow>(protectedInsertKeyedSql(demoTopicId), [
-			crypto.randomUUID(),
-			`{"order_id": ${orderId}, "status": "paid"}`,
-			'orders.eu.updated',
-			`order-${orderId}`,
-			0,
-			null,
-		]);
-	}
+  type ProducedRow = { id: number };
+  for (const [index, description] of seedOrders.entries()) {
+    const orderId = firstOrderId + index;
+    await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [
+      crypto.randomUUID(),
+      orderPayload(orderId, description),
+      'orders.eu.created',
+      null,
+    ]);
+  }
+}
+
+function orderPayload(orderId: number, description: string): string {
+  return JSON.stringify({ order_id: orderId, desc: description });
 }
 
 function toCell(value: unknown): string | null {
-	if (value === null || value === undefined) return null;
-	if (value instanceof Date) return value.toISOString();
-	if (typeof value === 'object') return JSON.stringify(value);
-	return String(value);
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
