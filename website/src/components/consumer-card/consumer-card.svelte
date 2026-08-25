@@ -4,11 +4,12 @@
 
 	type Props = {
 		consumer: Consumer;
+		disabled: boolean;
 		ontick: () => void;
 		onremove: () => void;
 	};
 
-	let { consumer, ontick, onremove }: Props = $props();
+	let { consumer, disabled, ontick, onremove }: Props = $props();
 </script>
 
 <div class="consumer-card">
@@ -27,8 +28,8 @@
 		{/each}
 	</div>
 	<div class="card-foot">
-		<ChromeButton label="Tick ▸" tone="primary" disabled={false} onclick={ontick} />
-		<ChromeButton label="Remove" tone="quiet" disabled={false} onclick={onremove} />
+		<ChromeButton label="Tick ▸" tone="primary" {disabled} onclick={ontick} />
+		<ChromeButton label="Remove" tone="quiet" {disabled} onclick={onremove} />
 	</div>
 </div>
 

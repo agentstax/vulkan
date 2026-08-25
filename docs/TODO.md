@@ -98,11 +98,17 @@ going live:
 3. Add consumer registers the group -- consumergroup.registerGroup and
    the cursor row it creates.
 4. cursor_1 auto-updates after any produce or tick.
-5. Tick = one claim, one handler call, one commit. The consume-path SQL
-   extraction (one file per statement) plus its drift-test coverage rides
-   WITH this step, not after it.
-6. Regenerate the build-time shell from the new seed, so the
-   server-rendered state is real query output again.
+5. Tick = one claim, one handler call, one commit. **DONE 2026-08-24
+   [0586].** Nine statements extracted, drift now counted per
+   `-- vulkan: <owner>` tag so unrun verbs need no case. Commit frees the
+   lease and writes nothing else -- under the default `failures` log mode
+   a success is never collected, so deliveryStatement / logStatement /
+   partialCommit wait for the fail-the-next-message toggle.
+6. Regenerate the build-time shell from the new seed. **DONE 2026-08-24 --
+   nothing to do.** `_board/console.ts` runs `createVulkanDatabase` in Node
+   at every build, so the shell cannot go stale against the seed; the built
+   page already carries the eight seeded rows and billing's cursor at 0.
+   The seed's own fix (one compaction key per order) landed with [0586].
 7. Rename what the build outgrew, once the shape has settled: the
    `sql-console` component is the sandbox, `produce-strip` produces a
    message rather than a strip of anything, and `_board/console.ts`

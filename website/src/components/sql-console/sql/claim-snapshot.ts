@@ -1,0 +1,21 @@
+// verbatim from pkg/consumergroup/messageconsumer/controller/datastore/freshclaim.go
+// freshClaimMessagesWithCursor -- the template is drift-checked byte-exact; the
+// function mirrors the fmt.Sprintf call
+import { interpolate } from './interpolate';
+import { cursorTable, messageLogTable } from './table-names';
+
+export const claimSnapshotSqlTemplate = `
+		-- vulkan: messageconsumer.freshClaimMessagesWithCursor
+		SELECT
+			(SELECT COALESCE(MAX(id), 0) FROM %s) AS head,
+			pg_snapshot_xmax(pg_current_snapshot())::text AS xmax,
+			c.claimed,
+			c.settled_head,
+			c.pending_head
+		FROM %s c
+		WHERE c.consumer_group_id = $1;
+	`;
+
+export function claimSnapshotSql(topicId: number): string {
+	return interpolate(claimSnapshotSqlTemplate, messageLogTable(topicId), cursorTable(topicId));
+}

@@ -41,6 +41,14 @@ the item is removed.
         ready -> inflight -> dead while the cursor moves past it. This is
         the sharpest demonstration the site can make of "success writes no
         row" — build it once the happy path is real.
+      - Deferred out of the first build (user, 2026-08-24): declaring a
+        binding on a group, so routing_key selects instead of decorating.
+        A bound group claims the full range and reads only the messages
+        whose routing_key matches its pattern — the fan-out story, and the
+        only thing that earns routing_key a column back in the message_log
+        panel (dropped from the default query for exactly that reason).
+        Needs UI to declare the pattern, and reintroduces ranges that read
+        `· 0 messages` — so it wants page copy alongside it.
   - Board-site open pool (board build + parked-items round done
     2026-08-23; each independent, pick up any order):
     - Spacing token scale + sweep — website/CONVENTIONS.md declares

@@ -7,10 +7,10 @@
 		name: 'consumer 1',
 		group: 'billing',
 		lines: [
-			{ kind: 'claim', text: 'claim (0, 1]' },
-			{ kind: 'handled', text: '"ship order 4471"', status: 'ok' },
-			{ kind: 'claim', text: 'claim (1, 2]' },
-			{ kind: 'handled', text: '"refund order 4468"', status: 'ok' },
+			{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
+			{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+			{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
+			{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
 		],
 	};
 
@@ -41,6 +41,7 @@
 		component: ConsumerGrid,
 		args: {
 			consumers: [billingOne, billingTwo, search],
+			disabled: false,
 			ontick: () => {},
 			onremove: () => {},
 		},
@@ -50,6 +51,7 @@
 <Story name="Three across" />
 <Story name="One consumer" args={{ consumers: [billingOne] }} />
 <Story name="No consumers" args={{ consumers: [] }} />
+<Story name="Tick in flight" args={{ disabled: true }} />
 <Story
 	name="Past one row"
 	args={{

@@ -58,6 +58,10 @@
 	color: var(--color-text-faint);
 }
 
+.out-line[data-kind='error'] .out-text {
+	color: var(--color-console-error);
+}
+
 .out-status[data-status='ok'] {
 	color: var(--color-solved);
 }

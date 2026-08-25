@@ -18,6 +18,15 @@ import { createBindingLogSqlTemplate } from './create-topic-tables/create-bindin
 import { createBindingLogIndexSqlTemplate } from './create-topic-tables/create-binding-log-index';
 import { protectedInsertKeyedSqlTemplate } from './protected-insert-keyed';
 import { protectedInsertKeylessSqlTemplate } from './protected-insert-keyless';
+import { getGroupSql } from './get-group';
+import { registerGroupLockSql } from './register-group-lock';
+import { registerGroupInsertSql } from './register-group-insert';
+import { registerGroupCursorSqlTemplate } from './register-group-cursor';
+import { claimSnapshotSqlTemplate } from './claim-snapshot';
+import { claimCursorSqlTemplate } from './claim-cursor';
+import { claimLeaseSqlTemplate } from './claim-lease';
+import { readMessagesSqlTemplate } from './read-messages';
+import { freeLeaseSqlTemplate } from './free-lease';
 
 const createTopicTablesTemplates = [
 	createTableSqlTemplate,
@@ -41,6 +50,12 @@ const protectedInsertTemplates = [
 	protectedInsertKeylessSqlTemplate,
 ];
 
+const registerGroupTemplates = [
+	registerGroupLockSql,
+	registerGroupInsertSql,
+	registerGroupCursorSqlTemplate,
+];
+
 function goSource(repoPath: string): string {
 	return readFileSync(
 		fileURLToPath(new URL(`../../../../../${repoPath}`, import.meta.url)),
@@ -48,14 +63,16 @@ function goSource(repoPath: string): string {
 	);
 }
 
-// backticks in Go comments produce bogus segments; every real statement
-// carries the -- vulkan: owner tag
-function goLiterals(source: string): string[] {
+// backticks in Go comments produce bogus segments; every real statement carries
+// the -- vulkan: owner tag, and the owner is what the count is taken against:
+// the console mirrors named verbs, not whole files, so group.go's deleteGroup and
+// commit.go's partialCommit are absent here without weakening the count.
+function goLiterals(source: string, owner: string): string[] {
 	const parts = source.split('`');
 	const literals: string[] = [];
 	for (let index = 1; index < parts.length; index += 2) {
 		const literal = parts[index];
-		if (literal !== undefined && literal.includes('-- vulkan:')) literals.push(literal);
+		if (literal !== undefined && literal.includes(`-- vulkan: ${owner}`)) literals.push(literal);
 	}
 	return literals;
 }
@@ -63,20 +80,54 @@ function goLiterals(source: string): string[] {
 describe('embedded SQL matches the Go source byte-exact', () => {
 	const cases: [string, string, string[]][] = [
 		[
-			'createSystemTables',
+			'system.createSystemTables',
 			'pkg/system/controller/datastore/tables.go',
 			createSystemTablesStatements,
 		],
-		['createTopicTables', 'pkg/topic/controller/datastore/tables.go', createTopicTablesTemplates],
-		['protectedInsertSQL', 'pkg/producer/controller/datastore/insert.go', protectedInsertTemplates],
+		[
+			'topic.createTopicTables',
+			'pkg/topic/controller/datastore/tables.go',
+			createTopicTablesTemplates,
+		],
+		[
+			'producer.protectedInsert',
+			'pkg/producer/controller/datastore/insert.go',
+			protectedInsertTemplates,
+		],
+		['consumergroup.getGroup', 'pkg/consumergroup/controller/datastore/group.go', [getGroupSql]],
+		[
+			'consumergroup.registerGroup',
+			'pkg/consumergroup/controller/datastore/group.go',
+			registerGroupTemplates,
+		],
+		[
+			'messageconsumer.freshClaimMessagesWithCursor',
+			'pkg/consumergroup/messageconsumer/controller/datastore/freshclaim.go',
+			[claimSnapshotSqlTemplate, claimCursorSqlTemplate],
+		],
+		[
+			'messageconsumer.claimMessages',
+			'pkg/consumergroup/messageconsumer/controller/datastore/freshclaim.go',
+			[claimLeaseSqlTemplate],
+		],
+		[
+			'messageconsumer.readMessages',
+			'pkg/consumergroup/messageconsumer/controller/datastore/claim.go',
+			[readMessagesSqlTemplate],
+		],
+		[
+			'messageconsumer.commit',
+			'pkg/consumergroup/messageconsumer/controller/datastore/commit.go',
+			[freeLeaseSqlTemplate],
+		],
 	];
 
-	test.each(cases)('%s', (_, repoPath, embedded) => {
+	test.each(cases)('%s', (owner, repoPath, embedded) => {
 		const source = goSource(repoPath);
 		for (const literal of embedded) {
 			expect(source).toContain(literal);
 		}
-		// count both ways: a statement added on the Go side fails here too
-		expect(goLiterals(source)).toHaveLength(embedded.length);
+		// count both ways: a statement added to the verb on the Go side fails here too
+		expect(goLiterals(source, owner)).toHaveLength(embedded.length);
 	});
 });

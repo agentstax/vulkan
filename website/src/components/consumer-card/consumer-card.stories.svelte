@@ -10,12 +10,13 @@
 				name: 'consumer 1',
 				group: 'billing',
 				lines: [
-					{ kind: 'claim', text: 'claim (0, 1]' },
-					{ kind: 'handled', text: '"ship order 4471"', status: 'ok' },
-					{ kind: 'claim', text: 'claim (1, 2]' },
-					{ kind: 'handled', text: '"refund order 4468"', status: 'ok' },
+					{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
+					{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+					{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
+					{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
 				],
 			},
+			disabled: false,
 			ontick: () => {},
 			onremove: () => {},
 		},
@@ -60,12 +61,47 @@
 			name: 'consumer 1',
 			group: 'billing',
 			lines: [
-				{ kind: 'claim', text: 'claim (2, 3]' },
-				{ kind: 'handled', text: '"restock the ovens"', status: 'error' },
+				{ kind: 'claim', text: 'claim (2, 3] · 1 message' },
+				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'error' },
 			],
 		},
 	}}
 />
+<Story
+	name="Caught up"
+	args={{
+		consumer: {
+			name: 'consumer 1',
+			group: 'billing',
+			lines: [
+				{ kind: 'claim', text: 'claim (2, 3] · 1 message' },
+				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' },
+				{ kind: 'note', text: 'caught up · nothing to claim' },
+			],
+		},
+	}}
+/>
+<Story
+	name="Range with nothing to read"
+	args={{
+		consumer: {
+			name: 'consumer 1',
+			group: 'billing',
+			lines: [{ kind: 'claim', text: 'claim (4, 5] · 0 messages' }],
+		},
+	}}
+/>
+<Story
+	name="The tick returned an error"
+	args={{
+		consumer: {
+			name: 'consumer 1',
+			group: 'billing',
+			lines: [{ kind: 'error', text: 'lease lost to another consumer' }],
+		},
+	}}
+/>
+<Story name="Tick in flight" args={{ disabled: true }} />
 <Story
 	name="Output past the card height"
 	args={{
@@ -73,14 +109,14 @@
 			name: 'consumer 1',
 			group: 'billing',
 			lines: [
-				{ kind: 'claim', text: 'claim (0, 1]' },
-				{ kind: 'handled', text: '"ship order 4471"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (1, 2]' },
-				{ kind: 'handled', text: '"refund order 4468"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (2, 3]' },
-				{ kind: 'handled', text: '"restock the ovens"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (3, 4]' },
-				{ kind: 'handled', text: '"ship order 4472"', status: 'ok' },
+				{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
+				{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
+				{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
+				{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
+				{ kind: 'claim', text: 'claim (2, 3] · 1 message' },
+				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' },
+				{ kind: 'claim', text: 'claim (3, 4] · 1 message' },
+				{ kind: 'handled', text: '#4 "ship order 4472"', status: 'ok' },
 			],
 		},
 	}}
