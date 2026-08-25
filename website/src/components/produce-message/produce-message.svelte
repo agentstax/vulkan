@@ -15,7 +15,7 @@
 	const fieldId = $props.id();
 </script>
 
-<div class="produce-strip">
+<div class="produce-message">
 	<label class="produce-label" for={fieldId}>
 		Produce to <span class="produce-topic">{topic}</span>
 	</label>
@@ -32,4 +32,4 @@
 	<div class="produce-error" role="alert">{errorMessage}</div>
 {/if}
 
-<style src="./produce-strip.css"></style>
+<style src="./produce-message.css"></style>

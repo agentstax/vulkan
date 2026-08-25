@@ -2,11 +2,12 @@
 	import { onMount } from 'svelte';
 	import AddConsumer from '../add-consumer/add-consumer.svelte';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
-	import ConsoleProgress from '../console-progress/console-progress.svelte';
-	import type { Consumer } from '../consumer-card/types';
+	import DatabaseProgress from '../database-progress/database-progress.svelte';
+	import type { Consumer, ConsumerLine } from '../consumer-card/types';
 	import ConsumerGrid from '../consumer-grid/consumer-grid.svelte';
-	import ProduceStrip from '../produce-strip/produce-strip.svelte';
+	import ProduceMessage from '../produce-message/produce-message.svelte';
 	import SqlPanel from '../sql-panel/sql-panel.svelte';
+	import type { ClaimedMessage } from './database';
 	import { DatabaseState } from './database-state.svelte';
 	import type { PanelShell } from './types';
 
@@ -40,6 +41,7 @@
 	let groups: string[] = $state([]);
 	let addError: string | null = $state(null);
 	let adding = $state(false);
+	let ticking = $state(false);
 
 	// never the card count: removing consumer 2 and adding again would reuse the
 	// name, and the grid keys its cards by it
@@ -48,7 +50,7 @@
 	const databaseState = new DatabaseState();
 	const busy = $derived(databaseState.status === 'connecting');
 
-	// the database starts booting as soon as the console is on screen, so a
+	// the database starts booting as soon as the sandbox is on screen, so a
 	// panel's first run only waits on the statement; a boot failure reaches
 	// every panel through its own run, which is where it is reported
 	onMount(() => {
@@ -113,6 +115,56 @@
 		return `shares ${target}'s cursor —\nits ticks claim ranges the\nothers have not.`;
 	}
 
+	// one tick: claim a range off the group's cursor, hand each message inside it
+	// to the handler, free the lease. The handler is this page's -- it succeeds
+	// on every message and its only work is the line it writes to the card.
+	async function tickConsumer(name: string): Promise<void> {
+		const consumer = consumers.find((candidate) => candidate.name === name);
+		if (consumer === undefined) return;
+
+		ticking = true;
+
+		try {
+			const handled: ConsumerLine[] = [];
+			const claimed = await databaseState.tick(consumer.group, (message) => {
+				handled.push({ kind: 'handled', text: handledText(message), status: 'ok' });
+			});
+
+			if (claimed === null) {
+				consumer.lines.push({ kind: 'note', text: 'caught up · nothing to claim' });
+				return;
+			}
+
+			consumer.lines.push({
+				kind: 'claim',
+				text: claimText(claimed.low, claimed.high, handled.length),
+			});
+			consumer.lines.push(...handled);
+		} catch (caught) {
+			consumer.lines.push({
+				kind: 'error',
+				text: caught instanceof Error ? caught.message : String(caught),
+			});
+		} finally {
+			ticking = false;
+		}
+	}
+
+	// the range is the cursor's, the count is what came back inside it: a keyed
+	// message a newer one on its key replaced is inside the range and unread
+	function claimText(low: number, high: number, count: number): string {
+		return `claim (${low}, ${high}] · ${count} ${count === 1 ? 'message' : 'messages'}`;
+	}
+
+	// the payload's own text field when it has one -- the reader typed it into
+	// the produce strip -- and the whole payload otherwise
+	function handledText(message: ClaimedMessage): string {
+		const payload = message.payload;
+		const text =
+			typeof payload === 'object' && payload !== null && 'text' in payload ? payload.text : payload;
+		return `#${message.id} ${JSON.stringify(text)}`;
+	}
+
 	// the group and its cursor outlive the card: a group with no consumers
 	// still holds its place in the log
 	function removeConsumer(name: string): void {
@@ -120,15 +172,15 @@
 	}
 </script>
 
-<div class="sql-console">
+<div class="sandbox">
 	<div class="title-bar">
-		<span class="console-label">{label}</span>
-		<span class="console-meta">postgres 18 · wasm · local to this tab</span>
+		<span class="sandbox-label">{label}</span>
+		<span class="sandbox-meta">postgres 18 · wasm · local to this tab</span>
 		<!-- the click does nothing yet: dropping the database and rebuilding it
 		     from the seed is not wired up -->
 		<ChromeButton label="Reset sandbox ↻" tone="primary" disabled={busy} onclick={() => {}} />
 	</div>
-	<ProduceStrip
+	<ProduceMessage
 		{topic}
 		text={produceText}
 		errorMessage={produceError}
@@ -141,14 +193,17 @@
 		<SqlPanel {databaseState} panelShell={cursors} editable={false} />
 		{#if databaseState.status === 'connecting' && databaseState.stage !== null}
 			<div class="progress-overlay">
-				<ConsoleProgress stage={databaseState.stage} />
+				<DatabaseProgress stage={databaseState.stage} />
 			</div>
 		{/if}
 	</div>
 	<div class="consumers">
-		<!-- Tick does nothing yet: claiming, handling and committing one message
-		     is not wired up -->
-		<ConsumerGrid {consumers} ontick={() => {}} onremove={removeConsumer} />
+		<ConsumerGrid
+			{consumers}
+			disabled={busy || ticking}
+			ontick={(name) => void tickConsumer(name)}
+			onremove={removeConsumer}
+		/>
 		<AddConsumer
 			{groups}
 			errorMessage={addError}
@@ -158,4 +213,4 @@
 	</div>
 </div>
 
-<style src="./sql-console.css"></style>
+<style src="./sandbox.css"></style>

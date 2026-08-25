@@ -6,7 +6,7 @@ import BoardSection from '../components/board-section/board-section.svelte';
 import BoardRows from '../components/board-rows/board-rows.svelte';
 import StickyRows from '../components/sticky-rows/sticky-rows.svelte';
 import ThreadPost from '../components/thread-post/thread-post.svelte';
-import SqlConsole from '../components/sql-console/sql-console.svelte';
+import Sandbox from '../components/sandbox/sandbox.svelte';
 import AnnouncementRow from '../components/announcement-row/announcement-row.svelte';
 import BoardStats from '../components/board-stats/board-stats.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
@@ -14,13 +14,13 @@ import { jumpTargets } from './_board/boards';
 import { boardRows, stickyRows } from './_board/rows';
 import { announcements } from './_board/announcements';
 import { siteStats } from './_board/stats';
-import { consoleLabel, consoleShell, consoleTopic } from './_board/console';
+import { sandboxLabel, sandboxShell, sandboxTopic } from './_board/sandbox';
 
 const docs = await getCollection('docs');
 const rows = boardRows(docs);
 const stickies = stickyRows(docs);
 const stats = siteStats(docs);
-const shell = await consoleShell();
+const shell = await sandboxShell();
 ---
 
 <BoardLayout
@@ -37,10 +37,10 @@ const shell = await consoleShell();
 				tables below are the ones the library creates, seeded through its own produce statement.
 				Edit the SQL and press Run: the database runs in this tab, and nothing leaves your browser.
 			</p>
-			<SqlConsole
+			<Sandbox
 				client:visible
-				label={consoleLabel}
-				topic={consoleTopic}
+				label={sandboxLabel}
+				topic={sandboxTopic}
 				messages={shell.messages}
 				cursors={shell.cursors}
 			/>

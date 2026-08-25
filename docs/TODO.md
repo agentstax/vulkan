@@ -14,14 +14,11 @@ mechanism [0584] rather than standing beside it.
 
 Mockup (the approved layout, built by overlaying the sandbox on the real
 dist page): https://claude.ai/code/artifact/3d58ee63-d602-435b-bab8-f0b5be65a878
-Regenerate with `npm run build && npm run mockup` in website/ — the
-generator is website/scripts/build-sandbox-mockup.mjs, writing the
-gitignored .mockup/homepage-sandbox.html. It reads the console island's
-scoped-class hashes off the built page, so it survives component edits;
-delete it once the sandbox ships and the page IS the mockup.
+The mockup generator that produced it is gone: the built page now renders
+the sandbox itself, so `npm run build` and a browser are the check.
 
-- It lives on the board index, in the slot the console holds today (inside
-  the Start Here hero post). No separate sandbox thread — one home.
+- It lives on the board index, in the slot the console held (inside the
+  Start Here hero post). No separate sandbox thread — one home.
 - The page layout does not change. The sandbox renders INSIDE the existing
   `.sql-console` frame and reuses the console's own parts: title bar,
   editor-area + highlighted `pre.sql`, result table, status bar.
@@ -109,15 +106,23 @@ going live:
    at every build, so the shell cannot go stale against the seed; the built
    page already carries the eight seeded rows and billing's cursor at 0.
    The seed's own fix (one compaction key per order) landed with [0586].
-7. Rename what the build outgrew, once the shape has settled: the
-   `sql-console` component is the sandbox, `produce-strip` produces a
-   message rather than a strip of anything, and `_board/console.ts`
-   feeds both panels. Names, folders, stories and the `consoleLabel` /
-   `ConsoleShell` vocabulary move together.
+7. Rename what the build outgrew. **DONE 2026-08-24.** Folders, files,
+   idents, css classes, story titles and prose moved together:
+   `sql-console` -> `sandbox`, `produce-strip` -> `produce-message`
+   (matching `add-consumer`'s verb-phrase shape), `console-progress` ->
+   `database-progress` (it reports the `DatabaseStage` boot, not a
+   console), `_board/console.ts` -> `_board/sandbox.ts` with
+   `sandboxLabel` / `sandboxTopic` / `sandboxShell` / `SandboxShell`,
+   and `editor.ts`'s `consoleTheme` -> `editorTheme`.
+   Deliberately KEPT: the `--color-console-*`, `--shadow-console` and
+   `--console-title-gradient` tokens, and `sql-panel` / `sql-result` /
+   `highlighted-sql`. The container is a sandbox; the panels inside it
+   are still SQL consoles, and the tokens name that chrome. Don't
+   re-flag them.
 
 **Phase 3 -- details.**
 
-- Panel SQL editing (CM6 in each panel, reusing the console's editor.ts
+- Panel SQL editing (CM6 in each panel, reusing the sandbox's editor.ts
   chunk) and the edited-query-never-clobbered rule.
 - Reset sandbox re-seeds.
 - Stories per component, `just site-verify`, a browser run (produce ->

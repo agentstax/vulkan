@@ -1,10 +1,10 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import ProduceStrip from './produce-strip.svelte';
+	import ProduceMessage from './produce-message.svelte';
 
 	const { Story } = defineMeta({
-		title: 'Board/ProduceStrip',
-		component: ProduceStrip,
+		title: 'Board/ProduceMessage',
+		component: ProduceMessage,
 		args: {
 			topic: 'orders',
 			text: 'restock the ovens',

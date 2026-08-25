@@ -7,7 +7,7 @@ import { PostgreSQL, sql } from '@codemirror/lang-sql';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 
-const consoleTheme = EditorView.theme({
+const editorTheme = EditorView.theme({
 	'&': { backgroundColor: 'var(--color-console-sql-bg)', fontSize: '12.5px' },
 	'&.cm-focused': { outline: 'none' },
 	'.cm-scroller': { fontFamily: 'var(--font-database)', lineHeight: '1.6' },
@@ -32,7 +32,7 @@ export function createEditor(
 			keymap.of([...defaultKeymap, ...historyKeymap]),
 			sql({ dialect: PostgreSQL }),
 			syntaxHighlighting(keywordHighlight),
-			consoleTheme,
+			editorTheme,
 			EditorView.updateListener.of((update) => {
 				if (update.docChanged) onSqlChange(update.state.doc.toString());
 			}),

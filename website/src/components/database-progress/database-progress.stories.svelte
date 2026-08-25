@@ -1,10 +1,10 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import ConsoleProgress from './console-progress.svelte';
+	import DatabaseProgress from './database-progress.svelte';
 
 	const { Story } = defineMeta({
-		title: 'Board/ConsoleProgress',
-		component: ConsoleProgress,
+		title: 'Board/DatabaseProgress',
+		component: DatabaseProgress,
 	});
 </script>
 

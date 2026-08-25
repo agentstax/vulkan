@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import { DatabaseState } from '../sql-console/database-state.svelte';
-	import type { PanelShell } from '../sql-console/types';
+	import { DatabaseState } from '../sandbox/database-state.svelte';
+	import type { PanelShell } from '../sandbox/types';
 	import SqlPanel from './sql-panel.svelte';
 
 	// one database for every story, so the wasm boot is paid once per session

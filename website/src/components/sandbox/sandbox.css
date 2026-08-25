@@ -1,4 +1,4 @@
-.sql-console {
+.sandbox {
 	border: 1px solid var(--border-outer);
 	border-top: 3px solid var(--color-console-edge);
 	background: var(--color-surface);
@@ -16,7 +16,7 @@
 	border-bottom: 1px solid var(--border-section);
 }
 
-.console-label {
+.sandbox-label {
 	font-size: 10px;
 	font-weight: 600;
 	color: var(--color-chrome-pale-text);
@@ -24,7 +24,7 @@
 
 /* pushes the title bar's button to the far edge -- scoped styles cannot
    reach into the button's own component to give it margin-left: auto */
-.console-meta {
+.sandbox-meta {
 	margin-right: auto;
 	font-size: 10px;
 	color: var(--color-text-faint);
@@ -48,7 +48,7 @@
 	}
 }
 
-/* no tinted ground here -- the cards sit on the console's own surface, which
+/* no tinted ground here -- the cards sit on the sandbox's own surface, which
    is what separates them from the panels above */
 .consumers {
 	display: flex;

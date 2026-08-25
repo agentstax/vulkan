@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { RunResult } from '../sql-console/database';
+	import type { RunResult } from '../sandbox/database';
 
 	type Props = {
 		result: RunResult;

@@ -1,4 +1,10 @@
-import type { DatabaseStage, RunResult, VulkanDatabase } from './database';
+import type {
+	ClaimedMessage,
+	ClaimedRange,
+	DatabaseStage,
+	RunResult,
+	VulkanDatabase,
+} from './database';
 
 // idle: nothing has asked for the database yet
 // connecting: the wasm chunk is loading, or Postgres is starting
@@ -6,7 +12,7 @@ import type { DatabaseStage, RunResult, VulkanDatabase } from './database';
 // failed: the boot threw
 export type DatabaseStatus = 'idle' | 'connecting' | 'ready' | 'failed';
 
-// The console's one database. Every panel runs its statements through this
+// The sandbox's one database. Every panel runs its statements through this
 // instance, so what one panel writes the next panel reads.
 export class DatabaseState {
 	status: DatabaseStatus = $state('idle');
@@ -43,6 +49,29 @@ export class DatabaseState {
 		const database = await this.connect();
 		await database.registerGroup(name);
 		this.revision += 1;
+	}
+
+	// One tick: claim a range, call the handler once per message inside it, free
+	// the lease. The three statements are the library's; this loop, and the
+	// handler it hands each message to, are the page's.
+	async tick(
+		group: string,
+		handle: (message: ClaimedMessage) => void,
+	): Promise<ClaimedRange | null> {
+		const database = await this.connect();
+		const claimed = await database.claim(group);
+
+		// caught up: the tick either wrote nothing or moved only the cursor's
+		// proof columns, which neither panel reads
+		if (claimed === null) return null;
+
+		for (const message of claimed.messages) {
+			handle(message);
+		}
+
+		await database.commit(claimed.groupId, claimed.token);
+		this.revision += 1;
+		return claimed;
 	}
 
 	async listGroups(): Promise<string[]> {

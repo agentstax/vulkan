@@ -1,7 +1,7 @@
 import { untrack } from 'svelte';
-import type { RunResult } from '../sql-console/database';
-import type { DatabaseState } from '../sql-console/database-state.svelte';
-import type { PanelShell } from '../sql-console/types';
+import type { RunResult } from '../sandbox/database';
+import type { DatabaseState } from '../sandbox/database-state.svelte';
+import type { PanelShell } from '../sandbox/types';
 
 // One panel's query and that query's last outcome. The shell seeds it with the
 // build-time rows, so the panel reads correctly before its first run lands.

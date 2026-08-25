@@ -65,7 +65,7 @@ function goSource(repoPath: string): string {
 
 // backticks in Go comments produce bogus segments; every real statement carries
 // the -- vulkan: owner tag, and the owner is what the count is taken against:
-// the console mirrors named verbs, not whole files, so group.go's deleteGroup and
+// the site mirrors named verbs, not whole files, so group.go's deleteGroup and
 // commit.go's partialCommit are absent here without weakening the count.
 function goLiterals(source: string, owner: string): string[] {
 	const parts = source.split('`');

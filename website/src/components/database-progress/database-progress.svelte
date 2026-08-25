@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { DatabaseStage } from '../sql-console/database';
+	import type { DatabaseStage } from '../sandbox/database';
 
 	type Props = {
 		stage: DatabaseStage;
@@ -16,4 +16,4 @@
 	</div>
 </div>
 
-<style src="./console-progress.css"></style>
+<style src="./database-progress.css"></style>

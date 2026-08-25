@@ -3,8 +3,8 @@
 	import type { EditorView } from '@codemirror/view';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import HighlightedSql from '../highlighted-sql/highlighted-sql.svelte';
-	import type { DatabaseState } from '../sql-console/database-state.svelte';
-	import type { PanelShell } from '../sql-console/types';
+	import type { DatabaseState } from '../sandbox/database-state.svelte';
+	import type { PanelShell } from '../sandbox/types';
 	import SqlResult from '../sql-result/sql-result.svelte';
 	import { PanelState } from './sql-panel-state.svelte';
 
@@ -56,7 +56,7 @@
 		// shell -- the editor never rides the initial payload
 		requestIdle(() => {
 			void (async () => {
-				const { createEditor } = await import('../sql-console/editor');
+				const { createEditor } = await import('../sandbox/editor');
 
 				if (cancelled || editorHost === undefined) return;
 
