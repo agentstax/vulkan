@@ -36,7 +36,7 @@ block; paste the message text or code into search to land on its page.
 | [VK0053](/errors/VK0053) | could not take a lock needed by the migration step | transient |
 
 Log events share the same `VK` code space: a Warn- or Error-level line
-that is operator-actionable carries its code in the line's `code` attr,
+that is operator-actionable carries its code in the line's `code` attribute,
 and the code lands on a page here the same way.
 
 | Code | Event | Level |
@@ -61,7 +61,7 @@ and the code lands on a page here the same way.
 
 Declared metrics share the code space too: a measurement's name resolves
 to its declaration, and `vulkan explain` accepts the code, the full
-name, or the stop-line attr key (`ready_count`).
+name, or the stop-line attribute key (`ready_count`).
 
 | Code | Metric | Kind |
 | ---- | ------ | ---- |
