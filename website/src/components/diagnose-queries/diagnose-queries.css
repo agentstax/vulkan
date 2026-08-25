@@ -1,0 +1,35 @@
+.placeholder-name {
+	background: var(--color-sql-placeholder-ground);
+	border: 1px solid var(--border-sql-placeholder);
+	color: var(--color-sql-placeholder-text);
+	font-family: var(--font-database);
+	font-size: 11.5px;
+	padding: 1px 5px;
+	margin-right: 5px;
+}
+
+.query-list {
+	list-style: decimal;
+	margin: 0;
+	padding-left: 22px;
+}
+
+.query-list li {
+	margin-bottom: 14px;
+}
+
+.query-list li:last-child {
+	margin-bottom: 0;
+}
+
+.query-label {
+	margin: 0 0 5px;
+	color: var(--color-text-muted);
+}
+
+.query-sql {
+	background: var(--color-console-sql-bg);
+	border: 1px solid var(--border-row);
+	border-left: 3px solid var(--color-console-edge);
+	max-width: 680px;
+}

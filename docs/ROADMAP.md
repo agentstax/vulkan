@@ -91,7 +91,8 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     pkg/common/error.go.
 
 - **A diagnose part on diagnostic declarations** (a 14b surface change,
-  pulled into Now because the documentation item above consumes it) — the
+  pulled into Now because the documentation item above consumes it;
+  picked up 2026-08-25, expanded in TODO.md) — the
   queries that show an operator the state behind a condition, declared
   once and surfaced everywhere. Today a declaration carries code,
   recovery, problem, fix (plus consequence on events); the fix says what

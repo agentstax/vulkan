@@ -16,3 +16,9 @@
 	name="Lowercase keywords"
 	args={{ sql: "select count(*) from delivery_1 where status = 'dead';" }}
 />
+<Story
+	name="Declared query with placeholders"
+	args={{
+		sql: 'SELECT status, attempts\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id};',
+	}}
+/>

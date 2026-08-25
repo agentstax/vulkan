@@ -171,6 +171,12 @@
 		--color-refused-ground: var(--refused-red-pale);
 		--color-refused-text: var(--refused-red);
 		--border-refused: var(--refused-red-border);
+		/* a diagnose query's braced placeholder -- the value the reader
+		   substitutes from their own log line before the query runs */
+		--color-sql-placeholder-ground: var(--amber-pale);
+		--color-sql-placeholder-text: var(--amber-dark);
+		--border-sql-placeholder: var(--amber-shade);
+
 		--flag-body: var(--amber-dark);
 		--flag-face: var(--amber);
 		--flag-highlight: var(--amber-light);

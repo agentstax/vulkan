@@ -6,6 +6,7 @@ import CodeFacts from '../components/code-facts/code-facts.svelte';
 import ErrorPost from '../components/error-post/error-post.svelte';
 import LogLine from '../components/log-line/log-line.svelte';
 import ThreadPost from '../components/thread-post/thread-post.svelte';
+import DiagnoseQueries from '../components/diagnose-queries/diagnose-queries.svelte';
 import CopyButton from '../components/copy-button/copy-button.svelte';
 import SearchStrip from '../components/search-strip/search-strip.svelte';
 import PrevNext from '../components/prev-next/prev-next.svelte';
@@ -13,6 +14,7 @@ import JumpTo from '../components/jump-to/jump-to.svelte';
 import { jumpTargets } from '../pages/_board/boards';
 import type { ThreadLink } from '../components/prev-next/types';
 import type { CodeThreadData } from '../pages/_thread/model';
+import type { DiagnoseQuery } from '../components/diagnose-queries/types';
 
 type Props = {
 	title: string;
@@ -26,6 +28,7 @@ type Props = {
 	previous: ThreadLink | null;
 	next: ThreadLink | null;
 	codeThread: CodeThreadData;
+	diagnose: DiagnoseQuery[] | null;
 };
 
 const {
@@ -40,6 +43,7 @@ const {
 	previous,
 	next,
 	codeThread,
+	diagnose,
 } = Astro.props;
 
 const trail = [
@@ -88,6 +92,19 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 				<slot />
 			</div>
 		</ErrorPost>
+		{
+			diagnose !== null && (
+				<ThreadPost
+					author="brandon"
+					role="Site Admin"
+					header={null}
+					postCount={postCount}
+					actions={null}
+				>
+					<DiagnoseQueries queries={diagnose} />
+				</ThreadPost>
+			)
+		}
 		{
 			codeThread.fix !== null && (
 				<ThreadPost

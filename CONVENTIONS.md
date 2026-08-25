@@ -73,6 +73,8 @@ surfaces it.
 | DLQ, dead-letter queue (as a place) | dead is a delivery status, not a separate queue | dead-lettered messages; delivery status dead |
 | door | coinage for the controller layer | API package; "the controller -- the only path to persistence" |
 | sentinel | coinage for a declared error value | named error variable; error value |
+| attr, attrs | shorthand for a word the reader should never have to expand | attribute; log attribute |
+| hole (a template's blank) | coinage for a blank the reader fills in | placeholder |
 | park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
 
 ## Structure
@@ -173,7 +175,7 @@ The domain layers:
   read-models, no Config types, no fields without production readers.
 - Every public read-model field carries a `json:"snake_case"` tag -- the
   wire name is the field's contract, the json sibling of the datastore
-  `db:` rule. Keys spell the log-attr registry's name where one exists
+  `db:` rule. Keys spell the log attribute registry's name where one exists
   (topic, version, group, message_id); otherwise the field's own name
   snake_cased. Write shapes, configs, and instances carry no tags.
 - `pkg/<x>/controller` -- the only path to persistence: all public verbs, ALL
@@ -501,7 +503,7 @@ internal invariants, same-package control-flow signals.
 
 Logs and errors are one message system with two mouths: an error speaks
 when a caller receives a value; a log speaks when there is no caller.
-They share the attr vocabulary, the problem-line grammar, and a
+They share the attribute vocabulary, the problem-line grammar, and a
 classification question.
 
 ### The seam
@@ -513,9 +515,9 @@ classification question.
   share stdout with program output.
 - `logging.NewPipelineLogger` is the ONE wrapper: its config declares
   what the pipeline composes -- `Buffer` (WithLogBuffer boundaries),
-  `Suppress` (repeat collapse), `Args` (bound attrs) -- and building
+  `Suppress` (repeat collapse), `Args` (bound attributes) -- and building
   over an existing pipeline merges instead of nesting.
-- Identity is bound once: a long-lived component binds its attrs at
+- Identity is bound once: a long-lived component binds its attributes at
   construction -- `NewPipelineLogger` with `Args` -- and its call sites
   never repeat the bound keys.
 - A long-lived instance (producer, consumer, system manager) declares
@@ -554,14 +556,14 @@ a tick loop -- is the one place logging a failure belongs.
 ### Messages
 
 - The message is a static lowercase clause naming the event, constant
-  across occurrences; every variable fact is an attr. A value
+  across occurrences; every variable fact is an attribute. A value
   interpolated into a message is a bug.
 - Problem-line rules apply verbatim: the banned words, tense follows the
   fact (a self-healing failure reads "could not <verb>"; a completed
   transition reads past participle -- "topic registered", "lease
   reclaimed"), consequence or next action after ` -- `.
 - Nothing branches or filters on message text -- not code, not labs.
-  Labs assert on log events by level and attrs through a counting
+  Labs assert on log events by level and attributes through a counting
   Logger, never by matching message substrings.
 
 ### Declared events
@@ -570,7 +572,7 @@ The mirror of the error-declaration boundary: a Warn or Error event
 earns a declaration (and a code) when it is operator-actionable enough
 for a docs page -- a durable data consequence, a reclaim, a backstop, a
 stopped mechanism. Debug/Info narration never declares, with ONE
-exception: a lifecycle summary line whose attr set needs a docs page
+exception: a lifecycle summary line whose attribute set needs a docs page
 (the stopped line's session counters) declares despite being Info --
 the code is the line's breadcrumb to its own explanation.
 
@@ -579,14 +581,14 @@ the code is the line's breadcrumb to its own explanation.
   errors' VK serial space, next four-digit serial after the current max
   across both registries.
 - Call sites log the declaration's Message and attach `"code",
-  Event.Code` as the first attr pair -- the message stays static, the
+  Event.Code` as the first attribute pair -- the message stays static, the
   code is the greppable pointer.
 - Land the hand-written docs page (same /errors/ path) in the same
   change; `vulkan explain` lists events beside errors.
 - The message follows the ### Messages grammar; the consequence clause
   is fixed at declaration, never at the call site.
 
-### Attrs
+### Attributes
 
 - One key per concept, flat snake_case, spelled from this table; a new
   concept adds its row in the same change:
@@ -639,17 +641,17 @@ A long-lived instance's "starting" line is its diagnosis snapshot: a
 pasted log answers "what was your setup?" without a second question. It
 carries the module version (common.BuildVersion), the instance identity,
 and the resolved config facts an operator would ask for (poll rate,
-timeouts, batch sizes) -- one line, attrs only. A config fact's key
+timeouts, batch sizes) -- one line, attributes only. A config fact's key
 spells its config field snake_cased (shutdown_timeout, batch_limit).
 
 The paired "stopped" line is the session summary: bound identity, the
 session's `duration`, and every lifetime counter the instance keeps as
-`<verb>_count` attrs -- all printed, zeros included, so the line's shape
+`<verb>_count` attributes -- all printed, zeros included, so the line's shape
 never varies. It is emitted on EVERY exit, fatal-error teardown included
 (the error is still returned, never logged), and reads memory only --
 never the database, which may be exactly what is down. A summary line
 with counters is declared (the Declared-events exception) and carries a
-trailing `help` attr, so the line itself points at its explanation.
+trailing `help` attribute, so the line itself points at its explanation.
 
 ### The failure record
 
@@ -659,7 +661,7 @@ trailing `help` attr, so the line itself points at its explanation.
 - Operations carry a debug buffer: a boundary (logging.WithLogBuffer)
   opens a small per-operation ring; Debug/Info/Warn records inside it
   are held as well as forwarded, and the operation's first Error record
-  drains the ring into its `preceding` group attr -- the failure line
+  drains the ring into its `preceding` group attribute -- the failure line
   ships its own narration. Boundaries today: the produce call, the
   per-delivery dispatch, the worker tick; a new operation shape adds its
   boundary when built.
