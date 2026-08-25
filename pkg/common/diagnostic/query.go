@@ -22,6 +22,8 @@ type Query struct {
 // so structural mistakes panic instead of returning an error nothing would
 // check.
 func NewQuery(label string, sql string) *Query {
+	sql = strings.TrimSpace(sql)
+
 	if label == "" {
 		panic("query label must not be empty")
 	}

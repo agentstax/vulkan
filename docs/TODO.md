@@ -122,7 +122,7 @@ Four facts from the 2026-08-25 survey that decide the shape:
       gate (VK0022/23), not-found and destroy guards (VK0005/06/14/15/16/
       20), commit-lost (VK0019). Constructor and config guards get
       nothing and no section renders -- absence is honest.
-- [ ] 4. tools/codeexport (full declaration record, per the Settled
+- [x] 4. tools/codeexport (full declaration record, per the Settled
       export bullet) + the site-verify drift guard, including the
       previously parked frontmatter check. Before the CLI tasks:
       this plus task 5 is what unblocks paste-your-log-line.

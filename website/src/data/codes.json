@@ -1,0 +1,619 @@
+{
+  "codes": {
+    "VK0001": {
+      "code": "VK0001",
+      "kind": "error",
+      "problem": "instance is already consuming",
+      "recovery": "permanent",
+      "fix": "wait for the running Consume to return, or Register another instance"
+    },
+    "VK0002": {
+      "code": "VK0002",
+      "kind": "error",
+      "problem": "lifecycle context can never be cancelled",
+      "recovery": "permanent",
+      "fix": "pass the application's shutdown context, or set the config's DisableGracefulShutdown"
+    },
+    "VK0003": {
+      "code": "VK0003",
+      "kind": "error",
+      "problem": "lease lost to another consumer",
+      "recovery": "permanent"
+    },
+    "VK0004": {
+      "code": "VK0004",
+      "kind": "error",
+      "problem": "topic partition size does not match the existing topic",
+      "recovery": "permanent",
+      "fix": "register with the existing PartitionSize, or use a new topic name"
+    },
+    "VK0005": {
+      "code": "VK0005",
+      "kind": "error",
+      "problem": "topic not found",
+      "recovery": "permanent",
+      "fix": "register it with MessageAdmin.RegisterTopic first",
+      "queries": [
+        {
+          "label": "every schema version registered under this name",
+          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE name = '{topic}';",
+          "placeholders": [
+            "topic"
+          ]
+        },
+        {
+          "label": "every registered topic, if the name itself is wrong",
+          "sql": "SELECT name, schema_version FROM topic ORDER BY name;",
+          "placeholders": []
+        }
+      ]
+    },
+    "VK0006": {
+      "code": "VK0006",
+      "kind": "error",
+      "problem": "topic still holds messages",
+      "recovery": "permanent",
+      "fix": "pass DestroyOptions.Force to destroy them with the topic",
+      "queries": [
+        {
+          "label": "how many messages the destroy would discard",
+          "sql": "SELECT count(*) AS message_count FROM message_log_{topic_id};",
+          "placeholders": [
+            "topic_id"
+          ]
+        },
+        {
+          "label": "the newest of them, to judge whether the topic is still in use",
+          "sql": "SELECT\n\tid,\n\trouting_key,\n\tcreated_at\nFROM message_log_{topic_id}\nORDER BY id DESC\nLIMIT 20;",
+          "placeholders": [
+            "topic_id"
+          ]
+        }
+      ]
+    },
+    "VK0007": {
+      "code": "VK0007",
+      "kind": "error",
+      "problem": "topic name already taken",
+      "recovery": "permanent",
+      "fix": "choose a different name"
+    },
+    "VK0008": {
+      "code": "VK0008",
+      "kind": "error",
+      "problem": "destroy is disabled",
+      "recovery": "permanent",
+      "fix": "set MessageAdminConfig.AllowDestroy"
+    },
+    "VK0009": {
+      "code": "VK0009",
+      "kind": "error",
+      "problem": "topic name uses the reserved __system. prefix",
+      "recovery": "permanent",
+      "fix": "choose a name outside the __system. prefix"
+    },
+    "VK0010": {
+      "code": "VK0010",
+      "kind": "error",
+      "problem": "a worker instance is still live",
+      "recovery": "permanent",
+      "fix": "stop running managers and consumers, or pass DestroyOptions.Force"
+    },
+    "VK0011": {
+      "code": "VK0011",
+      "kind": "error",
+      "problem": "topics are still registered",
+      "recovery": "permanent",
+      "fix": "destroy them first, or pass DestroyOptions.Force to destroy them and their messages"
+    },
+    "VK0012": {
+      "code": "VK0012",
+      "kind": "error",
+      "problem": "worker instance row expired or was removed",
+      "recovery": "permanent",
+      "fix": "stop the work; a replacement may already be running"
+    },
+    "VK0013": {
+      "code": "VK0013",
+      "kind": "error",
+      "problem": "cron job not found",
+      "recovery": "permanent",
+      "fix": "register it with MessageAdmin.RegisterCronJob first"
+    },
+    "VK0014": {
+      "code": "VK0014",
+      "kind": "error",
+      "problem": "consumer group not found",
+      "recovery": "permanent",
+      "fix": "register a consumer with this group name to create it",
+      "queries": [
+        {
+          "label": "every group registered on this topic",
+          "sql": "SELECT\n\tconsumer_group.id,\n\tconsumer_group.name,\n\tconsumer_group.created_at\nFROM consumer_group\nJOIN topic ON topic.id = consumer_group.topic_id\nWHERE topic.name = '{topic}'\nORDER BY consumer_group.name;",
+          "placeholders": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    "VK0015": {
+      "code": "VK0015",
+      "kind": "error",
+      "problem": "consumer group still has a live consumer",
+      "recovery": "permanent",
+      "fix": "stop the group's consumers, or pass DestroyOptions.Force",
+      "queries": [
+        {
+          "label": "the instances still heartbeating on this group",
+          "sql": "SELECT\n\tworker.name AS worker,\n\tworker_instance.id,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_instance\nJOIN worker ON worker.id = worker_instance.worker_id\nWHERE worker.consumer_group_id = {group_id}\n\tAND worker_instance.expires_at \u003e now()\nORDER BY worker_instance.expires_at;",
+          "placeholders": [
+            "group_id"
+          ]
+        }
+      ]
+    },
+    "VK0016": {
+      "code": "VK0016",
+      "kind": "error",
+      "problem": "consumer group still has delivery rows",
+      "recovery": "permanent",
+      "fix": "pass DestroyOptions.Force to delete them",
+      "queries": [
+        {
+          "label": "what the delivery rows would discard, by status",
+          "sql": "SELECT status, count(*) AS row_count\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\nGROUP BY status;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        },
+        {
+          "label": "the dead ones, whose dead-letter record goes with them",
+          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY message_id;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        }
+      ]
+    },
+    "VK0017": {
+      "code": "VK0017",
+      "kind": "error",
+      "problem": "schema not registered",
+      "recovery": "permanent",
+      "fix": "register the system with MessageAdmin.RegisterSystem first"
+    },
+    "VK0018": {
+      "code": "VK0018",
+      "kind": "error",
+      "problem": "could not create the covering partition",
+      "recovery": "transient"
+    },
+    "VK0019": {
+      "code": "VK0019",
+      "kind": "error",
+      "problem": "commit confirmation was lost",
+      "recovery": "permanent",
+      "queries": [
+        {
+          "label": "whether the outcomes landed -- rows updated at the commit",
+          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\nORDER BY updated_at DESC\nLIMIT 20;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        },
+        {
+          "label": "the range lease whose expiry settles it either way",
+          "sql": "SELECT\n\ttoken,\n\tlow,\n\thigh,\n\tuntil,\n\treclaims\nFROM lease_{topic_id}\nWHERE consumer_group_id = {group_id};",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        }
+      ]
+    },
+    "VK0020": {
+      "code": "VK0020",
+      "kind": "error",
+      "problem": "topic partitions remain after draining",
+      "recovery": "permanent",
+      "fix": "stop the topic's producers and call DestroyTopic again",
+      "queries": [
+        {
+          "label": "the partitions still attached to the log",
+          "sql": "SELECT partition.relname AS partition\nFROM pg_inherits\nJOIN pg_class AS partition ON partition.oid = pg_inherits.inhrelid\nWHERE pg_inherits.inhparent = to_regclass('message_log_{topic_id}')\nORDER BY partition.relname;",
+          "placeholders": [
+            "topic_id"
+          ]
+        },
+        {
+          "label": "whether a producer is still writing -- run it twice",
+          "sql": "SELECT max(id) AS head, count(*) AS message_count FROM message_log_{topic_id};",
+          "placeholders": [
+            "topic_id"
+          ]
+        }
+      ]
+    },
+    "VK0021": {
+      "code": "VK0021",
+      "kind": "error",
+      "problem": "could not finish the topic declaration",
+      "recovery": "transient",
+      "fix": "run RegisterTopic again if the topic should still exist"
+    },
+    "VK0022": {
+      "code": "VK0022",
+      "kind": "error",
+      "problem": "schema version is older than this build requires",
+      "recovery": "permanent",
+      "fix": "migrate the database up first",
+      "queries": [
+        {
+          "label": "the steps this database recorded, newest first",
+          "sql": "SELECT\n\tid,\n\tmigration_version,\n\tmin_compatible_version,\n\tstatus,\n\tcreated_at\nFROM migration_log\nORDER BY id DESC\nLIMIT 20;",
+          "placeholders": []
+        }
+      ]
+    },
+    "VK0023": {
+      "code": "VK0023",
+      "kind": "error",
+      "problem": "schema version is newer than this build understands",
+      "recovery": "permanent",
+      "fix": "upgrade the binary",
+      "queries": [
+        {
+          "label": "the steps this database recorded, newest first",
+          "sql": "SELECT\n\tid,\n\tmigration_version,\n\tmin_compatible_version,\n\tstatus,\n\tcreated_at\nFROM migration_log\nORDER BY id DESC\nLIMIT 20;",
+          "placeholders": []
+        },
+        {
+          "label": "which step raised the floor past this build",
+          "sql": "SELECT\n\tmigration_version,\n\tmin_compatible_version,\n\tcreated_at\nFROM migration_log\nWHERE min_compatible_version \u003e {build_version}\nORDER BY migration_version;",
+          "placeholders": [
+            "build_version"
+          ]
+        }
+      ]
+    },
+    "VK0024": {
+      "code": "VK0024",
+      "kind": "error",
+      "problem": "could not finish the worker declaration",
+      "recovery": "transient",
+      "fix": "rerun the declaration if the worker should still exist"
+    },
+    "VK0025": {
+      "code": "VK0025",
+      "kind": "error",
+      "problem": "could not finish the cron job declaration",
+      "recovery": "transient",
+      "fix": "rerun the declaration if the cron job should still exist"
+    },
+    "VK0026": {
+      "code": "VK0026",
+      "kind": "event",
+      "message": "lease reclaimed from expired worker",
+      "queries": [
+        {
+          "label": "the leases this group holds now",
+          "sql": "SELECT\n\ttoken,\n\tlow,\n\thigh,\n\tuntil,\n\treclaims\nFROM lease_{topic_id}\nWHERE consumer_group_id = {group_id}\nORDER BY low;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        },
+        {
+          "label": "what the reclaimed range left behind",
+          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tlast_error\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id BETWEEN {low} AND {high}\nORDER BY message_id;",
+          "placeholders": [
+            "topic_id",
+            "group_id",
+            "low",
+            "high"
+          ]
+        }
+      ]
+    },
+    "VK0027": {
+      "code": "VK0027",
+      "kind": "event",
+      "message": "range quarantined after max reclaims -- messages written as 'ready' exceptions",
+      "queries": [
+        {
+          "label": "the exceptions the quarantine wrote",
+          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tcan_run_after,\n\tlast_error\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id BETWEEN {low} AND {high}\nORDER BY message_id;",
+          "placeholders": [
+            "topic_id",
+            "group_id",
+            "low",
+            "high"
+          ]
+        },
+        {
+          "label": "the messages in the range, to find what kills a consumer",
+          "sql": "SELECT\n\tid,\n\trouting_key,\n\tpayload\nFROM message_log_{topic_id}\nWHERE id BETWEEN {low} AND {high}\nORDER BY id;",
+          "placeholders": [
+            "topic_id",
+            "low",
+            "high"
+          ]
+        }
+      ]
+    },
+    "VK0028": {
+      "code": "VK0028",
+      "kind": "event",
+      "message": "messages dead-lettered -- unrecoverable, will not be retried",
+      "queries": [
+        {
+          "label": "every dead row this group holds, newest first",
+          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY updated_at DESC;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        },
+        {
+          "label": "which errors account for them",
+          "sql": "SELECT last_error, count(*) AS dead_count\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nGROUP BY last_error\nORDER BY dead_count DESC;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        }
+      ]
+    },
+    "VK0029": {
+      "code": "VK0029",
+      "kind": "event",
+      "message": "message dead-lettered -- unrecoverable, will not be retried",
+      "queries": [
+        {
+          "label": "the delivery row the dead-lettering wrote",
+          "sql": "SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};",
+          "placeholders": [
+            "topic_id",
+            "group_id",
+            "message_id"
+          ]
+        },
+        {
+          "label": "every attempt it made, oldest first",
+          "sql": "SELECT\n\tattempt,\n\tstatus,\n\terror,\n\tattempted_at\nFROM delivery_log_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id}\nORDER BY attempt;",
+          "placeholders": [
+            "topic_id",
+            "group_id",
+            "message_id"
+          ]
+        },
+        {
+          "label": "the message itself",
+          "sql": "SELECT\n\tid,\n\trouting_key,\n\tpayload,\n\tcreated_at\nFROM message_log_{topic_id}\nWHERE id = {message_id};",
+          "placeholders": [
+            "topic_id",
+            "message_id"
+          ]
+        }
+      ]
+    },
+    "VK0030": {
+      "code": "VK0030",
+      "kind": "event",
+      "message": "exception dead-lettered -- unrecoverable, will not be retried",
+      "queries": [
+        {
+          "label": "the exception row now recorded dead",
+          "sql": "SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};",
+          "placeholders": [
+            "topic_id",
+            "group_id",
+            "message_id"
+          ]
+        },
+        {
+          "label": "the attempts that exhausted its budget",
+          "sql": "SELECT\n\tattempt,\n\tstatus,\n\terror,\n\tattempted_at\nFROM delivery_log_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id}\nORDER BY attempt;",
+          "placeholders": [
+            "topic_id",
+            "group_id",
+            "message_id"
+          ]
+        }
+      ]
+    },
+    "VK0031": {
+      "code": "VK0031",
+      "kind": "event",
+      "message": "crash-loop kill backstop fired -- exceptions marked dead",
+      "queries": [
+        {
+          "label": "the rows the backstop marked dead",
+          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY updated_at DESC;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        },
+        {
+          "label": "the attempts that crashed without recording an outcome",
+          "sql": "SELECT\n\tmessage_id,\n\tattempt,\n\tstatus,\n\tattempted_at\nFROM delivery_log_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'expired'\nORDER BY attempted_at DESC\nLIMIT 50;",
+          "placeholders": [
+            "topic_id",
+            "group_id"
+          ]
+        }
+      ]
+    },
+    "VK0032": {
+      "code": "VK0032",
+      "kind": "event",
+      "message": "stored message options outside this consumer's bounds -- clamped"
+    },
+    "VK0033": {
+      "code": "VK0033",
+      "kind": "event",
+      "message": "could not create partition ahead -- the first insert past the boundary will create it"
+    },
+    "VK0034": {
+      "code": "VK0034",
+      "kind": "event",
+      "message": "worker instance lost -- stopping, a replacement may already be running",
+      "queries": [
+        {
+          "label": "the instances holding this worker's rows now",
+          "sql": "SELECT\n\tworker_instance.id,\n\tworker_instance.token,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_instance\nJOIN worker ON worker.id = worker_instance.worker_id\nWHERE worker.name = '{worker}'\nORDER BY worker_instance.expires_at DESC;",
+          "placeholders": [
+            "worker"
+          ]
+        }
+      ]
+    },
+    "VK0035": {
+      "code": "VK0035",
+      "kind": "event",
+      "message": "manager row suspended -- its chain goes unreconciled until target_instances is restored",
+      "queries": [
+        {
+          "label": "every suspended worker row -- target_instances 0",
+          "sql": "SELECT\n\tid,\n\tname,\n\tsystem_id,\n\ttopic_id,\n\tconsumer_group_id\nFROM worker\nWHERE target_instances = 0\nORDER BY name;",
+          "placeholders": []
+        }
+      ]
+    },
+    "VK0036": {
+      "code": "VK0036",
+      "kind": "event",
+      "message": "worker tick backoff curve exhausted -- ticks continue at its cap",
+      "queries": [
+        {
+          "label": "this worker's rows and their failure streaks",
+          "sql": "SELECT\n\tworker.id,\n\tworker.target_instances,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker\nLEFT JOIN worker_instance ON worker_instance.worker_id = worker.id\nWHERE worker.name = '{worker}'\nORDER BY worker_instance.attempts DESC;",
+          "placeholders": [
+            "worker"
+          ]
+        }
+      ]
+    },
+    "VK0037": {
+      "code": "VK0037",
+      "kind": "event",
+      "message": "cron job request was already published by an earlier ambiguous commit"
+    },
+    "VK0038": {
+      "code": "VK0038",
+      "kind": "event",
+      "message": "produce exceeded the duration threshold"
+    },
+    "VK0039": {
+      "code": "VK0039",
+      "kind": "event",
+      "message": "delivery dispatch exceeded the duration threshold"
+    },
+    "VK0040": {
+      "code": "VK0040",
+      "kind": "event",
+      "message": "worker tick exceeded its poll rate -- the next tick is late"
+    },
+    "VK0041": {
+      "code": "VK0041",
+      "kind": "event",
+      "message": "consumer stopped"
+    },
+    "VK0042": {
+      "code": "VK0042",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.claimed",
+      "metric_kind": "counter",
+      "unit": "{message}",
+      "description": "messages this instance claimed -- cursor ranges and exception retries together"
+    },
+    "VK0043": {
+      "code": "VK0043",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.success",
+      "metric_kind": "counter",
+      "unit": "{message}",
+      "description": "consumerFunc runs that completed cleanly, counted at resolution"
+    },
+    "VK0044": {
+      "code": "VK0044",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.superseded",
+      "metric_kind": "counter",
+      "unit": "{message}",
+      "description": "messages resolved without running -- a newer message on their compaction key had already arrived"
+    },
+    "VK0045": {
+      "code": "VK0045",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.ready",
+      "metric_kind": "counter",
+      "unit": "{message}",
+      "description": "delivery rows written 'ready' -- each will be retried once its backoff passes"
+    },
+    "VK0046": {
+      "code": "VK0046",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.deferred",
+      "metric_kind": "counter",
+      "unit": "{message}",
+      "description": "delivery rows written 'deferred' -- another delivery held their compaction key"
+    },
+    "VK0047": {
+      "code": "VK0047",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.dead",
+      "metric_kind": "counter",
+      "unit": "{message}",
+      "description": "delivery rows written 'dead' -- exhausted retries, unrecoverable payloads, and the kill backstop"
+    },
+    "VK0048": {
+      "code": "VK0048",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.reclaimed",
+      "metric_kind": "counter",
+      "unit": "{lease}",
+      "description": "leases taken over from expired workers -- another instance died or stalled mid-range"
+    },
+    "VK0049": {
+      "code": "VK0049",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.quarantined",
+      "metric_kind": "counter",
+      "unit": "{range}",
+      "description": "ranges past the reclaim cap, written out as independent 'ready' exceptions"
+    },
+    "VK0050": {
+      "code": "VK0050",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.abandoned",
+      "metric_kind": "counter",
+      "unit": "{routine}",
+      "description": "consumerFunc goroutines written off past the hard timeout"
+    },
+    "VK0051": {
+      "code": "VK0051",
+      "kind": "metric",
+      "name": "vulkan.consumer.session.lease_lost",
+      "metric_kind": "counter",
+      "unit": "{commit}",
+      "description": "commits rejected because another worker reclaimed the lease first -- that work was redone elsewhere"
+    },
+    "VK0052": {
+      "code": "VK0052",
+      "kind": "event",
+      "message": "abandoned-routine events dropped -- abandoned-routine snapshots undercount"
+    },
+    "VK0053": {
+      "code": "VK0053",
+      "kind": "error",
+      "problem": "could not take a lock needed by the migration step",
+      "recovery": "transient",
+      "fix": "end the blocking session (pg_stat_activity), then run the migration again"
+    }
+  }
+}

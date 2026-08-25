@@ -375,12 +375,14 @@ site-dev:
   cd website && npm run dev
 
 # the site's sibling of `just verify`: prettier, eslint, stylelint,
-# astro check + svelte-check, remark-lint, vale, vitest. The compat
-# regenerate+diff is the drift guard -- the committed matrix must be what this
-# build's registries produce, so a schema change that skips site-compat fails.
+# astro check + svelte-check, remark-lint, vale, vitest. Each regenerate+diff
+# is a drift guard -- the committed data must be what this build produces, so a
+# change that skips the regenerate step fails here.
 site-verify:
   just site-compat
   git diff --exit-code --stat website/src/data/compat.json
+  just site-codes
+  git diff --exit-code --stat website/src/data/codes.json
   cd website && npm run verify
 
 # regenerate the compatibility matrix the migrations guide renders. Every
@@ -388,6 +390,12 @@ site-verify:
 # makes at Register -- so the page never holds a second copy of the gate.
 site-compat:
   cd tools && go run ./compatexport -out ../website/src/data/compat.json
+
+# regenerate the VK-code records the site reads: the diagnose queries it
+# renders, and the declaration each error page's frontmatter is checked
+# against (website/src/data/codes.test.ts).
+site-codes:
+  cd tools && go run ./codeexport -out ../website/src/data/codes.json
 
 # build + serve the built site (search needs the built Pagefind index)
 site-preview:

@@ -22,13 +22,23 @@ func TestNewQueryKeepsWhatItWasGiven(t *testing.T) {
 	}
 }
 
+// A declaration writes its SQL on the line after the opening backtick, so
+// the leading newline is the literal's shape, not the query's.
+func TestNewQueryTrimsTheLiteralsOwnWhitespace(t *testing.T) {
+	query := NewQuery("the delivery row", "\n"+deliverySql+"\n\t")
+	if query.Sql != deliverySql {
+		t.Errorf("sql = %q, want it trimmed", query.Sql)
+	}
+}
+
 func TestNewQueryPanicsOnStructuralMistakes(t *testing.T) {
 	cases := map[string]struct {
 		label string
 		sql   string
 	}{
-		"no label": {"", "SELECT 1"},
-		"no sql":   {"the delivery row", ""},
+		"no label":        {"", "SELECT 1"},
+		"no sql":          {"the delivery row", ""},
+		"only whitespace": {"the delivery row", "\n\t"},
 	}
 	for name, one := range cases {
 		t.Run(name, func(t *testing.T) {
