@@ -36,7 +36,7 @@ func (d *TopicDatastore) Delete(ctx context.Context, topicId int64, name string)
 }
 
 func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string) error {
-	if err := d.drainPartitions(ctx, iTopic.MessageLogTable(topicId)); err != nil {
+	if err := d.drainPartitions(ctx, topicId); err != nil {
 		return err
 	}
 

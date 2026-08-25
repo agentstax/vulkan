@@ -54,7 +54,17 @@ var ErrTopicNameTaken = diagnostic.NewError("VK0007", diagnostic.Permanent,
 // its drop-pass limit -- a producer is likely still writing.
 var ErrTopicPartitionsRemain = diagnostic.NewError("VK0020", diagnostic.Permanent,
 	"topic partitions remain after draining",
-	"stop the topic's producers and call DestroyTopic again")
+	"stop the topic's producers and call DestroyTopic again").
+	Diagnose(
+		diagnostic.NewQuery("the partitions still attached to the log", `
+SELECT partition.relname AS partition
+FROM pg_inherits
+JOIN pg_class AS partition ON partition.oid = pg_inherits.inhrelid
+WHERE pg_inherits.inhparent = to_regclass('message_log_{topic_id}')
+ORDER BY partition.relname;`),
+		diagnostic.NewQuery("whether a producer is still writing -- run it twice", `
+SELECT max(id) AS head, count(*) AS message_count FROM message_log_{topic_id};`),
+	)
 
 // ErrTopicDeclarationInterrupted means the topic row was destroyed between
 // the declaration's config write and its re-read; an unchanged retry

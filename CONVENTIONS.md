@@ -599,6 +599,11 @@ the code is the line's breadcrumb to its own explanation.
       code          a declared log event's code (Event.Code)
       topic         topic name
       topic_id      topic id
+      topics        the topic names a guard names, comma-separated
+      new_name      a rename's target topic name
+      declared_partition_size, existing_partition_size  the PartitionSize
+                    a declaration carries against the one the topic row
+                    already holds
       version       schema version (on VK0022/VK0023: the scope's current
                     migration version)
       build_version  the migration version a build defines for a scope

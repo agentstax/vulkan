@@ -52,9 +52,9 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 func assertVersionSupported(kind common.OwnerKind, state *datastore.SchemaStateData, buildVersion int64) error {
 	switch migrate.ClassifySchemaSupport(state.Version, state.MinCompatibleVersion, buildVersion) {
 	case migrate.SchemaOlderThanBuild:
-		return migrate.ErrSchemaOlderThanBuild.With("kind", kind, "version", state.Version, "build_version", buildVersion)
+		return migrate.ErrSchemaOlderThanBuild.With("owner_kind", kind, "version", state.Version, "build_version", buildVersion)
 	case migrate.SchemaNewerThanBuild:
-		return migrate.ErrSchemaNewerThanBuild.With("kind", kind, "version", state.Version, "min_compatible_version", state.MinCompatibleVersion, "build_version", buildVersion)
+		return migrate.ErrSchemaNewerThanBuild.With("owner_kind", kind, "version", state.Version, "min_compatible_version", state.MinCompatibleVersion, "build_version", buildVersion)
 	}
 	return nil
 }

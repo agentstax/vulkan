@@ -120,7 +120,7 @@ func (c *Controller) migrateOwner(ctx context.Context, conn *pgxpool.Conn, owner
 		return err
 	}
 	if current > maxVersion {
-		return migrate.ErrSchemaNewerThanBuild.With("kind", owner.Kind(), "version", current, "build_version", maxVersion)
+		return migrate.ErrSchemaNewerThanBuild.With("owner_kind", owner.Kind(), "version", current, "build_version", maxVersion)
 	}
 
 	switch {

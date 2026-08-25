@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
@@ -26,7 +27,9 @@ const dropPartitionBatchSize = 100
 // Batched partition drain: removes a partitioned table's partitions a
 // batch at a time so no single transaction holds more than a batch's
 // worth of lock slots, leaving the parent empty for a cheap final DROP.
-func (d *TopicDatastore) drainPartitions(ctx context.Context, parentTableName string) error {
+func (d *TopicDatastore) drainPartitions(ctx context.Context, topicId int64) error {
+	parentTableName := iTopic.MessageLogTable(topicId)
+
 	countSql := `-- vulkan: topic.drainPartitions
 SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
 	var partitionCount int64
@@ -59,7 +62,7 @@ SELECT count(*) FROM pg_inherits WHERE inhparent = to_regclass($1);`
 	}
 
 	// went past passLimit
-	return topic.ErrTopicPartitionsRemain.With("table", parentTableName, "passes", passLimit)
+	return topic.ErrTopicPartitionsRemain.With("topic_id", topicId)
 }
 
 func (d *TopicDatastore) listPartitions(ctx context.Context, parentTableName string) ([]string, error) {
