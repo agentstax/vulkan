@@ -7,11 +7,10 @@
 		name: 'consumer 1',
 		group: 'billing',
 		lines: [
-			{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
 			{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-			{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
 			{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
 		],
+		status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
 	};
 
 	const billingTwo: Consumer = {
@@ -23,6 +22,7 @@
 				text: 'same group as consumer 1.\nits next tick claims (2, 3] —\nranges never overlap.',
 			},
 		],
+		status: { text: 'no ticks yet', tone: 'plain' },
 	};
 
 	const search: Consumer = {
@@ -34,6 +34,7 @@
 				text: 'its own cursor, still at 0 —\nits first tick reads all three\nmessages billing handled.',
 			},
 		],
+		status: { text: 'no ticks yet', tone: 'plain' },
 	};
 
 	const { Story } = defineMeta({

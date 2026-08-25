@@ -26,7 +26,13 @@
 		value={text}
 		oninput={(event) => ontext(event.currentTarget.value)}
 	/>
-	<ChromeButton label="Produce ▸" tone="primary" {disabled} onclick={onproduce} />
+	<ChromeButton
+		label="Produce ▸"
+		ariaLabel="Produce a message"
+		tone="primary"
+		{disabled}
+		onclick={onproduce}
+	/>
 </div>
 {#if errorMessage !== null}
 	<div class="produce-error" role="alert">{errorMessage}</div>

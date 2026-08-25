@@ -81,6 +81,7 @@
 		<span class="panel-chip" data-state={panelState.stale ? 'behind' : 'current'}>{chip}</span>
 		<ChromeButton
 			label="Run ▸"
+			ariaLabel="Run this panel's query"
 			tone="primary"
 			disabled={runDisabled}
 			onclick={() => void panelState.run()}

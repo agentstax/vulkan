@@ -33,7 +33,13 @@
 			<option value={group}>group {group}</option>
 		{/each}
 	</select>
-	<ChromeButton label="Add" tone="quiet" {disabled} onclick={() => onadd(selected)} />
+	<ChromeButton
+		label="Add"
+		ariaLabel="Add a consumer"
+		tone="quiet"
+		{disabled}
+		onclick={() => onadd(selected)}
+	/>
 	<span class="add-hint">
 		New group = its own cursor, reads everything. Existing group = one cursor, disjoint ranges.
 	</span>

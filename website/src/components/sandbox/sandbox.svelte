@@ -3,7 +3,7 @@
 	import AddConsumer from '../add-consumer/add-consumer.svelte';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import DatabaseProgress from '../database-progress/database-progress.svelte';
-	import type { Consumer, ConsumerLine } from '../consumer-card/types';
+	import type { Consumer, ConsumerLine, ConsumerStatus } from '../consumer-card/types';
 	import ConsumerGrid from '../consumer-grid/consumer-grid.svelte';
 	import ProduceMessage from '../produce-message/produce-message.svelte';
 	import SqlPanel from '../sql-panel/sql-panel.svelte';
@@ -19,6 +19,10 @@
 	};
 
 	let { label, topic, messages, cursors }: Props = $props();
+
+	// what a card's status bar reads before its first tick, the sibling of a
+	// query panel showing 0 rows before its first run
+	const noTicksYet: ConsumerStatus = { text: 'no ticks yet', tone: 'plain' };
 
 	let produceText = $state('restock the ovens');
 	let produceError: string | null = $state(null);
@@ -79,6 +83,7 @@
 					text: "billing's cursor is at 0 —\nits first tick claims from the\nstart of the log.",
 				},
 			],
+			status: noTicksYet,
 		};
 	}
 
@@ -122,6 +127,7 @@
 				name: `consumer ${nextConsumer}`,
 				group: target,
 				lines: [{ kind: 'note', text: joinNote(group, target) }],
+				status: noTicksYet,
 			});
 			nextConsumer += 1;
 			addError = null;
@@ -155,21 +161,20 @@
 			});
 
 			if (claimed === null) {
-				consumer.lines.unshift({ kind: 'note', text: 'caught up · nothing to claim' });
+				consumer.status = { text: 'caught up · nothing to claim', tone: 'plain' };
 				return;
 			}
 
-			// the tick goes in as one block, newest block on top: the claim line
-			// announces the range, and the messages it read follow underneath it
-			consumer.lines.unshift(
-				{ kind: 'claim', text: claimText(claimed.low, claimed.high, handled.length) },
-				...handled,
-			);
+			consumer.status = {
+				text: claimText(claimed.low, claimed.high, handled.length),
+				tone: 'plain',
+			};
+			consumer.lines.unshift(...handled);
 		} catch (caught) {
-			consumer.lines.unshift({
-				kind: 'error',
+			consumer.status = {
 				text: caught instanceof Error ? caught.message : String(caught),
-			});
+				tone: 'error',
+			};
 		} finally {
 			ticking = false;
 		}
@@ -203,6 +208,7 @@
 		<span class="sandbox-meta">postgres 18 · wasm · local to this tab</span>
 		<ChromeButton
 			label="Reset sandbox ↻"
+			ariaLabel="Reset the sandbox"
 			tone="primary"
 			disabled={busy}
 			onclick={() => void reset()}

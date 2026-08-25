@@ -15,7 +15,21 @@
 <div class="consumer-card">
 	<div class="card-head">
 		<span class="consumer-name">{consumer.name}</span>
-		<span class="consumer-group">{consumer.group}</span>
+		<span class="consumer-group">({consumer.group})</span>
+		<ChromeButton
+			label="Tick ▸"
+			ariaLabel="Tick {consumer.name}"
+			tone="primary"
+			{disabled}
+			onclick={ontick}
+		/>
+		<ChromeButton
+			label="✕"
+			ariaLabel="Remove {consumer.name}"
+			tone="close"
+			{disabled}
+			onclick={onremove}
+		/>
 	</div>
 	<div class="card-out">
 		{#each consumer.lines as line, index (index)}
@@ -27,10 +41,7 @@
 			</div>
 		{/each}
 	</div>
-	<div class="card-foot">
-		<ChromeButton label="Tick ▸" tone="primary" {disabled} onclick={ontick} />
-		<ChromeButton label="Remove" tone="quiet" {disabled} onclick={onremove} />
-	</div>
+	<div class="card-status" data-tone={consumer.status.tone}>{consumer.status.text}</div>
 </div>
 
 <style src="./consumer-card.css"></style>

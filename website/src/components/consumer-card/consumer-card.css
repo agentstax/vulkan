@@ -8,10 +8,9 @@
 
 .card-head {
 	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 6px;
-	padding: 4px 8px;
+	align-items: center;
+	gap: 5px;
+	padding: 4px 6px 4px 8px;
 	background: var(--color-author-column);
 	border-bottom: 1px solid var(--border-row);
 }
@@ -23,7 +22,10 @@
 	color: var(--color-link);
 }
 
+/* pushes both buttons to the far end -- scoped styles cannot reach into the
+   button's own component to give it margin-left: auto */
 .consumer-group {
+	margin-right: auto;
 	font-family: var(--font-database);
 	font-size: 10px;
 	color: var(--color-text-muted);
@@ -52,13 +54,8 @@
 	white-space: pre-wrap;
 }
 
-.out-line[data-kind='claim'] .out-text,
 .out-line[data-kind='note'] .out-text {
 	color: var(--color-text-faint);
-}
-
-.out-line[data-kind='error'] .out-text {
-	color: var(--color-console-error);
 }
 
 .out-status[data-status='ok'] {
@@ -69,11 +66,20 @@
 	color: var(--color-console-error);
 }
 
-.card-foot {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 6px;
-	padding: 4px 8px;
+/* the card's own status bar: same chrome as a query panel's row count, because
+   it answers the same question -- what did the last run do */
+.card-status {
+	padding: 5px 8px;
+	background: var(--color-chrome-pale);
 	border-top: 1px solid var(--border-row);
+	color: var(--color-text-muted);
+	font-family: var(--font-database);
+	font-size: 10.5px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow-x: auto;
+}
+
+.card-status[data-tone='error'] {
+	color: var(--color-console-error);
 }

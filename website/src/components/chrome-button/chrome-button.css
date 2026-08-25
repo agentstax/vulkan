@@ -16,6 +16,16 @@
 	padding: 2px 8px;
 }
 
+/* the title-bar close box: square, glyph-sized, sitting at the head's far end
+   the way every window of the era ended its title bar */
+.chrome-button[data-tone='close'] {
+	width: 16px;
+	height: 16px;
+	padding: 0;
+	font-size: 9px;
+	line-height: 1;
+}
+
 .chrome-button:disabled {
 	color: var(--color-text-faint);
 	cursor: default;

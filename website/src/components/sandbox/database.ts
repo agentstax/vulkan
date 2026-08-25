@@ -300,13 +300,13 @@ async function seed(db: PGlite): Promise<void> {
 	type ProducedRow = { id: number };
 	await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [
 		crypto.randomUUID(),
-		'{"order_id": 42, "amount_cents": 1999}',
+		'{"order_id": 42, "status": "broke boy"}',
 		'orders.eu.created',
 		null,
 	]);
 	await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [
 		crypto.randomUUID(),
-		'{"order_id": 43, "amount_cents": 250}',
+		'{"order_id": 43, "status": "broke boy"}',
 		'',
 		null,
 	]);

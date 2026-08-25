@@ -10,11 +10,10 @@
 				name: 'consumer 1',
 				group: 'billing',
 				lines: [
-					{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
 					{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-					{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
 					{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
 				],
+				status: { text: 'claim (1, 2] · 1 message', tone: 'plain' },
 			},
 			disabled: false,
 			ontick: () => {},
@@ -25,7 +24,7 @@
 
 <Story name="Ticked twice" />
 <Story
-	name="Sharing a group"
+	name="Before its first tick"
 	args={{
 		consumer: {
 			name: 'consumer 2',
@@ -36,6 +35,7 @@
 					text: 'same group as consumer 1.\nits next tick claims (2, 3] —\nranges never overlap.',
 				},
 			],
+			status: { text: 'no ticks yet', tone: 'plain' },
 		},
 	}}
 />
@@ -51,6 +51,7 @@
 					text: 'its own cursor, still at 0 —\nits first tick reads all three\nmessages billing handled.',
 				},
 			],
+			status: { text: 'no ticks yet', tone: 'plain' },
 		},
 	}}
 />
@@ -60,10 +61,8 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
-			lines: [
-				{ kind: 'claim', text: 'claim (2, 3] · 1 message' },
-				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'error' },
-			],
+			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'error' }],
+			status: { text: 'claim (2, 3] · 1 message', tone: 'plain' },
 		},
 	}}
 />
@@ -73,11 +72,8 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
-			lines: [
-				{ kind: 'note', text: 'caught up · nothing to claim' },
-				{ kind: 'claim', text: 'claim (2, 3] · 1 message' },
-				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' },
-			],
+			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
+			status: { text: 'caught up · nothing to claim', tone: 'plain' },
 		},
 	}}
 />
@@ -87,7 +83,8 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
-			lines: [{ kind: 'claim', text: 'claim (4, 5] · 0 messages' }],
+			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
+			status: { text: 'claim (4, 5] · 0 messages', tone: 'plain' },
 		},
 	}}
 />
@@ -97,7 +94,8 @@
 		consumer: {
 			name: 'consumer 1',
 			group: 'billing',
-			lines: [{ kind: 'error', text: 'lease lost to another consumer' }],
+			lines: [{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' }],
+			status: { text: 'lease lost to another consumer', tone: 'error' },
 		},
 	}}
 />
@@ -109,15 +107,16 @@
 			name: 'consumer 1',
 			group: 'billing',
 			lines: [
-				{ kind: 'claim', text: 'claim (3, 4] · 1 message' },
+				{ kind: 'handled', text: '#8 "ship order 4475"', status: 'ok' },
+				{ kind: 'handled', text: '#7 "refund order 4474"', status: 'ok' },
+				{ kind: 'handled', text: '#6 "ship order 4473"', status: 'ok' },
+				{ kind: 'handled', text: '#5 "restock the ovens"', status: 'ok' },
 				{ kind: 'handled', text: '#4 "ship order 4472"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (2, 3] · 1 message' },
 				{ kind: 'handled', text: '#3 "restock the ovens"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
 				{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
-				{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
 				{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
 			],
+			status: { text: 'claim (7, 8] · 1 message', tone: 'plain' },
 		},
 	}}
 />

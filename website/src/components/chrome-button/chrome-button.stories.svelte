@@ -7,6 +7,7 @@
 		component: ChromeButton,
 		args: {
 			label: 'Run ▸',
+			ariaLabel: 'Run the query',
 			tone: 'primary',
 			disabled: false,
 			onclick: () => {},
@@ -16,5 +17,13 @@
 
 <Story name="Enabled" />
 <Story name="Disabled" args={{ disabled: true }} />
-<Story name="Quiet" args={{ label: 'Remove', tone: 'quiet' }} />
-<Story name="Quiet disabled" args={{ label: 'Remove', tone: 'quiet', disabled: true }} />
+<Story name="Quiet" args={{ label: 'Add', ariaLabel: 'Add a consumer', tone: 'quiet' }} />
+<Story
+	name="Quiet disabled"
+	args={{ label: 'Add', ariaLabel: 'Add a consumer', tone: 'quiet', disabled: true }}
+/>
+<Story name="Close box" args={{ label: '✕', ariaLabel: 'Remove consumer 1', tone: 'close' }} />
+<Story
+	name="Close box disabled"
+	args={{ label: '✕', ariaLabel: 'Remove consumer 1', tone: 'close', disabled: true }}
+/>
