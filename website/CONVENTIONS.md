@@ -150,8 +150,10 @@ preprocessor, no utility framework, no third-party token pack.
 - The body starts at H2 (the H1 is the frontmatter title); heading
   levels never skip (remark-lint enforces both).
 - Markdown first: a component appears in MDX only from the
-  whitelisted set (aside, tabs, the console); anything prose can
-  carry stays prose.
+  whitelisted set (aside, tabs, the console, the compat matrix);
+  anything prose can carry stays prose. A component earns a place on
+  the list by rendering something prose cannot state -- live query
+  results, a computed grid -- never by presenting prose more nicely.
 - Each page does ONE job -- tutorial, how-to, reference, or
   explanation; a guide that starts explaining links to the concept
   page instead of drifting.

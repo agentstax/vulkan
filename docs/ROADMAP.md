@@ -16,92 +16,84 @@ the item is removed.
 
 ## Now
 
-- **Documentation — remaining items** (the rewrite-to-the-real-API pass
-  shipped 2026-08-22 [0581], the board rebuild 2026-08-23
-  [0582] [0583] [0584]; these are what is left):
-  - Interactive mechanisms the user committed to, none built yet:
-    - Paste-your-log-line on code threads — parse a pasted line's attrs
-      and interpolate the reader's own values into the declared fix
-      command, and into the declared diagnose queries once those exist
-      (the diagnose item below owns that field — build it first, or this
-      page has only the fix to interpolate). The search strip below each
-      code thread is the placeholder.
-    - Compat verdict widget — pick a build version and a target version,
-      get the real MinCompatibleVersion gate answer ([0580]); the gate is
-      never reimplemented in TS, a build-time Go → JSON export of the
-      migration registry feeds it.
-    - Inline "why?" toggles expanding the decision record behind a claim
-      (liked, unscoped).
-    - Consumer-flow sandbox — SHIPPED 2026-08-25 [0585] [0586] [0587], see
-      HISTORY.md. What was deferred out of it stays here:
-      - Deferred out of the first build (user, 2026-08-24): a per-consumer
-        "fail the next message" toggle, so a delivery row materializes at
-        ready -> inflight -> dead while the cursor moves past it. This is
-        the sharpest demonstration the site can make of "success writes no
-        row" — build it once the happy path is real.
-      - Deferred out of the first build (user, 2026-08-24): declaring a
-        binding on a group, so routing_key selects instead of decorating.
-        A bound group claims the full range and reads only the messages
-        whose routing_key matches its pattern — the fan-out story, and the
-        only thing that earns routing_key a column back in the message_log
-        panel (dropped from the default query for exactly that reason).
-        Needs UI to declare the pattern, and reintroduces ranges that read
-        `· 0 messages` — so it wants page copy alongside it.
-  - Board-site open pool (board build + parked-items round done
-    2026-08-23; each independent, pick up any order):
-    - Spacing token scale + sweep — website/CONVENTIONS.md declares
-      spacing a closed token scale but component css still uses raw px;
-      define --space-* tokens, sweep every component css, then add the
-      spacing properties to the stylelint declaration-strict-value list
-      (colors/fonts/z-index/shadows are already enforced).
-    - Playwright initial-JS ceiling — the one settled Playwright test:
-      homepage initial JS under a declared byte ceiling, failing build
-      on regress. Playwright not yet installed.
-    - Console try-it links — ConsoleState makes a link = set sql +
-      run(); lets doc pages deep-link example queries into the console.
-    - PGlite wasm prefetch — requestIdleCallback fetch of the ~5.2MB
-      wasm+data chunk after interactive, so the first console Run is
-      near-instant.
-    - transition:persist on the console — keep the live PGlite instance
-      across navigations (ClientRouter view transitions; cost once per
-      session).
-    - Per-page example attr values on error/event threads — compose
-      richer example log lines (real attr keys per code) instead of the
-      minimal composed line.
-    - Dark mode as a "Board style" dropdown (palette donor picked during
-      the design rounds), not a system toggle.
+Doc-site rounds already shipped, for context on what is left below: the
+rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
+2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
+[0585] [0586] [0587]. All three are in HISTORY.md.
+
+- **Doc site — interactive mechanisms.** Svelte + PGlite work on the
+  board; the sandbox proved the pattern, neither of these is built.
+  - Compat verdict widget — pick a build version and a target version, get
+    the real MinCompatibleVersion gate answer [0580]. The gate is never
+    reimplemented in TS; a build-time Go → JSON export of the migration
+    registry feeds it.
+  - Paste-your-log-line on code threads — parse a pasted line's attrs and
+    interpolate the reader's own values into the declared fix command, and
+    into the declared diagnose queries once those exist. BLOCKED on the
+    diagnose item below: build that first, or this page has only the fix
+    to interpolate. The search strip under each code thread is the
+    placeholder.
+
+- **Doc site — content still owed.**
+  - Transactional-outbox side-effect footgun, worked example — calling
+    sendEmailConfirmation() before a Produce/multi-target closure is known
+    to commit fires the email even if a later step rolls back. Pairs with
+    the outbox framing already on guides/transactional-produce.
+  - consumerFunc hard timeout, goroutine abandoned — how to PREVENT it:
+    handle ctx.Done() inside consumerFunc, or raise TimeoutGrace. Rare,
+    but the abandoned goroutine is a real side effect. The counter and its
+    events are already documented (VK0050, VK0052, and abandoned_count on
+    VK0041); what no page says is what a reader should do about it.
+    Raised by CallSafely in pkg/consumergroup/base/consumer.go.
+  - Per-page example attr values on error/event threads — compose richer
+    example log lines from each code's real attr keys instead of the
+    minimal composed line.
+  - DDL table design diagram.
+
+- **Doc site — infrastructure & polish.** Each independent, any order.
+  - Spacing token scale + sweep — website/CONVENTIONS.md declares spacing
+    a closed token scale but component css still uses raw px. Define
+    --space-* tokens, sweep every component css, then add the spacing
+    properties to stylelint's declaration-strict-value list (color,
+    background, fill, stroke, font-family, z-index and box-shadow are
+    already enforced).
+  - Playwright initial-JS ceiling — the one settled Playwright test:
+    homepage initial JS under a declared byte ceiling, failing the build
+    on regress. Playwright is not installed and no other flow test is
+    planned. Last measured 2026-08-24: 60.5 KB raw / 22.4 KB gzipped.
+  - PGlite wasm prefetch — requestIdleCallback fetch of the ~5.2 MB
+    wasm+data chunk after interactive, so the sandbox's first statement is
+    near-instant. (sql-panel already uses requestIdleCallback to mount
+    CodeMirror; this is the same trigger, a different chunk.)
+  - transition:persist on the sandbox — keep the live PGlite instance
+    across navigations (ClientRouter view transitions; boot cost once per
+    session instead of once per page).
+  - Dark mode as a "Board style" dropdown (palette donor picked during the
+    design rounds), not a system toggle.
+
+- **Library work the doc pass surfaced.**
+  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
+    comments and maybe a log line recommending against production use.
+    UNBLOCKED: this was sequenced behind the quickstart rewrite so the
+    Default constructors would be built against observed friction rather
+    than guessed, and that rewrite shipped in [0581].
+    - The friction it observed: a consumer needs a MessageAdmin and
+      RegisterSystem just to GetTopic; `topic.SchemaVersion(1)` is
+      repeated three times per program; Consume's cancellable-ctx
+      requirement is a context.Background() trap; ConsumerConfig.Retry and
+      Message.Retry are confusable; produce-only deployments silently get
+      no upkeep unless someone runs `vulkan manager run`; RegisterTopic
+      wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
+      struct for the common case — whether nil works is unverified);
+      pkg/common and pkg/topic invite aliasing in user code.
+  - Go doc comments on the public API — the surfaces the worker and cron
+    rounds finalized never got a doc-comment pass. [0581] fixed
+    RoutingKey's in passing; the rest are unreviewed.
   - After the next `just site-deploy` (always ask before deploying):
     confirm the deployed /errors/ pages resolve at the Docs() URLs
-    (exact-case /errors/VK0005), then drop the placeholder TODO comment
-    on docsBaseURL in pkg/common/error.go.
-  - Doc site: worked example of the transactional-outbox side-effect footgun
-    (calling sendEmailConfirmation() before a Produce/multi-target closure is
-    known to commit fires the email even if a later step rolls back) — pair
-    with the outbox framing already on the site.
-  - Doc comments on the public API surfaces 13/14b finalized.
-  - Document the "consumerFunc hard timeout, goroutine abandoned" error
-    (CallSafely in pkg/consumer/base/consumer.go): what it means, how to
-    prevent it — handle ctx.Done() inside consumerFunc or raise
-    TimeoutGrace; rare, but the abandoned goroutine is a real side effect.
-  - Quick Start documentation — might require CLI work.
-  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
-    comments and maybe a log statement recommending not to use in prod.
-    Sequenced after the quickstart docs on purpose: writing them surfaces
-    the real startup friction (today ~6 constructor/register steps —
-    datastore, admin, system, topic, producer/consumer + Register), and the
-    Default constructors get built against that observed pattern rather
-    than guessed.
-    - The friction the quickstart rewrite actually observed ([0581]): a
-      consumer needs a MessageAdmin and RegisterSystem just to GetTopic;
-      `topic.SchemaVersion(1)` is repeated three times per program;
-      Consume's cancellable-ctx requirement is a context.Background()
-      trap; ConsumerConfig.Retry and Message.Retry are confusable;
-      produce-only deployments silently get no upkeep unless someone runs
-      `vulkan manager run`; RegisterTopic wants an
-      `&topiccontroller.TopicConfig{}` (an import plus an empty struct for
-      the common case — whether nil works is unverified); pkg/common and
-      pkg/topic invite aliasing in user code.
-  - DDL table design diagram.
+    (exact-case /errors/VK0005), then drop the placeholder TODO comment on
+    docsBaseURL — it lives in pkg/common/diagnostic/registry.go, not
+    pkg/common/error.go.
 
 - **A diagnose part on diagnostic declarations** (a 14b surface change,
   pulled into Now because the documentation item above consumes it) — the
@@ -317,6 +309,28 @@ Post-v1, unordered. Pick up only if a real workload demands it. Known
 dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
+
+- **Doc-site sandbox extensions** (parked 2026-08-25 — the sandbox works
+  as shipped; each of these is a second story on top of it, none of them
+  blocking):
+  - Fail-the-next-message toggle on a sandbox consumer, so a delivery row
+    materializes at ready -> inflight -> dead while the cursor moves past
+    it. The sharpest demonstration the site can make of "success writes no
+    row". The three statements it needs (deliveryStatement, logStatement,
+    partialCommit) are the ones [0586] left unextracted.
+  - Declare a binding on a group, so routing_key selects instead of
+    decorating. A bound group claims the full range and reads only the
+    messages whose routing_key matches its pattern — the fan-out story,
+    and the only thing that earns routing_key a column back in the
+    message_log panel (dropped from the default query for exactly that
+    reason). Needs UI to declare the pattern, and reintroduces ranges that
+    read `· 0 messages`, so it wants page copy alongside it.
+  - Try-it links into the sandbox — a link sets a panel's SQL and runs it,
+    letting doc pages deep-link example queries. (Wording predates the
+    sandbox: ConsoleState is gone; the panels own PanelState over one
+    shared DatabaseState.)
+  - Inline "why?" toggles expanding the decision record behind a claim
+    (liked, unscoped).
 
 - **Doc-site mechanisms considered and not taken** (2026-08-23 brainstorm;
   revive only if the site needs them): a Vulkan-powered real forum behind
