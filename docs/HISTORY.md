@@ -5,6 +5,45 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-25 — the homepage console grew into a consumer-flow sandbox [0585] [0586] [0587]
+
+- The board index now runs the whole produce/claim path in the browser.
+  Produce a message, watch consumer instances claim it off their group's
+  cursor, and read `message_log_1` and `cursor_1` beside them — one PGlite
+  Postgres shared by every panel and card, seeded from the library's own
+  DDL and produce statement.
+- It is a harness, not a simulation: nine more statements extracted
+  byte-exact from the Go sources (getGroup, registerGroup's three,
+  freshClaimMessagesWithCursor's snapshot and gate, claimMessages,
+  readMessages, commit's lease DELETE). Only the loop that calls them and
+  the handler it hands each message to belong to the page. Drift is now
+  counted per `-- vulkan: <owner>` tag rather than per file, so a verb the
+  site never runs needs no case while a statement added to a mirrored verb
+  still fails the build [0586].
+- The claim path's snapshot gate proves on the first poll under PGlite, so
+  Tick runs `freshClaimMessagesWithCursor` unchanged — structural, not
+  lucky: the snapshot statement takes no xid, and one backend means every
+  producer transaction has already committed [0585].
+- Consumers auto-run on their own clocks, roughly once a second with
+  jitter, replacing the manual Run button outright [0587]. `ChromeButton`
+  gained a `pressed: boolean | null` toggle state in muted amber;
+  `AutoRunner` owns the timers as plain TS so vitest can drive it with
+  fake timers.
+- A consumer is a group membership: adding one declares a new group (its
+  cursor starts at 0, so it replays) or joins an existing one (the two
+  claim disjoint ranges off one cursor). Reset sandbox drops the database
+  and rebuilds it from the seed, labeled a page control rather than an API
+  verb — rewinding a group is not a Vulkan verb.
+- Each panel owns a default query, mounts CodeMirror, and re-runs after any
+  write only while the visitor has not edited it; once edited it marks
+  itself `edited · behind` and waits. New result rows and new consumer
+  lines fade in from amber via `@starting-style`, behind
+  `prefers-reduced-motion`.
+- Verified: `just site-verify` green (0 errors, 21 vitest tests across 3
+  files), the full build, and a browser pass by the user — produce, the
+  clocks claiming it, the cursor advancing, Reset. Homepage initial JS
+  stayed dynamic-only for PGlite and CodeMirror.
+
 ## 2026-08-23 — the doc site rebuilt as a message board [0582] [0583] [0584]
 
 - Starlight uninstalled; the board serves the whole site. Astro core

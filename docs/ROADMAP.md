@@ -32,10 +32,8 @@ the item is removed.
       migration registry feeds it.
     - Inline "why?" toggles expanding the decision record behind a claim
       (liked, unscoped).
-    - Consumer-flow sandbox thread (picked up 2026-08-24; working window
-      in TODO.md) — produce a message, watch groups claim it, read the
-      message/cursor/delivery tables, all driven by the library's own
-      claim and commit statements in PGlite.
+    - Consumer-flow sandbox — SHIPPED 2026-08-25 [0585] [0586] [0587], see
+      HISTORY.md. What was deferred out of it stays here:
       - Deferred out of the first build (user, 2026-08-24): a per-consumer
         "fail the next message" toggle, so a delivery row materializes at
         ready -> inflight -> dead while the cursor moves past it. This is
