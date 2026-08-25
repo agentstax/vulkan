@@ -174,7 +174,7 @@ func (a *MessageAdmin) assertTopicIdle(ctx context.Context, topicId int64, name 
 		return err
 	}
 	if !empty {
-		return topic.ErrTopicNotEmpty.With("topic", name)
+		return topic.ErrTopicNotEmpty.With("topic", name, "topic_id", topicId)
 	}
 	return nil
 }

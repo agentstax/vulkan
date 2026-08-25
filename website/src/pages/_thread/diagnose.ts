@@ -28,6 +28,16 @@ WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id}
 ORDER BY attempt;`,
 		},
+		{
+			label: 'the message itself',
+			sql: `SELECT
+	id,
+	routing_key,
+	payload,
+	created_at
+FROM message_log_{topic_id}
+WHERE id = {message_id};`,
+		},
 	],
 };
 

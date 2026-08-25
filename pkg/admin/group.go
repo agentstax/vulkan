@@ -120,7 +120,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	}
 	for _, snapshot := range workers {
 		if snapshot.Owner.ConsumerGroupId == groupId && snapshot.LiveInstances > 0 {
-			return consumergroup.ErrGroupLive.With("group", groupName)
+			return consumergroup.ErrGroupLive.With("group", groupName, "group_id", groupId)
 		}
 	}
 
@@ -132,7 +132,7 @@ func (a *MessageAdmin) assertGroupIdle(ctx context.Context, topicId int64, group
 	exceptions := group.Exceptions
 	total := exceptions.Ready + exceptions.Inflight + exceptions.Deferred + exceptions.Dead
 	if total > 0 {
-		return consumergroup.ErrGroupDeliveriesPending.With("group", groupName)
+		return consumergroup.ErrGroupDeliveriesPending.With("group", groupName, "topic_id", topicId, "group_id", groupId)
 	}
 	return nil
 }

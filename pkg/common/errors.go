@@ -24,4 +24,25 @@ var ErrLeaseLost = diagnostic.NewError("VK0003", diagnostic.Permanent,
 // outcomes already queued: whether they landed is unconfirmable, so a retry
 // could record duplicates -- the lease's expiry sorts the truth out.
 var ErrCommitConfirmationLost = diagnostic.NewError("VK0019", diagnostic.Permanent,
-	"commit confirmation was lost", "")
+	"commit confirmation was lost", "").
+	Diagnose(
+		diagnostic.NewQuery("whether the outcomes landed -- rows updated at the commit", `
+SELECT
+	message_id,
+	status,
+	attempts,
+	updated_at
+FROM delivery_{topic_id}
+WHERE consumer_group_id = {group_id}
+ORDER BY updated_at DESC
+LIMIT 20;`),
+		diagnostic.NewQuery("the range lease whose expiry settles it either way", `
+SELECT
+	token,
+	low,
+	high,
+	until,
+	reclaims
+FROM lease_{topic_id}
+WHERE consumer_group_id = {group_id};`),
+	)

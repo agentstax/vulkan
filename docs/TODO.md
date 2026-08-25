@@ -117,7 +117,7 @@ Four facts from the 2026-08-25 survey that decide the shape:
 - [x] 2. diagnostic: Query + NewQuery, Diagnose on Error and Event,
       placeholder parsing. Panics at init on a malformed template, same
       as the other declaration-time guards.
-- [ ] 3. Declare the queries. Rough coverage from the survey: dead-letter
+- [x] 3. Declare the queries. Rough coverage from the survey: dead-letter
       and lease events (VK0026-31), worker events (VK0034-36), the schema
       gate (VK0022/23), not-found and destroy guards (VK0005/06/14/15/16/
       20), commit-lost (VK0019). Constructor and config guards get

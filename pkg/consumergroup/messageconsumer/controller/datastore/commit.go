@@ -116,7 +116,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 	// was recorded.
 	if err := tx.Commit(ctx); err != nil {
 		if len(outcomes) > 0 {
-			return common.ErrCommitConfirmationLost.Wrap(err)
+			return common.ErrCommitConfirmationLost.With("topic_id", topicId, "group_id", groupId).Wrap(err)
 		}
 		return err // nothing recorded -- safe for Retry to auto-classify
 	}

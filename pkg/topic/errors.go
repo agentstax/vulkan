@@ -13,13 +13,37 @@ var ErrTopicConfigMismatch = diagnostic.NewError("VK0004", diagnostic.Permanent,
 // ErrTopicNotFound means the named topic has no row.
 var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
 	"topic not found",
-	"register it with MessageAdmin.RegisterTopic first")
+	"register it with MessageAdmin.RegisterTopic first").
+	Diagnose(
+		diagnostic.NewQuery("every schema version registered under this name", `
+SELECT
+	id,
+	name,
+	schema_version,
+	created_at
+FROM topic
+WHERE name = '{topic}';`),
+		diagnostic.NewQuery("every registered topic, if the name itself is wrong", `
+SELECT name, schema_version FROM topic ORDER BY name;`),
+	)
 
 // ErrTopicNotEmpty means Destroy was called on a topic that still holds
 // messages, without an explicit force override.
 var ErrTopicNotEmpty = diagnostic.NewError("VK0006", diagnostic.Permanent,
 	"topic still holds messages",
-	"pass DestroyOptions.Force to destroy them with the topic")
+	"pass DestroyOptions.Force to destroy them with the topic").
+	Diagnose(
+		diagnostic.NewQuery("how many messages the destroy would discard", `
+SELECT count(*) AS message_count FROM message_log_{topic_id};`),
+		diagnostic.NewQuery("the newest of them, to judge whether the topic is still in use", `
+SELECT
+	id,
+	routing_key,
+	created_at
+FROM message_log_{topic_id}
+ORDER BY id DESC
+LIMIT 20;`),
+	)
 
 // ErrTopicNameTaken means Rename's target name already belongs to another topic.
 var ErrTopicNameTaken = diagnostic.NewError("VK0007", diagnostic.Permanent,

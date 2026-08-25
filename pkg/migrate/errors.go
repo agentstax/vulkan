@@ -14,10 +14,42 @@ var ErrNotRegistered = diagnostic.NewError("VK0017", diagnostic.Permanent,
 // build requires.
 var ErrSchemaOlderThanBuild = diagnostic.NewError("VK0022", diagnostic.Permanent,
 	"schema version is older than this build requires",
-	"migrate the database up first")
+	"migrate the database up first").
+	Diagnose(
+		diagnostic.NewQuery("the steps this database recorded, newest first", `
+SELECT
+	id,
+	migration_version,
+	min_compatible_version,
+	status,
+	created_at
+FROM migration_log
+ORDER BY id DESC
+LIMIT 20;`),
+	)
 
 // ErrSchemaNewerThanBuild means the database was migrated past this build by
 // a step whose MinCompatibleVersion is above it.
 var ErrSchemaNewerThanBuild = diagnostic.NewError("VK0023", diagnostic.Permanent,
 	"schema version is newer than this build understands",
-	"upgrade the binary")
+	"upgrade the binary").
+	Diagnose(
+		diagnostic.NewQuery("the steps this database recorded, newest first", `
+SELECT
+	id,
+	migration_version,
+	min_compatible_version,
+	status,
+	created_at
+FROM migration_log
+ORDER BY id DESC
+LIMIT 20;`),
+		diagnostic.NewQuery("which step raised the floor past this build", `
+SELECT
+	migration_version,
+	min_compatible_version,
+	created_at
+FROM migration_log
+WHERE min_compatible_version > {build_version}
+ORDER BY migration_version;`),
+	)
