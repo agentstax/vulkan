@@ -29,11 +29,10 @@
 	color: var(--color-text-muted);
 }
 
-/* a fixed height, not a max: three cards holding different numbers of lines
-   still line their feet up across the row */
 .card-out {
 	flex: 1;
 	height: 78px;
+	max-height: 140px;
 	overflow-y: auto;
 	padding: 6px 8px;
 	background: var(--color-console-sql-bg);

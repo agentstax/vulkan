@@ -155,17 +155,18 @@
 			});
 
 			if (claimed === null) {
-				consumer.lines.push({ kind: 'note', text: 'caught up · nothing to claim' });
+				consumer.lines.unshift({ kind: 'note', text: 'caught up · nothing to claim' });
 				return;
 			}
 
-			consumer.lines.push({
-				kind: 'claim',
-				text: claimText(claimed.low, claimed.high, handled.length),
-			});
-			consumer.lines.push(...handled);
+			// the tick goes in as one block, newest block on top: the claim line
+			// announces the range, and the messages it read follow underneath it
+			consumer.lines.unshift(
+				{ kind: 'claim', text: claimText(claimed.low, claimed.high, handled.length) },
+				...handled,
+			);
 		} catch (caught) {
-			consumer.lines.push({
+			consumer.lines.unshift({
 				kind: 'error',
 				text: caught instanceof Error ? caught.message : String(caught),
 			});

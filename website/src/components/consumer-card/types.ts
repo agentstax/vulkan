@@ -12,6 +12,10 @@ export type ConsumerLine =
 
 // A consumer instance and the group whose cursor it claims from. Several
 // consumers naming the same group share that one cursor.
+//
+// lines are NEWEST FIRST, the same end message_log_1 puts its newest row: a
+// tick prepends its whole block, so the newest claim is always the top line
+// and the card needs no scrolling to show what just happened.
 export type Consumer = {
 	name: string;
 	group: string;

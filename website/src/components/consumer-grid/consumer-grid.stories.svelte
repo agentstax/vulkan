@@ -7,10 +7,10 @@
 		name: 'consumer 1',
 		group: 'billing',
 		lines: [
-			{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
-			{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
 			{ kind: 'claim', text: 'claim (1, 2] · 1 message' },
 			{ kind: 'handled', text: '#2 "refund order 4468"', status: 'ok' },
+			{ kind: 'claim', text: 'claim (0, 1] · 1 message' },
+			{ kind: 'handled', text: '#1 "ship order 4471"', status: 'ok' },
 		],
 	};
 
