@@ -1,0 +1,131 @@
+.compat-matrix {
+	margin: 0;
+	border: 1px solid var(--border-section);
+	background: var(--color-surface);
+}
+
+.matrix-label {
+	padding: 5px 8px;
+	background: var(--color-chrome-pale);
+	border-bottom: 1px solid var(--border-row);
+	color: var(--color-chrome-pale-text);
+	font-family: var(--font-chrome);
+	font-size: 11px;
+	font-weight: 600;
+}
+
+/* the grid gains a column per migration step, so it outgrows the content
+   column long before the page does */
+.matrix-scroll {
+	overflow-x: auto;
+	padding: 8px;
+}
+
+.matrix {
+	border-collapse: collapse;
+	font-family: var(--font-database);
+	font-size: 10.5px;
+}
+
+/* the corner carries no label -- each header names its own axis, so there is
+   nothing to fit into the one cell that belongs to both */
+.matrix-corner {
+	border: 0;
+}
+
+.matrix-head,
+.matrix-side {
+	padding: 3px 7px;
+	background: var(--color-console-result-header);
+	border: 1px solid var(--border-row);
+	color: var(--color-text-muted);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.matrix-side {
+	text-align: right;
+}
+
+.matrix-cell {
+	padding: 3px 7px;
+	border: 1px solid var(--border-row);
+	text-align: center;
+	white-space: nowrap;
+}
+
+.matrix-cell[data-support='supported'] {
+	background: var(--color-supported-ground);
+	border-color: var(--border-supported);
+	color: var(--color-supported-text);
+	font-weight: 600;
+}
+
+.matrix-cell[data-support='older_than_build'] {
+	background: var(--color-migrate-ground);
+	border-color: var(--border-migrate);
+	color: var(--color-migrate-text);
+}
+
+.matrix-cell[data-support='newer_than_build'] {
+	background: var(--color-refused-ground);
+	border-color: var(--border-refused);
+	color: var(--color-refused-text);
+}
+
+.matrix-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 14px;
+	margin: 0;
+	padding: 6px 8px;
+	border-top: 1px solid var(--border-row);
+	list-style: none;
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-text-muted);
+}
+
+.legend-item {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+}
+
+.legend-swatch {
+	width: 10px;
+	height: 10px;
+	border: 1px solid var(--border-row);
+}
+
+.legend-item[data-support='supported'] .legend-swatch {
+	background: var(--color-supported-ground);
+	border-color: var(--border-supported);
+}
+
+.legend-item[data-support='older_than_build'] .legend-swatch {
+	background: var(--color-migrate-ground);
+	border-color: var(--border-migrate);
+}
+
+.legend-item[data-support='newer_than_build'] .legend-swatch {
+	background: var(--color-refused-ground);
+	border-color: var(--border-refused);
+}
+
+.matrix-steps {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 10px;
+	margin: 0;
+	padding: 6px 8px;
+	border-top: 1px solid var(--border-row);
+	font-family: var(--font-database);
+	font-size: 10px;
+	color: var(--color-text-muted);
+}
+
+.step[data-breaking='true'] {
+	color: var(--color-refused-text);
+	font-weight: 600;
+}

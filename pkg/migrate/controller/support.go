@@ -46,18 +46,14 @@ func (c *Controller) AssertTopicSchemaSupported(ctx context.Context, systemId in
 // *** HELPERS ***
 // ***************
 
-// assertVersionSupported allows a build iff
-// state.MinCompatibleVersion <= buildVersion <= state.Version, where
-// buildVersion is what this binary's registry defines
-// state.Version is what the database records
-// - database behind the build     -> ErrSchemaOlderThanBuild (migrate up)
-// - breaking step past the build  -> ErrSchemaNewerThanBuild (upgrade binary)
-// - additive steps past the build -> allowed, the rolling-deploy window
+// assertVersionSupported renders migrate.ClassifySchemaSupport's answer as
+// the declared error for whichever side is behind. buildVersion is what this
+// binary's registry defines; state is what the database records.
 func assertVersionSupported(kind common.OwnerKind, state *datastore.SchemaStateData, buildVersion int64) error {
-	switch {
-	case state.Version < buildVersion:
+	switch migrate.ClassifySchemaSupport(state.Version, state.MinCompatibleVersion, buildVersion) {
+	case migrate.SchemaOlderThanBuild:
 		return migrate.ErrSchemaOlderThanBuild.With("kind", kind, "version", state.Version, "build_version", buildVersion)
-	case state.MinCompatibleVersion > buildVersion:
+	case migrate.SchemaNewerThanBuild:
 		return migrate.ErrSchemaNewerThanBuild.With("kind", kind, "version", state.Version, "min_compatible_version", state.MinCompatibleVersion, "build_version", buildVersion)
 	}
 	return nil

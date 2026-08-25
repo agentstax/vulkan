@@ -3,6 +3,9 @@ title: Upgrades & Migrations
 description: How schema versions work, what a rolling deploy can rely on, and the compatibility table for every release.
 ---
 
+import CompatMatrix from '../../../components/compat-matrix/compat-matrix.svelte';
+import compat from '../../../data/compat.json';
+
 Vulkan's tables live in your Postgres database, so upgrading Vulkan can mean
 migrating schema. This page is the contract for how that works: what a
 version is, which upgrades are safe to roll, and how a binary refuses —
@@ -59,6 +62,35 @@ Transactional migration steps run under a 2-second `lock_timeout`, so a step
 queued behind your traffic gives up and retries instead of stalling the
 queries queued behind it. When contention outlasts the retries, the run
 stops with `VK0053` naming the blocking session as the thing to clear.
+
+## Which builds a database admits
+
+The rule is two comparisons, but its consequences are easier to see than to
+read. Each cell is the gate's answer for one pair — a binary built at some
+schema version, a database sitting at another. Both scopes sit at v1 today,
+so there is exactly one pair to ask about:
+
+<CompatMatrix scope={compat.topic} label="Topic scope" />
+
+The grid gains a row and a column per migration step, and settles into three
+regions:
+
+- **The diagonal** — binary and database agree. Always admitted.
+- **Over the diagonal** — the binary expects schema the database doesn't
+  have yet. Always `VK0022`: migrate the database up.
+- **Under it** — the database is ahead of the binary. This is the
+  rolling-deploy window, and it reaches exactly as far back as the newest
+  breaking step allows. A run of additive steps leaves it wide; one breaking
+  step closes it to a single column, then it reopens at the new floor.
+
+No verdict is drawn by hand. A build-time export walks every pair through the
+same comparison the library runs at `Register`, so this page holds no second
+copy of the rule that could drift from the one your binaries enforce.
+
+The grid reads a database that reached its version by applying steps in
+order. A rolled-back database records the downgrade, so its floor is whatever
+the steps at or below its current version declare — the gate reads the
+recorded trail, never the declared one.
 
 ## Compatibility table
 

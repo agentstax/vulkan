@@ -5,6 +5,25 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-25 — the migrations guide shows the gate as a grid [0588]
+
+- The compatibility matrix on guides/migrations is generated, not written:
+  `tools/compatexport` walks every (build version, database version) pair
+  through `migrate.ClassifySchemaSupport` — the same call the library makes
+  at Register — and writes the verdicts to `website/src/data/compat.json`.
+  The page does a table lookup; TS never compares a version to a floor.
+- The rule got one home in the process. `assertVersionSupported` is now a
+  switch over the new classifier, and `migrate.Version(registry)` absorbed
+  the `len(Registry)+1` formula both scope registries had spelled out.
+- The exporter takes registries as parameters rather than reading the
+  package-level ones, so a fixture registry can prove the rule across
+  versions that do not exist yet — the empty pre-v1 registries give a
+  one-cell grid on their own. Its tests assert the fixture's whole 5x5 as a
+  text literal.
+- `just site-compat` regenerates; `just site-verify` regenerates and diffs,
+  so a registry change that skips the export fails the build. The component
+  is static (no `client:` directive, zero JS added to the page).
+
 ## 2026-08-25 — the homepage console grew into a consumer-flow sandbox [0585] [0586] [0587]
 
 - The board index now runs the whole produce/claim path in the browser.

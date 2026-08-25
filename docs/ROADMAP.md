@@ -21,12 +21,7 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Doc site — interactive mechanisms.** Svelte + PGlite work on the
-  board; the sandbox proved the pattern, neither of these is built.
-  - Compat verdict widget — pick a build version and a target version, get
-    the real MinCompatibleVersion gate answer [0580]. The gate is never
-    reimplemented in TS; a build-time Go → JSON export of the migration
-    registry feeds it.
+- **Doc site — interactive mechanisms.**
   - Paste-your-log-line on code threads — parse a pasted line's attrs and
     interpolate the reader's own values into the declared fix command, and
     into the declared diagnose queries once those exist. BLOCKED on the

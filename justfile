@@ -375,9 +375,19 @@ site-dev:
   cd website && npm run dev
 
 # the site's sibling of `just verify`: prettier, eslint, stylelint,
-# astro check + svelte-check, remark-lint, vale, vitest
+# astro check + svelte-check, remark-lint, vale, vitest. The compat
+# regenerate+diff is the drift guard -- the committed matrix must be what this
+# build's registries produce, so a schema change that skips site-compat fails.
 site-verify:
+  just site-compat
+  git diff --exit-code --stat website/src/data/compat.json
   cd website && npm run verify
+
+# regenerate the compatibility matrix the migrations guide renders. Every
+# verdict comes from migrate.ClassifySchemaSupport -- the call the library
+# makes at Register -- so the page never holds a second copy of the gate.
+site-compat:
+  cd tools && go run ./compatexport -out ../website/src/data/compat.json
 
 # build + serve the built site (search needs the built Pagefind index)
 site-preview:

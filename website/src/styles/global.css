@@ -75,6 +75,9 @@
 		--solved-green: #1e7b3c;
 		--solved-green-pale: #eaf4ec;
 		--solved-green-border: #cbe3d2;
+		--refused-red: #a93226;
+		--refused-red-pale: #fbeceb;
+		--refused-red-border: #eecdc9;
 
 		/* semantic -- what components consume */
 		--color-page: var(--page-blue-gray);
@@ -156,6 +159,18 @@
 		--color-solved: var(--solved-green);
 		--color-solved-ground: var(--solved-green-pale);
 		--border-solved: var(--solved-green-border);
+
+		/* the schema gate's three verdicts -- supported, and the two refusals
+		   told apart by which side has to move */
+		--color-supported-ground: var(--solved-green-pale);
+		--color-supported-text: var(--solved-green);
+		--border-supported: var(--solved-green-border);
+		--color-migrate-ground: var(--amber-pale);
+		--color-migrate-text: var(--amber-dark);
+		--border-migrate: var(--amber-shade);
+		--color-refused-ground: var(--refused-red-pale);
+		--color-refused-text: var(--refused-red);
+		--border-refused: var(--refused-red-border);
 		--flag-body: var(--amber-dark);
 		--flag-face: var(--amber);
 		--flag-highlight: var(--amber-light);
