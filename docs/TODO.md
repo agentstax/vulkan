@@ -167,6 +167,22 @@ going live:
   literal was written. The card names the two fields when it renders, which
   is why it leads with `order_id` while the message_log_1 panel -- showing
   the raw column -- leads with `desc`.
+- New result rows flash on entry. **DONE 2026-08-25.** `@starting-style`
+  plus a transition on `.result td`: a new cell fades up out of
+  `--color-row-enter` (amber, the board's new-or-act colour). Two things
+  make it fire only for genuinely new rows:
+  - SqlResult keys its `{#each}` by ROW CONTENT (`JSON.stringify(cells)`
+    plus an occurrence suffix for duplicates), not by index. Index keys
+    reuse every `<tr>` when a row is prepended, so nothing is ever rendered
+    fresh and nothing reaches `@starting-style`.
+  - The declarations sit on the cell, not the row: a `td` background paints
+    over the `tr`'s, so the `nth-child` stripe keeps its own and neither
+    rule has to outrank the other.
+  Inside `@media (prefers-reduced-motion: no-preference)`, matching
+  database-progress; with no transition declared the starting values are
+  never used, so reduced motion means no flash rather than a jump. Rows in
+  the server-rendered shell animate once on page load -- `@starting-style`
+  fires for elements in the initial HTML too.
 - STILL OPEN: a browser run (produce -> the clocks claim it -> cursor
   advances, then Reset). Everything below the UI is proved headlessly, but
   nothing has driven the actual page.

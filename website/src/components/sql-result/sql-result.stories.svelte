@@ -1,5 +1,6 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
+	import type { ResultRow } from '../sandbox/database';
 	import SqlResult from './sql-result.svelte';
 
 	const { Story } = defineMeta({
@@ -7,7 +8,7 @@
 		component: SqlResult,
 	});
 
-	const manyRows: (string | null)[][] = Array.from({ length: 40 }, (_, index) => [
+	const manyRows: ResultRow[] = Array.from({ length: 40 }, (_, index) => [
 		String(index + 1),
 		index % 3 === 0 ? null : 'orders.eu.created',
 		`{"order_id": ${index + 1}, "amount_cents": ${(index + 1) * 25}}`,

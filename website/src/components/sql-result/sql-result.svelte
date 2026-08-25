@@ -7,6 +7,17 @@
 
 	let { result }: Props = $props();
 
+	// no id column to key on -- a panel runs whatever SQL the reader typed -- so
+	// a row is identified by its cells, and the repeat count keeps duplicates apart
+	const rowKeys: string[] = $derived.by(() => {
+		const repeats: Record<string, number> = {};
+		return result.rows.map((cells) => {
+			const content = JSON.stringify(cells);
+			repeats[content] = (repeats[content] ?? 0) + 1;
+			return `${content}#${repeats[content]}`;
+		});
+	});
+
 	const statusText = $derived.by(() => {
 		const parts: string[] = [];
 		if (result.affectedRows === null) {
@@ -31,9 +42,9 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each result.rows as row, index (index)}
+				{#each result.rows as cells, index (rowKeys[index])}
 					<tr>
-						{#each row as cell, cellIndex (cellIndex)}
+						{#each cells as cell, cellIndex (cellIndex)}
 							<td>
 								{#if cell === null}
 									<span class="null-value">NULL</span>

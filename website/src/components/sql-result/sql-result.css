@@ -28,6 +28,26 @@
 	padding: 5px 10px;
 }
 
+/* a row the previous run did not return fades up out of amber. The declarations
+   sit on the cell, not the row: a td background paints over the tr's, so the
+   nth-child stripe below keeps its own and neither rule has to outrank the
+   other. Rows are keyed by content, so only genuinely new ones are rendered
+   fresh and reach @starting-style. */
+@media (prefers-reduced-motion: no-preference) {
+	.result td {
+		transition:
+			background-color 0.75s ease,
+			opacity 0.75s ease;
+	}
+
+	@starting-style {
+		.result td {
+			background-color: var(--color-row-enter);
+			opacity: 0;
+		}
+	}
+}
+
 .result tbody tr:nth-child(even) {
 	background: var(--color-row-stripe-a);
 }

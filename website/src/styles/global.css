@@ -95,6 +95,7 @@
 		--border-row: var(--border-blue-row);
 		--color-row-stripe-a: var(--stripe-blue-light);
 		--color-row-stripe-b: var(--stripe-blue-dark);
+		--color-row-enter: var(--amber-pale);
 		--folder-updated-body: var(--amber-dark);
 		--folder-updated-face: var(--amber);
 		--folder-updated-highlight: var(--amber-light);
