@@ -178,7 +178,11 @@ going live:
   - The declarations sit on the cell, not the row: a `td` background paints
     over the `tr`'s, so the `nth-child` stripe keeps its own and neither
     rule has to outrank the other.
-  Inside `@media (prefers-reduced-motion: no-preference)`, matching
+  Consumer-card lines got the same entry, on `.out-line`. A card's lines are
+  only ever PREPENDED, so they key from the end
+  (`consumer.lines.length - index`) -- exact here, and the shape guess the
+  result table could not make.
+  Both sit inside `@media (prefers-reduced-motion: no-preference)`, matching
   database-progress; with no transition declared the starting values are
   never used, so reduced motion means no flash rather than a jump. Rows in
   the server-rendered shell animate once on page load -- `@starting-style`

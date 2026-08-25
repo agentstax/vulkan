@@ -34,7 +34,9 @@
 		/>
 	</div>
 	<div class="card-out">
-		{#each consumer.lines as line, index (index)}
+		<!-- keyed from the end: a run only ever prepends, so counting back leaves
+		     every existing line's key alone and only a new one renders fresh -->
+		{#each consumer.lines as line, index (consumer.lines.length - index)}
 			<div class="out-line" data-kind={line.kind}>
 				<span class="out-text">{line.text}</span>
 				{#if line.kind === 'handled'}

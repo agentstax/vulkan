@@ -52,6 +52,22 @@
 	gap: 6px;
 }
 
+/* visual flash of consumer lines on enter */
+@media (prefers-reduced-motion: no-preference) {
+	.out-line {
+		transition:
+			background-color 0.75s ease,
+			opacity 0.75s ease;
+	}
+
+	@starting-style {
+		.out-line {
+			background-color: var(--color-row-enter);
+			opacity: 0;
+		}
+	}
+}
+
 /* a note carries its own newlines */
 .out-text {
 	white-space: pre-wrap;
