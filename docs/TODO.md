@@ -90,8 +90,9 @@ Four facts from the 2026-08-25 survey that decide the shape:
 
 ### Open
 
-- [ ] How a typo'd placeholder gets caught. Three options; decide before
-      task 2.
+- [x] How a typo'd placeholder gets caught -- SETTLED: the
+      tools/conventions test below. It lands with task 3, when there are
+      declared queries to check.
       - Recommended: a tools/conventions test that parses the
         ### Attributes table out of CONVENTIONS.md and validates every
         declared query's placeholders -- prose stays the single source,
@@ -108,12 +109,12 @@ Four facts from the 2026-08-25 survey that decide the shape:
 
 ### Tasks
 
-- [ ] 1. The proposal page: VK0029's thread page with its diagnose
+- [x] 1. The proposal page: VK0029's thread page with its diagnose
       section rendered, reviewed before any Go lands (docs drive
       implementation). Decides how a reader meets the section -- heading,
       placeholder rendering before values are known, and whether the two
       queries read as one block or two.
-- [ ] 2. diagnostic: Query + NewQuery, Diagnose on Error and Event,
+- [x] 2. diagnostic: Query + NewQuery, Diagnose on Error and Event,
       placeholder parsing. Panics at init on a malformed template, same
       as the other declaration-time guards.
 - [ ] 3. Declare the queries. Rough coverage from the survey: dead-letter

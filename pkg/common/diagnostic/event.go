@@ -1,10 +1,11 @@
 package diagnostic
 
 // Event is a declared operator-actionable log event: the static message
-// a call site logs and the code that rides in its "code" attr.
+// a call site logs and the code that rides in its "code" attribute.
 type Event struct {
 	Code    string
 	Message string
+	Queries []*Query // none when the event has no state to look at
 }
 
 // NewEvent declares a log event and registers its code. A non-empty
@@ -21,6 +22,20 @@ func NewEvent(code string, message string, consequence string) *Event {
 	declared := &Event{Code: code, Message: message}
 	register(declared)
 	return declared
+}
+
+// Diagnose attaches the queries that show an operator the state behind this
+// event, and returns the same declaration so it chains onto NewEvent.
+func (e *Event) Diagnose(queries ...*Query) *Event {
+	if len(queries) == 0 {
+		panic("diagnose queries must not be empty: " + e.Code)
+	}
+	if len(e.Queries) > 0 {
+		panic("diagnose queries are already declared: " + e.Code)
+	}
+
+	e.Queries = queries
+	return e
 }
 
 // Docs returns the event's documentation page, derived from the code.

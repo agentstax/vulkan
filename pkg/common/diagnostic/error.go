@@ -20,14 +20,16 @@ const (
 // - code
 // - recovery
 // - problem
-// - fix fixed at declaration
+// - fix
+// - diagnose queries fixed at declaration
 // - values
 // - wrapped cause attached per raise via With and Wrap
 type Error struct {
 	Code     string
 	Recovery Recovery
 	Problem  string
-	Fix      string // "" when the code cannot know the remedy
+	Fix      string   // "" when the code cannot know the remedy
+	Queries  []*Query // none when the condition has no state to look at
 	values   []slog.Attr
 	wrapped  error
 }
@@ -46,6 +48,20 @@ func NewError(code string, recovery Recovery, problem string, fix string) *Error
 	declared := &Error{Code: code, Recovery: recovery, Problem: problem, Fix: fix}
 	register(declared)
 	return declared
+}
+
+// Diagnose attaches the queries that show an operator the state behind this
+// condition, and returns the same declaration so it chains onto NewError.
+func (e *Error) Diagnose(queries ...*Query) *Error {
+	if len(queries) == 0 {
+		panic("diagnose queries must not be empty: " + e.Code)
+	}
+	if len(e.Queries) > 0 {
+		panic("diagnose queries are already declared: " + e.Code)
+	}
+
+	e.Queries = queries
+	return e
 }
 
 // With returns a copy carrying the given name/value pairs appended to any
