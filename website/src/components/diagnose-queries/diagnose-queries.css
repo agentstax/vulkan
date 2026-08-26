@@ -33,3 +33,7 @@
 	border-left: 3px solid var(--color-console-edge);
 	max-width: 680px;
 }
+
+.query-actions {
+	margin-top: 6px;
+}

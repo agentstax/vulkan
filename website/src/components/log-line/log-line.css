@@ -16,3 +16,11 @@
 .log-line[data-kind='error'] {
 	border-left: 3px solid var(--color-pin);
 }
+
+/* the fix's blanks, marked the way a diagnose query marks its own */
+.log-segment[data-kind='placeholder'] {
+	background: var(--color-sql-placeholder-ground);
+	border-bottom: 1px solid var(--border-sql-placeholder);
+	color: var(--color-sql-placeholder-text);
+	font-weight: 600;
+}

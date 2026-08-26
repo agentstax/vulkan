@@ -14,3 +14,4 @@ we need a long 1hr repeatable live test:
 - producers are variadic - zero load, low load, high load, ddos territory
 - produces report at end of system - failed produces, skipped (dropped) messages, retries
 - We can build on this overtime but keep it relatively simple at start 
+need another review to make sure we are not logging any sensitive information like payload
