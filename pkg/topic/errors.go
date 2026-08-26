@@ -11,6 +11,8 @@ var ErrTopicConfigMismatch = diagnostic.NewError("VK0004", diagnostic.Permanent,
 	"register with the existing PartitionSize, or use a new topic name")
 
 // ErrTopicNotFound means the named topic has no row.
+//
+// Diagnose queries: vulkan explain VK0005
 var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
 	"topic not found",
 	"register it with MessageAdmin.RegisterTopic first").
@@ -29,6 +31,8 @@ SELECT name, schema_version FROM topic ORDER BY name;`),
 
 // ErrTopicNotEmpty means Destroy was called on a topic that still holds
 // messages, without an explicit force override.
+//
+// Diagnose queries: vulkan explain VK0006
 var ErrTopicNotEmpty = diagnostic.NewError("VK0006", diagnostic.Permanent,
 	"topic still holds messages",
 	"pass DestroyOptions.Force to destroy them with the topic").
@@ -52,6 +56,8 @@ var ErrTopicNameTaken = diagnostic.NewError("VK0007", diagnostic.Permanent,
 
 // ErrTopicPartitionsRemain means Destroy kept finding new partitions after
 // its drop-pass limit -- a producer is likely still writing.
+//
+// Diagnose queries: vulkan explain VK0020
 var ErrTopicPartitionsRemain = diagnostic.NewError("VK0020", diagnostic.Permanent,
 	"topic partitions remain after draining",
 	"stop the topic's producers and call DestroyTopic again").

@@ -6,6 +6,8 @@ import (
 
 // EventLeaseReclaimed means a range lease's worker stopped renewing and the
 // range went back to the claimable pool.
+//
+// Diagnose queries: vulkan explain VK0026
 var EventLeaseReclaimed = diagnostic.NewEvent("VK0026",
 	"lease reclaimed from expired worker", "").
 	Diagnose(
@@ -33,6 +35,8 @@ ORDER BY message_id;`),
 
 // EventRangeQuarantined means a range hit MaxRangeReclaims and is treated as
 // poison instead of being handed out again.
+//
+// Diagnose queries: vulkan explain VK0027
 var EventRangeQuarantined = diagnostic.NewEvent("VK0027",
 	"range quarantined after max reclaims",
 	"messages written as 'ready' exceptions").
@@ -60,6 +64,8 @@ ORDER BY id;`),
 
 // EventMessagesDeadLettered marks a commit that wrote terminal outcomes for
 // a batch of messages.
+//
+// Diagnose queries: vulkan explain VK0028
 var EventMessagesDeadLettered = diagnostic.NewEvent("VK0028",
 	"messages dead-lettered",
 	"unrecoverable, will not be retried").
@@ -84,6 +90,8 @@ ORDER BY dead_count DESC;`),
 	)
 
 // EventMessageDeadLettered marks one delivery written as terminal.
+//
+// Diagnose queries: vulkan explain VK0029
 var EventMessageDeadLettered = diagnostic.NewEvent("VK0029",
 	"message dead-lettered",
 	"unrecoverable, will not be retried").
@@ -118,6 +126,8 @@ WHERE id = {message_id};`),
 	)
 
 // EventExceptionDeadLettered marks one exception written as terminal.
+//
+// Diagnose queries: vulkan explain VK0030
 var EventExceptionDeadLettered = diagnostic.NewEvent("VK0030",
 	"exception dead-lettered",
 	"unrecoverable, will not be retried").
@@ -145,6 +155,8 @@ ORDER BY attempt;`),
 
 // EventKillBackstopFired means the crash-loop backstop marked a group's
 // exceptions dead after repeated consumer crashes on the same rows.
+//
+// Diagnose queries: vulkan explain VK0031
 var EventKillBackstopFired = diagnostic.NewEvent("VK0031",
 	"crash-loop kill backstop fired",
 	"exceptions marked dead").

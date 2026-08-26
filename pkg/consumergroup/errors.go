@@ -5,6 +5,8 @@ import (
 )
 
 // ErrGroupNotFound means the named group has no row on that topic.
+//
+// Diagnose queries: vulkan explain VK0014
 var ErrGroupNotFound = diagnostic.NewError("VK0014", diagnostic.Permanent,
 	"consumer group not found",
 	"register a consumer with this group name to create it").
@@ -22,6 +24,8 @@ ORDER BY consumer_group.name;`),
 
 // ErrGroupLive means Destroy was called while a worker instance still runs
 // on the group, without a force override.
+//
+// Diagnose queries: vulkan explain VK0015
 var ErrGroupLive = diagnostic.NewError("VK0015", diagnostic.Permanent,
 	"consumer group still has a live consumer",
 	"stop the group's consumers, or pass DestroyOptions.Force").
@@ -43,6 +47,8 @@ ORDER BY worker_instance.expires_at;`),
 // holds delivery rows, without a force override. Deleting them discards:
 //   - ready/inflight/deferred rows -> failures promised a retry
 //   - dead rows                    -> the dead-letter record
+//
+// Diagnose queries: vulkan explain VK0016
 var ErrGroupDeliveriesPending = diagnostic.NewError("VK0016", diagnostic.Permanent,
 	"consumer group still has delivery rows",
 	"pass DestroyOptions.Force to delete them").

@@ -12,6 +12,8 @@ var ErrNotRegistered = diagnostic.NewError("VK0017", diagnostic.Permanent,
 
 // ErrSchemaOlderThanBuild means the stored schema version is below what this
 // build requires.
+//
+// Diagnose queries: vulkan explain VK0022
 var ErrSchemaOlderThanBuild = diagnostic.NewError("VK0022", diagnostic.Permanent,
 	"schema version is older than this build requires",
 	"migrate the database up first").
@@ -30,6 +32,8 @@ LIMIT 20;`),
 
 // ErrSchemaNewerThanBuild means the database was migrated past this build by
 // a step whose MinCompatibleVersion is above it.
+//
+// Diagnose queries: vulkan explain VK0023
 var ErrSchemaNewerThanBuild = diagnostic.NewError("VK0023", diagnostic.Permanent,
 	"schema version is newer than this build understands",
 	"upgrade the binary").

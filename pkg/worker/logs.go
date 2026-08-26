@@ -6,6 +6,8 @@ import (
 
 // EventInstanceLost means this instance's worker_instance row was claimed by
 // a replacement while it was still running.
+//
+// Diagnose queries: vulkan explain VK0034
 var EventInstanceLost = diagnostic.NewEvent("VK0034",
 	"worker instance lost",
 	"stopping, a replacement may already be running").
@@ -24,6 +26,8 @@ ORDER BY worker_instance.expires_at DESC;`),
 
 // EventManagerRowSuspended means the manager's own row has target_instances
 // 0, so its workers stop being reconciled.
+//
+// Diagnose queries: vulkan explain VK0035
 var EventManagerRowSuspended = diagnostic.NewEvent("VK0035",
 	"manager row suspended",
 	"its chain goes unreconciled until target_instances is restored").
@@ -42,6 +46,8 @@ ORDER BY name;`),
 
 // EventTickBackoffCurveExhausted means a tick loop's failure streak passed
 // its TickRetry cap -- the failure is no longer self-healing.
+//
+// Diagnose queries: vulkan explain VK0036
 var EventTickBackoffCurveExhausted = diagnostic.NewEvent("VK0036",
 	"worker tick backoff curve exhausted",
 	"ticks continue at its cap").

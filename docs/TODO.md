@@ -135,10 +135,13 @@ Four facts from the 2026-08-25 survey that decide the shape:
       rather than the block growing a part, so the error surface stays
       the tight block that points here. Each label renders as a SQL
       comment, so the section pastes into psql as it stands.
-- [ ] 7. Doc comments add nothing: pkg.go.dev renders the var's full
+- [x] 7. Doc comments add nothing: pkg.go.dev renders the var's full
       declaration source, Diagnose call and SQL included, so a copied
-      query in the comment is the hand-copy drift bet again. At most a
-      one-line pointer ("diagnose queries: vulkan explain VK0029") on
-      declarations that have one.
+      query in the comment is the hand-copy drift bet again. The
+      one-line pointer went on all 18 anyway: gopls hover renders the
+      doc comment and the TYPE, never the initializer, so in the IDE --
+      where callers write errors.Is -- the queries are invisible without
+      it. tools/conventions checks presence, absence, and that the
+      pointer names its own code.
 - [ ] 8. Decision record + HISTORY entry; ROADMAP's diagnose item slims
       to a pointer and paste-your-log-line unblocks.

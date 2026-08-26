@@ -23,6 +23,8 @@ var ErrLeaseLost = diagnostic.NewError("VK0003", diagnostic.Permanent,
 // ErrCommitConfirmationLost means the connection died at Commit with
 // outcomes already queued: whether they landed is unconfirmable, so a retry
 // could record duplicates -- the lease's expiry sorts the truth out.
+//
+// Diagnose queries: vulkan explain VK0019
 var ErrCommitConfirmationLost = diagnostic.NewError("VK0019", diagnostic.Permanent,
 	"commit confirmation was lost", "").
 	Diagnose(
