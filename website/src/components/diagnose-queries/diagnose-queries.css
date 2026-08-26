@@ -28,6 +28,7 @@
 }
 
 .query-sql {
+	position: relative;
 	background: var(--color-console-sql-bg);
 	border: 1px solid var(--border-row);
 	border-left: 3px solid var(--color-console-edge);
@@ -35,5 +36,7 @@
 }
 
 .query-actions {
-	margin-top: 6px;
+	position: absolute;
+	top: 6px;
+	right: 12px;
 }

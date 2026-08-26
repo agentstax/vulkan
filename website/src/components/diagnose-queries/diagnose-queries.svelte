@@ -23,9 +23,11 @@
 	{#each queries as query (query.label)}
 		<li>
 			<p class="query-label">{query.label}</p>
-			<div class="query-sql"><HighlightedSql sql={query.sql} {values} /></div>
-			<div class="query-actions">
-				<CopyButton label="Copy query" text={filledSql(query.sql, values)} />
+			<div class="query-sql">
+				<div class="query-actions">
+					<CopyButton label="Copy query" text={filledSql(query.sql, values)} />
+				</div>
+				<HighlightedSql sql={query.sql} {values} />
 			</div>
 		</li>
 	{/each}
