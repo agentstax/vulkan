@@ -5,6 +5,30 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-25 — declarations say what to look at, in SQL [0589]
+
+- A `diagnostic` declaration now carries diagnose queries: `Diagnose(...)`
+  chains an ordered set of `NewQuery(label, sql)` onto an Err* or Event, and
+  the SQL names its blanks `{attribute_name}` after the log attributes the
+  condition's own line already carries. 18 of 53 codes declare them; guards
+  declare none and no section renders.
+- Three surfaces read the one declaration. `vulkan explain VK0029` renders the
+  queries under the block (the CLI error block stays tight and points there),
+  the code thread pages read them from `website/src/data/codes.json`, and the
+  Go doc comment carries a one-line pointer — gopls hover shows the doc and the
+  type but never the initializer, so the queries are invisible in the IDE.
+- `tools/codeexport` writes the whole declaration record, not the queries
+  alone, which finally gave the error pages' hand-copied frontmatter its parked
+  drift check: `just site-verify` regenerates, diffs, and compares every page's
+  title, fix, recovery and kind against the declaration.
+- The log attribute registry became binding without becoming code. A
+  `tools/conventions` walk parses the `### Attributes` table out of
+  CONVENTIONS.md and rejects any placeholder — or any raised `With` pair —
+  naming something unregistered. It found seven pre-existing violations on its
+  first run.
+- Swept `attr`/`attrs`, `door`, `sentinel` and `hole` out of every live Go file
+  and the ROADMAP; historical records keep the words they were written with.
+
 ## 2026-08-25 — the migrations guide shows the gate as a grid [0588]
 
 - The compatibility matrix on guides/migrations is generated, not written:

@@ -24,10 +24,11 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 - **Doc site — interactive mechanisms.**
   - Paste-your-log-line on code threads — parse a pasted line's
     attributes and interpolate the reader's own values into the declared
-    fix command, and into the declared diagnose queries once those exist.
-    BLOCKED on the diagnose item below: build that first, or this page has
-    only the fix to interpolate. The search strip under each code thread
-    is the placeholder.
+    fix command and into the declared diagnose queries. UNBLOCKED by
+    [0589]: 18 codes now carry query templates, and each query's
+    placeholders travel beside its SQL in codes.json, so the page fills
+    them by name without parsing the SQL. The search strip under each
+    code thread is the placeholder.
 
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling
@@ -89,35 +90,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     (exact-case /errors/VK0005), then drop the placeholder TODO comment on
     docsBaseURL — it lives in pkg/common/diagnostic/registry.go, not
     pkg/common/error.go.
-
-- **A diagnose part on diagnostic declarations** (a 14b surface change,
-  pulled into Now because the documentation item above consumes it;
-  picked up 2026-08-25, expanded in TODO.md) — the
-  queries that show an operator the state behind a condition, declared
-  once and surfaced everywhere. Today a declaration carries code,
-  recovery, problem, fix (plus consequence on events); the fix says what
-  to change, nothing says what to LOOK at. Vulkan's answer is unusual and cheap: the state is
-  rows, so the diagnosis is SQL. Pre-v1 is when the struct can still grow
-  a part.
-  - Surfaces, all fed by the one declaration: the Go doc comment on the
-    Err*/Event variable, `vulkan explain VKxxxx`, and the code thread's
-    page. The CLI error block stays tight — it points at explain.
-  - Shape to settle: one labeled query or a small ordered set (most
-    conditions want "is the row there?" then "what does its state say?");
-    where the text lives given that ## SQL puts all SQL in datastores —
-    this SQL is documentation the library never executes, so it is a
-    const beside the declaration, not a datastore method.
-  - Per-topic tables are the interesting part: a query naming
-    `delivery_<id>` needs the reader's topic id, and the log attribute
-    registry already carries topic_id/group/message_id — so the declared
-    query is a template whose placeholders are attribute names. That is
-    what makes the paste-your-log-line page (the documentation item above)
-    able to hand back runnable SQL instead of generic advice.
-  - Not every condition earns one; constructor/config guards have nothing
-    to look at. Absence is honest — no diagnose section renders.
-  - Follow-on worth weighing at the same time: `vulkan explain --run`
-    (or a `vulkan diagnose` verb) executing the declared queries against
-    the operator's own database, since the CLI already holds a connection.
 
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
@@ -253,6 +225,12 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
+
+- **`vulkan explain --run`** (or a `vulkan diagnose` verb) — execute a
+  declaration's diagnose queries against the operator's own database, since
+  the CLI already holds a connection. The queries themselves shipped
+  2026-08-25 [0589]; placeholders named by attribute key keep this reachable
+  without a redesign, and the CLI would take `--topic-id`-style flags.
 
 - **Vocabulary walker** — enforce the CONVENTIONS.md ## Vocabulary registry
   mechanically: a tools/conventions test that greps code, comments, and

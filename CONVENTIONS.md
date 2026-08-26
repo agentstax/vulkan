@@ -73,7 +73,7 @@ surfaces it.
 | DLQ, dead-letter queue (as a place) | dead is a delivery status, not a separate queue | dead-lettered messages; delivery status dead |
 | door | coinage for the controller layer | API package; "the controller -- the only path to persistence" |
 | sentinel | coinage for a declared error value | named error variable; error value |
-| attr, attrs | shorthand for a word the reader should never have to expand | attribute; log attribute |
+| attr, attrs | shorthand for a word the reader should never have to expand | attribute; log attribute (`slog.Attr` is stdlib and keeps its name) |
 | hole (a template's blank) | coinage for a blank the reader fills in | placeholder |
 | park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
 
