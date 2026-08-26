@@ -4,8 +4,8 @@
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
-	gap: 8px;
-	padding-top: 9px;
+	gap: var(--space-8);
+	padding-top: var(--space-9);
 	border-top: 1px dashed var(--border-row);
 }
 
@@ -16,7 +16,7 @@
 }
 
 .group-select {
-	padding: 2px 5px;
+	padding: var(--space-2) var(--space-5);
 	border: 1px solid var(--border-outer);
 	background: var(--color-surface);
 	font-family: var(--font-chrome);

@@ -9,8 +9,8 @@
 .card-head {
 	display: flex;
 	align-items: center;
-	gap: 5px;
-	padding: 4px 6px 4px 8px;
+	gap: var(--space-5);
+	padding: var(--space-4) var(--space-6) var(--space-4) var(--space-8);
 	background: var(--color-author-column);
 	border-bottom: 1px solid var(--border-row);
 }
@@ -36,7 +36,7 @@
 	min-height: 100px;
 	max-height: 100px;
 	overflow-y: auto;
-	padding: 6px 8px;
+	padding: var(--space-6) var(--space-8);
 
 	/* NOT the panels' --color-console-sql-bg: a card wearing the SQL ground is
 	   what made two cards across read as two more query panels */
@@ -49,7 +49,7 @@
 .out-line {
 	display: flex;
 	align-items: baseline;
-	gap: 6px;
+	gap: var(--space-6);
 }
 
 /* visual flash of consumer lines on enter */
@@ -88,7 +88,7 @@
 /* the card's own status bar: same chrome as a query panel's row count, because
    it answers the same question -- what did the last run do */
 .card-status {
-	padding: 5px 8px;
+	padding: var(--space-5) var(--space-8);
 	background: var(--color-chrome-pale);
 	border-top: 1px solid var(--border-row);
 	color: var(--color-text-muted);

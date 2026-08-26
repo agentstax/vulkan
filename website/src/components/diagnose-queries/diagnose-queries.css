@@ -4,18 +4,18 @@
 	color: var(--color-sql-placeholder-text);
 	font-family: var(--font-database);
 	font-size: 11.5px;
-	padding: 1px 5px;
-	margin-right: 5px;
+	padding: var(--space-1) var(--space-5);
+	margin-right: var(--space-5);
 }
 
 .query-list {
 	list-style: decimal;
 	margin: 0;
-	padding-left: 22px;
+	padding-left: var(--space-22);
 }
 
 .query-list li {
-	margin-bottom: 14px;
+	margin-bottom: var(--space-14);
 }
 
 .query-list li:last-child {
@@ -23,7 +23,7 @@
 }
 
 .query-label {
-	margin: 0 0 5px;
+	margin: 0 0 var(--space-5);
 	color: var(--color-text-muted);
 }
 

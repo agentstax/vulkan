@@ -5,6 +5,19 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-26 — the spacing token scale [0595]
+
+- The closed spacing scale website/CONVENTIONS.md declared now exists:
+  `--space-1` … `--space-34`, 22 steps named by their pixel value, one tier
+  beside the z-index scale. The scale is the exact set the design already
+  used — no value was snapped, so nothing moved visually.
+- Every margin, padding, and gap across 36 component stylesheets, the three
+  layout scoped blocks, and global.css now consumes the scale; stylelint's
+  declaration-strict-value list gained the spacing properties, so a new
+  value cannot enter without adding its step to the tokens layer.
+- Full site verify floor green; the stylelint rule was sabotage-checked
+  against raw px hidden in mixed shorthands and logical properties.
+
 ## 2026-08-26 — the night board [0593]
 
 - The footer's inert `Board style: Vulkan Classic ▾` chip is a real `<select>`

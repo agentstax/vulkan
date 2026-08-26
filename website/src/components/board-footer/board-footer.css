@@ -1,7 +1,7 @@
 .board-footer {
 	background: var(--color-chrome-bar);
 	box-shadow: var(--lacquer-dim);
-	padding: 9px 24px;
+	padding: var(--space-9) var(--space-24);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
@@ -10,7 +10,7 @@
 
 .footer-links {
 	display: flex;
-	gap: 14px;
+	gap: var(--space-14);
 	align-items: center;
 }
 
@@ -40,7 +40,7 @@
 
 .footer-meta {
 	display: flex;
-	gap: 16px;
+	gap: var(--space-16);
 	align-items: center;
 	color: var(--color-chrome-bar-meta);
 }
@@ -48,7 +48,7 @@
 .board-style {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--space-6);
 }
 
 /* the era's select, keeping its own arrow -- color-scheme on :root is what
@@ -59,7 +59,7 @@
 	border: 1px solid var(--border-outer);
 	font-family: var(--font-chrome);
 	font-size: 10px;
-	padding: 1px 2px;
+	padding: var(--space-1) var(--space-2);
 }
 
 .board-style select:focus-visible {

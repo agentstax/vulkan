@@ -5,7 +5,7 @@
 }
 
 .matrix-label {
-	padding: 5px 8px;
+	padding: var(--space-5) var(--space-8);
 	background: var(--color-chrome-pale);
 	border-bottom: 1px solid var(--border-row);
 	color: var(--color-chrome-pale-text);
@@ -18,7 +18,7 @@
    column long before the page does */
 .matrix-scroll {
 	overflow-x: auto;
-	padding: 8px;
+	padding: var(--space-8);
 }
 
 .matrix {
@@ -35,7 +35,7 @@
 
 .matrix-head,
 .matrix-side {
-	padding: 3px 7px;
+	padding: var(--space-3) var(--space-7);
 	background: var(--color-console-result-header);
 	border: 1px solid var(--border-row);
 	color: var(--color-text-muted);
@@ -48,7 +48,7 @@
 }
 
 .matrix-cell {
-	padding: 3px 7px;
+	padding: var(--space-3) var(--space-7);
 	border: 1px solid var(--border-row);
 	text-align: center;
 	white-space: nowrap;
@@ -76,9 +76,9 @@
 .matrix-legend {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px 14px;
+	gap: var(--space-4) var(--space-14);
 	margin: 0;
-	padding: 6px 8px;
+	padding: var(--space-6) var(--space-8);
 	border-top: 1px solid var(--border-row);
 	list-style: none;
 	font-family: var(--font-chrome);
@@ -89,7 +89,7 @@
 .legend-item {
 	display: flex;
 	align-items: center;
-	gap: 5px;
+	gap: var(--space-5);
 }
 
 .legend-swatch {
@@ -116,9 +116,9 @@
 .matrix-steps {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px 10px;
+	gap: var(--space-4) var(--space-10);
 	margin: 0;
-	padding: 6px 8px;
+	padding: var(--space-6) var(--space-8);
 	border-top: 1px solid var(--border-row);
 	font-family: var(--font-database);
 	font-size: 10px;

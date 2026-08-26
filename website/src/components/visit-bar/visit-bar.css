@@ -1,7 +1,7 @@
 .visit-bar {
 	background: var(--color-chrome-pale);
 	border-bottom: 1px solid var(--border-row);
-	padding: 7px 24px;
+	padding: var(--space-7) var(--space-24);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;

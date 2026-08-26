@@ -1,7 +1,7 @@
 .code-facts {
 	background: var(--color-chrome-pale);
 	border: 1px solid var(--border-section);
-	padding: 6px 14px;
+	padding: var(--space-6) var(--space-14);
 	font-family: var(--font-database);
 	font-size: 11px;
 	font-variant-numeric: tabular-nums;

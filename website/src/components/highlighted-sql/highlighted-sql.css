@@ -1,6 +1,6 @@
 .sql {
 	margin: 0;
-	padding: 12px 14px;
+	padding: var(--space-12) var(--space-14);
 	tab-size: 2;
 	font-family: var(--font-database);
 	font-size: 12.5px;

@@ -143,7 +143,7 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 		font-size: 10px;
 		color: var(--color-text-faint);
 		display: flex;
-		gap: 6px;
+		gap: var(--space-6);
 	}
 
 	.adjacent-links a {
@@ -160,6 +160,6 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 	.search-region {
 		display: flex;
 		flex-direction: column;
-		gap: 20px;
+		gap: var(--space-20);
 	}
 </style>

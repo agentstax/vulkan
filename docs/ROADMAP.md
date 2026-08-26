@@ -24,14 +24,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 - **Doc site — interactive mechanisms.** Paste-your-log-line shipped
   2026-08-26 [0590]; what it left open is the example-values item below.
 
-- **Doc site — infrastructure & polish.** Each independent, any order.
-  - Spacing token scale + sweep — website/CONVENTIONS.md declares spacing
-    a closed token scale but component css still uses raw px. Define
-    --space-* tokens, sweep every component css, then add the spacing
-    properties to stylelint's declaration-strict-value list (color,
-    background, fill, stroke, font-family, z-index and box-shadow are
-    already enforced).
-
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling
     sendEmailConfirmation() before a Produce/multi-target closure is known

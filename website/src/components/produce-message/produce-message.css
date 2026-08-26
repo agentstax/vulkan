@@ -1,8 +1,8 @@
 .produce-message {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	padding: 8px 10px;
+	gap: var(--space-8);
+	padding: var(--space-8) var(--space-10);
 	background: var(--color-chrome-pale);
 	border-bottom: 1px solid var(--border-row);
 }
@@ -22,7 +22,7 @@
 .produce-field {
 	flex: 1;
 	min-width: 0;
-	padding: 4px 8px;
+	padding: var(--space-4) var(--space-8);
 	background: var(--color-surface);
 	border: 1px solid var(--border-outer);
 	font-family: var(--font-database);
@@ -31,7 +31,7 @@
 }
 
 .produce-error {
-	padding: 6px 10px;
+	padding: var(--space-6) var(--space-10);
 	background: var(--color-chrome-pale);
 	border-bottom: 1px solid var(--border-row);
 	font-family: var(--font-database);

@@ -9,7 +9,7 @@
 	color: var(--color-sql-placeholder-text);
 	font-family: var(--font-database);
 	font-size: 11.5px;
-	padding: 1px 4px;
+	padding: var(--space-1) var(--space-4);
 }
 
 .fix-segment[data-kind='value'] {
@@ -18,5 +18,5 @@
 	color: var(--color-sql-value-text);
 	font-family: var(--font-database);
 	font-size: 11.5px;
-	padding: 1px 4px;
+	padding: var(--space-1) var(--space-4);
 }

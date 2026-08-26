@@ -1,9 +1,9 @@
 .thread-row {
 	display: grid;
 	grid-template-columns: var(--grid-board-columns);
-	gap: 10px;
+	gap: var(--space-10);
 	align-items: center;
-	padding: 11px 14px;
+	padding: var(--space-11) var(--space-14);
 	border-top: 1px solid var(--border-row);
 }
 

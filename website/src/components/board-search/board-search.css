@@ -1,19 +1,19 @@
 .board-search {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	padding: 12px;
+	gap: var(--space-10);
+	padding: var(--space-12);
 }
 
 .search-form {
 	display: flex;
-	gap: 8px;
+	gap: var(--space-8);
 }
 
 .search-form input {
 	flex-grow: 1;
 	max-width: 520px;
-	padding: 4px 10px;
+	padding: var(--space-4) var(--space-10);
 	background: var(--color-surface);
 	border: 1px solid var(--border-outer);
 	font-family: var(--font-database);

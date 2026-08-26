@@ -1,10 +1,10 @@
 .board-banner {
 	background: var(--banner-gradient);
 	box-shadow: var(--lacquer);
-	padding: 34px 32px 26px;
+	padding: var(--space-34) var(--space-32) var(--space-26);
 	display: flex;
 	align-items: center;
-	gap: 24px;
+	gap: var(--space-24);
 }
 
 /* the mark hangs over the banner's bottom edge into the nav strip */
@@ -12,13 +12,13 @@
 	flex-shrink: 0;
 	position: relative;
 	z-index: var(--z-raised);
-	margin-bottom: -34px;
+	margin-bottom: calc(-1 * var(--space-34));
 }
 
 .identity {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--space-6);
 }
 
 .wordmark {

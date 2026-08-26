@@ -2,9 +2,21 @@
 	"plugins": ["stylelint-declaration-strict-value"],
 	"rules": {
 		"scale-unlimited/declaration-strict-value": [
-			["/color$/", "color", "background", "fill", "stroke", "font-family", "z-index", "box-shadow"],
+			[
+				"/color$/",
+				"color",
+				"background",
+				"fill",
+				"stroke",
+				"font-family",
+				"z-index",
+				"box-shadow",
+				"/^margin/",
+				"/^padding/",
+				"/gap$/"
+			],
 			{
-				"ignoreValues": ["currentColor", "transparent", "inherit", "none"],
+				"ignoreValues": ["currentColor", "transparent", "inherit", "none", "0", "auto"],
 				"message": "raw values live in the tokens layer; components consume semantic tokens only"
 			}
 		]

@@ -1,6 +1,6 @@
 .whats-new-status {
 	margin: 0;
-	padding: 8px 12px;
+	padding: var(--space-8) var(--space-12);
 	border-bottom: 1px solid var(--border-row);
 	font-size: 11px;
 	color: var(--color-text-faint);

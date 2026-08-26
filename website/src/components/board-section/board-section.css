@@ -5,7 +5,7 @@
 .band {
 	background: var(--band-gradient);
 	box-shadow: var(--lacquer);
-	padding: 8px 14px;
+	padding: var(--space-8) var(--space-14);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
@@ -14,7 +14,7 @@
 .band[data-columns='true'] {
 	display: grid;
 	grid-template-columns: var(--grid-board-columns);
-	gap: 10px;
+	gap: var(--space-10);
 	align-items: center;
 }
 

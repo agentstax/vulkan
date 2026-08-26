@@ -9,10 +9,10 @@
 .title-bar {
 	background: var(--console-title-gradient);
 	box-shadow: var(--lacquer-bright);
-	padding: 6px 12px;
+	padding: var(--space-6) var(--space-12);
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: var(--space-12);
 	border-bottom: 1px solid var(--border-section);
 }
 
@@ -36,8 +36,8 @@
 	/* minmax(0, 1fr), never 1fr: a pre and a nowrap table refuse to shrink,
 	   so plain 1fr tracks grow past the post body and out of the section box */
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-	gap: 10px;
-	padding: 10px;
+	gap: var(--space-10);
+	padding: var(--space-10);
 	background: var(--color-console-sql-bg);
 	border-bottom: 1px solid var(--border-row);
 }
@@ -54,8 +54,8 @@
 .consumers {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	padding: 10px;
+	gap: var(--space-10);
+	padding: var(--space-10);
 	background: var(--color-chrome-pale);
 }
 

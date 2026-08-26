@@ -1,9 +1,9 @@
 .announcement-row {
 	display: grid;
 	grid-template-columns: var(--grid-board-columns);
-	gap: 10px;
+	gap: var(--space-10);
 	align-items: center;
-	padding: 10px 14px;
+	padding: var(--space-10) var(--space-14);
 	border-top: 1px solid var(--border-row);
 }
 

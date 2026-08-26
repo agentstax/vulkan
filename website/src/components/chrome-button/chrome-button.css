@@ -6,14 +6,14 @@
 	font-size: 10px;
 	font-weight: 700;
 	color: var(--color-text);
-	padding: 3px 16px;
+	padding: var(--space-3) var(--space-16);
 	cursor: pointer;
 }
 
 .chrome-button[data-tone='quiet'] {
 	font-weight: 400;
 	color: var(--color-text-muted);
-	padding: 2px 8px;
+	padding: var(--space-2) var(--space-8);
 }
 
 /* the title-bar close box: square, glyph-sized, sitting at the head's far end

@@ -6,10 +6,10 @@
 .aside-header {
 	background: var(--color-chrome-pale);
 	border-bottom: 1px solid var(--border-row);
-	padding: 6px 12px;
+	padding: var(--space-6) var(--space-12);
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: var(--space-10);
 }
 
 .aside-chip {
@@ -20,7 +20,7 @@
 	font-weight: 700;
 	letter-spacing: 1px;
 	color: var(--color-chrome-pale-text);
-	padding: 2px 7px;
+	padding: var(--space-2) var(--space-7);
 }
 
 .aside-title {
@@ -31,12 +31,12 @@
 }
 
 .aside-body {
-	padding: 11px 13px;
+	padding: var(--space-11) var(--space-13);
 	font-family: var(--font-content);
 	font-size: 13px;
 	line-height: 1.65;
 	color: var(--color-text);
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--space-10);
 }

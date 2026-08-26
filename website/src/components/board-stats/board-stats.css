@@ -1,17 +1,17 @@
 .board-stats {
 	border: 1px solid var(--border-section);
 	background: var(--color-chrome-pale);
-	padding: 12px 14px;
+	padding: var(--space-12) var(--space-14);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	gap: 24px;
+	gap: var(--space-24);
 }
 
 .stats {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: var(--space-4);
 }
 
 .stats-line {
@@ -31,7 +31,7 @@
 .legend {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: var(--space-4);
 	font-size: 10px;
 	color: var(--color-chrome-pale-text);
 }
@@ -39,7 +39,7 @@
 .legend-row {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--space-6);
 }
 
 .legend-visited {

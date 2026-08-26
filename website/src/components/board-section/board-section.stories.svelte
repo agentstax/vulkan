@@ -70,7 +70,7 @@
 	{#snippet template(args)}
 		{@const { children: _children, ...storyProps } = args}
 		<BoardSection {...storyProps}>
-			<div style="padding: 12px 14px; font-size: 12px;">rows go here</div>
+			<div style="padding: var(--space-12) var(--space-14); font-size: 12px;">rows go here</div>
 		</BoardSection>
 	{/snippet}
 </Story>

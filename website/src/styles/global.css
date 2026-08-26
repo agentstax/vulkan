@@ -196,6 +196,31 @@
 		/* z-index scale -- closed; a new layer adds its named step here */
 		--z-raised: 2;
 
+		/* spacing scale -- closed; each step is named by its pixel value,
+		   and a new gap or padding adds its step here */
+		--space-1: 1px;
+		--space-2: 2px;
+		--space-3: 3px;
+		--space-4: 4px;
+		--space-5: 5px;
+		--space-6: 6px;
+		--space-7: 7px;
+		--space-8: 8px;
+		--space-9: 9px;
+		--space-10: 10px;
+		--space-11: 11px;
+		--space-12: 12px;
+		--space-13: 13px;
+		--space-14: 14px;
+		--space-16: 16px;
+		--space-18: 18px;
+		--space-20: 20px;
+		--space-22: 22px;
+		--space-24: 24px;
+		--space-26: 26px;
+		--space-32: 32px;
+		--space-34: 34px;
+
 		--font-chrome: Verdana, Geneva, sans-serif;
 		--font-band: 'Trebuchet MS', Verdana, sans-serif;
 		--font-content: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
@@ -392,7 +417,7 @@
 	.thread-body {
 		display: flex;
 		flex-direction: column;
-		gap: 14px;
+		gap: var(--space-14);
 		font-family: var(--font-content);
 		font-size: 14px;
 		line-height: 1.7;
@@ -405,21 +430,21 @@
 	}
 
 	.thread-body :where(ul, ol) {
-		padding-left: 22px;
+		padding-left: var(--space-22);
 	}
 
 	.thread-body :where(h2) {
-		margin: 8px 0 0;
+		margin: var(--space-8) 0 0;
 		max-width: 680px;
 		font-size: 19px;
 		font-weight: 700;
 		letter-spacing: -0.2px;
-		padding-bottom: 6px;
+		padding-bottom: var(--space-6);
 		border-bottom: 1px solid var(--border-row);
 	}
 
 	.thread-body :where(h3) {
-		margin: 4px 0 0;
+		margin: var(--space-4) 0 0;
 		max-width: 680px;
 		font-size: 15px;
 		font-weight: 700;
@@ -430,14 +455,14 @@
 		font-size: 12px;
 		background: var(--color-console-sql-bg);
 		border: 1px solid var(--border-row);
-		padding: 0 5px;
+		padding: 0 var(--space-5);
 	}
 
 	.thread-body :where(pre) {
 		margin: 0;
 		max-width: 680px;
 		box-sizing: border-box;
-		padding: 13px 16px;
+		padding: var(--space-13) var(--space-16);
 		background: var(--color-console-sql-bg);
 		border: 1px solid var(--border-row);
 		font-size: 12.5px;
@@ -486,7 +511,7 @@
 	}
 
 	.thread-body :where(th, td) {
-		padding: 6px 10px;
+		padding: var(--space-6) var(--space-10);
 		border-bottom: 1px solid var(--border-row);
 	}
 
@@ -521,7 +546,7 @@
 		font-weight: 700;
 		color: var(--color-text);
 		text-decoration: none;
-		padding: 3px 12px;
+		padding: var(--space-3) var(--space-12);
 		cursor: pointer;
 	}
 

@@ -9,7 +9,7 @@
 .post-header {
 	background: var(--color-chrome-pale);
 	border-bottom: 1px solid var(--border-row);
-	padding: 6px 14px;
+	padding: var(--space-6) var(--space-14);
 	display: flex;
 	justify-content: space-between;
 	font-size: 10px;
@@ -22,7 +22,7 @@
 
 .header-links {
 	display: flex;
-	gap: 6px;
+	gap: var(--space-6);
 	align-items: baseline;
 }
 
@@ -34,7 +34,7 @@
 .accepted-label {
 	display: flex;
 	align-items: center;
-	gap: 7px;
+	gap: var(--space-7);
 	color: var(--color-solved);
 	font-weight: 700;
 	letter-spacing: 0.5px;
@@ -59,10 +59,10 @@
 	flex-shrink: 0;
 	background: var(--color-author-column);
 	border-right: 1px solid var(--border-row);
-	padding: 14px 12px;
+	padding: var(--space-14) var(--space-12);
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--space-6);
 	font-size: 10px;
 	color: var(--color-text-muted);
 }
@@ -75,7 +75,7 @@
 
 .stars {
 	display: flex;
-	gap: 2px;
+	gap: var(--space-2);
 }
 
 .stars path {
@@ -90,21 +90,21 @@
 	align-self: flex-start;
 	border: 1px solid var(--border-avatar);
 	background: var(--color-avatar-ground);
-	padding: 6px 6px 0;
-	margin-top: 4px;
+	padding: var(--space-6) var(--space-6) 0;
+	margin-top: var(--space-4);
 }
 
 .post-count {
-	margin-top: 6px;
+	margin-top: var(--space-6);
 	font-variant-numeric: tabular-nums;
 }
 
 .post-body {
 	flex-grow: 1;
-	padding: 14px 16px;
+	padding: var(--space-14) var(--space-16);
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
+	gap: var(--space-12);
 	font-family: var(--font-content);
 	font-size: 14px;
 	line-height: 1.7;
