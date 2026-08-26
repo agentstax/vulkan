@@ -130,8 +130,11 @@ Four facts from the 2026-08-25 survey that decide the shape:
       placeholders travel with the query rather than being re-parsed in
       TS -- src/data/codes.ts is the one typed reader over the export,
       and highlight.ts's sqlPlaceholders is gone.
-- [ ] 6. `vulkan explain VKxxxx` renders the section; --output json
-      carries it.
+- [x] 6. `vulkan explain VKxxxx` renders the section; --output json
+      carries it. explain calls renderDiagnoseQueries after the block
+      rather than the block growing a part, so the error surface stays
+      the tight block that points here. Each label renders as a SQL
+      comment, so the section pastes into psql as it stands.
 - [ ] 7. Doc comments add nothing: pkg.go.dev renders the var's full
       declaration source, Diagnose call and SQL included, so a copied
       query in the comment is the hand-copy drift bet again. At most a

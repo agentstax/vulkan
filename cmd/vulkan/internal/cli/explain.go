@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -15,9 +16,10 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 		Short: "Explain a Vulkan error, log-event, or metric code, offline",
 		Long: "explain renders a declared error condition, log event, or metric --\n" +
 			"problem, recovery, fix, docs link -- from the code on any log line or\n" +
-			"error message. A metric also resolves by its full name or by its\n" +
-			"stop-line attr key (ready_count). With no argument it lists every\n" +
-			"declared condition, event, and metric.",
+			"error message, plus the diagnose queries when the declaration has\n" +
+			"them. A metric also resolves by its full name or by its stop-line\n" +
+			"attribute key (ready_count). With no argument it lists every declared\n" +
+			"condition, event, and metric.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
@@ -70,6 +72,7 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 					return nil
 				}
 				renderErrorBlock(w, declared, fix)
+				renderDiagnoseQueries(w, declared.Queries)
 				return nil
 			}
 			for _, declared := range diagnostic.Events() {
@@ -81,6 +84,7 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 					return nil
 				}
 				renderLogEventBlock(w, declared)
+				renderDiagnoseQueries(w, declared.Queries)
 				return nil
 			}
 			for _, declared := range diagnostic.Metrics() {
@@ -95,7 +99,7 @@ func newExplainCmd(g *globalFlags) *cobra.Command {
 				return nil
 			}
 
-			if declared, ok := metricByNameOrAttrKey(args[0]); ok {
+			if declared, ok := metricByNameOrAttributeKey(args[0]); ok {
 				if g.jsonOutput() {
 					writeJSON(w, toMetricExplainDocument(declared))
 					return nil
@@ -122,6 +126,17 @@ type explainDocument struct {
 	Unit        string `json:"unit,omitempty"`        // metric
 	Description string `json:"description,omitempty"` // metric
 	Docs        string `json:"docs"`
+
+	Queries []explainQuery `json:"queries,omitempty"` // error, event
+}
+
+// explainQuery is one declared diagnose query as json. The placeholders travel
+// beside the SQL because the declaration already decides what a placeholder
+// is -- a reader of this document never parses the SQL to find out.
+type explainQuery struct {
+	Label        string   `json:"label"`
+	Sql          string   `json:"sql"`
+	Placeholders []string `json:"placeholders"`
 }
 
 // ***************
@@ -136,6 +151,7 @@ func toErrorExplainDocument(declared *diagnostic.Error, fix string) explainDocum
 		Recovery: string(declared.Recovery),
 		Fix:      fix,
 		Docs:     declared.Docs(),
+		Queries:  toExplainQueries(declared.Queries),
 	}
 }
 
@@ -145,6 +161,7 @@ func toEventExplainDocument(declared *diagnostic.Event) explainDocument {
 		Code:    declared.Code,
 		Message: declared.Message,
 		Docs:    declared.Docs(),
+		Queries: toExplainQueries(declared.Queries),
 	}
 }
 
@@ -160,6 +177,53 @@ func toMetricExplainDocument(declared *diagnostic.Metric) explainDocument {
 	}
 }
 
+func toExplainQueries(queries []*diagnostic.Query) []explainQuery {
+	documents := make([]explainQuery, 0, len(queries))
+	for _, query := range queries {
+		documents = append(documents, explainQuery{
+			Label:        query.Label,
+			Sql:          query.Sql,
+			Placeholders: query.Placeholders(),
+		})
+	}
+	return documents
+}
+
+// renderDiagnoseQueries writes a declaration's diagnose queries under its
+// block. Only explain renders them -- the error surface stays the tight block
+// that points here. Each label is written as a SQL comment so the section
+// pastes into psql as it stands, once the placeholder values are filled in.
+func renderDiagnoseQueries(w io.Writer, queries []*diagnostic.Query) {
+	if len(queries) == 0 {
+		return
+	}
+
+	fmt.Fprintf(w, "\ndiagnose:%s\n", diagnoseSubstitution(queries))
+	for _, query := range queries {
+		fmt.Fprintf(w, "\n  -- %s\n", query.Label)
+		for _, line := range strings.Split(query.Sql, "\n") {
+			fmt.Fprintf(w, "  %s\n", line)
+		}
+	}
+}
+
+// diagnoseSubstitution names every value the reader fills in across the whole
+// set, so the instruction is read once rather than per query.
+func diagnoseSubstitution(queries []*diagnostic.Query) string {
+	names := make([]string, 0, 4)
+	for _, query := range queries {
+		for _, name := range query.Placeholders() {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " fill in " + strings.Join(names, ", ") + " with your own values"
+}
+
 // resolvedCliFix is a declared error's fix with the CLI rewrite applied when
 // cliFixes has one.
 func resolvedCliFix(declared *diagnostic.Error) string {
@@ -169,10 +233,10 @@ func resolvedCliFix(declared *diagnostic.Error) string {
 	return declared.Fix
 }
 
-// metricByNameOrAttrKey resolves a metric by its full name, or by a
-// stop-line counter attr key: ready_count strips its suffix and matches the
-// declared name whose last segment is ready.
-func metricByNameOrAttrKey(argument string) (*diagnostic.Metric, bool) {
+// metricByNameOrAttributeKey resolves a metric by its full name, or by a
+// stop-line counter attribute key: ready_count strips its suffix and matches
+// the declared name whose last segment is ready.
+func metricByNameOrAttributeKey(argument string) (*diagnostic.Metric, bool) {
 	if declared, ok := diagnostic.GetMetric(argument); ok {
 		return declared, true
 	}
