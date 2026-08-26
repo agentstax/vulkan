@@ -8,8 +8,8 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
-// CursorAdvancerController is the cursor advancer kind's door: the instance advances
-// committed through it.
+// CursorAdvancerController is the cursor advancer kind's only path to
+// persistence: the instance advances committed through it.
 type CursorAdvancerController struct {
 	Logger logging.Logger
 

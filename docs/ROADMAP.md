@@ -22,12 +22,12 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
 - **Doc site — interactive mechanisms.**
-  - Paste-your-log-line on code threads — parse a pasted line's attrs and
-    interpolate the reader's own values into the declared fix command, and
-    into the declared diagnose queries once those exist. BLOCKED on the
-    diagnose item below: build that first, or this page has only the fix
-    to interpolate. The search strip under each code thread is the
-    placeholder.
+  - Paste-your-log-line on code threads — parse a pasted line's
+    attributes and interpolate the reader's own values into the declared
+    fix command, and into the declared diagnose queries once those exist.
+    BLOCKED on the diagnose item below: build that first, or this page has
+    only the fix to interpolate. The search strip under each code thread
+    is the placeholder.
 
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling
@@ -40,9 +40,9 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     events are already documented (VK0050, VK0052, and abandoned_count on
     VK0041); what no page says is what a reader should do about it.
     Raised by CallSafely in pkg/consumergroup/base/consumer.go.
-  - Per-page example attr values on error/event threads — compose richer
-    example log lines from each code's real attr keys instead of the
-    minimal composed line.
+  - Per-page example attribute values on error/event threads — compose
+    richer example log lines from each code's real attribute keys instead
+    of the minimal composed line.
   - DDL table design diagram.
 
 - **Doc site — infrastructure & polish.** Each independent, any order.
@@ -108,11 +108,11 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     this SQL is documentation the library never executes, so it is a
     const beside the declaration, not a datastore method.
   - Per-topic tables are the interesting part: a query naming
-    `delivery_<id>` needs the reader's topic id, and the log-attr registry
-    already carries topic_id/group/message_id — so the declared query is a
-    template whose holes are attr names. That is what makes the
-    paste-your-log-line page (the documentation item above) able to hand
-    back runnable SQL instead of generic advice.
+    `delivery_<id>` needs the reader's topic id, and the log attribute
+    registry already carries topic_id/group/message_id — so the declared
+    query is a template whose placeholders are attribute names. That is
+    what makes the paste-your-log-line page (the documentation item above)
+    able to hand back runnable SQL instead of generic advice.
   - Not every condition earns one; constructor/config guards have nothing
     to look at. Absence is honest — no diagnose section renders.
   - Follow-on worth weighing at the same time: `vulkan explain --run`
@@ -418,12 +418,12 @@ prerequisite if quorum-as-a-fraction wins.
   - The feature: consumerFunc says "can't process NOW, retry at T" without it
     counting as a failure (downstream rate limit, keyed dependency outage —
     the circuit breaker hands the dead-tenant case here — out-of-order
-    business state, off-peak scheduling). Open shapes: sentinel error the
-    library recognizes (least churn, composes with named-errors taxonomy) vs
-    richer return; substrate = exception window's can_run_after (exists
-    today) vs the ordered-index buffer; does a defer consume an attempt, does
-    it write a delivery_log row. A defer-only need does not justify building
-    the orderer.
+    business state, off-peak scheduling). Open shapes: a named error
+    variable the library recognizes (least churn, composes with the
+    named-errors taxonomy) vs richer return; substrate = exception
+    window's can_run_after (exists today) vs the ordered-index buffer;
+    does a defer consume an attempt, does it write a delivery_log row. A
+    defer-only need does not justify building the orderer.
   - The mechanism sketch (async ordered-index claim table, for whenever the
     lifecycle path revives): deliveries stays the durable unordered backlog;
     an orderer async top-ups a SMALL ordered ready-buffer per user policy
@@ -572,7 +572,7 @@ prerequisite if quorum-as-a-fraction wins.
     registration time. Default open question: retention-anchored
     max(RetentionTTL, 7d) vs industry-standard OFF (Pulsar/NATS opt-in;
     Kafka the lone always-on at 7d) — re-settle at build; needs an explicit
-    never sentinel (0-as-unset vs 0-as-never collide). Retention-forever
+    never value (0-as-unset vs 0-as-never collide). Retention-forever
     topics never expire groups. Expiry is recoverable by design: a returning
     group re-seeds and REPLAYS what retention holds — duplicate work, not
     data loss. Stakes: with allow_drop_past_committed=false (default) an
@@ -632,7 +632,8 @@ prerequisite if quorum-as-a-fraction wins.
   leases on the cursor path: a page row per N ids above the committed
   cursor holding a done-bitmap gives bit-granular crash recovery (reclaim
   redelivers only unset bits), updates batched one page-row UPDATE per
-  commit — Pulsar's ack-hole structure. Deliberately NOT a route to custom
+  commit — the structure Pulsar keeps for individually confirmed messages
+  below its cursor. Deliberately NOT a route to custom
   dispatch order (bitmaps compress "who's done"; priority/delay/fairness
   need "who's next", one index entry per pending message regardless).
   Only worth building if range-granular crash redelivery shows up as a real

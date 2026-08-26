@@ -14,10 +14,10 @@ func writeJSON(w io.Writer, document any) {
 	_ = encoder.Encode(document)
 }
 
-// jsonAttrValue maps a slog attr value to its json rendering: durations keep
-// their units as strings instead of collapsing to nanosecond ints; everything
-// else passes through natively.
-func jsonAttrValue(value slog.Value) any {
+// jsonAttributeValue maps a slog attribute value to its json rendering:
+// durations keep their units as strings instead of collapsing to nanosecond
+// ints; everything else passes through natively.
+func jsonAttributeValue(value slog.Value) any {
 	switch value.Kind() {
 	case slog.KindDuration:
 		return value.Duration().String()

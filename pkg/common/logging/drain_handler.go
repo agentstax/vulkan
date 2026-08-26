@@ -7,7 +7,7 @@ import (
 )
 
 // drainHandler drains the operation's held records into its first
-// Error's "preceding" group attr. Runs after suppression, so a dropped
+// Error's "preceding" group attribute. Runs after suppression, so a dropped
 // repeat Error leaves the ring for the next emitted one.
 type drainHandler struct {
 }

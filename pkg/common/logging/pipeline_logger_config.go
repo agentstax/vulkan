@@ -9,7 +9,7 @@ type PipelineLoggerConfig struct {
 
 	// Buffer opts into WithLogBuffer operation boundaries: records below
 	// Error are held in the operation's ring, and the operation's first
-	// Error drains them into its "preceding" attr.
+	// Error drains them into its "preceding" attribute.
 	Buffer bool
 
 	// Suppress collapses repeats of one (level, message) Warn/Error line

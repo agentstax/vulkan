@@ -286,7 +286,7 @@ func poisonSection(ctx context.Context) {
 	poisonedKey := strconv.FormatInt(poisoned.Id, 10)
 	siblingKey := strconv.FormatInt(sibling.Id, 10)
 
-	// registration validated the schedule, so corrupt it behind the door --
+	// registration validated the schedule, so corrupt the row directly --
 	// every ClaimDueCronJob's ParseSchedule now fails for this row
 	exec(ctx, `UPDATE cron_job SET schedule = 'not a schedule' WHERE id = $1;`, poisoned.Id)
 	backdate(ctx, poisoned.Id, time.Now().UTC().Add(-2*time.Hour))

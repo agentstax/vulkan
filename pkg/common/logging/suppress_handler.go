@@ -50,7 +50,7 @@ func (s *suppressHandler) handle(ctx context.Context, record *record) *record {
 	return record
 }
 
-// admit reports whether this occurrence is emitted, with the attr pair
+// admit reports whether this occurrence is emitted, with the attribute pair
 // that carries a rolled window's count.
 func (s *suppressHandler) admit(level slog.Level, message string) ([]any, bool) {
 	s.mutex.Lock()

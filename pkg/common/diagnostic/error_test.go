@@ -104,8 +104,8 @@ func TestLogValueRendersPartsAsFields(t *testing.T) {
 	raised := errTestTopicMissing.With("topic", "orders").Wrap(errors.New("row deleted"))
 
 	fields := map[string]string{}
-	for _, attr := range raised.LogValue().Group() {
-		fields[attr.Key] = attr.Value.String()
+	for _, attribute := range raised.LogValue().Group() {
+		fields[attribute.Key] = attribute.Value.String()
 	}
 
 	want := map[string]string{

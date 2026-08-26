@@ -6,7 +6,7 @@ import (
 )
 
 // enrichHandler puts the bound args onto every line. Runs after capture,
-// so held records skip the identity attrs the emitted line carries.
+// so held records skip the identity attributes the emitted line carries.
 type enrichHandler struct {
 	args []any
 }

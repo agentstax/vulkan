@@ -8,8 +8,9 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 )
 
-// CronSchedulerController is the cron scheduler kind's door: the execution
-// scans, claims, and advances cron_job rows through it.
+// CronSchedulerController is the cron scheduler kind's only path to
+// persistence: the instance scans, claims, and advances cron_job rows
+// through it.
 type CronSchedulerController struct {
 	Logger logging.Logger
 

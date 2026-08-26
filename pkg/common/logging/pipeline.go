@@ -28,7 +28,7 @@ type handler interface {
 // PipelineLogger walks every log call as a record through the stages its
 // Config composes, in one fixed order: capture -> enrich -> suppress ->
 // drain -> sink.
-//   - capture before enrich: held records skip the bound attrs the
+//   - capture before enrich: held records skip the bound attributes the
 //     emitted line already carries
 //   - suppress before drain: a dropped repeat Error leaves the held
 //     narration for the next emitted one

@@ -545,7 +545,7 @@ func cleanup() {
 // --- capture logger ---
 
 // captureLogger records every line so sections can count edges by their
-// alert/owner attrs.
+// alert/owner attributes.
 type captureLogger struct {
 	mu    sync.Mutex
 	lines []capturedLine

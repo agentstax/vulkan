@@ -69,7 +69,7 @@ func (e *Error) Diagnose(queries ...*Query) *Error {
 // Identifier strings render quoted, everything else via its slog value.
 func (e *Error) With(pairs ...any) *Error {
 	copied := *e
-	copied.values = append(slices.Clone(e.values), toAttrs(pairs)...)
+	copied.values = append(slices.Clone(e.values), toAttributes(pairs)...)
 	return &copied
 }
 
@@ -98,15 +98,15 @@ func (e *Error) Error() string {
 	var builder strings.Builder
 	builder.WriteString(e.Problem)
 
-	for i, attr := range e.values {
+	for i, attribute := range e.values {
 		if i == 0 {
 			builder.WriteString(": ")
 		} else {
 			builder.WriteString(", ")
 		}
-		builder.WriteString(attr.Key)
+		builder.WriteString(attribute.Key)
 		builder.WriteString(" ")
-		builder.WriteString(formatValue(attr.Value))
+		builder.WriteString(formatValue(attribute.Value))
 	}
 
 	if e.Fix != "" {
@@ -138,7 +138,7 @@ func (e *Error) Is(target error) bool {
 
 // LogValue renders the same parts as fields for JSON logs.
 func (e *Error) LogValue() slog.Value {
-	attrs := []slog.Attr{
+	attributes := []slog.Attr{
 		slog.String("code", e.Code),
 		slog.String("problem", e.Problem),
 		slog.String("recovery", string(e.Recovery)),
@@ -146,14 +146,14 @@ func (e *Error) LogValue() slog.Value {
 	}
 
 	if e.Fix != "" {
-		attrs = append(attrs, slog.String("fix", e.Fix))
+		attributes = append(attributes, slog.String("fix", e.Fix))
 	}
-	attrs = append(attrs, e.values...)
+	attributes = append(attributes, e.values...)
 	if e.wrapped != nil {
-		attrs = append(attrs, slog.String("cause", e.wrapped.Error()))
+		attributes = append(attributes, slog.String("cause", e.wrapped.Error()))
 	}
 
-	return slog.GroupValue(attrs...)
+	return slog.GroupValue(attributes...)
 }
 
 // Docs returns the error's documentation page, derived from the code.
@@ -180,20 +180,20 @@ func Errors() []*Error {
 // *** HELPERS ***
 // ***************
 
-func toAttrs(pairs []any) []slog.Attr {
-	attrs := make([]slog.Attr, 0, (len(pairs)+1)/2)
+func toAttributes(pairs []any) []slog.Attr {
+	attributes := make([]slog.Attr, 0, (len(pairs)+1)/2)
 	for i := 0; i < len(pairs); i += 2 {
 		name := fmt.Sprint(pairs[i])
 
 		// a name with no value is a raise-site bug; render the gap
 		// rather than crash or silently drop the name
 		if i+1 >= len(pairs) {
-			attrs = append(attrs, slog.String(name, "(missing)"))
+			attributes = append(attributes, slog.String(name, "(missing)"))
 			break
 		}
-		attrs = append(attrs, slog.Any(name, pairs[i+1]))
+		attributes = append(attributes, slog.Any(name, pairs[i+1]))
 	}
-	return attrs
+	return attributes
 }
 
 func formatValue(value slog.Value) string {

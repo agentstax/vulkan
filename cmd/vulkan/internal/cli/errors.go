@@ -156,8 +156,8 @@ func renderErrorBlock(w io.Writer, structuredError *diagnostic.Error, fix string
 	fmt.Fprintf(w, "error[%s]: %s\n", structuredError.Code, structuredError.Problem)
 
 	rows := make([][2]string, 0, 8)
-	for _, attr := range structuredError.Values() {
-		rows = append(rows, [2]string{attr.Key, formatAttrValue(attr.Value)})
+	for _, attribute := range structuredError.Values() {
+		rows = append(rows, [2]string{attribute.Key, formatAttributeValue(attribute.Value)})
 	}
 	if cause := structuredError.Unwrap(); cause != nil {
 		rows = append(rows, [2]string{"cause", cause.Error()})
@@ -220,11 +220,11 @@ func toErrorDocument(structuredError *diagnostic.Error, fix string) errorDocumen
 		Docs:     structuredError.Docs(),
 	}
 
-	attrs := structuredError.Values()
-	if len(attrs) > 0 {
-		object.Values = make(map[string]any, len(attrs))
-		for _, attr := range attrs {
-			object.Values[attr.Key] = jsonAttrValue(attr.Value)
+	attributes := structuredError.Values()
+	if len(attributes) > 0 {
+		object.Values = make(map[string]any, len(attributes))
+		for _, attribute := range attributes {
+			object.Values[attribute.Key] = jsonAttributeValue(attribute.Value)
 		}
 	}
 
@@ -241,7 +241,7 @@ func toPlainErrorDocument(message string) errorDocument {
 	return errorDocument{Error: errorObject{Problem: message}}
 }
 
-func formatAttrValue(value slog.Value) string {
+func formatAttributeValue(value slog.Value) string {
 	if value.Kind() == slog.KindString {
 		return strconv.Quote(value.String())
 	}

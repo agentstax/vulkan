@@ -8,8 +8,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 )
 
-// JanitorController is the janitor kind's door: the execution's sweep pass
-// drops and drains expired storage through it.
+// JanitorController is the janitor kind's only path to persistence: the
+// instance's sweep pass drops and drains expired storage through it.
 type JanitorController struct {
 	Logger logging.Logger
 

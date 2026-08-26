@@ -3,7 +3,7 @@ package main
 // binding lifecycle lab: a group's set is declared at Register and replaced
 // only when no live instance still declares it.
 //
-// Registers its own topic, destroyed on exit. Drives the consumer door end to
+// Registers its own topic, destroyed on exit. Drives the consumer API end to
 // end -- real Register attempts, a real consuming incumbent whose heartbeats
 // block the swap, and a real Consume blocked in its declaration wait.
 //

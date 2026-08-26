@@ -226,7 +226,7 @@ func (w *WarnCounter) InfoContext(ctx context.Context, msg string, args ...any) 
 	w.inner.InfoContext(ctx, msg, args...)
 }
 
-// counted by attr shape, never message text: both partition warns carry
+// counted by attribute shape, never message text: both partition warns carry
 // topic_id; only the create-ahead one carries an error value.
 func (w *WarnCounter) WarnContext(ctx context.Context, msg string, args ...any) {
 	if hasArgKey(args, "topic_id") {
