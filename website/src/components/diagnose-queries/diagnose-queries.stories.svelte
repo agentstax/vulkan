@@ -17,10 +17,12 @@
 			{
 				label: 'the delivery row the dead-lettering wrote',
 				sql: 'SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};',
+				placeholders: ['topic_id', 'group_id', 'message_id'],
 			},
 			{
 				label: 'every attempt it made, oldest first',
 				sql: 'SELECT\n\tattempt,\n\tstatus,\n\terror,\n\tattempted_at\nFROM delivery_log_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id}\nORDER BY attempt;',
+				placeholders: ['topic_id', 'group_id', 'message_id'],
 			},
 		],
 	}}
@@ -34,6 +36,7 @@
 			{
 				label: 'the topic rows registered under that name',
 				sql: "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE name = '{topic}';",
+				placeholders: ['topic'],
 			},
 		],
 	}}
@@ -47,6 +50,7 @@
 			{
 				label: 'the migration steps this database recorded, newest first',
 				sql: 'SELECT\n\tmigration_version,\n\tmin_compatible_version,\n\tstatus,\n\tcreated_at\nFROM migration_log\nWHERE system_id IS NOT NULL\nORDER BY id DESC;',
+				placeholders: [],
 			},
 		],
 	}}

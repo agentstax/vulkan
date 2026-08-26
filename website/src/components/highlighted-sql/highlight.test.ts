@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sqlPlaceholders, sqlSegments } from './highlight';
+import { sqlSegments } from './highlight';
 
 describe('sqlSegments', () => {
 	it('returns one plain segment for text with no keywords', () => {
@@ -40,20 +40,5 @@ describe('sqlSegments', () => {
 
 	it('returns no segments for empty sql', () => {
 		expect(sqlSegments('')).toEqual([]);
-	});
-});
-
-describe('sqlPlaceholders', () => {
-	it('lists each placeholder once in first-appearance order', () => {
-		const sql = 'FROM delivery_{topic_id} WHERE consumer_group_id = {group_id}';
-		expect(sqlPlaceholders(sql)).toEqual(['topic_id', 'group_id']);
-	});
-
-	it('collapses a placeholder repeated across the query', () => {
-		expect(sqlPlaceholders('{topic_id} {group_id} {topic_id}')).toEqual(['topic_id', 'group_id']);
-	});
-
-	it('lists nothing for a query with none', () => {
-		expect(sqlPlaceholders('SELECT 1')).toEqual([]);
 	});
 });

@@ -1,19 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import codes from './codes.json';
+import { codeRecords, type CodeRecord } from './codes';
 
-type CodeRecord = {
-	code: string;
-	kind: string;
-	problem?: string;
-	recovery?: string;
-	fix?: string;
-	message?: string;
-	name?: string;
-};
-
-const declared = codes.codes as Record<string, CodeRecord>;
 const pagesDirectory = join(import.meta.dirname, '../content/docs/errors');
 
 // Error pages are hand-written and stay that way, so their frontmatter
@@ -21,19 +10,28 @@ const pagesDirectory = join(import.meta.dirname, '../content/docs/errors');
 // honest: a reworded problem line, fix, or recovery fails here until its page
 // is updated in the same change.
 describe('error pages against the declarations', () => {
+	// codes.ts reads the export as a union on kind. A kind the union does not
+	// name would be typed as something it is not, so the walk proves it first.
+	it('declares every code as one of the three kinds', () => {
+		const unknown = Object.values(codeRecords)
+			.filter((record) => !['error', 'event', 'metric'].includes(record.kind))
+			.map((record) => `${record.code} is kind ${record.kind}`);
+		expect(unknown).toEqual([]);
+	});
+
 	it('gives every declared code a page', () => {
-		const missing = Object.keys(declared).filter((code) => !pages().has(code));
+		const missing = Object.keys(codeRecords).filter((code) => !pages().has(code));
 		expect(missing).toEqual([]);
 	});
 
 	it('gives every page a declaration', () => {
-		const orphaned = [...pages().keys()].filter((code) => declared[code] === undefined);
+		const orphaned = [...pages().keys()].filter((code) => codeRecords[code] === undefined);
 		expect(orphaned).toEqual([]);
 	});
 
 	it('titles each page with the declaration text', () => {
 		for (const [code, frontmatter] of pages()) {
-			const record = declared[code];
+			const record = codeRecords[code];
 			if (record === undefined) {
 				continue;
 			}
@@ -43,7 +41,7 @@ describe('error pages against the declarations', () => {
 
 	it('repeats the declared fix and recovery verbatim', () => {
 		for (const [code, frontmatter] of pages()) {
-			const record = declared[code];
+			const record = codeRecords[code];
 			if (record?.kind !== 'error') {
 				continue;
 			}
@@ -55,7 +53,7 @@ describe('error pages against the declarations', () => {
 
 	it('states the declaration kind each page documents', () => {
 		for (const [code, frontmatter] of pages()) {
-			const record = declared[code];
+			const record = codeRecords[code];
 			if (record === undefined) {
 				continue;
 			}
@@ -71,10 +69,10 @@ function expectedTitle(record: CodeRecord): string | undefined {
 	switch (record.kind) {
 		case 'error':
 			return record.problem;
+		case 'event':
+			return record.message.split(' -- ')[0];
 		case 'metric':
 			return record.name;
-		default:
-			return record.message?.split(' -- ')[0];
 	}
 }
 

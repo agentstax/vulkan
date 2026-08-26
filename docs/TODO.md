@@ -126,7 +126,10 @@ Four facts from the 2026-08-25 survey that decide the shape:
       export bullet) + the site-verify drift guard, including the
       previously parked frontmatter check. Before the CLI tasks:
       this plus task 5 is what unblocks paste-your-log-line.
-- [ ] 5. The code thread pages render the section from codes.json.
+- [x] 5. The code thread pages render the section from codes.json. The
+      placeholders travel with the query rather than being re-parsed in
+      TS -- src/data/codes.ts is the one typed reader over the export,
+      and highlight.ts's sqlPlaceholders is gone.
 - [ ] 6. `vulkan explain VKxxxx` renders the section; --output json
       carries it.
 - [ ] 7. Doc comments add nothing: pkg.go.dev renders the var's full

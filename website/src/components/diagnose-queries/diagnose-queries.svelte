@@ -1,7 +1,6 @@
 <script lang="ts">
 	import HighlightedSql from '../highlighted-sql/highlighted-sql.svelte';
 	import ThreadAside from '../thread-aside/thread-aside.svelte';
-	import { sqlPlaceholders } from '../highlighted-sql/highlight';
 	import type { DiagnoseQuery } from './types';
 
 	type Props = {
@@ -10,9 +9,7 @@
 
 	let { queries }: Props = $props();
 
-	const placeholders = $derived([
-		...new Set(queries.flatMap((query) => sqlPlaceholders(query.sql))),
-	]);
+	const placeholders = $derived([...new Set(queries.flatMap((query) => query.placeholders))]);
 </script>
 
 <p>Helpful info.</p>

@@ -53,14 +53,6 @@ export function sqlSegments(sql: string): SqlSegment[] {
 	return segments;
 }
 
-// sqlPlaceholders lists each placeholder's attribute name once, in
-// first-appearance order, so a query can state which values it wants without
-// a second copy of the list.
-export function sqlPlaceholders(sql: string): string[] {
-	const names = sql.match(placeholderPattern) ?? [];
-	return [...new Set(names.map((name) => name.slice(1, -1)))]; // slice cuts off the surrounding {}
-}
-
 // ***************
 // *** HELPERS ***
 // ***************
