@@ -35,13 +35,12 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     homepage initial JS under a declared byte ceiling, failing the build
     on regress. Playwright is not installed and no other flow test is
     planned. Last measured 2026-08-24: 60.5 KB raw / 22.4 KB gzipped.
-  - PGlite wasm prefetch — requestIdleCallback fetch of the ~5.2 MB
-    wasm+data chunk after interactive, so the sandbox's first statement is
-    near-instant. (sql-panel already uses requestIdleCallback to mount
-    CodeMirror; this is the same trigger, a different chunk.)
   - transition:persist on the sandbox — keep the live PGlite instance
     across navigations (ClientRouter view transitions; boot cost once per
-    session instead of once per page).
+    session instead of once per page). ClientRouter is in the stack list
+    but not actually wired up yet, so PGlite's module-level caches die on
+    every navigation — this saves a whole boot, where the rejected
+    prefetch [0591] saved part of one.
   - Dark mode as a "Board style" dropdown (palette donor picked during the
     design rounds), not a system toggle.
 
@@ -315,6 +314,9 @@ prerequisite if quorum-as-a-fraction wins.
   schema — scrapped 2026-08-24). The log-line-to-investigation-kit idea
   was revived the same day in its declared form and SHIPPED as the
   declared queries [0589] plus the paste box that fills them [0590].
+  Prefetching the sandbox's PGlite wasm was built and reverted the same
+  way 2026-08-26 — the code-to-gain ratio lost, not a defect [0591];
+  reopening it needs a browser measurement, not another estimate.
 
 - **Gauge metric declarations** ([0567] chunk-5 follow-on) — convert the
   remaining bare vulkan.* metric name consts (the collector's gauges in
