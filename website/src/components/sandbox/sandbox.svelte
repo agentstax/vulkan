@@ -60,8 +60,12 @@
 			.catch(() => {});
 	});
 
-	// the island goes away on a view transition; its timers would not
-	onDestroy(() => autoRunner.stopAll());
+	// the island goes away on a view transition; its timers and the Postgres
+	// behind it would not
+	onDestroy(() => {
+		autoRunner.stopAll();
+		void databaseState.close();
+	});
 
 	// a page control, not an API verb: the database is dropped and rebuilt from
 	// the seed, and the cards go with it -- their lines describe ticks against a

@@ -35,12 +35,16 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     homepage initial JS under a declared byte ceiling, failing the build
     on regress. Playwright is not installed and no other flow test is
     planned. Last measured 2026-08-24: 60.5 KB raw / 22.4 KB gzipped.
-  - transition:persist on the sandbox — keep the live PGlite instance
-    across navigations (ClientRouter view transitions; boot cost once per
-    session instead of once per page). ClientRouter is in the stack list
-    but not actually wired up yet, so PGlite's module-level caches die on
-    every navigation — this saves a whole boot, where the rejected
-    prefetch [0591] saved part of one.
+  - Persist the sandbox's database across navigations — ClientRouter
+    shipped [0592] and already caches PGlite's download and wasm compile;
+    what still repeats on a return to the homepage is instantiate, initdb,
+    the topic DDL and the seed. Skipping those needs DatabaseState hoisted
+    to a module singleton with the consumer cards, groups and nextConsumer
+    moved alongside it, or the cards contradict the database they read.
+    Scoped out of [0592] on that cost, plus a live Postgres pinned for the
+    session. `transition:persist` is NOT the mechanism — Astro drops a
+    persisted element the destination page lacks, and the sandbox is on
+    one page.
   - Dark mode as a "Board style" dropdown (palette donor picked during the
     design rounds), not a system toggle.
 

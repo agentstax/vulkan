@@ -5,6 +5,25 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-26 — soft navigation across the board [0592]
+
+- `<ClientRouter />` in `BoardLayout.astro` — the only layout that owns a
+  `<head>` — puts all 80 pages on view transitions. The swap keeps `window` and
+  the module registry, so PGlite's cached responses and compiled wasm survive:
+  returning to the homepage skips the 5.53 MB download and the 10 MB compile,
+  and runs only instantiate, initdb, the topic DDL and the seed.
+- The roadmap asked for `transition:persist` on the sandbox, which cannot work
+  — Astro drops a persisted element the destination page lacks, and the sandbox
+  is on one page. Persisting the database at all needs `DatabaseState` hoisted
+  to a module singleton with the consumer cards alongside it; not taken.
+- `DatabaseState.close()` is new and runs from the sandbox's `onDestroy`: a full
+  page load used to release the 128 MB wasm memory for free, and a soft
+  navigation does not. `reset()` routes through it instead of repeating it.
+- The reduced-motion guard for `::view-transition-*` is ours, in global.css.
+  Astro's own ships only when a `transition:*` directive is used, so with none
+  the cross-fade is the browser's default and nothing else gates it.
+- Cost: 16.29 KB raw / 5.55 KB gzipped of router on every page.
+
 ## 2026-08-26 — paste your log line, and the thread fills [0590]
 
 - A declared fix now carries the same `{attribute}` placeholders [0589] gave

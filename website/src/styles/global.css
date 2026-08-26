@@ -319,6 +319,17 @@
 	.thread-body :where(tbody tr:nth-child(odd)) {
 		background: var(--color-row-stripe-a);
 	}
+
+	/* The page-to-page cross-fade is the browser's own default, so there is no
+	   no-preference block to withhold it -- a reader who asked for less motion
+	   has it turned off here instead. */
+	@media (prefers-reduced-motion: reduce) {
+		::view-transition-group(*),
+		::view-transition-old(*),
+		::view-transition-new(*) {
+			animation: none !important;
+		}
+	}
 }
 
 @layer utilities {
