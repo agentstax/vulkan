@@ -21,3 +21,11 @@
 	color: var(--color-sql-placeholder-text);
 	font-weight: 600;
 }
+
+/* still marked: the query now says something about their database */
+.sql-segment[data-kind='value'] {
+	background: var(--color-sql-value-ground);
+	border-bottom: 1px solid var(--border-sql-value);
+	color: var(--color-sql-value-text);
+	font-weight: 600;
+}

@@ -126,7 +126,8 @@ func exitCode(err error) int {
 
 // translateAdminError rewrites raw library errors into operator-facing ones:
 // a structured error becomes the block (fix swapped for a pasteable vulkan
-// command when cliFixes has one); a topic command run before the schema was
+// command when cliFixes has one, then filled from the raise's own values);
+// a topic command run before the schema was
 // ever migrated hits Postgres 42P01 (undefined_table) deep in a query --
 // surface the fix, not the raw SQLSTATE.
 func translateAdminError(err error) error {
@@ -135,7 +136,7 @@ func translateAdminError(err error) error {
 		if cliFix, ok := cliFixes[structuredError.Code]; ok {
 			fix = cliFix
 		}
-		return failStructured(structuredError, fix)
+		return failStructured(structuredError, structuredError.Fill(fix))
 	}
 
 	var pgErr *pgconn.PgError

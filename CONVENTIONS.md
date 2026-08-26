@@ -458,6 +458,17 @@ vulkan command in the CLI).
 - One imperative action naming the exact field, method, or command with
   the caller's real values interpolated; a CLI fix runs verbatim as
   pasted -- one that doesn't is a bug.
+- Interpolate with the same `{attribute_name}` placeholders a diagnose
+  query uses, named from the log attribute registry under ## Logging.
+  `Error()` and `LogValue()` fill them from the values the raise attached,
+  and the fix text carries the quoting its position needs -- the value
+  goes in raw (`register "{cron_job}" with ...`). [0590]
+- A fix placeholder must be attachable at EVERY raise site of its code:
+  one fix string serves all of them, so a name one site cannot supply is
+  a blank on a real operator's line. A `tools/conventions` walk enforces
+  it. Diagnose queries are exempt -- a declaration carries an ordered SET
+  of them, so a name-keyed and an id-keyed query can sit side by side and
+  whichever value the line carries finds one it can fill.
 - A closed set names every legal value, so the caller fixes the input
   without opening docs; a near-miss gets offered ("a topic with a similar
   name exists: \"order\"").

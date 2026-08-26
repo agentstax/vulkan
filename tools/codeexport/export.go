@@ -44,9 +44,10 @@ type CodeRecord struct {
 	Code string `json:"code"`
 	Kind string `json:"kind"` // error | event | metric
 
-	Problem  string `json:"problem,omitempty"`  // error
-	Recovery string `json:"recovery,omitempty"` // error
-	Fix      string `json:"fix,omitempty"`      // error
+	Problem         string   `json:"problem,omitempty"`          // error
+	Recovery        string   `json:"recovery,omitempty"`         // error
+	Fix             string   `json:"fix,omitempty"`              // error
+	FixPlaceholders []string `json:"fix_placeholders,omitempty"` // error
 
 	Message string `json:"message,omitempty"` // event
 
@@ -60,12 +61,13 @@ type CodeRecord struct {
 
 func newErrorRecord(declared *diagnostic.Error) CodeRecord {
 	return CodeRecord{
-		Code:     declared.Code,
-		Kind:     string(diagnostic.KindError),
-		Problem:  declared.Problem,
-		Recovery: string(declared.Recovery),
-		Fix:      declared.Fix,
-		Queries:  newQueryRecords(declared.Queries),
+		Code:            declared.Code,
+		Kind:            string(diagnostic.KindError),
+		Problem:         declared.Problem,
+		Recovery:        string(declared.Recovery),
+		Fix:             declared.Fix,
+		FixPlaceholders: declared.FixPlaceholders(),
+		Queries:         newQueryRecords(declared.Queries),
 	}
 }
 

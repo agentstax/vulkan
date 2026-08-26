@@ -25,7 +25,10 @@
       "kind": "error",
       "problem": "topic partition size does not match the existing topic",
       "recovery": "permanent",
-      "fix": "register with the existing PartitionSize, or use a new topic name"
+      "fix": "register with PartitionSize {existing_partition_size}, or use a new topic name",
+      "fix_placeholders": [
+        "existing_partition_size"
+      ]
     },
     "VK0005": {
       "code": "VK0005",
@@ -39,6 +42,13 @@
           "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE name = '{topic}';",
           "placeholders": [
             "topic"
+          ]
+        },
+        {
+          "label": "the topic row behind an id, if that is what the line carried",
+          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE id = {topic_id};",
+          "placeholders": [
+            "topic_id"
           ]
         },
         {
@@ -118,7 +128,10 @@
       "kind": "error",
       "problem": "cron job not found",
       "recovery": "permanent",
-      "fix": "register it with MessageAdmin.RegisterCronJob first"
+      "fix": "register \"{cron_job}\" with MessageAdmin.RegisterCronJob first",
+      "fix_placeholders": [
+        "cron_job"
+      ]
     },
     "VK0014": {
       "code": "VK0014",
@@ -132,6 +145,13 @@
           "sql": "SELECT\n\tconsumer_group.id,\n\tconsumer_group.name,\n\tconsumer_group.created_at\nFROM consumer_group\nJOIN topic ON topic.id = consumer_group.topic_id\nWHERE topic.name = '{topic}'\nORDER BY consumer_group.name;",
           "placeholders": [
             "topic"
+          ]
+        },
+        {
+          "label": "the group row behind an id, if that is what the line carried",
+          "sql": "SELECT\n\tid,\n\ttopic_id,\n\tname,\n\tcreated_at\nFROM consumer_group\nWHERE id = {group_id};",
+          "placeholders": [
+            "group_id"
           ]
         }
       ]
@@ -249,7 +269,12 @@
       "kind": "error",
       "problem": "schema version is older than this build requires",
       "recovery": "permanent",
-      "fix": "migrate the database up first",
+      "fix": "migrate the {owner_kind} schema up from {version} to {build_version}",
+      "fix_placeholders": [
+        "owner_kind",
+        "version",
+        "build_version"
+      ],
       "queries": [
         {
           "label": "the steps this database recorded, newest first",
@@ -263,7 +288,10 @@
       "kind": "error",
       "problem": "schema version is newer than this build understands",
       "recovery": "permanent",
-      "fix": "upgrade the binary",
+      "fix": "upgrade the binary to one whose build version is at least {version}",
+      "fix_placeholders": [
+        "version"
+      ],
       "queries": [
         {
           "label": "the steps this database recorded, newest first",

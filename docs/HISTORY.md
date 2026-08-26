@@ -5,6 +5,29 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-26 — paste your log line, and the thread fills [0590]
+
+- A declared fix now carries the same `{attribute}` placeholders [0589] gave
+  diagnose queries, filled from the values the raise attached. `Error()` and
+  `LogValue()` fill through the exported `Error.Fill`, which the CLI also uses
+  on its own `cliFixes` rewrites — so a fix naming a vulkan command runs
+  verbatim as pasted. Four fixes took a placeholder: VK0004, VK0013, VK0022,
+  VK0023.
+- The rule the build surfaced: a fix placeholder must be attachable at EVERY
+  raise site, because one string serves all of them. A `tools/conventions` walk
+  over every `return <declared Err>` enforces it. VK0005 and VK0014 failed it —
+  four raise sites resolve by id and the name is unknowable there — so they
+  kept their static fix and gained an id-keyed diagnose query, which also
+  closed a [0589] gap where those sites raised a condition whose query named a
+  value their line never carried.
+- Code threads replaced the search strip with a paste box. A pasted line fills
+  the diagnose queries, the fix, and the copy button, looked up BY NAME across
+  the three shapes the library emits — slog's text handler, JSON, and the
+  `Error()` one-liner. Nothing parses the line's grammar and nothing is stored.
+- A value enters SQL by the quoting already around its blank: quoted position
+  doubles any `'`, bare position takes only an identifier or a number and
+  otherwise stays a blank rather than render SQL that cannot run.
+
 ## 2026-08-25 — declarations say what to look at, in SQL [0589]
 
 - A `diagnostic` declaration now carries diagnose queries: `Diagnose(...)`

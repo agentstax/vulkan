@@ -21,30 +21,8 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Doc site — interactive mechanisms.**
-  - Paste-your-log-line on code threads — parse a pasted line's
-    attributes and interpolate the reader's own values into the declared
-    fix command and into the declared diagnose queries. UNBLOCKED by
-    [0589]: 18 codes now carry query templates, and each query's
-    placeholders travel beside its SQL in codes.json, so the page fills
-    them by name without parsing the SQL. The search strip under each
-    code thread is the placeholder.
-
-- **Doc site — content still owed.**
-  - Transactional-outbox side-effect footgun, worked example — calling
-    sendEmailConfirmation() before a Produce/multi-target closure is known
-    to commit fires the email even if a later step rolls back. Pairs with
-    the outbox framing already on guides/transactional-produce.
-  - consumerFunc hard timeout, goroutine abandoned — how to PREVENT it:
-    handle ctx.Done() inside consumerFunc, or raise TimeoutGrace. Rare,
-    but the abandoned goroutine is a real side effect. The counter and its
-    events are already documented (VK0050, VK0052, and abandoned_count on
-    VK0041); what no page says is what a reader should do about it.
-    Raised by CallSafely in pkg/consumergroup/base/consumer.go.
-  - Per-page example attribute values on error/event threads — compose
-    richer example log lines from each code's real attribute keys instead
-    of the minimal composed line.
-  - DDL table design diagram.
+- **Doc site — interactive mechanisms.** Paste-your-log-line shipped
+  2026-08-26 [0590]; what it left open is the example-values item below.
 
 - **Doc site — infrastructure & polish.** Each independent, any order.
   - Spacing token scale + sweep — website/CONVENTIONS.md declares spacing
@@ -66,6 +44,26 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     session instead of once per page).
   - Dark mode as a "Board style" dropdown (palette donor picked during the
     design rounds), not a system toggle.
+
+- **Doc site — content still owed.**
+  - Transactional-outbox side-effect footgun, worked example — calling
+    sendEmailConfirmation() before a Produce/multi-target closure is known
+    to commit fires the email even if a later step rolls back. Pairs with
+    the outbox framing already on guides/transactional-produce.
+  - consumerFunc hard timeout, goroutine abandoned — how to PREVENT it:
+    handle ctx.Done() inside consumerFunc, or raise TimeoutGrace. Rare,
+    but the abandoned goroutine is a real side effect. The counter and its
+    events are already documented (VK0050, VK0052, and abandoned_count on
+    VK0041); what no page says is what a reader should do about it.
+    Raised by CallSafely in pkg/consumergroup/base/consumer.go.
+  - Per-page example attribute values on error/event threads — compose
+    richer example log lines from each code's real attribute keys instead
+    of the minimal composed line. Now load-bearing, not cosmetic [0590]:
+    the composed line carries no attribute values, so a reader with no log
+    of their own has nothing that demonstrates the paste box. The line
+    feeds both the thread's LogLine and the paste box's shape hint, so one
+    richer composition serves both.
+  - DDL table design diagram.
 
 - **Library work the doc pass surfaced.**
   - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
@@ -315,8 +313,8 @@ prerequisite if quorum-as-a-fraction wins.
   playground (judged not unique). Rejected outright: a your-deployment
   context panel and a schema atlas (an interactive column-level map of the
   schema — scrapped 2026-08-24). The log-line-to-investigation-kit idea
-  was revived the same day in its declared form: see the diagnose part in
-  Next.
+  was revived the same day in its declared form and SHIPPED as the
+  declared queries [0589] plus the paste box that fills them [0590].
 
 - **Gauge metric declarations** ([0567] chunk-5 follow-on) — convert the
   remaining bare vulkan.* metric name consts (the collector's gauges in

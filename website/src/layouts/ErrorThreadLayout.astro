@@ -7,8 +7,9 @@ import ErrorPost from '../components/error-post/error-post.svelte';
 import LogLine from '../components/log-line/log-line.svelte';
 import ThreadPost from '../components/thread-post/thread-post.svelte';
 import DiagnoseQueries from '../components/diagnose-queries/diagnose-queries.svelte';
+import FixLine from '../components/fix-line/fix-line.svelte';
 import CopyButton from '../components/copy-button/copy-button.svelte';
-import SearchStrip from '../components/search-strip/search-strip.svelte';
+import LogLinePaste from '../components/log-line-paste/log-line-paste.svelte';
 import PrevNext from '../components/prev-next/prev-next.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
 import { jumpTargets } from '../pages/_board/boards';
@@ -29,6 +30,8 @@ type Props = {
 	next: ThreadLink | null;
 	codeThread: CodeThreadData;
 	diagnose: DiagnoseQuery[] | null;
+	fixPlaceholders: string[];
+	pastePlaceholders: string[];
 };
 
 const {
@@ -44,6 +47,8 @@ const {
 	next,
 	codeThread,
 	diagnose,
+	fixPlaceholders,
+	pastePlaceholders,
 } = Astro.props;
 
 const trail = [
@@ -101,7 +106,7 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 					postCount={postCount}
 					actions={null}
 				>
-					<DiagnoseQueries queries={diagnose} />
+					<DiagnoseQueries client:visible queries={diagnose} />
 				</ThreadPost>
 			)
 		}
@@ -114,14 +119,12 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 					postCount={postCount}
 					actions={null}
 				>
-					<p>
-						<strong>{codeThread.fix}</strong>
-					</p>
+					<FixLine client:visible fix={codeThread.fix} placeholders={fixPlaceholders} />
 				</ThreadPost>
 			)
 		}
 	</div>
-	<SearchStrip exampleText={codeThread.logLine} />
+	<LogLinePaste client:visible placeholders={pastePlaceholders} exampleText={codeThread.logLine} />
 	<PrevNext previous={previous} next={next} />
 	<div class="thread-return">
 		<Breadcrumb trail={returnTrail} />

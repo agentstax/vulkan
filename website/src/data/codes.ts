@@ -19,6 +19,7 @@ export type ErrorRecord = {
 	problem: string;
 	recovery: 'transient' | 'permanent';
 	fix?: string;
+	fix_placeholders?: string[];
 	queries?: QueryRecord[];
 };
 

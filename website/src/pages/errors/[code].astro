@@ -5,7 +5,7 @@ import ErrorThreadLayout from '../../layouts/ErrorThreadLayout.astro';
 import { boardHref, isErrorThread, threadCode } from '../_board/boards';
 import { threadData } from '../_thread/thread';
 import { codeThreadData } from '../_thread/code';
-import { diagnoseQueries } from '../_thread/diagnose';
+import { diagnoseQueries, fixPlaceholders, pastePlaceholders } from '../_thread/diagnose';
 
 export const getStaticPaths = (async () => {
 	const docs = await getCollection('docs');
@@ -37,6 +37,8 @@ const codeThread = codeThreadData(entry);
 	next={thread.next}
 	codeThread={codeThread}
 	diagnose={diagnoseQueries(codeThread.code)}
+	fixPlaceholders={fixPlaceholders(codeThread.code)}
+	pastePlaceholders={pastePlaceholders(codeThread.code)}
 >
 	<Content />
 </ErrorThreadLayout>

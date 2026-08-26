@@ -1,14 +1,8 @@
 package diagnostic
 
 import (
-	"regexp"
-	"slices"
 	"strings"
 )
-
-// placeholderPattern matches one {attribute_name} placeholder -- the log
-// attribute keys the condition's own line already carries.
-var placeholderPattern = regexp.MustCompile(`\{[a-z][a-z0-9_]*\}`)
 
 // Query is one declared diagnose query: the label names what the query
 // answers, the SQL answers it against the reader's own database. The library
@@ -37,14 +31,5 @@ func NewQuery(label string, sql string) *Query {
 // Placeholders lists each placeholder's attribute name once, in
 // first-appearance order.
 func (q *Query) Placeholders() []string {
-	found := placeholderPattern.FindAllString(q.Sql, -1)
-
-	names := make([]string, 0, len(found))
-	for _, placeholder := range found {
-		name := strings.Trim(placeholder, "{}")
-		if !slices.Contains(names, name) {
-			names = append(names, name)
-		}
-	}
-	return names
+	return placeholderNames(q.Sql)
 }

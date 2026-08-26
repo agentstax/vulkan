@@ -93,7 +93,7 @@
 		     CodeMirror editor in editorHost -- identically sized, so the swap
 		     causes no layout shift -->
 		{#if !editorMounted}
-			<HighlightedSql sql={panelState.sql} />
+			<HighlightedSql sql={panelState.sql} values={new Map()} />
 		{/if}
 		<div class="editor-host" bind:this={editorHost}></div>
 	</div>

@@ -176,6 +176,10 @@
 		--color-sql-placeholder-ground: var(--amber-pale);
 		--color-sql-placeholder-text: var(--amber-dark);
 		--border-sql-placeholder: var(--amber-shade);
+		/* the same blank once filled -- settled, against the amber waiting */
+		--color-sql-value-ground: var(--solved-green-pale);
+		--color-sql-value-text: var(--solved-green);
+		--border-sql-value: var(--solved-green-border);
 
 		--flag-body: var(--amber-dark);
 		--flag-face: var(--amber);

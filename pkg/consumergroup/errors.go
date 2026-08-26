@@ -20,6 +20,14 @@ FROM consumer_group
 JOIN topic ON topic.id = consumer_group.topic_id
 WHERE topic.name = '{topic}'
 ORDER BY consumer_group.name;`),
+		diagnostic.NewQuery("the group row behind an id, if that is what the line carried", `
+SELECT
+	id,
+	topic_id,
+	name,
+	created_at
+FROM consumer_group
+WHERE id = {group_id};`),
 	)
 
 // ErrGroupLive means Destroy was called while a worker instance still runs

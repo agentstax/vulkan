@@ -7,7 +7,7 @@ import (
 // ErrCronJobNotFound means the named cron job has no row.
 var ErrCronJobNotFound = diagnostic.NewError("VK0013", diagnostic.Permanent,
 	"cron job not found",
-	"register it with MessageAdmin.RegisterCronJob first")
+	`register "{cron_job}" with MessageAdmin.RegisterCronJob first`)
 
 // ErrDeclarationInterrupted means the cron job row was deleted between the
 // declaration's insert attempt and its update; an unchanged retry re-creates

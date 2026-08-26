@@ -28,7 +28,7 @@ type Error struct {
 	Code     string
 	Recovery Recovery
 	Problem  string
-	Fix      string   // "" when the code cannot know the remedy
+	Fix      string   // "" when the code cannot know the remedy; may carry {attribute} placeholders
 	Queries  []*Query // none when the condition has no state to look at
 	values   []slog.Attr
 	wrapped  error
@@ -64,6 +64,18 @@ func (e *Error) Diagnose(queries ...*Query) *Error {
 	return e
 }
 
+// FixPlaceholders lists each attribute name the fix substitutes, once, in
+// first-appearance order.
+func (e *Error) FixPlaceholders() []string {
+	return placeholderNames(e.Fix)
+}
+
+// Fill substitutes text's {attribute} placeholders with the values this raise
+// attached -- the declared fix, or a surface's own rewording of it.
+func (e *Error) Fill(text string) string {
+	return fillPlaceholders(text, e.values)
+}
+
 // With returns a copy carrying the given name/value pairs appended to any
 // already attached.
 // Identifier strings render quoted, everything else via its slog value.
@@ -94,6 +106,7 @@ func (e *Error) Unwrap() error {
 // - problem: name value, name value -- fix [code]: cause.
 // No values drops the ":", an empty fix drops the "--",
 // no cause drops the trailing chain.
+// The fix's placeholders fill from the attached values.
 func (e *Error) Error() string {
 	var builder strings.Builder
 	builder.WriteString(e.Problem)
@@ -111,7 +124,7 @@ func (e *Error) Error() string {
 
 	if e.Fix != "" {
 		builder.WriteString(" -- ")
-		builder.WriteString(e.Fix)
+		builder.WriteString(e.Fill(e.Fix))
 	}
 
 	builder.WriteString(" [")
@@ -146,7 +159,7 @@ func (e *Error) LogValue() slog.Value {
 	}
 
 	if e.Fix != "" {
-		attributes = append(attributes, slog.String("fix", e.Fix))
+		attributes = append(attributes, slog.String("fix", e.Fill(e.Fix)))
 	}
 	attributes = append(attributes, e.values...)
 	if e.wrapped != nil {

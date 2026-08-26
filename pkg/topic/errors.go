@@ -8,7 +8,7 @@ import (
 // Every other config field can be changed by registering again.
 var ErrTopicConfigMismatch = diagnostic.NewError("VK0004", diagnostic.Permanent,
 	"topic partition size does not match the existing topic",
-	"register with the existing PartitionSize, or use a new topic name")
+	"register with PartitionSize {existing_partition_size}, or use a new topic name")
 
 // ErrTopicNotFound means the named topic has no row.
 //
@@ -25,6 +25,14 @@ SELECT
 	created_at
 FROM topic
 WHERE name = '{topic}';`),
+		diagnostic.NewQuery("the topic row behind an id, if that is what the line carried", `
+SELECT
+	id,
+	name,
+	schema_version,
+	created_at
+FROM topic
+WHERE id = {topic_id};`),
 		diagnostic.NewQuery("every registered topic, if the name itself is wrong", `
 SELECT name, schema_version FROM topic ORDER BY name;`),
 	)

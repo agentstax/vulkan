@@ -1,13 +1,16 @@
 <script lang="ts">
-	import { sqlSegments } from './highlight';
+	import { fillSegments, sqlSegments } from './highlight';
 
 	type Props = {
 		sql: string;
+		// the reader's own values, keyed by attribute name
+		// an empty map doesn't fill any placeholders
+		values: Map<string, string>;
 	};
 
-	let { sql }: Props = $props();
+	let { sql, values }: Props = $props();
 
-	const segments = $derived(sqlSegments(sql));
+	const segments = $derived(fillSegments(sqlSegments(sql), values));
 </script>
 
 <!-- whitespace inside pre is content, so tags stay glued and the

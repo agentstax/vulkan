@@ -103,7 +103,8 @@ func registeredAttributes(t *testing.T) func(string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, rest, found := strings.Cut(string(source), "### Attributes")
+	// the heading on its own line, never a mention of it in prose above
+	_, rest, found := strings.Cut(string(source), "\n### Attributes\n")
 	if !found {
 		t.Fatal("CONVENTIONS.md has no ### Attributes section")
 	}
