@@ -31,13 +31,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     properties to stylelint's declaration-strict-value list (color,
     background, fill, stroke, font-family, z-index and box-shadow are
     already enforced).
-  - Playwright initial-JS ceiling — the one settled Playwright test:
-    homepage initial JS under a declared byte ceiling, failing the build
-    on regress. Playwright is not installed and no other flow test is
-    planned. Last measured 2026-08-26, walking the homepage's module
-    scripts and island urls through their static imports: 82.17 KB raw /
-    32.30 KB gzipped (the 2026-08-24 reading of 60.5 / 22.4 predates
-    ClientRouter [0592] and the footer island [0593]).
 
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling
@@ -311,7 +304,15 @@ prerequisite if quorum-as-a-fraction wins.
   declared queries [0589] plus the paste box that fills them [0590].
   Prefetching the sandbox's PGlite wasm was built and reverted the same
   way 2026-08-26 — the code-to-gain ratio lost, not a defect [0591];
-  reopening it needs a browser measurement, not another estimate.
+  reopening it needs a browser measurement, not another estimate. The
+  initial-JS byte ceiling went the same way 2026-08-26 [0594]: ~240 lines
+  of hand-written import-graph walk plus tests and rule edits behind one
+  number that moves a few times a year, so Playwright stays an unused
+  stack row and no ceiling is enforced. The measurement stands — the
+  homepage is 34.76 KB gzipped / 88.15 KB raw once inline scripts are
+  counted, not the 32.30 / 82.17 recorded before — and reviving it wants
+  an off-the-shelf checker that is one config file, not a walk of our
+  own.
 
 - **Gauge metric declarations** ([0567] chunk-5 follow-on) — convert the
   remaining bare vulkan.* metric name consts (the collector's gauges in
