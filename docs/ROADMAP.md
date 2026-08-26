@@ -34,19 +34,10 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   - Playwright initial-JS ceiling — the one settled Playwright test:
     homepage initial JS under a declared byte ceiling, failing the build
     on regress. Playwright is not installed and no other flow test is
-    planned. Last measured 2026-08-24: 60.5 KB raw / 22.4 KB gzipped.
-  - Persist the sandbox's database across navigations — ClientRouter
-    shipped [0592] and already caches PGlite's download and wasm compile;
-    what still repeats on a return to the homepage is instantiate, initdb,
-    the topic DDL and the seed. Skipping those needs DatabaseState hoisted
-    to a module singleton with the consumer cards, groups and nextConsumer
-    moved alongside it, or the cards contradict the database they read.
-    Scoped out of [0592] on that cost, plus a live Postgres pinned for the
-    session. `transition:persist` is NOT the mechanism — Astro drops a
-    persisted element the destination page lacks, and the sandbox is on
-    one page.
-  - Dark mode as a "Board style" dropdown (palette donor picked during the
-    design rounds), not a system toggle.
+    planned. Last measured 2026-08-26, walking the homepage's module
+    scripts and island urls through their static imports: 82.17 KB raw /
+    32.30 KB gzipped (the 2026-08-24 reading of 60.5 / 22.4 predates
+    ClientRouter [0592] and the footer island [0593]).
 
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling

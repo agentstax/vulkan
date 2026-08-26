@@ -5,6 +5,29 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-26 — the night board [0593]
+
+- The footer's inert `Board style: Vulkan Classic ▾` chip is a real `<select>`
+  with a second entry. Choosing one sets `data-board-style` on `<html>`, which
+  is the whole mechanism: the tokens layer serves a different palette and no
+  component changed, because all 42 component stylesheets already carry zero
+  raw colours.
+- The night palette follows the era's dark-board convention — near-black
+  content ground, navy chrome, silver text — over its own primitive sheet.
+  Amber is excluded from the swap on purpose: it means new-or-act and nothing
+  else [0583], so only the grounds beneath it darken.
+- Shiki bakes fence colours at build time, so both themes now ship with
+  `defaultColor: false` and the base layer reads `--shiki-light` /
+  `--shiki-dark`. That is the one place a board style is read outside the
+  tokens layer.
+- An `is:inline` script in `BoardLayout`'s `<head>` applies the style before
+  the first paint and again on `astro:after-swap` — ClientRouter [0592] copies
+  the incoming document's `<html>` attributes, and the static build carries
+  none. `prefers-color-scheme` seeds the first visit; a stored choice outranks
+  it from then on.
+- Cost: `BoardFooter` became a `client:idle` island, 1.6 KB raw / 0.8 KB
+  gzipped on every page.
+
 ## 2026-08-26 — soft navigation across the board [0592]
 
 - `<ClientRouter />` in `BoardLayout.astro` — the only layout that owns a

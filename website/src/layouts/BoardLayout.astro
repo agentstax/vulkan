@@ -30,6 +30,33 @@ const { title, description, navCurrent } = Astro.props;
 			href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
 		/>
 		<ClientRouter />
+		<script is:inline>
+			// The board style has to be on <html> before the first paint, or the
+			// page renders classic and repaints. It is put back after every soft
+			// navigation too: ClientRouter's swap copies the incoming document's
+			// <html> attributes, and the incoming document is the static build,
+			// which carries none. Storage is re-read each time so a style chosen
+			// in the footer survives the next navigation. Until a reader chooses,
+			// the operating system's preference picks the opening style.
+			(() => {
+				const readStyle = () => {
+					try {
+						const stored = window.localStorage.getItem('vulkan-board:style');
+						if (stored !== null) return stored;
+					} catch {
+						// storage denied -- the preference below decides every load
+					}
+					return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'classic';
+				};
+
+				const applyStyle = () => {
+					document.documentElement.dataset.boardStyle = readStyle();
+				};
+
+				applyStyle();
+				document.addEventListener('astro:after-swap', applyStyle);
+			})();
+		</script>
 	</head>
 	<body>
 		<div class="page-frame">
@@ -39,7 +66,7 @@ const { title, description, navCurrent } = Astro.props;
 			<div class="page-content">
 				<slot />
 			</div>
-			<BoardFooter />
+			<BoardFooter client:idle />
 		</div>
 	</body>
 </html>
@@ -47,7 +74,7 @@ const { title, description, navCurrent } = Astro.props;
 <style>
 	.page-frame {
 		width: min(1080px, calc(100% - 32px));
-		margin: 32px auto 0;
+		margin: 32px auto;
 		background: var(--color-surface);
 		border: 1px solid var(--border-outer);
 		box-shadow: var(--shadow-page-frame);

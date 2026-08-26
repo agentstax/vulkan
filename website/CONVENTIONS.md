@@ -139,8 +139,13 @@ preprocessor, no utility framework, no third-party token pack.
   classes.
 - `:global()` is a sanctioned-crossing list: the base layer's MDX
   styling and view-transition names. Anywhere else it is a bug.
-- A theme is a tokens-layer redefinition; a component never branches
-  on theme. All motion sits behind `prefers-reduced-motion`.
+- A board style is a tokens-layer redefinition -- its own primitive
+  sheet, then a re-point of the semantic names -- selected by
+  `data-board-style` on the root element; a component never branches on
+  it. The ONE crossing is the code fence: Shiki colours it at build
+  time, so both styles ship as `--shiki-light`/`--shiki-dark` custom
+  properties and the base layer picks the side. All motion sits behind
+  `prefers-reduced-motion`.
 
 ## Content
 
@@ -169,7 +174,10 @@ preprocessor, no utility framework, no third-party token pack.
 - Every supported state is a story -- the story list is the
   component's done-checklist; story count tracks states, never usage
   sites.
-- Everything editable is an arg; titles follow `Board/<Name>`.
+- Everything editable is an arg; titles follow `Board/<Name>`. The
+  board style is the one toolbar global -- it is the document's state,
+  not any component's prop, and every component has as many looks as
+  the board has styles.
 
 ## Data from the library
 

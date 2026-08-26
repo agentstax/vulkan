@@ -14,6 +14,8 @@
 
 @layer tokens {
 	:root {
+		color-scheme: light;
+
 		/* primitives -- the settled board palette */
 		--band-blue-start: #2166a0;
 		--band-blue-end: #184e7c;
@@ -199,6 +201,162 @@
 		--font-content: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
 		--font-database: 'IBM Plex Mono', 'Courier New', monospace;
 	}
+
+	/* The night board -- the second board style, in the dark-board convention
+	   of the era: a near-black content ground under navy chrome, silver text,
+	   accents lifted until they carry on it. A style redefines semantic names
+	   only, over its own primitive sheet; the classic amber primitives above
+	   are inherited untouched, because amber still means new-or-act and a
+	   style may not give that mark a second meaning. Everything structural --
+	   the grid, the z-index scale, the fonts -- is style-independent and
+	   stated once above. */
+	:root[data-board-style='night'] {
+		color-scheme: dark;
+
+		/* primitives -- the night board palette */
+		--page-pitch: #0f1216;
+		--page-dot-pitch: #1a1f26;
+		--surface-coal: #171b21;
+		--band-slate-start: #1d2733;
+		--band-slate-end: #141b24;
+		--band-slate-meta: #8fa8bf;
+		--ink-silver: #c8ccd2;
+		--ink-silver-muted: #8b9199;
+		--ink-silver-faint: #6b7178;
+		--ink-silver-bright: #e8ebef;
+		--border-graphite-outer: #303845;
+		--border-graphite-section: #2a323d;
+		--border-graphite-row: #232a33;
+		--stripe-coal-light: #1b2027;
+		--stripe-coal-dark: #171b21;
+		--link-sky: #6ea8e0;
+		--link-flare: #e2762a;
+		--link-orchid: #a98fc9;
+		--amber-umber: #2e2617;
+		--folder-graphite: #55606d;
+		--folder-graphite-face: #333c48;
+		--folder-graphite-highlight: #46515f;
+		--folder-graphite-shade: #262e38;
+		--banner-pitch-start: #1b2836;
+		--banner-pitch-end: #10161f;
+		--banner-shadow-pitch: #070a0e;
+		--chrome-bar-pitch: #0b0e12;
+		--chrome-bar-pitch-meta: #6b7681;
+		--chrome-deep-slate: #202730;
+		--sticky-umber: #241f14;
+		--sticky-umber-border: #3a3320;
+		--sticky-label-coral: #e0685a;
+		--author-coal: #1a1f27;
+		--avatar-ground-coal: #222933;
+		--avatar-border-graphite: #333c48;
+		--console-slate-1: #212932;
+		--console-slate-2: #1a2028;
+		--button-face-slate-1: #2a323d;
+		--button-face-slate-2: #1e242c;
+		--console-sql-pitch: #12161b;
+		--console-keyword-sky: #7fb3dd;
+		--console-header-slate: #202832;
+		--null-graphite: #5f6a75;
+		--solved-moss: #57b877;
+		--solved-moss-ground: #16241b;
+		--solved-moss-border: #27412f;
+		--refused-coral: #e07a6e;
+		--refused-coral-ground: #2a1917;
+		--refused-coral-border: #462a26;
+		--surface-veil-pitch: rgba(15, 18, 22, 0.88);
+
+		/* semantic -- the same names the components already consume */
+		--color-page: var(--page-pitch);
+		--color-page-dot: var(--page-dot-pitch);
+		--color-surface: var(--surface-coal);
+		--color-text: var(--ink-silver);
+		--color-text-muted: var(--ink-silver-muted);
+		--color-text-faint: var(--ink-silver-faint);
+		--color-link: var(--link-sky);
+		--color-link-hover: var(--link-flare);
+		--color-link-visited: var(--link-orchid);
+		--band-gradient: linear-gradient(
+			180deg,
+			var(--band-slate-start) 0%,
+			var(--band-slate-end) 100%
+		);
+		--color-band-title: var(--ink-silver-bright);
+		--color-band-meta: var(--band-slate-meta);
+		--border-outer: var(--border-graphite-outer);
+		--border-section: var(--border-graphite-section);
+		--border-row: var(--border-graphite-row);
+		--color-row-stripe-a: var(--stripe-coal-light);
+		--color-row-stripe-b: var(--stripe-coal-dark);
+		--color-row-enter: var(--amber-umber);
+		--folder-read-body: var(--folder-graphite);
+		--folder-read-face: var(--folder-graphite-face);
+		--folder-read-highlight: var(--folder-graphite-highlight);
+		--folder-read-shade: var(--folder-graphite-shade);
+		--banner-gradient: linear-gradient(
+			180deg,
+			var(--banner-pitch-start) 0%,
+			var(--banner-pitch-end) 100%
+		);
+		--color-banner-tagline: var(--band-slate-meta);
+		--shadow-wordmark: 0 2px 0 var(--banner-shadow-pitch);
+		--shadow-volcano: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
+		--color-chrome-bar: var(--chrome-bar-pitch);
+		--color-chrome-bar-link: var(--band-slate-meta);
+		--color-chrome-bar-link-current: var(--ink-silver-bright);
+		--color-chrome-bar-meta: var(--chrome-bar-pitch-meta);
+		--color-chrome-pale: var(--chrome-deep-slate);
+		--color-chrome-pale-text: var(--ink-silver-muted);
+		--color-sticky-row: var(--sticky-umber);
+		--border-sticky-row: var(--sticky-umber-border);
+		--color-sticky-label: var(--sticky-label-coral);
+		--color-author-column: var(--author-coal);
+		--color-avatar-ground: var(--avatar-ground-coal);
+		--border-avatar: var(--avatar-border-graphite);
+		--console-title-gradient: linear-gradient(
+			180deg,
+			var(--console-slate-1) 0%,
+			var(--console-slate-2) 100%
+		);
+		--button-gradient: linear-gradient(
+			180deg,
+			var(--button-face-slate-1) 0%,
+			var(--button-face-slate-2) 100%
+		);
+		--color-toggle-on: var(--amber-umber);
+		--color-toggle-on-text: var(--amber-light);
+		--color-console-sql-bg: var(--console-sql-pitch);
+		--color-console-keyword: var(--console-keyword-sky);
+		--color-console-result-header: var(--console-header-slate);
+		--color-console-null: var(--null-graphite);
+		--shadow-console: 0 4px 14px rgba(0, 0, 0, 0.5);
+		--color-console-error: var(--sticky-label-coral);
+		--color-panel-behind-text: var(--amber-light);
+		--color-progress-veil: var(--surface-veil-pitch);
+		--color-progress-track: var(--stripe-coal-light);
+		--color-solved: var(--solved-moss);
+		--color-solved-ground: var(--solved-moss-ground);
+		--border-solved: var(--solved-moss-border);
+		--color-supported-ground: var(--solved-moss-ground);
+		--color-supported-text: var(--solved-moss);
+		--border-supported: var(--solved-moss-border);
+		--color-migrate-ground: var(--amber-umber);
+		--color-migrate-text: var(--amber-light);
+		--color-refused-ground: var(--refused-coral-ground);
+		--color-refused-text: var(--refused-coral);
+		--border-refused: var(--refused-coral-border);
+		--color-sql-placeholder-ground: var(--amber-umber);
+		--color-sql-placeholder-text: var(--amber-light);
+		--color-sql-value-ground: var(--solved-moss-ground);
+		--color-sql-value-text: var(--solved-moss);
+		--border-sql-value: var(--solved-moss-border);
+
+		/* the era's lacquered highlight is a white bevel; on the night ground
+		   the same trick reads as glare until it is nearly gone */
+		--lacquer: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+		--lacquer-dim: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+		--lacquer-bright: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		--shadow-page-frame: inset 0 0 0 1px var(--border-graphite-row), 0 3px 18px rgba(0, 0, 0, 0.5);
+	}
 }
 
 @layer base {
@@ -290,6 +448,26 @@
 
 	.thread-body :where(pre code) {
 		font-family: var(--font-database);
+	}
+
+	/* Shiki highlights at build time, so a fence would otherwise carry ONE
+	   style's colors inline and ignore the board style. Both themes ship as
+	   custom properties instead (astro.config.mjs, defaultColor off) and the
+	   fence picks its side here -- the one place a board style is read
+	   outside the tokens layer, because the values are the build's, not
+	   ours. */
+	.thread-body :where(pre.astro-code),
+	.thread-body :where(pre.astro-code span) {
+		color: var(--shiki-light);
+		font-style: var(--shiki-light-font-style, inherit);
+		font-weight: var(--shiki-light-font-weight, inherit);
+	}
+
+	:root[data-board-style='night'] .thread-body :where(pre.astro-code),
+	:root[data-board-style='night'] .thread-body :where(pre.astro-code span) {
+		color: var(--shiki-dark);
+		font-style: var(--shiki-dark-font-style, inherit);
+		font-weight: var(--shiki-dark-font-weight, inherit);
 	}
 
 	.thread-body :where(table) {

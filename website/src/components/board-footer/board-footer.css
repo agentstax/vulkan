@@ -51,16 +51,18 @@
 	gap: 6px;
 }
 
-.style-chip {
+/* the era's select, keeping its own arrow -- color-scheme on :root is what
+   turns the native control dark under the night style */
+.board-style select {
 	background: var(--color-chrome-pale);
 	color: var(--color-text);
 	border: 1px solid var(--border-outer);
-	padding: 2px 8px;
-	display: flex;
-	align-items: center;
-	gap: 6px;
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	padding: 1px 2px;
 }
 
-.style-chip path {
-	fill: var(--color-chrome-pale-text);
+.board-style select:focus-visible {
+	outline: 2px solid var(--color-focus-ring);
+	outline-offset: 2px;
 }
