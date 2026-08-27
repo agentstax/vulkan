@@ -9,8 +9,6 @@ website layered error handling - try / catch with modal popup, user friendly mes
 
 mobile friendly docsite
 
-make sure we add our ./doc/decisions into the site can call it 'regrets'
-
 should make more use of vale for standardized writing style its an interesting idea
 
 make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
@@ -27,4 +25,4 @@ need another review to make sure we are not logging any sensitive information li
 
 something funny with 'All times are UTC' as a link to something snarky about local time errors could reference some massive problem that was related to time zone error
 
-footer 'the team' could be a directly link to claude / anthrophic
+Should be able to click on my user profile
