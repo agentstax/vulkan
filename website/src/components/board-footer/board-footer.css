@@ -1,7 +1,7 @@
 .board-footer {
 	background: var(--color-chrome-bar);
 	box-shadow: var(--lacquer-dim);
-	padding: var(--space-9) var(--space-24);
+	padding: var(--space-10) var(--space-20);
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
