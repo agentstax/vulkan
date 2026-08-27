@@ -155,10 +155,16 @@ preprocessor, no utility framework, no third-party token pack.
 - The body starts at H2 (the H1 is the frontmatter title); heading
   levels never skip (remark-lint enforces both).
 - Markdown first: a component appears in MDX only from the
-  whitelisted set (aside, tabs, the console, the compat matrix);
-  anything prose can carry stays prose. A component earns a place on
-  the list by rendering something prose cannot state -- live query
-  results, a computed grid -- never by presenting prose more nicely.
+  whitelisted set (aside, tabs, the console, the compat matrix, the
+  decision-record index); anything prose can carry stays prose. A
+  component earns a place on the list by rendering something prose
+  cannot state -- live query results, a computed grid -- never by
+  presenting prose more nicely.
+- The decision records (`../docs/decisions`, the `decisions`
+  collection) are append-only history and render as-is: their own
+  frontmatter shape, the body H1 as the thread title, the vocabulary
+  of the day the decision settled. The site adapts to them and never
+  edits one; vale and remark-lint do not run over them.
 - Each page does ONE job -- tutorial, how-to, reference, or
   explanation; a guide that starts explaining links to the concept
   page instead of drifting.

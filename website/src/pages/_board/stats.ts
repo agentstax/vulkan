@@ -1,21 +1,12 @@
-import { readdirSync } from 'node:fs';
-import type { CollectionEntry } from 'astro:content';
-import { isErrorThread } from './boards';
+import { isDecisionRecordThread, isErrorThread } from './boards';
 import type { SiteStats } from './model';
+import type { Thread } from './threads';
 
-type DocsEntry = CollectionEntry<'docs'>;
-
-// the build runs from website/, so the decision records sit one level up
-const decisionRecordsDirectory = '../docs/decisions';
-
-export function siteStats(docs: DocsEntry[]): SiteStats {
-	const decisionRecords = readdirSync(decisionRecordsDirectory).filter((name) =>
-		name.endsWith('.md'),
-	);
-
+export function siteStats(threads: Thread[]): SiteStats {
 	return {
-		threadCount: docs.length,
-		codeCount: docs.filter((entry) => isErrorThread(entry.id)).length,
-		decisionRecordCount: decisionRecords.length,
+		// the doc threads alone -- the records get their own line
+		docCount: threads.filter((thread) => !isDecisionRecordThread(thread.id)).length,
+		codeCount: threads.filter((thread) => isErrorThread(thread.id)).length,
+		decisionRecordCount: threads.filter((thread) => isDecisionRecordThread(thread.id)).length,
 	};
 }

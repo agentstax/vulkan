@@ -1,8 +1,10 @@
-# 0565 -- logging grows a record pipeline under the Logger seam
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0565 -- logging grows a record pipeline under the Logger seam
 
 ## Context
 

@@ -1,8 +1,10 @@
-# 0558 -- Logging rule sheet
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0558 -- Logging rule sheet
 
 ## Context
 

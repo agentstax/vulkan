@@ -1,8 +1,10 @@
-# 0560 -- SQL literal owner comments
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0560 -- SQL literal owner comments
 
 ## Context
 

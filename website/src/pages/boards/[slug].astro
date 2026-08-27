@@ -8,6 +8,7 @@ import ThreadRows from '../../components/thread-rows/thread-rows.svelte';
 import JumpTo from '../../components/jump-to/jump-to.svelte';
 import { boards, jumpTargets } from '../_board/boards';
 import { threadRows } from '../_board/rows';
+import { siteThreads } from '../_board/threads';
 
 export const getStaticPaths = (() => {
 	return boards.map((board) => ({ params: { slug: board.slug }, props: { board } }));
@@ -17,7 +18,8 @@ type Props = InferGetStaticPropsType<typeof getStaticPaths>;
 
 const { board } = Astro.props;
 const docs = await getCollection('docs');
-const rows = threadRows(board, docs);
+const decisions = await getCollection('decisions');
+const rows = threadRows(board, siteThreads(docs, decisions));
 
 // a board title that matches a nav label (Troubleshooting) lights that link
 const navCurrent = board.title;

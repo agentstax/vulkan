@@ -1,8 +1,10 @@
-# 0559 -- Per-operation debug buffer
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0559 -- Per-operation debug buffer
 
 ## Context
 

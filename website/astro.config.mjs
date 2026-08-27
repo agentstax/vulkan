@@ -1,7 +1,9 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import { unified } from '@astrojs/markdown-remark';
 import mdx from '@astrojs/mdx';
 import svelte from '@astrojs/svelte';
+import { remarkDecisionRecords } from './src/helpers/decision-records.ts';
 
 // named keyword families only -- keyword.operator stays ink
 const keywordScopes = [
@@ -29,6 +31,7 @@ export default defineConfig({
 		optimizeDeps: { exclude: ['@electric-sql/pglite'] },
 	},
 	markdown: {
+		processor: unified({ remarkPlugins: [remarkDecisionRecords] }),
 		shikiConfig: {
 			// The board's code dialect: keywords in the console's SQL-keyword
 			// colour, strings one quiet red, everything else ink -- each theme's

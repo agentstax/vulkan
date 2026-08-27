@@ -1,8 +1,10 @@
-# 0561 -- Logging machinery moves to pkg/common/logging
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0561 -- Logging machinery moves to pkg/common/logging
 
 ## Context
 

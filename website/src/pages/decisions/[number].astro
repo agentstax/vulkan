@@ -1,23 +1,18 @@
 ---
 import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
 import { getCollection, render } from 'astro:content';
-import ThreadLayout from '../layouts/ThreadLayout.astro';
-import { boards, boardHref, isDecisionRecordThread, isErrorThread } from './_board/boards';
-import { boardThreads } from './_board/rows';
-import { siteThreads } from './_board/threads';
-import { threadData } from './_thread/thread';
+import ThreadLayout from '../../layouts/ThreadLayout.astro';
+import { boardHref, isDecisionRecordThread, recordNumber } from '../_board/boards';
+import { siteThreads } from '../_board/threads';
+import { threadData } from '../_thread/thread';
 
 export const getStaticPaths = (async () => {
 	const docs = await getCollection('docs');
 	const decisions = await getCollection('decisions');
-	const threads = siteThreads(docs, decisions);
 
-	// every board thread except the error threads and the decision records
-	// -- those render through errors/[code].astro and decisions/[number].astro
-	return boards
-		.flatMap((board) => boardThreads(board, threads))
-		.filter((thread) => !isErrorThread(thread.id) && !isDecisionRecordThread(thread.id))
-		.map((thread) => ({ params: { id: thread.id }, props: { thread } }));
+	return siteThreads(docs, decisions)
+		.filter((thread) => isDecisionRecordThread(thread.id))
+		.map((thread) => ({ params: { number: recordNumber(thread.id) }, props: { thread } }));
 }) satisfies GetStaticPaths;
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>;

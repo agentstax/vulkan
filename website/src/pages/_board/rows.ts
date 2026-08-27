@@ -1,15 +1,13 @@
-import type { CollectionEntry } from 'astro:content';
 import { lastCommitDate } from '../../helpers/last-commit-date';
 import type { BoardRowData, StickyRowData, ThreadRowData } from './model';
-import { boards, boardHref, stickyIds, isErrorThread, threadCode, type Board } from './boards';
+import { boards, boardHref, stickyIds, type Board } from './boards';
+import type { Thread } from './threads';
 
-type DocsEntry = CollectionEntry<'docs'>;
-
-export function boardRows(docs: DocsEntry[]): BoardRowData[] {
+export function boardRows(threads: Thread[]): BoardRowData[] {
 	return boards.map((board) => {
-		const entries = boardEntries(board, docs);
+		const members = boardThreads(board, threads);
 
-		const dated = entries.map((entry) => ({ entry, date: lastCommitDate(entryFilePath(entry)) }));
+		const dated = members.map((thread) => ({ thread, date: lastCommitDate(thread.filePath) }));
 		dated.sort((a, b) => b.date.localeCompare(a.date));
 		const newest = dated[0];
 		if (newest === undefined) {
@@ -20,73 +18,57 @@ export function boardRows(docs: DocsEntry[]): BoardRowData[] {
 			title: board.title,
 			href: boardHref(board),
 			description: board.description,
-			threadCount: entries.length,
-			lastPostTitle: threadTitle(newest.entry),
-			lastPostHref: `/${newest.entry.id}/`,
+			threadCount: members.length,
+			lastPostTitle: newest.thread.title,
+			lastPostHref: `/${newest.thread.id}/`,
 			lastPostDate: newest.date,
 			// visiting any of these pages counts as visiting the board
-			scopeHrefs: [boardHref(board), ...entries.map((entry) => `/${entry.id}/`)],
+			scopeHrefs: [boardHref(board), ...members.map((thread) => `/${thread.id}/`)],
 		};
 	});
 }
 
-export function stickyRows(docs: DocsEntry[]): StickyRowData[] {
+export function stickyRows(threads: Thread[]): StickyRowData[] {
 	return stickyIds.map((id) => {
-		const entry = docs.find((candidate) => candidate.id === id);
-		if (entry === undefined) {
-			throw new Error(`sticky "${id}" matches no docs entry`);
+		const thread = threads.find((candidate) => candidate.id === id);
+		if (thread === undefined) {
+			throw new Error(`sticky "${id}" matches no thread`);
 		}
 
 		return {
-			title: entry.data.title,
+			title: thread.title,
 			href: `/${id}/`,
-			lastUpdatedDate: lastCommitDate(entryFilePath(entry)),
+			lastUpdatedDate: lastCommitDate(thread.filePath),
 		};
 	});
 }
 
-export function threadRows(board: Board, docs: DocsEntry[]): ThreadRowData[] {
-	return boardEntries(board, docs).map((entry) => ({
-		title: threadTitle(entry),
-		href: `/${entry.id}/`,
-		lastUpdatedDate: lastCommitDate(entryFilePath(entry)),
+export function threadRows(board: Board, threads: Thread[]): ThreadRowData[] {
+	return boardThreads(board, threads).map((thread) => ({
+		title: thread.title,
+		href: `/${thread.id}/`,
+		lastUpdatedDate: lastCommitDate(thread.filePath),
 	}));
 }
 
 // every thread on the board, newest change first -- the /whats-new/ page
 // filters this against the visitor's own visit log at hydration
-export function whatsNewRows(docs: DocsEntry[]): ThreadRowData[] {
-	const rows = boards.flatMap((board) => threadRows(board, docs));
+export function whatsNewRows(threads: Thread[]): ThreadRowData[] {
+	const rows = boards.flatMap((board) => threadRows(board, threads));
 	rows.sort(
 		(a, b) => b.lastUpdatedDate.localeCompare(a.lastUpdatedDate) || a.title.localeCompare(b.title),
 	);
 	return rows;
 }
 
-export function boardEntries(board: Board, docs: DocsEntry[]): DocsEntry[] {
-	const ids = docs.map((entry) => entry.id);
+export function boardThreads(board: Board, threads: Thread[]): Thread[] {
+	const ids = threads.map((thread) => thread.id);
 
 	return board.threads(ids).map((id) => {
-		const entry = docs.find((candidate) => candidate.id === id);
-		if (entry === undefined) {
-			throw new Error(`board "${board.title}" names thread "${id}" but no docs entry matches`);
+		const thread = threads.find((candidate) => candidate.id === id);
+		if (thread === undefined) {
+			throw new Error(`board "${board.title}" names thread "${id}" but no thread matches`);
 		}
-		return entry;
+		return thread;
 	});
-}
-
-// an error thread's display title carries its code, everywhere the board
-// names it
-export function threadTitle(entry: DocsEntry): string {
-	if (isErrorThread(entry.id)) {
-		return `${entry.data.title} [${threadCode(entry.id)}]`;
-	}
-	return entry.data.title;
-}
-
-export function entryFilePath(entry: DocsEntry): string {
-	if (entry.filePath === undefined) {
-		throw new Error(`docs entry "${entry.id}" carries no filePath`);
-	}
-	return entry.filePath;
 }

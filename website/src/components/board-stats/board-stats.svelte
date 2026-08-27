@@ -2,24 +2,24 @@
 	import PixelFolder from '../pixel-folder/pixel-folder.svelte';
 
 	type Props = {
-		threadCount: number;
+		docCount: number;
 		codeCount: number;
 		decisionRecordCount: number;
 	};
 
-	let { threadCount, codeCount, decisionRecordCount }: Props = $props();
+	let { docCount, codeCount, decisionRecordCount }: Props = $props();
 </script>
 
 <div class="board-stats">
 	<div class="stats">
 		<span class="stats-line">
-			{threadCount} threads
+			<a href="/whats-new/">{docCount} documents</a>
 		</span>
-    <span class="stats-line">
-			{codeCount} error and event codes
+		<span class="stats-line">
+			<a href="/errors/">{codeCount} error and event codes</a>
 		</span>
-    <span class="stats-line">
-			{decisionRecordCount} decision records
+		<span class="stats-line">
+			<a href="/decisions/">{decisionRecordCount} decision records</a>
 		</span>
 	</div>
 	<div class="legend">

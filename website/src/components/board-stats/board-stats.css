@@ -22,12 +22,6 @@
 	font-variant-numeric: tabular-nums;
 }
 
-.stats-note {
-	font-family: var(--font-content);
-	font-size: 11px;
-	color: var(--color-text-muted);
-}
-
 .legend {
 	display: flex;
 	flex-direction: column;

@@ -14,12 +14,15 @@ import { jumpTargets } from './_board/boards';
 import { boardRows, stickyRows } from './_board/rows';
 import { announcements } from './_board/announcements';
 import { siteStats } from './_board/stats';
+import { siteThreads } from './_board/threads';
 import { sandboxLabel, sandboxShell, sandboxTopic } from './_board/sandbox';
 
 const docs = await getCollection('docs');
-const rows = boardRows(docs);
-const stickies = stickyRows(docs);
-const stats = siteStats(docs);
+const decisions = await getCollection('decisions');
+const threads = siteThreads(docs, decisions);
+const rows = boardRows(threads);
+const stickies = stickyRows(threads);
+const stats = siteStats(threads);
 const shell = await sandboxShell();
 ---
 
@@ -62,7 +65,7 @@ const shell = await sandboxShell();
 		}
 	</BoardSection>
 	<BoardStats
-		threadCount={stats.threadCount}
+		docCount={stats.docCount}
 		codeCount={stats.codeCount}
 		decisionRecordCount={stats.decisionRecordCount}
 	/>

@@ -1,8 +1,10 @@
-# 0568 -- Summary lines declare and carry a help breadcrumb
-
+---
 status: accepted
 date: 2026-08-21
 phase: pre-v1
+---
+
+# 0568 -- Summary lines declare and carry a help breadcrumb
 
 ## Context
 

@@ -1,8 +1,10 @@
-# 0566 -- Slow-operation threshold logging
-
+---
 status: accepted
 date: 2026-08-21
 phase: pre-v1
+---
+
+# 0566 -- Slow-operation threshold logging
 
 ## Context
 

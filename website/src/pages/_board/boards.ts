@@ -53,6 +53,13 @@ export const boards: Board[] = [
 		description: 'Kafka · RabbitMQ & SQS — shipped behavior only, no wishful checkmarks',
 		threads: () => ['compare/kafka', 'compare/rabbitmq-sqs', 'compare/job-queues'],
 	},
+	{
+		title: 'Decision records',
+		slug: 'decisions',
+		description: 'the why behind shipped behavior — every settled design decision, append-only',
+		// the record index leads, then the record threads in number order
+		threads: (ids) => ['decisions', ...ids.filter(isDecisionRecordThread).sort()],
+	},
 ];
 
 export const stickyIds = ['quickstart', 'why-vulkan'];
@@ -77,4 +84,16 @@ export function threadCode(id: string): string {
 		throw new Error(`thread "${id}" carries no code segment`);
 	}
 	return code;
+}
+
+export function isDecisionRecordThread(id: string): boolean {
+	return id.startsWith('decisions/');
+}
+
+export function recordNumber(id: string): string {
+	const number = id.split('/')[1];
+	if (number === undefined) {
+		throw new Error(`thread "${id}" carries no record number segment`);
+	}
+	return number;
 }

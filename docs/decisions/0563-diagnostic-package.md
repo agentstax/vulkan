@@ -1,8 +1,10 @@
-# 0563 -- Coded declarations move to pkg/common/diagnostic
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0563 -- Coded declarations move to pkg/common/diagnostic
 
 ## Context
 

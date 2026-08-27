@@ -1,8 +1,10 @@
-# 0564 -- Repeated Warn/Error suppression in the logging pipeline
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0564 -- Repeated Warn/Error suppression in the logging pipeline
 
 ## Context
 

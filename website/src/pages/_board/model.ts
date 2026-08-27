@@ -22,7 +22,7 @@ export type StickyRowData = {
 };
 
 export type SiteStats = {
-	threadCount: number;
+	docCount: number;
 	codeCount: number;
 	decisionRecordCount: number;
 };

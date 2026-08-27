@@ -1,8 +1,10 @@
-# 0562 -- Log events carry VK codes from the error registry
-
+---
 status: accepted
 date: 2026-08-20
 phase: pre-v1
+---
+
+# 0562 -- Log events carry VK codes from the error registry
 
 ## Context
 

@@ -1,0 +1,9 @@
+.date {
+	white-space: nowrap;
+}
+
+/* a decision that no longer stands is listed, not featured */
+[data-status='rejected'],
+[data-status='superseded'] {
+	color: var(--color-text-faint);
+}

@@ -3,38 +3,49 @@ import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
 import { getCollection, render } from 'astro:content';
 import ErrorThreadLayout from '../../layouts/ErrorThreadLayout.astro';
 import { boardHref, isErrorThread, threadCode } from '../_board/boards';
+import { siteThreads } from '../_board/threads';
 import { threadData } from '../_thread/thread';
 import { codeThreadData } from '../_thread/code';
 import { diagnoseQueries, fixPlaceholders, pastePlaceholders } from '../_thread/diagnose';
 
 export const getStaticPaths = (async () => {
 	const docs = await getCollection('docs');
+	const decisions = await getCollection('decisions');
+	const threads = siteThreads(docs, decisions);
 
 	return docs
 		.filter((entry) => isErrorThread(entry.id))
-		.map((entry) => ({ params: { code: threadCode(entry.id) }, props: { entry } }));
+		.map((entry) => {
+			const thread = threads.find((candidate) => candidate.id === entry.id);
+			if (thread === undefined) {
+				throw new Error(`error thread "${entry.id}" matches no site thread`);
+			}
+			return { params: { code: threadCode(entry.id) }, props: { entry, thread } };
+		});
 }) satisfies GetStaticPaths;
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>;
 
-const { entry } = Astro.props;
+const { entry, thread } = Astro.props;
 const docs = await getCollection('docs');
+const decisions = await getCollection('decisions');
+const threads = siteThreads(docs, decisions);
 const { Content } = await render(entry);
-const thread = threadData(entry, docs);
+const data = threadData(thread, threads);
 const codeThread = codeThreadData(entry);
 ---
 
 <ErrorThreadLayout
 	title={entry.data.title}
 	description={entry.data.description ?? entry.data.title}
-	boardTitle={thread.board.title}
-	boardHref={boardHref(thread.board)}
-	editHref={thread.editHref}
-	postedDate={thread.postedDate}
-	reportHref={thread.reportHref}
-	postCount={thread.postCount}
-	previous={thread.previous}
-	next={thread.next}
+	boardTitle={data.board.title}
+	boardHref={boardHref(data.board)}
+	editHref={data.editHref}
+	postedDate={data.postedDate}
+	reportHref={data.reportHref}
+	postCount={data.postCount}
+	previous={data.previous}
+	next={data.next}
 	codeThread={codeThread}
 	diagnose={diagnoseQueries(codeThread.code)}
 	fixPlaceholders={fixPlaceholders(codeThread.code)}

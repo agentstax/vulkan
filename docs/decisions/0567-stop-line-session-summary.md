@@ -1,8 +1,10 @@
-# 0567 -- Stop line as session summary
-
+---
 status: accepted
 date: 2026-08-21
 phase: pre-v1
+---
+
+# 0567 -- Stop line as session summary
 
 ## Context
 

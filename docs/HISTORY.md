@@ -5,6 +5,18 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-26 — the decision records on the board [0596]
+
+- New Decision records board: a generated index thread at `/decisions/`
+  plus one thread per record at `/decisions/NNNN/` — all 335 records,
+  `[NNNN]` citations linkified, Pagefind-indexed. The records stay
+  append-only source files, read in place from docs/decisions by a
+  second content collection.
+- The board machinery now runs on a neutral Thread shape fed by both
+  collections; 11 records (0558–0568) had their metadata normalized to
+  the declared frontmatter format, prose untouched.
+- Full site verify floor green; 417 pages built.
+
 ## 2026-08-26 — the spacing token scale [0595]
 
 - The closed spacing scale website/CONVENTIONS.md declared now exists:

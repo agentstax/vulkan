@@ -7,9 +7,11 @@ import WhatsNewRows from '../components/whats-new-rows/whats-new-rows.svelte';
 import JumpTo from '../components/jump-to/jump-to.svelte';
 import { jumpTargets } from './_board/boards';
 import { whatsNewRows } from './_board/rows';
+import { siteThreads } from './_board/threads';
 
 const docs = await getCollection('docs');
-const rows = whatsNewRows(docs);
+const decisions = await getCollection('decisions');
+const rows = whatsNewRows(siteThreads(docs, decisions));
 ---
 
 <BoardLayout

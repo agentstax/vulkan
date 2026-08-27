@@ -1,0 +1,19 @@
+---
+import { getCollection } from 'astro:content';
+import { recordTitle } from '../../helpers/decision-records';
+import RecordIndexRows from './record-index-rows.svelte';
+import type { RecordIndexRow } from './types';
+
+const decisions = await getCollection('decisions');
+const rows: RecordIndexRow[] = decisions
+	.map((entry) => ({
+		number: entry.id,
+		href: `/decisions/${entry.id}/`,
+		date: entry.data.date.toISOString().slice(0, 10),
+		status: entry.data.status,
+		title: recordTitle(entry.id, entry.body),
+	}))
+	.sort((a, b) => b.number.localeCompare(a.number));
+---
+
+<RecordIndexRows rows={rows} />

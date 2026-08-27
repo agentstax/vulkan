@@ -1,33 +1,31 @@
-import type { CollectionEntry } from 'astro:content';
 import { lastCommitDate } from '../../helpers/last-commit-date';
 import { repositoryUrl } from '../../site';
 import type { ThreadLink } from '../../components/prev-next/types';
 import { boards } from '../_board/boards';
-import { boardEntries, entryFilePath, threadTitle } from '../_board/rows';
+import { boardThreads } from '../_board/rows';
+import { repositoryFilePath, type Thread } from '../_board/threads';
 import type { ThreadData } from './model';
 
-type DocsEntry = CollectionEntry<'docs'>;
-
-export function threadData(entry: DocsEntry, docs: DocsEntry[]): ThreadData {
-	const ids = docs.map((candidate) => candidate.id);
-	const board = boards.find((candidate) => candidate.threads(ids).includes(entry.id));
+export function threadData(thread: Thread, threads: Thread[]): ThreadData {
+	const ids = threads.map((candidate) => candidate.id);
+	const board = boards.find((candidate) => candidate.threads(ids).includes(thread.id));
 	if (board === undefined) {
-		throw new Error(`thread "${entry.id}" belongs to no board`);
+		throw new Error(`thread "${thread.id}" belongs to no board`);
 	}
 
-	const members = boardEntries(board, docs);
-	const position = members.findIndex((member) => member.id === entry.id);
-	const previousEntry = position > 0 ? members[position - 1] : undefined;
-	const nextEntry = position < members.length - 1 ? members[position + 1] : undefined;
+	const members = boardThreads(board, threads);
+	const position = members.findIndex((member) => member.id === thread.id);
+	const previousThread = position > 0 ? members[position - 1] : undefined;
+	const nextThread = position < members.length - 1 ? members[position + 1] : undefined;
 
 	return {
 		board,
-		postedDate: lastCommitDate(entryFilePath(entry)),
-		postCount: docs.length,
-		editHref: `${repositoryUrl}/edit/main/website/${entryFilePath(entry)}`,
-		reportHref: `${repositoryUrl}/issues/new?title=${encodeURIComponent(`docs: ${entry.data.title}`)}`,
-		previous: toThreadLink(previousEntry),
-		next: toThreadLink(nextEntry),
+		postedDate: lastCommitDate(thread.filePath),
+		postCount: threads.length,
+		editHref: `${repositoryUrl}/edit/main/${repositoryFilePath(thread)}`,
+		reportHref: `${repositoryUrl}/issues/new?title=${encodeURIComponent(`docs: ${thread.title}`)}`,
+		previous: toThreadLink(previousThread),
+		next: toThreadLink(nextThread),
 	};
 }
 
@@ -35,9 +33,9 @@ export function threadData(entry: DocsEntry, docs: DocsEntry[]): ThreadData {
 // *** HELPERS ***
 // ***************
 
-function toThreadLink(entry: DocsEntry | undefined): ThreadLink | null {
-	if (entry === undefined) {
+function toThreadLink(thread: Thread | undefined): ThreadLink | null {
+	if (thread === undefined) {
 		return null;
 	}
-	return { title: threadTitle(entry), href: `/${entry.id}/` };
+	return { title: thread.title, href: `/${thread.id}/` };
 }

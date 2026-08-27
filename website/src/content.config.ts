@@ -38,4 +38,21 @@ export const collections = {
 				.describe('the declared fix, verbatim; absent when the code cannot know one'),
 		}),
 	}),
+	decisions: defineCollection({
+		loader: glob({
+			pattern: '*.md',
+			base: '../docs/decisions',
+			// the record number is the id; the file name's slug serves the repo
+			generateId: ({ entry }) => entry.slice(0, 4),
+		}),
+		schema: z.object({
+			status: z
+				.enum(['accepted', 'rejected', 'superseded'])
+				.describe('whether the decision stands, was rejected, or was replaced by a later record'),
+			date: z.coerce.date().describe('the day the decision settled'),
+			phase: z.coerce
+				.string()
+				.describe('the build phase the record was written in ("14a", "pre-v1")'),
+		}),
+	}),
 };
