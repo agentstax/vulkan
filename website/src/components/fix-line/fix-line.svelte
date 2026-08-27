@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fillText, logAttributes } from '../../helpers/placeholders';
+	import IslandBoundary from '../island-boundary/island-boundary.svelte';
 	import { pastedLogLine } from '../../state/pasted-log-line.svelte';
 
 	type Props = {
@@ -14,10 +15,12 @@
 	const segments = $derived(fillText(fix, values));
 </script>
 
-<p class="fix-line">
-	{#each segments as segment, index (index)}<span class="fix-segment" data-kind={segment.kind}
-			>{segment.text}</span
-		>{/each}
-</p>
+<IslandBoundary name="fix line">
+	<p class="fix-line">
+		{#each segments as segment, index (index)}<span class="fix-segment" data-kind={segment.kind}
+				>{segment.text}</span
+			>{/each}
+	</p>
+</IslandBoundary>
 
 <style src="./fix-line.css"></style>

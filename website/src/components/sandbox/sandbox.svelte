@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import AddConsumer from '../add-consumer/add-consumer.svelte';
+	import BootNotice from '../boot-notice/boot-notice.svelte';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import DatabaseProgress from '../database-progress/database-progress.svelte';
+	import IslandBoundary from '../island-boundary/island-boundary.svelte';
 	import type { Consumer, ConsumerLine, ConsumerStatus } from '../consumer-card/types';
 	import ConsumerGrid from '../consumer-grid/consumer-grid.svelte';
 	import ProduceMessage from '../produce-message/produce-message.svelte';
@@ -242,58 +244,58 @@
 	}
 </script>
 
-<div class="sandbox">
-	<div class="title-bar">
-		<span class="sandbox-label">{label}</span>
-		<span class="sandbox-meta">postgres 18 · wasm · local to this tab</span>
-		<ChromeButton
-			label="Reset sandbox ↻"
-			ariaLabel="Reset the sandbox"
-			tone="primary"
-			pressed={null}
-			disabled={busy}
-			onclick={() => void reset()}
-		/>
-	</div>
-	<ProduceMessage
-		{topic}
-		text={produceDescription}
-		errorMessage={produceError}
-		disabled={busy || bootFailed || producing}
-		ontext={(next) => (produceDescription = next)}
-		onproduce={() => void produce()}
-	/>
-	<div class="panels">
-		<SqlPanel {databaseState} panelShell={messages} />
-		<SqlPanel {databaseState} panelShell={cursors} />
-		{#if databaseState.status === 'connecting' && databaseState.stage !== null}
-			<div class="progress-overlay">
-				<DatabaseProgress stage={databaseState.stage} />
-			</div>
-		{:else if bootFailed}
-			<div class="progress-overlay">
-				<div class="boot-notice" role="alert">
-					the database could not start — reset the sandbox to try again, or reload the page
-				</div>
-			</div>
-		{/if}
-	</div>
-	<section class="consumer-region" aria-label="Consumers">
-		<div class="consumers">
-			<ConsumerGrid
-				{consumers}
-				disabled={busy || bootFailed}
-				onautorun={setAutoRun}
-				onremove={removeConsumer}
-			/>
-			<AddConsumer
-				{groups}
-				errorMessage={addError}
-				disabled={busy || bootFailed || adding}
-				onadd={(group) => void addConsumer(group)}
+<IslandBoundary name="sandbox">
+	<div class="sandbox">
+		<div class="title-bar">
+			<span class="sandbox-label">{label}</span>
+			<span class="sandbox-meta">postgres 18 · wasm · local to this tab</span>
+			<ChromeButton
+				label="Reset sandbox ↻"
+				ariaLabel="Reset the sandbox"
+				tone="primary"
+				pressed={null}
+				disabled={busy}
+				onclick={() => void reset()}
 			/>
 		</div>
-	</section>
-</div>
+		<ProduceMessage
+			{topic}
+			text={produceDescription}
+			errorMessage={produceError}
+			disabled={busy || bootFailed || producing}
+			ontext={(next) => (produceDescription = next)}
+			onproduce={() => void produce()}
+		/>
+		<div class="panels">
+			<SqlPanel {databaseState} panelShell={messages} />
+			<SqlPanel {databaseState} panelShell={cursors} />
+			{#if databaseState.status === 'connecting' && databaseState.stage !== null}
+				<div class="progress-overlay">
+					<DatabaseProgress stage={databaseState.stage} />
+				</div>
+			{:else if bootFailed}
+				<div class="progress-overlay">
+					<BootNotice />
+				</div>
+			{/if}
+		</div>
+		<section class="consumer-region" aria-label="Consumers">
+			<div class="consumers">
+				<ConsumerGrid
+					{consumers}
+					disabled={busy || bootFailed}
+					onautorun={setAutoRun}
+					onremove={removeConsumer}
+				/>
+				<AddConsumer
+					{groups}
+					errorMessage={addError}
+					disabled={busy || bootFailed || adding}
+					onadd={(group) => void addConsumer(group)}
+				/>
+			</div>
+		</section>
+	</div>
+</IslandBoundary>
 
 <style src="./sandbox.css"></style>
