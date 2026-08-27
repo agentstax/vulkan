@@ -3,6 +3,7 @@ import { ClientRouter } from 'astro:transitions';
 import '../styles/global.css';
 import BoardBanner from '../components/board-banner/board-banner.svelte';
 import BoardNav from '../components/board-nav/board-nav.svelte';
+import SiteNotice from '../components/site-notice/site-notice.svelte';
 import TrackedVisitBar from '../components/tracked-visit-bar/tracked-visit-bar.svelte';
 import BoardFooter from '../components/board-footer/board-footer.svelte';
 
@@ -57,8 +58,15 @@ const { title, description, navCurrent } = Astro.props;
 				document.addEventListener('astro:after-swap', applyStyle);
 			})();
 		</script>
+		<script>
+			// bundled on purpose, never is:inline: a bundled module runs once for
+			// the whole visit and its window listeners survive ClientRouter swaps
+			import { listenForPageFailures } from '../state/site-notice.svelte';
+			listenForPageFailures();
+		</script>
 	</head>
 	<body>
+		<SiteNotice client:idle />
 		<div class="page-frame">
 			<BoardBanner />
 			<BoardNav current={navCurrent} />

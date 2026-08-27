@@ -1,0 +1,60 @@
+/* two faces of one notice, chosen by the state's kind: the banner rides the
+   viewport top and stays out of the way; the modal sits over the page and
+   asks for the reload */
+.notice-banner {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: var(--z-raised);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-10);
+	padding: var(--space-6) var(--space-12);
+	background: var(--color-surface);
+	border-bottom: 1px solid var(--border-outer);
+	box-shadow: var(--shadow-console);
+}
+
+.notice-veil {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-raised);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--color-progress-veil);
+}
+
+.notice-box {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-8);
+	max-width: 44ch;
+	padding: var(--space-14) var(--space-24);
+	background: var(--color-surface);
+	border: 1px solid var(--border-outer);
+}
+
+.notice-problem {
+	margin: 0;
+	font-family: var(--font-chrome);
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--color-text);
+}
+
+.notice-detail {
+	margin: 0;
+	font-family: var(--font-database);
+	font-size: 10px;
+	line-height: 1.6;
+	color: var(--color-console-error);
+}
+
+.notice-actions {
+	display: flex;
+	gap: var(--space-8);
+}

@@ -35,9 +35,10 @@ each up.
       search unavailable).
 - [ ] Rung 3 — global nets + site notice (~150–250 lines): one bundled
       layout module registering 'error' / 'unhandledrejection' /
-      'vite:preloadError'; the site-notice component with banner, modal
-      (reload-required only), and full-page states plus stories;
-      reload-once sessionStorage guard.
+      'vite:preloadError'; the site-notice component with banner and
+      modal (reload-required only) states plus stories; reload-once
+      sessionStorage guard. The full-page face was built then cut in the
+      round [0598] — no trigger exists on a prerendered shell.
 - [ ] Rung 4 — conventions + message sweep (~40 lines of rules plus
       string rewrites): the website/CONVENTIONS.md ## Errors section
       (tier ladder, allowed surfaces, the reader-SQL vs site-machinery
