@@ -15,3 +15,5 @@ we need a long 1hr repeatable live test:
 - produces report at end of system - failed produces, skipped (dropped) messages, retries
 - We can build on this overtime but keep it relatively simple at start 
 need another review to make sure we are not logging any sensitive information like payload
+something funny with 'All times are UTC' as a link to something snarky about local time errors could reference some massive problem that was related to time zone error
+footer 'the team' could also link to a crazy crack monkey or junkey getting his ai fix

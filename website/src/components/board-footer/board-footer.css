@@ -14,28 +14,13 @@
 	align-items: center;
 }
 
-.footer-links a,
-.footer-links button {
+.footer-links a {
 	color: var(--color-chrome-bar-link);
 	font-size: 10px;
 }
 
-.footer-links button {
-	border: 0;
-	padding: 0;
-	background: none;
-	font-family: var(--font-chrome);
-	cursor: pointer;
-}
-
-.footer-links a:hover,
-.footer-links button:hover {
+.footer-links a:hover {
 	text-decoration: underline;
-}
-
-.footer-links button:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 2px;
 }
 
 .footer-meta {

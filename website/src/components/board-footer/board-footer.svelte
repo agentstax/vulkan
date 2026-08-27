@@ -6,8 +6,6 @@
 <div class="board-footer">
 	<div class="footer-links">
 		<a href="{repositoryUrl}/graphs/contributors">The team</a>
-		<!-- inert until the read-tracking module owns the stored visit record -->
-		<button type="button">Delete board cookies</button>
 	</div>
 	<div class="footer-meta">
 		<span>All times are UTC</span>

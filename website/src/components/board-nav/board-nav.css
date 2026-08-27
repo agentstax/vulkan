@@ -1,7 +1,7 @@
 .board-nav {
 	background: var(--color-chrome-bar);
 	box-shadow: var(--lacquer-dim);
-	padding: var(--space-7) var(--space-24);
+	padding: var(--space-7) var(--space-20);
 	display: flex;
 	gap: var(--space-22);
 	font-size: 11px;

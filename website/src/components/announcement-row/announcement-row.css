@@ -3,7 +3,7 @@
 	grid-template-columns: var(--grid-board-columns);
 	gap: var(--space-10);
 	align-items: center;
-	padding: var(--space-10) var(--space-14);
+	padding: var(--space-12) var(--space-14);
 	border-top: 1px solid var(--border-row);
 }
 

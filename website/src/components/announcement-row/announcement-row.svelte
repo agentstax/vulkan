@@ -14,7 +14,7 @@
 </script>
 
 <div class="announcement-row" data-stripe={stripe}>
-	<PixelFlag width={15} />
+	<PixelFlag width={20} />
 	<a class="announcement-title" {href}>{title}</a>
 	<span></span>
 	<span class="announcement-date">{date}</span>

@@ -7,7 +7,7 @@
 	const { Story } = defineMeta({
 		title: 'Board/BoardSection',
 		component: BoardSection,
-		args: { title: 'Board', columnLabels: null, threadCount: null },
+		args: { title: 'Board', columnLabels: null },
 	});
 </script>
 
@@ -45,7 +45,10 @@
 		</BoardSection>
 	{/snippet}
 </Story>
-<Story name="With thread total" args={{ title: 'Start Here', threadCount: 2 }}>
+<Story
+	name="Date column only"
+	args={{ title: 'Start Here', columnLabels: { threadCount: null, lastPost: 'Updated' } }}
+>
 	{#snippet template(args)}
 		{@const { children: _children, ...storyProps } = args}
 		<BoardSection {...storyProps}>
@@ -66,7 +69,7 @@
 		</BoardSection>
 	{/snippet}
 </Story>
-<Story name="Title only" args={{ title: 'Announcements' }}>
+<Story name="Title only" args={{ title: 'Information' }}>
 	{#snippet template(args)}
 		{@const { children: _children, ...storyProps } = args}
 		<BoardSection {...storyProps}>

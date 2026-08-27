@@ -35,9 +35,3 @@
 .column-label[data-align='center'] {
 	text-align: center;
 }
-
-.thread-total {
-	color: var(--color-band-meta);
-	font-size: 10px;
-	font-variant-numeric: tabular-nums;
-}

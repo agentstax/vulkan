@@ -13,9 +13,14 @@
 <div class="board-stats">
 	<div class="stats">
 		<span class="stats-line">
-			{threadCount} threads · {codeCount} error and event codes · {decisionRecordCount} decision records
+			{threadCount} threads
 		</span>
-		<span class="stats-note">every number on this site is real or absent</span>
+    <span class="stats-line">
+			{codeCount} error and event codes
+		</span>
+    <span class="stats-line">
+			{decisionRecordCount} decision records
+		</span>
 	</div>
 	<div class="legend">
 		<span class="legend-row">

@@ -29,7 +29,7 @@ const shell = await sandboxShell();
 	navCurrent="Board Index"
 >
 	<Breadcrumb trail={[{ label: 'Board Index', href: '/' }]} />
-	<BoardSection title="Start Here" columnLabels={null} threadCount={stickies.length}>
+	<BoardSection title="Start Here" columnLabels={{ threadCount: null, lastPost: 'Updated' }}>
 		<StickyRows client:idle stickies={stickies} />
 		<ThreadPost author="brandon" role="Site Admin" header={null} postCount={null} actions={null}>
 			<p>
@@ -46,14 +46,10 @@ const shell = await sandboxShell();
 			/>
 		</ThreadPost>
 	</BoardSection>
-	<BoardSection
-		title="Board"
-		columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}
-		threadCount={null}
-	>
+	<BoardSection title="Board" columnLabels={{ threadCount: 'Threads', lastPost: 'Last post' }}>
 		<BoardRows client:idle rows={rows} />
 	</BoardSection>
-	<BoardSection title="Announcements" columnLabels={null} threadCount={null}>
+	<BoardSection title="Announcements" columnLabels={{ threadCount: null, lastPost: 'Posted' }}>
 		{
 			announcements.map((announcement, index) => (
 				<AnnouncementRow

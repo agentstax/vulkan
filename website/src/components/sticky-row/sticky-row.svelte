@@ -19,7 +19,7 @@
 		<a class="sticky-title" {href} onclick={onVisit}>{title}</a>
 	</div>
 	<span></span>
-	<span class="sticky-date">updated {lastUpdatedDate}</span>
+	<span class="sticky-date">{lastUpdatedDate}</span>
 </div>
 
 <style src="./sticky-row.css"></style>

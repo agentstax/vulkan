@@ -30,7 +30,7 @@ const navCurrent = board.title;
 			{ label: board.title, href: null },
 		]}
 	/>
-	<BoardSection title={board.title} columnLabels={null} threadCount={rows.length}>
+	<BoardSection title={board.title} columnLabels={{ threadCount: null, lastPost: 'Updated' }}>
 		<ThreadRows client:idle rows={rows} />
 	</BoardSection>
 	<JumpTo client:idle targets={jumpTargets} />

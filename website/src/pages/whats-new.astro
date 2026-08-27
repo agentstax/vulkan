@@ -23,7 +23,7 @@ const rows = whatsNewRows(docs);
 			{ label: "What's new", href: null },
 		]}
 	/>
-	<BoardSection title="What's new" columnLabels={null} threadCount={null}>
+	<BoardSection title="What's new" columnLabels={{ threadCount: null, lastPost: 'Updated' }}>
 		<WhatsNewRows client:idle rows={rows} />
 	</BoardSection>
 	<JumpTo client:idle targets={jumpTargets} />
