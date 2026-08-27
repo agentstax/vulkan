@@ -1,19 +1,24 @@
-need to exaimine a table DDL diagram before doing final public surface / documentation
-related should audit / evaluate all table columns for consistency in naming
-
-randomized cookie popup on doc site that mocks cookies being used for a doc site
-- We don't use cookies? Do you agree we don't use cookies [agree], [only necessary]
-need AGPLv3 liscense
-
-website layered error handling - try / catch with modal popup, user friendly messages, backup broken page if all else fails
+# Doc
 
 mobile friendly docsite
 
-should make more use of vale for standardized writing style its an interesting idea
-
+need to cleanup and refactor website sandbox and database code they have grown to large and unruly
 make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
 
-need to cleanup and refactor website sandbox and database code they have grown to large and unruly
+randomized cookie popup on doc site that mocks cookies being used for a doc site
+- We don't use cookies? Do you agree we don't use cookies [agree], [only necessary]
+something funny with 'All times are UTC' as a link to something snarky about local time errors could reference some massive problem that was related to time zone error
+Should be able to click on my user profile could make it funny
+- or could have cookie popup with standard yes or no and whatever user clicks be like 
+  'oh sorry bro you've been hacked, we ain't got no cookies here'
+  'god please no I'll do anything [links to github repo to give star]' 'accept fate'
+
+# Other
+
+need to exaimine a table DDL diagram before doing final public surface / documentation
+related should audit / evaluate all table columns for consistency in naming
+
+need AGPLv3 liscense
 
 we need a long 1hr repeatable live test:
 - spins up db, multi producer and multi consumers (built images)
@@ -22,7 +27,3 @@ we need a long 1hr repeatable live test:
 - We can build on this overtime but keep it relatively simple at start
 
 need another review to make sure we are not logging any sensitive information like payload
-
-something funny with 'All times are UTC' as a link to something snarky about local time errors could reference some massive problem that was related to time zone error
-
-Should be able to click on my user profile
