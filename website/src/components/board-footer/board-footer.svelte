@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { repositoryUrl } from '../../site';
 	import { boardStyle, boardStyles } from '../../state/board-style.svelte';
 </script>
 
 <div class="board-footer">
 	<div class="footer-links">
-		<a href="{repositoryUrl}/graphs/contributors">The team</a>
+		<a href="https://claude.ai">The team</a>
 	</div>
 	<div class="footer-meta">
 		<span>All times are UTC</span>
