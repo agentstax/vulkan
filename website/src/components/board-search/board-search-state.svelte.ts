@@ -4,7 +4,8 @@ import { excerptSegments, type ExcerptSegment } from '../../helpers/excerpt-segm
 // searching: a query is running
 // done: the last query's hits are showing
 // unavailable: the Pagefind bundle is missing (the site build generates it)
-export type SearchPhase = 'ready' | 'searching' | 'done' | 'unavailable';
+// stopped: the last query threw before finishing; running it again is fine
+export type SearchPhase = 'ready' | 'searching' | 'done' | 'unavailable' | 'stopped';
 
 export type SearchHit = {
 	title: string;
@@ -43,22 +44,27 @@ export class SearchState {
 			return;
 		}
 
-		const found = await pagefind.debouncedSearch(query);
-		// null = a newer search superseded this one; its own result is coming
-		if (found === null) {
-			return;
-		}
+		try {
+			const found = await pagefind.debouncedSearch(query);
+			// null = a newer search superseded this one; its own result is coming
+			if (found === null) {
+				return;
+			}
 
-		const pages = await Promise.all(
-			found.results.slice(0, hitLimit).map((result) => result.data()),
-		);
-		this.hits = pages.map((page) => ({
-			title: page.meta.title ?? page.url,
-			href: page.url,
-			excerpt: excerptSegments(page.excerpt),
-		}));
-		this.totalCount = found.results.length;
-		this.phase = 'done';
+			const pages = await Promise.all(
+				found.results.slice(0, hitLimit).map((result) => result.data()),
+			);
+			this.hits = pages.map((page) => ({
+				title: page.meta.title ?? page.url,
+				href: page.url,
+				excerpt: excerptSegments(page.excerpt),
+			}));
+			this.totalCount = found.results.length;
+			this.phase = 'done';
+		} catch {
+			// without this, the throw leaves "searching…" up for good
+			this.phase = 'stopped';
+		}
 	}
 
 	private async load(): Promise<Pagefind | null> {

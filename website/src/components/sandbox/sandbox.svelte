@@ -7,6 +7,7 @@
 	import ConsumerGrid from '../consumer-grid/consumer-grid.svelte';
 	import ProduceMessage from '../produce-message/produce-message.svelte';
 	import SqlPanel from '../sql-panel/sql-panel.svelte';
+	import { caughtMessage } from '../../helpers/caught-message';
 	import { AutoRunner } from './auto-run';
 	import type { ClaimedMessage } from './database';
 	import { DatabaseState } from './database-state.svelte';
@@ -45,9 +46,14 @@
 	const autoRunner = new AutoRunner(tickConsumer);
 	const busy = $derived(databaseState.status === 'connecting' || resetting);
 
+	// bootFailed stays out of busy on purpose: it holds the produce, add, and
+	// consumer controls shut, while Reset stays live as the retry
+	const bootFailed = $derived(databaseState.status === 'failed');
+
 	// the database starts booting as soon as the sandbox is on screen, so a
-	// panel's first run only waits on the statement; a boot failure reaches
-	// every panel through its own run, which is where it is reported.
+	// panel's first run only waits on the statement; a boot failure is
+	// reported by the notice over the panels, with each panel's own run
+	// carrying the caught detail.
 	// The seeded card's clock starts here too -- its first tick lands about a
 	// second in, which the boot it awaits has usually beaten.
 	onMount(() => {
@@ -86,8 +92,8 @@
 			autoRunner.start(consumers[0]!.name);
 			await refreshGroups();
 		} catch {
-			// a database that could not be rebuilt reports itself in both panels,
-			// through the run each one makes on the revision the reset bumped
+			// a database that could not be rebuilt shows the boot notice again,
+			// and the run each panel makes on the bumped revision has the detail
 		} finally {
 			resetting = false;
 		}
@@ -114,7 +120,7 @@
 		try {
 			groups = await databaseState.listGroups();
 		} catch {
-			// a database that never came up already says so in both panels
+			// a database that never came up already says so over the panels
 		}
 	}
 
@@ -125,7 +131,7 @@
 			await databaseState.produce(produceDescription);
 			produceError = null;
 		} catch (caught) {
-			produceError = caught instanceof Error ? caught.message : String(caught);
+			produceError = caughtMessage(caught);
 		} finally {
 			producing = false;
 		}
@@ -156,7 +162,7 @@
 			nextConsumer += 1;
 			addError = null;
 		} catch (caught) {
-			addError = caught instanceof Error ? caught.message : String(caught);
+			addError = caughtMessage(caught);
 		} finally {
 			adding = false;
 		}
@@ -199,7 +205,7 @@
 			// the consumer stops itself -- the unpressed toggle says it did
 			setAutoRun(name, false);
 			consumer.status = {
-				text: caught instanceof Error ? caught.message : String(caught),
+				text: caughtMessage(caught),
 				tone: 'error',
 			};
 		}
@@ -253,7 +259,7 @@
 		{topic}
 		text={produceDescription}
 		errorMessage={produceError}
-		disabled={busy || producing}
+		disabled={busy || bootFailed || producing}
 		ontext={(next) => (produceDescription = next)}
 		onproduce={() => void produce()}
 	/>
@@ -264,15 +270,26 @@
 			<div class="progress-overlay">
 				<DatabaseProgress stage={databaseState.stage} />
 			</div>
+		{:else if bootFailed}
+			<div class="progress-overlay">
+				<div class="boot-notice" role="alert">
+					the database could not start — reset the sandbox to try again, or reload the page
+				</div>
+			</div>
 		{/if}
 	</div>
 	<section class="consumer-region" aria-label="Consumers">
 		<div class="consumers">
-			<ConsumerGrid {consumers} disabled={busy} onautorun={setAutoRun} onremove={removeConsumer} />
+			<ConsumerGrid
+				{consumers}
+				disabled={busy || bootFailed}
+				onautorun={setAutoRun}
+				onremove={removeConsumer}
+			/>
 			<AddConsumer
 				{groups}
 				errorMessage={addError}
-				disabled={busy || adding}
+				disabled={busy || bootFailed || adding}
 				onadd={(group) => void addConsumer(group)}
 			/>
 		</div>

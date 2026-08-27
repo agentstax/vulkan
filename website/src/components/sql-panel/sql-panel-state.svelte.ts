@@ -1,4 +1,5 @@
 import { untrack } from 'svelte';
+import { caughtMessage } from '../../helpers/caught-message';
 import type { RunResult } from '../sandbox/database';
 import type { DatabaseState } from '../sandbox/database-state.svelte';
 import type { PanelShell } from '../sandbox/types';
@@ -81,7 +82,7 @@ export class PanelState {
 			this.errorMessage = null;
 			this.stale = false;
 		} catch (caught) {
-			this.errorMessage = caught instanceof Error ? caught.message : String(caught);
+			this.errorMessage = caughtMessage(caught);
 		} finally {
 			this.running = false;
 		}

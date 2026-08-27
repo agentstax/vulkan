@@ -46,7 +46,13 @@ export class AutoRunner {
 	// delays the one after it instead of stacking a second claim on top
 	private async fire(name: string): Promise<void> {
 		this.timers.delete(name);
-		await this.run(name);
+
+		try {
+			await this.run(name);
+		} catch {
+			// the run reports through the card it belongs to; a throw that
+			// escaped it must not end the clock, or the card freezes silently
+		}
 
 		// auto-run went off, or the card was removed, while the run was in
 		// flight: this consumer has no next run

@@ -17,6 +17,7 @@
 
 	let editorHost: HTMLDivElement | undefined = $state(undefined);
 	let editorMounted = $state(false);
+	let editorMessage: string | null = $state(null);
 
 	// the shell seeds the panel once -- after that the editor owns the SQL and
 	// runs own the results, so reading the prop at construction is the intent
@@ -59,12 +60,20 @@
 		// shell -- the editor never rides the initial payload
 		requestIdle(() => {
 			void (async () => {
-				const { createEditor } = await import('../sandbox/editor');
+				try {
+					const { createEditor } = await import('../sandbox/editor');
 
-				if (cancelled || editorHost === undefined) return;
+					if (cancelled || editorHost === undefined) return;
 
-				editorView = createEditor(editorHost, initialSql, (next) => panelState.setSql(next));
-				editorMounted = true;
+					editorView = createEditor(editorHost, initialSql, (next) => panelState.setSql(next));
+					editorMounted = true;
+				} catch {
+					// a lost chunk leaves the static shell in place, which still
+					// reads correctly but it doesn't work
+					if (cancelled) return;
+					editorMessage =
+						'the editor could not load — the query still runs as shown; reload the page to edit it';
+				}
 			})();
 		});
 
@@ -96,6 +105,9 @@
 			<HighlightedSql sql={panelState.sql} values={new Map()} />
 		{/if}
 		<div class="editor-host" bind:this={editorHost}></div>
+		{#if editorMessage !== null}
+			<div class="editor-notice" role="alert">{editorMessage}</div>
+		{/if}
 	</div>
 	<div class="result-area">
 		{#if panelState.errorMessage !== null}
