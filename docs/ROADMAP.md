@@ -44,10 +44,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     richer composition serves both.
   - DDL table design diagram.
 
-- **Doc site — layered error handling** — design settled 2026-08-27
-  [0597]: four tiers, banner default, modal reserved for
-  reload-required; the four build rungs are expanded in TODO.md.
-
 - **Library work the doc pass surfaced.**
   - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
     comments and maybe a log line recommending against production use.

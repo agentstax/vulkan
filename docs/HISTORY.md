@@ -5,6 +5,42 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-27 — layered error handling on the doc site [0597] [0598]
+
+- Four tiers, disruptiveness matched to scope. Inline at the source stays the
+  default and the workhorse: `<svelte:boundary>` catches render and effect
+  throws only, so DOM handlers and async work keep their own call-site
+  try/catch under every other tier.
+- The holes the survey found are closed: the sandbox's boot-failure status was
+  written and read nowhere (the progress overlay vanished and the controls
+  re-enabled with no message) and now raises a notice with Reset live as the
+  retry; the SQL panel's CodeMirror import was an uncaught dynamic import
+  leaving a silently read-only box; a throw inside search left `searching…` up
+  for good; the auto-run clock could die silently on an escaped throw; and
+  `String(caught)` made `[object Object]` reachable — every caught value now
+  passes through one helper.
+- New `island-boundary` wraps the five islands with real render risk — the
+  sandbox, search, and the three log-line islands whose `$derived` chains parse
+  reader-pasted text. Its failed face carries a working retry, which recreates
+  the markup while the island's own state survives.
+- One page-level notice, fed only by the three global nets registered once in
+  `BoardLayout`'s bundled script — window `error`, `unhandledrejection`, and
+  Vite's `vite:preloadError`. A banner for faults the reader can wave away; the
+  modal only for the stale-chunk-after-redeploy case, which reloads once behind
+  a sessionStorage guard before it asks. A bundled module runs once per visit,
+  so the listeners survive ClientRouter swaps.
+- The full-page face was built, storied, and cut in the same round [0598]: the
+  shell is prerendered, so prose always renders and no honest trigger exists.
+  Error toasts are banned outright — an auto-dismissing error is missable.
+- website/CONVENTIONS.md gained `## Errors`, owning what the root file cannot:
+  which surface a failure uses, and the split between reader-typed SQL (the
+  real Postgres message, verbatim — the console is a terminal) and site
+  machinery (the house problem + fix grammar). The two internal throws in the
+  sandbox database were reworded to match.
+- Verify floor green through the build: `astro check` clean, Vitest passing,
+  419 pages built, and the notice module confirmed shared between the layout
+  script and the island in `dist/`.
+
 ## 2026-08-26 — the decision records on the board [0596]
 
 - New Decision records board: a generated index thread at `/decisions/`
