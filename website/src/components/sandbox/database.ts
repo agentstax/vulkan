@@ -200,7 +200,9 @@ export class VulkanDatabase {
 	async claim(groupName: string): Promise<ClaimedRange | null> {
 		const group = await this.getGroup(this.db, groupName);
 		if (group === null) {
-			throw new Error(`consumer group not found: ${JSON.stringify(groupName)}`);
+			throw new Error(
+				`consumer group not found: ${JSON.stringify(groupName)} — register it with the Add consumer control`,
+			);
 		}
 
 		return this.db.transaction(async (tx) => {
@@ -314,11 +316,11 @@ export async function createVulkanDatabase(
 // *** HELPERS ***
 // ***************
 
-// the library's own wording for a group whose cursor row is missing -- the one
-// state that makes a consumer poll forever while messages pile up
+// a group whose cursor row is missing -- the one state that makes a consumer
+// poll forever while messages pile up
 function noCursor(groupId: number): Error {
 	return new Error(
-		`no cursor for group ${groupId} on topic ${demoTopicId} -- was Register called?`,
+		`cursor not found for group ${groupId} on topic ${demoTopicId} — register the group before claiming`,
 	);
 }
 

@@ -113,6 +113,44 @@ beside one:
 - A Playwright test asserts the homepage's initial JS stays under the
   declared ceiling; a chunk that regresses it is a failing build.
 
+## Errors
+
+The prose grammar for every reader-facing message binds from the root
+## Errors by reference (see the preamble); this section owns which
+surface a failure uses. Four tiers, disruptiveness matched to scope
+[0597]:
+
+- Inline at the source is the default: the failure renders beside the
+  control that caused it, an `errorMessage: string | null` prop into a
+  `role="alert"` block. A DOM handler or async call reports through its
+  own try/catch at the call site -- no other tier sees those throws.
+- A section whose rendering can fail wraps its markup in
+  island-boundary's `<svelte:boundary>`: render and effect throws
+  inside the children swap in the fallback face with a working retry.
+  The boundary never catches handler or async throws -- tier 1 stays
+  mandatory under it.
+- The page-level notice (src/state/site-notice.svelte.ts, the ONE
+  site-wide surface) is fed only by the global nets registered once in
+  BoardLayout's bundled script: window 'error', 'unhandledrejection',
+  and 'vite:preloadError'. A banner for faults the reader can wave
+  away; the modal ONLY for the reload-required stale-chunk case. The
+  full-page face was cut -- a prerendered shell always leaves readable
+  prose [0598]. A component never show()s its own notice: a failure a
+  component can name belongs to the tiers above.
+- Error toasts do not exist here: an auto-dismissing error is missable
+  and inaccessible, so the persistent banner is the only roaming
+  surface.
+
+What a message shows:
+
+- Reader-typed SQL fails with the real Postgres message, verbatim --
+  the console is a terminal and the error is its output. Every other
+  failure speaks the problem -- fix grammar in the site's own words.
+- A caught value reaches the page only through helpers/caught-message;
+  String() on a thrown object renders "[object Object]".
+- Every failure state a component supports is a story -- ## Storybook's
+  done-checklist rule applied to error faces.
+
 ## CSS
 
 Vanilla CSS only -- native nesting, custom properties; no
