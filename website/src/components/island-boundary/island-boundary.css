@@ -24,4 +24,6 @@
 	font-size: 10px;
 	line-height: 1.6;
 	color: var(--color-console-error);
+	/* a caught message can carry an unbroken chunk URL */
+	overflow-wrap: anywhere;
 }

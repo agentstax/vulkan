@@ -10,6 +10,7 @@
 
 .sticky-name {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
 	gap: var(--space-8);
 }
@@ -31,4 +32,14 @@
 	color: var(--color-text-faint);
 	font-size: 10px;
 	font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 639px) {
+	.sticky-row {
+		grid-template-columns: var(--grid-board-columns-collapsed);
+	}
+
+	.sticky-date {
+		grid-column: 2;
+	}
 }

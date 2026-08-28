@@ -103,4 +103,18 @@ const versionManifestHref = new URL('/versions.json', siteUrl).href;
 		flex-direction: column;
 		gap: var(--space-20);
 	}
+
+	/* below the collapse the frame's gutters shrink: a phone cannot
+	   spare 72px of the row to margins and padding */
+	@media (max-width: 639px) {
+		.page-frame {
+			width: calc(100% - 16px);
+			margin: var(--space-16) auto;
+		}
+
+		.page-content {
+			padding: var(--space-12);
+			gap: var(--space-16);
+		}
+	}
 </style>

@@ -3,13 +3,16 @@
 	box-shadow: var(--lacquer-dim);
 	padding: var(--space-10) var(--space-20);
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	align-items: center;
+	gap: var(--space-6) var(--space-14);
 	font-size: 10px;
 }
 
 .footer-links {
 	display: flex;
+	flex-wrap: wrap;
 	gap: var(--space-14);
 	align-items: center;
 }
@@ -25,7 +28,8 @@
 
 .footer-meta {
 	display: flex;
-	gap: var(--space-16);
+	flex-wrap: wrap;
+	gap: var(--space-6) var(--space-16);
 	align-items: center;
 	color: var(--color-chrome-bar-meta);
 }
@@ -50,4 +54,16 @@
 .board-style select:focus-visible {
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 2px;
+}
+
+/* a thumb needs more face than a pointer */
+@media (pointer: coarse) {
+	.board-style select {
+		padding: var(--space-6) var(--space-8);
+		font-size: 12px;
+	}
+
+	.footer-links a {
+		padding: var(--space-6) 0;
+	}
 }

@@ -2,15 +2,16 @@
 
 mobile friendly docsite
 
+add a dedicate hero section giving the low down of repo. 'Its kafka on postgres.'
+
 need to cleanup and refactor website sandbox and database code they have grown to large and unruly
 make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
 
-randomized cookie popup on doc site that mocks cookies being used for a doc site
-- could have cookie popup with standard yes or no and whatever user clicks be like 
-  'oh sorry bro you've been hacked, we ain't got no cookies here'
-  'god please no I'll do anything [links to github repo to give star]' 'accept fate'
-Should be able to click on my user profile could make it funny
-something funny with 'All times are UTC' as a link to something snarky about local time errors could reference some massive problem that was related to time zone error
+Should be able to click on my user profile could make it funny or a reference
+- I like the idea of profile doing stanely parable reference "The end is never the end.. 
+  is never the end.. is never the end" fits well with the never ending work of this project
+
+Need to do a multi browser / version compatibility review
 
 # Other
 

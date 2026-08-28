@@ -42,12 +42,6 @@
 	border-bottom: 1px solid var(--border-row);
 }
 
-@media (max-width: 760px) {
-	.panels {
-		grid-template-columns: minmax(0, 1fr);
-	}
-}
-
 /* the panels sit on the dark SQL ground and the cards on this pale one: two
    cards across otherwise read as a second row of query panels, and inverting
    the grounds is what tells them apart at a glance */

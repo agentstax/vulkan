@@ -44,3 +44,10 @@
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 1px;
 }
+
+/* under 16px iOS Safari zooms the whole page when the input focuses */
+@media (pointer: coarse) {
+	.produce-field {
+		font-size: 16px;
+	}
+}

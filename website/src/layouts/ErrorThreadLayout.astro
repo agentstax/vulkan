@@ -135,8 +135,10 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 <style>
 	.thread-top {
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		align-items: baseline;
+		gap: var(--space-4) var(--space-12);
 	}
 
 	.adjacent-links {
@@ -152,8 +154,10 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 
 	.thread-return {
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		align-items: center;
+		gap: var(--space-6) var(--space-12);
 	}
 
 	/* mirrors the page-content gap so the wrapper is invisible in the flow */

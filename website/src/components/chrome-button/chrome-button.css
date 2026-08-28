@@ -47,3 +47,20 @@
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 2px;
 }
+
+/* a thumb needs more face than a pointer */
+@media (pointer: coarse) {
+	.chrome-button {
+		padding: var(--space-8) var(--space-16);
+		font-size: 12px;
+	}
+
+	.chrome-button[data-tone='quiet'] {
+		padding: var(--space-6) var(--space-10);
+	}
+
+	.chrome-button[data-tone='close'] {
+		width: 28px;
+		height: 28px;
+	}
+}

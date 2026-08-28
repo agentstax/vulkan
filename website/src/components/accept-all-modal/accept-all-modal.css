@@ -10,7 +10,10 @@
 	justify-content: center;
 	padding: var(--space-16);
 	background: var(--color-hacked-veil);
-	overflow: hidden;
+	/* memes past the right edge stay clipped; the vertical axis scrolls
+	   so a landscape viewport can still reach the buttons */
+	overflow-x: hidden;
+	overflow-y: auto;
 }
 
 /* the copies sit on the veil, not in the box -- they are what happened to
@@ -33,6 +36,9 @@
 	display: flex;
 	flex-direction: column;
 	gap: var(--space-10);
+	/* margin auto, not the veil's alignment: a box taller than the veil
+	   keeps a reachable top edge to scroll from */
+	margin: auto;
 	max-width: 52ch;
 	padding: var(--space-18) var(--space-24);
 	background: var(--color-surface);

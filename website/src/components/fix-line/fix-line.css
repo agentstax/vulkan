@@ -1,6 +1,8 @@
 .fix-line {
 	margin: 0;
 	font-weight: 700;
+	/* a substituted value is one unbreakable token (a topic name, an id) */
+	overflow-wrap: anywhere;
 }
 
 .fix-segment[data-kind='placeholder'] {

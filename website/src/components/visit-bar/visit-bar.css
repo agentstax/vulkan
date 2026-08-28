@@ -3,9 +3,10 @@
 	border-bottom: 1px solid var(--border-row);
 	padding: var(--space-7) var(--space-20);
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	align-items: center;
-	gap: var(--space-8);
+	gap: var(--space-4) var(--space-8);
 	font-size: 10px;
 	color: var(--color-chrome-pale-text);
 }
@@ -22,8 +23,9 @@
 
 .visit-area {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--space-8);
+	gap: var(--space-4) var(--space-8);
 }
 
 .visit-date {

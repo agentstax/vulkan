@@ -26,3 +26,13 @@
 	font-size: 10px;
 	font-variant-numeric: tabular-nums;
 }
+
+@media (max-width: 639px) {
+	.announcement-row {
+		grid-template-columns: var(--grid-board-columns-collapsed);
+	}
+
+	.announcement-date {
+		grid-column: 2;
+	}
+}

@@ -197,9 +197,15 @@
 		--lacquer-bright: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 		--shadow-page-frame: inset 0 0 0 1px #ffffff, 0 3px 14px rgba(31, 58, 84, 0.2);
 		--grid-board-columns: 34px 1fr 80px 210px;
+		/* the same rows below the 640px collapse: icon beside a single
+		   content column, the meta cells re-slotted under the title */
+		--grid-board-columns-collapsed: 34px minmax(0, 1fr);
 
 		/* z-index scale -- closed; a new layer adds its named step here */
 		--z-raised: 2;
+		/* the page-failure notice outranks the cookie notice: both are fixed
+		   overlays, and the one that means something broke must win */
+		--z-notice: 3;
 
 		/* spacing scale -- closed; each step is named by its pixel value,
 		   and a new gap or padding adds its step here */
@@ -417,6 +423,14 @@
 		outline-offset: 2px;
 	}
 
+	/* hover is the underline's only carrier, and touch has no hover --
+	   prose links keep the underline there so color is not the one mark */
+	@media (pointer: coarse) {
+		.thread-body :where(a) {
+			text-decoration: underline;
+		}
+	}
+
 	/* the rendered-MDX dialect: a thread's body is classless HTML inside
 	   one .thread-body wrapper -- the sanctioned base-layer MDX styling */
 	.thread-body {
@@ -461,6 +475,9 @@
 		background: var(--color-console-sql-bg);
 		border: 1px solid var(--border-row);
 		padding: 0 var(--space-5);
+		/* a long identifier is one unbreakable token; without a break
+		   opportunity it widens the page instead of wrapping */
+		overflow-wrap: anywhere;
 	}
 
 	.thread-body :where(pre) {
@@ -500,7 +517,11 @@
 		font-weight: var(--shiki-dark-font-weight, inherit);
 	}
 
+	/* block display so a table wider than the post body scrolls in its
+	   own box instead of pushing the page frame wide */
 	.thread-body :where(table) {
+		display: block;
+		overflow-x: auto;
 		max-width: 680px;
 		border: 1px solid var(--border-section);
 		border-collapse: collapse;
@@ -591,5 +612,14 @@
 	.era-button:focus-visible {
 		outline: 2px solid var(--color-focus-ring);
 		outline-offset: 2px;
+	}
+
+	/* a thumb needs more face than a pointer: the era look keeps its
+	   10px type on fine pointers and grows only where taps happen */
+	@media (pointer: coarse) {
+		.era-button {
+			padding: var(--space-8) var(--space-14);
+			font-size: 12px;
+		}
 	}
 }

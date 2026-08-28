@@ -103,6 +103,10 @@ beside one:
 
 - Static is the default. Every island names its trigger at the use
   site -- `client:visible` or `client:idle`; `client:load` is banned.
+  An island whose content is viewport-gated uses `client:media` with
+  the breakpoint from ## CSS, paired with CSS that hides its
+  server-rendered markup below the same width -- the JS never loads
+  where the content never shows [0602].
 - Island props are serializable values against the component's Props
   type -- functions never cross the boundary.
 - Heavy chunks (PGlite wasm, CodeMirror) load only through dynamic
@@ -167,6 +171,12 @@ preprocessor, no utility framework, no third-party token pack.
   spacing -- exist only in the tokens layer (stylelint +
   declaration-strict-value enforces it). z-index and spacing are
   closed token scales, not ad-hoc integers.
+- Two breakpoints, and only these two [0602] -- a media query cannot
+  read a custom property, so the values are convention: `640px` is
+  the layout collapse (multi-column rows stack, phone-only removals),
+  `760px` is the sandbox gate (`max-width: 760px` hides, the island
+  hydrates on `min-width: 761px`). Touch-target and input sizing
+  adjust under `(pointer: coarse)`, never under a width query.
 - base styles the classless HTML that rendered MDX produces.
   compositions are the hand-written layout primitives (.flow,
   .cluster, ...) and carry no color or type. A utility is generated

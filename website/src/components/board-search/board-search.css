@@ -12,6 +12,9 @@
 
 .search-form input {
 	flex-grow: 1;
+	/* a text input's minimum is its size attribute's width: without this
+	   the button is pushed out of the row on a narrow screen */
+	min-width: 0;
 	max-width: 520px;
 	padding: var(--space-4) var(--space-10);
 	background: var(--color-surface);
@@ -24,6 +27,13 @@
 .search-form input:focus-visible {
 	outline: 2px solid var(--color-focus-ring);
 	outline-offset: 1px;
+}
+
+/* under 16px iOS Safari zooms the whole page when the input focuses */
+@media (pointer: coarse) {
+	.search-form input {
+		font-size: 16px;
+	}
 }
 
 .search-status {

@@ -21,3 +21,11 @@
 .copy-button[data-phase='failed'] {
 	color: var(--color-console-error);
 }
+
+/* a thumb needs more face than a pointer */
+@media (pointer: coarse) {
+	.copy-button {
+		padding: var(--space-6) var(--space-4);
+		font-size: 12px;
+	}
+}

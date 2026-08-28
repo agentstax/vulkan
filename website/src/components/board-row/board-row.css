@@ -56,3 +56,19 @@
 .last-post-date {
 	font-variant-numeric: tabular-nums;
 }
+
+/* the band's column labels are hidden at this width, so the bare
+   thread-count number would float unlabeled -- it goes with them */
+@media (max-width: 639px) {
+	.board-row {
+		grid-template-columns: var(--grid-board-columns-collapsed);
+	}
+
+	.thread-count {
+		display: none;
+	}
+
+	.last-post {
+		grid-column: 2;
+	}
+}

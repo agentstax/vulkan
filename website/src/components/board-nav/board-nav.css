@@ -3,7 +3,8 @@
 	box-shadow: var(--lacquer-dim);
 	padding: var(--space-7) var(--space-20);
 	display: flex;
-	gap: var(--space-22);
+	flex-wrap: wrap;
+	gap: var(--space-4) var(--space-22);
 	font-size: 11px;
 	font-weight: 700;
 }
@@ -18,4 +19,11 @@
 
 .board-nav a[aria-current='page'] {
 	color: var(--color-chrome-bar-link-current);
+}
+
+/* a thumb needs more face than a pointer */
+@media (pointer: coarse) {
+	.board-nav a {
+		padding: var(--space-6) 0;
+	}
 }

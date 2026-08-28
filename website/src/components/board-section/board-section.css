@@ -35,3 +35,16 @@
 .column-label[data-align='center'] {
 	text-align: center;
 }
+
+/* below the collapse the rows have no columns to label, so the band
+   falls back to its plain flex face */
+@media (max-width: 639px) {
+	.band[data-columns='true'] {
+		display: flex;
+	}
+
+	.band[data-columns='true'] > span:empty,
+	.column-label {
+		display: none;
+	}
+}

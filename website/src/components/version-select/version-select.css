@@ -1,7 +1,8 @@
 .version-select {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--space-8);
+	gap: var(--space-4) var(--space-8);
 	font-size: 10px;
 	color: var(--color-chrome-pale-text);
 }
@@ -33,4 +34,12 @@ select {
 	font-family: var(--font-chrome);
 	font-size: 10px;
 	color: var(--color-text);
+}
+
+/* a thumb needs more face than a pointer */
+@media (pointer: coarse) {
+	select {
+		padding: var(--space-6) var(--space-8);
+		font-size: 12px;
+	}
 }

@@ -21,6 +21,9 @@
 	font-size: 12px;
 	line-height: 1.5;
 	color: var(--color-text-faint);
+	/* excerpts carry codes, identifiers, and log fragments -- unbroken
+	   tokens wrap instead of widening the results list */
+	overflow-wrap: anywhere;
 }
 
 .result-excerpt mark {

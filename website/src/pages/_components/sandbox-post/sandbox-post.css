@@ -1,0 +1,12 @@
+.sandbox-post {
+	display: contents;
+}
+
+/* the island hydrates on min-width: 761px at its use site, so below the
+   gate this server-rendered shell would show dead controls -- hiding it
+   is the visual half of the same boundary */
+@media (max-width: 760px) {
+	.sandbox-post {
+		display: none;
+	}
+}

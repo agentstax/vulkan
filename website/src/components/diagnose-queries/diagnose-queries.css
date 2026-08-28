@@ -40,3 +40,14 @@
 	top: 6px;
 	right: 12px;
 }
+
+/* below the collapse the floated button would cover the first SQL
+   line, so it takes its own row above the query instead */
+@media (max-width: 639px) {
+	.query-actions {
+		position: static;
+		display: flex;
+		justify-content: flex-end;
+		padding: var(--space-6) var(--space-6) 0;
+	}
+}
