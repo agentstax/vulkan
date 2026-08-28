@@ -28,6 +28,11 @@ const keywordScopes = [
 export default defineConfig({
 	site: siteUrl,
 	vite: {
+		build: {
+			// Vite 8's baseline-widely-available list, pinned -- the default
+			// floats per Vite major, so the floor moves only by deliberate edit
+			target: ['chrome111', 'edge111', 'firefox114', 'safari16.4', 'ios16.4'],
+		},
 		// PGlite locates its wasm assets itself; pre-bundling breaks the paths
 		optimizeDeps: { exclude: ['@electric-sql/pglite'] },
 	},

@@ -1,3 +1,4 @@
+import { SvelteSet } from 'svelte/reactivity';
 import type {
 	ClaimedMessage,
 	ClaimedRange,
@@ -26,28 +27,52 @@ export class DatabaseState {
 	// boot and the rest await the same promise
 	private connecting: Promise<VulkanDatabase> | null = null;
 
+	// operations still running; close() waits them out, because closing
+	// PGlite with a statement in flight leaves its wasm spinning on the
+	// main thread
+	private pendingOperations = new SvelteSet<Promise<unknown>>();
+
+	// set while close() drains; a panel's straggler run scheduled during the
+	// island's teardown is refused instead of reaching a closed database
+	private closing = false;
+
 	connect(): Promise<VulkanDatabase> {
 		this.connecting ??= this.create();
 		return this.connecting;
 	}
 
+	// the one path every statement-running verb takes: the operation is
+	// registered before its first await, so close() sees it the moment it
+	// exists and can wait for it
+	private perform<T>(work: (database: VulkanDatabase) => Promise<T>): Promise<T> {
+		if (this.closing) {
+			return Promise.reject(new Error('the database is closing'));
+		}
+
+		const operation = this.connect().then((database) => work(database));
+		this.pendingOperations.add(operation);
+		void operation
+			.catch(() => {})
+			.finally(() => {
+				this.pendingOperations.delete(operation);
+			});
+		return operation;
+	}
+
 	// PGlite serializes statements on its own mutex, so two panels running at
 	// once need no queue here
 	async run(sql: string): Promise<RunResult> {
-		const database = await this.connect();
-		return database.run(sql);
+		return this.perform((database) => database.run(sql));
 	}
 
 	async produce(description: string): Promise<void> {
-		const database = await this.connect();
-		await database.produce(description);
+		await this.perform((database) => database.produce(description));
 		this.revision += 1;
 	}
 
 	// a group is a write: its cursor row is what the cursor panel reads
 	async registerGroup(name: string): Promise<void> {
-		const database = await this.connect();
-		await database.registerGroup(name);
+		await this.perform((database) => database.registerGroup(name));
 		this.revision += 1;
 	}
 
@@ -58,18 +83,22 @@ export class DatabaseState {
 		group: string,
 		handle: (message: ClaimedMessage) => void,
 	): Promise<ClaimedRange | null> {
-		const database = await this.connect();
-		const claimed = await database.claim(group);
+		const claimed = await this.perform(async (database) => {
+			const claimed = await database.claim(group);
 
-		// caught up: the tick either wrote nothing or moved only the cursor's
-		// proof columns, which neither panel reads
+			// caught up: the tick either wrote nothing or moved only the cursor's
+			// proof columns, which neither panel reads
+			if (claimed === null) return null;
+
+			for (const message of claimed.messages) {
+				handle(message);
+			}
+
+			await database.commit(claimed.groupId, claimed.token);
+			return claimed;
+		});
 		if (claimed === null) return null;
 
-		for (const message of claimed.messages) {
-			handle(message);
-		}
-
-		await database.commit(claimed.groupId, claimed.token);
 		this.revision += 1;
 		return claimed;
 	}
@@ -88,6 +117,14 @@ export class DatabaseState {
 	// 128 MB. The status is the caller's to set: reset is on its way back to
 	// connecting, and a destroyed island has nothing left to render one.
 	async close(): Promise<void> {
+		// refuse new operations, then wait for every running one to settle
+		// before shutting down -- re-checking because a settling operation
+		// can have started another before the refusal began
+		this.closing = true;
+		while (this.pendingOperations.size > 0) {
+			await Promise.allSettled([...this.pendingOperations]);
+		}
+
 		const current = this.connecting;
 		this.connecting = null;
 
@@ -97,11 +134,13 @@ export class DatabaseState {
 			(database) => database.close(),
 			() => {},
 		);
+
+		// reset builds a fresh database next; its operations are welcome again
+		this.closing = false;
 	}
 
 	async listGroups(): Promise<string[]> {
-		const database = await this.connect();
-		return database.listGroups();
+		return this.perform((database) => database.listGroups());
 	}
 
 	private async create(): Promise<VulkanDatabase> {

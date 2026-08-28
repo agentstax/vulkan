@@ -33,6 +33,28 @@ beside one:
   Go dep, and a utility that a rune module or twenty lines of CSS can
   carry is written, not installed.
 
+## Browser support
+
+Two lines, moved only by deliberate edit, never by a toolchain
+default [0606]:
+
+- Supported -- Baseline Widely Available: Chrome/Edge 121+,
+  Firefox 123+, Safari/iOS 17.2+ (87% of tracked global usage,
+  2026-08). Everything the site does works here. An enhancement
+  needing more (view transitions: Safari 18/Firefox 144;
+  requestIdleCallback: Safari 18) ships only with the graceful
+  fallback it already carries -- an instant swap, a setTimeout.
+- Readable -- the pinned build floor: Chrome/Edge 111+,
+  Firefox 114+, Safari/iOS 16.4+, the `vite.build.target` list in
+  astro.config.mjs (Vite 8's baseline-widely-available set,
+  frozen because the default floats per Vite major). Between the
+  two lines every page stays readable and navigable; islands lock
+  behind their own failure faces.
+- Below the floor the site gets CSS's own error recovery and
+  nothing else: no @supports guards, no polyfills, no legacy
+  bundle. The structural cliff is Safari 15.4/Chrome 99 (@layer,
+  :where(), :focus-visible) -- under 0.2% of usage and falling.
+
 ## TypeScript
 
 - `astro/tsconfigs/strictest` + `verbatimModuleSyntax`; `astro check`

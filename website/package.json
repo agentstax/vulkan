@@ -11,9 +11,10 @@
 		"storybook": "storybook dev -p 6006",
 		"build-storybook": "storybook build",
 		"lint": "eslint .",
-		"test": "vitest run",
+		"test": "vitest run src",
+		"flows": "playwright test",
 		"format": "prettier --write .",
-		"verify": "prettier --check . && eslint . && stylelint \"src/**/*.css\" && astro check && svelte-check --threshold error && remark src/content/docs --ext md,mdx --quiet --frail && vale --minAlertLevel=error src/content/docs && vitest run"
+		"verify": "prettier --check . && eslint . && stylelint \"src/**/*.css\" && astro check && svelte-check --threshold error && remark src/content/docs --ext md,mdx --quiet --frail && vale --minAlertLevel=error src/content/docs && vitest run src && playwright test"
 	},
 	"dependencies": {
 		"@astrojs/mdx": "^7.0.7",
@@ -32,6 +33,7 @@
 	"devDependencies": {
 		"@astrojs/check": "^0.9.10",
 		"@eslint/js": "^10.0.1",
+		"@playwright/test": "^1.62.1",
 		"@storybook/addon-svelte-csf": "^5.1.2",
 		"@storybook/svelte-vite": "^10.5.10",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",

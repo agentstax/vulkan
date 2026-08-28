@@ -2,6 +2,8 @@
 dist/
 storybook-static/
 .mockup/
+test-results/
+playwright-report/
 # generated types
 .astro/
 

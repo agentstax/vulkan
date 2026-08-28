@@ -5,6 +5,38 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — sandbox close freeze fixed; Playwright flows bootstrapped [0607]
+
+- The freeze the [0606] spot check surfaced is fixed the same day:
+  DatabaseState registers every statement-running operation before its
+  first await and close() refuses new work, drains the pending set,
+  then shuts PGlite down — so leaving a booted sandbox no longer
+  strands the next page on a spinning wasm loop. Four instrumented
+  navigation runs that previously froze 4/4 now show no main-thread
+  stall at all, and reset() rides the same drain.
+- Playwright is now real, not just declared: `@playwright/test` devDep,
+  `playwright.config.ts` with chromium/firefox/webkit projects against
+  the built site, and `tests/flows.spec.ts` covering home render,
+  sandbox boot, search + back-navigation, and the freeze regression —
+  12/12 green across all three engines, wired into `npm run verify`
+  (vitest scoped to `src` so the two runners keep their own files).
+
+## 2026-08-28 — the doc site's browser support line [0606]
+
+- The site now declares what it supports: Baseline Widely Available
+  (Chrome/Edge 121+, Firefox 123+, Safari/iOS 17.2+ — 87% of tracked
+  global usage) as the supported line, with the build floor pinned as
+  `vite.build.target` in astro.config.mjs (chrome111/edge111/
+  firefox114/safari16.4/ios16.4) so a toolchain major can no longer
+  move it silently. Rules in website/CONVENTIONS.md ## Browser
+  support. A three-engine spot check (Chromium, Firefox, WebKit
+  against the built site) passed every flow — home, sandbox boot,
+  search, back-navigation, doc pages — and surfaced one shipped bug:
+  PGlite's close() deadlocks when a query is still in flight, so
+  navigating off the homepage while the sandbox is active can freeze
+  the destination page (reproduced in Node against 0.5.6 and 0.5.8;
+  fixed the same day [0607]).
+
 ## 2026-08-28 — the member profile page [0605]
 
 - Clicking brandon's name or avatar on any thread post now opens
