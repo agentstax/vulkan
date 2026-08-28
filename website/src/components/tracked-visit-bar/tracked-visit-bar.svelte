@@ -3,7 +3,7 @@
 	import VisitBar from '../visit-bar/visit-bar.svelte';
 	import type { VersionManifest } from '../version-select/types';
 	import { readTracking } from '../../state/read-tracking.svelte';
-	import { versionManifestState } from './tracked-visit-bar-state.svelte';
+	import { lastVisitDate, VersionManifestState } from './tracked-visit-bar-state.svelte';
 
 	type Props = {
 		version: string;
@@ -15,22 +15,30 @@
 
 	let { version, buildManifest, manifestUrl }: Props = $props();
 
-	// captured before this page view is appended, so the bar shows the
-	// PREVIOUS visit
-	const lastVisitDate = readTracking.lastVisitDate();
+	const visitDate = lastVisitDate();
 
-	const manifestState = versionManifestState(buildManifest);
+	const manifestState = new VersionManifestState(buildManifest);
 	let path = $state('');
 
+	// the island carries transition:persist, so this instance lives for the
+	// whole visit: onMount runs once, and every later navigation reaches the
+	// bar through astro:after-swap instead
 	onMount(() => {
-		readTracking.recordPageVisit(window.location.pathname);
-		path = window.location.pathname;
+		const recordVisit = () => {
+			readTracking.recordPageVisit(window.location.pathname);
+			path = window.location.pathname;
+		};
+
+		recordVisit();
 		void manifestState.load(manifestUrl);
+
+		document.addEventListener('astro:after-swap', recordVisit);
+		return () => document.removeEventListener('astro:after-swap', recordVisit);
 	});
 </script>
 
 <VisitBar
-	lastVisitDate={lastVisitDate === null ? null : lastVisitDate.slice(0, 10)}
+	lastVisitDate={visitDate === null ? null : visitDate.slice(0, 10)}
 	{version}
 	manifest={manifestState.manifest}
 	{path}

@@ -23,5 +23,6 @@
 </script>
 
 <Story name="First visit" args={{ lastVisitDate: null }} />
+<Story name="Prerendered placeholder" args={{ lastVisitDate: '9999-99-99' }} />
 <Story name="Returning visitor" />
 <Story name="On an old version" args={{ version: 'v0-demo' }} />

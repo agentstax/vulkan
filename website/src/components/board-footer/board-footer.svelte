@@ -7,7 +7,6 @@
 		<a href="https://claude.ai">The team</a>
 	</div>
 	<div class="footer-meta">
-		<span>All times are UTC</span>
 		<label class="board-style">
 			Board style:
 			<select bind:value={() => boardStyle.current, (id) => boardStyle.select(id)}>

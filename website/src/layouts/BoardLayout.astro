@@ -81,6 +81,7 @@ const versionManifestHref = new URL('/versions.json', siteUrl).href;
 			<BoardNav current={navCurrent} />
 			<TrackedVisitBar
 				client:idle
+				transition:persist="visit-bar"
 				version={docsVersion}
 				{buildManifest}
 				manifestUrl={versionManifestHref}

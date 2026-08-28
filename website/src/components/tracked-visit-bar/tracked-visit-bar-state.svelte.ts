@@ -1,21 +1,28 @@
 import type { VersionEntry, VersionManifest } from '../version-select/types';
+import { readTracking } from '../../state/read-tracking.svelte';
 
-class VersionManifestState {
+// the date the prerendered page shows: shaped like a real date, so the
+// client's capture replacing it at hydration barely moves the bar
+const lastVisitPlaceholder = '9999-99-99';
+
+// the client reads the log before the first page view is appended, so the
+// value names the visit BEFORE this one; the island's transition:persist
+// keeps it (and the component) alive across ClientRouter swaps
+export function lastVisitDate(): string | null {
+	if (typeof window === 'undefined') {
+		return lastVisitPlaceholder;
+	}
+	return readTracking.lastVisitDate();
+}
+
+export class VersionManifestState {
 	manifest: VersionManifest;
-	private loadStarted = false;
 
 	constructor(buildManifest: VersionManifest) {
 		this.manifest = $state(buildManifest);
 	}
 
-	// one fetch per visit: ClientRouter swaps re-mount the island but keep
-	// the module graph, so repeat calls after the first are no-ops
 	async load(manifestUrl: string): Promise<void> {
-		if (this.loadStarted) {
-			return;
-		}
-		this.loadStarted = true;
-
 		try {
 			const response = await fetch(manifestUrl);
 			if (!response.ok) {
@@ -30,18 +37,6 @@ class VersionManifestState {
 			// unreachable live site -- the build's own manifest stays
 		}
 	}
-}
-
-// the visit's one instance: each navigation mounts a fresh island, and
-// every mount after the first must render the already-fetched manifest
-// on its first paint instead of starting over from the build's copy
-let visitInstance: VersionManifestState | null = null;
-
-export function versionManifestState(buildManifest: VersionManifest): VersionManifestState {
-	if (visitInstance === null) {
-		visitInstance = new VersionManifestState(buildManifest);
-	}
-	return visitInstance;
 }
 
 // ***************
