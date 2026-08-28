@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — Playwright covers the editor swap and the initial-JS ceiling
+
+- Two flow tests close the coverage gaps the [0607] bootstrap left,
+  design in [0608]. The editor test waits for CodeMirror over the
+  static shell, asserts the shell is removed, and types until the
+  panel chip leaves "auto re-runs" — the mount and its setSql wiring,
+  previously checked by hand.
+- The initial-JS test sums script response bytes on the homepage at a
+  640px viewport — below the sandbox gate nothing more ever hydrates,
+  so the count is stable, answering the flakiness that helped sink the
+  import-graph walk [0594] (which stays rejected). Measured 82,080 raw
+  bytes; ceiling 96,000; no PGlite chunk may be requested there.
+- website/CONVENTIONS.md ## Islands & loading reworded to describe the
+  shipped check instead of promising an unenforced ceiling. All six
+  runs (both tests × 3 engines) green.
+
 ## 2026-08-28 — website CSS review: one focus ring, one post frame
 
 - The sweep behind it came back clean on the enforced rules — no raw

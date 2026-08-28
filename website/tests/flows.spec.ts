@@ -32,6 +32,45 @@ test('search finds threads and back returns to the results', async ({ page }) =>
 	await expect(results.first()).toBeVisible({ timeout: 20_000 });
 });
 
+test('the editor swaps in over the static shell and registers edits', async ({ page }) => {
+	await page.goto('/');
+
+	// the swap needs only hydration and an idle tick, not a booted database,
+	// so this waits on CodeMirror alone
+	const panel = page.locator('.sql-panel').first();
+	await expect(panel.locator('.cm-editor')).toBeVisible({ timeout: 30_000 });
+	await expect(panel.locator('.editor-area pre')).toHaveCount(0);
+
+	// typing must reach the panel state -- the chip leaves "auto re-runs"
+	// only through its setSql
+	await panel.locator('.cm-content').click();
+	await page.keyboard.type(' -- edited');
+	await expect(panel.locator('.panel-chip')).toHaveText(/edited/);
+});
+
+// raw (decompressed) bytes, measured 2026-08-28 at 82,080 -- headroom for
+// small growth, a failing build for a heavy chunk in the initial payload
+const initialJsCeilingBytes = 96_000;
+
+test('the homepage JS below the sandbox gate stays under the ceiling', async ({ page }) => {
+	const scriptBytes: Promise<number>[] = [];
+	const scriptUrls: string[] = [];
+	page.on('response', (response) => {
+		if (response.request().resourceType() !== 'script') return;
+		scriptUrls.push(response.url());
+		scriptBytes.push(response.body().then((body) => body.length));
+	});
+
+	// below the 761px sandbox gate the island never hydrates, so networkidle
+	// is a stable moment and the sum is the JS every phone reader pays
+	await page.setViewportSize({ width: 640, height: 900 });
+	await page.goto('/', { waitUntil: 'networkidle' });
+
+	expect(scriptUrls.filter((url) => /pglite/i.test(url))).toEqual([]);
+	const totalBytes = (await Promise.all(scriptBytes)).reduce((sum, bytes) => sum + bytes, 0);
+	expect(totalBytes).toBeLessThan(initialJsCeilingBytes);
+});
+
 test('leaving a booted sandbox keeps the next page alive', async ({ page }) => {
 	test.setTimeout(sandboxBootTimeout + 60_000);
 	await page.goto('/');

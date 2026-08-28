@@ -136,8 +136,11 @@ default [0606]:
   console's shell is server-rendered -- example SQL as build-time
   highlighted text over real seeded result rows -- and the editor
   swaps in sized identically.
-- A Playwright test asserts the homepage's initial JS stays under the
-  declared ceiling; a chunk that regresses it is a failing build.
+- A Playwright flow test sums the script bytes the homepage loads
+  below the sandbox gate -- the island never hydrates there, so the
+  count is stable -- against a declared ceiling, and asserts no PGlite
+  chunk is requested; past the ceiling is a failing build. The
+  build-time import-graph walk stays rejected [0594].
 
 ## Errors
 

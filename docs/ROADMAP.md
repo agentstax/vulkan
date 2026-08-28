@@ -21,18 +21,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Doc site — interactive mechanisms.** Paste-your-log-line shipped
-  2026-08-26 [0590]; what it left open is the example-values item below.
-
-- **Website Playwright coverage.** The flows suite bootstrapped in [0607]
-  covers home render, sandbox boot, search, and the close-freeze
-  regression only. Wanted next: an editor-swap assertion (the CodeMirror
-  mount has no test — checked by hand during the 2026-08-28 sandbox
-  refactor), and the initial-JS line CONVENTIONS ## Islands & loading
-  promises but nothing enforces — scoped as a ~20-line Playwright
-  response-byte sum, NOT a revival of the rejected import-graph walk
-  [0594]; reconcile that conventions sentence with [0594] either way.
-
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling
     sendEmailConfirmation() before a Produce/multi-target closure is known
