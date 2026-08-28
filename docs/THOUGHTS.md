@@ -1,6 +1,6 @@
 # Doc
 
-Need to move accepted answer section immediately underneath question or problem. Helpful info in way http://localhost:4322/errors/VK0005
+Need an actual good table DDL generator. Ideally something that can do it live, probably some tool for it
 
 # Other
 

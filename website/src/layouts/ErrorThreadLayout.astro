@@ -98,19 +98,6 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 			</div>
 		</ErrorPost>
 		{
-			diagnose !== null && (
-				<ThreadPost
-					author="brandon"
-					role="Site Admin"
-					header={null}
-					postCount={postCount}
-					actions={null}
-				>
-					<DiagnoseQueries client:visible queries={diagnose} />
-				</ThreadPost>
-			)
-		}
-		{
 			codeThread.fix !== null && (
 				<ThreadPost
 					author="brandon"
@@ -120,6 +107,19 @@ const threadUrl = new URL(Astro.url.pathname, Astro.site).href;
 					actions={null}
 				>
 					<FixLine client:visible fix={codeThread.fix} placeholders={fixPlaceholders} />
+				</ThreadPost>
+			)
+		}
+		{
+			diagnose !== null && (
+				<ThreadPost
+					author="brandon"
+					role="Site Admin"
+					header={null}
+					postCount={postCount}
+					actions={null}
+				>
+					<DiagnoseQueries client:visible queries={diagnose} />
 				</ThreadPost>
 			)
 		}
