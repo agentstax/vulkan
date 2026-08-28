@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fillText, logAttributes, markPlaceholders } from './placeholders';
+import { fillText, logAttributes } from './placeholders';
 
 // The lines below are the shapes the library actually emits, so a change to
 // its rendering shows up here first.
@@ -108,11 +108,9 @@ describe('fillText', () => {
 	it('returns no segments for empty text', () => {
 		expect(fillText('', new Map())).toEqual([]);
 	});
-});
 
-describe('markPlaceholders', () => {
-	it('marks every blank and fills none', () => {
-		const segments = markPlaceholders('migrate the {owner_kind} schema up from {version}');
+	it('marks every blank when nothing fills', () => {
+		const segments = fillText('migrate the {owner_kind} schema up from {version}', new Map());
 
 		expect(segments).toEqual([
 			{ text: 'migrate the ', kind: 'plain' },

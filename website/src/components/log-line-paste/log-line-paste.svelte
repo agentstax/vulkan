@@ -7,7 +7,7 @@
 		// every attribute name this thread's queries and fix substitute
 		placeholders: string[];
 		// the thread's composed line, shown as the shape to paste. It carries
-		// no attribute values, so it is never something to fill from.
+		// example values, so pasting the line above demonstrates the fill.
 		exampleText: string;
 	};
 

@@ -5,6 +5,23 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — the consumer-timeouts guide
+
+- New small page guides/consumer-timeouts closes the Now-list gap the
+  ROADMAP named: the counters and events were documented (VK0050,
+  VK0052, abandoned_count on VK0041) but no page said what a reader
+  should do about them. Placement settled as a standalone guide with
+  interweaving links — the user's stated preference over growing an
+  existing page.
+- The page walks the cancel -> grace -> abandon window with the real
+  CallSafely strings (email-sender at 5s, message 214, abandoned at
+  5.1s), fixes it with a ctx-respecting handler (http.Post vs
+  NewRequestWithContext), and splits the two knobs: Message.Timeout
+  for slow work, TimeoutGrace for slow cancellation response only.
+- Inbound links added where a reader actually lands: VK0041's
+  abandoned_count bullet, VK0050, VK0052's investigate line, and
+  concepts/lifecycle's retries section; Guides board row added.
+
 ## 2026-08-28 — transactional-produce gets the side-effect footgun
 
 - New "Side effects don't roll back" section on

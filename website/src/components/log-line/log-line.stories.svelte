@@ -6,7 +6,7 @@
 		title: 'Board/LogLine',
 		component: LogLine,
 		args: {
-			text: 'topic not found -- register it with MessageAdmin.RegisterTopic first [VK0005]',
+			text: 'schema version is older than this build requires: version 2, build_version 3, owner_kind "topic" -- migrate the topic schema up from 2 to 3 [VK0022]',
 			kind: 'error',
 		},
 	});
@@ -16,14 +16,8 @@
 
 <Story
 	name="Event"
-	args={{ text: 'level=WARN msg="messages dead-lettered" code=VK0028', kind: 'event' }}
-/>
-
-<!-- VK0022: the composed line carries the fix, and the fix carries blanks -->
-<Story
-	name="Error whose fix names the caller's values"
 	args={{
-		text: 'schema version is older than this build requires -- migrate the {owner_kind} schema up from {version} to {build_version} [VK0022]',
-		kind: 'error',
+		text: 'level=WARN msg="messages dead-lettered" code=VK0028 topic_id=1 group_id=7',
+		kind: 'event',
 	}}
 />

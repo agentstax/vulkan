@@ -23,12 +23,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 
 - **Doc site — content still owed.** (AI-drafted prose now writes
   against website/VOICE.md [0609].)
-  - consumerFunc hard timeout, goroutine abandoned — how to PREVENT it:
-    handle ctx.Done() inside consumerFunc, or raise TimeoutGrace. Rare,
-    but the abandoned goroutine is a real side effect. The counter and its
-    events are already documented (VK0050, VK0052, and abandoned_count on
-    VK0041); what no page says is what a reader should do about it.
-    Raised by CallSafely in pkg/consumergroup/base/consumer.go.
   - Per-page example attribute values on error/event threads — compose
     richer example log lines from each code's real attribute keys instead
     of the minimal composed line. Now load-bearing, not cosmetic [0590]:

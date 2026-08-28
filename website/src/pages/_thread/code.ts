@@ -1,5 +1,7 @@
 import type { CollectionEntry } from 'astro:content';
 import { threadCode } from '../_board/boards';
+import { pastePlaceholders } from './diagnose';
+import { errorExampleLine, eventExampleLine } from './example-line';
 import type { CodeThreadData } from './model';
 
 type DocsEntry = CollectionEntry<'docs'>;
@@ -15,6 +17,7 @@ export function codeThreadData(entry: DocsEntry): CodeThreadData {
 	}
 
 	const title = entry.data.title;
+	const names = pastePlaceholders(code);
 	switch (kind) {
 		case 'error': {
 			if (recovery === undefined) {
@@ -26,8 +29,11 @@ export function codeThreadData(entry: DocsEntry): CodeThreadData {
 				solved: fix !== undefined,
 				classification: `recovery ${recovery}`,
 				rank: recovery === 'permanent' ? 'Permanent error' : 'Transient error',
-				introduction: "As it arrives in your log or error chain — the values are your call's own:",
-				logLine: `${title}${fix === undefined ? '' : ` -- ${fix}`} [${code}]`,
+				introduction:
+					names.length > 0
+						? 'As it arrives in your log or error chain — example values stand where yours will:'
+						: "As it arrives in your log or error chain — the values are your call's own:",
+				logLine: errorExampleLine(title, fix ?? null, code, names),
 				consequence,
 				fix: fix ?? null,
 			};
@@ -42,8 +48,11 @@ export function codeThreadData(entry: DocsEntry): CodeThreadData {
 				solved: false,
 				classification: `log event at ${level}`,
 				rank: `Log event at ${level}`,
-				introduction: 'As it arrives in your log:',
-				logLine: `level=${level.toUpperCase()} msg="${title}" code=${code}`,
+				introduction:
+					names.length > 0
+						? 'As it arrives in your log — example values stand where yours will:'
+						: 'As it arrives in your log:',
+				logLine: eventExampleLine(title, level, code, names),
 				consequence,
 				fix: null,
 			};

@@ -24,12 +24,6 @@ export function logAttributes(line: string, names: string[]): Map<string, string
 	return found;
 }
 
-// markPlaceholders splits text on its placeholders without filling any -- for
-// text that states a code's own shape rather than one reader's values.
-export function markPlaceholders(text: string): FilledSegment[] {
-	return fillText(text, new Map());
-}
-
 // A name nothing filled stays a visible blank.
 export function fillText(text: string, values: Map<string, string>): FilledSegment[] {
 	const segments: FilledSegment[] = [];
