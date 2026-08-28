@@ -5,6 +5,37 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — website CSS review: one focus ring, one post frame
+
+- The sweep behind it came back clean on the enforced rules — no raw
+  values outside the tokens layer, only the two sanctioned breakpoints,
+  token discipline intact. What it found was duplication.
+- The focus ring is now stated once in the base layer for everything
+  interactive (a/button/select/summary at 2px offset, input/textarea
+  hugging at 1px, `:where()` so any scoped override still wins); nine
+  restatements deleted across eight components and the era-button
+  utility. One deliberate standardization: add-consumer's select ring
+  offset moved 1px to match every other select.
+- thread-post and error-post shared 85 identical lines of frame CSS —
+  header strip, author column, post body, and the phone collapse. Both
+  now render a new post-frame component (framed/header/headerTone/
+  authorCell/authorIgnored snippet props) carrying that CSS once;
+  thread-post.css and error-post.css keep only their own cell contents.
+  Pagefind behavior preserved: thread authors stay ignored, the error
+  code cell stays indexable.
+- The off-list `.post-body :global(p)` crossing went from two components
+  to one, and the website CONVENTIONS `:global()` sanctioned list now
+  names it.
+- Verified: full-page screenshots before/after are byte-identical on the
+  error thread, 404, and phone widths (home differs only by the live
+  sandbox's row-fade timing — it differs from itself the same way); all
+  12 Playwright flows pass; prettier/eslint/stylelint/svelte-check
+  clean. Left as-is, deliberately: the empty compositions layer (no
+  third call site yet), the varied inline-error font sizes, and the
+  four remaining ~80+-line style files (compat-matrix 131,
+  consumer-card 104, accept-all-modal 102, member-profile 94) — single
+  components, splitting would be busywork.
+
 ## 2026-08-28 — sandbox and database code split to the conventions' own shape
 
 - The sandbox tree's three biggest files carried logic where the gist

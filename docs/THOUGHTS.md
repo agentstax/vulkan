@@ -1,7 +1,5 @@
 # Doc
 
-make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
-
 # Other
 
 need to exaimine a table DDL diagram before doing final public surface / documentation

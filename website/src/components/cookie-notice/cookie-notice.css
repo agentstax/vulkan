@@ -66,11 +66,6 @@
 	cursor: pointer;
 }
 
-.notice-policy:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 2px;
-}
-
 /* the bit is a desktop bit: at phone widths the bar would eat a third
    of the screen and bury the page's own controls, so it never shows */
 @media (max-width: 639px) {

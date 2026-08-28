@@ -418,9 +418,19 @@
 		text-decoration: underline;
 	}
 
-	a:focus-visible {
+	/* the one focus ring, stated here for everything interactive -- a
+	   component never restates it. :where() keeps specificity at zero, so
+	   a scoped rule that needs a different ring still wins unqualified. */
+	a:focus-visible,
+	:where(button, select, summary):focus-visible {
 		outline: 2px solid var(--color-focus-ring);
 		outline-offset: 2px;
+	}
+
+	/* a text field draws its own box, so its ring hugs a step closer */
+	:where(input, textarea):focus-visible {
+		outline: 2px solid var(--color-focus-ring);
+		outline-offset: 1px;
 	}
 
 	/* hover is the underline's only carrier, and touch has no hover --
@@ -607,11 +617,6 @@
 		text-decoration: none;
 		padding: var(--space-3) var(--space-12);
 		cursor: pointer;
-	}
-
-	.era-button:focus-visible {
-		outline: 2px solid var(--color-focus-ring);
-		outline-offset: 2px;
 	}
 
 	/* a thumb needs more face than a pointer: the era look keeps its

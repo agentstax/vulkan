@@ -24,11 +24,6 @@
 	color: var(--color-text);
 }
 
-.search-form input:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 1px;
-}
-
 /* under 16px iOS Safari zooms the whole page when the input focuses */
 @media (pointer: coarse) {
 	.search-form input {

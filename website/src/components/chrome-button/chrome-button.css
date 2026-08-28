@@ -43,11 +43,6 @@
 	cursor: default;
 }
 
-.chrome-button:focus-visible {
-	outline: 2px solid var(--color-focus-ring);
-	outline-offset: 2px;
-}
-
 /* a thumb needs more face than a pointer */
 @media (pointer: coarse) {
 	.chrome-button {

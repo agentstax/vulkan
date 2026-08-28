@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import PixelExclamation from '../pixel-exclamation/pixel-exclamation.svelte';
+	import PostFrame from '../post-frame/post-frame.svelte';
 
 	type Props = {
 		code: string;
@@ -15,27 +16,31 @@
 	let { code, rank, reportHref, actions, children }: Props = $props();
 </script>
 
-<div class="error-post">
-	<div class="post-header" data-pagefind-ignore>
-		<span>the log line</span>
-		<span class="header-links">
-			{#if actions !== null}
-				{@render actions()}
-				<span>&middot;</span>
-			{/if}
-			<a href={reportHref}>Report this thread</a>
-		</span>
-	</div>
-	<div class="post-columns">
-		<div class="author">
-			<span class="code-name">{code}</span>
-			<span class="code-rank">{rank}</span>
-			<span class="avatar"><PixelExclamation width={44} /></span>
-		</div>
-		<div class="post-body">
-			{@render children()}
-		</div>
-	</div>
-</div>
+{#snippet headerContents()}
+	<span>the log line</span>
+	<span class="header-links">
+		{#if actions !== null}
+			{@render actions()}
+			<span>&middot;</span>
+		{/if}
+		<a href={reportHref}>Report this thread</a>
+	</span>
+{/snippet}
+
+{#snippet authorCell()}
+	<span class="code-name">{code}</span>
+	<span class="code-rank">{rank}</span>
+	<span class="avatar"><PixelExclamation width={44} /></span>
+{/snippet}
+
+<PostFrame
+	framed={true}
+	header={headerContents}
+	headerTone="plain"
+	{authorCell}
+	authorIgnored={false}
+>
+	{@render children()}
+</PostFrame>
 
 <style src="./error-post.css"></style>

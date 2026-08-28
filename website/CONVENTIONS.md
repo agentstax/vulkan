@@ -208,7 +208,9 @@ preprocessor, no utility framework, no third-party token pack.
   `data-` attributes (`[data-folder='new']`), never modifier
   classes.
 - `:global()` is a sanctioned-crossing list: the base layer's MDX
-  styling and view-transition names. Anywhere else it is a bug.
+  styling, view-transition names, and post-frame's reset of the
+  classless children a post body receives (`.post-body :global(p)`).
+  Anywhere else it is a bug.
 - A board style is a tokens-layer redefinition -- its own primitive
   sheet, then a re-point of the semantic names -- selected by
   `data-board-style` on the root element; a component never branches on
