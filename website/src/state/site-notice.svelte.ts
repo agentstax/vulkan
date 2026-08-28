@@ -1,3 +1,4 @@
+import type { TransitionBeforeSwapEvent } from 'astro:transitions/client';
 import { caughtMessage } from '../helpers/caught-message';
 
 // The page-level notice: the surface for failures no island caught. One
@@ -61,6 +62,15 @@ export function listenForPageFailures(): void {
 
 	window.addEventListener('unhandledrejection', (event) => {
 		siteNotice.show('banner', caughtMessage(event.reason));
+	});
+
+	// the router leaves the transition's ready promise unhandled, and a
+	// skipped cross-fade rejects it while the navigation itself completes
+	// (Chrome skips on mobile whenever the viewport resizes mid-flight).
+	// Catching it here keeps the skip out of the net above -- the fix
+	// Nuxt applied to its own router, applied at Astro's event seam.
+	document.addEventListener('astro:before-swap', (event) => {
+		(event as TransitionBeforeSwapEvent).viewTransition.ready.catch(() => {});
 	});
 
 	// a failed chunk after a redeploy: fresh HTML names fresh chunks, so one

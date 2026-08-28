@@ -23,6 +23,13 @@ close-out).
   Checks: prettier, eslint, stylelint, astro check, vitest, astro
   build all pass; svelte-check carries only the pre-existing
   board-stats story drift.
+- Found by the first mobile check, fixed [0603] then re-fixed [0604]:
+  Chrome skips view transitions on mobile (Chromium regression
+  456078987) and leaks the `ready` rejection as an unhandled
+  rejection the banner reported. Now caught at the source —
+  `event.viewTransition.ready.catch()` on astro:before-swap, the
+  Nuxt-router fix at Astro's event seam — and [0603]'s net filter is
+  reverted, so the net is fully strict again.
 - Remaining to close out: user's manual pass at 390/640/761px (and
   confirming no PGlite request below the gate in the network log);
   then the HISTORY.md entry, delete mobile-review.md, and drop the
