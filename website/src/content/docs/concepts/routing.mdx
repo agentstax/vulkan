@@ -83,7 +83,8 @@ vulkan alert bindings
 ```
 
 <ThreadAside label="NOTE" title="Binding changes are forward-only">
-The pattern is evaluated when a message fans out to the group, and the
+The pattern is evaluated when a message
+[fans out](/concepts/fan-out/) to the group, and the
 fan-out position only moves forward — so a binding added today applies
 to messages produced after it installs. Messages already routed (or
 skipped) keep the outcome they had.

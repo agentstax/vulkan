@@ -1,5 +1,7 @@
 # Doc
 
+Need to move accepted answer section immediately underneath question or problem. Helpful info in way http://localhost:4322/errors/VK0005
+
 # Other
 
 need to exaimine a table DDL diagram before doing final public surface / documentation

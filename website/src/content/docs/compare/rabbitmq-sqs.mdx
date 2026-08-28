@@ -7,8 +7,8 @@ import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 RabbitMQ and SQS are the workhorses of the queue world, and Vulkan
 borrows their best ideas shamelessly: per-message retries,
-dead-lettering, leases (SQS calls its version a visibility timeout),
-routing. The disagreement is about one default: **what happens to a
+dead-lettering, [leases](/concepts/lifecycle/) (SQS calls its version
+a visibility timeout), routing. The disagreement is about one default: **what happens to a
 message after it's consumed.**
 
 They delete it. Vulkan keeps it. Almost every difference below falls

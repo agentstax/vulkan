@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — code threads carry example attribute values
+
+- The [0590] gap closed by [0610]: every error/event thread's example
+  log line now carries example values for its own placeholder names,
+  so pasting it into the paste box fills the thread's queries and fix
+  — the feature demonstrates itself.
+- One shared value table (orders.created, group id 7, message 214,
+  topic_janitor, alert.partition_count) keeps the whole board on one
+  fictional deployment; VK0023 overrides the version pair so its fix
+  never migrates downward. Composition mirrors the real renderers,
+  and a round-trip test over codes.json proves every composed line
+  fills all of its own names.
+- LogLine's blank-marking path and the markPlaceholders helper went
+  with it — every placeholder on a composed line now fills, so the
+  marked-blank state no longer exists.
+
 ## 2026-08-28 — the consumer-timeouts guide
 
 - New small page guides/consumer-timeouts closes the Now-list gap the

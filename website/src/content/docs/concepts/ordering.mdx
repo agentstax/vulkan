@@ -13,8 +13,9 @@ today — and which one is still a proposal.
 
 ## What's guaranteed by default
 
-Messages are appended with strictly increasing ids, and a group's claims
-scan the log **in id order** — work is handed out oldest-first. But
+Messages are appended with strictly increasing ids, and a group's
+[claims](/concepts/architecture/) scan the log **in id order** — work is
+handed out oldest-first. But
 handed out is not finished: with `MessageConcurrency` above 1, multiple
 consumer instances, or a retry in the mix, *completion* order is not
 guaranteed. The default is full parallelism, honestly labeled.
@@ -38,8 +39,8 @@ produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delt
 
 The guarantee: **at most one delivery per compaction key is in flight
 at a time, per consumer group.** Under the hood it's a `key_lease` row —
-a same-key message arriving while the key is busy is recorded `deferred`
-and picked up later; messages with different keys, and messages with no
+a same-key message arriving while the key is busy is recorded
+[`deferred`](/concepts/lifecycle/) and picked up later; messages with different keys, and messages with no
 key, run fully parallel.
 
 The subtlety that makes this *not* FIFO: compaction semantics apply.
@@ -70,7 +71,9 @@ second, today Vulkan doesn't ship it.
 
 ## Compared to the neighbors
 
-Scored on shipped behavior only:
+Scored on shipped behavior only — the [Kafka](/compare/kafka/) and
+[RabbitMQ & SQS](/compare/rabbitmq-sqs/) pages carry the full
+comparisons:
 
 | | Kafka | SQS FIFO | Vulkan today |
 | --- | --- | --- | --- |

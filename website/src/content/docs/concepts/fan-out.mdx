@@ -73,8 +73,9 @@ FROM cursor_1 c JOIN consumer_group g ON g.id = c.consumer_group_id;
 The same numbers ship as metrics — head, claimed, committed, backlog,
 in-flight per group — collected by the metrics worker and readable via
 `vulkan metrics list`, because lag is the early warning for every
-consumer failure mode: a stuck handler, an under-provisioned fleet, a
-poison-pill loop.
+consumer failure mode: a [stuck handler](/guides/consumer-timeouts/),
+an under-provisioned fleet, a
+[poison-pill loop](/guides/dead-letters/).
 
 ## Retention
 

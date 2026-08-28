@@ -67,8 +67,9 @@ Spec questions the proposal has to answer before it ships — recorded
 here so the eventual design is reviewable against them:
 
 - **Delivery rows in the window.** A rewind re-runs messages that may
-  have open or `dead` delivery rows; the verb must define whether those
-  reset, keep their attempt history, or block the rewind.
+  have open or [`dead`](/guides/dead-letters/) delivery rows; the verb
+  must define whether those reset, keep their attempt history, or block
+  the rewind.
 - **Safety rail.** Rewinding a group that fires emails is exciting in
   the wrong way — the verb should report what it *would* redeliver
   (count, id range, time span) before doing it.

@@ -71,7 +71,9 @@ instead of paging through an opaque console one message at a time.
    text — as a library verb and a CLI command. Today no such verb
    exists, and hand-editing Vulkan's tables is not a supported path.
    Dead rows keep their full record while they wait; the messages they
-   point at are retained per the topic's retention policy.
+   point at are retained per the topic's retention policy. The
+   cursor-side sibling — rewinding an existing group — is proposed on
+   [the replay guide](/guides/replay/).
    </ThreadAside>
 
 5. **Confirm.** The same triage query, trending to zero for new

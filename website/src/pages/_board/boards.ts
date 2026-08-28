@@ -32,9 +32,11 @@ export const boards: Board[] = [
 	{
 		title: 'Guides',
 		slug: 'guides',
-		description: 'transactional produce, dead letters, consumer timeouts, replay, migrations',
+		description:
+			'transactional produce, side effects & retries, dead letters, consumer timeouts, replay, migrations',
 		threads: () => [
 			'guides/transactional-produce',
+			'guides/side-effects-and-retries',
 			'guides/replay',
 			'guides/dead-letters',
 			'guides/consumer-timeouts',

@@ -78,7 +78,8 @@ Three details about the closure's arguments:
   hatch, not the default path).
 - The `uuid.UUID` argument is the idempotency key this produce will
   dedup on. Persist it alongside your work if you plan to retry across
-  a crash — more on that [below](#retries-are-yours-to-own).
+  a crash — more in
+  [Side Effects & Retries](/guides/side-effects-and-retries/).
 - The payload comes back from the closure, not from a captured
   variable — so it can be built from what your own statements returned
   (a generated id, a computed total).
@@ -158,114 +159,17 @@ the transaction.
 
 </ThreadAside>
 
-## Side effects don't roll back
-
-Don't call `sendEmailConfirmation()` before the transaction is known
-to commit. If a later step fails and rolls back, the database will
-undo its half but that email can't be 'unsent'. The transaction covers
-your statements and the produced message; a plain function call inside
-the closure runs the moment it's reached, and no `ROLLBACK` reaches it.
-
-Here's the closure from above with an email in the wrong place. Say
-`orderId` is `4127` and the customer is `jamie@example.com`:
-
-```go
-// ❌ the email fires whether or not the commit happens
-err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId); err != nil {
-		return err
-	}
-
-	sendEmailConfirmation("jamie@example.com") // fires NOW, mid-transaction
-
-	_, err := receipts.ProduceInTx(ctx, tx,
-		func(context.Context, producer.Tx, uuid.UUID) (*ReceiptRequested, error) {
-			return &ReceiptRequested{OrderId: orderId}, nil
-		}, producer.ProduceOptions{})
-	return err
-})
-```
-
-Walk the failure: the produce returns an error (a dropped connection
-is enough) -> `InTransaction` rolls back -> order 4127 is unpaid again
-and no receipt message exists -> Jamie is holding a "payment received"
-email for a payment the database says never happened.
-
-Moving the call below `InTransaction` fixes that, with one catch: it
-must sit behind the `nil` check. An error return doesn't confirm the
-rollback either — an ambiguous commit failure surfaces as-is (see
-[retries](#retries-are-yours-to-own)) — so on error the only safe
-move is still no email.
-
-```go
-err := producer.InTransaction(ctx, ds, func(ctx context.Context, tx producer.Tx) error {
-	// statements and produces only -- everything in here can roll back
-	_, err := tx.Exec(ctx, `UPDATE orders SET status = 'paid' WHERE id = $1`, orderId)
-	return err
-})
-if err != nil {
-	return err // maybe committed, maybe not -- still no email
-}
-sendEmailConfirmation("jamie@example.com") // the commit is known here
-```
-
-Now walk *this* failure: the process crashes after the commit, before
-the send. The payment is recorded, the receipt message flows, the
-email never goes out. That's the dual write from the top of this page
-in the other order — database first, side effect second — and it has
-the same fix. Make the email a message:
-
-```go
-_, err := emails.ProduceInTx(ctx, tx,
-	func(context.Context, producer.Tx, uuid.UUID) (*EmailRequested, error) {
-		return &EmailRequested{To: "jamie@example.com", Template: "payment-received"}, nil
-	}, producer.ProduceOptions{})
-```
-
-An `email-sender` consumer group calls `sendEmailConfirmation()` in
-its consumerFunc — the relay shape from the note below, pointed at
-your own mail provider. The request to send now commits atomically
-with the payment, a flaky provider gets retries, and a send that
-keeps failing is dead-lettered instead of vanishing with a crashed
-process.
-
-## Retries are yours to own
-
-`InTransaction` never retries your closure — a transient blip or an
-ambiguous commit failure surfaces to you as-is, because only you know
-what's safe to rerun. If you wrap your own retry loop around it, make
-the rerun dedup-safe by supplying your own idempotency key: unset keys
-mint fresh per call, so a naive rerun produces the message twice.
-
-```go
-key, err := uuid.NewV7()
-if err != nil {
-	return err
-}
-
-// persist key alongside the work before the first attempt
-produced, err := instance.Produce(ctx, &OrderCreated{OrderId: order.Id},
-	producer.ProduceOptions{IdempotencyKey: key})
-if err != nil {
-	return err
-}
-if produced.Duplicate {
-	fmt.Println("an earlier attempt already landed -- nothing produced twice")
-}
-```
-
-`Duplicate == true` means an earlier call — or an earlier attempt of
-this one, after a commit whose outcome you never learned — already
-produced under the same key. Prefer time-ordered keys (UUIDv7): random
-v4 keys slow throughput down considerably. A caller-supplied key also
-locks that key for the length of the transaction it runs in, so keep
-transactions that reuse keys short.
+Two things stay yours after the commit guarantee — side effects the
+transaction can't undo, and rerunning the closure when the outcome
+was ambiguous. Both have their own page:
+[Side Effects & Retries](/guides/side-effects-and-retries/).
 
 <ThreadAside label="NOTE" title="Need to reach external systems too?">
 If some messages must also flow to systems outside Postgres (another
 org's Kafka, a partner webhook), your Vulkan topic already *is* a
 transactional outbox — add a relay consumer group that forwards
-downstream, with retries and dead-lettered messages for the flaky
+downstream, with retries and
+[dead-lettered messages](/guides/dead-letters/) for the flaky
 remote end. The hard half (atomic capture) is done; the relay is just
 another consumer.
 
@@ -279,4 +183,6 @@ boundary physically cannot extend into it (two-phase commit exists, and
 nobody's on-call rotation has ever been improved by it). Every
 broker-centric architecture eventually grows an outbox table, a relay,
 and a reconciliation job. Vulkan is what you get by taking that endpoint
-seriously and designing for it from the start.
+seriously and designing for it from the start. The full comparison —
+including when Kafka is still the right call — is
+[its own page](/compare/kafka/).

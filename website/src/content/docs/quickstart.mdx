@@ -267,6 +267,9 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    `ProduceInTx` accepts. Do your own statements first and produce last:
    producing holds a lock on consumer progress for the topic until commit,
    so the produce should be the shortest-held thing in the transaction.
+   The whole story — proving the rollback to yourself, multi-topic
+   commits, and what stays yours — is
+   [the transactional-produce guide](/guides/transactional-produce/).
 
 
 <ThreadAside label="CAUTION" title="One more thing for real deployments">

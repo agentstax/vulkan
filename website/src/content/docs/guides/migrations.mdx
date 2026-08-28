@@ -33,10 +33,10 @@ refuses to start rather than run against a shape it doesn't understand:
 
 - **Database older than the binary** — the binary requires schema the
   database doesn't have yet: `schema version is older than this build
-  requires — migrate the database up first` (`VK0022`).
+  requires — migrate the database up first` ([`VK0022`](/errors/VK0022)).
 - **Database migrated past what the binary tolerates** — a newer release
   applied a breaking migration: `schema version is newer than this build
-  understands — upgrade the binary` (`VK0023`).
+  understands — upgrade the binary` ([`VK0023`](/errors/VK0023)).
 
 ## Rolling deploys: the minimum compatible version
 
@@ -61,7 +61,8 @@ the machinery's.
 Transactional migration steps run under a 2-second `lock_timeout`, so a step
 queued behind your traffic gives up and retries instead of stalling the
 queries queued behind it. When contention outlasts the retries, the run
-stops with `VK0053` naming the blocking session as the thing to clear.
+stops with [`VK0053`](/errors/VK0053) naming the blocking session as the
+thing to clear.
 
 ## Which builds a database admits
 

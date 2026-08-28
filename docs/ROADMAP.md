@@ -23,13 +23,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 
 - **Doc site — content still owed.** (AI-drafted prose now writes
   against website/VOICE.md [0609].)
-  - Per-page example attribute values on error/event threads — compose
-    richer example log lines from each code's real attribute keys instead
-    of the minimal composed line. Now load-bearing, not cosmetic [0590]:
-    the composed line carries no attribute values, so a reader with no log
-    of their own has nothing that demonstrates the paste box. The line
-    feeds both the thread's LogLine and the paste box's shape hint, so one
-    richer composition serves both.
   - DDL table design diagram.
 
 - **Library work the doc pass surfaced.**
@@ -207,6 +200,13 @@ documentation; the latter want a surface that has stopped moving.
   not re-proposed. The research evidence is summarized in [0609];
   VOICE.md ## Sample sources names where future samples may come
   from.
+
+- **Doc-site pages the 2026-08-28 link sweep found missing** — a
+  compaction concept page (concepts/ordering leans on compaction keys and
+  NewCompactionOptions with nowhere to point; architecture's diagram
+  shows compaction_head unexplained) and a workers/maintenance-fleet
+  page (the fleet is a table in concepts/architecture plus one
+  quickstart caution; `vulkan manager run` and cron jobs have no home).
 
 - **`vulkan explain --run`** (or a `vulkan diagnose` verb) — execute a
   declaration's diagnose queries against the operator's own database, since
