@@ -1,7 +1,5 @@
 # Doc
 
-mobile friendly docsite
-
 add a dedicate hero section giving the low down of repo. 'Its kafka on postgres.'
 
 need to cleanup and refactor website sandbox and database code they have grown to large and unruly

@@ -261,6 +261,13 @@ dependencies: pgx-vs-database/sql should weigh LISTEN/NOTIFY's outcome if
 both are in play; presence heartbeat rows are the circuit breaker's
 prerequisite if quorum-as-a-fraction wins.
 
+- **File the view-transition `ready` leak upstream on Astro** (parked
+  2026-08-27 [0604]). Their router attaches no handler to the promise,
+  so every Astro site on mobile Chrome banners a skipped cross-fade as
+  a failure; Nuxt fixed the identical leak in its own router (PRs
+  #34515, #35537) and their closed report is #10830. Our
+  `astro:before-swap` catch is deletable the day they take it.
+
 - **Doc-site sandbox extensions** (parked 2026-08-25 — the sandbox works
   as shipped; each of these is a second story on top of it, none of them
   blocking):

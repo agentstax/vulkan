@@ -5,6 +5,43 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-27 — mobile-friendly doc site [0602] [0604]
+
+- Two breakpoints, declared in `website/CONVENTIONS.md`: 640px collapses
+  the layout, 761px gates the sandbox. Media queries cannot read custom
+  properties, so the values are convention rather than tokens, and
+  touch-target work keys off `(pointer: coarse)` instead of a width —
+  the era look is untouched on a mouse.
+- The sandbox never loads on a phone. Its island boots PGlite in
+  `onMount`, so hydration itself is the ~16MB download (9.6MB wasm +
+  6MB data) for a console unusable at that width. The homepage's whole
+  intro-plus-sandbox post became one route-local component hydrated on
+  `client:media="(min-width: 761px)"` and hidden below it, so the JS is
+  never fetched; a dedicated hero section will fill that slot at every
+  width. CSS-hiding under `client:visible` was rejected — what
+  IntersectionObserver reports for a boxless target is fragile ground
+  for a 16MB gate.
+- The layout work the sweep found: one token
+  (`--grid-board-columns`) forced ~460px of row into the ~286px a 390px
+  phone leaves inside the page frame, so its five consumers collapse to
+  an icon-plus-content grid; the posts' 150px author column becomes a
+  header strip above the body; a `flex-wrap`/`min-width: 0` pass across
+  fourteen rows; tables scroll in their own box and inline code, caught
+  messages, and search excerpts wrap instead of widening the page. The
+  cookie notice is hidden below 640px — the bit stays a desktop bit
+  rather than a bar eating a third of a phone screen — and `--z-notice`
+  puts the failure banner above it where the two used to tie.
+- Chrome skips same-document view transitions on mobile (Chromium
+  regression 456078987) and leaks the rejection of a `ready` promise the
+  spec says to mark handled. Astro's router never touches `ready`, so
+  the failure banner reported a cross-fade that did not play as a page
+  failure. Caught at the source —
+  `event.viewTransition.ready.catch()` on `astro:before-swap`, the fix
+  Nuxt applied inside its own router — and the unhandledrejection net
+  stays fully strict. Filtering exception names at the net shipped
+  first [0603] and was superseded the same day: `InvalidStateError` is a
+  wrong-state class, and a global skip would hide real faults.
+
 ## 2026-08-27 — doc site versioning [0601]
 
 - One live site at the apex; a release deploys the same build twice —

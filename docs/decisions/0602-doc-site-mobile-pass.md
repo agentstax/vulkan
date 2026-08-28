@@ -9,8 +9,8 @@ phase: pre-v1
 ## Context
 
 The site was built desktop-first: two width media queries existed in
-the whole tree, and a three-agent sweep (mobile-review.md, this
-session) found the same failure everywhere — fixed-width tracks
+the whole tree, and a three-agent sweep found the same failure
+everywhere — fixed-width tracks
 (`--grid-board-columns`, the posts' 150px author column) forcing ~460px
 of content into the ~286px a 390px phone leaves inside the page frame,
 plus non-wrapping flex rows, unwrapped wide content, sub-20px touch
