@@ -8,6 +8,7 @@ import CookieNotice from '../components/cookie-notice/cookie-notice.svelte';
 import TrackedVisitBar from '../components/tracked-visit-bar/tracked-visit-bar.svelte';
 import BoardFooter from '../components/board-footer/board-footer.svelte';
 import { siteUrl, docsVersion } from '../site';
+import buildManifest from '../../public/versions.json';
 
 type Props = {
 	title: string;
@@ -78,7 +79,12 @@ const versionManifestHref = new URL('/versions.json', siteUrl).href;
 		<div class="page-frame">
 			<BoardBanner />
 			<BoardNav current={navCurrent} />
-			<TrackedVisitBar client:idle version={docsVersion} manifestUrl={versionManifestHref} />
+			<TrackedVisitBar
+				client:idle
+				version={docsVersion}
+				{buildManifest}
+				manifestUrl={versionManifestHref}
+			/>
 			<div class="page-content">
 				<slot />
 			</div>

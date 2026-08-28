@@ -1,23 +1,26 @@
 import type { VersionEntry, VersionManifest } from '../version-select/types';
 
-// loading: the manifest fetch has not finished
-// done: the fetch finished -- manifest stays null when it could not be read
-export type VersionManifestPhase = 'loading' | 'done';
-
 export class VersionManifestState {
-	phase: VersionManifestPhase = $state('loading');
-	manifest: VersionManifest | null = $state(null);
+	manifest: VersionManifest;
+
+	constructor(buildManifest: VersionManifest) {
+		this.manifest = $state(buildManifest);
+	}
 
 	async load(manifestUrl: string): Promise<void> {
 		try {
 			const response = await fetch(manifestUrl);
-			if (response.ok) {
-				this.manifest = toManifest((await response.json()) as unknown);
+			if (!response.ok) {
+				return;
+			}
+
+			const fetched = toManifest((await response.json()) as unknown);
+			if (fetched !== null) {
+				this.manifest = fetched;
 			}
 		} catch {
-			// unreachable manifest -- the bar shows only this build's version
+			// unreachable live site -- the build's own manifest stays
 		}
-		this.phase = 'done';
 	}
 }
 

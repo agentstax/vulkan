@@ -1,21 +1,25 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import VisitBar from '../visit-bar/visit-bar.svelte';
+	import type { VersionManifest } from '../version-select/types';
 	import { readTracking } from '../../state/read-tracking.svelte';
 	import { VersionManifestState } from './tracked-visit-bar-state.svelte';
 
 	type Props = {
 		version: string;
+		// the manifest this build carries; the live site's copy replaces it
+		// once fetched
+		buildManifest: VersionManifest;
 		manifestUrl: string;
 	};
 
-	let { version, manifestUrl }: Props = $props();
+	let { version, buildManifest, manifestUrl }: Props = $props();
 
 	// captured before this page view is appended, so the bar shows the
 	// PREVIOUS visit
 	const lastVisitDate = readTracking.lastVisitDate();
 
-	const manifestState = new VersionManifestState();
+	const manifestState = new VersionManifestState(buildManifest);
 	let path = $state('');
 
 	onMount(() => {
@@ -29,6 +33,5 @@
 	lastVisitDate={lastVisitDate === null ? null : lastVisitDate.slice(0, 10)}
 	{version}
 	manifest={manifestState.manifest}
-	manifestFetched={manifestState.phase === 'done'}
 	{path}
 />

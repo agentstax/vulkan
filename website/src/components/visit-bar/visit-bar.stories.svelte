@@ -17,7 +17,6 @@
 			lastVisitDate: '2026-08-22',
 			version: 'main',
 			manifest,
-			manifestFetched: true,
 			path: '/quickstart/',
 		},
 	});
@@ -26,5 +25,3 @@
 <Story name="First visit" args={{ lastVisitDate: null }} />
 <Story name="Returning visitor" />
 <Story name="On an old version" args={{ version: 'v0-demo' }} />
-<Story name="Manifest still loading" args={{ manifest: null, manifestFetched: false }} />
-<Story name="Manifest unreachable" args={{ manifest: null }} />

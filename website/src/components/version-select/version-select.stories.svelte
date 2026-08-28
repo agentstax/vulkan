@@ -23,4 +23,3 @@
 <Story name="On the latest version" args={{ version: 'main' }} />
 <Story name="On an old version" args={{ version: 'v0-demo' }} />
 <Story name="On a version the manifest does not list" args={{ version: 'v0-unlisted' }} />
-<Story name="Manifest unreachable" args={{ version: 'main', manifest: null }} />

@@ -2,12 +2,12 @@
 
 add a dedicate hero section giving the low down of repo. 'Its kafka on postgres.'
 
-need to cleanup and refactor website sandbox and database code they have grown to large and unruly
-make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
-
 Should be able to click on my user profile could make it funny or a reference
 - I like the idea of profile doing stanely parable reference "The end is never the end.. 
   is never the end.. is never the end" fits well with the never ending work of this project
+
+need to cleanup and refactor website sandbox and database code they have grown to large and unruly
+make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
 
 Need to do a multi browser / version compatibility review
 
