@@ -15,7 +15,8 @@
 
 		const url = new URL(window.location.href);
 		url.searchParams.set('q', query);
-		window.history.replaceState(null, '', url);
+		// preserve the ClientRouter's {index, scroll} state
+		window.history.replaceState(window.history.state, '', url);
 		void state.search();
 	}
 
