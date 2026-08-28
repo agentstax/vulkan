@@ -1,0 +1,72 @@
+/* The bar rides the bottom edge the way every real consent notice does --
+   act one only works while it is indistinguishable from the banner a reader
+   has dismissed a thousand times, so it takes no veil and traps no focus.
+   Accept all answers on accept-all-modal instead, which owns its own look. */
+.cookie-notice {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	z-index: var(--z-raised);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-8);
+	padding: var(--space-12) var(--space-16);
+	background: var(--color-surface);
+	border-top: 1px solid var(--border-outer);
+	box-shadow: var(--shadow-console);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.cookie-notice {
+		animation: cookie-notice-rise 200ms ease-out;
+	}
+
+	@keyframes cookie-notice-rise {
+		from {
+			transform: translateY(100%);
+		}
+	}
+}
+
+.notice-title {
+	margin: 0;
+	font-family: var(--font-chrome);
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--color-text);
+}
+
+.notice-body {
+	margin: 0;
+	max-width: 82ch;
+	font-family: var(--font-content);
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--color-text-muted);
+}
+
+.notice-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--space-8);
+}
+
+/* Manage preferences, set as the de-emphasized link a real banner buries
+   it as -- the reader who hunts for it has already earned its answer */
+.notice-policy {
+	background: none;
+	border: none;
+	padding: 0;
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-link);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.notice-policy:focus-visible {
+	outline: 2px solid var(--color-focus-ring);
+	outline-offset: 2px;
+}

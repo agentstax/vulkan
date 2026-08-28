@@ -4,6 +4,7 @@ import '../styles/global.css';
 import BoardBanner from '../components/board-banner/board-banner.svelte';
 import BoardNav from '../components/board-nav/board-nav.svelte';
 import SiteNotice from '../components/site-notice/site-notice.svelte';
+import CookieNotice from '../components/cookie-notice/cookie-notice.svelte';
 import TrackedVisitBar from '../components/tracked-visit-bar/tracked-visit-bar.svelte';
 import BoardFooter from '../components/board-footer/board-footer.svelte';
 
@@ -76,6 +77,7 @@ const { title, description, navCurrent } = Astro.props;
 			</div>
 			<BoardFooter client:idle />
 		</div>
+		<CookieNotice client:idle />
 	</body>
 </html>
 

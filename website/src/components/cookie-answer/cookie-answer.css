@@ -1,0 +1,32 @@
+.answer-body {
+	margin: 0;
+	max-width: 82ch;
+	font-family: var(--font-content);
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--color-text);
+}
+
+/* the one true sentence under every answer, set back from the joke above
+   it so the two are not read as the same voice */
+.answer-statement {
+	margin: 0;
+	max-width: 82ch;
+	font-family: var(--font-content);
+	font-size: 11px;
+	line-height: 1.6;
+	color: var(--color-text-muted);
+}
+
+.answer-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--space-8);
+}
+
+/* roomier than the chrome buttons act one uses -- these carry a sentence
+   fragment, not a one-word verb */
+.answer-actions .era-button {
+	padding: var(--space-6) var(--space-12);
+}

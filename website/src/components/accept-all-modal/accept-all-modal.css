@@ -1,0 +1,96 @@
+/* Accept all is the one answer that stops being chrome and takes the
+   screen -- pressing the button nobody reads should cost more than a
+   rewritten strip along the bottom edge. */
+.modal-veil {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-raised);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-16);
+	background: var(--color-hacked-veil);
+	overflow: hidden;
+}
+
+/* the copies sit on the veil, not in the box -- they are what happened to
+   the page, and the box is the only part still talking to the reader. The
+   tag carries the real pixel size so the aspect survives the width the
+   placement gives it. */
+.modal-meme {
+	position: absolute;
+	height: auto;
+}
+
+/* a rectangular still gets the border that reads it as a pasted card; art
+   with its own alpha edge gets none, or the frame boxes in empty pixels */
+.modal-meme[data-framed='true'] {
+	border: 1px solid var(--border-section);
+}
+
+.modal-box {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-10);
+	max-width: 52ch;
+	padding: var(--space-18) var(--space-24);
+	background: var(--color-surface);
+	border: 1px solid var(--border-outer);
+	box-shadow: var(--shadow-console);
+}
+
+.modal-body {
+	margin: 0;
+	font-family: var(--font-content);
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--color-text);
+}
+
+/* the dump: monospace and tabular, because the digits arrive one at a time
+   and a proportional face would shuffle the ones already on screen */
+.leaked {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+	margin: 0;
+	padding: var(--space-10) var(--space-12);
+	background: var(--color-console-sql-bg);
+	border: 1px solid var(--border-section);
+}
+
+.leaked-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--space-8);
+}
+
+.leaked-label {
+	font-family: var(--font-chrome);
+	font-size: 10px;
+	color: var(--color-text-muted);
+}
+
+.leaked-value {
+	margin: 0;
+	min-height: 1.4em;
+	font-family: var(--font-database);
+	font-size: 14px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 1px;
+	color: var(--color-console-error);
+}
+
+.modal-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--space-8);
+}
+
+.modal-actions .era-button {
+	padding: var(--space-6) var(--space-12);
+}

@@ -80,6 +80,7 @@
 		--refused-red: #a93226;
 		--refused-red-pale: #fbeceb;
 		--refused-red-border: #eecdc9;
+		--veil-pitch: rgba(9, 12, 16, 0.92);
 
 		/* semantic -- what components consume */
 		--color-page: var(--page-blue-gray);
@@ -182,6 +183,10 @@
 		--color-sql-value-ground: var(--solved-green-pale);
 		--color-sql-value-text: var(--solved-green);
 		--border-sql-value: var(--solved-green-border);
+
+		/* A taken-over screen is dark whichever board the reader chose, so
+		   like amber this is stated once and the night sheet inherits it. */
+		--color-hacked-veil: var(--veil-pitch);
 
 		--flag-body: var(--amber-dark);
 		--flag-face: var(--amber);
@@ -521,6 +526,39 @@
 
 	.thread-body :where(tbody tr:nth-child(odd)) {
 		background: var(--color-row-stripe-a);
+	}
+
+	/* The page's flinch when a reader presses Accept all, switched on by
+	   helpers/page-stutter and cleared when it ends. steps(1) rather than a
+	   curve: a page that reloaded under you blinks, it does not fade. The
+	   shove is a scroll from that same helper -- transforming the page here
+	   would re-anchor every position: fixed child mid-animation. */
+	@media (prefers-reduced-motion: no-preference) {
+		body[data-stutter] {
+			animation: page-stutter 420ms steps(1, end);
+		}
+
+		@keyframes page-stutter {
+			0%,
+			26%,
+			58%,
+			88%,
+			100% {
+				opacity: 1;
+			}
+
+			14% {
+				opacity: 0.3;
+			}
+
+			46% {
+				opacity: 0.12;
+			}
+
+			76% {
+				opacity: 0.55;
+			}
+		}
 	}
 
 	/* The page-to-page cross-fade is the browser's own default, so there is no

@@ -5,6 +5,40 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-27 — the doc site's cookie notice [0599] [0600]
+
+- The site sets no cookies, so the one piece of chrome every reader is trained
+  to look at is where it says so. Act one copies the compliance-vendor
+  standard — "we value your privacy", the cookies-and-similar-technologies
+  paragraph, Accept all / Reject non-essential / Manage preferences. Act two
+  is the site's real privacy note: no cookies, no analytics, no third party,
+  only localStorage the reader's own browser holds.
+- Its own surface, never `site-notice`. That is the shipped error channel, and
+  a prank on it would teach readers to ignore the one banner that means
+  something actually broke. Separate component, separate state, opposite
+  screen edge. First visit, one answer per browser, no veil and no focus trap
+  on the bar — a real consent bar does not block the page.
+- The pressed control is the whole input: `answers.ts` is a discriminated
+  union keyed by control, so the modal answer carries no content and the
+  compiler refuses any read of one. Reject and Manage rewrite the bar in place
+  through `cookie-answer`; Accept all gets `accept-all-modal`, its own
+  component free to diverge — which it did.
+- Accept all's consequence: the page stutters (opacity blinks in the base
+  layer plus scroll jolts, modal opening on `animationend`), then a routing
+  and account number type out a digit at a time over a dark veil with memes
+  pasted around the box. The numbers are noise per opening but the shape is
+  real — valid ABA checksum, genuine district prefix — because a number of the
+  wrong length reads as a prop.
+- Two traps found and closed while building: the stutter's shove is a scroll,
+  never a transform, because a transform on the page becomes the containing
+  block for every `position: fixed` child and would fling the consent bar to
+  the document bottom mid-animation; and the `animationend` listener checks
+  `event.target`, since that event bubbles and a descendant's animation ending
+  would otherwise cut the stutter short.
+- Net log confirms the meme files are fetched only when the modal renders — a
+  plain page load requests neither. The art is placeholder: it is Nickelodeon's
+  and must be swapped for CC0 or CC BY before the site ships (roadmap, Now).
+
 ## 2026-08-27 — layered error handling on the doc site [0597] [0598]
 
 - Four tiers, disruptiveness matched to scope. Inline at the source stays the
