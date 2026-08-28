@@ -26,8 +26,10 @@
 	{:else}
 		<span class="visit-area">
 			<span class="visit-date">You last visited on {lastVisitDate}</span>
-			<span aria-hidden="true">|</span>
-			<a href="/whats-new/">Show what's new since then</a>
+			<span class="whats-new-area">
+				<span aria-hidden="true">|</span>
+				<a href="/whats-new/">Show what's new since then</a>
+			</span>
 		</span>
 	{/if}
 </div>

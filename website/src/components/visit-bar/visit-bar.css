@@ -32,6 +32,18 @@
 	font-variant-numeric: tabular-nums;
 }
 
+.whats-new-area {
+	display: flex;
+	align-items: center;
+	gap: var(--space-4) var(--space-8);
+}
+
+@media (max-width: 639px) {
+	.whats-new-area {
+		display: none;
+	}
+}
+
 a {
 	font-size: 10px;
 }
