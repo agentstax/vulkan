@@ -1,8 +1,5 @@
 # Doc
 
-Need to do a multi browser / version compatibility review
-
-need to cleanup and refactor website sandbox and database code they have grown to large and unruly
 make sure we do a css review after website done to make sure we can make new layers of simplfy / standize structures
 
 # Other

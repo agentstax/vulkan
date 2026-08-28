@@ -5,6 +5,28 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — sandbox and database code split to the conventions' own shape
+
+- The sandbox tree's three biggest files carried logic where the gist
+  should be; each got the split the rules already name, no new behavior.
+- sandbox.svelte 299 -> 82 lines: a SandboxState runes class in
+  sandbox-state.svelte.ts owns the database, the AutoRunner, the consumer
+  cards, and every control's flags (the ## Components stateful/
+  presentational split); busy/bootFailed are $derived class fields — the
+  first state class to use them.
+- database.ts 357 -> 301 with VulkanDatabase at ~line 66 instead of 134:
+  the table-exact row types and read-models moved to sandbox/model.ts,
+  the TS sibling of a datastore's model.go.
+- sql-panel's 45-line onMount became mountEditorOnIdle in
+  sql-panel/mount-editor.ts (type-only CodeMirror import, so the chunk
+  stays out of the initial payload — verified in the build output);
+  editor.ts moved beside it, sql-panel being its only importer (the seam
+  law). All six sandbox Playwright flows pass across the three engines;
+  the editor swap itself was checked by hand — the missing assertion is
+  now a ROADMAP Now item.
+- ChaosDiagram.astro noted as pre-conventions legacy (root-level .astro,
+  raw hex styles, prop default) and deliberately left alone.
+
 ## 2026-08-28 — sandbox close freeze fixed; Playwright flows bootstrapped [0607]
 
 - The freeze the [0606] spot check surfaced is fixed the same day:
