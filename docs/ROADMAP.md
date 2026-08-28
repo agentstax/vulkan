@@ -21,7 +21,8 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Doc site — content still owed.**
+- **Doc site — content still owed.** (AI-drafted prose now writes
+  against website/VOICE.md [0609].)
   - Transactional-outbox side-effect footgun, worked example — calling
     sendEmailConfirmation() before a Produce/multi-target closure is known
     to commit fires the email even if a later step rolls back. Pairs with
@@ -201,6 +202,21 @@ stay revisable, text polish (naming/errors/logging/comments) last.
 
 Pre-v1 — the 14b public-API pass, then measurement, evaluation, and
 documentation; the latter want a surface that has stopped moving.
+
+- **Voice workflow rungs 2–3** ([0609] shipped rung 1, the
+  website/VOICE.md file; these are deferred until the author has
+  time). Rung 2: author-seeded drafts — the author types or dictates
+  the rough take first and the AI continues and tightens, plus one
+  critique pass naming the draft's differences from the samples
+  before revising; judging is comparative only ("which passage is by
+  the samples' author"), in a fresh context, never a score. Rung 3:
+  after a handful of pages accumulate AI-draft → published-edit git
+  diffs, periodically distill what the author changed into VOICE.md
+  amendments (replacing the constructed contrastive pairs with real
+  pairs) and keep a dismissed-patterns note so rejected ideas are
+  not re-proposed. The research evidence is summarized in [0609];
+  VOICE.md ## Sample sources names where future samples may come
+  from.
 
 - **`vulkan explain --run`** (or a `vulkan diagnose` verb) — execute a
   declaration's diagnose queries against the operator's own database, since

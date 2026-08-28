@@ -5,6 +5,20 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — the doc site's prose voice file
+
+- website/VOICE.md ships and website/CLAUDE.md loads it, design in
+  [0609]: verbatim author samples (session messages, raw
+  explain-it-back answers), two contrastive same-passage pairs,
+  measurable rules, and a revision checklist run as its own pass.
+  AI-drafted site prose now writes against it.
+- Behind it: a voice profile mined from ~3,600 hand-typed session
+  messages across 71 transcripts plus the repo's user-authored
+  strata, and a two-track research sweep (academic + practitioner)
+  of style-imitation evidence. The working doc was folded into
+  [0609], the ROADMAP Later rungs item, and VOICE.md's
+  ## Sample sources, then deleted the same day.
+
 ## 2026-08-28 — Playwright covers the editor swap and the initial-JS ceiling
 
 - Two flow tests close the coverage gaps the [0607] bootstrap left,

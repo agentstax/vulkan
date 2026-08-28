@@ -73,7 +73,8 @@ file) and README/CLAUDE.md stay at root:
   to superseded, linked both ways. A new record takes the next number after
   the current max.
 - CONVENTIONS.md (code rules), website/CONVENTIONS.md (frontend code
-  rules, loaded via website/CLAUDE.md when working in that tree), and
+  rules) and website/VOICE.md (site prose voice, [0609]) -- both
+  loaded via website/CLAUDE.md when working in that tree -- and
   AGENTS.md (this file) hold the binding CURRENT rules -- never infer
   today's rules by replaying decision history.
 

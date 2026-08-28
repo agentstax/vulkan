@@ -724,3 +724,7 @@ Rules for the doc site (website/) and all user-facing prose.
 - The website/ tree carries its own rule file, website/CONVENTIONS.md --
   this file's sibling for frontend code. Its preamble names the sections
   here that bind there by reference; it never restates them.
+- AI-drafted site prose writes against website/VOICE.md (samples, rules,
+  and a revision checklist run as its own pass) -- read it before
+  drafting any website/ prose, even when no file in that tree is open
+  yet.
