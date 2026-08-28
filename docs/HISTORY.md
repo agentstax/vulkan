@@ -5,6 +5,21 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — the table-design page
+
+- concepts/table-design ships the DDL diagram, closing the last
+  content-owed item on the ROADMAP Now list: one ASCII topology
+  diagram — the control-plane ownership spine, the id-names-the-family
+  seam, the three FK crossings back to consumer_group — plus
+  per-table structural facts and a "deliberate absences" section (no
+  topic_id in the family, no FK into message_log, destroy is DROP).
+- Depth deliberately capped above column lists: keys and relationships
+  move rarely, so the page can't silently drift from DDL no check
+  watches. Facts verified against createSystemTables and
+  createTopicTables.
+- Inbound links from architecture, quickstart step 5, and routing;
+  the page slots after architecture on the Concepts board.
+
 ## 2026-08-28 — doc-content sweep: one split, a site-wide link pass
 
 - transactional-produce (1709 words, 2.5x the site median) split: its
