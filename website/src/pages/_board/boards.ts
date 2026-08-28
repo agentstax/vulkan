@@ -19,10 +19,11 @@ export const boards: Board[] = [
 	{
 		title: 'Concepts',
 		slug: 'concepts',
-		description: 'queue & log, lifecycle, ordering, routing, fan-out, architecture',
+		description: 'queue & log, lifecycle, ordering, routing, fan-out, architecture, table design',
 		threads: () => [
 			'concepts/queue-and-log',
 			'concepts/architecture',
+			'concepts/table-design',
 			'concepts/lifecycle',
 			'concepts/fan-out',
 			'concepts/routing',

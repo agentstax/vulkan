@@ -5,6 +5,24 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — doc-content sweep: one split, a site-wide link pass
+
+- transactional-produce (1709 words, 2.5x the site median) split: its
+  side-effects and retries sections became guides/side-effects-and-
+  retries — the two things outside the commit guarantee on one page —
+  per the user's smaller-docs-with-interweaving-links preference.
+- Link pass over the four pages with zero outbound links
+  (transactional-produce, migrations, ordering, routing) and the
+  unreferenced compare pages: quickstart's headline step now links the
+  produce guide, migrations links its VK0022/VK0023/VK0053 threads,
+  ordering links architecture/lifecycle/both compare pages, routing
+  links fan-out, fan-out's lag warning links consumer-timeouts and
+  dead-letters, dead-letters and replay name each other as sibling
+  proposals, why-vulkan's capability table links fan-out/routing/
+  ordering.
+- Two missing pages the sweep surfaced parked in ROADMAP Later: a
+  compaction concept page and a workers/maintenance-fleet page.
+
 ## 2026-08-28 — code threads carry example attribute values
 
 - The [0590] gap closed by [0610]: every error/event thread's example

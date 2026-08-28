@@ -1,0 +1,106 @@
+---
+title: Table Design
+description: Every Vulkan table on one page — the shared control plane, the per-topic family, and the relationships and deliberate absences between them.
+---
+
+Every Vulkan table is one of two kinds: shared control-plane schema,
+created once by `RegisterSystem`, or a member of one topic's family,
+created by `RegisterTopic` and named by the topic's id. The
+[architecture page](/concepts/architecture/) explains why the split
+exists; this page is the map of what's actually there.
+
+```
+   SHARED CONTROL PLANE                  ONE FAMILY PER TOPIC (suffix = id)
+   created by RegisterSystem             created by RegisterTopic
+
+   ┌────────┐
+   │ system │
+   └───┬────┘
+       │ system_id
+   ┌───▼────┐    id names the family    ┌───────────────────────────────┐
+   │ topic  │ ·························▶│ message_log_1  (partitioned)  │
+   └───┬────┘                           │ idempotency_key_1             │
+       │ topic_id                       │ compaction_head_1             │
+   ┌───┴────────────┐                   │ delivery_1 · delivery_log_1   │
+┌──▼────────┐ ┌─────▼──────────┐        │ cursor_1 · lease_1            │
+│ topic_log │ │ consumer_group │◀───────│ key_lease_1                   │
+└───────────┘ └────────────────┘  FK    │ binding_1 · binding_log_1     │
+                                 from   └───────────────────────────────┘
+   worker ─▶ worker_log          cursor,
+     └─▶ worker_instance         binding,
+   cron_job                      binding_log
+   migration_log
+```
+
+## The control plane
+
+`system` -> `topic` -> `consumer_group` is the ownership spine, each
+link a real foreign key with `ON DELETE CASCADE`. The `topic` row is
+where a topic's identity and config live: `(name, schema_version)` is
+unique — a payload schema bump is a whole new topic row — and its `id`
+is what names the family's physical tables. `partition_size` is
+immutable after creation because the log's partition boundaries depend
+on it staying fixed.
+
+The fleet and history tables hang off the spine with one shared
+pattern: `worker`, `cron_job`, and `migration_log` each carry all
+three owner columns (`system_id`, `topic_id`, `consumer_group_id`)
+and a CHECK that exactly one is set — a worker belongs to the system,
+a topic, or a group, never two. `worker_instance` is the live-copy
+row under a `worker`: a `token` only its creator can match and a
+heartbeat-renewed `expires_at`, the same lease shape the
+[lifecycle](/concepts/lifecycle/) uses for claims.
+
+Two of these are append-only operator trails, never updated:
+`topic_log` and `worker_log` snapshot every declaration, while the
+`topic` and `worker` rows stay the truth.
+
+## The family
+
+Suffix `1` throughout — the topic's id from the catalog.
+
+- **`message_log_1`** — the log. `id BIGSERIAL PRIMARY KEY` is the
+  position, and the table is partitioned by id range
+  (`message_log_1_0`, `message_log_1_1`, ...), `partition_size` rows
+  each. Beside the `payload`: `routing_key`, `compaction_key`,
+  `compaction_rank`, and a sparse `options` document.
+- **`idempotency_key_1`** — produce dedup. The key uuid is the primary
+  key; rows expire on a TTL sweep.
+- **`compaction_head_1`** — one row per compaction key naming the
+  key's winning message id, upserted in the same transaction as every
+  keyed produce.
+- **`delivery_1`** — the failure lifecycle,
+  `PRIMARY KEY (consumer_group_id, message_id)`: status, attempts,
+  `can_run_after` backoff, last error, and a per-row lease. The
+  statuses are the [lifecycle](/concepts/lifecycle/) state machine.
+- **`delivery_log_1`** — the per-attempt trail,
+  `PRIMARY KEY (consumer_group_id, message_id, attempt)`, append-only.
+- **`cursor_1`** — one row per group (`consumer_group_id UNIQUE`):
+  `claimed` and `committed`, plus the snapshot-fence columns
+  (`settled_head`, `pending_head`, `pending_xmax`) that keep claims
+  from reading past ids whose producing transactions haven't committed.
+- **`lease_1`** — range claims: `(low, high)`, an expiry, and a
+  `reclaims` counter that quarantines a range reclaimed too often.
+- **`key_lease_1`** — `PRIMARY KEY (consumer_group_id, compaction_key)`:
+  at most one in-flight delivery per key per group, the
+  [ordering](/concepts/ordering/) opt-in.
+- **`binding_1`** / **`binding_log_1`** — the group's
+  [routing](/concepts/routing/) patterns, and the append-only trail of
+  every declaration attempt.
+
+## The deliberate absences
+
+- **No `topic_id` column anywhere in the family.** The table name is
+  the scope; a cross-topic read resolves ids from the catalog first
+  and loops the families.
+- **No foreign key into `message_log_1`.** Delivery rows carry bare
+  `message_id` values and cursor positions are plain ids, so retention
+  can `DROP` a whole partition without a constraint check walking
+  every referencing row.
+- **FKs cross back to the control plane only from the long-lived
+  tables** — `cursor_1`, `binding_1`, and `binding_log_1` declare
+  `consumer_group_id` foreign keys; the churn-heavy `delivery_1`,
+  `delivery_log_1`, and the lease tables carry the same column
+  unconstrained.
+- **Destroying a topic drops the family's tables outright** — cleanup
+  is `DROP TABLE`, never a cross-table `DELETE` sweep.

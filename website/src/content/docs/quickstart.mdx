@@ -196,7 +196,9 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 5. **Look inside with psql**
 
    Everything is rows in your database. Each topic owns its physical
-   tables, named by the topic's id — resolve it once from the catalog:
+   tables, named by the topic's id
+   ([the whole map](/concepts/table-design/)) — resolve it once from
+   the catalog:
 
    ```sql
    SELECT id FROM topic WHERE name = 'signup.welcome-email' AND schema_version = 1;

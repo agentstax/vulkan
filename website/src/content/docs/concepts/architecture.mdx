@@ -37,7 +37,9 @@ library. Everything below is rows.
 
 **One physical family per topic** — created by `RegisterTopic`, named
 by the topic's id. A per-topic table carries no `topic_id` column; the
-table name *is* the scope. The split is deliberate, not decorative:
+table name *is* the scope — every table, key, and relationship is
+mapped on [Table Design](/concepts/table-design/). The split is
+deliberate, not decorative:
 
 - Retention drops wait on every cursor in a table — shared tables would
   let one lagging group on topic A block cleanup for unrelated topic B.
