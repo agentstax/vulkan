@@ -2,25 +2,27 @@
 	import Sandbox from '../../../components/sandbox/sandbox.svelte';
 	import ThreadPost from '../../../components/thread-post/thread-post.svelte';
 	import type { PanelShell } from '../../../components/sandbox/types';
+	import ExampleQuery from '../example-query/example-query.svelte';
 
 	type Props = {
-		label: string;
 		topic: string;
 		messages: PanelShell;
 		cursors: PanelShell;
 	};
 
-	let { label, topic, messages, cursors }: Props = $props();
+	let { topic, messages, cursors }: Props = $props();
 </script>
 
 <div class="sandbox-post">
 	<ThreadPost author="brandon" role="Site Admin" header={null} postCount={null} actions={null}>
-		<p>
-			Every queue makes you trust its dashboard. Vulkan is Postgres, so you can just look — the
-			tables below are the ones the library creates, seeded through its own produce statement. Edit
-			the SQL and press Run: the database runs in this tab, and nothing leaves your browser.
-		</p>
-		<Sandbox {label} {topic} {messages} {cursors} />
+		<h3 class="headline">It's Kafka on Postgres.</h3>
+		<p>You can do cool things like this</p>
+		<div class="sandbox-region">
+			<Sandbox {topic} {messages} {cursors} />
+		</div>
+		<div class="example-region">
+			<ExampleQuery panel={messages} />
+		</div>
 	</ThreadPost>
 </div>
 

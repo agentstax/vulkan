@@ -16,12 +16,6 @@
 	border-bottom: 1px solid var(--border-section);
 }
 
-.sandbox-label {
-	font-size: 10px;
-	font-weight: 600;
-	color: var(--color-chrome-pale-text);
-}
-
 /* pushes the title bar's button to the far edge -- scoped styles cannot
    reach into the button's own component to give it margin-left: auto */
 .sandbox-meta {

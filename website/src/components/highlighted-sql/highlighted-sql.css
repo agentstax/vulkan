@@ -9,6 +9,10 @@
 	overflow-x: auto;
 }
 
+.sql-segment[data-kind='comment'] {
+	color: var(--color-text-faint);
+}
+
 .sql-segment[data-kind='keyword'] {
 	color: var(--color-console-keyword);
 	font-weight: 600;

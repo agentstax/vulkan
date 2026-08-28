@@ -16,6 +16,12 @@
 	args={{ sql: 'SELECT id, routing_key, payload\nFROM message_log_1\nORDER BY id DESC;' }}
 />
 <Story
+	name="Comment line over the query"
+	args={{
+		sql: '-- your queue, selected\nSELECT id, payload\nFROM message_log_1\nORDER BY id DESC;',
+	}}
+/>
+<Story
 	name="Lowercase keywords"
 	args={{ sql: "select count(*) from delivery_1 where status = 'dead';" }}
 />

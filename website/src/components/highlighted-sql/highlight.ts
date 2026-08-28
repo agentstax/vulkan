@@ -1,4 +1,4 @@
-export type SqlSegmentKind = 'plain' | 'keyword' | 'placeholder' | 'value';
+export type SqlSegmentKind = 'plain' | 'keyword' | 'placeholder' | 'value' | 'comment';
 
 export type SqlSegment = {
 	text: string;
@@ -37,18 +37,22 @@ const keywordPattern = new RegExp(`\\b(${keywords.join('|').replaceAll(' ', '\\s
 // {attribute_name} -- the log attribute keys their own line already carries
 const placeholderPattern = /\{[a-z][a-z0-9_]*\}/g;
 
+const commentPattern = /--[^\n]*/g;
+
 // sqlSegments feeds the static shell's highlighting; the CodeMirror editor
 // replaces the whole shell once the live console mounts.
 export function sqlSegments(sql: string): SqlSegment[] {
 	const segments: SqlSegment[] = [];
 
+	// a comment runs to the end of its line and outranks the passes below:
+	// a brace run or keyword inside it is prose, not a blank or a verb
 	let cursor = 0;
-	for (const match of sql.matchAll(placeholderPattern)) {
-		pushKeywordSegments(segments, sql.slice(cursor, match.index));
-		segments.push({ text: match[0], kind: 'placeholder' });
+	for (const match of sql.matchAll(commentPattern)) {
+		pushPlaceholderSegments(segments, sql.slice(cursor, match.index));
+		segments.push({ text: match[0], kind: 'comment' });
 		cursor = match.index + match[0].length;
 	}
-	pushKeywordSegments(segments, sql.slice(cursor));
+	pushPlaceholderSegments(segments, sql.slice(cursor));
 
 	return segments;
 }
@@ -100,6 +104,20 @@ function isQuotedPosition(segments: SqlSegment[], index: number): boolean {
 		before.text.endsWith("'") &&
 		after.text.startsWith("'")
 	);
+}
+
+function pushPlaceholderSegments(segments: SqlSegment[], sql: string): void {
+	if (sql === '') {
+		return;
+	}
+
+	let cursor = 0;
+	for (const match of sql.matchAll(placeholderPattern)) {
+		pushKeywordSegments(segments, sql.slice(cursor, match.index));
+		segments.push({ text: match[0], kind: 'placeholder' });
+		cursor = match.index + match[0].length;
+	}
+	pushKeywordSegments(segments, sql.slice(cursor));
 }
 
 function pushKeywordSegments(segments: SqlSegment[], sql: string): void {

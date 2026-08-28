@@ -38,6 +38,21 @@ describe('sqlSegments', () => {
 		expect(sqlSegments("payload @> '{}'")).toEqual([{ text: "payload @> '{}'", kind: 'plain' }]);
 	});
 
+	it('marks a -- comment to the end of its line', () => {
+		expect(sqlSegments('-- your queue, selected\nSELECT id')).toEqual([
+			{ text: '-- your queue, selected', kind: 'comment' },
+			{ text: '\n', kind: 'plain' },
+			{ text: 'SELECT', kind: 'keyword' },
+			{ text: ' id', kind: 'plain' },
+		]);
+	});
+
+	it('leaves a keyword and a brace run inside a comment as comment text', () => {
+		expect(sqlSegments('-- select {topic_id} first')).toEqual([
+			{ text: '-- select {topic_id} first', kind: 'comment' },
+		]);
+	});
+
 	it('returns no segments for empty sql', () => {
 		expect(sqlSegments('')).toEqual([]);
 	});

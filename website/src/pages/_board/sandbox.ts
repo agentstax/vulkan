@@ -10,7 +10,6 @@ import {
 import type { VulkanDatabase } from '../../components/sandbox/database';
 import type { PanelShell } from '../../components/sandbox/types';
 
-export const sandboxLabel = 'your queue, selected';
 export const sandboxTopic = demoTopicName;
 
 export type SandboxShell = {

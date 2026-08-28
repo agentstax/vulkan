@@ -6,7 +6,6 @@
 		title: 'Board/Sandbox',
 		component: Sandbox,
 		args: {
-			label: 'your queue, selected',
 			topic: 'orders',
 			messages: {
 				table: 'message_log_1',

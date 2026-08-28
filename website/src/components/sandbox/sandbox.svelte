@@ -16,13 +16,12 @@
 	import type { PanelShell } from './types';
 
 	type Props = {
-		label: string;
 		topic: string;
 		messages: PanelShell;
 		cursors: PanelShell;
 	};
 
-	let { label, topic, messages, cursors }: Props = $props();
+	let { topic, messages, cursors }: Props = $props();
 
 	// what a card's status bar reads before its first tick, the sibling of a
 	// query panel showing 0 rows before its first run
@@ -247,7 +246,6 @@
 <IslandBoundary name="sandbox">
 	<div class="sandbox">
 		<div class="title-bar">
-			<span class="sandbox-label">{label}</span>
 			<span class="sandbox-meta">postgres 18 · wasm · local to this tab</span>
 			<ChromeButton
 				label="Reset sandbox ↻"

@@ -2,11 +2,31 @@
 	display: contents;
 }
 
-/* the island hydrates on min-width: 761px at its use site, so below the
-   gate this server-rendered shell would show dead controls -- hiding it
-   is the visual half of the same boundary */
+.headline {
+	margin: 0;
+	font-family: var(--font-band);
+	font-size: 27px;
+	font-weight: 700;
+	letter-spacing: -0.3px;
+}
+
+/* the live sandbox and the static example are the same query at two
+   widths: the island hydrates on min-width: 761px at its use site, so
+   below the gate the dead-control shell hides and the example stands in */
 @media (max-width: 760px) {
-	.sandbox-post {
+	.sandbox-region {
 		display: none;
+	}
+}
+
+@media (min-width: 761px) {
+	.example-region {
+		display: none;
+	}
+}
+
+@media (max-width: 639px) {
+	.headline {
+		font-size: 22px;
 	}
 }
