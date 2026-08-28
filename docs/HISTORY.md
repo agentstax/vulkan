@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — transactional-produce gets the side-effect footgun
+
+- New "Side effects don't roll back" section on
+  guides/transactional-produce, the first Now-list content item owed:
+  sendEmailConfirmation() inside the InTransaction closure fires even
+  when the produce fails and the payment rolls back, worked with real
+  values (order 4127, jamie@example.com).
+- The section walks the half-fix too — the call behind the nil check,
+  with the catch that an error return may be an ambiguous commit, so
+  error also means no email — then the crash-after-commit gap, landing
+  on producing EmailRequested in the same commit with an email-sender
+  consumer group doing the send (the page's existing relay framing).
+- First page drafted against website/VOICE.md's checklist as its own
+  pass: a non-compiling `...` placeholder and a place-shaped
+  dead-letter clause caught and fixed.
+
 ## 2026-08-28 — the doc site's prose voice file
 
 - website/VOICE.md ships and website/CLAUDE.md loads it, design in

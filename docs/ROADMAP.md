@@ -23,10 +23,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 
 - **Doc site — content still owed.** (AI-drafted prose now writes
   against website/VOICE.md [0609].)
-  - Transactional-outbox side-effect footgun, worked example — calling
-    sendEmailConfirmation() before a Produce/multi-target closure is known
-    to commit fires the email even if a later step rolls back. Pairs with
-    the outbox framing already on guides/transactional-produce.
   - consumerFunc hard timeout, goroutine abandoned — how to PREVENT it:
     handle ctx.Done() inside consumerFunc, or raise TimeoutGrace. Rare,
     but the abandoned goroutine is a real side effect. The counter and its
