@@ -1,11 +1,6 @@
 import { SvelteSet } from 'svelte/reactivity';
-import type {
-	ClaimedMessage,
-	ClaimedRange,
-	DatabaseStage,
-	RunResult,
-	VulkanDatabase,
-} from './database';
+import type { DatabaseStage, VulkanDatabase } from './database';
+import type { ClaimedMessage, ClaimedRange, RunResult } from './model';
 
 // idle: nothing has asked for the database yet
 // connecting: the wasm chunk is loading, or Postgres is starting

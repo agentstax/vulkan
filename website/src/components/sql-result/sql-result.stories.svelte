@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import type { ResultRow } from '../sandbox/database';
+	import type { ResultRow } from '../sandbox/model';
 	import SqlResult from './sql-result.svelte';
 
 	const { Story } = defineMeta({

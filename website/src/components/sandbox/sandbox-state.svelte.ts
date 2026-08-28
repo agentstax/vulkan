@@ -1,7 +1,7 @@
 import { caughtMessage } from '../../helpers/caught-message';
 import type { Consumer, ConsumerLine, ConsumerStatus } from '../consumer-card/types';
 import { AutoRunner } from './auto-run';
-import type { ClaimedMessage } from './database';
+import type { ClaimedMessage } from './model';
 import { DatabaseState } from './database-state.svelte';
 
 // what a card's status bar reads before its first tick, the sibling of a

@@ -1,6 +1,6 @@
 import { untrack } from 'svelte';
 import { caughtMessage } from '../../helpers/caught-message';
-import type { RunResult } from '../sandbox/database';
+import type { RunResult } from '../sandbox/model';
 import type { DatabaseState } from '../sandbox/database-state.svelte';
 import type { PanelShell } from '../sandbox/types';
 
