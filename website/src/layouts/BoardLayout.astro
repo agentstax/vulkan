@@ -7,6 +7,7 @@ import SiteNotice from '../components/site-notice/site-notice.svelte';
 import CookieNotice from '../components/cookie-notice/cookie-notice.svelte';
 import TrackedVisitBar from '../components/tracked-visit-bar/tracked-visit-bar.svelte';
 import BoardFooter from '../components/board-footer/board-footer.svelte';
+import { siteUrl, docsVersion } from '../site';
 
 type Props = {
 	title: string;
@@ -15,6 +16,11 @@ type Props = {
 };
 
 const { title, description, navCurrent } = Astro.props;
+
+// on a frozen version deployment the canonical still names the live
+// origin, so search engines index one copy of every page
+const canonicalHref = new URL(Astro.url.pathname, siteUrl).href;
+const versionManifestHref = new URL('/versions.json', siteUrl).href;
 ---
 
 <!doctype html>
@@ -24,6 +30,7 @@ const { title, description, navCurrent } = Astro.props;
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>{title}</title>
 		<meta name="description" content={description} />
+		<link rel="canonical" href={canonicalHref} />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -71,7 +78,7 @@ const { title, description, navCurrent } = Astro.props;
 		<div class="page-frame">
 			<BoardBanner />
 			<BoardNav current={navCurrent} />
-			<TrackedVisitBar client:idle />
+			<TrackedVisitBar client:idle version={docsVersion} manifestUrl={versionManifestHref} />
 			<div class="page-content">
 				<slot />
 			</div>

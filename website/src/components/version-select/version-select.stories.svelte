@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import VisitBar from './visit-bar.svelte';
+	import VersionSelect from './version-select.svelte';
 
 	const manifest = {
 		latest: 'main',
@@ -11,20 +11,16 @@
 	};
 
 	const { Story } = defineMeta({
-		title: 'Board/VisitBar',
-		component: VisitBar,
+		title: 'Board/VersionSelect',
+		component: VersionSelect,
 		args: {
-			lastVisitDate: '2026-08-22',
-			version: 'main',
-			manifest,
-			manifestFetched: true,
 			path: '/quickstart/',
+			manifest,
 		},
 	});
 </script>
 
-<Story name="First visit" args={{ lastVisitDate: null }} />
-<Story name="Returning visitor" />
+<Story name="On the latest version" args={{ version: 'main' }} />
 <Story name="On an old version" args={{ version: 'v0-demo' }} />
-<Story name="Manifest still loading" args={{ manifest: null, manifestFetched: false }} />
-<Story name="Manifest unreachable" args={{ manifest: null }} />
+<Story name="On a version the manifest does not list" args={{ version: 'v0-unlisted' }} />
+<Story name="Manifest unreachable" args={{ version: 'main', manifest: null }} />

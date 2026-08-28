@@ -24,23 +24,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 - **Doc site — interactive mechanisms.** Paste-your-log-line shipped
   2026-08-26 [0590]; what it left open is the example-values item below.
 
-- **Cookie notice — replace the placeholder meme art.** BLOCKS shipping
-  the notice [0600]. `website/public/i-like-money.gif` and
-  `laughing-pointing.png` are Nickelodeon's, and a build publishes them.
-  They went in as local preview only.
-  - Swap for CC0 or CC BY art: Kenney (CC0, no attribution) and
-    game-icons.net (CC BY 3.0, 4,180 SVGs) were the sources surveyed;
-    OpenMoji is CC BY-SA, so its share-alike travels with any derivative.
-    16colo.rs is the right aesthetic but needs per-author permission —
-    reference only.
-  - Classic memes are not an option at any price: Trollface is registered
-    and its owner DMCA'd a Nintendo title off the eShop; Doge, Nyan Cat
-    and Hackerman are all similarly owned.
-  - Weight is the second reason to swap: 1.1MB across two files today,
-    the heaviest thing the site would serve. Drawing them in the house
-    pixel-SVG idiom (the deleted `pixel-skull` is the template, in git
-    history) solves licence and weight together.
-
 - **Doc site — content still owed.**
   - Transactional-outbox side-effect footgun, worked example — calling
     sendEmailConfirmation() before a Produce/multi-target closure is known

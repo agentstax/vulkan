@@ -5,6 +5,26 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-27 — doc site versioning [0601]
+
+- One live site at the apex; a release deploys the same build twice —
+  `just site-deploy` and `just site-freeze <slug>` — and the frozen alias
+  (`<slug>.vulkan-5ss.pages.dev`) is never deployed to again. The
+  React/Vue frozen-archive model on Cloudflare Pages branch aliases;
+  in-source snapshot copies rejected.
+- No build carries the version list: `public/versions.json` on the live
+  origin is the one registry, fetched at read time by every deployment
+  (CORS via `public/_headers`). An old deployment grows the version select
+  and starts showing "You are reading the {version} docs" the moment the
+  live registry moves, without being redeployed.
+- Each build carries only its own stamp (`site.ts` `docsVersion`, `main`
+  pre-release). The visit bar renders version-select at its left edge,
+  the visit facts on the right; every page canonicals to the live origin,
+  and Cloudflare's
+  `x-robots-tag: noindex` on alias domains keeps old versions out of
+  search. A throwaway v0-demo freeze proved the whole flow — dropdown,
+  old-docs notice, same-path switching — and was deleted after review.
+
 ## 2026-08-27 — the doc site's cookie notice [0599] [0600]
 
 - The site sets no cookies, so the one piece of chrome every reader is trained

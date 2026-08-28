@@ -5,8 +5,25 @@
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
+	gap: var(--space-8);
 	font-size: 10px;
 	color: var(--color-chrome-pale-text);
+}
+
+.visit-bar[data-old-version='true'] {
+	background: var(--color-sticky-row);
+	border-bottom: 1px solid var(--border-sticky-row);
+}
+
+.version-area {
+	display: flex;
+	align-items: center;
+}
+
+.visit-area {
+	display: flex;
+	align-items: center;
+	gap: var(--space-8);
 }
 
 .visit-date {

@@ -4,6 +4,7 @@ import { unified } from '@astrojs/markdown-remark';
 import mdx from '@astrojs/mdx';
 import svelte from '@astrojs/svelte';
 import { remarkDecisionRecords } from './src/helpers/decision-records.ts';
+import { siteUrl } from './src/site.ts';
 
 // named keyword families only -- keyword.operator stays ink
 const keywordScopes = [
@@ -25,7 +26,7 @@ const keywordScopes = [
 
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://vulkan-5ss.pages.dev',
+	site: siteUrl,
 	vite: {
 		// PGlite locates its wasm assets itself; pre-bundling breaks the paths
 		optimizeDeps: { exclude: ['@electric-sql/pglite'] },

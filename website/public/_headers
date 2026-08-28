@@ -1,0 +1,4 @@
+# frozen version deployments fetch the manifest cross-origin from their
+# own alias domains
+/versions.json
+  Access-Control-Allow-Origin: *

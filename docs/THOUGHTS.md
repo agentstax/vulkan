@@ -1,7 +1,5 @@
 # Doc
 
-Doc site versioning (big one)
-
 mobile friendly docsite
 
 need to cleanup and refactor website sandbox and database code they have grown to large and unruly

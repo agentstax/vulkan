@@ -406,3 +406,12 @@ site-storybook:
 
 site-deploy:
   cd website && npm run build && ./node_modules/.bin/wrangler pages deploy dist --project-name vulkan --branch main
+
+# freeze the current build at a permanent version alias
+# (<slug>.vulkan-5ss.pages.dev). Runs beside site-deploy at a release
+# checkpoint, after the same change bumps src/site.ts docsVersion and adds
+# the release's row to public/versions.json. A frozen alias is never
+# deployed to again; its version list stays current because every build
+# fetches /versions.json from the live origin at read time.
+site-freeze slug:
+  cd website && npm run build && ./node_modules/.bin/wrangler pages deploy dist --project-name vulkan --branch {{slug}}
