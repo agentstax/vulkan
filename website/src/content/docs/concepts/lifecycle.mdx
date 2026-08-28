@@ -60,7 +60,9 @@ fraudConsumer, err := consumer.NewConsumer[OrderCreated](ds, &consumer.ConsumerC
 
 The delay before attempt *n* is `BaseDelay × Exponent^n`, capped at
 `MaxDelay` (defaults: exponent 2, cap 5 minutes, 3 retries, `30s`
-timeout). And backoff is a **timestamp, not a timer**: a failed retry
+timeout). What the timeout actually does when it fires — and the
+goroutine it can leave behind — is its own page:
+[Consumer Timeouts](/guides/consumer-timeouts/). And backoff is a **timestamp, not a timer**: a failed retry
 writes `can_run_after` into the future and the row simply becomes
 claimable again when the time comes. Nothing is waiting in a process
 that might die.

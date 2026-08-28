@@ -1,0 +1,106 @@
+---
+title: Consumer Timeouts
+description: What the timeout actually does when consumerFunc runs past it — cancel, grace, abandon — and how to write a handler the cutoff never catches.
+---
+
+Vulkan cannot kill a running consumerFunc — no Go program can kill a
+goroutine. What the timeout buys instead: at the resolved `Timeout`
+the func's ctx is cancelled, and for `TimeoutGrace` (100ms by
+default) Vulkan waits for it to notice and return. Past
+`Timeout + TimeoutGrace` the attempt is written off as failed — the
+delivery backs off and retries on the normal
+[lifecycle](/concepts/lifecycle/) — but the goroutine is left
+running, unreachable, until it returns on its own.
+
+That last clause is the footgun this page is about. A handler that
+ignores its ctx turns every hard timeout into a goroutine that keeps
+holding connections and memory, and may still *do the work* long
+after the retry has done it again.
+
+## The window, concretely
+
+Say the `email-sender` group from the [quickstart](/quickstart/)
+runs with `Timeout: 5 * time.Second` and the default grace, and
+message 214 hits a mail API that has stopped answering:
+
+- at 5s -> the ctx handed to consumerFunc is cancelled, with a cause
+  naming the budget: `Timeout (5s) exceeded for message 214 attempt 1`
+- 5s to 5.1s -> Vulkan waits for the func to return
+- at 5.1s -> the attempt is recorded as failed (`hard timeout after
+  5.1s, goroutine abandoned for message 214`), the delivery backs
+  off toward its retry, and the goroutine is on its own
+
+The delivery side is ordinary failure handling from here. The
+goroutine side is not: it runs until whatever it's blocked on lets
+go, and when it finally returns, that return is recorded as cleared.
+
+## Write a handler the cutoff never catches
+
+The fix is passing the ctx on. Every blocking call in the stdlib and
+every serious client takes one; a consumerFunc whose blocking calls
+all carry its ctx unwinds within the grace on its own.
+
+```go
+// ❌ no ctx anywhere -- a hung mail API is an abandoned goroutine
+err := instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
+	response, err := http.Post(mailApiUrl, "application/json", emailBody(email))
+	if err != nil {
+		return err
+	}
+	return response.Body.Close()
+})
+```
+
+`http.Post` has no deadline and no cancellation: when the mail API
+hangs, this func blocks past 5s, past 5.1s, and is abandoned — once
+per attempt, so a message that retries leaks a goroutine each time,
+all of them unblocking whenever the API does. The fix is one line:
+
+```go
+err := instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, mailApiUrl, emailBody(email))
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	return response.Body.Close()
+})
+```
+
+Now the request dies when the ctx does: the func returns inside the
+grace, the attempt records as an ordinary failure, nothing is left
+running. Database calls are the same move — pgx and database/sql
+take a ctx per call. A hand-written loop (chunked processing, a
+batch per iteration) checks `ctx.Err()` between iterations.
+
+## When to touch the knobs
+
+Two knobs sit around the window, for two different problems:
+
+- The work is legitimately slow — raise the timeout, group-wide via
+  `ConsumerConfig.Message.Timeout` or per message at produce time
+  (messages request, consumers clamp; the resolved value stays
+  inside `MessageMax`). A healthy-but-slow handler shouldn't ride
+  the cutoff.
+- The *cancellation response* is slower than 100ms — raise
+  `TimeoutGrace`. Some drivers answer a cancel with a network round
+  trip of their own, and the default assumes a same-region trip.
+  Grace is slack for a func that did respect its ctx to finish
+  unwinding — it is never extra time to keep working.
+
+## How you'd know it's happening
+
+- `abandoned_count` on the [consumer stopped](/errors/VK0041) line —
+  a healthy session ends with it at 0.
+- `vulkan.consumer.session.abandoned`
+  ([VK0050](/errors/VK0050)), the same count as a metric, flushed
+  per session.
+- The cleared record on each abandoned goroutine's eventual return
+  is what tells hung from merely slow — an outstanding count that
+  never drains means the goroutines are still stuck. A storm of
+  abandoned routines can overflow the metric queue and log
+  [VK0052](/errors/VK0052); at that rate, investigate the consumer,
+  not the metrics.
