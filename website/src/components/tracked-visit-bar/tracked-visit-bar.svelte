@@ -3,7 +3,7 @@
 	import VisitBar from '../visit-bar/visit-bar.svelte';
 	import type { VersionManifest } from '../version-select/types';
 	import { readTracking } from '../../state/read-tracking.svelte';
-	import { VersionManifestState } from './tracked-visit-bar-state.svelte';
+	import { versionManifestState } from './tracked-visit-bar-state.svelte';
 
 	type Props = {
 		version: string;
@@ -19,7 +19,7 @@
 	// PREVIOUS visit
 	const lastVisitDate = readTracking.lastVisitDate();
 
-	const manifestState = new VersionManifestState(buildManifest);
+	const manifestState = versionManifestState(buildManifest);
 	let path = $state('');
 
 	onMount(() => {
