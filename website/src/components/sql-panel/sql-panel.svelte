@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { EditorView } from '@codemirror/view';
 	import ChromeButton from '../chrome-button/chrome-button.svelte';
 	import HighlightedSql from '../highlighted-sql/highlighted-sql.svelte';
 	import type { DatabaseState } from '../sandbox/database-state.svelte';
 	import type { PanelShell } from '../sandbox/types';
 	import SqlResult from '../sql-result/sql-result.svelte';
+	import { mountEditorOnIdle } from './mount-editor';
 	import { PanelState } from './sql-panel-state.svelte';
 
 	type Props = {
@@ -38,49 +38,20 @@
 		panelState.runAt(databaseState.revision);
 	});
 
+	// the initial doc seeds the editor once -- after that the editor owns the
+	// text and pushes it back into the panel state
 	onMount(() => {
-		let editorView: EditorView | null = null;
-		let cancelled = false;
+		if (editorHost === undefined) return;
 
-		// Safari gained requestIdleCallback in 18; elsewhere the next timer
-		// tick keeps the same "later, not now" effect
-		function requestIdle(callback: () => void): void {
-			if (typeof window.requestIdleCallback === 'function') {
-				window.requestIdleCallback(callback);
-			} else {
-				window.setTimeout(callback, 1);
-			}
-		}
-
-		// the initial doc seeds the editor once -- after that the editor owns
-		// the text and pushes it back into the panel state
-		const initialSql = panelState.sql;
-
-		// on idle, dynamic-import CodeMirror and swap it in over the static
-		// shell -- the editor never rides the initial payload
-		requestIdle(() => {
-			void (async () => {
-				try {
-					const { createEditor } = await import('../sandbox/editor');
-
-					if (cancelled || editorHost === undefined) return;
-
-					editorView = createEditor(editorHost, initialSql, (next) => panelState.setSql(next));
-					editorMounted = true;
-				} catch {
-					// a lost chunk leaves the static shell in place, which still
-					// reads correctly but it doesn't work
-					if (cancelled) return;
-					editorMessage =
-						'the editor could not load — the query still runs as shown; reload the page to edit it';
-				}
-			})();
-		});
-
-		return () => {
-			cancelled = true;
-			editorView?.destroy();
-		};
+		return mountEditorOnIdle(
+			editorHost,
+			panelState.sql,
+			(next) => panelState.setSql(next),
+			() => (editorMounted = true),
+			() =>
+				(editorMessage =
+					'the editor could not load — the query still runs as shown; reload the page to edit it'),
+		);
 	});
 </script>
 
