@@ -1,0 +1,37 @@
+---
+import { getCollection } from 'astro:content';
+import BoardLayout from '../../layouts/BoardLayout.astro';
+import Breadcrumb from '../../components/breadcrumb/breadcrumb.svelte';
+import BoardSection from '../../components/board-section/board-section.svelte';
+import MemberProfile from './_components/member-profile/member-profile.svelte';
+import { firstCommitDate } from '../../helpers/last-commit-date';
+import { repositoryUrl } from '../../site';
+import { siteThreads } from '../_board/threads';
+
+const docs = await getCollection('docs');
+const decisions = await getCollection('decisions');
+const postCount = siteThreads(docs, decisions).length;
+---
+
+<BoardLayout
+	title="Viewing profile :: brandon"
+	description="brandon — Site Admin of the Vulkan board."
+	navCurrent={null}
+>
+	<Breadcrumb
+		trail={[
+			{ label: 'Board Index', href: '/' },
+			{ label: 'Viewing profile :: brandon', href: null },
+		]}
+	/>
+	<BoardSection title="Viewing profile :: brandon" columnLabels={null}>
+		<MemberProfile
+			author="brandon"
+			role="Site Admin"
+			joinedDate={firstCommitDate()}
+			postCount={postCount}
+			websiteHref={repositoryUrl}
+			personalText="the end is never"
+		/>
+	</BoardSection>
+</BoardLayout>

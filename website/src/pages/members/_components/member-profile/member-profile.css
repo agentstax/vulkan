@@ -1,0 +1,94 @@
+.member-profile {
+	border: 1px solid var(--border-section);
+}
+
+.profile-columns {
+	display: flex;
+}
+
+.identity {
+	width: 150px;
+	flex-shrink: 0;
+	background: var(--color-author-column);
+	border-right: 1px solid var(--border-row);
+	padding: var(--space-14) var(--space-12);
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-6);
+	font-size: 10px;
+	color: var(--color-text-muted);
+}
+
+.member-name {
+	font-weight: 700;
+	color: var(--color-link);
+	font-size: 12px;
+}
+
+.stars {
+	display: flex;
+	gap: var(--space-2);
+}
+
+.stars path {
+	fill: var(--color-rank-star);
+}
+
+.member-role {
+	font-style: italic;
+}
+
+.avatar {
+	align-self: flex-start;
+	border: 1px solid var(--border-avatar);
+	background: var(--color-avatar-ground);
+	padding: var(--space-6) var(--space-6) 0;
+	margin-top: var(--space-4);
+}
+
+.facts {
+	flex-grow: 1;
+	min-width: 0;
+	margin: 0;
+	padding: var(--space-14) var(--space-16);
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	align-content: start;
+	gap: var(--space-8) var(--space-16);
+	font-size: 12px;
+}
+
+.facts dt {
+	font-weight: 700;
+	color: var(--color-text-muted);
+}
+
+.facts dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	font-variant-numeric: tabular-nums;
+	color: var(--color-text);
+}
+
+/* below the collapse the identity column becomes a header strip, the
+   same fold thread-post's author column takes */
+@media (max-width: 639px) {
+	.profile-columns {
+		flex-direction: column;
+	}
+
+	.identity {
+		width: auto;
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		column-gap: var(--space-10);
+		border-right: none;
+		border-bottom: 1px solid var(--border-row);
+	}
+
+	.avatar {
+		order: -1;
+		margin-top: 0;
+	}
+}

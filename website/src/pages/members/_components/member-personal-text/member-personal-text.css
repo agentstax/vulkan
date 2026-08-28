@@ -1,0 +1,43 @@
+.personal-text {
+	border-top: 1px solid var(--border-row);
+}
+
+.personal-text-label {
+	display: block;
+	padding: var(--space-6) var(--space-14);
+	background: var(--color-chrome-pale);
+	border-bottom: 1px solid var(--border-row);
+	font-size: 10px;
+	font-weight: 700;
+	color: var(--color-chrome-pale-text);
+}
+
+.personal-text-window {
+	display: flex;
+	overflow: hidden;
+	padding: var(--space-12) 0;
+	font-family: var(--font-content);
+	font-size: 13px;
+	font-style: italic;
+	color: var(--color-text-muted);
+}
+
+/* two identical copies in a row; sliding both by one copy's width lands the
+   second where the first began, so the loop restarts invisibly */
+.personal-text-copy {
+	flex-shrink: 0;
+	white-space: pre;
+	min-width: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.personal-text-copy {
+		animation: personal-text-loop 60s linear infinite;
+	}
+
+	@keyframes personal-text-loop {
+		to {
+			transform: translateX(-100%);
+		}
+	}
+}

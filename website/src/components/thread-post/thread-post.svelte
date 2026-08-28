@@ -39,7 +39,7 @@
 	{/if}
 	<div class="post-columns">
 		<div class="author" data-pagefind-ignore>
-			<span class="author-name">{author}</span>
+			<a class="author-name" href={`/members/${author}/`}>{author}</a>
 			<span class="stars">
 				{#each [0, 1, 2] as star (star)}
 					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -50,7 +50,7 @@
 				{/each}
 			</span>
 			<span class="author-role">{role}</span>
-			<span class="avatar"><PixelVolcano width={44} /></span>
+			<a class="avatar" href={`/members/${author}/`}><PixelVolcano width={44} /></a>
 			{#if postCount !== null}
 				<span class="post-count">Posts: {postCount}</span>
 			{/if}

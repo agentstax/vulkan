@@ -5,6 +5,23 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-28 — the member profile page [0605]
+
+- Clicking brandon's name or avatar on any thread post now opens
+  `/members/brandon/`, a phpBB-shaped "Viewing profile" page. Every
+  fact on it is real: Total posts is the thread count the posts
+  already show, Website is the repo, and Joined is the repo's first
+  commit date — a `firstCommitDate()` read off the commit-log walk
+  the build already runs, since the newest-first walk ends holding
+  the oldest date.
+- The "Personal text" strip (SMF's name for a profile's free-text
+  field) is the Stanley Parable loading screen as forum
+  furniture: "the end is never " scrolling forever through an
+  overflow-hidden box, two identical copies sliding one width so the
+  loop restarts invisibly. Motion sits behind
+  `prefers-reduced-motion`; the still version is the line cut off at
+  the box edge.
+
 ## 2026-08-27 — mobile-friendly doc site [0602] [0604]
 
 - Two breakpoints, declared in `website/CONVENTIONS.md`: 640px collapses

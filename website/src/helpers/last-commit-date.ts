@@ -5,6 +5,7 @@ import { relative, resolve } from 'node:path';
 type CommitLog = {
 	root: string;
 	dates: Map<string, string>;
+	oldestDate: string;
 };
 
 // one walk of the whole history, cached for the process: the boards ask
@@ -22,6 +23,10 @@ export function lastCommitDate(filePath: string): string {
 	}
 
 	return statSync(filePath).mtime.toISOString().slice(0, 10);
+}
+
+export function firstCommitDate(): string {
+	return loadCommitLog().oldestDate;
 }
 
 // ***************
@@ -51,6 +56,7 @@ function loadCommitLog(): CommitLog {
 		}
 	}
 
-	commitLog = { root, dates };
+	// the walk is newest-first, so the date left standing is the first commit's
+	commitLog = { root, dates, oldestDate: date };
 	return commitLog;
 }
