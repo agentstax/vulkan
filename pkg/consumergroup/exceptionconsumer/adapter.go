@@ -18,7 +18,7 @@ func toExceptionMessageMeta(exception *controller.ClaimedException, resolved *co
 	return consumergroup.MessageMeta{
 		Id:             exception.MessageId,
 		RoutingKey:     exception.RoutingKey,
-		CompactionKey:  exception.CompactionKey,
+		MessageKey:     exception.MessageKey,
 		CompactionRank: exception.CompactionRank,
 		CreatedAt:      exception.CreatedAt,
 		Options:        resolved,

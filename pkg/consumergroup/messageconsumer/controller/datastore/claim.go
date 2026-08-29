@@ -45,8 +45,9 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 			m.payload,
 			m.created_at,
 			COALESCE(m.routing_key, '') AS routing_key,
-			COALESCE(m.compaction_key, '') AS compaction_key,
-			m.compaction_rank,
+			COALESCE(m.message_key, '') AS message_key,
+			COALESCE(m.compaction_rank, 0) AS compaction_rank,
+			(m.compaction_rank IS NOT NULL) AS compacted,
 			m.options
 		FROM %s m
 		WHERE m.id > $1
@@ -67,13 +68,13 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 				-- we do not return anything
 			)
 			AND (
-				-- unkeyed rows are never compacted
-				m.compaction_key IS NULL
-				-- keyed rows are eligible only if they're compaction_head's current
-				-- pointer for their key -- O(1) lookup, no per-row scan
+				-- uncompacted rows (keyless or keyed) are never superseded
+				m.compaction_rank IS NULL
+				-- compacted rows are eligible only if they're compaction_head's
+				-- current pointer for their key -- O(1) lookup, no per-row scan
 				OR m.id = (
 					SELECT head_id FROM %s
-					WHERE compaction_key = m.compaction_key
+					WHERE compaction_key = m.message_key
 				)
 			)
 		-- rows MUST come back in id order or a batch LIMIT could

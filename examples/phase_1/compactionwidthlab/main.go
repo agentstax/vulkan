@@ -139,20 +139,20 @@ func seed(ctx context.Context, wp *producer.ProducerInstance[Record]) {
 }
 
 func publish(ctx context.Context, wp *producer.ProducerInstance[Record], key string) {
-	compaction, err := producer.NewCompactionOptions(key, 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	must(err)
 	_, err = wp.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Record, error) {
 		return &Record{Key: key}, nil
-	}, producer.ProduceOptions{Compaction: compaction})
+	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 
 // keyId reads back one seeded row's real id -- aggregate is MIN or MAX,
 // picking between the two versions of a twice-published key.
-func keyId(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, compactionKey string, aggregate string) int64 {
+func keyId(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, messageKey string, aggregate string) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`
-		SELECT %s(id) FROM message_log_%d WHERE compaction_key = $1;
-	`, aggregate, topicId), compactionKey)
+		SELECT %s(id) FROM message_log_%d WHERE message_key = $1;
+	`, aggregate, topicId), messageKey)
 }
 
 func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
@@ -180,7 +180,7 @@ func explainCompactionTouches(ctx context.Context, ds *iDatastore.PostgresDatast
 		WHERE m.id = $1
 			AND NOT EXISTS (
 				SELECT 1 FROM %s newer
-				WHERE newer.compaction_key = m.compaction_key
+				WHERE newer.message_key = m.message_key
 					AND newer.id > m.id
 			);
 	`, logTable, logTable)

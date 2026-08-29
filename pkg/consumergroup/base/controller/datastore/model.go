@@ -8,7 +8,7 @@ type KeyLeaseVerdict string
 const (
 	KeyLeaseAcquired   KeyLeaseVerdict = "acquired"   // the caller holds the key until release or expiry
 	KeyLeaseBusy       KeyLeaseVerdict = "busy"       // another delivery holds the key
-	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the message is no longer its key's compaction head -- never run it
+	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the compacted message is no longer its key's compaction head -- never run it
 )
 
 // KeyLeaseData is one Claim outcome. Token is set only when
@@ -17,6 +17,6 @@ type KeyLeaseData struct {
 	Verdict         KeyLeaseVerdict
 	TopicId         int64
 	ConsumerGroupId int64
-	CompactionKey   string
+	MessageKey      string
 	Token           pgtype.UUID
 }

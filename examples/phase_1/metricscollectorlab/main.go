@@ -176,8 +176,8 @@ func main() {
 		}
 		covered := 0
 		for _, head := range heads {
-			if _, ok := expected[head.CompactionKey]; ok {
-				expected[head.CompactionKey] = true
+			if _, ok := expected[head.MessageKey]; ok {
+				expected[head.MessageKey] = true
 			}
 		}
 		for _, seen := range expected {
@@ -192,9 +192,9 @@ func main() {
 	step("head values match the seeded state -- nothing consumed yet")
 	byKey := make(map[string]*metrics.Measurement, len(heads))
 	for _, head := range heads {
-		byKey[head.CompactionKey] = head.Message
+		byKey[head.MessageKey] = head.Message
 		if head.Message.Attributes["topic"] == metrics.TopicName {
-			die(fmt.Sprintf("measurement %s measures __system.metrics -- exclusion broken", head.CompactionKey))
+			die(fmt.Sprintf("measurement %s measures __system.metrics -- exclusion broken", head.MessageKey))
 		}
 	}
 	for _, topicName := range topicNames {

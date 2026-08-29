@@ -8,7 +8,7 @@ package main
 // the start of a long-lived, high-volume topic, where "current tail" keeps
 // getting further away as the topic ages.
 //
-// One row (id=1, compaction_key="stale") is never superseded. The topic's
+// One row (id=1, message_key="stale") is never superseded. The topic's
 // history is grown in checkpoints -- more partitions, more filler rows
 // behind it -- and at each checkpoint the SAME row's "is this the latest"
 // check is EXPLAIN ANALYZEd fresh, so partitions-touched and wall-clock
@@ -73,7 +73,7 @@ func main() {
 		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	}()
 
-	step("insert the never-superseded row -- id=1, compaction_key=\"stale\"")
+	step("insert the never-superseded row -- id=1, message_key=\"stale\"")
 	insertStaleRow(ctx, ds, tp.Id)
 
 	step("grow the topic's history in checkpoints, measuring the SAME row's negative-proof cost fresh each time")
@@ -123,7 +123,7 @@ func main() {
 // ---- helpers ----
 
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
-	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicId)
+	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, message_key, compaction_rank) VALUES ('{}'::jsonb, 'stale', 0);`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql)
 	must(err)
 }
@@ -154,7 +154,7 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		return
 	}
 	sql := fmt.Sprintf(`
-		INSERT INTO message_log_%d (payload, compaction_key)
+		INSERT INTO message_log_%d (payload, message_key)
 		SELECT '{}'::jsonb, NULL FROM generate_series(1, $1);
 	`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql, count)
@@ -172,7 +172,7 @@ func explainStaleNegative(ctx context.Context, ds *iDatastore.PostgresDatastore,
 		WHERE m.id = 1
 			AND NOT EXISTS (
 				SELECT 1 FROM %s newer
-				WHERE newer.compaction_key = m.compaction_key
+				WHERE newer.message_key = m.message_key
 					AND newer.id > m.id
 			);
 	`, logTable, logTable)

@@ -18,12 +18,12 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 		return "", errors.New("owner must not be nil")
 	}
 
-	compactionKey, err := alert.CompactionKey(name, owner)
+	messageKey, err := alert.MessageKey(name, owner)
 	if err != nil {
 		return "", err
 	}
 
-	head, err := c.heads.GetHead(ctx, c.alerts.Topic.Id, compactionKey)
+	head, err := c.heads.GetHead(ctx, c.alerts.Topic.Id, messageKey)
 	if err != nil {
 		return "", err
 	}
@@ -36,12 +36,13 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 		return alert.RecordOutcomeNothing, nil
 	}
 
-	compaction, err := producer.NewCompactionOptions(compactionKey, 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	if err != nil {
 		return "", err
 	}
 	if _, err := c.alerts.Produce(ctx, published, producer.ProduceOptions{
 		RoutingKey: published.RoutingKey(),
+		MessageKey: messageKey,
 		Compaction: compaction,
 	}); err != nil {
 		return "", err

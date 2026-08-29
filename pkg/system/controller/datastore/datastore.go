@@ -16,7 +16,7 @@ import (
 // - consumer_group
 // - cursor
 // - lease
-// - key_lease
+// - message_key_lease
 // - worker
 // - worker_instance
 // - binding

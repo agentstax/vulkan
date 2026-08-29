@@ -15,7 +15,7 @@ type KeyLeaseVerdict string
 const (
 	KeyLeaseAcquired   KeyLeaseVerdict = "acquired"   // the caller holds the key until release or expiry
 	KeyLeaseBusy       KeyLeaseVerdict = "busy"       // another delivery holds the key
-	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the message is no longer its key's compaction head -- never run it
+	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the compacted message is no longer its key's compaction head -- never run it
 )
 
 // KeyLeaseClaim is one Claim outcome. Token is set only when
@@ -24,16 +24,17 @@ type KeyLeaseClaim struct {
 	Verdict         KeyLeaseVerdict
 	TopicId         int64
 	ConsumerGroupId int64
-	CompactionKey   string
+	MessageKey      string
 	Token           uuid.UUID
 }
 
 // Claim attempts to acquire the exclusive right to run a keyed
-// message. KeyLeaseAcquired guarantees the message was still its key's
-// compaction head after the lease was won.
+// message. For a compacted message, KeyLeaseAcquired also guarantees it was
+// still its key's compaction head after the lease was won; an uncompacted
+// message is never superseded.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration) (*KeyLeaseClaim, error) {
+func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, duration time.Duration) (*KeyLeaseClaim, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -57,7 +58,7 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 		return nil, err
 	}
 
-	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, duration, toTokenData(token))
+	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, compacted, duration, toTokenData(token))
 	if err != nil || data == nil {
 		return nil, err
 	}

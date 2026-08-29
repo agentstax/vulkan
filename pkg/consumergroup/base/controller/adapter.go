@@ -11,7 +11,7 @@ func toKeyLeaseClaim(data *datastore.KeyLeaseData) *KeyLeaseClaim {
 		Verdict:         KeyLeaseVerdict(data.Verdict),
 		TopicId:         data.TopicId,
 		ConsumerGroupId: data.ConsumerGroupId,
-		CompactionKey:   data.CompactionKey,
+		MessageKey:      data.MessageKey,
 		Token:           uuid.UUID(data.Token.Bytes),
 	}
 }
@@ -21,7 +21,7 @@ func toKeyLeaseData(claim *KeyLeaseClaim) *datastore.KeyLeaseData {
 		Verdict:         datastore.KeyLeaseVerdict(claim.Verdict),
 		TopicId:         claim.TopicId,
 		ConsumerGroupId: claim.ConsumerGroupId,
-		CompactionKey:   claim.CompactionKey,
+		MessageKey:      claim.MessageKey,
 		Token:           toTokenData(claim.Token),
 	}
 }

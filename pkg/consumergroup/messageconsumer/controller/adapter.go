@@ -12,8 +12,9 @@ func toMessage(data datastore.MessageData) Message {
 		Payload:        data.Payload,
 		CreatedAt:      data.CreatedAt,
 		RoutingKey:     data.RoutingKey,
-		CompactionKey:  data.CompactionKey,
+		MessageKey:     data.MessageKey,
 		CompactionRank: data.CompactionRank,
+		Compacted:      data.Compacted,
 		Options:        data.Options,
 	}
 }

@@ -79,7 +79,7 @@ func newMetricsListCmd(g *globalFlags) *cobra.Command {
 
 func printMeasurementKeys(w io.Writer, heads []*producer.MessageRow[metrics.Measurement]) {
 	for _, head := range heads {
-		fmt.Fprintln(w, head.CompactionKey)
+		fmt.Fprintln(w, head.MessageKey)
 	}
 }
 

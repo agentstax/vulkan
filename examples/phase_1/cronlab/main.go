@@ -345,7 +345,7 @@ func deferSection(ctx context.Context) {
 	backdate(ctx, job.Id, time.Now().UTC().Add(-9*time.Second))
 	waitAdvanced(ctx, job.Id)
 	deferred := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT MAX(id) FROM message_log_%d WHERE compaction_key = $1;`, jobRequests.Id),
+		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id),
 		strconv.FormatInt(job.Id, 10))
 
 	// the 'deferred' row lands while the first request is still running
@@ -390,7 +390,7 @@ func runNowOverrideSection(ctx context.Context) {
 	waitAdvanced(ctx, job.Id)
 	<-started
 	blocker := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT MAX(id) FROM message_log_%d WHERE compaction_key = $1;`, jobRequests.Id),
+		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id),
 		strconv.FormatInt(job.Id, 10))
 
 	// were the second request stamped with the job's 'defer', it would wait
@@ -740,12 +740,12 @@ func waitAdvanced(ctx context.Context, jobId int64) {
 
 func messageCount(ctx context.Context, compactionKey string) int64 {
 	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE compaction_key = $1;`, jobRequests.Id), compactionKey)
+		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id), compactionKey)
 }
 
 func producedScheduledTimes(ctx context.Context, compactionKey string) []time.Time {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(
-		`SELECT payload->>'scheduled_at' FROM message_log_%d WHERE compaction_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
+		`SELECT payload->>'scheduled_at' FROM message_log_%d WHERE message_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
 	must(err)
 	defer rows.Close()
 

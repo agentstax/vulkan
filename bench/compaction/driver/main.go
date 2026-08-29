@@ -140,11 +140,12 @@ func main() {
 				if len(keys) > 0 {
 					// rotate the pool from a per-goroutine offset -- maximal
 					// reverse-order pressure at enqueue, the sort's job to absorb
-					compaction, err := producer.NewCompactionOptions(keys[(offset+produced)%len(keys)], 0)
+					compaction, err := producer.NewCompactionOptions(0)
 					if err != nil {
 						record(err)
 						return
 					}
+					options.MessageKey = keys[(offset+produced)%len(keys)]
 					options.Compaction = compaction
 				}
 

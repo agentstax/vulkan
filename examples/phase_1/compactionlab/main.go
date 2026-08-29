@@ -6,7 +6,7 @@ package main
 // self-contained -- no dependency on external state.
 //
 // Confirms, in order:
-//   - a claim spanning several versions of a compaction_key only returns the
+//   - a claim spanning several versions of a message key only returns the
 //     latest; older versions still physically exist in message_log_<id>
 //     (filtered at read time, never deleted).
 //   - a version superseded AFTER its predecessor already delivered doesn't
@@ -21,7 +21,7 @@ package main
 //     convention, not a framework concept) is still delivered normally on
 //     both the CURSOR and LIFECYCLE paths.
 //   - EXPLAIN ANALYZE over unkeyed-only rows shows the compaction subplan
-//     never executes (the OR short-circuits on compaction_key IS NULL).
+//     never executes (the OR short-circuits on compaction_rank IS NULL).
 
 import (
 	"context"
@@ -229,8 +229,9 @@ func main() {
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[KeyedRecord], key string, version int, deleted bool) {
 	opts := producer.ProduceOptions{}
 	if key != "" {
-		compaction, err := producer.NewCompactionOptions(key, 0)
+		compaction, err := producer.NewCompactionOptions(0)
 		must(err)
+		opts.MessageKey = key
 		opts.Compaction = compaction
 	}
 	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*KeyedRecord, error) {
@@ -254,7 +255,7 @@ func decode(payload json.RawMessage) KeyedRecord {
 // explainNoCompactionSubplan EXPLAIN ANALYZEs the exact shape readMessages runs
 // over an id range that only contains unkeyed rows, then checks the plan for
 // the compaction_head lookup being marked never executed -- proof the OR's left
-// disjunct (compaction_key IS NULL) short-circuited it for every row.
+// disjunct (compaction_rank IS NULL) short-circuited it for every row.
 func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64) {
 	logTable := fmt.Sprintf("message_log_%d", topicId)
 	sql := fmt.Sprintf(`
@@ -266,9 +267,9 @@ func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresData
 				OR EXISTS (SELECT 1 FROM binding_config_%d b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern_regex)
 			)
 			AND (
-				m.compaction_key IS NULL
+				m.compaction_rank IS NULL
 				OR m.id = (SELECT head_id FROM compaction_head_%d
-					WHERE compaction_key = m.compaction_key)
+					WHERE compaction_key = m.message_key)
 			)
 		ORDER BY m.id;
 	`, logTable, topicId, topicId, topicId)

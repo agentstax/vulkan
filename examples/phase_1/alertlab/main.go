@@ -213,7 +213,7 @@ func classifySection(ctx context.Context) {
 	alerts, err := alertcontroller.NewAlertController(ctx, instance, heads, classifyRepeat, &alertcontroller.ControllerConfig{Logger: capture})
 	must(err)
 
-	key, err := alert.CompactionKey(labCheckName, labTopicOwner)
+	key, err := alert.MessageKey(labCheckName, labTopicOwner)
 	must(err)
 	found, err := alert.NewAlert(labCheckName, labTopicOwner, alert.StatusActive, alert.SeverityWarn, "labcheck condition holds", nil)
 	must(err)
@@ -524,11 +524,11 @@ func cleanup() {
 	must(mAdmin.UnsuspendCronJob(ctx, compactionreadcost.JobName))
 
 	labKey := partitionCountKey(labTopicOwner)
-	checkKey, err := alert.CompactionKey(labCheckName, labTopicOwner)
+	checkKey, err := alert.MessageKey(labCheckName, labTopicOwner)
 	must(err)
 	keys := []string{labKey, checkKey}
 	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
-	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
+	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE message_key = ANY($1);`, alertsTopic.Id), keys)
 
 	must(mAdmin.DestroyTopic(ctx, labTopic.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
@@ -613,7 +613,7 @@ func readCheckSummary(ctx context.Context) map[string]float64 {
 	attributes := map[string]string{"alert": partitioncountcontroller.AlertPartitionCount}
 	byKey := make(map[string]float64, len(heads))
 	for _, head := range heads {
-		byKey[head.CompactionKey] = head.Message.Value
+		byKey[head.MessageKey] = head.Message.Value
 	}
 	summary := make(map[string]float64, 4)
 	for _, name := range []string{
@@ -632,14 +632,14 @@ func readCheckSummary(ctx context.Context) map[string]float64 {
 }
 
 func partitionCountKey(owner *common.Owner) string {
-	key, err := alert.CompactionKey(partitioncountcontroller.AlertPartitionCount, owner)
+	key, err := alert.MessageKey(partitioncountcontroller.AlertPartitionCount, owner)
 	must(err)
 	return key
 }
 
 func alertMessageCount(ctx context.Context, compactionKey string) int64 {
 	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE compaction_key = $1;`, alertsTopic.Id), compactionKey)
+		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, alertsTopic.Id), compactionKey)
 }
 
 func headId(ctx context.Context, compactionKey string) int64 {

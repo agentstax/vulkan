@@ -25,8 +25,9 @@ type ClaimedException struct {
 	Payload         json.RawMessage
 	CreatedAt       time.Time
 	RoutingKey      string
-	CompactionKey   string
-	CompactionRank  int64
+	MessageKey      string
+	CompactionRank  int64 // 0 if not compacted
+	Compacted       bool  // the produce enabled Compaction
 	Options         *common.MessageOptions
 }
 
@@ -49,7 +50,7 @@ func (c *ExceptionConsumerGroupController) Kill(ctx context.Context, topicId int
 }
 
 // Claim claims 'ready', expired 'inflight', and 'deferred' rows up
-// to maxRetries attempts. A leased compaction key excludes its rows.
+// to maxRetries attempts. A leased message key excludes its rows.
 func (c *ExceptionConsumerGroupController) Claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ClaimedException, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
@@ -141,4 +142,15 @@ func (c *ExceptionConsumerGroupController) RecordSuperseded(ctx context.Context,
 	}
 
 	return c.datastore.RecordSuperseded(ctx, toExceptionData(exception), deliveryLogMode)
+}
+
+// RecordDeferred returns the row to 'deferred' -- its key was busy at the
+// gate, so no run started. The claim's attempts increment is decremented
+// back and the log row lands at that attempt.
+func (c *ExceptionConsumerGroupController) RecordDeferred(ctx context.Context, exception *ClaimedException, deliveryLogMode topic.DeliveryLogMode) error {
+	if exception == nil {
+		return errors.New("exception must not be nil")
+	}
+
+	return c.datastore.RecordDeferred(ctx, toExceptionData(exception), deliveryLogMode)
 }

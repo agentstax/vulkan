@@ -47,6 +47,12 @@ consume-side lock that has nothing to do with compaction.
 - Defer-without-compaction is a new behavior path: the key-lease
   claim logic must not assume a compaction head exists. Its labs
   (deferlab siblings) extend to the uncompacted case.
+- Two same-key deferred rows can now share one exception batch (with
+  compaction the older would be superseded); the loser at the key
+  gate returns to status 'deferred' with its attempts increment
+  decremented back, instead of sitting 'inflight' until lease
+  expiry. `message_log.compaction_rank` becomes nullable -- NULL is
+  the row-level fact that a message never opted into compaction.
 - Doc-site compaction pages rewrite around "the message key", with
   compaction as one of its two uses; the produce page is the
   proposal surface before implementation (docs drive public-surface

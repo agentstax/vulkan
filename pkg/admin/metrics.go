@@ -37,9 +37,9 @@ func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.Messag
 }
 
 // ListMeasurementMessages returns one series' retained measurements, newest first.
-// compactionKey is metrics.MeasurementKey(name, attributes); limit is required.
+// messageKey is metrics.MeasurementKey(name, attributes); limit is required.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
-func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, compactionKey string, limit int) ([]*producer.MessageRow[metrics.Measurement], error) {
+func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, messageKey string, limit int) ([]*producer.MessageRow[metrics.Measurement], error) {
 	found, err := a.topicController.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
 	if err != nil {
 		return nil, err
@@ -47,5 +47,5 @@ func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, compactionKe
 	if found == nil {
 		return nil, migrate.ErrNotRegistered.With("topic", metrics.TopicName)
 	}
-	return a.measurementHeads.ListKeyMessages(ctx, found.Id, compactionKey, limit)
+	return a.measurementHeads.ListKeyMessages(ctx, found.Id, messageKey, limit)
 }

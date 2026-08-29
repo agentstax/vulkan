@@ -16,7 +16,7 @@ import (
 // - delivery_log_<id>
 // - consumer_group_cursor_<id>
 // - claim_lease_<id>
-// - key_lease_<id>
+// - message_key_lease_<id>
 // - compaction_head_<id>
 // - binding_config_<id>
 // - binding_config_log_<id>
@@ -40,8 +40,8 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			-- sequence hands out out-of-order id blocks
 
 			routing_key TEXT,
-			compaction_key TEXT,
-			compaction_rank BIGINT NOT NULL DEFAULT 0,
+			message_key TEXT,
+			compaction_rank BIGINT, -- NULL = this message never opted into compaction
 			payload JSONB NOT NULL,
 			options JSONB,                                -- sparse MessageOptions
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -63,13 +63,13 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	}
 
 	// keeps a key's history read (compaction's ListKeyMessages) an index scan.
-	// partial, so topics that never set a compaction key pay nothing.
-	createCompactionKeyIndexSql := fmt.Sprintf(`
+	// partial, so topics that never set a message key pay nothing.
+	createMessageKeyIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_compaction_key ON %s (compaction_key, id)
-			WHERE compaction_key IS NOT NULL;
+		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (message_key, id)
+			WHERE message_key IS NOT NULL;
 	`, iTopic.MessageLogTable(id), iTopic.MessageLogTable(id))
-	if _, err := tx.Exec(ctx, createCompactionKeyIndexSql); err != nil {
+	if _, err := tx.Exec(ctx, createMessageKeyIndexSql); err != nil {
 		return err
 	}
 
@@ -118,8 +118,8 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// delivery_log_<id> exists for every topic, whatever its delivery_log_mode.
 	// One row per delivery event:
 	//   - 'failure': the attempt ran and returned an error
-	//   - 'superseded': dropped unrun -- a newer message on its compaction key exists
-	//   - 'deferred': never ran -- another delivery held its compaction key
+	//   - 'superseded': dropped unrun -- a compacted message key has a newer version
+	//   - 'deferred': never ran -- another delivery held its message key
 	//   - 'expired': a claim's lease ran out with no outcome recorded -- logged by the claim that takes the row over
 	//   - 'killed': dead-lettered by the crash-loop backstop
 	//   - 'success': the attempt ran clean -- written only under mode 'all'
@@ -175,19 +175,19 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		return err
 	}
 
-	// key_lease_<id>: at most one in-flight delivery per compaction key per
-	// consumer group.
-	createKeyLeaseSql := fmt.Sprintf(`
+	// message_key_lease_<id>: at most one in-flight delivery per message key
+	// per consumer group.
+	createMessageKeyLeaseSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			consumer_group_id BIGINT NOT NULL, -- PK
-			compaction_key TEXT NOT NULL,      -- PK
+			message_key TEXT NOT NULL,         -- PK
 			lease_token UUID NOT NULL,
 			expires_at TIMESTAMPTZ NOT NULL,
-			PRIMARY KEY (consumer_group_id, compaction_key)
+			PRIMARY KEY (consumer_group_id, message_key)
 		);
-	`, iTopic.KeyLeaseTable(id))
-	if _, err := tx.Exec(ctx, createKeyLeaseSql); err != nil {
+	`, iTopic.MessageKeyLeaseTable(id))
+	if _, err := tx.Exec(ctx, createMessageKeyLeaseSql); err != nil {
 		return err
 	}
 

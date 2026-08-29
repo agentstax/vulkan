@@ -85,7 +85,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 					shown = shown[:series]
 				}
 				for _, head := range shown {
-					messages, err := mAdmin.ListMeasurementMessages(ctx, head.CompactionKey, limit)
+					messages, err := mAdmin.ListMeasurementMessages(ctx, head.MessageKey, limit)
 					if err != nil {
 						return translateAdminError(err)
 					}
@@ -117,7 +117,7 @@ func newMetricsGetCmd(g *globalFlags) *cobra.Command {
 				shown = shown[:series]
 			}
 			for _, head := range shown {
-				messages, err := mAdmin.ListMeasurementMessages(ctx, head.CompactionKey, limit)
+				messages, err := mAdmin.ListMeasurementMessages(ctx, head.MessageKey, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}

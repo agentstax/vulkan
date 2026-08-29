@@ -94,8 +94,8 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 	}
 
 	var keyClaim *keyleasecontroller.KeyLeaseClaim
-	if exception.CompactionKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
-		claim, err := r.ClaimKeyedRun(ctx, exception.CompactionKey, exception.MessageId, resolvedOptions)
+	if exception.MessageKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
+		claim, err := r.ClaimKeyedRun(ctx, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions)
 		switch {
 		case err != nil:
 			// a failed key-lease claim counts as this attempt's own failure
@@ -103,9 +103,10 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 		case claim.Verdict == keyleasecontroller.KeyLeaseSuperseded:
 			return r.recordSuperseded(ctx, exception)
 		case claim.Verdict == keyleasecontroller.KeyLeaseBusy:
-			// our lease expired in the batch queue and another worker re-claimed it
-			r.Logger.WarnContext(ctx, "key busy at gate -- delivery re-claimed by another worker", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId, "compaction_key", exception.CompactionKey)
-			return nil
+			// usually a same-batch sibling on the key started first -- the row
+			// returns to 'deferred' and the next claim takes it once the key frees
+			r.Logger.DebugContext(ctx, "key busy at gate -- delivery re-deferred", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId, "message_key", exception.MessageKey)
+			return r.recordDeferred(ctx, exception)
 		}
 		keyClaim = claim
 	}
@@ -170,6 +171,14 @@ func (r *exceptionRunner[Message]) recordSuperseded(ctx context.Context, excepti
 	r.Metrics.RecordSuperseded(1)
 
 	err := r.consumers.RecordSuperseded(ctx, exception, r.Topic.DeliveryLogMode)
+	return r.absorbLostLease(ctx, exception, err)
+}
+
+func (r *exceptionRunner[Message]) recordDeferred(ctx context.Context, exception *controller.ClaimedException) error {
+	// no run started -- the row waits out the key's current holder
+	r.Metrics.RecordDeferred(1)
+
+	err := r.consumers.RecordDeferred(ctx, exception, r.Topic.DeliveryLogMode)
 	return r.absorbLostLease(ctx, exception, err)
 }
 

@@ -11,7 +11,7 @@ import (
 // Dropping one partition locks ~5 relations:
 //   - the partition itself
 //   - its pkey index
-//   - its compaction_key index
+//   - its message_key index
 //   - its TOAST table + TOAST index
 //
 // Locks come from a pool sized ONCE at server start

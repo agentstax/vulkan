@@ -14,7 +14,7 @@ import (
 type KeyLeaseData struct {
 	TopicId         int64
 	ConsumerGroupId int64
-	CompactionKey   string
+	MessageKey      string
 	Token           pgtype.UUID
 }
 
@@ -30,7 +30,8 @@ type ExceptionData struct {
 	Payload         json.RawMessage        `db:"payload"`
 	CreatedAt       time.Time              `db:"created_at"`
 	RoutingKey      string                 `db:"routing_key"`
-	CompactionKey   string                 `db:"compaction_key"`
-	CompactionRank  int64                  `db:"compaction_rank"`
+	MessageKey      string                 `db:"message_key"`
+	CompactionRank  int64                  `db:"compaction_rank"` // 0 if not compacted, COALESCE'd at read
+	Compacted       bool                   `db:"compacted"`       // compaction_rank IS NOT NULL, aliased at read
 	Options         *common.MessageOptions `db:"options"`
 }

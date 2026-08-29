@@ -18,8 +18,9 @@ func toClaimedException(data datastore.ExceptionData) ClaimedException {
 		Payload:         data.Payload,
 		CreatedAt:       data.CreatedAt,
 		RoutingKey:      data.RoutingKey,
-		CompactionKey:   data.CompactionKey,
+		MessageKey:      data.MessageKey,
 		CompactionRank:  data.CompactionRank,
+		Compacted:       data.Compacted,
 		Options:         data.Options,
 	}
 }
@@ -35,8 +36,9 @@ func toExceptionData(exception *ClaimedException) *datastore.ExceptionData {
 		Payload:         exception.Payload,
 		CreatedAt:       exception.CreatedAt,
 		RoutingKey:      exception.RoutingKey,
-		CompactionKey:   exception.CompactionKey,
+		MessageKey:      exception.MessageKey,
 		CompactionRank:  exception.CompactionRank,
+		Compacted:       exception.Compacted,
 		Options:         exception.Options,
 	}
 }
@@ -49,7 +51,7 @@ func toKeyLeaseData(claim *keyleasecontroller.KeyLeaseClaim) *datastore.KeyLease
 	return &datastore.KeyLeaseData{
 		TopicId:         claim.TopicId,
 		ConsumerGroupId: claim.ConsumerGroupId,
-		CompactionKey:   claim.CompactionKey,
+		MessageKey:      claim.MessageKey,
 		Token:           toTokenData(claim.Token),
 	}
 }

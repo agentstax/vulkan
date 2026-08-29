@@ -15,8 +15,9 @@ type AppendData[Message any] struct {
 	IdempotencyKey uuid.UUID
 	Payload        *Message // nil when a ProduceFunc supplies it inside the transaction
 	RoutingKey     string
-	CompactionKey  string
-	CompactionRank int64
+	MessageKey     string
+	Compacted      bool  // the produce enabled Compaction
+	CompactionRank int64 // read only when Compacted
 	Options        *common.MessageOptions
 }
 
@@ -33,6 +34,6 @@ type HeadData struct {
 	Payload        json.RawMessage `db:"payload"`
 	CreatedAt      time.Time       `db:"created_at"`
 	RoutingKey     string          `db:"routing_key"` // "" if unset, COALESCE'd at read
-	CompactionKey  string          `db:"compaction_key"`
+	MessageKey     string          `db:"message_key"`
 	CompactionRank int64           `db:"compaction_rank"`
 }

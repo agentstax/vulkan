@@ -9,19 +9,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// GetHead reads the current compaction head under compactionKey,
+// GetHead reads the current compaction head under messageKey,
 // nil if the key has no head.
-func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
+func (d *CompactionDatastore) GetHead(ctx context.Context, topicId int64, messageKey string) (*MessageData, error) {
 	var head *MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		head, err = d.getHead(ctx, topicId, compactionKey)
+		head, err = d.getHead(ctx, topicId, messageKey)
 		return err
 	})
 	return head, err
 }
 
-func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compactionKey string) (*MessageData, error) {
+func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, messageKey string) (*MessageData, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: compaction.getHead
 		SELECT
@@ -29,7 +29,7 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compac
 			m.payload,
 			m.created_at,
 			COALESCE(m.routing_key, ''),
-			m.compaction_key,
+			m.message_key,
 			m.compaction_rank
 		FROM %s h
 		JOIN %s m ON m.id = h.head_id
@@ -37,12 +37,12 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compac
 	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
 	var head MessageData
-	err := d.Datastore.Pool.QueryRow(ctx, sql, compactionKey).Scan(
+	err := d.Datastore.Pool.QueryRow(ctx, sql, messageKey).Scan(
 		&head.Id,
 		&head.Payload,
 		&head.CreatedAt,
 		&head.RoutingKey,
-		&head.CompactionKey,
+		&head.MessageKey,
 		&head.CompactionRank,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -55,7 +55,7 @@ func (d *CompactionDatastore) getHead(ctx context.Context, topicId int64, compac
 }
 
 // ListHeads reads every key's current head on the topic, ordered by
-// compaction key.
+// message key.
 func (d *CompactionDatastore) ListHeads(ctx context.Context, topicId int64) ([]MessageData, error) {
 	var heads []MessageData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -74,7 +74,7 @@ func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]M
 			m.payload,
 			m.created_at,
 			COALESCE(m.routing_key, ''),
-			m.compaction_key,
+			m.message_key,
 			m.compaction_rank
 		FROM %s h
 		JOIN %s m ON m.id = h.head_id
@@ -95,7 +95,7 @@ func (d *CompactionDatastore) listHeads(ctx context.Context, topicId int64) ([]M
 			&head.Payload,
 			&head.CreatedAt,
 			&head.RoutingKey,
-			&head.CompactionKey,
+			&head.MessageKey,
 			&head.CompactionRank,
 		); err != nil {
 			return nil, err

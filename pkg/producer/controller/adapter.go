@@ -12,10 +12,11 @@ func toAppendData[Message any](idempotencyKey uuid.UUID, payload *Message, optio
 		IdempotencyKey: idempotencyKey,
 		Payload:        payload,
 		RoutingKey:     options.RoutingKey,
+		MessageKey:     options.MessageKey,
 		Options:        options.Message,
 	}
-	if options.Compaction != nil {
-		data.CompactionKey = options.Compaction.Key
+	if options.Compaction != nil && options.Compaction.Enable {
+		data.Compacted = true
 		data.CompactionRank = options.Compaction.Rank
 	}
 	return data
@@ -39,7 +40,7 @@ func toMessageRow[Message any](data *datastore.HeadData) (*MessageRow[Message], 
 		Message:        &message,
 		CreatedAt:      data.CreatedAt,
 		RoutingKey:     data.RoutingKey,
-		CompactionKey:  data.CompactionKey,
+		MessageKey:     data.MessageKey,
 		CompactionRank: data.CompactionRank,
 	}, nil
 }

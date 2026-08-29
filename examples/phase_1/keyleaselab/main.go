@@ -1,4 +1,4 @@
-// Command keyleaselab proves the key_lease primitives in isolation (no
+// Command keyleaselab proves the message_key_lease primitives in isolation (no
 // consumer wiring yet -- dispatch integration is proven by later labs).
 //
 // Registers its own topic, self-seeds keyed messages, fully self-contained.
@@ -20,7 +20,7 @@
 //     message's own reclaim resolves superseded, and after release the new
 //     head acquires.
 //   - the janitor sweep removes expired rows and leaves live ones.
-//   - destroying the topic drops its key_lease table.
+//   - destroying the topic drops its message_key_lease table.
 package main
 
 import (
@@ -88,7 +88,7 @@ func main() {
 	step("seed: two versions of user:1 -- the newer is the compaction head")
 	publish(ctx, wpInstance, "user:1", 1)
 	publish(ctx, wpInstance, "user:1", 2)
-	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM message_log_%d WHERE compaction_key = 'user:1'`, topicId))
+	staleID := scalarInt64(ctx, fmt.Sprintf(`SELECT MIN(id) FROM message_log_%d WHERE message_key = 'user:1'`, topicId))
 	headID := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = 'user:1'`, topicId))
 	if staleID == headID {
 		die("seed broken: stale and head ids match")
@@ -127,11 +127,11 @@ func main() {
 	step("a release inside a rolled-back txn leaves the lease held")
 	tx, err := ds.Pool.Begin(ctx)
 	must(err)
-	// mirrors releaseKeyLease's SQL (pkg/consumer/datastore.go) -- keep in sync
+	// mirrors consumerbase.release's SQL (pkg/consumergroup/base/controller/datastore/keylease.go) -- keep in sync
 	tag, err := tx.Exec(ctx, fmt.Sprintf(`
-		DELETE FROM key_lease_%d
+		DELETE FROM message_key_lease_%d
 		WHERE consumer_group_id = $1
-			AND compaction_key = $2
+			AND message_key = $2
 			AND lease_token = $3;
 	`, topicId), groupId, "user:1", held.Token)
 	must(err)
@@ -265,18 +265,18 @@ func main() {
 	if n := leaseCount(ctx); n != 1 {
 		die(fmt.Sprintf("want only the live row to survive the sweep, count=%d", n))
 	}
-	survivor := scalarString(ctx, fmt.Sprintf(`SELECT compaction_key FROM key_lease_%d WHERE consumer_group_id = $1`, topicId), groupId)
+	survivor := scalarString(ctx, fmt.Sprintf(`SELECT message_key FROM message_key_lease_%d WHERE consumer_group_id = $1`, topicId), groupId)
 	if survivor != "user:2" {
 		die(fmt.Sprintf("sweep removed the wrong row, survivor=%s", survivor))
 	}
 	fmt.Println("  ✓ expired swept, live kept")
 
-	step("destroying the topic drops its key_lease table")
+	step("destroying the topic drops its message_key_lease table")
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	var keyLeaseTable *string
-	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("key_lease_%d", topicId)).Scan(&keyLeaseTable))
+	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("message_key_lease_%d", topicId)).Scan(&keyLeaseTable))
 	if keyLeaseTable != nil {
-		die("destroy left the key_lease table behind")
+		die("destroy left the message_key_lease table behind")
 	}
 	fmt.Println("  ✓ destroy dropped the table")
 
@@ -284,23 +284,23 @@ func main() {
 }
 
 func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key string, msgID int64, d time.Duration) *keyleasecontroller.KeyLeaseClaim {
-	c, err := cd.Claim(ctx, topicId, groupId, key, msgID, d)
+	c, err := cd.Claim(ctx, topicId, groupId, key, msgID, true, d)
 	must(err)
 	return c
 }
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
-	compaction, err := producer.NewCompactionOptions(key, 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	must(err)
 	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
-	}, producer.ProduceOptions{Compaction: compaction})
+	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 
 func leaseCount(ctx context.Context) int {
 	var n int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM key_lease_%d WHERE consumer_group_id = $1`, topicId), groupId).Scan(&n))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM message_key_lease_%d WHERE consumer_group_id = $1`, topicId), groupId).Scan(&n))
 	return n
 }
 

@@ -232,7 +232,64 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}
 	if deliveryLogMode != topic.DeliveryLogModeOff {
-		args = append(args, "a newer message on the same compaction key superseded this delivery")
+		args = append(args, "a newer version of the same message key superseded this delivery")
+	}
+	return d.record(ctx, sql, args...)
+}
+
+// RecordDeferred returns the row to 'deferred': its key was busy when the
+// claim reached the gate, so no run started. The claim's attempts increment
+// is decremented back and the log row lands at that attempt; the next claim
+// takes the row once the key frees.
+func (d *ExceptionConsumerGroupDatastore) RecordDeferred(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.recordDeferred(ctx, exception, deliveryLogMode)
+	})
+}
+
+func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
+	var sql string
+	if deliveryLogMode == topic.DeliveryLogModeOff {
+		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordDeferred
+			UPDATE %s
+			SET
+				status = 'deferred',
+				attempts = attempts - 1,
+				lease_token = NULL,
+				lease_expires_at = NULL,
+				updated_at = now()
+			WHERE consumer_group_id = $1
+				AND message_id = $2
+				AND lease_token = $3;
+		`, iTopic.ExceptionQueueTable(exception.TopicId))
+	} else {
+		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
+		// row atomic
+		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordDeferred
+			WITH updated AS (
+				UPDATE %[1]s
+				SET
+					status = 'deferred',
+					attempts = attempts - 1,
+					lease_token = NULL,
+					lease_expires_at = NULL,
+					updated_at = now()
+				WHERE consumer_group_id = $1
+					AND message_id = $2
+					AND lease_token = $3
+				RETURNING attempts
+			)
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			SELECT $1, $2, attempts + 1, 'deferred', $4
+			FROM updated;
+		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+	}
+
+	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}
+	if deliveryLogMode != topic.DeliveryLogModeOff {
+		args = append(args, "another delivery held the message key when this claim reached its gate")
 	}
 	return d.record(ctx, sql, args...)
 }
@@ -255,10 +312,10 @@ func (d *ExceptionConsumerGroupDatastore) recordAndReleaseKey(ctx context.Contex
 		-- vulkan: exceptionconsumer.recordAndReleaseKey
 		DELETE FROM %s
 		WHERE consumer_group_id = $1
-			AND compaction_key = $2
+			AND message_key = $2
 			AND lease_token = $3;
-	`, iTopic.KeyLeaseTable(keyClaim.TopicId))
-	releaseTag, err := tx.Exec(ctx, releaseSql, keyClaim.ConsumerGroupId, keyClaim.CompactionKey, keyClaim.Token)
+	`, iTopic.MessageKeyLeaseTable(keyClaim.TopicId))
+	releaseTag, err := tx.Exec(ctx, releaseSql, keyClaim.ConsumerGroupId, keyClaim.MessageKey, keyClaim.Token)
 	if err != nil {
 		return err
 	}
@@ -269,7 +326,7 @@ func (d *ExceptionConsumerGroupDatastore) recordAndReleaseKey(ctx context.Contex
 	if releaseTag.RowsAffected() == 0 {
 		// the run outlived its key lease -- another delivery on the key may
 		// have overlapped it
-		d.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group_id", keyClaim.ConsumerGroupId, "compaction_key", keyClaim.CompactionKey)
+		d.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group_id", keyClaim.ConsumerGroupId, "message_key", keyClaim.MessageKey)
 	}
 	if tag.RowsAffected() == 0 {
 		return common.ErrLeaseLost

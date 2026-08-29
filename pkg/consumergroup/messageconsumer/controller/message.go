@@ -13,7 +13,8 @@ type Message struct {
 	Payload        json.RawMessage
 	CreatedAt      time.Time
 	RoutingKey     string // "" if unset
-	CompactionKey  string // "" if unset
-	CompactionRank int64
+	MessageKey     string // "" if unset
+	CompactionRank int64  // 0 if not compacted
+	Compacted      bool   // the produce enabled Compaction
 	Options        *common.MessageOptions
 }

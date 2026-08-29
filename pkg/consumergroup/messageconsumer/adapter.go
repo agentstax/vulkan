@@ -20,7 +20,7 @@ func toMessageMeta(claimed controller.Message, resolved *common.MessageOptions) 
 	return consumergroup.MessageMeta{
 		Id:             claimed.Id,
 		RoutingKey:     claimed.RoutingKey,
-		CompactionKey:  claimed.CompactionKey,
+		MessageKey:     claimed.MessageKey,
 		CompactionRank: claimed.CompactionRank,
 		CreatedAt:      claimed.CreatedAt,
 		Options:        resolved,

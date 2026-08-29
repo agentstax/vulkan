@@ -125,11 +125,11 @@ func main() {
 // ---- helpers ----
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[RankedRecord], key, label string, rank int64) {
-	compaction, err := producer.NewCompactionOptions(key, rank)
+	compaction, err := producer.NewCompactionOptions(rank)
 	must(err)
 	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*RankedRecord, error) {
 		return &RankedRecord{Key: key, Label: label}, nil
-	}, producer.ProduceOptions{Compaction: compaction})
+	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	must(err)
 }
 

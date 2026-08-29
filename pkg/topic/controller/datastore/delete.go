@@ -63,7 +63,7 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 		iTopic.IdempotencyKeyTable(topicId),
 		iTopic.ConsumerGroupCursorTable(topicId),
 		iTopic.ClaimLeaseTable(topicId),
-		iTopic.KeyLeaseTable(topicId),
+		iTopic.MessageKeyLeaseTable(topicId),
 		iTopic.CompactionHeadTable(topicId),
 		iTopic.BindingConfigTable(topicId),
 		iTopic.BindingConfigLogTable(topicId),

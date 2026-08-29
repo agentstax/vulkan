@@ -55,7 +55,7 @@ const (
 	MetricCursorInflight               = "vulkan.consumer.cursor.inflight"                           // claimed - committed -- claimed but not yet resolved
 	MetricReadyExceptions              = "vulkan.consumer.exceptions.ready"                          // delivery rows waiting to be retried
 	MetricInflightExceptions           = "vulkan.consumer.exceptions.inflight"                       // delivery rows leased out to a retry attempt
-	MetricDeferredExceptions           = "vulkan.consumer.exceptions.deferred"                       // delivery rows waiting for their compaction key's key_lease to free
+	MetricDeferredExceptions           = "vulkan.consumer.exceptions.deferred"                       // delivery rows waiting for their message key's lease to free
 	MetricDeadExceptions               = "vulkan.consumer.exceptions.dead"                           // dead-lettered delivery rows -- DLQ size
 	MetricOldestUnresolvedAge          = "vulkan.consumer.exceptions.oldest_unresolved_age"          // age of the oldest ready/inflight/deferred row, in ms
 	MetricOpenLeases                   = "vulkan.consumer.open_leases"                               // currently open leases for the (group, topic)
@@ -158,7 +158,7 @@ func NewMeasurement(name string, kind Kind, value float64, unit Unit, attributes
 	}, nil
 }
 
-// MeasurementKey is the compaction key a Measurement is produced under. Attribute keys
+// MeasurementKey is the message key a Measurement is produced under. Attribute keys
 // are sorted, so equal attribute sets always yield one key -- map iteration
 // order must never reach it.
 //

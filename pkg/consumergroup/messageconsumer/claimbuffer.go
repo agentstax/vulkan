@@ -115,11 +115,11 @@ func (b *claimBuffer) resolveTerminal(item *buffered, err error) {
 }
 
 func (b *claimBuffer) resolveSuperseded(item *buffered) {
-	b.resolve(item, kindSuperseded, "a newer message on the same compaction key superseded this delivery")
+	b.resolve(item, kindSuperseded, "a newer version of the same message key superseded this delivery")
 }
 
 func (b *claimBuffer) resolveDeferred(item *buffered) {
-	b.resolve(item, kindDeferred, "another delivery held the compaction key at dispatch")
+	b.resolve(item, kindDeferred, "another delivery held the message key at dispatch")
 }
 
 func (b *claimBuffer) resolve(item *buffered, kind outcomeKind, err string) {

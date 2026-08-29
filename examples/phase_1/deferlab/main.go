@@ -20,13 +20,16 @@
 //   - a failing Defer message still frees the key.
 //   - redemption: a stale 'deferred' row resolves superseded with its log row
 //     and never runs; the head's row runs and pops.
-//   - a row whose compaction key has an unexpired key_lease is never claimed:
+//   - a row whose message key has an unexpired lease is never claimed:
 //     no attempts motion, no log rows; the kill backstop never touches a
 //     'deferred' row; the run lands once the key frees.
 //   - a failed holder's retry passes the key gate and resolves superseded once
 //     a newer head exists, its claim-time attempts increment decremented back.
 //   - a crashed holder's expired key lease: redemption takes the key over.
-//   - Concurrency Defer without a CompactionKey is refused at produce time.
+//   - Concurrency Defer without a MessageKey is refused at produce time.
+//   - uncompacted defer (a key, no Compaction): no compaction_head row is
+//     written, every version runs exactly once serialized on the key, and a
+//     same-batch key collision re-defers the loser instead of superseding it.
 //   - torture: two cursor consumers and two exception consumers fight one key
 //     through an abandoned (past-Timeout) holder and head churn -- only the
 //     final head ever runs, exactly once, every other version audits out
@@ -349,14 +352,14 @@ func main() {
 	if n := deliveryAttempts(ctx, g8, v7); n != 99 {
 		die(fmt.Sprintf("an exhausted row must not be claimed, attempts = %d", n))
 	}
-	// the unexpired key_lease alone must exclude the row -- attempts back at
+	// the unexpired message_key_lease row alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
 	execSql(ctx, fmt.Sprintf(`UPDATE exception_queue_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
 	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
-		die(fmt.Sprintf("a row whose compaction key has an unexpired key_lease must not be claimed, got status %q attempts %d", s, n))
+		die(fmt.Sprintf("a row whose message key has an unexpired lease must not be claimed, got status %q attempts %d", s, n))
 	}
 
 	stopRedeem8 := startExceptionConsumer(ctx, tp.Name, "deferlab.g8", nil, func(ctx context.Context, message *Rec) error {
@@ -424,8 +427,8 @@ func main() {
 
 	step("a crashed holder's expired key lease: redemption takes the key over")
 	g10 := groupId(ctx, cd, "deferlab.g10")
-	// a crashed holder's key_lease row: unexpired, never released
-	execSql(ctx, fmt.Sprintf(`INSERT INTO key_lease_%d (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, topicId), g10)
+	// a crashed holder's message_key_lease row: unexpired, never released
+	execSql(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, topicId), g10)
 	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyDefer)
 	v10 := messageId(ctx, "u:10", 1)
 	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
@@ -446,11 +449,73 @@ func main() {
 	stopRedeem10()
 	fmt.Println("  ✓ deferred behind the crashed holder, ran after expiry via takeover")
 
-	step("Defer without a CompactionKey is refused at produce time")
+	step("Defer without a MessageKey is refused at produce time")
 	if _, err := wpInstance.Produce(ctx, &Rec{Version: 1}, producer.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyDefer}}); err == nil {
-		die("produce must refuse Defer without a CompactionKey")
+		die("produce must refuse Defer without a MessageKey")
 	}
 	fmt.Println("  ✓ refused")
+
+	step("uncompacted defer: no head row, every version runs exactly once, none superseded")
+	g12 := groupId(ctx, cd, "deferlab.g12")
+	started12 := make(chan struct{})
+	release12 := make(chan struct{})
+	var once12 sync.Once
+	publishUncompacted(ctx, wpInstance, "uc:1", 1)
+	uc1 := messageId(ctx, "uc:1", 1)
+
+	done12 := make(chan struct{})
+	go func() {
+		defer close(done12)
+		consume(ctx, tp.Name, "deferlab.g12", nil, 3, func(ctx context.Context, message *Rec) error {
+			if message.Key == "uc:1" && message.Version == 1 {
+				once12.Do(func() { close(started12) })
+				<-release12
+			}
+			record(message)
+			return nil
+		}, func() bool { return ran("uc:1", 1) })
+	}()
+
+	<-started12 // v1 is running and holds the key
+	publishUncompacted(ctx, wpInstance, "uc:1", 2)
+	uc2 := messageId(ctx, "uc:1", 2)
+	waitFor(func() bool { return deliveryStatus(ctx, g12, uc2) == "deferred" }, "v2's 'deferred' row")
+	publishUncompacted(ctx, wpInstance, "uc:1", 3)
+	uc3 := messageId(ctx, "uc:1", 3)
+	waitFor(func() bool { return deliveryStatus(ctx, g12, uc3) == "deferred" }, "v3's 'deferred' row")
+
+	var headRows12 int
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM compaction_head_%d WHERE compaction_key = 'uc:1';`, tp.Id)).Scan(&headRows12))
+	if headRows12 != 0 {
+		die(fmt.Sprintf("an uncompacted produce must not write a compaction head, got %d rows", headRows12))
+	}
+
+	close(release12)
+	<-done12 // v1 finished
+
+	// redemption runs BOTH deferred versions -- an uncompacted key keeps its
+	// history; a same-batch key collision re-defers instead of superseding
+	stopRedeem12 := startExceptionConsumer(ctx, tp.Name, "deferlab.g12", nil, func(ctx context.Context, message *Rec) error {
+		record(message)
+		return nil
+	})
+	waitFor(func() bool { return ran("uc:1", 2) && ran("uc:1", 3) }, "both deferred versions to run")
+	waitFor(func() bool {
+		return deliveryStatus(ctx, g12, uc2) == "" && deliveryStatus(ctx, g12, uc3) == "" && leaseCount(ctx, g12) == 0
+	}, "both rows to pop and the key to free")
+	stopRedeem12()
+
+	for version, id := range map[int]int64{1: uc1, 2: uc2, 3: uc3} {
+		if n := runCount("uc:1", version); n != 1 {
+			die(fmt.Sprintf("version %d must run exactly once, ran %d times", version, n))
+		}
+		for _, status := range logStatuses(ctx, g12, id) {
+			if status == "superseded" {
+				die(fmt.Sprintf("version %d resolved superseded -- an uncompacted key must keep every version", version))
+			}
+		}
+	}
+	fmt.Println("  ✓ v1 ran holding the key, v2 and v3 both redeemed, nothing superseded")
 
 	step("torture: two consumers per loop fight one key through an abandoned holder and head churn")
 	g11 := groupId(ctx, cd, "deferlab.g11")
@@ -694,15 +759,27 @@ func ran(key string, version int) bool {
 }
 
 func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int, policy common.ConcurrencyPolicy) {
-	compaction, err := producer.NewCompactionOptions(key, 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	must(err)
-	opts := producer.ProduceOptions{Compaction: compaction}
+	opts := producer.ProduceOptions{MessageKey: key, Compaction: compaction}
 	if policy != "" {
 		opts.Message = &common.MessageOptions{Concurrency: policy}
 	}
 	_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, opts)
+	must(err)
+}
+
+// publishUncompacted produces a Defer message with a key and no Compaction --
+// every version is kept, deliveries serialize on the key.
+func publishUncompacted(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
+	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
+		return &Rec{Key: key, Version: version}, nil
+	}, producer.ProduceOptions{
+		MessageKey: key,
+		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
+	})
 	must(err)
 }
 
@@ -721,14 +798,14 @@ func groupId(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupContr
 
 func messageId(ctx context.Context, key string, version int) int64 {
 	var id int64
-	sql := fmt.Sprintf(`SELECT id FROM message_log_%d WHERE compaction_key = $1 AND (payload->>'version')::int = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT id FROM message_log_%d WHERE message_key = $1 AND (payload->>'version')::int = $2`, topicId)
 	must(ds.Pool.QueryRow(ctx, sql, key, version).Scan(&id))
 	return id
 }
 
 func leaseCount(ctx context.Context, groupId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM key_lease_%d WHERE consumer_group_id = $1`, topicId)
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM message_key_lease_%d WHERE consumer_group_id = $1`, topicId)
 	must(ds.Pool.QueryRow(ctx, sql, groupId).Scan(&n))
 	return n
 }

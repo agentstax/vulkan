@@ -183,14 +183,14 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	fmt.Printf("  ✓ live worker instance refuses the destroy\n")
 
 	// delivery rows refuse it; force discards them along with the rows no FK
-	// reaches (lease, key_lease, delivery_log)
+	// reaches (claim_lease, message_key_lease, delivery_log)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status) VALUES ($1, 1, 'ready');`, topicA.Id), doomed.Id)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO claim_lease_%d (consumer_group_id, low, high, expires_at) VALUES ($1, 1, 10, now() + interval '1 minute');`, topicA.Id), doomed.Id)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, 1, 1, 'failure', 'lab');`, topicA.Id), doomed.Id)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO key_lease_%d (consumer_group_id, compaction_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, topicA.Id), doomed.Id)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, topicA.Id), doomed.Id)
 	must(err)
 	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
 		die(fmt.Sprintf("destroy with delivery rows: want ErrGroupDeliveriesPending, got %v", err))
@@ -204,7 +204,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 		"worker rows":       `SELECT COUNT(*) FROM worker_config WHERE consumer_group_id = $1;`,
 		"instance rows":     `SELECT COUNT(*) FROM worker_instance wi WHERE wi.worker_id IN (SELECT id FROM worker_config WHERE consumer_group_id = $1);`,
 		"lease rows":        fmt.Sprintf(`SELECT COUNT(*) FROM claim_lease_%d WHERE consumer_group_id = $1;`, topicA.Id),
-		"key lease rows":    fmt.Sprintf(`SELECT COUNT(*) FROM key_lease_%d WHERE consumer_group_id = $1;`, topicA.Id),
+		"key lease rows":    fmt.Sprintf(`SELECT COUNT(*) FROM message_key_lease_%d WHERE consumer_group_id = $1;`, topicA.Id),
 		"delivery rows":     fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = $1;`, topicA.Id),
 		"delivery log rows": fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1;`, topicA.Id),
 	} {

@@ -23,17 +23,17 @@ func (d *CronJobDatastore) Status(ctx context.Context, jobRequestsTopicId int64,
 }
 
 func (d *CronJobDatastore) status(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string) ([]GroupStatusData, error) {
-	compactionKey := strconv.FormatInt(cronJobId, 10)
+	messageKey := strconv.FormatInt(cronJobId, 10)
 
 	groups, err := d.matchingGroups(ctx, jobRequestsTopicId, name)
 	if err != nil {
 		return nil, err
 	}
-	messageIds, err := d.jobMessageIds(ctx, jobRequestsTopicId, compactionKey)
+	messageIds, err := d.jobMessageIds(ctx, jobRequestsTopicId, messageKey)
 	if err != nil {
 		return nil, err
 	}
-	headId, err := d.headId(ctx, jobRequestsTopicId, compactionKey)
+	headId, err := d.headId(ctx, jobRequestsTopicId, messageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -85,17 +85,17 @@ func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicI
 	return groups, nil
 }
 
-// jobMessageIds is every message id on the job's compaction key still inside
+// jobMessageIds is every message id on the job's message key still inside
 // the retention window.
-func (d *CronJobDatastore) jobMessageIds(ctx context.Context, jobRequestsTopicId int64, compactionKey string) ([]int64, error) {
+func (d *CronJobDatastore) jobMessageIds(ctx context.Context, jobRequestsTopicId int64, messageKey string) ([]int64, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: cron.jobMessageIds
 		SELECT m.id
 		FROM %s m
-		WHERE m.compaction_key = $1;
+		WHERE m.message_key = $1;
 	`, iTopic.MessageLogTable(jobRequestsTopicId))
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql, compactionKey)
+	rows, err := d.Datastore.Pool.Query(ctx, sql, messageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (d *CronJobDatastore) jobMessageIds(ctx context.Context, jobRequestsTopicId
 }
 
 // headId is the key's compaction_head pointer; 0 when the job has no messages.
-func (d *CronJobDatastore) headId(ctx context.Context, jobRequestsTopicId int64, compactionKey string) (int64, error) {
+func (d *CronJobDatastore) headId(ctx context.Context, jobRequestsTopicId int64, messageKey string) (int64, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: cron.headId
 		SELECT head_id
@@ -125,7 +125,7 @@ func (d *CronJobDatastore) headId(ctx context.Context, jobRequestsTopicId int64,
 	`, iTopic.CompactionHeadTable(jobRequestsTopicId))
 
 	var headId int64
-	err := d.Datastore.Pool.QueryRow(ctx, sql, compactionKey).Scan(&headId)
+	err := d.Datastore.Pool.QueryRow(ctx, sql, messageKey).Scan(&headId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil

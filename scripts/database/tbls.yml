@@ -44,7 +44,7 @@ relations:
     columns: [consumer_group_id]
     parentTable: consumer_group_config
     parentColumns: [id]
-  - table: key_lease_1
+  - table: message_key_lease_1
     columns: [consumer_group_id]
     parentTable: consumer_group_config
     parentColumns: [id]

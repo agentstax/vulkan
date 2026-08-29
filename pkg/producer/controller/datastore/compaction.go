@@ -13,11 +13,11 @@ import (
 // GetCompactionHeadInTx reads the head against the caller's tx, locking it
 // FOR UPDATE so a following produce on the same key is a race-free
 // compare-and-set. No retry: the tx owns its own error handling.
-func (d *ProducerDatastore[Message]) GetCompactionHeadInTx(ctx context.Context, q iDatastore.Querier, topicId int64, compactionKey string) (*HeadData, error) {
-	return d.getCompactionHead(ctx, q, topicId, compactionKey)
+func (d *ProducerDatastore[Message]) GetCompactionHeadInTx(ctx context.Context, q iDatastore.Querier, topicId int64, messageKey string) (*HeadData, error) {
+	return d.getCompactionHead(ctx, q, topicId, messageKey)
 }
 
-func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q iDatastore.Querier, topicId int64, compactionKey string) (*HeadData, error) {
+func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q iDatastore.Querier, topicId int64, messageKey string) (*HeadData, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: producer.getCompactionHead
 		SELECT
@@ -25,7 +25,7 @@ func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q iD
 			m.payload,
 			m.created_at,
 			COALESCE(m.routing_key, ''),
-			m.compaction_key,
+			m.message_key,
 			m.compaction_rank
 		FROM %s h
 		JOIN %s m ON m.id = h.head_id
@@ -34,12 +34,12 @@ func (d *ProducerDatastore[Message]) getCompactionHead(ctx context.Context, q iD
 	`, iTopic.CompactionHeadTable(topicId), iTopic.MessageLogTable(topicId))
 
 	var head HeadData
-	err := q.QueryRow(ctx, sql, compactionKey).Scan(
+	err := q.QueryRow(ctx, sql, messageKey).Scan(
 		&head.Id,
 		&head.Payload,
 		&head.CreatedAt,
 		&head.RoutingKey,
-		&head.CompactionKey,
+		&head.MessageKey,
 		&head.CompactionRank,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

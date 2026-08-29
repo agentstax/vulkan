@@ -128,8 +128,7 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 			return err
 		}
 
-		// id not name -- a destroyed name's reuse must not share a key
-		compaction, err := producer.NewCompactionOptions(strconv.FormatInt(row.Id, 10), 0)
+		compaction, err := producer.NewCompactionOptions(0)
 		if err != nil {
 			return err
 		}
@@ -138,7 +137,9 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 			return request, nil
 		}
 		produced, err := i.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
-			RoutingKey:     row.Name,
+			RoutingKey: row.Name,
+			// id not name -- a destroyed name's reuse must not share a key
+			MessageKey:     strconv.FormatInt(row.Id, 10),
 			Compaction:     compaction,
 			IdempotencyKey: cron.IdempotencyKey(scheduledTime, row.Id),
 			Message: &common.MessageOptions{

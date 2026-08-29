@@ -11,6 +11,6 @@ type MessageData struct {
 	Payload        json.RawMessage `db:"payload"`
 	CreatedAt      time.Time       `db:"created_at"`
 	RoutingKey     string          `db:"routing_key"` // "" if unset, COALESCE'd at read
-	CompactionKey  string          `db:"compaction_key"`
+	MessageKey     string          `db:"message_key"`
 	CompactionRank int64           `db:"compaction_rank"`
 }

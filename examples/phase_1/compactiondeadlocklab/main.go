@@ -125,12 +125,12 @@ func batcherAbsenceScenario(ctx context.Context) {
 			defer wg.Done()
 			for produced := range producesPerGoroutine {
 				key := keys[(offset+produced)%len(keys)]
-				compaction, err := producer.NewCompactionOptions(key, 0)
+				compaction, err := producer.NewCompactionOptions(0)
 				if err != nil {
 					record(err)
 					return
 				}
-				if _, err := instance.Produce(ctx, &labMessage{Note: key}, producer.ProduceOptions{Compaction: compaction}); err != nil {
+				if _, err := instance.Produce(ctx, &labMessage{Note: key}, producer.ProduceOptions{MessageKey: key, Compaction: compaction}); err != nil {
 					record(err)
 					return
 				}
@@ -163,9 +163,9 @@ func produceInTxDeadlockScenario(ctx context.Context) {
 
 	// seed both head rows so the second produces contend on existing rows
 	for _, key := range []string{"tx-a", "tx-b"} {
-		compaction, err := producer.NewCompactionOptions(key, 0)
+		compaction, err := producer.NewCompactionOptions(0)
 		must(err)
-		_, err = wpInstance.Produce(ctx, &labMessage{Note: "seed"}, producer.ProduceOptions{Compaction: compaction})
+		_, err = wpInstance.Produce(ctx, &labMessage{Note: "seed"}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
 	}
 	deadlocksBefore := deadlockCount(ctx)
@@ -252,13 +252,13 @@ func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, 
 }
 
 func produceKeyInTx(ctx context.Context, tx producer.Tx, key string, idempotencyKey uuid.UUID) error {
-	compaction, err := producer.NewCompactionOptions(key, 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
 	_, err = wpInstance.ProduceInTx(ctx, tx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*labMessage, error) {
 		return &labMessage{Note: key}, nil
-	}, producer.ProduceOptions{Compaction: compaction, IdempotencyKey: idempotencyKey})
+	}, producer.ProduceOptions{MessageKey: key, Compaction: compaction, IdempotencyKey: idempotencyKey})
 	return err
 }
 
@@ -290,14 +290,14 @@ func waitDeadlockCount(ctx context.Context, want int64) {
 func messageCount(ctx context.Context) int64 {
 	var count int64
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE compaction_key LIKE 'hot-%%';`, topicId)).Scan(&count))
+		fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE message_key LIKE 'hot-%%';`, topicId)).Scan(&count))
 	return count
 }
 
 func keyMessageCount(ctx context.Context, key string) int64 {
 	var count int64
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE compaction_key = $1;`, topicId), key).Scan(&count))
+		fmt.Sprintf(`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, topicId), key).Scan(&count))
 	return count
 }
 
@@ -310,7 +310,7 @@ func assertHeadIsMaxId(ctx context.Context, key string) {
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT
 			h.head_id,
-			(SELECT MAX(id) FROM message_log_%d WHERE compaction_key = $1)
+			(SELECT MAX(id) FROM message_log_%d WHERE message_key = $1)
 		FROM compaction_head_%d h
 		WHERE h.compaction_key = $1;`, topicId, topicId), key).Scan(&headId, &maxId))
 	if headId != maxId {

@@ -10,8 +10,8 @@ type ProduceOptions = controller.ProduceOptions
 // with the controller that validates it.
 type CompactionOptions = controller.CompactionOptions
 
-// NewCompactionOptions builds the Compaction option for a produce. Pass rank
-// 0 to let arrival order pick the key's winner.
-func NewCompactionOptions(key string, rank int64) (*CompactionOptions, error) {
-	return controller.NewCompactionOptions(key, rank)
+// NewCompactionOptions builds the Compaction option for a produce, enabled.
+// Pass rank 0 to let arrival order pick the key's winner.
+func NewCompactionOptions(rank int64) (*CompactionOptions, error) {
+	return controller.NewCompactionOptions(rank)
 }

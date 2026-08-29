@@ -81,7 +81,7 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	compaction, err := producer.NewCompactionOptions("hot-key", 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	must(err)
 
 	var wg sync.WaitGroup
@@ -89,14 +89,14 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 		wg.Go(func() {
 			_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 				return common.NewWork(30, "admin@example.com")
-			}, producer.ProduceOptions{Compaction: compaction})
+			}, producer.ProduceOptions{MessageKey: "hot-key", Compaction: compaction})
 			must(err)
 		})
 	}
 	wg.Wait()
 
 	var trueMax, compactionHeadValue int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT MAX(id) FROM message_log_%d WHERE compaction_key='hot-key';`, tp.Id)).Scan(&trueMax))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT MAX(id) FROM message_log_%d WHERE message_key='hot-key';`, tp.Id)).Scan(&trueMax))
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key='hot-key';`, tp.Id)).Scan(&compactionHeadValue))
 
 	assertInt64(fmt.Sprintf("compaction_head converged to the true max id across %d concurrent publishes", n), compactionHeadValue, trueMax)
@@ -154,7 +154,7 @@ func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // seeding, this cares about query cost at scale, not seeding realism) so
 // its own compaction_head row is set directly alongside it.
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, compaction_key) VALUES ('{}'::jsonb, 'stale');`, topicId))
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, message_key, compaction_rank) VALUES ('{}'::jsonb, 'stale', 0);`, topicId))
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO compaction_head_%d (compaction_key, head_id) VALUES ('stale', 1);`, topicId))
 	must(err)
@@ -186,7 +186,7 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		return
 	}
 	sql := fmt.Sprintf(`
-		INSERT INTO message_log_%d (payload, compaction_key)
+		INSERT INTO message_log_%d (payload, message_key)
 		SELECT '{}'::jsonb, NULL FROM generate_series(1, $1);
 	`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql, count)
@@ -202,9 +202,9 @@ func explainCompactionHeadLookup(ctx context.Context, ds *iDatastore.PostgresDat
 		EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 FROM %s m
 		WHERE m.id = 1
 			AND (
-				m.compaction_key IS NULL
+				m.compaction_rank IS NULL
 				OR m.id = (SELECT head_id FROM compaction_head_%d
-					WHERE compaction_key = m.compaction_key)
+					WHERE compaction_key = m.message_key)
 			);
 	`, logTable, topicId)
 

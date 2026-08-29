@@ -7,7 +7,7 @@ import (
 )
 
 // locksPerPartition: a partition owns 5 lockable relations -- table, pkey
-// index, compaction_key index, TOAST table, TOAST index -- and dropping the
+// index, message_key index, TOAST table, TOAST index -- and dropping the
 // parent locks them all at once.
 const locksPerPartition = 5
 

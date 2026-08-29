@@ -137,8 +137,9 @@ func timeSequential(ctx context.Context, wpInstance *producer.ProducerInstance[c
 	for i := range n {
 		opts := producer.ProduceOptions{}
 		if key := keyFn(i); key != "" {
-			compaction, err := producer.NewCompactionOptions(key, 0)
+			compaction, err := producer.NewCompactionOptions(0)
 			must(err)
+			opts.MessageKey = key
 			opts.Compaction = compaction
 		}
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -170,11 +171,11 @@ func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label
 	for g := range goroutines {
 		wg.Go(func() {
 			for i := range perGoroutine {
-				compaction, err := producer.NewCompactionOptions(keyFn(g, i), 0)
+				compaction, err := producer.NewCompactionOptions(0)
 				must(err)
 				_, err = wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
 					return common.NewWork(30, "admin@example.com")
-				}, producer.ProduceOptions{Compaction: compaction})
+				}, producer.ProduceOptions{MessageKey: keyFn(g, i), Compaction: compaction})
 				must(err)
 			}
 		})

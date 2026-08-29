@@ -7,7 +7,7 @@ import (
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 )
 
-// SweepExpiredKeyLeases deletes this topic's expired key_lease rows.
+// SweepExpiredKeyLeases deletes this topic's expired message_key_lease rows.
 // A crashed consumer leaves its expired row behind:
 //   - the key gets another message -> that claim takes the row over
 //   - the key never does -> the row sits forever, only this sweep removes it
@@ -38,13 +38,13 @@ func (d *JanitorDatastore) sweepKeyLeasesBatch(ctx context.Context, topicId int6
 	sql := fmt.Sprintf(`
 		-- vulkan: topicjanitor.sweepKeyLeasesBatch
 		DELETE FROM %[1]s
-		WHERE (consumer_group_id, compaction_key) IN (
-			SELECT k.consumer_group_id, k.compaction_key
+		WHERE (consumer_group_id, message_key) IN (
+			SELECT k.consumer_group_id, k.message_key
 			FROM %[1]s k
 			WHERE k.expires_at < now()
 			LIMIT $1
 		);
-	`, iTopic.KeyLeaseTable(topicId))
+	`, iTopic.MessageKeyLeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, batchSize)
 	if err != nil {
 		return 0, err

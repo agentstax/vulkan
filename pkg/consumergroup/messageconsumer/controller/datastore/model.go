@@ -12,9 +12,10 @@ type MessageData struct {
 	Id             int64                  `db:"id"`
 	Payload        json.RawMessage        `db:"payload"`
 	CreatedAt      time.Time              `db:"created_at"`
-	RoutingKey     string                 `db:"routing_key"`    // "" if unset, COALESCE'd at read
-	CompactionKey  string                 `db:"compaction_key"` // "" if unset, COALESCE'd at read
-	CompactionRank int64                  `db:"compaction_rank"`
+	RoutingKey     string                 `db:"routing_key"`     // "" if unset, COALESCE'd at read
+	MessageKey     string                 `db:"message_key"`     // "" if unset, COALESCE'd at read
+	CompactionRank int64                  `db:"compaction_rank"` // 0 if not compacted, COALESCE'd at read
+	Compacted      bool                   `db:"compacted"`       // compaction_rank IS NOT NULL, aliased at read
 	Options        *common.MessageOptions `db:"options"`
 }
 
@@ -46,7 +47,7 @@ type OutcomeKind string
 const (
 	OutcomeException  OutcomeKind = "exception"  // retryable -- writes a 'ready' delivery row instead of failing the whole range
 	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- writes the delivery row straight to 'dead'
-	OutcomeSuperseded OutcomeKind = "superseded" // a newer message on its compaction key exists -- log row only, never a delivery row
+	OutcomeSuperseded OutcomeKind = "superseded" // its compacted message key has a newer version -- log row only, never a delivery row
 	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- writes a 'deferred' delivery row for the exception window
 	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
 )

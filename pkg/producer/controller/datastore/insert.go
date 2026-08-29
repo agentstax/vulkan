@@ -59,7 +59,7 @@ func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx 
 
 // insertProtectedSavepoint pipelines the claim+insert CTE with RELEASE
 // SAVEPOINT as one round trip -- always a single statement regardless of
-// compaction key, so it always fully batches. duplicate=true means the claim
+// compaction, so it always fully batches. duplicate=true means the claim
 // already existed.
 func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
@@ -88,7 +88,7 @@ func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Contex
 }
 
 // insertProtected runs the idempotency claim + message insert (+ compaction_head
-// upsert when keyed) in one round trip. duplicate=true means the claim already
+// upsert when compacted) in one round trip. duplicate=true means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
 func (d *ProducerDatastore[Message]) insertProtected(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
@@ -117,14 +117,14 @@ func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savep
 	_, _ = q.Exec(ctx, "ROLLBACK TO SAVEPOINT "+savepointName+";")
 }
 
-// protectedInsertSQL builds the claim+insert(+compaction_head upsert when keyed)
-// CTE -- shared with the savepoint-batched path so both run the exact same
-// statement. Claims against idempotency_key_<topicId>
+// protectedInsertSQL builds the claim+insert(+compaction_head upsert when
+// compacted) CTE -- shared with the savepoint-batched path so both run the
+// exact same statement. Claims against idempotency_key_<topicId>
 func protectedInsertSQL[Message any](topicId int64, payload *Message, data *AppendData[Message]) (string, []any) {
 	args := []any{data.IdempotencyKey, payload, data.RoutingKey}
 
 	var sql string
-	if data.CompactionKey != "" {
+	if data.Compacted {
 		// claim + insert + compaction_head upsert in one round trip -- inserted
 		// stays empty when the claim already existed, so latest never fires either.
 		sql = fmt.Sprintf(`
@@ -135,7 +135,7 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			), inserted AS (
-				INSERT INTO %s (payload, routing_key, compaction_key, compaction_rank, options)
+				INSERT INTO %s (payload, routing_key, message_key, compaction_rank, options)
 				SELECT $2, NULLIF($3, ''), $4, $5, $6  -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
@@ -150,10 +150,11 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 			SELECT id FROM inserted;
 		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId), iTopic.CompactionHeadTable(topicId))
 
-		args = append(args, data.CompactionKey, data.CompactionRank, data.Options) // $4, $5, $6
+		args = append(args, data.MessageKey, data.CompactionRank, data.Options) // $4, $5, $6
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
+		// compaction_rank stays NULL: this message never opted into compaction.
 		sql = fmt.Sprintf(`
 			-- vulkan: producer.protectedInsert
 			WITH claim AS (
@@ -162,16 +163,17 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, options)
+			INSERT INTO %s (payload, routing_key, message_key, options)
 			SELECT
 				$2,
 				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
-				$4
+				NULLIF($4, ''), -- if message_key is empty string '' insert as NULL
+				$5
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
 		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId))
 
-		args = append(args, data.Options) // $4
+		args = append(args, data.MessageKey, data.Options) // $4, $5
 	}
 
 	return sql, args

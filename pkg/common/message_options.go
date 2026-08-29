@@ -12,8 +12,8 @@ import (
 // - consumer clamp > produced message > consumer defaults > system defaults
 // Messages REQUEST, consumers PROTECT THEMSELVES.
 type MessageOptions struct {
-	// Concurrency - concurrency policy for this message's compaction key.
-	// Requires a compaction key -- Defer without one errors at produce time.
+	// Concurrency - concurrency policy for this message's message key.
+	// Requires a message key -- Defer without one errors at produce time.
 	// Default: ConcurrencyAllow (same-key deliveries may overlap).
 	Concurrency ConcurrencyPolicy `json:"concurrency,omitempty"`
 

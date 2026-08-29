@@ -62,16 +62,18 @@ No cron doc page exists on the site, so there was nothing to gate on;
   (metrics lab needs `just metrics-collector-lab` or a rebuilt
   bin/vulkan -- stale binary was a false failure)
 
-### 3. 0612 doc page (the proposal -- gate for chunk 4)
+### 3. 0612 doc page (the proposal -- gate for chunk 4) -- DONE 2026-08-29
 
-- produce + compaction pages rewritten around "the message key":
-  MessageKey on ProduceOptions, CompactionOptions{Rank} opt-in,
-  Defer needs only a key; new sections marked Proposed [0581]
-- find the defer-requires-key declared error; draft its reworded
-  problem/fix text and page edit
-- VOICE.md pass; user reviews before any chunk-4 code
+- USER-SETTLED during review: new concepts/message-key.mdx (not an
+  ordering.mdx rewrite); no Proposed labels (chunk 4 lands before the
+  next deploy); defer guarantees exclusivity only, retries can
+  reorder; CompactionOptions stays a pointer AND gains Enable bool
+  (clarity over one-mechanism-per-fact) -- 0612 amended
+- shipped: message-key.mdx + ordering.mdx rewrite + boards.ts entry;
+  the defer-requires-key error is a PLAIN Validate error (no VK
+  code), rewordings approved and landed in chunk 4
 
-### 4. 0612 implementation + message_key_lease
+### 4. 0612 implementation + message_key_lease -- DONE 2026-08-29
 
 - ProduceOptions.MessageKey; CompactionOptions loses Key;
   NewCompactionOptions signature; Compaction-without-MessageKey errors
@@ -82,6 +84,17 @@ No cron doc page exists on the site, so there was nothing to gate on;
 - labs: deferlab extends to the uncompacted case; grep labs for
   `->>'compaction_key'`; alert.CompactionKey helper + callers
 - error/event docs pages whose text says compaction key
+- verified: builds all modules, vet, pkg race tests, tools/conventions,
+  fresh drop+recreate + schema-diagram regenerated clean; labs defer
+  (incl. new uncompacted step) / keylease / compaction / compactionrank /
+  cron / alert / metricscollector green
+- implementation facts: compaction_rank now NULLABLE (NULL = never
+  opted into compaction) -- that nullability is the compacted marker
+  the read paths branch on; compaction_head keeps its compaction_key
+  column per the record; new exceptionconsumer RecordDeferred verb
+  re-defers the loser of a same-batch key collision (see 0612
+  Consequences); batcher sorts on the key only when Compaction is
+  enabled (uncompacted produces take no head lock)
 
 ### 5. Conventions enforcement + rule files
 

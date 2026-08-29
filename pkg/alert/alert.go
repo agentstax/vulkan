@@ -8,7 +8,7 @@ import (
 )
 
 // Status is an alert's lifecycle state -- an active alert and its later
-// resolution are versions of one compaction key.
+// resolution are versions of one compacted message key.
 type Status string
 
 const (
@@ -103,10 +103,10 @@ func (a *Alert) RoutingKey() string {
 	return fmt.Sprintf("alert.%s.%s.%s.%s", a.Name, a.Owner.Kind(), a.Severity, a.Owner.Name)
 }
 
-// CompactionKey is <name>/<owner-kind>/<owner-id>, composed nowhere else; kind
+// MessageKey is <name>/<owner-kind>/<owner-id>, composed nowhere else; kind
 // keeps id spaces from colliding. A run that built no alert still builds
 // this key to read its head.
-func CompactionKey(name string, owner *common.Owner) (string, error) {
+func MessageKey(name string, owner *common.Owner) (string, error) {
 	var id int64
 	switch owner.Kind() {
 	case common.OwnerSystem:

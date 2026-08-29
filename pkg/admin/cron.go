@@ -122,7 +122,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, err
 	}
 
-	compaction, err := producer.NewCompactionOptions(strconv.FormatInt(job.Id, 10), 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +131,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 	// run is its own unique job.
 	return instance.Produce(ctx, request, producer.ProduceOptions{
 		RoutingKey: job.Name,
+		MessageKey: strconv.FormatInt(job.Id, 10),
 		Compaction: compaction,
 		Message: &common.MessageOptions{
 			Concurrency: cfg.Concurrency,

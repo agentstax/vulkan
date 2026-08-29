@@ -144,11 +144,11 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 		return err
 	}
 
-	// no cascade -- nothing references the per-topic key_lease table
+	// no cascade -- nothing references the per-topic message_key_lease table
 	keyLeaseSql := fmt.Sprintf(`
 		-- vulkan: consumergroup.deleteGroup
 		DELETE FROM %s WHERE consumer_group_id = $1;
-	`, iTopic.KeyLeaseTable(topicId))
+	`, iTopic.MessageKeyLeaseTable(topicId))
 	if _, err := tx.Exec(ctx, keyLeaseSql, groupId); err != nil {
 		return err
 	}

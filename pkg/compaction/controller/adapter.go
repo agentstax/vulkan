@@ -17,7 +17,7 @@ func toMessageRow[Message any](data *datastore.MessageData) (*common.MessageRow[
 		Message:        &message,
 		CreatedAt:      data.CreatedAt,
 		RoutingKey:     data.RoutingKey,
-		CompactionKey:  data.CompactionKey,
+		MessageKey:     data.MessageKey,
 		CompactionRank: data.CompactionRank,
 	}, nil
 }

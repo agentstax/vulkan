@@ -77,7 +77,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 			ORDER BY id ASC -- walk the expired prefix from the front, same PK-index ride as partitionExpired
 			LIMIT $2
 		)
-		RETURNING id, compaction_key;
+		RETURNING id, compaction_rank;
 	`, iTopic.MessageLogPartitionTable(topicId, n), iTopic.MessageLogPartitionTable(topicId, n))
 
 	rows, err := tx.Query(ctx, sweepSql, cutoff, batchSize, floor)
@@ -119,9 +119,9 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 
 	// most topics never use compaction at all, so most sweeps would
 	// otherwise pay a delete that can never match anything
-	anyKeyed := slices.ContainsFunc(swept, func(r sweptRow) bool { return r.CompactionKey != nil })
+	anyCompacted := slices.ContainsFunc(swept, func(r sweptRow) bool { return r.CompactionRank != nil })
 
-	if anyKeyed {
+	if anyCompacted {
 		orphanKeySql := fmt.Sprintf(`
 			-- vulkan: topicjanitor.sweepBatch
 			DELETE FROM %s

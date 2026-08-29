@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// SweepExpiredKeyLeases deletes expired key_lease rows in batches.
+// SweepExpiredKeyLeases deletes expired message_key_lease rows in batches.
 func (c *JanitorController) SweepExpiredKeyLeases(ctx context.Context, topicId int64, batchSize int) error {
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)

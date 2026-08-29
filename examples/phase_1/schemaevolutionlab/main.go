@@ -97,9 +97,9 @@ func main() {
 	step("v1 holds live keyed traffic for 5 users")
 	for i, key := range keys {
 		cents := int64(i+1) * 100
-		compaction, err := producer.NewCompactionOptions(key, 0)
+		compaction, err := producer.NewCompactionOptions(0)
 		must(err)
-		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{Compaction: compaction})
+		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
 		fmt.Printf("  wrote %s cents=%d to v1\n", key, cents)
 	}
@@ -138,11 +138,12 @@ func main() {
 		if !ok {
 			return fmt.Errorf("no MessageMeta in context for key %q", work.Key)
 		}
-		compaction, err := producer.NewCompactionOptions(work.Key, -1)
+		compaction, err := producer.NewCompactionOptions(-1)
 		if err != nil {
 			return err
 		}
 		_, err = wp2Instance.Produce(ctx, &V2Order{Key: work.Key, Cents: work.Cents, Currency: "USD"}, producer.ProduceOptions{
+			MessageKey:     work.Key,
 			Compaction:     compaction,
 			IdempotencyKey: bridgeIdempotencyKey(meta.Id),
 		})
@@ -207,11 +208,11 @@ func main() {
 // ---- helpers ----
 
 func liveWrite(ctx context.Context, wp *producer.ProducerInstance[V2Order], key string, cents int64, currency string) error {
-	compaction, err := producer.NewCompactionOptions(key, 0)
+	compaction, err := producer.NewCompactionOptions(0)
 	if err != nil {
 		return err
 	}
-	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, producer.ProduceOptions{Compaction: compaction})
+	_, err = wp.Produce(ctx, &V2Order{Key: key, Cents: cents, Currency: currency}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 	return err
 }
 

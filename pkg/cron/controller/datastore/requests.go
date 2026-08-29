@@ -22,17 +22,17 @@ func (d *CronJobDatastore) ListRequests(ctx context.Context, jobRequestsTopicId 
 }
 
 func (d *CronJobDatastore) listRequests(ctx context.Context, jobRequestsTopicId int64, cronJobId int64, name string, limit int) ([]JobRequestStatusData, error) {
-	compactionKey := strconv.FormatInt(cronJobId, 10)
+	messageKey := strconv.FormatInt(cronJobId, 10)
 
 	groups, err := d.matchingGroups(ctx, jobRequestsTopicId, name)
 	if err != nil {
 		return nil, err
 	}
-	messages, err := d.jobMessages(ctx, jobRequestsTopicId, compactionKey, limit)
+	messages, err := d.jobMessages(ctx, jobRequestsTopicId, messageKey, limit)
 	if err != nil {
 		return nil, err
 	}
-	headId, err := d.headId(ctx, jobRequestsTopicId, compactionKey)
+	headId, err := d.headId(ctx, jobRequestsTopicId, messageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -57,19 +57,19 @@ func (d *CronJobDatastore) listRequests(ctx context.Context, jobRequestsTopicId 
 	return statuses, nil
 }
 
-// jobMessages is the newest limit message-log rows on the job's compaction
+// jobMessages is the newest limit message-log rows on the job's message
 // key, newest first.
-func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId int64, compactionKey string, limit int) ([]jobMessageData, error) {
+func (d *CronJobDatastore) jobMessages(ctx context.Context, jobRequestsTopicId int64, messageKey string, limit int) ([]jobMessageData, error) {
 	sql := fmt.Sprintf(`
 		-- vulkan: cron.jobMessages
 		SELECT m.id, m.payload, m.created_at
 		FROM %s m
-		WHERE m.compaction_key = $1
+		WHERE m.message_key = $1
 		ORDER BY m.id DESC
 		LIMIT $2;
 	`, iTopic.MessageLogTable(jobRequestsTopicId))
 
-	rows, err := d.Datastore.Pool.Query(ctx, sql, compactionKey, limit)
+	rows, err := d.Datastore.Pool.Query(ctx, sql, messageKey, limit)
 	if err != nil {
 		return nil, err
 	}

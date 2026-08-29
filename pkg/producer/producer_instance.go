@@ -157,11 +157,11 @@ func (p *ProducerInstance[Message]) ProduceFunc(ctx context.Context, producerFun
 // cannot advance past this message until tx commits, and every statement
 // after this call extends how long that lock is held.
 //
-// Producing several compaction keys in one transaction locks each key's
+// Producing several compacted message keys in one transaction locks each key's
 // compaction_head row until tx resolves. Two transactions taking the same
 // keys in reverse order deadlock: Postgres kills one (40P01, a full
 // rollback) and InTransaction never reruns your closure -- retry it
-// yourself. Ordering these calls by compaction key avoids the cycle;
+// yourself. Ordering these calls by message key avoids the cycle;
 // batched Produce sorts the same way, so a consistent order composes.
 func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, producerFunc ProducerFunc[Message], options ProduceOptions) (*ProduceResult[Message], error) {
 	defer p.warnSlowProduce(ctx, time.Now())
@@ -178,12 +178,12 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, prod
 	return NewProduceResult(appended.Message, appended.Id, appended.Duplicate)
 }
 
-// GetCompactionHeadInTx returns the current compaction head under compactionKey,
+// GetCompactionHeadInTx returns the current compaction head under messageKey,
 // or nil if nothing has been published under it.
 // It does so within the transaction and locks the found row in a FOR UPDATE
 // allowing for race-free compare and set.
-func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, compactionKey string) (*MessageRow[Message], error) {
-	return p.controller.GetCompactionHeadInTx(ctx, tx, p.Topic.Id, compactionKey)
+func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, messageKey string) (*MessageRow[Message], error) {
+	return p.controller.GetCompactionHeadInTx(ctx, tx, p.Topic.Id, messageKey)
 }
 
 // warnSlowProduce logs one line when a produce entry point ran past the

@@ -31,7 +31,7 @@ type MessageAdmin struct {
 	consumerController *consumergroupcontroller.ConsumerGroupController
 	jobRequestProducer *producer.Producer[cron.JobRequest]
 	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
-	// only measurements carry compaction keys on __system.metrics, so this
+	// only measurements carry message keys on __system.metrics, so this
 	// Measurement-typed controller's reads never see an abandoned-routine event
 	measurementHeads  *compactioncontroller.CompactionController[metrics.Measurement]
 	metricsController *metricscontroller.MetricsController

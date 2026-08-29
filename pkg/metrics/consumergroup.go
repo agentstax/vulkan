@@ -11,9 +11,9 @@ import (
 var (
 	MetricSessionClaimed     = diagnostic.NewMetric("VK0042", "vulkan.consumer.session.claimed", string(KindCounter), string(UnitCount("message")), "messages this instance claimed -- cursor ranges and exception retries together")
 	MetricSessionSuccess     = diagnostic.NewMetric("VK0043", "vulkan.consumer.session.success", string(KindCounter), string(UnitCount("message")), "consumerFunc runs that completed cleanly, counted at resolution")
-	MetricSessionSuperseded  = diagnostic.NewMetric("VK0044", "vulkan.consumer.session.superseded", string(KindCounter), string(UnitCount("message")), "messages resolved without running -- a newer message on their compaction key had already arrived")
+	MetricSessionSuperseded  = diagnostic.NewMetric("VK0044", "vulkan.consumer.session.superseded", string(KindCounter), string(UnitCount("message")), "messages resolved without running -- a newer version of their compacted message key had already arrived")
 	MetricSessionReady       = diagnostic.NewMetric("VK0045", "vulkan.consumer.session.ready", string(KindCounter), string(UnitCount("message")), "delivery rows written 'ready' -- each will be retried once its backoff passes")
-	MetricSessionDeferred    = diagnostic.NewMetric("VK0046", "vulkan.consumer.session.deferred", string(KindCounter), string(UnitCount("message")), "delivery rows written 'deferred' -- another delivery held their compaction key")
+	MetricSessionDeferred    = diagnostic.NewMetric("VK0046", "vulkan.consumer.session.deferred", string(KindCounter), string(UnitCount("message")), "delivery rows written 'deferred' -- another delivery held their message key")
 	MetricSessionDead        = diagnostic.NewMetric("VK0047", "vulkan.consumer.session.dead", string(KindCounter), string(UnitCount("message")), "delivery rows written 'dead' -- exhausted retries, unrecoverable payloads, and the kill backstop")
 	MetricSessionReclaimed   = diagnostic.NewMetric("VK0048", "vulkan.consumer.session.reclaimed", string(KindCounter), string(UnitCount("lease")), "leases taken over from expired workers -- another instance died or stalled mid-range")
 	MetricSessionQuarantined = diagnostic.NewMetric("VK0049", "vulkan.consumer.session.quarantined", string(KindCounter), string(UnitCount("range")), "ranges past the reclaim cap, written out as independent 'ready' exceptions")
@@ -47,7 +47,7 @@ type CursorSnapshot struct {
 type ExceptionSnapshot struct {
 	Ready    int64 `json:"ready"`    // retryable, will be reclaimed
 	Inflight int64 `json:"inflight"` // currently leased out to a retry attempt
-	Deferred int64 `json:"deferred"` // waiting for their compaction key's key_lease to free
+	Deferred int64 `json:"deferred"` // waiting for their message key's lease to free
 	Dead     int64 `json:"dead"`     // DLQ size
 
 	OldestUnresolvedAge time.Duration `json:"oldest_unresolved_age"` // age of the oldest ready/inflight/deferred row; 0 if none outstanding

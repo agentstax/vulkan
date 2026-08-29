@@ -71,7 +71,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			-- InitPlan feeding an index cond, O(batch). joining old_values in
 			-- plans the same bound as a join FILTER over an in-id-order index
 			-- walk from 0 -- O(whole log) per tick, measured 660x slower at 200k
-			SELECT m.id, m.routing_key, m.compaction_key
+			SELECT m.id, m.routing_key, m.message_key, m.compaction_rank
 			FROM %[2]s m                                           -- [2] = message_log table
 			WHERE m.id > (SELECT committed FROM old_values)
 			ORDER BY m.id
@@ -97,13 +97,14 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 				-- no row is materialized for this message at all
 			)
 			AND (
-				-- unkeyed rows are never compacted
-				b.compaction_key IS NULL
-				-- keyed rows materialize a delivery only if they're compaction_head's
-				-- current pointer for their key -- O(1) lookup, no per-row scan
+				-- uncompacted rows (keyless or keyed) are never superseded
+				b.compaction_rank IS NULL
+				-- compacted rows materialize a delivery only if they're
+				-- compaction_head's current pointer for their key -- O(1) lookup,
+				-- no per-row scan
 				OR b.id = (
 					SELECT head_id FROM %[5]s                      -- [5] = compaction_head table
-					WHERE compaction_key = b.compaction_key
+					WHERE compaction_key = b.message_key
 				)
 			)
 			ON CONFLICT DO NOTHING

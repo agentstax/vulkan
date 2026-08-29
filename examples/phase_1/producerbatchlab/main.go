@@ -270,11 +270,11 @@ func hotCompactionKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 		if err != nil {
 			return err
 		}
-		compaction, err := producer.NewCompactionOptions(fmt.Sprintf("hot:%d", (p+s)%keys), 0)
+		compaction, err := producer.NewCompactionOptions(0)
 		if err != nil {
 			return err
 		}
-		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{Compaction: compaction})
+		_, err = wpInstance.Produce(ctx, work, producer.ProduceOptions{MessageKey: fmt.Sprintf("hot:%d", (p+s)%keys), Compaction: compaction})
 		return err
 	})
 
@@ -285,8 +285,8 @@ func hotCompactionKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatas
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT count(*) FROM compaction_head_%d lk
 		JOIN (
-			SELECT compaction_key, max(id) AS max_id FROM message_log_%d GROUP BY compaction_key
-		) m ON m.compaction_key = lk.compaction_key
+			SELECT message_key, max(id) AS max_id FROM message_log_%d GROUP BY message_key
+		) m ON m.message_key = lk.compaction_key
 		WHERE lk.head_id <> m.max_id;
 	`, tp.Id, tp.Id)).Scan(&stale))
 	if stale != 0 {

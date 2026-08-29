@@ -245,8 +245,8 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 // a message's concurrency policy can resolve it (superseded or deferred)
 // without ever running consumerFunc
 func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, resolvedOptions *common.MessageOptions) {
-	if item.row.CompactionKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
-		claim, err := r.ClaimKeyedRun(ctx, item.row.CompactionKey, item.row.Id, resolvedOptions)
+	if item.row.MessageKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
+		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, resolvedOptions)
 		switch {
 		case err != nil:
 			// record as an exception so it still runs later
@@ -289,13 +289,13 @@ func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keylease
 
 	released, err := r.ReleaseKeyedRun(releaseCtx, claim)
 	if err != nil {
-		r.Logger.WarnContext(ctx, "could not release key lease -- key frees on expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "compaction_key", claim.CompactionKey, "error", err)
+		r.Logger.WarnContext(ctx, "could not release key lease -- key frees on expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_key", claim.MessageKey, "error", err)
 		return
 	}
 	if !released {
 		// the run outlived its lease -- another delivery on the key may have
 		// overlapped it
-		r.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group", r.Owner.Name, "topic_id", r.Topic.Id, "compaction_key", claim.CompactionKey)
+		r.Logger.WarnContext(ctx, "key lease expired mid-run and was taken over", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_key", claim.MessageKey)
 	}
 }
 

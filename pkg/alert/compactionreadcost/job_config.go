@@ -14,7 +14,7 @@ type JobConfig struct {
 	// Default: @hourly.
 	Schedule string
 
-	// Threshold - the partition count one compaction key's replay may span
+	// Threshold - the partition count one compacted message key's replay may span
 	// before the alert is published.
 	// Default: 0, which measures against 10,000 partitions.
 	Threshold int64

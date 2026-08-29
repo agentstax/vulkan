@@ -11,7 +11,7 @@ import (
 )
 
 // Claim claims 'ready', expired 'inflight', and 'deferred' rows up
-// to maxRetries attempts. A leased compaction key excludes its rows.
+// to maxRetries attempts. A leased message key excludes its rows.
 func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimed []ExceptionData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -45,13 +45,13 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 							(d.status = 'inflight' AND d.lease_expires_at < now()) OR
 							(d.status = 'deferred')
 						)
-						-- never claim a row whose compaction key is under an unexpired key_lease
+						-- never claim a row whose message key is under an unexpired lease
 						AND NOT EXISTS (
 							SELECT 1
 							FROM %[3]s kl
 							JOIN %[2]s m ON m.id = d.message_id
 							WHERE kl.consumer_group_id = d.consumer_group_id
-								AND kl.compaction_key = m.compaction_key
+								AND kl.message_key = m.message_key
 								AND kl.expires_at >= now()
 						)
 					ORDER BY d.message_id
@@ -70,13 +70,14 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				m.payload,
 				m.created_at,
 				COALESCE(m.routing_key, '') AS routing_key,
-				COALESCE(m.compaction_key, '') AS compaction_key,
-				m.compaction_rank,
+				COALESCE(m.message_key, '') AS message_key,
+				COALESCE(m.compaction_rank, 0) AS compaction_rank,
+				(m.compaction_rank IS NOT NULL) AS compacted,
 				m.options
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.KeyLeaseTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.MessageKeyLeaseTable(topicId))
 	} else {
 		// eligible is split out so it can remember each row's pre-claim status
 		// and attempts -- the expired_logged CTE needs both, atomically with
@@ -93,13 +94,13 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 						(d.status = 'inflight' AND d.lease_expires_at < now()) OR
 						(d.status = 'deferred')
 					)
-					-- never claim a row whose compaction key is under an unexpired key_lease
+					-- never claim a row whose message key is under an unexpired lease
 					AND NOT EXISTS (
 						SELECT 1
 						FROM %[4]s kl
 						JOIN %[2]s m ON m.id = d.message_id
 						WHERE kl.consumer_group_id = d.consumer_group_id
-							AND kl.compaction_key = m.compaction_key
+							AND kl.message_key = m.message_key
 							AND kl.expires_at >= now()
 					)
 				ORDER BY d.message_id
@@ -136,13 +137,14 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				m.payload,
 				m.created_at,
 				COALESCE(m.routing_key, '') AS routing_key,
-				COALESCE(m.compaction_key, '') AS compaction_key,
-				m.compaction_rank,
+				COALESCE(m.message_key, '') AS message_key,
+				COALESCE(m.compaction_rank, 0) AS compaction_rank,
+				(m.compaction_rank IS NOT NULL) AS compacted,
 				m.options
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId), iTopic.KeyLeaseTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId), iTopic.MessageKeyLeaseTable(topicId))
 	}
 
 	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupId, limit, leaseDuration.Seconds(), topicId, maxRetries)

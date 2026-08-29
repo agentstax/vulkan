@@ -21,11 +21,18 @@ type ProduceOptions struct {
 	// Ex: "orders.created", "billing.invoice.paid"
 	RoutingKey string
 
-	// Compaction - opts this message into log compaction: it becomes one
-	// version of a key whose claims only ever return the latest version, not
-	// every version ever written. Build with NewCompactionOptions.
-	// Default: nil (not part of a compacted stream; delivered independently,
-	// never superseded).
+	// MessageKey - the entity this message is about. On its own it is stored
+	// and nothing more; Compaction and ConcurrencyDefer both read it.
+	// Default: "" (no key).
+	//
+	// Ex: "user:123", "acct-42", a device serial.
+	MessageKey string
+
+	// Compaction - opts this message into log compaction under its
+	// MessageKey: it becomes one version of the key, and claims only ever
+	// return the key's latest version, not every version ever written.
+	// Build with NewCompactionOptions.
+	// Default: nil (not compacted; delivered independently, never superseded).
 	//
 	// A hot key caps batched throughput: same-key batches commit one after
 	// another, and adding producer processes makes a hot key slower, not faster.
@@ -52,8 +59,11 @@ type ProduceOptions struct {
 // Validate rejects nonsensical option combinations.
 // Must be called after Fill().
 func (o ProduceOptions) Validate() error {
-	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyDefer && o.Compaction == nil {
-		return errors.New("Concurrency 'defer' set without Compaction -- defer has nothing to defer on, set Compaction too")
+	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyDefer && o.MessageKey == "" {
+		return errors.New("Concurrency 'defer' set without MessageKey -- defer serializes deliveries by key, set ProduceOptions.MessageKey")
+	}
+	if o.Compaction != nil && o.Compaction.Enable && o.MessageKey == "" {
+		return errors.New("Compaction enabled without MessageKey -- compaction picks a winner per key, set ProduceOptions.MessageKey")
 	}
 	if err := o.Compaction.Validate(); err != nil {
 		return fmt.Errorf("Compaction: %w", err)
@@ -64,14 +74,14 @@ func (o ProduceOptions) Validate() error {
 	return nil
 }
 
-// CompactionOptions is ProduceOptions.Compaction: the key a message compacts
-// under, and the rank that decides the key's winner.
+// CompactionOptions is ProduceOptions.Compaction: whether the message
+// compacts under its MessageKey, and the rank that decides the key's winner.
 type CompactionOptions struct {
-	// Key - the compaction key claims resolve to the latest version of.
-	// Ex: "user:123", "session:abc-def"
-	Key string
+	// Enable - opts the message into compaction. A nil Compaction and Enable
+	// false mean the same thing: not compacted.
+	Enable bool
 
-	// Rank - overrides arrival order when picking the Key's winner: higher
+	// Rank - overrides arrival order when picking the key's winner: higher
 	// rank wins, equal ranks fall to the id tiebreak. 0 means arrival order
 	// decides.
 	//
@@ -81,13 +91,10 @@ type CompactionOptions struct {
 	Rank int64
 }
 
-// NewCompactionOptions builds the Compaction option for a produce. Pass rank
-// 0 to let arrival order pick the key's winner.
-func NewCompactionOptions(key string, rank int64) (*CompactionOptions, error) {
-	if key == "" {
-		return nil, errors.New("compaction key is required")
-	}
-	return &CompactionOptions{Key: key, Rank: rank}, nil
+// NewCompactionOptions builds the Compaction option for a produce, enabled.
+// Pass rank 0 to let arrival order pick the key's winner.
+func NewCompactionOptions(rank int64) (*CompactionOptions, error) {
+	return &CompactionOptions{Enable: true, Rank: rank}, nil
 }
 
 // Validate tolerates a nil receiver -- nil means not compacted.
@@ -95,8 +102,8 @@ func (o *CompactionOptions) Validate() error {
 	if o == nil {
 		return nil
 	}
-	if o.Key == "" {
-		return fmt.Errorf("Key is required -- Rank %d has nothing to rank; build with NewCompactionOptions", o.Rank)
+	if !o.Enable && o.Rank != 0 {
+		return fmt.Errorf("Rank must be 0 when Enable is false, got %d -- build with NewCompactionOptions", o.Rank)
 	}
 	return nil
 }

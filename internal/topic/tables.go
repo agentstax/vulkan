@@ -41,9 +41,9 @@ func ClaimLeaseTable(topicID int64) string {
 	return fmt.Sprintf("claim_lease_%d", topicID)
 }
 
-// KeyLeaseTable is topicID's own physical compaction-key lease table.
-func KeyLeaseTable(topicID int64) string {
-	return fmt.Sprintf("key_lease_%d", topicID)
+// MessageKeyLeaseTable is topicID's own physical message-key lease table.
+func MessageKeyLeaseTable(topicID int64) string {
+	return fmt.Sprintf("message_key_lease_%d", topicID)
 }
 
 // CompactionHeadTable is topicID's own physical compaction head index.

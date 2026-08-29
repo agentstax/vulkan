@@ -12,7 +12,7 @@ import (
 type MessageMeta struct {
 	Id             int64     `json:"message_id"`
 	RoutingKey     string    `json:"routing_key"`
-	CompactionKey  string    `json:"compaction_key"`
+	MessageKey     string    `json:"message_key"`
 	CompactionRank int64     `json:"compaction_rank"`
 	CreatedAt      time.Time `json:"created_at"`
 

@@ -52,11 +52,12 @@ func (b *batch[Message]) recordAll(err error) {
 // *** HELPERS ***
 // ***************
 
-// compactionSortKey reads an operation's compaction key; "" for a message
-// that isn't compacted.
+// compactionSortKey reads an operation's message key when the produce enabled
+// compaction; "" for a message that takes no compaction_head lock.
 func compactionSortKey[Message any](operation *batchOperation[Message]) string {
-	if operation.request.options.Compaction == nil {
+	options := operation.request.options
+	if options.Compaction == nil || !options.Compaction.Enable {
 		return ""
 	}
-	return operation.request.options.Compaction.Key
+	return options.MessageKey
 }

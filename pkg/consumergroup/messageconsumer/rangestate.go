@@ -18,7 +18,7 @@ const (
 	kindSuccess outcomeKind = iota
 	kindException
 	kindTerminal
-	kindSuperseded // dropped unrun -- a newer message on its compaction key exists
+	kindSuperseded // dropped unrun -- its compacted message key has a newer version
 	kindDeferred   // key busy at dispatch -- the commit writes its 'deferred' row
 )
 
