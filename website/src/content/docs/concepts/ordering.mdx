@@ -22,50 +22,52 @@ guaranteed. The default is full parallelism, honestly labeled.
 
 ## Opt-in: one in-flight delivery per key
 
-For messages that carry a compaction key, `ConcurrencyDefer` gives you
-per-key mutual exclusion within a consumer group:
+For messages that carry a [message key](/concepts/message-key/),
+`ConcurrencyDefer` gives you per-key mutual exclusion within a consumer
+group:
 
 ```go
-compaction, err := producer.NewCompactionOptions("acct-42", 0)
-if err != nil {
-	return err
-}
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
 	producer.ProduceOptions{
-		Compaction: compaction,
+		MessageKey: "acct-42",
 		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
 	})
 ```
 
-The guarantee: **at most one delivery per compaction key is in flight
-at a time, per consumer group.** Under the hood it's a `key_lease` row —
-a same-key message arriving while the key is busy is recorded
-[`deferred`](/concepts/lifecycle/) and picked up later; messages with different keys, and messages with no
-key, run fully parallel.
+The guarantee: **at most one delivery per message key is in flight
+at a time, per consumer group.** Under the hood it's a
+`message_key_lease` row — a same-key message arriving while the key is
+busy is recorded [`deferred`](/concepts/lifecycle/) and runs when the
+key frees, oldest first; messages with different keys, and messages
+with no key, run fully parallel.
 
-The subtlety that makes this *not* FIFO: compaction semantics apply.
-When the key frees, the key's **current head** runs — the latest
-version, not every version ever written. If three updates to `acct-42`
-land while the first is processing, the middle one is superseded and
-only the newest runs. That's "process each key's current state, one at
-a time" — exactly right for state-shaped messages (a user record, a
-session, a device's latest reading), and exactly wrong for "apply every
-delta in sequence."
+Two subtleties keep this from being FIFO. First, exclusivity is the
+whole guarantee: a delivery that errors re-enters through the exception
+window on its own retry schedule, and the key does not wait — the next
+same-key message can run before the failed one's retry. Second, a
+message that also enables [compaction](/concepts/message-key/) brings
+supersede semantics along: when the key frees, the key's **current
+head** runs — the latest version, not every version ever written. If
+three updates to `acct-42` land while the first is processing, the
+middle one is superseded and only the newest runs. That's "process each
+key's current state, one at a time" — exactly right for state-shaped
+messages (a user record, a session, a device's latest reading), and
+exactly wrong for "apply every delta in sequence."
 
-The hot-key trade comes with it, visibly: a hot key serializes itself.
-Same-key produces commit one after another, and adding producer
-processes makes a hot key slower, not faster — that's what you opted
-into.
+The hot-key trade comes with it, visibly: a hot key serializes its own
+deliveries no matter how many consumer instances you add, and with
+compaction enabled same-key produces commit one after another too —
+that's what you opted into.
 
 <ThreadAside label="PROPOSED" title="Strict per-key FIFO">
 
-"Every message with this key, in order, one at a time" — a separate
-partition key beside the compaction key, with claim-time lanes and
-order preserved through retries — is a designed-but-unbuilt proposal
-(the SQS `MessageGroupId` / Kafka partition shape). It's deliberately
-not the same knob as compaction: compaction answers "what's current,"
-FIFO answers "don't reorder history." If your workload needs the
-second, today Vulkan doesn't ship it.
+"Every message with this key, in order, one at a time — even across
+retries" — claim-time lanes on the message key, with order preserved
+through failures — is a designed-but-unbuilt proposal (the SQS
+`MessageGroupId` / Kafka partition shape). It's deliberately a
+different guarantee from defer: defer answers "one at a time," FIFO
+answers "don't reorder history." If your workload needs the second,
+today Vulkan doesn't ship it.
 
 </ThreadAside>
 
@@ -77,8 +79,8 @@ comparisons:
 
 | | Kafka | SQS FIFO | Vulkan today |
 | --- | --- | --- | --- |
-| Ordering unit | partition (count fixed up front) | MessageGroupId | compaction key |
-| Guarantee | per-partition order | per-group order | per-key exclusivity, latest version wins |
+| Ordering unit | partition (count fixed up front) | MessageGroupId | message key |
+| Guarantee | per-partition order | per-group order | per-key exclusivity; latest version wins when compacted |
 | Choose per message? | no — topic topology | yes | yes |
 | Unordered fast path on the same topic | no | no — separate queue | yes — messages without a key |
 

@@ -1,0 +1,110 @@
+---
+title: The Message Key
+description: One label, two uses — compaction resolves a key to its latest version, defer runs a key's deliveries one at a time.
+---
+
+A message key is a label a message carries: `ProduceOptions.MessageKey`,
+stored beside the payload in the [log](/concepts/queue-and-log/). On its
+own it changes nothing — a keyed message with no other option set is
+claimed, delivered, and retained exactly like a keyless one. The key
+exists for the two features that read it: **compaction** ("deliver this
+key's latest version") and **defer** ("one delivery per key at a time").
+Each is a separate per-message opt-in, and they compose.
+
+## Setting a key
+
+```go
+produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
+	producer.ProduceOptions{MessageKey: "acct-42"})
+```
+
+Name the entity the message is about — `acct-42`, `user:123`, a device
+serial. Two messages should share a key exactly when a feature ought to
+treat them as versions of one thing or as one serial queue; that's the
+whole test. The key lands in `message_log`'s `message_key` column, and a
+key with neither feature enabled is just that — a recorded fact.
+
+## Compaction: the key's latest version wins
+
+Compaction answers "what is this key's current state." A message that
+enables it becomes one version of its key: a group's claims resolve the
+key to its newest version, and older versions still waiting are
+superseded — recorded, never delivered.
+
+```go
+compaction, err := producer.NewCompactionOptions(0)
+if err != nil {
+	return err
+}
+produced, err := instance.Produce(ctx, &UserUpdated{Id: "user:123", Plan: "pro"},
+	producer.ProduceOptions{
+		MessageKey: "user:123",
+		Compaction: compaction,
+	})
+```
+
+Rank 0 means arrival order picks the winner. A real rank — a source
+system's row version, epoch micros — overrides arrival: higher wins,
+equal ranks fall to id order. Rank is a commitment: a high-rank write
+pins its key, and lower ranks lose silently until something at or above
+it arrives.
+
+Enabling compaction without a message key errors at produce time — rank
+has no key to pick a winner for.
+
+## Defer: one delivery per key at a time
+
+`ConcurrencyDefer` gives per-key mutual exclusion within a consumer
+group: at most one delivery per message key is in flight at a time.
+Same-key messages arriving while the key is busy are recorded
+[`deferred`](/concepts/lifecycle/) and held; different keys, and keyless
+messages, stay fully parallel.
+
+```go
+produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
+	producer.ProduceOptions{
+		MessageKey: "acct-42",
+		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
+	})
+```
+
+Under the hood it's a `message_key_lease` row per (group, key). Without
+compaction every message is kept: the key frees -> the oldest deferred
+message runs -> the key is busy again, id order, one at a time.
+
+The guarantee is exclusivity, and only that. A delivery that errors
+leaves through the exception window and re-enters on its retry schedule;
+the key does not wait for it, so the next same-key message can run
+before the failed one's retry. A handler that must see every message in
+written order even across failures needs strict per-key FIFO — a
+proposal, not shipped (see [Ordering & Concurrency](/concepts/ordering/)).
+
+`Defer` without a message key errors at produce time — there's nothing
+to serialize on.
+
+## Composed: current state, one at a time
+
+Compaction changes what defer runs when the key frees: the key's
+**current head**, so intermediate versions are superseded rather than
+queued. Three updates to `user:123` land while the first is processing
+-> the middle one is superseded -> only the newest runs when the key
+frees. That's "process each key's current state, one at a time" — right
+for state-shaped messages (a user record, a session, a device's latest
+reading), wrong for "apply every delta in sequence."
+
+All four shapes:
+
+- key alone — a recorded label; delivery is unchanged.
+- key + compaction — claims deliver the latest version; successive
+  heads of one key may overlap in flight.
+- key + defer — every message delivered, one at a time per key, oldest
+  first.
+- key + both — the latest version, one at a time per key.
+
+## The cost
+
+Both features serialize a hot key, at different ends. For compaction —
+same-key produces commit one after another, so adding producer
+processes makes a hot key slower, not faster. For defer — the key's
+deliveries run one at a time no matter how many consumer instances you
+add. A key with neither enabled costs nothing.

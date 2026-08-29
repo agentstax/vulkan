@@ -24,8 +24,11 @@ consume-side lock that has nothing to do with compaction.
 
 - The key becomes a message-level concept named message key.
 - `ProduceOptions` gains a top-level `MessageKey string`;
-  `CompactionOptions` keeps `Rank` and loses `Key`
-  (`NewCompactionOptions` loses its key param). `Compaction` set
+  `CompactionOptions` keeps `Rank`, loses `Key`, and gains
+  `Enable bool` — kept a pointer with an explicit flag for reading
+  clarity (user-settled over one-mechanism-per-fact): nil and
+  `Enable` false both mean not compacted.
+  `NewCompactionOptions(rank)` sets `Enable`. `Compaction` enabled
   without `MessageKey` errors at produce time.
 - `common.MessageRow.CompactionKey` → `MessageKey`, wire tag
   `compaction_key` → `message_key`. Column `compaction_key` →
