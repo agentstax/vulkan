@@ -21,25 +21,19 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Step 1 -- build the three gaps the playground catalog found**
-  (`examples/playground/`, shipped 2026-08-29 -- see HISTORY; each
-  scenario's header is its scorecard and the catalog is the measuring
-  instrument for every step here). Each gap is a predicate, a
-  classification, or one INSERT clause on rows that already exist; docs
-  page first per the record rules, then a decision record, then code.
-  Lease extend (scenario 11) is already designed as *Lease
-  heartbeat/renewal (9b)* in the parking lot -- promote on its merit
-  once these ship. Handler outcome shipped 2026-08-29 [0614] (see
-  HISTORY); start from now shipped 2026-08-29 [0616]; strict per-key
-  FIFO shipped 2026-08-29 as ordered delivery [0617]. Step 1 is done.
-- **Step 2 -- re-write the affected playground scenarios** (04 retry+dead,
-  07 new-group-deep-topic, 10 keyed-ordering) against the shipped
-  verbs, and add scenarios any new surface needs. Their headers drop
-  the trap and keep the concept count -- the before/after is the
-  evidence the gap closed.
-- **Step 3 -- the public-API review**, resumed where the gaps interrupted
-  it. Everything below is that review, in the order it was already
-  sequenced.
+- **Step 3 -- the public-API review**, resumed where the playground
+  gaps interrupted it (Steps 1 and 2 shipped 2026-08-29 -- see
+  HISTORY). The catalog (`examples/playground/`) is the measuring
+  instrument: each scenario's header is its scorecard. Lease extend
+  (scenario 11) is designed as *Lease heartbeat/renewal (9b)* in the
+  parking lot -- promote on its merit. Everything below is that review,
+  in the order it was already sequenced.
+- **IdempotencyKey stays uuid.UUID; rescope the v7-not-v4 warning**
+  (settled 2026-08-29 from playground scenario 09): scenario 09's
+  derived v5 key from an upstream event id is the canonical
+  external-key path, so the field comment and
+  guides/side-effects-and-retries warn only hot-path producers minting
+  their own keys, not callers deriving one.
 - **Library work the doc pass surfaced.**
   - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
     comments and maybe a log line recommending against production use.

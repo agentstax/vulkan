@@ -3,21 +3,14 @@
 // A fraud-scoring service is added a year after orders.placed went live.
 // It wants live traffic only.
 //
-// Concepts held before domain code: identical to scenario 03 -- there is
-// nothing to hold, because there is nothing to say.
+// Concepts held before domain code (10): the 9 from scenario 03, plus
+// ConsumerConfig.Start (consumergroup.Head()).
 //
 // Traps hit:
-//   - The cursor of a new group starts at 0. On a topic with millions of
-//     retained messages this handler scores a year of orders before it
-//     sees one from today, and nothing warns.
-//   - No Register option, no config field, no admin verb expresses "start
-//     from now" / "start from this id" / "start from this time". Kafka
-//     auto.offset.reset=latest, JetStream DeliverNew, Pub/Sub seek --
-//     every peer answers this on day one.
-//   - The replay guide's RewindGroup is PROPOSED; the same verb pointed
-//     forward would be this feature.
-//   - Workaround today: RetentionTTL on the topic (a producer-side,
-//     all-groups decision) or accepting the backlog.
+//   - Start is read once, when Register creates the group's cursor row. A
+//     group that already exists keeps its position; changing Start later
+//     changes nothing and nothing says so. Kafka's auto.offset.reset has
+//     the same rule -- moving an existing group is RewindGroup, PROPOSED.
 package main
 
 import (
@@ -27,6 +20,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 )
@@ -54,12 +48,13 @@ func run() error {
 	}
 	defer ds.Close()
 
-	scoringConsumer, err := consumer.NewConsumer[OrderPlaced](ds, nil)
+	scoringConsumer, err := consumer.NewConsumer[OrderPlaced](ds, &consumer.ConsumerConfig{
+		Start: consumergroup.Head(),
+	})
 	if err != nil {
 		return err
 	}
 
-	// wanted: something here saying "from now". nothing exists.
 	scoring, err := scoringConsumer.Register(ctx, "fraud-scoring", "orders.placed", topic.SchemaVersion(1), nil)
 	if err != nil {
 		return err

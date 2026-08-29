@@ -9,13 +9,6 @@
 // ConsumerConfig.Message.Retry distinction.
 //
 // Traps hit:
-//   - The handler has two outcomes: nil or error. Every error is an
-//     exception row retried MaxRetries times; the declined card burns three
-//     attempts and a backoff curve before it is dead. SETTLED 2026-08-29:
-//     the runner will honour diagnostic Permanent -> terminal.
-//   - No way to say "run me again after 02:00, this is not a failure".
-//     SETTLED 2026-08-29: consumergroup.Delay(d) writing can_run_after and
-//     bumping exception_queue.delays, capped by RetryPolicy.MaxDelays.
 //   - ConsumerConfig.Retry is the consumer's own Postgres retry;
 //     ConsumerConfig.Message.Retry is message redelivery. Both are
 //     *common.RetryPolicy, both sit on the same config.
@@ -83,20 +76,30 @@ func run() error {
 
 	return payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequested) error {
 		meta, _ := consumergroup.MetaFromContext(ctx)
-		fmt.Printf("charging %s (message %d)\n", payment.OrderId, meta.Id)
+		fmt.Printf("charging %s (message %d, attempt %d, delays %d)\n",
+			payment.OrderId, meta.Id, meta.Attempts+1, meta.Delays)
 
 		switch payment.Card {
 		case "declined":
-			// terminal in intent; retried 3 times in practice
-			return errCardDeclined
+			// dead on this attempt; the cause lands in last_error
+			return consumergroup.Terminal(errCardDeclined)
 		case "gateway-down":
-			// transient -- retry is what we want
+			// retried MaxRetries times with backoff
 			return errGatewayDown
 		case "settles-later":
-			// wanted: come back after 02:00 without counting an attempt.
-			// today the only choices are succeed (lose it) or fail (burn one).
-			return errors.New("bank settles at 02:00")
+			// runs again after the delay; attempts stays where it was
+			return consumergroup.Delay(untilSettlement())
 		}
 		return nil
 	})
+}
+
+// untilSettlement is the wait until the bank's next 02:00 settlement.
+func untilSettlement() time.Duration {
+	now := time.Now()
+	settlement := time.Date(now.Year(), now.Month(), now.Day(), 2, 0, 0, 0, now.Location())
+	if !settlement.After(now) {
+		settlement = settlement.AddDate(0, 0, 1)
+	}
+	return settlement.Sub(now)
 }

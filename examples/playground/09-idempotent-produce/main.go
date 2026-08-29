@@ -11,9 +11,7 @@
 //   - The key is a uuid.UUID, but the caller's natural key is the
 //     upstream's event id (a string). The user must derive a UUID from it
 //     deterministically (uuid.NewSHA1 over a namespace) -- and that yields
-//     a v5, exactly the random-shaped key the docs warn against. SETTLED
-//     2026-08-29: keep uuid.UUID; this file is the canonical external-key
-//     path, and the warning gets rescoped to hot-path producers minting keys.
+//     a v5, exactly the random-shaped key the docs warn against.
 //   - Duplicate is a field on a success result, not an error; a caller
 //     that only checks err treats the duplicate as a fresh produce.
 //   - A caller-supplied key opts the call out of batching (documented in

@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — playground scenarios 04 / 07 / 10 rewritten against the shipped verbs
+
+- The catalog is the measuring instrument: 04 returns
+  `consumergroup.Terminal` / `consumergroup.Delay` and drops its two
+  handler-outcome traps (three still true stay); 07 sets
+  `ConsumerConfig.Start: consumergroup.Head()`, drops its four
+  start-from-now traps, concept count 9 -> 10, keeps the read-once-at-
+  cursor-creation rule as its one trap; 10 produces under
+  `common.ConcurrencyOrdered` with a handler that fails once, drops the
+  order-across-failures and const-comment traps, keeps key-alone-orders-
+  nothing. Each header records what closed and the record that closed it.
+- No new scenario: every Step 1 surface lives inside an existing one.
+  All three ran against the dev DB (04: dead on attempt 1 / ready
+  attempts=1 / ready delays=1 with can_run_after ahead; 07: committed =
+  MAX(id); 10: -30's retry ran before +55). ROADMAP Now Step 2 closed.
+
 ## 2026-08-29 — ordered delivery per key; parallel / exclusive / ordered [0617]
 
 - Concurrency values renamed to what the key permits: `parallel` (zero),

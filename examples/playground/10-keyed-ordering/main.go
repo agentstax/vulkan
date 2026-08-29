@@ -4,34 +4,25 @@
 // overlap. The producer keys by account; the consumer runs concurrently.
 //
 // Concepts held before domain code (11): the produce set from scenario 01,
-// plus MessageKey, MessageOptions.Concurrency (ConcurrencyExclusive), the
+// plus MessageKey, MessageOptions.Concurrency (ConcurrencyOrdered), the
 // consumer's MessageConcurrency, ConcurrencyOverride, and the
-// "exclusive = only the key's most recent head runs" semantics.
+// "ordered = every same-key message in id order, one at a time, through
+// failures" semantics.
 //
 // Traps hit:
 //   - A message key alone orders nothing: MessageConcurrency > 1 delivers
-//     two same-key messages at once unless Concurrency: exclusive is set --
-//     and exclusive is a per-MESSAGE option the producer sets, not a topic or
-//     group property (ConcurrencyOverride on the consumer is the group-wide
-//     form).
-//   - Exclusive is exclusivity, not order across failures: a same-key delivery
-//     that errors leaves through the exception window and its retry does
-//     not hold the key, so the NEXT same-key message runs before the failed
-//     one's retry. For a balance stream that reorders deltas. Strict per-key
-//     FIFO is a documented proposal, not shipped (concepts/ordering).
-//   - The const comment on ConcurrencyExclusive ("only the key's most recent
-//     head runs") describes exclusive+compaction, not exclusive alone -- without
-//     compaction every message runs, oldest first. The doc site has it
-//     right; the code comment misleads.
-//   - Kafka users expect "same key, same partition, in order"; the
-//     statement of what Vulkan guarantees per key lives in a concepts page,
-//     not in any type.
+//     two same-key messages at once unless Concurrency is exclusive or
+//     ordered -- and that is a per-MESSAGE option the producer sets, not a
+//     topic or group property (ConcurrencyOverride on the consumer is the
+//     group-wide form).
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -78,7 +69,7 @@ func run() error {
 	}
 
 	balanceProducer, err := producer.NewProducer[BalanceChanged](ds, &producer.ProducerConfig{
-		Message: &common.MessageOptions{Concurrency: common.ConcurrencyExclusive},
+		Message: &common.MessageOptions{Concurrency: common.ConcurrencyOrdered},
 	})
 	if err != nil {
 		return err
@@ -107,9 +98,15 @@ func run() error {
 		return err
 	}
 
+	// the first delivery of -30 fails; under ordered, +55 waits for its retry
+	var failedOnce atomic.Bool
+
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		return ledger.Consume(ctx, func(ctx context.Context, change *BalanceChanged) error {
+			if change.Delta == -30 && failedOnce.CompareAndSwap(false, true) {
+				return errors.New("ledger row locked")
+			}
 			fmt.Printf("%s %+d\n", change.AccountId, change.Delta)
 			return nil
 		})
