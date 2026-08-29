@@ -6,15 +6,15 @@ import "fmt"
 type ConcurrencyPolicy string
 
 const (
-	ConcurrencyAllow ConcurrencyPolicy = "allow" // current key busy -> new same-keyed message runs concurrently
-	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message waits; when the key frees the oldest waiting one runs (with compaction: the key's current head)
+	ConcurrencyParallel  ConcurrencyPolicy = "parallel"  // same-key deliveries may overlap
+	ConcurrencyExclusive ConcurrencyPolicy = "exclusive" // one delivery per key at a time: a same-key message finding the key busy is deferred and runs when the key frees, oldest first (with compaction: the key's current head)
 )
 
 func (p ConcurrencyPolicy) Validate() error {
 	switch p {
-	case "", ConcurrencyAllow, ConcurrencyDefer:
+	case "", ConcurrencyParallel, ConcurrencyExclusive:
 		return nil
 	default:
-		return fmt.Errorf("must be one of %q, %q, got %q", ConcurrencyAllow, ConcurrencyDefer, p)
+		return fmt.Errorf("must be one of %q, %q, got %q", ConcurrencyParallel, ConcurrencyExclusive, p)
 	}
 }

@@ -150,7 +150,7 @@ func seedingSection(ctx context.Context) {
 	}
 	seeded, err := alertcontroller.ToJobPayload(partitionCountJob.Payload)
 	must(err)
-	if seeded.Threshold != 0 || partitionCountJob.Concurrency != common.ConcurrencyDefer {
+	if seeded.Threshold != 0 || partitionCountJob.Concurrency != common.ConcurrencyExclusive {
 		die(fmt.Sprintf("seeded job: want threshold 0 + defer, got %d %s", seeded.Threshold, partitionCountJob.Concurrency))
 	}
 	readCostJob, err := mAdmin.GetCronJob(ctx, compactionreadcost.JobName)

@@ -77,6 +77,7 @@ surfaces it.
 | hole (a template's blank) | coinage for a blank the reader fills in | placeholder |
 | park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
 | snooze | a job-queue verb for what is a handler-requested later run | delay; `consumergroup.Delay`, the `delays` column, `RetryPolicy.MaxDelays` |
+| allow, defer (concurrency policy values) | verbs for what the new message does; the values name what the key permits | parallel, exclusive, ordered (`deferred` stays the row status) |
 | compaction key (the message's key) | the key is a message property; compaction is one of its two readers [0612] | message key (compaction_head's own compaction_key column keeps its name) |
 
 ## Structure

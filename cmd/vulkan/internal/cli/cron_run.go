@@ -18,9 +18,9 @@ func newCronRunCmd(g *globalFlags) *cobra.Command {
 		Short: "Produce one job request for a cron job immediately",
 		Long: "Produce one job request for a cron job immediately, outside its schedule. The\n" +
 			"schedule and next scheduled time are untouched, and a suspended job still runs.\n\n" +
-			"The request runs with concurrency 'allow' regardless of the job's own\n" +
+			"The request runs with concurrency 'parallel' regardless of the job's own\n" +
 			"policy -- it runs even while a previous request is still being worked. Pass\n" +
-			"--concurrency defer to run early without overlapping one. A pending job\n" +
+			"--concurrency exclusive to run early without overlapping one. A pending job\n" +
 			"request no consumer has claimed yet is superseded by it.",
 		Args: requireCronJobName("run"),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -66,7 +66,7 @@ func newCronRunCmd(g *globalFlags) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&concurrency, "concurrency", "", "whether the request runs while a previous one is still running, overriding the job's own policy: allow or defer (default allow)")
+	cmd.Flags().StringVar(&concurrency, "concurrency", "", "whether the request runs while a previous one is still running, overriding the job's own policy: parallel or exclusive (default parallel)")
 
 	return cmd
 }

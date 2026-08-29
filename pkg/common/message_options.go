@@ -13,8 +13,8 @@ import (
 // Messages REQUEST, consumers PROTECT THEMSELVES.
 type MessageOptions struct {
 	// Concurrency - concurrency policy for this message's message key.
-	// Requires a message key -- Defer without one errors at produce time.
-	// Default: ConcurrencyAllow (same-key deliveries may overlap).
+	// Requires a message key -- Exclusive without one errors at produce time.
+	// Default: ConcurrencyParallel (same-key deliveries may overlap).
 	Concurrency ConcurrencyPolicy `json:"concurrency,omitempty"`
 
 	// Timeout - how long this message's consumerFunc may run.
@@ -80,7 +80,7 @@ func (o *MessageOptions) ResolveConcurrency(override ConcurrencyPolicy) *Message
 	case override != "":
 		resolved.Concurrency = override
 	case resolved.Concurrency == "":
-		resolved.Concurrency = ConcurrencyAllow
+		resolved.Concurrency = ConcurrencyParallel
 	}
 	return &resolved
 }

@@ -7,6 +7,8 @@ ignorecase: true
 # banned when describing Vulkan's own -- a human judges each hit
 swap:
   ack: the delivery is recorded
+  "concurrency allow": parallel
+  "concurrency defer": exclusive
   "compaction key": message key
   nack: the handler returns an error
   "dead-letter queue": dead-lettered messages

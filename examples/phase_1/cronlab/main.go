@@ -14,10 +14,10 @@
 //     that came due while suspended is dropped, not produced late
 //  6. poisoned row -- one job's produce fails every tick, siblings still
 //     produce and the worker keeps ticking
-//  7. defer (spot -- deferlab owns depth) -- a scheduler request lands while
+//  7. exclusive (spot -- exclusivelab owns depth) -- a scheduler request lands while
 //     a previous one is still running, waits, then runs
-//  8. run-now beside a running request -- the default 'allow' runs alongside
-//     it; cfg.Concurrency defer waits for it instead
+//  8. run-now beside a running request -- the default 'parallel' runs alongside
+//     it; cfg.Concurrency exclusive waits for it instead
 //  9. run-now supersedes a pending unclaimed request
 //  10. consumer end-to-end + status -- bind the job's name, fail-once retry,
 //     'success' rows land, CronJobStatus shows RAN/SUCCEEDED/FAILED
@@ -338,10 +338,10 @@ func poisonSection(ctx context.Context) {
 }
 
 func deferSection(ctx context.Context) {
-	step("defer (spot): a scheduler request waits behind a running one, then runs")
+	step("exclusive (spot): a scheduler request waits behind a running one, then runs")
 
 	job, err := mAdmin.RegisterCronJob(ctx, prefix+".defer", parse("@every 1m"), nil,
-		&croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
+		&croncontroller.CronJobConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(mAdmin.DestroyCronJob(ctx, prefix+".defer")) }()
 
@@ -363,7 +363,7 @@ func deferSection(ctx context.Context) {
 	defer stop()
 
 	// both requests are scheduler-produced, so both carry the job's own
-	// 'defer' -- the first is still running when the second lands (an 'allow'
+	// 'exclusive' -- the first is still running when the second lands (an 'parallel'
 	// run never makes later requests wait, so run-now can't be the blocker)
 	backdate(ctx, job.Id, time.Now().UTC().Add(-10*time.Second))
 	waitAdvanced(ctx, job.Id)
@@ -387,10 +387,10 @@ func deferSection(ctx context.Context) {
 }
 
 func runNowOverrideSection(ctx context.Context) {
-	step("run-now beside a running request: default 'allow' runs alongside it, cfg defer waits for it")
+	step("run-now beside a running request: default 'parallel' runs alongside it, cfg exclusive waits for it")
 
 	job, err := mAdmin.RegisterCronJob(ctx, prefix+".runnow", parse("@hourly"), nil,
-		&croncontroller.CronJobConfig{Concurrency: common.ConcurrencyDefer})
+		&croncontroller.CronJobConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(mAdmin.DestroyCronJob(ctx, prefix+".runnow")) }()
 
@@ -411,8 +411,8 @@ func runNowOverrideSection(ctx context.Context) {
 	})
 	defer stop()
 
-	// the blocker must be scheduler-produced: it carries the job's 'defer',
-	// so later defer requests wait for it while the handler blocks
+	// the blocker must be scheduler-produced: it carries the job's 'exclusive',
+	// so later exclusive requests wait for it while the handler blocks
 	backdate(ctx, job.Id, time.Now().UTC().Add(-2*time.Hour))
 	waitAdvanced(ctx, job.Id)
 	<-started
@@ -420,8 +420,8 @@ func runNowOverrideSection(ctx context.Context) {
 		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id),
 		strconv.FormatInt(job.Id, 10))
 
-	// were the second request stamped with the job's 'defer', it would wait
-	// until the first finishes -- the default 'allow' runs it now
+	// were the second request stamped with the job's 'exclusive', it would wait
+	// until the first finishes -- the default 'parallel' runs it now
 	override, err := mAdmin.RunCronJob(ctx, prefix+".runnow", nil)
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
@@ -434,9 +434,9 @@ func runNowOverrideSection(ctx context.Context) {
 	}
 	fmt.Println("  ✓ default run-now succeeded while the first was still running")
 
-	// cfg.Concurrency defer opts back into the job's no-overlap safety: this
+	// cfg.Concurrency exclusive opts back into the job's no-overlap safety: this
 	// request waits for the running one instead of running beside it
-	deferred, err := mAdmin.RunCronJob(ctx, prefix+".runnow", &admin.RunCronJobConfig{Concurrency: common.ConcurrencyDefer})
+	deferred, err := mAdmin.RunCronJob(ctx, prefix+".runnow", &admin.RunCronJobConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
@@ -444,13 +444,13 @@ func runNowOverrideSection(ctx context.Context) {
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
 		jobRequests.Id, group, deferred.Id)); got != 0 {
-		die("a defer run-now must not run while a previous request is still running")
+		die("an exclusive run-now must not run while a previous request is still running")
 	}
 	close(release)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND status = 'success';`,
 		jobRequests.Id, group), 3)
-	fmt.Println("  ✓ defer run-now waited for the running request, then ran")
+	fmt.Println("  ✓ exclusive run-now waited for the running request, then ran")
 }
 
 func supersedeSection(ctx context.Context) {
@@ -467,7 +467,7 @@ func supersedeSection(ctx context.Context) {
 	// the key's compaction_head pointer, and the claim query only returns a
 	// keyed row while it IS the head, so the first is dropped unrun with no
 	// delivery_log trace (the 'superseded' log row is the dispatched-then-
-	// outraced defer path -- deferlab owns it)
+	// outraced exclusive path -- exclusivelab owns it)
 	pending, err := mAdmin.RunCronJob(ctx, prefix+".supersede", nil)
 	must(err)
 	head, err := mAdmin.RunCronJob(ctx, prefix+".supersede", nil)

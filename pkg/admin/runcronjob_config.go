@@ -9,15 +9,15 @@ import (
 // RunCronJobConfig is RunCronJob's spec -- every field is optional.
 type RunCronJobConfig struct {
 	// Concurrency - the produced request's concurrent-run policy.
-	// Default: allow (the request runs even while a previous one is still running).
+	// Default: parallel (the request runs even while a previous one is still running).
 	//
-	// Set defer to run early WITHOUT overlapping a request already running.
+	// Set exclusive to run early WITHOUT overlapping a request already running.
 	Concurrency common.ConcurrencyPolicy
 }
 
 func (c *RunCronJobConfig) WithDefaults() *RunCronJobConfig {
 	if c.Concurrency == "" {
-		c.Concurrency = common.ConcurrencyAllow
+		c.Concurrency = common.ConcurrencyParallel
 	}
 	return c
 }

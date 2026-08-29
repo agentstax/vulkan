@@ -4,23 +4,23 @@
 // overlap. The producer keys by account; the consumer runs concurrently.
 //
 // Concepts held before domain code (11): the produce set from scenario 01,
-// plus MessageKey, MessageOptions.Concurrency (ConcurrencyDefer), the
+// plus MessageKey, MessageOptions.Concurrency (ConcurrencyExclusive), the
 // consumer's MessageConcurrency, ConcurrencyOverride, and the
-// "defer = only the key's most recent head runs" semantics.
+// "exclusive = only the key's most recent head runs" semantics.
 //
 // Traps hit:
 //   - A message key alone orders nothing: MessageConcurrency > 1 delivers
-//     two same-key messages at once unless Concurrency: defer is set --
-//     and defer is a per-MESSAGE option the producer sets, not a topic or
+//     two same-key messages at once unless Concurrency: exclusive is set --
+//     and exclusive is a per-MESSAGE option the producer sets, not a topic or
 //     group property (ConcurrencyOverride on the consumer is the group-wide
 //     form).
-//   - Defer is exclusivity, not order across failures: a same-key delivery
+//   - Exclusive is exclusivity, not order across failures: a same-key delivery
 //     that errors leaves through the exception window and its retry does
 //     not hold the key, so the NEXT same-key message runs before the failed
 //     one's retry. For a balance stream that reorders deltas. Strict per-key
 //     FIFO is a documented proposal, not shipped (concepts/ordering).
-//   - The const comment on ConcurrencyDefer ("only the key's most recent
-//     head runs") describes defer+compaction, not defer alone -- without
+//   - The const comment on ConcurrencyExclusive ("only the key's most recent
+//     head runs") describes exclusive+compaction, not exclusive alone -- without
 //     compaction every message runs, oldest first. The doc site has it
 //     right; the code comment misleads.
 //   - Kafka users expect "same key, same partition, in order"; the
@@ -78,7 +78,7 @@ func run() error {
 	}
 
 	balanceProducer, err := producer.NewProducer[BalanceChanged](ds, &producer.ProducerConfig{
-		Message: &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
+		Message: &common.MessageOptions{Concurrency: common.ConcurrencyExclusive},
 	})
 	if err != nil {
 		return err

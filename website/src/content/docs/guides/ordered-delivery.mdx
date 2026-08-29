@@ -1,0 +1,131 @@
+---
+title: Ordered Delivery per Key
+description: ConcurrencyOrdered runs every message with a key in id order, one at a time, and keeps that order across failures — proposed, written up as the spec.
+---
+
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
+
+<ThreadAside label="PROPOSED" title="Not shipped">
+Everything on this page is proposed API. Today `exclusive` (shipped as
+`defer` until the rename lands) is the only keyed policy, and it is
+exclusivity, not order across failures.
+
+</ThreadAside>
+
+`ConcurrencyOrdered` is the third concurrency policy: a message with a
+key runs only after every earlier message on that key is resolved for
+this consumer group, and never at the same time as one. `exclusive`
+gives you the second half of that sentence; `ordered` adds the first
+half and keeps it true through a failure. The three values name what
+the key permits, loosest to strictest: `parallel`, `exclusive`,
+`ordered`.
+
+```go
+produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
+	producer.ProduceOptions{
+		MessageKey: "acct-42",
+		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyOrdered},
+	})
+```
+
+| policy | same key, key busy | same key, an earlier delivery failed and is waiting to retry |
+| --- | --- | --- |
+| `parallel` (default) | runs concurrently | runs |
+| `exclusive` | waits; runs when the key frees | runs - the retry comes later, so the deltas reorder |
+| `ordered` | waits | waits for the retry to succeed or dead-letter |
+
+Resolved means the earlier delivery succeeded, was dead-lettered, or
+was never going to run. `dead` does not hold the key: dead-lettering
+is the way out of a stuck lane, so `MaxRetries` and the backoff curve
+bound how long one bad message can hold up the ones behind it. This is
+the SQS FIFO `MessageGroupId` rule and the Kafka partition rule, on the
+message key.
+
+`ordered` needs a message key and refuses `Compaction.Enable` at
+produce time - compaction supersedes older versions, ordered delivers
+every one; a message cannot ask for both. `ConcurrencyOverride:
+common.ConcurrencyOrdered` on the consumer config applies it to every
+keyed message the group sees.
+
+## Worked case
+
+The `apply-balance` group on `ledger.adjustments` (topic id `1`),
+`MessageConcurrency: 4`, four messages for `acct-42`:
+
+| id | delta | what happens |
+| --- | --- | --- |
+| 101 | -500 | claimed, runs, the handler errors: `ready`, `can_run_after` = now + 1s |
+| 102 | +200 | claimed in the same range; an earlier `acct-42` delivery is unresolved: `deferred`, never ran |
+| 103 | -50 | same: `deferred` |
+| 104 | +10 | same: `deferred` |
+
+Under `exclusive`, 102 would have run the moment 101's key lease was
+released at the failure, and the balance would apply +200 before -500.
+Under `ordered`, the retry of 101 goes first: the exception consumer
+claims rows in id order and skips a row while an earlier same-key row
+is `ready`, `inflight`, or `deferred`. 101 succeeds on its second run
+and its row is deleted; 102 is claimable on the next poll, then 103,
+then 104. If 101 dies instead, its row turns `dead` and 102 is
+claimable the same way.
+
+```sql
+SELECT message_id, message_key, status, attempts, can_run_after
+FROM exception_queue_1
+WHERE consumer_group_id = 7 AND message_key = 'acct-42'
+ORDER BY message_id;
+--  message_id | message_key | status   | attempts | can_run_after
+--  101        | acct-42     | ready    | 1        | 14:02:11
+--  102        | acct-42     | deferred | 0        | 14:02:10
+--  103        | acct-42     | deferred | 0        | 14:02:10
+--  104        | acct-42     | deferred | 0        | 14:02:10
+```
+
+## What "earlier" means
+
+The lane is defined by rows the group already has and by the window it
+is still reading:
+
+1. `exception_queue` gains `message_key` and `concurrency` columns -
+   the key and the policy the group resolved for the message, written
+   with every row - and an index on `(consumer_group_id, message_key,
+   message_id)`. "An earlier same-key delivery is unresolved" is then
+   one indexed lookup: a row with a lower `message_id`, the same key,
+   and status `ready`, `inflight`, or `deferred`. The policy sits on
+   the row so the exception consumer's claim can tell an ordered row
+   from an exclusive one without re-resolving options in SQL.
+2. An earlier same-key message the group has claimed but not recorded
+   yet has no row anywhere. It sits between the group's `committed`
+   cursor and the message's own id, so the ordered claim also checks
+   `message_log` for a same-key id in that window, outside the
+   claimer's own range. Inside its own range the consumer instance runs
+   same-key ordered messages one after another in id order, in the
+   same goroutine: the first message of a key is dispatched, the rest
+   are chained behind it. When one succeeds or dead-letters the next
+   runs; when one fails, delays, or is deferred, the rest of the chain
+   is recorded `deferred` without running and the exception consumer
+   takes over in order. A key that stays in one instance's ranges never
+   leaves the fast path, which is where the hot-key throughput comes
+   from.
+
+Both checks live in the key-lease claim, the statement `exclusive`
+already uses; an ordered claim that finds an earlier unresolved delivery gets
+the existing busy verdict and the existing `deferred` row. The
+exception consumer's claim gets check 1 as a predicate so a waiting row
+is not claimed and handed back every poll while its predecessor is on
+a backoff; check 2 stays at the gate, because the window closes on its
+own as soon as the other range commits.
+
+The cost is honest: a deferred ordered message runs one exception
+poll after its predecessor resolves, and a message waiting on another
+instance's open range waits for that range to commit and the cursor
+advancer to move `committed`. `exclusive` never pays either; it stays
+the cheaper guarantee for handlers that only need "one at a time".
+
+## What it does not do
+
+- No order across keys, and no order for messages without a key -
+  those stay fully parallel, on the same topic.
+- No order across consumer groups: each group has its own lane per key.
+- No order with compaction: refused at produce time.
+- No new table. The lane is the rows the group already writes, read in
+  id order.

@@ -1,5 +1,5 @@
-// Command deferlab proves the dispatch-time concurrency policy on the cursor
-// path: ConcurrencyDefer messages run under an exclusive key lease, resolve
+// Command exclusivelab proves the dispatch-time concurrency policy on the cursor
+// path: ConcurrencyExclusive messages run under an exclusive key lease, resolve
 // deferred while the key is busy (the range commit writes each one's
 // 'deferred' delivery row), and resolve superseded when a newer message on
 // the key exists.
@@ -7,17 +7,17 @@
 // Registers its own topic, self-seeds keyed messages, fully self-contained.
 //
 // Confirms, in order:
-//   - a Defer message on a free key runs while HOLDING the key lease and
+//   - a Exclusive message on a free key runs while HOLDING the key lease and
 //     releases it on success -- no delivery or delivery_log rows.
-//   - an Allow (unset policy) keyed message runs with zero key lease rows.
-//   - an unkeyed message under ConcurrencyOverride Defer runs as Allow.
-//   - ConcurrencyOverride Allow beats a message's own Defer.
+//   - an Parallel (unset policy) keyed message runs with zero key lease rows.
+//   - an unkeyed message under ConcurrencyOverride Exclusive runs as Parallel.
+//   - ConcurrencyOverride Parallel beats a message's own Exclusive.
 //   - key busy -> every head deferred during the hold ends with its own
 //     'deferred' delivery row and 'deferred' log row once its range commits;
 //     the rows sit inert; the key frees after the holder finishes.
 //   - a message claimed as head but no longer head at dispatch resolves
 //     superseded: never runs, delivery_log status 'superseded', no delivery row.
-//   - a failing Defer message still frees the key.
+//   - a failing Exclusive message still frees the key.
 //   - redemption: a stale 'deferred' row resolves superseded with its log row
 //     and never runs; the head's row runs and pops.
 //   - a row whose message key has an unexpired lease is never claimed:
@@ -26,8 +26,8 @@
 //   - a failed holder's retry passes the key gate and resolves superseded once
 //     a newer head exists, its claim-time attempts increment decremented back.
 //   - a crashed holder's expired key lease: redemption takes the key over.
-//   - Concurrency Defer without a MessageKey is refused at produce time.
-//   - uncompacted defer (a key, no Compaction): no compaction_head row is
+//   - Concurrency Exclusive without a MessageKey is refused at produce time.
+//   - uncompacted exclusive (a key, no Compaction): no compaction_head row is
 //     written, every version runs exactly once serialized on the key, and a
 //     same-batch key collision re-defers the loser instead of superseding it.
 //   - torture: two cursor consumers and two exception consumers fight one key
@@ -113,7 +113,7 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	topicName := fmt.Sprintf("deferlab.%d", time.Now().UnixNano())
+	topicName := fmt.Sprintf("exclusivelab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	must(err)
 	topicId = tp.Id
@@ -127,11 +127,11 @@ func run() (err error) {
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	step("defer on a free key: runs holding the key lease, releases on success")
-	publish(ctx, wpInstance, "u:1", 1, common.ConcurrencyDefer)
-	g1 := groupId(ctx, cd, "deferlab.g1")
+	step("exclusive on a free key: runs holding the key lease, releases on success")
+	publish(ctx, wpInstance, "u:1", 1, common.ConcurrencyExclusive)
+	g1 := groupId(ctx, cd, "exclusivelab.g1")
 	var heldDuringRun int
-	consume(ctx, tp.Name, "deferlab.g1", nil, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "exclusivelab.g1", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:1" {
 			heldDuringRun = leaseCount(ctx, g1)
 		}
@@ -145,15 +145,15 @@ func run() (err error) {
 		die(fmt.Sprintf("want the key released after success, count=%d", n))
 	}
 	if n := deliveryCount(ctx, g1, ""); n != 0 {
-		die(fmt.Sprintf("a clean Defer run must leave no delivery rows, got %d", n))
+		die(fmt.Sprintf("a clean Exclusive run must leave no delivery rows, got %d", n))
 	}
 	fmt.Println("  ✓ held during, released after, no rows")
 
-	step("allow (unset policy) keyed message never touches the key lease")
+	step("parallel (unset policy) keyed message never touches the key lease")
 	publish(ctx, wpInstance, "u:2", 1, "")
-	g2 := groupId(ctx, cd, "deferlab.g2")
+	g2 := groupId(ctx, cd, "exclusivelab.g2")
 	allowHeld := -1
-	consume(ctx, tp.Name, "deferlab.g2", nil, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "exclusivelab.g2", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:2" {
 			allowHeld = leaseCount(ctx, g2)
 		}
@@ -161,15 +161,15 @@ func run() (err error) {
 		return nil
 	}, func() bool { return ran("u:2", 1) })
 	if allowHeld != 0 {
-		die(fmt.Sprintf("an Allow run must not hold a key lease, count=%d", allowHeld))
+		die(fmt.Sprintf("an Parallel run must not hold a key lease, count=%d", allowHeld))
 	}
 	fmt.Println("  ✓ no lease rows")
 
-	step("unkeyed under ConcurrencyOverride Defer runs as Allow")
+	step("unkeyed under ConcurrencyOverride Exclusive runs as Parallel")
 	publishUnkeyed(ctx, wpInstance, 1)
-	g3 := groupId(ctx, cd, "deferlab.g3")
+	g3 := groupId(ctx, cd, "exclusivelab.g3")
 	unkeyedHeld := -1
-	consume(ctx, tp.Name, "deferlab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyDefer}, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "exclusivelab.g3", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyExclusive}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "" {
 			unkeyedHeld = leaseCount(ctx, g3)
 		}
@@ -177,15 +177,15 @@ func run() (err error) {
 		return nil
 	}, func() bool { return ran("", 1) })
 	if unkeyedHeld != 0 {
-		die(fmt.Sprintf("an unkeyed run must not hold a key lease even under override Defer, count=%d", unkeyedHeld))
+		die(fmt.Sprintf("an unkeyed run must not hold a key lease even under override Exclusive, count=%d", unkeyedHeld))
 	}
 	fmt.Println("  ✓ no lease rows")
 
-	step("ConcurrencyOverride Allow beats a message's own Defer")
-	publish(ctx, wpInstance, "u:3", 1, common.ConcurrencyDefer)
-	g4 := groupId(ctx, cd, "deferlab.g4")
+	step("ConcurrencyOverride Parallel beats a message's own Exclusive")
+	publish(ctx, wpInstance, "u:3", 1, common.ConcurrencyExclusive)
+	g4 := groupId(ctx, cd, "exclusivelab.g4")
 	overrideHeld := -1
-	consume(ctx, tp.Name, "deferlab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyAllow}, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "exclusivelab.g4", &messageconsumer.MessageConsumerConfig{ConcurrencyOverride: common.ConcurrencyParallel}, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:3" {
 			overrideHeld = leaseCount(ctx, g4)
 		}
@@ -193,22 +193,22 @@ func run() (err error) {
 		return nil
 	}, func() bool { return ran("u:3", 1) })
 	if overrideHeld != 0 {
-		die(fmt.Sprintf("override Allow must skip the key lease, count=%d", overrideHeld))
+		die(fmt.Sprintf("override Parallel must skip the key lease, count=%d", overrideHeld))
 	}
 	fmt.Println("  ✓ ran without a lease")
 
 	step("busy key: each head deferred during the hold gets its own 'deferred' row at commit")
-	g5 := groupId(ctx, cd, "deferlab.g5")
+	g5 := groupId(ctx, cd, "exclusivelab.g5")
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startOnce sync.Once
-	publish(ctx, wpInstance, "u:4", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:4", 1, common.ConcurrencyExclusive)
 	v1 := messageId(ctx, "u:4", 1)
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		consume(ctx, tp.Name, "deferlab.g5", nil, 3, func(ctx context.Context, message *Rec) error {
+		consume(ctx, tp.Name, "exclusivelab.g5", nil, 3, func(ctx context.Context, message *Rec) error {
 			if message.Key == "u:4" {
 				startOnce.Do(func() { close(started) })
 				<-release
@@ -219,11 +219,11 @@ func run() (err error) {
 	}()
 
 	<-started // v1 is running and holds the key
-	publish(ctx, wpInstance, "u:4", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:4", 2, common.ConcurrencyExclusive)
 	v2 := messageId(ctx, "u:4", 2)
 	waitFor(func() bool { return deliveryStatus(ctx, g5, v2) == "deferred" }, "v2's 'deferred' row")
 
-	publish(ctx, wpInstance, "u:4", 3, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:4", 3, common.ConcurrencyExclusive)
 	v3 := messageId(ctx, "u:4", 3)
 	waitFor(func() bool { return deliveryStatus(ctx, g5, v3) == "deferred" }, "v3's 'deferred' row")
 	if s := deliveryStatus(ctx, g5, v2); s != "deferred" {
@@ -255,18 +255,18 @@ func run() (err error) {
 	fmt.Printf("  ✓ v2 and v3 each hold a 'deferred' row, key freed (v1=%d v2=%d v3=%d)\n", v1, v2, v3)
 
 	step("head moved between claim and dispatch: resolves superseded, never runs")
-	g6 := groupId(ctx, cd, "deferlab.g6")
+	g6 := groupId(ctx, cd, "exclusivelab.g6")
 	blockStarted := make(chan struct{})
 	blockRelease := make(chan struct{})
 	var blockOnce sync.Once
 	publishUnkeyed(ctx, wpInstance, 2) // the blocker -- pins the single processor
-	publish(ctx, wpInstance, "u:5", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:5", 1, common.ConcurrencyExclusive)
 	v5old := messageId(ctx, "u:5", 1)
 
 	done6 := make(chan struct{})
 	go func() {
 		defer close(done6)
-		consume(ctx, tp.Name, "deferlab.g6", nil, 1, func(ctx context.Context, message *Rec) error {
+		consume(ctx, tp.Name, "exclusivelab.g6", nil, 1, func(ctx context.Context, message *Rec) error {
 			if message.Key == "" && message.Version == 2 {
 				blockOnce.Do(func() { close(blockStarted) })
 				<-blockRelease
@@ -277,7 +277,7 @@ func run() (err error) {
 	}()
 
 	<-blockStarted // u:5 v1 is claimed and queued behind the blocker
-	publish(ctx, wpInstance, "u:5", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:5", 2, common.ConcurrencyExclusive)
 	close(blockRelease)
 	<-done6 // v2 ran -- so v1 resolved before it
 	if ran("u:5", 1) {
@@ -292,14 +292,14 @@ func run() (err error) {
 	}
 	fmt.Println("  ✓ never ran, logged superseded, no delivery row")
 
-	step("a failing Defer message frees the key")
-	g7 := groupId(ctx, cd, "deferlab.g7")
-	publish(ctx, wpInstance, "u:6", 1, common.ConcurrencyDefer)
+	step("a failing Exclusive message frees the key")
+	g7 := groupId(ctx, cd, "exclusivelab.g7")
+	publish(ctx, wpInstance, "u:6", 1, common.ConcurrencyExclusive)
 	v6 := messageId(ctx, "u:6", 1)
-	consume(ctx, tp.Name, "deferlab.g7", nil, 3, func(ctx context.Context, message *Rec) error {
+	consume(ctx, tp.Name, "exclusivelab.g7", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
 		if message.Key == "u:6" {
-			return errors.New("deferlab: synthetic failure")
+			return errors.New("exclusivelab: synthetic failure")
 		}
 		return nil
 	}, func() bool { return deliveryStatus(ctx, g7, v6) == "ready" })
@@ -313,7 +313,7 @@ func run() (err error) {
 	fmt.Println("  ✓ key freed, 'ready' row, status failure")
 
 	step("redemption: the stale 'deferred' row resolves superseded, the head runs and pops")
-	stopRedeem := startExceptionConsumer(ctx, tp.Name, "deferlab.g5", nil, func(ctx context.Context, message *Rec) error {
+	stopRedeem := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g5", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
@@ -344,11 +344,11 @@ func run() (err error) {
 	fmt.Println("  ✓ v2 superseded with full audit, v3 ran and popped")
 
 	step("a held key excludes its 'deferred' row from the claim, kill backstop blind to it")
-	g8 := groupId(ctx, cd, "deferlab.g8")
+	g8 := groupId(ctx, cd, "exclusivelab.g8")
 	started8 := make(chan struct{})
 	release8 := make(chan struct{})
 	var once8 sync.Once
-	stopCursor8 := startConsumer(ctx, tp.Name, "deferlab.g8", nil, 3, func(ctx context.Context, message *Rec) error {
+	stopCursor8 := startConsumer(ctx, tp.Name, "exclusivelab.g8", nil, 3, func(ctx context.Context, message *Rec) error {
 		if message.Key == "u:7" && message.Version == 1 {
 			once8.Do(func() { close(started8) })
 			<-release8
@@ -356,9 +356,9 @@ func run() (err error) {
 		record(message)
 		return nil
 	})
-	publish(ctx, wpInstance, "u:7", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:7", 1, common.ConcurrencyExclusive)
 	<-started8 // v1 is running and holds the key
-	publish(ctx, wpInstance, "u:7", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:7", 2, common.ConcurrencyExclusive)
 	v7 := messageId(ctx, "u:7", 2)
 	waitFor(func() bool { return deliveryStatus(ctx, g8, v7) == "deferred" }, "v2's 'deferred' row")
 
@@ -388,7 +388,7 @@ func run() (err error) {
 		die(fmt.Sprintf("a row whose message key has an unexpired lease must not be claimed, got status %q attempts %d", s, n))
 	}
 
-	stopRedeem8 := startExceptionConsumer(ctx, tp.Name, "deferlab.g8", nil, func(ctx context.Context, message *Rec) error {
+	stopRedeem8 := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g8", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
@@ -413,20 +413,20 @@ func run() (err error) {
 	fmt.Println("  ✓ excluded from the claim while held, survived the backstop, ran on release")
 
 	step("a failed holder's retry supersedes once a newer head runs")
-	g9 := groupId(ctx, cd, "deferlab.g9")
+	g9 := groupId(ctx, cd, "exclusivelab.g9")
 	failV1 := func(ctx context.Context, message *Rec) error {
 		record(message)
 		if message.Key == "u:8" && message.Version == 1 {
-			return errors.New("deferlab: synthetic holder failure")
+			return errors.New("exclusivelab: synthetic holder failure")
 		}
 		return nil
 	}
-	stopCursor9 := startConsumer(ctx, tp.Name, "deferlab.g9", nil, 3, failV1)
-	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "deferlab.g9", nil, failV1)
-	publish(ctx, wpInstance, "u:8", 1, common.ConcurrencyDefer)
+	stopCursor9 := startConsumer(ctx, tp.Name, "exclusivelab.g9", nil, 3, failV1)
+	stopRedeem9 := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g9", nil, failV1)
+	publish(ctx, wpInstance, "u:8", 1, common.ConcurrencyExclusive)
 	v8old := messageId(ctx, "u:8", 1)
 	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "ready" }, "v1 to fail and go 'ready'")
-	publish(ctx, wpInstance, "u:8", 2, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:8", 2, common.ConcurrencyExclusive)
 	waitFor(func() bool { return ran("u:8", 2) }, "v2 to run on the freed key")
 	waitFor(func() bool { return deliveryStatus(ctx, g9, v8old) == "superseded" }, "v1's retry to resolve superseded")
 	stopCursor9()
@@ -452,20 +452,20 @@ func run() (err error) {
 	fmt.Println("  ✓ retry gate refused v1, attempts decremented back, superseded logged")
 
 	step("a crashed holder's expired key lease: redemption takes the key over")
-	g10 := groupId(ctx, cd, "deferlab.g10")
+	g10 := groupId(ctx, cd, "exclusivelab.g10")
 	// a crashed holder's message_key_lease row: unexpired, never released
 	execSql(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'u:10', gen_random_uuid(), now() + interval '1500 milliseconds')`, topicId), g10)
-	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:10", 1, common.ConcurrencyExclusive)
 	v10 := messageId(ctx, "u:10", 1)
-	stopCursor10 := startConsumer(ctx, tp.Name, "deferlab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
+	stopCursor10 := startConsumer(ctx, tp.Name, "exclusivelab.g10", nil, 3, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
-	stopRedeem10 := startExceptionConsumer(ctx, tp.Name, "deferlab.g10", nil, func(ctx context.Context, message *Rec) error {
+	stopRedeem10 := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g10", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
-	waitFor(func() bool { return deliveryStatus(ctx, g10, v10) == "deferred" }, "v1 to defer behind the crashed holder's key")
+	waitFor(func() bool { return deliveryStatus(ctx, g10, v10) == "deferred" }, "v1 to wait behind the crashed holder's key")
 	if ran("u:10", 1) {
 		die("nothing may run while the crashed holder's lease is live")
 	}
@@ -475,14 +475,14 @@ func run() (err error) {
 	stopRedeem10()
 	fmt.Println("  ✓ deferred behind the crashed holder, ran after expiry via takeover")
 
-	step("Defer without a MessageKey is refused at produce time")
-	if _, err := wpInstance.Produce(ctx, &Rec{Version: 1}, producer.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyDefer}}); err == nil {
-		die("produce must refuse Defer without a MessageKey")
+	step("Exclusive without a MessageKey is refused at produce time")
+	if _, err := wpInstance.Produce(ctx, &Rec{Version: 1}, producer.ProduceOptions{Message: &common.MessageOptions{Concurrency: common.ConcurrencyExclusive}}); err == nil {
+		die("produce must refuse Exclusive without a MessageKey")
 	}
 	fmt.Println("  ✓ refused")
 
-	step("uncompacted defer: no head row, every version runs exactly once, none superseded")
-	g12 := groupId(ctx, cd, "deferlab.g12")
+	step("uncompacted exclusive: no head row, every version runs exactly once, none superseded")
+	g12 := groupId(ctx, cd, "exclusivelab.g12")
 	started12 := make(chan struct{})
 	release12 := make(chan struct{})
 	var once12 sync.Once
@@ -492,7 +492,7 @@ func run() (err error) {
 	done12 := make(chan struct{})
 	go func() {
 		defer close(done12)
-		consume(ctx, tp.Name, "deferlab.g12", nil, 3, func(ctx context.Context, message *Rec) error {
+		consume(ctx, tp.Name, "exclusivelab.g12", nil, 3, func(ctx context.Context, message *Rec) error {
 			if message.Key == "uc:1" && message.Version == 1 {
 				once12.Do(func() { close(started12) })
 				<-release12
@@ -521,7 +521,7 @@ func run() (err error) {
 
 	// redemption runs BOTH deferred versions -- an uncompacted key keeps its
 	// history; a same-batch key collision re-defers instead of superseding
-	stopRedeem12 := startExceptionConsumer(ctx, tp.Name, "deferlab.g12", nil, func(ctx context.Context, message *Rec) error {
+	stopRedeem12 := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g12", nil, func(ctx context.Context, message *Rec) error {
 		record(message)
 		return nil
 	})
@@ -544,7 +544,7 @@ func run() (err error) {
 	fmt.Println("  ✓ v1 ran holding the key, v2 and v3 both redeemed, nothing superseded")
 
 	step("torture: two consumers per loop fight one key through an abandoned holder and head churn")
-	g11 := groupId(ctx, cd, "deferlab.g11")
+	g11 := groupId(ctx, cd, "exclusivelab.g11")
 	// a short per-message Timeout so v1's sleeping run is abandoned mid-hold --
 	// its failure recording frees the key while the goroutine sleeps on
 	tortureMessageCfg := func() *messageconsumer.MessageConsumerConfig {
@@ -563,17 +563,17 @@ func run() (err error) {
 		}
 		return nil
 	}
-	stopCursor11a := startConsumer(ctx, tp.Name, "deferlab.g11", tortureMessageCfg(), 3, tortureFunc)
-	stopCursor11b := startConsumer(ctx, tp.Name, "deferlab.g11", tortureMessageCfg(), 3, tortureFunc)
-	stopRedeem11a := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
-	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "deferlab.g11", tortureExceptionCfg(), tortureFunc)
+	stopCursor11a := startConsumer(ctx, tp.Name, "exclusivelab.g11", tortureMessageCfg(), 3, tortureFunc)
+	stopCursor11b := startConsumer(ctx, tp.Name, "exclusivelab.g11", tortureMessageCfg(), 3, tortureFunc)
+	stopRedeem11a := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g11", tortureExceptionCfg(), tortureFunc)
+	stopRedeem11b := startExceptionConsumer(ctx, tp.Name, "exclusivelab.g11", tortureExceptionCfg(), tortureFunc)
 
-	publish(ctx, wpInstance, "u:11", 1, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:11", 1, common.ConcurrencyExclusive)
 	tv1 := messageId(ctx, "u:11", 1)
 	<-started11 // v1 runs holding the key
-	publish(ctx, wpInstance, "u:11", 2, common.ConcurrencyDefer)
-	publish(ctx, wpInstance, "u:11", 3, common.ConcurrencyDefer)
-	publish(ctx, wpInstance, "u:11", 4, common.ConcurrencyDefer)
+	publish(ctx, wpInstance, "u:11", 2, common.ConcurrencyExclusive)
+	publish(ctx, wpInstance, "u:11", 3, common.ConcurrencyExclusive)
+	publish(ctx, wpInstance, "u:11", 4, common.ConcurrencyExclusive)
 	tv2 := messageId(ctx, "u:11", 2)
 	tv3 := messageId(ctx, "u:11", 3)
 	tv4 := messageId(ctx, "u:11", 4)
@@ -631,7 +631,7 @@ func run() (err error) {
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	fmt.Println("  ✓ destroyed")
 
-	fmt.Println("\n✅ DEFER LAB PASSED")
+	fmt.Println("\n✅ EXCLUSIVE LAB PASSED")
 	return nil
 }
 
@@ -742,7 +742,9 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 func abandonedEventProducer(ctx context.Context) *metricsproducer.MetricsProducer {
 	events, err := metricsproducer.NewMetricsProducer(ds, nil)
 	must(err)
-	go func() { must(events.Run(ctx, "deferlab", "deferlab", topic.SchemaVersion(1), "deferlab-session")) }()
+	go func() {
+		must(events.Run(ctx, "exclusivelab", "exclusivelab", topic.SchemaVersion(1), "exclusivelab-session"))
+	}()
 	return events
 }
 
@@ -798,14 +800,14 @@ func publish(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], ke
 	must(err)
 }
 
-// publishUncompacted produces a Defer message with a key and no Compaction --
+// publishUncompacted produces a Exclusive message with a key and no Compaction --
 // every version is kept, deliveries serialize on the key.
 func publishUncompacted(ctx context.Context, wpInstance *producer.ProducerInstance[Rec], key string, version int) {
 	_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*Rec, error) {
 		return &Rec{Key: key, Version: version}, nil
 	}, producer.ProduceOptions{
 		MessageKey: key,
-		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
+		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyExclusive},
 	})
 	must(err)
 }

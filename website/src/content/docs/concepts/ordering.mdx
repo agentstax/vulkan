@@ -23,14 +23,14 @@ guaranteed. The default is full parallelism, honestly labeled.
 ## Opt-in: one in-flight delivery per key
 
 For messages that carry a [message key](/concepts/message-key/),
-`ConcurrencyDefer` gives you per-key mutual exclusion within a consumer
+`ConcurrencyExclusive` gives you per-key mutual exclusion within a consumer
 group:
 
 ```go
 produced, err := instance.Produce(ctx, &BalanceAdjusted{Account: "acct-42", Delta: -500},
 	producer.ProduceOptions{
 		MessageKey: "acct-42",
-		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyDefer},
+		Message:    &common.MessageOptions{Concurrency: common.ConcurrencyExclusive},
 	})
 ```
 
@@ -65,7 +65,7 @@ that's what you opted into.
 retries" — claim-time lanes on the message key, with order preserved
 through failures — is a designed-but-unbuilt proposal (the SQS
 `MessageGroupId` / Kafka partition shape). It's deliberately a
-different guarantee from defer: defer answers "one at a time," FIFO
+different guarantee from exclusive: exclusive answers "one at a time," FIFO
 answers "don't reorder history." If your workload needs the second,
 today Vulkan doesn't ship it.
 

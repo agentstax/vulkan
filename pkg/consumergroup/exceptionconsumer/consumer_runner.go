@@ -94,7 +94,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 	}
 
 	var keyClaim *keyleasecontroller.KeyLeaseClaim
-	if exception.MessageKey != "" && resolvedOptions.Concurrency == common.ConcurrencyDefer {
+	if exception.MessageKey != "" && resolvedOptions.Concurrency == common.ConcurrencyExclusive {
 		claim, err := r.ClaimKeyedRun(ctx, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions)
 		switch {
 		case err != nil:

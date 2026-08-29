@@ -14,8 +14,8 @@ type CronJobConfig struct {
 	Timeout time.Duration
 
 	// Concurrency - whether a job request runs while a previous one is still
-	// running (allow) or waits for it (defer).
-	// Default: allow.
+	// running (parallel) or waits for it (exclusive).
+	// Default: parallel.
 	Concurrency common.ConcurrencyPolicy
 
 	// Metadata - marshaled to opaque JSON carried on every job request.
@@ -28,7 +28,7 @@ func (c *CronJobConfig) WithDefaults() *CronJobConfig {
 		c.Timeout = 30 * time.Second
 	}
 	if c.Concurrency == "" {
-		c.Concurrency = common.ConcurrencyAllow
+		c.Concurrency = common.ConcurrencyParallel
 	}
 	return c
 }

@@ -89,7 +89,7 @@ func (a *MessageAdmin) UnsuspendCronJob(ctx context.Context, name string) error 
 //
 // Two deliberate consequences:
 //   - The request's concurrency is cfg.Concurrency, NOT the job's own policy
-//     -- by default 'allow', so it runs even while a previous request is still
+//     -- by default 'parallel', so it runs even while a previous request is still
 //     running.
 //   - It supersedes a pending JobRequest no consumer has claimed yet.
 func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCronJobConfig) (*producer.ProduceResult[cron.JobRequest], error) {

@@ -22,7 +22,7 @@ type ProduceOptions struct {
 	RoutingKey string
 
 	// MessageKey - the entity this message is about. On its own it is stored
-	// and nothing more; Compaction and ConcurrencyDefer both read it.
+	// and nothing more; Compaction and ConcurrencyExclusive both read it.
 	// Default: "" (no key).
 	//
 	// Ex: "user:123", "acct-42", a device serial.
@@ -59,8 +59,8 @@ type ProduceOptions struct {
 // Validate rejects nonsensical option combinations.
 // Must be called after Fill().
 func (o ProduceOptions) Validate() error {
-	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyDefer && o.MessageKey == "" {
-		return errors.New("Concurrency 'defer' set without MessageKey -- defer serializes deliveries by key, set ProduceOptions.MessageKey")
+	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyExclusive && o.MessageKey == "" {
+		return errors.New("Concurrency 'exclusive' set without MessageKey -- exclusive runs deliveries one at a time per key, set ProduceOptions.MessageKey")
 	}
 	if o.Compaction != nil && o.Compaction.Enable && o.MessageKey == "" {
 		return errors.New("Compaction enabled without MessageKey -- compaction picks a winner per key, set ProduceOptions.MessageKey")

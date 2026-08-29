@@ -9,12 +9,11 @@ export const createCronJobConfigSql = `
 			name TEXT NOT NULL UNIQUE,                       -- also the routing key every job request is produced with
 			schedule TEXT NOT NULL,                          -- cron spec; UTC unless it carries TZ=
 			suspended BOOLEAN NOT NULL DEFAULT false,        -- a suspended job keeps its schedule but never produces
-			concurrency TEXT NOT NULL DEFAULT 'allow',       -- -> MessageOptions.Concurrency
+			concurrency TEXT NOT NULL DEFAULT 'parallel',    -- 'parallel' | 'exclusive' -> MessageOptions.Concurrency
 			timeout_ns BIGINT NOT NULL,                      -- nanoseconds; -> MessageOptions.Timeout
 			payload JSONB NOT NULL DEFAULT '{}',             -- the job's opaque document, produced with every request
 			metadata JSONB NOT NULL DEFAULT '{}',
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
-			CHECK (concurrency IN ('allow', 'defer')),
 			CHECK (timeout_ns > 0)
 		);
 	`;
