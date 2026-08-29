@@ -25,7 +25,7 @@ checkmarked.
 | Retained, append-only log | yes | yes |
 | Independent consumer groups | yes | yes |
 | New consumer reads history | yes | yes — a new group's default |
-| Per-key ordering | yes — partitions (count fixed up front) | per-key exclusivity, latest-wins (opt-in); strict FIFO proposed |
+| Per-key ordering | yes — partitions (count fixed up front) | per-key order, or exclusivity with latest-wins (opt-in per message) |
 | Per-message retry/backoff | no — retry topics, hand-built | yes — native |
 | Dead-lettering | DIY topic + tooling | native, per group, queryable |
 | Routing by key bindings | no — consumers filter client-side | yes — native |

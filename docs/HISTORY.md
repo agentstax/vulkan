@@ -5,6 +5,26 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — ordered delivery per key; parallel / exclusive / ordered [0617]
+
+- Concurrency values renamed to what the key permits: `parallel` (zero),
+  `exclusive`, `ordered`; row status `deferred` unchanged;
+  cron_job_config's CHECK-constrained enum dropped in passing.
+- `ordered`: a keyed message runs only after every earlier same-key
+  message is resolved for the group, one at a time, through failures;
+  `dead` releases the lane. exception_queue gains `message_key` +
+  `concurrency` (the resolved policy) + an index; the ordered key-lease
+  claim refuses while an earlier same-key exception row is unresolved or
+  a same-key message_log id sits in `(committed, id)` outside the
+  claimer's own range; the exception claim skips an ordered row behind
+  an unresolved predecessor. Inside one range same-key ordered messages
+  are chained and run back to back in one goroutine; a predecessor that
+  did not succeed defers the rest.
+- Doc site: guides/ordered-delivery (written first as the proposal),
+  ordering / message-key / compare pages; orderedlab is the regression
+  (fail-then-succeed order, dead releases, fast path with no deferred
+  rows). Shipped in four reviewed chunks: rename, columns, policy, lane.
+
 ## 2026-08-29 — a new group's cursor position: consumergroup.Head() [0616]
 
 - `consumergroup.CursorPosition{Kind}` with `Beginning()` / `Head()`;

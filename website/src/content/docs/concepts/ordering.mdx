@@ -1,15 +1,13 @@
 ---
 title: Ordering & Concurrency
-description: What order Vulkan actually guarantees, the per-key exclusivity you can opt into today, and the strict FIFO that's still a proposal.
+description: What order Vulkan actually guarantees, and the two per-key policies you can opt into — exclusive and ordered.
 ---
-
-import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
 
 Ordering and concurrency are fundamentally at odds: if message B must
 wait for message A, no amount of consumer instances makes B faster.
 Systems that pretend otherwise either serialize everything (slow) or
-order nothing (wrong). This page says exactly which trade Vulkan ships
-today — and which one is still a proposal.
+order nothing (wrong). This page says exactly which trades Vulkan
+ships, per message key.
 
 ## What's guaranteed by default
 
@@ -59,17 +57,17 @@ deliveries no matter how many consumer instances you add, and with
 compaction enabled same-key produces commit one after another too —
 that's what you opted into.
 
-<ThreadAside label="PROPOSED" title="Strict per-key FIFO">
+## Opt-in: every message on a key, in order
 
-"Every message with this key, in order, one at a time — even across
-retries" — claim-time lanes on the message key, with order preserved
-through failures — is a designed-but-unbuilt proposal (the SQS
-`MessageGroupId` / Kafka partition shape). It's deliberately a
-different guarantee from exclusive: exclusive answers "one at a time," FIFO
-answers "don't reorder history." If your workload needs the second,
-today Vulkan doesn't ship it.
-
-</ThreadAside>
+`ConcurrencyOrdered` is the stricter policy: a keyed message runs only
+after every earlier message on its key is resolved for the group, and
+the order holds through a failure — the failed message's retry goes
+before the messages behind it, and only `dead` releases them. It is
+the SQS `MessageGroupId` / Kafka partition guarantee on the message
+key, and a different one from exclusive: exclusive answers "one at a
+time," ordered answers "don't reorder history." Every row it writes,
+what "earlier" means, and what it costs are on
+[ordered delivery](/guides/ordered-delivery/).
 
 ## Compared to the neighbors
 
@@ -80,9 +78,6 @@ comparisons:
 | | Kafka | SQS FIFO | Vulkan today |
 | --- | --- | --- | --- |
 | Ordering unit | partition (count fixed up front) | MessageGroupId | message key |
-| Guarantee | per-partition order | per-group order | per-key exclusivity; latest version wins when compacted |
+| Guarantee | per-partition order | per-group order | per-key order (`ordered`) or exclusivity (`exclusive`); latest version wins when compacted |
 | Choose per message? | no — topic topology | yes | yes |
 | Unordered fast path on the same topic | no | no — separate queue | yes — messages without a key |
-
-Strict per-key FIFO would move Vulkan's guarantee column next to SQS
-FIFO's; until it ships, it's a proposal, not a checkmark.

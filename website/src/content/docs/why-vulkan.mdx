@@ -113,7 +113,7 @@ delete. Vulkan keeps going:
 | [Retained history new consumers can read](/concepts/fan-out/) | no — deleted on consume | yes — append-only log |
 | Independent consumer groups (fan-out) | no — one consumer wins | yes — cursor per group |
 | [Routing by key bindings](/concepts/routing/) | no | yes |
-| [Per-key ordering beside full parallelism](/concepts/ordering/) | no | per-key exclusivity (opt-in); strict FIFO proposed |
+| [Per-key ordering beside full parallelism](/concepts/ordering/) | no | per-key exclusivity or strict order (opt-in per message) |
 
 The deep idea: Vulkan separates the **immutable log of what happened**
 from the **mutable state of who's handled it** — and only materializes

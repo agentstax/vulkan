@@ -1,16 +1,7 @@
 ---
 title: Ordered Delivery per Key
-description: ConcurrencyOrdered runs every message with a key in id order, one at a time, and keeps that order across failures — proposed, written up as the spec.
+description: ConcurrencyOrdered runs every message with a key in id order, one at a time, and keeps that order across failures.
 ---
-
-import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
-
-<ThreadAside label="PROPOSED" title="Not shipped">
-Everything on this page is proposed API. Today `exclusive` (shipped as
-`defer` until the rename lands) is the only keyed policy, and it is
-exclusivity, not order across failures.
-
-</ThreadAside>
 
 `ConcurrencyOrdered` is the third concurrency policy: a message with a
 key runs only after every earlier message on that key is resolved for

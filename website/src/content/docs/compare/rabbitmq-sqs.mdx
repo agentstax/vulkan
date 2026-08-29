@@ -24,7 +24,7 @@ checkmarked.
 | Retry / dead-letter per message | yes | yes | yes, per consumer group |
 | Delayed delivery | plugin | yes (15-min cap) | no — retry backoff, or a handler-requested delay |
 | Routing | yes — exchanges (the gold standard) | no (SNS bolt-on) | yes — routing-key patterns |
-| FIFO | per-queue | FIFO queues (with a throughput cap) | per-key exclusivity (opt-in); strict FIFO proposed |
+| FIFO | per-queue | FIFO queues (with a throughput cap) | per-key order (opt-in per message, no throughput cap on unordered keys) |
 | Read history again | no — consumed is gone | no — consumed is gone | yes — new groups read retained history |
 | Fan-out to N consumers | exchange→N queues, declared in advance | SNS→N queues, declared in advance | any group, anytime — including one added after the fact |
 | Message visibility | opaque broker state | opaque, 14-day max | rows; retention you choose |

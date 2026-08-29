@@ -62,8 +62,6 @@ demands them rather than on speculation:
 
 - **Circuit breaker** — per-instance trip with group-wide coordination,
   so a dead downstream doesn't dead-letter a backlog.
-- **FIFO partitions** — strict per-key ordering as an opt-in claim gate.
-  (Today's guarantee is [narrower →](/concepts/ordering/).)
 - **Header routing** — attribute-set matching (`region=eu AND tier=gold`)
   beside the routing key.
 - **Producer wake-ups via LISTEN/NOTIFY** — today consumers poll;

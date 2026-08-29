@@ -32,7 +32,7 @@ checkmarked.
 | Retained history new consumers can read | no | no | yes — append-only log |
 | Multiple independent consumer groups per message | no | no | yes |
 | Routing bindings | no | no | yes — routing-key patterns |
-| Per-key ordering | no | partial (unique/sequence opts) | per-key exclusivity (opt-in); strict FIFO proposed |
+| Per-key ordering | no | partial (unique/sequence opts) | per-key exclusivity or strict order (opt-in per message) |
 | Model | SQS-style queue, SQL API | Go job runner | log + queue platform |
 
 The structural difference is one design decision: job queues **delete

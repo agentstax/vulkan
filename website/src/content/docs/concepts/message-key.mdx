@@ -76,8 +76,8 @@ The guarantee is exclusivity, and only that. A delivery that errors
 leaves through the exception window and re-enters on its retry schedule;
 the key does not wait for it, so the next same-key message can run
 before the failed one's retry. A handler that must see every message in
-written order even across failures needs strict per-key FIFO — a
-proposal, not shipped (see [Ordering & Concurrency](/concepts/ordering/)).
+written order even across failures asks for `ConcurrencyOrdered`
+instead ([ordered delivery](/guides/ordered-delivery/)).
 
 `Exclusive` without a message key errors at produce time — there's nothing
 to serialize on.

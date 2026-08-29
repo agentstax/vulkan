@@ -30,35 +30,8 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   Lease extend (scenario 11) is already designed as *Lease
   heartbeat/renewal (9b)* in the parking lot -- promote on its merit
   once these ship. Handler outcome shipped 2026-08-29 [0614] (see
-  HISTORY); start from now shipped 2026-08-29 [0616]. Remaining: strict
-  per-key FIFO (sketched, DDL edit).
-  - Added 2026-08-29 (sketched, not built): strict per-key FIFO -- the
-    third no-verb gap, playground scenario 10. Today `defer` is
-    exclusivity only: the key lease is held for the run and released when
-    the outcome is recorded, so a failed delivery's `ready` row leaves the
-    key free and the next same-key message runs before the retry (deltas
-    reorder). The rule, from SQS FIFO MessageGroupId / Kafka partitions:
-    a keyed message may not run while an earlier same-key delivery for
-    this group is unresolved (`ready`/`inflight`/`deferred`); `dead` does
-    not block -- dead-letter is the escape valve, so MaxRetries is the
-    stall bound. The delta, three places and no new table: (1)
-    `exception_queue` gains a `message_key` column (baseline DDL edit) so
-    the predecessor check is an index lookup on (consumer_group_id,
-    message_key, message_id) -- today the exception claim joins
-    message_log for the key, which is the hole; (2) `claimUncompacted`'s
-    INSERT gains `WHERE NOT EXISTS (earlier unresolved same-key row)` --
-    no row back is already KeyLeaseBusy -> the existing `deferred`
-    outcome, cursor advances as it does for any deferred row; (3) the
-    exception claim (already ORDER BY message_id, already skips leased
-    keys) adds the same predicate, so the lower-id retry is claimed
-    first and a deferred later message waits until the earlier one is
-    gone or dead. Shape: a THIRD ConcurrencyPolicy value, `defer` stays
-    as the cheaper exclusivity-only guarantee; name open under the
-    vocabulary rules ("runs only after every earlier delivery on its key
-    is resolved"). Errors at produce time with Compaction.Enable
-    (compaction supersedes, FIFO delivers every message -- contradictory;
-    same shape as defer-without-key). Docs page first, per the record
-    rules; ordering.mdx's PROPOSED aside is the seed.
+  HISTORY); start from now shipped 2026-08-29 [0616]; strict per-key
+  FIFO shipped 2026-08-29 as ordered delivery [0617]. Step 1 is done.
 - **Step 2 -- re-write the affected playground scenarios** (04 retry+dead,
   07 new-group-deep-topic, 10 keyed-ordering) against the shipped
   verbs, and add scenarios any new surface needs. Their headers drop
