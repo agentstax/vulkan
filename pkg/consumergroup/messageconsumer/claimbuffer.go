@@ -22,6 +22,7 @@ type buffered struct {
 	lease   controller.RangeLease  // token used for staleness check, ForceReclaimRange
 	index   int                    // this message's index in rangeState.results
 	options *common.MessageOptions // the message's options resolved against the group's config
+	next    *buffered              // the range's next ordered message on the same key -- never queued, run after this one resolves
 }
 
 func newBuffered(row controller.Message, lease controller.RangeLease, index int, options *common.MessageOptions) *buffered {
@@ -76,9 +77,28 @@ func (b *claimBuffer) add(ctx context.Context, claimed *controller.ClaimedRange)
 	// track BEFORE enqueueing: a mid-enqueue error still leaves the range
 	// tracked, so closeOpenRanges settles it instead of it leaking untracked
 	b.track(state)
+
+	// each ordered key's messages, in id order; everything else is queued as is
+	chains := map[string][]*buffered{}
 	for i, row := range claimed.Messages {
 		item := newBuffered(row, claimed.Lease, i, b.cfg.resolveMessageOptions(row.Options))
-		if err := b.queue.EnQueue(ctx, item); err != nil {
+		if row.MessageKey != "" && item.options.Concurrency == common.ConcurrencyOrdered {
+			// build the ordered chain's data
+			chains[row.MessageKey] = append(chains[row.MessageKey], item)
+		} else {
+			// not ordered: enqueue immediately
+			if err := b.queue.EnQueue(ctx, item); err != nil {
+				return err
+			}
+		}
+	}
+
+	// link each chain and queue only its first message
+	for _, chain := range chains {
+		for i := range chain[:len(chain)-1] {
+			chain[i].next = chain[i+1]
+		}
+		if err := b.queue.EnQueue(ctx, chain[0]); err != nil {
 			return err
 		}
 	}
@@ -130,6 +150,14 @@ func (b *claimBuffer) resolveDeferred(item *buffered) {
 	b.resolve(item, kindDeferred, "another delivery held the message key at dispatch", 0)
 }
 
+// resolveDeferredBehind defers the ordered messages chained behind item:
+// item did not succeed, so nothing on its key may run until it is resolved.
+func (b *claimBuffer) resolveDeferredBehind(item *buffered) {
+	for behind := item.next; behind != nil; behind = behind.next {
+		b.resolve(behind, kindDeferred, "an earlier delivery on the message key did not succeed", 0)
+	}
+}
+
 func (b *claimBuffer) resolveDelayed(item *buffered, delayed *consumergroup.DelayedDelivery) {
 	b.resolve(item, kindDelayed, delayed.Error(), delayed.Delay)
 }
@@ -140,6 +168,15 @@ func (b *claimBuffer) resolve(item *buffered, kind outcomeKind, err string, dela
 		return // already settled elsewhere -- fences a drain-timeout straggler
 	}
 	state.resolve(item.index, kind, err, delay, item.options.Concurrency)
+}
+
+// outcomeOf reads item's resolved kind; false while it is unresolved.
+func (b *claimBuffer) outcomeOf(item *buffered) (outcomeKind, bool) {
+	state := b.lookup(item.lease.Token)
+	if state == nil {
+		return 0, false
+	}
+	return state.outcomeOf(item.index)
 }
 
 func (b *claimBuffer) isRangeResolved(token uuid.UUID) bool {

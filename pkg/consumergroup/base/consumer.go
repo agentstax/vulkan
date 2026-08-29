@@ -64,9 +64,12 @@ func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], own
 // switch on the returned claim's Verdict. The key must stay held for
 // everything the delivery's own lease also covers: the run itself, ctx-cancel
 // unwinding, and recording the outcome.
-func (b *BaseConsumer[Message]) ClaimKeyedRun(ctx context.Context, key string, messageId int64, compacted bool, resolved *common.MessageOptions) (*controller.KeyLeaseClaim, error) {
+// ownRange is the claimer's claimed range (low, high]; an ordered claim
+// orders same-key messages inside it in memory, so the claim skips them.
+// A claim with no range passes the zero RangeBounds.
+func (b *BaseConsumer[Message]) ClaimKeyedRun(ctx context.Context, key string, messageId int64, compacted bool, resolved *common.MessageOptions, ownRange controller.RangeBounds) (*controller.KeyLeaseClaim, error) {
 	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.RecordMargin
-	return b.keyLeases.Claim(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, compacted, resolved.Concurrency, duration)
+	return b.keyLeases.Claim(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, compacted, resolved.Concurrency, ownRange, duration)
 }
 
 // ReleaseKeyedRun frees a claim ClaimKeyedRun acquired.

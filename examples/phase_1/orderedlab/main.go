@@ -14,6 +14,8 @@
 //     rows 2 and 3 sat 'deferred' while 1 was 'ready'.
 //   - key acct-2: the first is Terminal; the second runs after it is 'dead'.
 //   - a different key (acct-3) is not held behind either lane.
+//   - key acct-4: twenty messages in one range, none failing, run in order
+//     back to back on the fast path -- no deferred row, no exception poll.
 package main
 
 import (
@@ -114,9 +116,12 @@ func run() (err error) {
 	produce("acct-2", 1)
 	produce("acct-2", 2)
 	produce("acct-3", 1)
+	for seq := 1; seq <= 20; seq++ {
+		produce("acct-4", seq)
+	}
 
 	adjustmentConsumer, err := consumer.NewConsumer[Adjustment](ds, &consumer.ConsumerConfig{
-		BatchLimit:              10,
+		BatchLimit:              50,
 		MessageConcurrency:      4,
 		ClaimPollRate:           100 * time.Millisecond,
 		ExceptionInitialBackoff: 500 * time.Millisecond,
@@ -185,6 +190,20 @@ func run() (err error) {
 	}
 	fmt.Println("PASS: 2 ran after 1 was dead-lettered; acct-3 was never held")
 
+	step("acct-4: twenty same-key messages in one range run in order on the fast path")
+	waitUntil(func() bool { return len(entries("acct-4")) >= 20 }, 20*time.Second, "acct-4 to be entered twenty times")
+	got = entries("acct-4")
+	for i, seq := range got {
+		if seq != i+1 {
+			die(fmt.Sprintf("acct-4 handler order %v, want 1..20", got))
+		}
+	}
+	waitForGone(ctx, ds, tp.Id, groupId, ids["acct-4/20"], 10*time.Second)
+	if deferred := deferredLogRows(ctx, ds, tp.Id, groupId, "acct-4"); deferred != 0 {
+		die(fmt.Sprintf("acct-4 wrote %d deferred log rows, want 0 -- the in-range chain should keep it off the exception path", deferred))
+	}
+	fmt.Println("PASS: 1..20 in order, no deferred rows")
+
 	stop()
 	if err := <-consumeDone; err != nil && !errors.Is(err, context.Canceled) {
 		must(err)
@@ -241,6 +260,18 @@ func assertLogStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 	if status != want {
 		die(fmt.Sprintf("message %d attempt %d log status %q, want %q", messageId, attempt, status, want))
 	}
+}
+
+// deferredLogRows counts 'deferred' delivery_log rows for the key's messages.
+func deferredLogRows(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, key string) int {
+	sql := fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM delivery_log_%[1]d l JOIN message_log_%[1]d m ON m.id = l.message_id
+		WHERE l.consumer_group_id = $1 AND m.message_key = $2 AND l.status = 'deferred'
+	`, topicId)
+	var count int
+	must(ds.Pool.QueryRow(ctx, sql, groupId, key).Scan(&count))
+	return count
 }
 
 func groupIdOf(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {

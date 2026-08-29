@@ -127,6 +127,15 @@ func (r *rangeState) resolve(index int, kind outcomeKind, err string, delay time
 	r.resolved.Add(1)
 }
 
+// outcomeOf reads a result's kind; false while it is unresolved.
+func (r *rangeState) outcomeOf(index int) (outcomeKind, bool) {
+	current := &r.results[index]
+	if !current.done.Load() {
+		return 0, false
+	}
+	return current.kind, true
+}
+
 // isResolved returns true when all messages in range have been tracked / resolved.
 func (r *rangeState) isResolved() bool {
 	return r.resolved.Load() == int64(r.total)

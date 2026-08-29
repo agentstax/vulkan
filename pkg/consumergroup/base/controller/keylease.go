@@ -19,6 +19,22 @@ const (
 	KeyLeaseSuperseded KeyLeaseVerdict = "superseded" // the compacted message is no longer its key's compaction head -- never run it
 )
 
+// RangeBounds is a claimed range (Low, High]; the zero value is no range.
+type RangeBounds struct {
+	Low  int64
+	High int64
+}
+
+func NewRangeBounds(low int64, high int64) (RangeBounds, error) {
+	if low < 0 {
+		return RangeBounds{}, fmt.Errorf("low must be >= 0, got %d", low)
+	}
+	if high < low {
+		return RangeBounds{}, fmt.Errorf("high must be >= low (%d), got %d", low, high)
+	}
+	return RangeBounds{Low: low, High: high}, nil
+}
+
 // KeyLeaseClaim is one Claim outcome. Token is set only when
 // acquired; Release matches on it.
 type KeyLeaseClaim struct {
@@ -34,11 +50,12 @@ type KeyLeaseClaim struct {
 // still its key's compaction head after the lease was won; an uncompacted
 // message is never superseded.
 // For ConcurrencyOrdered the claim is also refused (busy) while an earlier
-// same-key message is unresolved for the group; a compacted message keeps
-// the compaction head as its gate whatever the policy says.
+// same-key message is unresolved for the group -- except one inside ownRange,
+// which the caller orders itself; a compacted message keeps the compaction
+// head as its gate whatever the policy says.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, policy common.ConcurrencyPolicy, duration time.Duration) (*KeyLeaseClaim, error) {
+func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, policy common.ConcurrencyPolicy, ownRange RangeBounds, duration time.Duration) (*KeyLeaseClaim, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -54,6 +71,9 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 	if err := policy.Validate(); err != nil {
 		return nil, fmt.Errorf("policy: %w", err)
 	}
+	if ownRange.High < ownRange.Low {
+		return nil, fmt.Errorf("ownRange.High must be >= ownRange.Low (%d), got %d", ownRange.Low, ownRange.High)
+	}
 	if duration <= 0 {
 		return nil, fmt.Errorf("duration must be > 0, got %v", duration)
 	}
@@ -65,7 +85,7 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 		return nil, err
 	}
 
-	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, compacted, policy, duration, toTokenData(token))
+	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, compacted, policy, ownRange.Low, ownRange.High, duration, toTokenData(token))
 	if err != nil || data == nil {
 		return nil, err
 	}

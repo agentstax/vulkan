@@ -95,7 +95,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 
 	var keyClaim *keyleasecontroller.KeyLeaseClaim
 	if exception.MessageKey != "" && resolvedOptions.Concurrency.HoldsKey() {
-		claim, err := r.ClaimKeyedRun(ctx, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions)
+		claim, err := r.ClaimKeyedRun(ctx, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions, keyleasecontroller.RangeBounds{})
 		switch {
 		case err != nil:
 			// a failed key-lease claim counts as this attempt's own failure

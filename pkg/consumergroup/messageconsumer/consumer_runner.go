@@ -214,8 +214,27 @@ func (r *messageRunner[Message]) dispatch(ctx context.Context, wg *sync.WaitGrou
 
 		wg.Go(func() {
 			defer r.poolLimiter.ReleasePermit(ctx, permitOwner.String())
-			r.processClaim(ctx, item)
+			r.processChain(ctx, item)
 		})
+	}
+}
+
+// processChain runs item and then, one after another under the same permit,
+// the ordered same-key messages chained behind it. A predecessor that did
+// not succeed -- failed, delayed, deferred, or left unresolved -- stops the
+// chain: the rest are deferred, and the exception path takes them in order.
+func (r *messageRunner[Message]) processChain(ctx context.Context, item *buffered) {
+	r.processClaim(ctx, item)
+
+	kind, resolved := r.buffer.outcomeOf(item)
+	switch {
+	case !resolved:
+		return
+	case kind != kindSuccess && kind != kindTerminal:
+		r.buffer.resolveDeferredBehind(item)
+		r.commitIfResolved(ctx, item)
+	case item.next != nil:
+		r.processChain(ctx, item.next)
 	}
 }
 
@@ -229,7 +248,11 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 	}
 
 	r.runItem(ctx, item)
+	r.commitIfResolved(ctx, item)
+}
 
+// commitIfResolved commits item's range once every message in it is resolved.
+func (r *messageRunner[Message]) commitIfResolved(ctx context.Context, item *buffered) {
 	if !r.buffer.isRangeResolved(item.lease.Token) {
 		return
 	}
@@ -244,7 +267,7 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 // without ever running consumerFunc
 func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered) {
 	if item.row.MessageKey != "" && item.options.Concurrency.HoldsKey() {
-		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, item.options)
+		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, item.options, keyleasecontroller.RangeBounds{Low: item.lease.Low, High: item.lease.High})
 		switch {
 		case err != nil:
 			// record as an exception so it still runs later
