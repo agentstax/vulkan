@@ -122,7 +122,7 @@ func run() (err error) {
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
 
-	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	seed(ctx, wpInstance, 3)
 
 	cfg := &messageconsumer.MessageConsumerConfig{

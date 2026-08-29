@@ -118,7 +118,7 @@ func run() (err error) {
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup))
+	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup, consumergroup.Beginning()))
 
 	const lease = 2 * time.Second
 	const maxRangeReclaims = 3 // never exhausted in this lab -- exactly one reclaim happens
@@ -221,8 +221,8 @@ func run() (err error) {
 	committed = advance(ctx, cursorAdvancerDatastore, tp.Id)
 	assertInt("committed", committed, 11)
 
-	publish(ctx, wpInstance, "user:6", 1, true)                                   // id 12, LIFECYCLE path
-	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup)) // fresh group scans from mark 0 -> the whole log
+	publish(ctx, wpInstance, "user:6", 1, true)                                                              // id 12, LIFECYCLE path
+	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup, consumergroup.Beginning())) // fresh group scans from mark 0 -> the whole log
 	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
 	delivered, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
 	must(err)

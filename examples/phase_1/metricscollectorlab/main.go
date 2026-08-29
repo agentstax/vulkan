@@ -24,6 +24,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
@@ -120,7 +121,7 @@ func run() (err error) {
 		}()
 
 		for _, group := range groupNames {
-			_, err := consumers.RegisterGroup(ctx, registered.Id, group)
+			_, err := consumers.RegisterGroup(ctx, registered.Id, group, consumergroup.Beginning())
 			must(err)
 		}
 

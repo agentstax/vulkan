@@ -662,6 +662,8 @@ the code is the line's breadcrumb to its own explanation.
       cron_job      cron job name
       cron_job_id   cron job id
       low, high     id range bounds
+      committed     the committed cursor id a new group's row was created
+                    at -- the registered (created) line
       attempt       retry position (attempts = the row's own column; a
                     cap spells its config field, max_retries)
       delay         backoff delay

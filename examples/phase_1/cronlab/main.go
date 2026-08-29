@@ -35,6 +35,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
@@ -691,7 +692,7 @@ func startScheduler(ctx context.Context) func() {
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name)
+	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name, consumergroup.Beginning())
 	must(err)
 	_, err = controller.DeclareBindings(ctx, jobRequests.Id, group.Id, bindings, time.Now())
 	must(err)

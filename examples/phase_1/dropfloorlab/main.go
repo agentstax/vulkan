@@ -190,7 +190,7 @@ func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 }
 
 func reset(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
-	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group))
+	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group, consumergroup.Beginning()))
 	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), groupId)

@@ -16,7 +16,10 @@ package main
 //     and leaves the same-named group on the other topic untouched.
 //  5. deleting a group row directly cascades its cursor away -- DestroyGroup
 //     is this delete plus the rows no FK reaches.
-//  6. DestroyGroup: AllowDestroy-gated, not-found error, refused while the
+//  6. Start: consumergroup.Head() creates the cursor at MAX(id) of the log,
+//     only a post-register produce is delivered, and a later Register with
+//     another position leaves the row alone.
+//  7. DestroyGroup: AllowDestroy-gated, not-found error, refused while the
 //     group has a live worker instance or delivery rows, and force sweeps
 //     every row the group owns.
 
@@ -30,12 +33,18 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
+
+type labMessage struct {
+	N int `json:"n"`
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -85,7 +94,7 @@ func run() (err error) {
 
 	step("RegisterGroup registers the group with its children in one txn")
 	group := fmt.Sprintf("consumergrouplab.group.%d", suffix)
-	registered, err := cd.RegisterGroup(ctx, topicA.Id, group)
+	registered, err := cd.RegisterGroup(ctx, topicA.Id, group, consumergroup.Beginning())
 	must(err)
 	g, err := cd.GetGroup(ctx, topicA.Id, group)
 	must(err)
@@ -96,7 +105,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ group %q (id %d) on topic %d, cursor created with it\n", group, registered.Id, topicA.Id)
 
 	step("same name on a second topic is a DIFFERENT group")
-	other, err := cd.RegisterGroup(ctx, topicB.Id, group)
+	other, err := cd.RegisterGroup(ctx, topicB.Id, group, consumergroup.Beginning())
 	must(err)
 	if other.Id == registered.Id {
 		die(fmt.Sprintf("second topic reused the first topic's group: %+v", other))
@@ -111,7 +120,7 @@ func run() (err error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := cd.RegisterGroup(ctx, topicA.Id, race)
+			_, err := cd.RegisterGroup(ctx, topicA.Id, race, consumergroup.Beginning())
 			errs <- err
 		}()
 	}
@@ -126,6 +135,50 @@ func run() (err error) {
 		die(fmt.Sprintf("race group has %d registry rows, want 1", raceRows))
 	}
 	fmt.Printf("  ✓ 10 concurrent registrations -> one registry row\n")
+
+	step("Start: consumergroup.Head() places a new group's cursor at MAX(id); an existing group keeps its position")
+	labProducer, err := producer.NewProducer[labMessage](ds, nil)
+	must(err)
+	producing, err := labProducer.Register(ctx, topicA.Name, topic.SchemaVersion(1))
+	must(err)
+	var seededHead int64
+	for n := 1; n <= 3; n++ {
+		produced, err := producing.Produce(ctx, &labMessage{N: n}, producer.ProduceOptions{})
+		must(err)
+		seededHead = produced.Id
+	}
+	headConsumer, err := consumer.NewConsumer[labMessage](ds, &consumer.ConsumerConfig{
+		Start:         consumergroup.Head(),
+		ClaimPollRate: 200 * time.Millisecond,
+	})
+	must(err)
+	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
+	headInstance, err := headConsumer.Register(ctx, headGroup, topicA.Name, topic.SchemaVersion(1), nil)
+	must(err)
+	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
+	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, producer.ProduceOptions{})
+	must(err)
+	consumeCtx, stop := context.WithCancel(ctx)
+	time.AfterFunc(20*time.Second, stop)
+	var seen []int
+	consumeErr := headInstance.Consume(consumeCtx, func(ctx context.Context, message *labMessage) error {
+		seen = append(seen, message.N)
+		stop()
+		return nil
+	})
+	if consumeErr != nil && !errors.Is(consumeErr, context.Canceled) {
+		must(consumeErr)
+	}
+	if len(seen) != 1 || seen[0] != 4 {
+		die(fmt.Sprintf("group at the head saw %v, want only the post-register message 4 (id %d)", seen, fresh.Id))
+	}
+	before := readCursor(ctx, ds, topicA.Id, headGroup)
+	beginningConsumer, err := consumer.NewConsumer[labMessage](ds, nil)
+	must(err)
+	_, err = beginningConsumer.Register(ctx, headGroup, topicA.Name, topic.SchemaVersion(1), nil)
+	must(err)
+	assertCursor(ctx, ds, topicA.Id, headGroup, before, "after a second Register at the beginning")
+	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)
 
 	step("destroying a topic destroys ITS groups and no one else's")
 	must(mAdmin.DestroyTopic(ctx, topicB.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
@@ -174,7 +227,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	step("DestroyGroup: gate + not-found, live/backlogged guards, force sweeps everything")
 
 	doomedName := fmt.Sprintf("consumergrouplab.doomed.%d", suffix)
-	doomed, err := cd.RegisterGroup(ctx, topicA.Id, doomedName)
+	doomed, err := cd.RegisterGroup(ctx, topicA.Id, doomedName, consumergroup.Beginning())
 	must(err)
 	_, err = cd.DeclareBindings(ctx, topicA.Id, doomed.Id, []string{"some.routing.key"}, time.Now())
 	must(err)
@@ -245,6 +298,25 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 }
 
 // ---- helpers ----
+
+// readCursor reads the group's committed cursor id by group name.
+func readCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, group string) int64 {
+	var committed int64
+	sql := fmt.Sprintf(`
+		SELECT c.committed
+		FROM consumer_group_cursor_%d c JOIN consumer_group_config g ON g.id = c.consumer_group_id
+		WHERE g.topic_id = $1 AND g.name = $2;
+	`, topicId)
+	must(ds.Pool.QueryRow(ctx, sql, topicId, group).Scan(&committed))
+	return committed
+}
+
+func assertCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, group string, want int64, when string) {
+	committed := readCursor(ctx, ds, topicId, group)
+	if committed != want {
+		die(fmt.Sprintf("group %q committed = %d %s, want %d", group, committed, when, want))
+	}
+}
 
 // assertChildren counts the group's cursor row -- it exists and dies
 // together with the registry row (want 1 or 0).

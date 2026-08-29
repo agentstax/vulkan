@@ -146,7 +146,7 @@ func runLazyStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) ([]
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
 
 	watcherDone := make(chan struct{})
@@ -225,7 +225,7 @@ func runSyncStaleness(ctx context.Context, ds *iDatastore.PostgresDatastore) []f
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	seed(ctx, wpInstance, int(int64(numRanges)*batchSize))
 
 	var stalenesses []float64
@@ -312,7 +312,7 @@ func timeSequentialCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	seed(ctx, wpInstance, int(n))
 
 	start := time.Now()
@@ -370,7 +370,7 @@ func timeConcurrentCommits(ctx context.Context, ds *iDatastore.PostgresDatastore
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	seed(ctx, wpInstance, total)
 
 	start := time.Now()

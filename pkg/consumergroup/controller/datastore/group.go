@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/jackc/pgx/v5"
@@ -42,12 +43,13 @@ func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Queri
 	return &group, nil
 }
 
-// RegisterGroup registers the group and its cursor if it doesn't exist.
-func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int64, name string) (*GroupData, error) {
+// RegisterGroup registers the group and its cursor if it doesn't exist; start
+// places the cursor only when this call creates the row.
+func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*GroupData, error) {
 	var group *GroupData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		group, err = d.registerGroup(ctx, topicId, name)
+		group, err = d.registerGroup(ctx, topicId, name, start)
 		return err
 	})
 	return group, err
@@ -55,7 +57,7 @@ func (d *ConsumerGroupDatastore) RegisterGroup(ctx context.Context, topicId int6
 
 // registerGroup registers behind a per-(topic,name) advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int64, name string) (*GroupData, error) {
+func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*GroupData, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -104,12 +106,8 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 		return nil, err
 	}
 
-	cursorSql := fmt.Sprintf(`
-		-- vulkan: consumergroup.registerGroup
-		INSERT INTO %s (consumer_group_id)
-		VALUES ($1);
-	`, iTopic.ConsumerGroupCursorTable(topicId))
-	if _, err := tx.Exec(ctx, cursorSql, group.Id); err != nil {
+	committed, err := d.insertCursor(ctx, tx, topicId, group.Id, start)
+	if err != nil {
 		return nil, err
 	}
 
@@ -117,8 +115,38 @@ func (d *ConsumerGroupDatastore) registerGroup(ctx context.Context, topicId int6
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "consumer group registered (created)", "group", group.Name, "topic_id", group.TopicId, "group_id", group.Id)
+	d.Logger.InfoContext(ctx, "consumer group registered (created)", "group", group.Name, "topic_id", group.TopicId, "group_id", group.Id, "committed", committed)
 	return &group, nil
+}
+
+// insertCursor writes the group's cursor row at the declared position and
+// returns the committed id it starts from.
+func (d *ConsumerGroupDatastore) insertCursor(ctx context.Context, q datastore.Querier, topicId int64, groupId int64, start consumergroup.CursorPosition) (int64, error) {
+	var sql string
+	switch start.Kind {
+	case consumergroup.CursorPositionBeginning:
+		sql = fmt.Sprintf(`
+			-- vulkan: consumergroup.insertCursor
+			INSERT INTO %s (consumer_group_id)
+			VALUES ($1)
+			RETURNING committed;
+		`, iTopic.ConsumerGroupCursorTable(topicId))
+	case consumergroup.CursorPositionHead:
+		sql = fmt.Sprintf(`
+			-- vulkan: consumergroup.insertCursor
+			INSERT INTO %s (consumer_group_id, claimed, committed, settled_head)
+			SELECT $1, head, head, head
+			FROM (SELECT COALESCE(MAX(id), 0) AS head FROM %s) AS log
+			RETURNING committed;
+		`, iTopic.ConsumerGroupCursorTable(topicId), iTopic.MessageLogTable(topicId))
+	default:
+		return 0, fmt.Errorf("unrecognized cursor position kind: %q", start.Kind)
+	}
+	var committed int64
+	if err := q.QueryRow(ctx, sql, groupId).Scan(&committed); err != nil {
+		return 0, err
+	}
+	return committed, nil
 }
 
 // DeleteGroup deletes the group and every row it owns in one transaction.

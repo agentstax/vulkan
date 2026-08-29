@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 )
 
 // TODO - better comments for each field. Should follow structure of producer.Options and the topic register Config
@@ -63,6 +64,11 @@ type ConsumerConfig struct {
 	// beating whatever the message requested.
 	// Default: "" (honor each message's own policy).
 	ConcurrencyOverride common.ConcurrencyPolicy
+
+	// Start - where a group's cursor is placed when Register creates it;
+	// a group that already has a cursor row keeps its position.
+	// Default: consumergroup.Beginning() -- the oldest retained message.
+	Start consumergroup.CursorPosition
 
 	Logger logging.Logger      // pass your own *slog.Logger or anything satisfying logging.Logger. Default: text lines to stderr, warn level and up.
 	Retry  *common.RetryPolicy // transient-error retry policy for this consumer's own Postgres calls -- never applies to message redelivery, that is Message.Retry. Default: common.NewDefaultRetryPolicy().
@@ -205,6 +211,9 @@ func (c *ConsumerConfig) Validate() error {
 	}
 	if err := c.ConcurrencyOverride.Validate(); err != nil {
 		return fmt.Errorf("ConcurrencyOverride: %w", err)
+	}
+	if err := c.Start.Kind.Validate(); err != nil {
+		return fmt.Errorf("Start.Kind: %w", err)
 	}
 	if err := c.Retry.Validate(); err != nil {
 		return fmt.Errorf("Retry: %w", err)

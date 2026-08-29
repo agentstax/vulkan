@@ -48,6 +48,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer"
 	exceptionconsumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller"
@@ -730,7 +731,7 @@ func groupOwner(ctx context.Context, topicName string, group string) *common.Own
 
 	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
 	must(err)
 
 	owner, err := common.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
@@ -817,7 +818,7 @@ func publishUnkeyed(ctx context.Context, wpInstance *producer.ProducerInstance[R
 }
 
 func groupId(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, name string) int64 {
-	g, err := cd.RegisterGroup(ctx, topicId, name)
+	g, err := cd.RegisterGroup(ctx, topicId, name, consumergroup.Beginning())
 	must(err)
 	return g.Id
 }

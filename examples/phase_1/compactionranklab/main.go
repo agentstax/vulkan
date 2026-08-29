@@ -95,7 +95,7 @@ func run() (err error) {
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 
 	const lease = 5 * time.Second
 	const maxRangeReclaims = 3 // never exhausted in this lab -- no crashes/reclaims here

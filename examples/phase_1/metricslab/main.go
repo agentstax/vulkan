@@ -121,7 +121,7 @@ func run() (err error) {
 
 	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consumermessage.Beginning())
 	must(err)
 	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
 	must(err)

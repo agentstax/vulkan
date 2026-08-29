@@ -1,0 +1,126 @@
+---
+title: Where a New Group Starts
+description: A new consumer group reads retained history by default; a cursor position of consumergroup.Head() makes it read live traffic only.
+---
+
+A new consumer group starts at the beginning of retained history unless
+its config's `Start` says otherwise, and `consumergroup.Head()` says
+"the head of the log": the group sees only messages produced after it
+was registered. The position is used once, when `Register` creates the
+group's cursor row; an existing group keeps its position no matter
+what the config says on a later `Register`.
+
+```go
+scoringConsumer, err := consumer.NewConsumer[OrderPlaced](ds, &consumer.ConsumerConfig{
+	Start: consumergroup.Head(),
+})
+must(err)
+
+scoring, err := scoringConsumer.Register(ctx, "fraud-scoring",
+	"orders.placed", topic.SchemaVersion(1), nil)
+must(err)
+must(scoring.Consume(ctx, scoreOrder))
+```
+
+This is Kafka's `auto.offset.reset=latest` and JetStream's
+`DeliverNew`, with the same rule: declaration-time config, consulted
+only when the group has no position yet. It is not a verb - moving an
+existing group is [rewind](/guides/replay/), which is still proposed
+and answers harder questions (open delivery rows, a safety rail,
+retention) that a brand-new group does not have.
+
+## The position type
+
+`consumergroup.CursorPosition` is a place in a topic's message log,
+and it is the one type every cursor-placing surface takes: `Start` on
+the consumer config today, the rewind verb when it ships. Its zero
+value is the beginning, so a config that says nothing keeps today's
+behavior.
+
+| constructor | the cursor is set to | status |
+| --- | --- | --- |
+| `consumergroup.Beginning()` | the oldest retained message; the zero value | shipped |
+| `consumergroup.Head()` | `MAX(id)` of the log at the moment the row is written | shipped |
+| `consumergroup.AtMessageId(id)` | a message id | [rewind](/guides/replay/), proposed |
+| `consumergroup.AtTime(t)` | the first message created at or after `t` | [rewind](/guides/replay/), proposed |
+
+Event Hubs' `EventPosition` and EventStoreDB's `StreamPosition` are the
+same shape: a value with a constructor per kind, handed to whichever
+verb places a cursor. The last two rows are on the page so the type is
+read once; they ship with the verb that needs them, not with this
+field.
+
+## Worked case
+
+`orders.placed` (topic id `1`) has been live for a year and
+`message_log_1` holds ids `1` through `1204318`. A fraud-scoring
+service is added today; scoring a year of settled orders is a day of
+CPU for nothing.
+
+`Register` with `Start: consumergroup.Head()` creates the cursor row at
+the head instead of at 0:
+
+```sql
+SELECT consumer_group_id, claimed, committed, settled_head
+FROM consumer_group_cursor_1;
+--  consumer_group_id | claimed | committed | settled_head
+--  7                 | 1204318 | 1204318   | 1204318
+```
+
+The next produce is id `1204319`. The group's first claim is the range
+`(1204318, 1204319]` and the handler sees exactly that order. The year
+behind it is never read, and because `committed` already sits at the
+head, retention and partition drops never wait on this group either.
+
+The register log line carries the position, so a group that started
+at the head says so once:
+
+```
+consumer group registered (created) group=fraud-scoring topic_id=1 group_id=7 committed=1204318
+```
+
+## What "after" means
+
+The head is `MAX(id)` of the message log inside the register
+transaction. A produce that took id `1204317` but had not committed
+when the group registered commits later, and `1204317 < claimed`
+forever: the group never sees it. Kafka `latest` and JetStream `new`
+skip that message the same way. For a service that wants live
+traffic this is the right trade - the message is from before it
+existed, by the only clock that matters to a new group.
+
+If a group must not miss anything produced around its own start, the
+answer is ordering, not a position: register it before the producer
+runs. On an empty topic the beginning and the head are the same place.
+
+## What it does not do
+
+- No id or timestamp target yet. "Start from Tuesday" is
+  `consumergroup.AtTime(tuesday)` handed to the rewind verb pointed
+  forward, and it inherits that verb's spec questions; the two shipped
+  constructors are the ones a brand-new group can use.
+- No effect on an existing group. Changing `Start` for a group that
+  has a cursor row changes nothing, and the register log line does not
+  fire because nothing was created. Delete the group and register it
+  again if that is what you want.
+- Bindings need nothing extra. A group with a [binding set](/concepts/fan-out/)
+  reads the same cursor row, so a bound group at the head starts at
+  the head.
+- The exception queue is untouched. A new group has no delivery rows,
+  which is exactly why this is one statement.
+
+## The statement
+
+The register transaction writes the cursor row with the head in every
+position column instead of the default `0`:
+
+```sql
+INSERT INTO consumer_group_cursor_1 (consumer_group_id, claimed, committed, settled_head)
+SELECT $1, head, head, head
+FROM (SELECT COALESCE(MAX(id), 0) AS head FROM message_log_1) AS log;
+```
+
+`settled_head` is the fresh-claim fence's "nothing uncommitted at or
+below this id" mark. Writing the head there is the skip described
+above, stated as a column value: the group treats everything at or
+below the head as settled, whether or not it was.

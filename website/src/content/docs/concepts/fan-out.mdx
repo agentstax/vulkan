@@ -39,10 +39,11 @@ RabbitMQ, the moment a message was consumed it was gone; the fourth
 queue you bind next quarter receives only what's published after it
 exists.
 
-(The flip side, honestly: there is no "start from now" option today. A
-new group on a topic with deep retention will read all of it — register
-the group early, or keep retention matched to what you'd want a new
-consumer to replay.)
+A group that only wants live traffic says so once, at registration:
+`Start: consumergroup.Head()` on its consumer config places the new
+cursor at the head of the log instead of 0
+([where a new group starts](/guides/new-group-start/)). The default
+stays the beginning.
 
 ## Replay
 

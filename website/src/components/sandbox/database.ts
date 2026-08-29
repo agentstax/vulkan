@@ -24,7 +24,7 @@ import { freeLeaseSql } from './sql/free-lease';
 import { getGroupSql } from './sql/get-group';
 import { protectedInsertUncompactedSql } from './sql/protected-insert-uncompacted';
 import { readMessagesSql } from './sql/read-messages';
-import { registerGroupCursorSql } from './sql/register-group-cursor';
+import { insertCursorBeginningSql } from './sql/register-group-cursor';
 import { registerGroupInsertSql } from './sql/register-group-insert';
 import { registerGroupLockSql } from './sql/register-group-lock';
 
@@ -134,7 +134,7 @@ export class VulkanDatabase {
 			if ((await this.getGroup(tx, name)) !== null) return;
 
 			const inserted = await tx.query<GroupRow>(registerGroupInsertSql, [demoTopicId, name]);
-			await tx.query(registerGroupCursorSql(demoTopicId), [inserted.rows[0]!.id]);
+			await tx.query(insertCursorBeginningSql(demoTopicId), [inserted.rows[0]!.id]);
 		});
 	}
 

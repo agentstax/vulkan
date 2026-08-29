@@ -22,7 +22,10 @@ import { protectedInsertUncompactedSqlTemplate } from './protected-insert-uncomp
 import { getGroupSql } from './get-group';
 import { registerGroupLockSql } from './register-group-lock';
 import { registerGroupInsertSql } from './register-group-insert';
-import { registerGroupCursorSqlTemplate } from './register-group-cursor';
+import {
+	insertCursorBeginningSqlTemplate,
+	insertCursorHeadSqlTemplate,
+} from './register-group-cursor';
 import { claimSnapshotSqlTemplate } from './claim-snapshot';
 import { claimCursorSqlTemplate } from './claim-cursor';
 import { claimLeaseSqlTemplate } from './claim-lease';
@@ -52,11 +55,9 @@ const protectedInsertTemplates = [
 	protectedInsertUncompactedSqlTemplate,
 ];
 
-const registerGroupTemplates = [
-	registerGroupLockSql,
-	registerGroupInsertSql,
-	registerGroupCursorSqlTemplate,
-];
+const registerGroupTemplates = [registerGroupLockSql, registerGroupInsertSql];
+
+const insertCursorTemplates = [insertCursorBeginningSqlTemplate, insertCursorHeadSqlTemplate];
 
 function goSource(repoPath: string): string {
 	return readFileSync(
@@ -101,6 +102,11 @@ describe('embedded SQL matches the Go source byte-exact', () => {
 			'consumergroup.registerGroup',
 			'pkg/consumergroup/controller/datastore/group.go',
 			registerGroupTemplates,
+		],
+		[
+			'consumergroup.insertCursor',
+			'pkg/consumergroup/controller/datastore/group.go',
+			insertCursorTemplates,
 		],
 		[
 			'messageconsumer.freshClaimMessagesWithCursor',

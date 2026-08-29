@@ -12,6 +12,7 @@ import (
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
 	iCommon "github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -96,7 +97,7 @@ func run() (err error) {
 	}
 	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group)
+	g, err := consumerDatastore.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
 	must(err)
 	owner, err := iCommon.NewConsumerGroupOwner(tp.SystemId, tp.Id, g.Id, g.Name)
 	must(err)

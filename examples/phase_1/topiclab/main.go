@@ -143,11 +143,11 @@ func run() (err error) {
 	time.Sleep(ttl + ttlMargin)
 
 	groupA := "topiclab.groupA" // topicA's own reader, fully caught up
-	groupAID := mustGroupID(cd.RegisterGroup(ctx, topicA.Id, groupA))
+	groupAID := mustGroupID(cd.RegisterGroup(ctx, topicA.Id, groupA, consumergroup.Beginning()))
 	setCursor(ctx, ds, topicA.Id, groupAID, 5, 5)
 
 	groupB := "topiclab.groupB" // topicB's reader, registered but never advances -- badly lagging
-	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB))
+	mustGroupID(cd.RegisterGroup(ctx, topicB.Id, groupB, consumergroup.Beginning()))
 
 	must(janitorDatastore.DropExpiredPartitions(ctx, topicA.Id, partitionSize, ttl, false, topicA.DeliveryLogMode))
 	assertPartitions(ctx, ds, topicA.Id, "topicA's partition 0 dropped, totally unaffected by topicB's lagging group", []int64{1})
@@ -160,7 +160,7 @@ func run() (err error) {
 	wpCInstance, err := wpC.Register(ctx, topicC.Name, topic.SchemaVersion(1))
 	must(err)
 	groupRoute := "topiclab.route"
-	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute))
+	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consumergroup.Beginning()))
 
 	headBefore := head(ctx, ds, topicC.Id)      // topicC is fresh, this is 0
 	publish(ctx, wpCInstance, "orders.created") // id headBefore+1, published BEFORE any binding exists
@@ -190,8 +190,8 @@ func run() (err error) {
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
-	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX))
-	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY))
+	groupXID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupX, consumergroup.Beginning()))
+	groupYID := mustGroupID(cd.RegisterGroup(ctx, topicD.Id, groupY, consumergroup.Beginning()))
 	_, err = cd.DeclareBindings(ctx, topicD.Id, groupXID, []string{"sliceX.*"}, time.Now())
 	must(err)
 	_, err = cd.DeclareBindings(ctx, topicD.Id, groupYID, []string{"sliceY.*"}, time.Now())

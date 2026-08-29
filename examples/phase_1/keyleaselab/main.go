@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -106,7 +107,7 @@ func run() (err error) {
 	must(err)
 	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
 	must(err)
-	g, err := cd.RegisterGroup(ctx, tp.Id, group)
+	g, err := cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
 	must(err)
 	groupId = g.Id
 

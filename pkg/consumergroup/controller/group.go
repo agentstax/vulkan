@@ -25,17 +25,20 @@ func (c *ConsumerGroupController) GetGroup(ctx context.Context, topicId int64, n
 	return toGroup(data), nil
 }
 
-// RegisterGroup creates the group and its cursor; an existing group is
-// returned untouched.
-func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int64, name string) (*consumergroup.Group, error) {
+// RegisterGroup creates the group and its cursor at start; an existing group
+// is returned untouched, its position kept.
+func (c *ConsumerGroupController) RegisterGroup(ctx context.Context, topicId int64, name string, start consumergroup.CursorPosition) (*consumergroup.Group, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
+	if err := start.Kind.Validate(); err != nil {
+		return nil, fmt.Errorf("start.Kind: %w", err)
+	}
 
-	data, err := c.datastore.RegisterGroup(ctx, topicId, name)
+	data, err := c.datastore.RegisterGroup(ctx, topicId, name, start)
 	if err != nil {
 		return nil, err
 	}

@@ -30,37 +30,8 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   Lease extend (scenario 11) is already designed as *Lease
   heartbeat/renewal (9b)* in the parking lot -- promote on its merit
   once these ship. Handler outcome shipped 2026-08-29 [0614] (see
-  HISTORY). Order for the rest: start from now (sketched, one
-  statement), strict per-key FIFO (sketched, DDL edit).
-  - A new consumer group has no "start from now" option — its cursor
-    starts at 0, so on a deep-retention topic every new group reads the
-    full history before it sees live traffic.
-    - Sketched 2026-08-29 (playground scenario 07). Today
-      consumergroup.registerGroup's cursor insert is `INSERT INTO
-      consumer_group_cursor_<id> (consumer_group_id) VALUES ($1)` -- every
-      position column defaults to 0. Peers: Kafka auto.offset.reset
-      (consulted ONLY when the group has no committed offset), JetStream
-      DeliverPolicy new/last/by-start-time (fixed at consumer creation).
-      Both are declaration-time config that applies once, on first
-      registration, and is ignored after -- that is the shape, not an
-      admin verb. Delta, one statement: when the declared start is
-      "latest", the cursor insert becomes `INSERT ... SELECT $1,
-      COALESCE(MAX(id), 0) AS claimed, same AS committed, same AS
-      settled_head FROM message_log_<id>` in the register transaction.
-      Semantics = "messages produced after the group was declared"; a
-      produce in flight with a lower id that commits after the register
-      is skipped -- identical to Kafka latest / JetStream new, document
-      it. (Exactness would reuse the freshclaim.go xid8 fence:
-      pending_head/pending_xmax at register, first claim settles it --
-      only if the edge turns out to matter.) Surface: a ConsumerConfig
-      field naming the cursor's starting position, zero = beginning,
-      name open under the vocabulary rules (cursor, not offset). Id/time
-      targets are the replay guide's PROPOSED RewindGroup verb pointed
-      forward -- same admin verb, and it inherits that guide's spec
-      questions (delivery rows in the window, safety rail, retention);
-      the new-group flag has none of them because no rows exist yet, so
-      it ships first and alone. Fan-out (deliveryconsumer) reads the same
-      cursor row, so bindings need nothing extra.
+  HISTORY); start from now shipped 2026-08-29 [0616]. Remaining: strict
+  per-key FIFO (sketched, DDL edit).
   - Added 2026-08-29 (sketched, not built): strict per-key FIFO -- the
     third no-verb gap, playground scenario 10. Today `defer` is
     exclusivity only: the key lease is held for the run and released when

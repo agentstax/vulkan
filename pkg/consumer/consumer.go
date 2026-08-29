@@ -120,7 +120,7 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 
 	c.logAlerts(ctx, current)
 
-	group, err := c.consumers.RegisterGroup(ctx, current.Id, consumerGroup)
+	group, err := c.consumers.RegisterGroup(ctx, current.Id, consumerGroup, c.Config.Start)
 	if err != nil {
 		return nil, err
 	}

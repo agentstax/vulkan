@@ -91,7 +91,7 @@ func run() (err error) {
 
 	step("seed a row in every topic-scoped table")
 
-	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group))
+	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	_, err = cd.DeclareBindings(ctx, tp.Id, groupId, []string{"orders.*"}, time.Now())
 	must(err)
 

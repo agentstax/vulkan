@@ -5,6 +5,23 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — a new group's cursor position: consumergroup.Head() [0616]
+
+- `consumergroup.CursorPosition{Kind}` with `Beginning()` / `Head()`;
+  `consumer.ConsumerConfig.Start` (zero = beginning) is used only when
+  `Register` creates the group's cursor row -- the register transaction
+  writes `MAX(id)` of the message log to claimed/committed/settled_head
+  through a second literal (`consumergroup.insertCursor`); an existing
+  group keeps its position. An in-flight lower id that commits after
+  the register is skipped, as Kafka latest / JetStream new do. The
+  registered-(created) line carries `committed`. Peer survey and the
+  rejected shapes (bool, enum-with-companion-fields) are in the record.
+- Doc site: guides/new-group-start (written first as the proposal),
+  fan-out and replay pointers; the replay guide's proposed RewindGroup
+  now takes the same type (`AtTime`, `AtMessageId` ship with it).
+  Sandbox mirror carries both cursor-insert templates; consumergrouplab
+  scenario 6 is the regression.
+
 ## 2026-08-29 — delivery_log keyed by its own id [0615]
 
 - The composite PK on `attempt` collided when a retry claim handed its
