@@ -37,10 +37,10 @@ pattern->pattern_regex.
   passed on rerun -- watch at the full-suite checkpoint; looks like
   pre-existing raciness, the sweep is name-only
 
-### 2. cron_job_cursor split + cron renames (0611 + 0613 cron scope)
+### 2. cron_job_cursor split + cron renames (0611 + 0613 cron scope) -- DONE 2026-08-29
 
-Public surface (CronJob/JobRequest Data->Payload, wire data->payload):
-doc page for cron updates FIRST as the proposal, reviewed before code.
+No cron doc page exists on the site, so there was nothing to gate on;
+[0613] served as the spec directly.
 
 - cron_job->cron_job_config; new 1:1 cron_job_cursor takes
   next/last_scheduled_time as next/last_scheduled_at + the due index
@@ -51,6 +51,16 @@ doc page for cron updates FIRST as the proposal, reviewed before code.
 - cron_job.data->payload: columns, Go fields, wire tags, declare path;
   grep labs for `->>'data'`
 - verify: cronlab, alertlab, metrics labs
+- verified: cron_job_config + cron_job_cursor live (register writes
+  both rows; unsuspend/replace are two-table transactions; due scan
+  and claim join; suspend splits config/cursor writes). Also renamed
+  under [0613]'s rule: JobRequest.ScheduledTime->ScheduledAt (wire
+  scheduled_at, caught by cronlab's `->>'scheduled_time'` NULL),
+  admin RegisterCronJob's data param->payload, alert
+  JobData->JobPayload chain (alert.Alert.Data left, flagged in the
+  record). Labs cronlab / alertlab / metricscollectorlab green
+  (metrics lab needs `just metrics-collector-lab` or a rebuilt
+  bin/vulkan -- stale binary was a false failure)
 
 ### 3. 0612 doc page (the proposal -- gate for chunk 4)
 

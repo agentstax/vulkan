@@ -15,7 +15,7 @@ import (
 )
 
 // RegisterCronJob creates the job named name if it doesn't exist and returns
-// it. Safe to call on every startup: schedule, data and cfg are applied on
+// it. Safe to call on every startup: schedule, payload and cfg are applied on
 // every call, so changing one and redeploying changes the job -- and two
 // services passing different values for one name will overwrite each other.
 //   - name: must not contain '*'.
@@ -27,7 +27,7 @@ import (
 //
 // A suspended job stays suspended across a call -- only SuspendCronJob and
 // UnsuspendCronJob change that.
-func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedule *cron.Schedule, data any, cfg *croncontroller.CronJobConfig) (*cron.CronJob, error) {
+func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedule *cron.Schedule, payload any, cfg *croncontroller.CronJobConfig) (*cron.CronJob, error) {
 	if name == "" {
 		return nil, errors.New("cron job name is required")
 	}
@@ -48,7 +48,7 @@ func (a *MessageAdmin) RegisterCronJob(ctx context.Context, name string, schedul
 		return nil, err
 	}
 
-	return a.cronJobController.Register(ctx, owner, name, schedule, data, cfg)
+	return a.cronJobController.Register(ctx, owner, name, schedule, payload, cfg)
 }
 
 // GetCronJob returns (nil, nil), not an error, if name isn't registered.
@@ -117,7 +117,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, err
 	}
 
-	request, err := cron.NewJobRequest(job.Id, job.Name, time.Now().UTC(), job.Data, job.Metadata)
+	request, err := cron.NewJobRequest(job.Id, job.Name, time.Now().UTC(), job.Payload, job.Metadata)
 	if err != nil {
 		return nil, err
 	}

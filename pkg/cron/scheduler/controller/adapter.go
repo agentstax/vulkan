@@ -6,14 +6,14 @@ import (
 
 func toDueCronJob(data *datastore.DueCronJobData) *DueCronJob {
 	return &DueCronJob{
-		Id:                data.Id,
-		Name:              data.Name,
-		Schedule:          data.Schedule,
-		Concurrency:       data.Concurrency,
-		Timeout:           data.Timeout,
-		Data:              data.Data,
-		Metadata:          data.Metadata,
-		NextScheduledTime: data.NextScheduledTime,
-		DbNow:             data.DbNow,
+		Id:              data.Id,
+		Name:            data.Name,
+		Schedule:        data.Schedule,
+		Concurrency:     data.Concurrency,
+		Timeout:         data.Timeout,
+		Payload:         data.Payload,
+		Metadata:        data.Metadata,
+		NextScheduledAt: data.NextScheduledAt,
+		DbNow:           data.DbNow,
 	}
 }

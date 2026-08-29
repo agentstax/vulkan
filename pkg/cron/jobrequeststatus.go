@@ -18,7 +18,7 @@ const (
 type JobRequestStatus struct {
 	ConsumerGroup string            `json:"group"`
 	MessageId     int64             `json:"message_id"`
-	ScheduledTime time.Time         `json:"scheduled_time"`
+	ScheduledAt   time.Time         `json:"scheduled_at"`
 	ProducedAt    time.Time         `json:"produced_at"`
 	Outcome       JobRequestOutcome `json:"outcome"`
 

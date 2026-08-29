@@ -26,21 +26,22 @@ func (d *CronJobDatastore) get(ctx context.Context, q datastore.Querier, name st
 	sql := `
 		-- vulkan: cron.get
 		SELECT
-			id,
-			COALESCE(system_id, 0),
-			COALESCE(topic_id, 0),
-			COALESCE(consumer_group_id, 0),
-			name,
-			schedule,
-			concurrency,
-			timeout_ns,
-			suspended,
-			data,
-			metadata,
-			next_scheduled_time,
-			last_scheduled_time
-		FROM cron_job
-		WHERE name = $1;
+			cron_job_config.id,
+			COALESCE(cron_job_config.system_id, 0),
+			COALESCE(cron_job_config.topic_id, 0),
+			COALESCE(cron_job_config.consumer_group_id, 0),
+			cron_job_config.name,
+			cron_job_config.schedule,
+			cron_job_config.concurrency,
+			cron_job_config.timeout_ns,
+			cron_job_config.suspended,
+			cron_job_config.payload,
+			cron_job_config.metadata,
+			cron_job_cursor.next_scheduled_at,
+			cron_job_cursor.last_scheduled_at
+		FROM cron_job_config
+		JOIN cron_job_cursor ON cron_job_cursor.cron_job_id = cron_job_config.id
+		WHERE cron_job_config.name = $1;
 	`
 	return d.scanCronJobData(q.QueryRow(ctx, sql, name))
 }
@@ -59,21 +60,22 @@ func (d *CronJobDatastore) list(ctx context.Context) ([]CronJobData, error) {
 	sql := `
 		-- vulkan: cron.list
 		SELECT
-			id,
-			COALESCE(system_id, 0),
-			COALESCE(topic_id, 0),
-			COALESCE(consumer_group_id, 0),
-			name,
-			schedule,
-			concurrency,
-			timeout_ns,
-			suspended,
-			data,
-			metadata,
-			next_scheduled_time,
-			last_scheduled_time
-		FROM cron_job
-		ORDER BY name;
+			cron_job_config.id,
+			COALESCE(cron_job_config.system_id, 0),
+			COALESCE(cron_job_config.topic_id, 0),
+			COALESCE(cron_job_config.consumer_group_id, 0),
+			cron_job_config.name,
+			cron_job_config.schedule,
+			cron_job_config.concurrency,
+			cron_job_config.timeout_ns,
+			cron_job_config.suspended,
+			cron_job_config.payload,
+			cron_job_config.metadata,
+			cron_job_cursor.next_scheduled_at,
+			cron_job_cursor.last_scheduled_at
+		FROM cron_job_config
+		JOIN cron_job_cursor ON cron_job_cursor.cron_job_id = cron_job_config.id
+		ORDER BY cron_job_config.name;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -103,7 +105,7 @@ func (d *CronJobDatastore) Suspend(ctx context.Context, name string) error {
 
 func (d *CronJobDatastore) suspend(ctx context.Context, name string) error {
 	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.suspend
-UPDATE cron_job SET suspended = true WHERE name = $1;`, name)
+UPDATE cron_job_config SET suspended = true WHERE name = $1;`, name)
 	if err != nil {
 		return err
 	}
@@ -140,15 +142,35 @@ func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
 		return fmt.Errorf("cron job %q stays suspended: %w", name, err)
 	}
 
-	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.unsuspend
-UPDATE cron_job SET suspended = false, next_scheduled_time = $2 WHERE name = $1;`, name, next)
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `
+		-- vulkan: cron.unsuspend
+		UPDATE cron_job_config SET suspended = false WHERE name = $1;
+	`, name)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return cron.ErrCronJobNotFound.With("cron_job", name)
 	}
-	d.Logger.InfoContext(ctx, "cron job unsuspended", "cron_job", name, "next_scheduled_time", next)
+
+	if _, err := tx.Exec(ctx, `
+		-- vulkan: cron.unsuspend
+		UPDATE cron_job_cursor SET next_scheduled_at = $2 WHERE cron_job_id = $1;
+	`, job.Id, next); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	d.Logger.InfoContext(ctx, "cron job unsuspended", "cron_job", name, "next_scheduled_at", next)
 	return nil
 }
 
@@ -183,8 +205,10 @@ func (d *CronJobDatastore) Delete(ctx context.Context, name string) error {
 }
 
 func (d *CronJobDatastore) delete(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.delete
-DELETE FROM cron_job WHERE name = $1;`, name)
+	tag, err := d.Datastore.Pool.Exec(ctx, `
+		-- vulkan: cron.delete
+		DELETE FROM cron_job_config WHERE name = $1;
+	`, name)
 	if err != nil {
 		return err
 	}
@@ -209,10 +233,10 @@ func (d *CronJobDatastore) scanCronJobData(row pgx.Row) (*CronJobData, error) {
 		&data.Concurrency,
 		&data.TimeoutNs,
 		&data.Suspended,
-		&data.Data,
+		&data.Payload,
 		&data.Metadata,
-		&data.NextScheduledTime,
-		&data.LastScheduledTime,
+		&data.NextScheduledAt,
+		&data.LastScheduledAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

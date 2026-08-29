@@ -61,18 +61,18 @@ func toCronJobSnapshot(data datastore.CronJobSnapshotData) (metrics.CronJobSnaps
 	}
 
 	snapshot := metrics.CronJobSnapshot{
-		Owner:             owner,
-		Name:              data.Name,
-		Schedule:          data.Schedule,
-		Suspended:         data.Suspended,
-		NextScheduledTime: data.NextScheduledTime,
-		DueFor:            time.Duration(data.DueForSecs * float64(time.Second)),
+		Owner:           owner,
+		Name:            data.Name,
+		Schedule:        data.Schedule,
+		Suspended:       data.Suspended,
+		NextScheduledAt: data.NextScheduledAt,
+		DueFor:          time.Duration(data.DueForSecs * float64(time.Second)),
 	}
-	if data.LastScheduledTime != nil {
-		snapshot.LastScheduledTime = *data.LastScheduledTime
+	if data.LastScheduledAt != nil {
+		snapshot.LastScheduledAt = *data.LastScheduledAt
 	}
 
-	// a suspended row's next_scheduled_time goes stale on purpose --
+	// a suspended row's next_scheduled_at goes stale on purpose --
 	// unsuspending recomputes it, so staleness is never overdue
 	snapshot.Overdue = !snapshot.Suspended && snapshot.DueFor > overdueThreshold
 	return snapshot, nil

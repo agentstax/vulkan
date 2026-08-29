@@ -10,10 +10,10 @@ import (
 )
 
 // Register resolves name to its job, creating it owned by owner if it
-// doesn't exist; an existing job takes schedule, data and cfg -- the newest
+// doesn't exist; an existing job takes schedule, payload and cfg -- the newest
 // declaration wins. cfg may be nil or a sparse struct -- WithDefaults fills
 // every field left unset, Validate rejects what's out of range.
-func (c *CronJobController) Register(ctx context.Context, owner *common.Owner, name string, schedule *cron.Schedule, data any, cfg *CronJobConfig) (*cron.CronJob, error) {
+func (c *CronJobController) Register(ctx context.Context, owner *common.Owner, name string, schedule *cron.Schedule, payload any, cfg *CronJobConfig) (*cron.CronJob, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
@@ -34,7 +34,7 @@ func (c *CronJobController) Register(ctx context.Context, owner *common.Owner, n
 		return nil, fmt.Errorf("timeout %v exceeds schedule %q's min rate %v", cfg.Timeout, schedule, schedule.MinRate())
 	}
 
-	registered, err := c.datastore.Register(ctx, owner, toRegisterCronJobData(name, schedule, data, cfg))
+	registered, err := c.datastore.Register(ctx, owner, toRegisterCronJobData(name, schedule, payload, cfg))
 	if err != nil {
 		return nil, err
 	}

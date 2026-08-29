@@ -7,32 +7,32 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 )
 
-// CronJobData models the cron_job table row exactly -- the nullable owner id
-// columns scan COALESCE'd to 0.
+// CronJobData is one cron_job_config row joined to its cron_job_cursor row
+// -- the nullable owner id columns scan COALESCE'd to 0.
 type CronJobData struct {
-	Id                int64           `db:"id"`
-	SystemId          int64           `db:"system_id"`
-	TopicId           int64           `db:"topic_id"`
-	ConsumerGroupId   int64           `db:"consumer_group_id"`
-	Name              string          `db:"name"`
-	Schedule          string          `db:"schedule"`
-	Concurrency       string          `db:"concurrency"`
-	TimeoutNs         int64           `db:"timeout_ns"`
-	Suspended         bool            `db:"suspended"`
-	Data              json.RawMessage `db:"data"`
-	Metadata          json.RawMessage `db:"metadata"`
-	NextScheduledTime time.Time       `db:"next_scheduled_time"`
-	LastScheduledTime *time.Time      `db:"last_scheduled_time"`
+	Id              int64           `db:"id"`
+	SystemId        int64           `db:"system_id"`
+	TopicId         int64           `db:"topic_id"`
+	ConsumerGroupId int64           `db:"consumer_group_id"`
+	Name            string          `db:"name"`
+	Schedule        string          `db:"schedule"`
+	Concurrency     string          `db:"concurrency"`
+	TimeoutNs       int64           `db:"timeout_ns"`
+	Suspended       bool            `db:"suspended"`
+	Payload         json.RawMessage `db:"payload"`
+	Metadata        json.RawMessage `db:"metadata"`
+	NextScheduledAt time.Time       `db:"next_scheduled_at"`
+	LastScheduledAt *time.Time      `db:"last_scheduled_at"`
 }
 
 // RegisterCronJobData is one declaration of a cron job, as RegisterCronJob
-// takes it. Schedule stays parsed -- next_scheduled_time is computed from it.
+// takes it. Schedule stays parsed -- next_scheduled_at is computed from it.
 type RegisterCronJobData struct {
 	Name        string
 	Schedule    *cron.Schedule
 	Concurrency string
 	TimeoutNs   int64
-	Data        any
+	Payload     any
 	Metadata    any
 }
 

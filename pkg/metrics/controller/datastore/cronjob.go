@@ -2,7 +2,7 @@ package datastore
 
 import "context"
 
-// CronJobSnapshots is every cron_job row with its owner columns and schedule
+// CronJobSnapshots is every cron job (config row joined to its cursor) with its owner columns and schedule
 // state.
 func (d *MetricsDatastore) CronJobSnapshots(ctx context.Context) ([]CronJobSnapshotData, error) {
 	var jobs []CronJobSnapshotData
@@ -26,10 +26,11 @@ func (d *MetricsDatastore) cronJobSnapshots(ctx context.Context) ([]CronJobSnaps
 			COALESCE(g.name, ''),
 			j.schedule,
 			j.suspended,
-			j.next_scheduled_time,
-			j.last_scheduled_time,
-			EXTRACT(EPOCH FROM (now() - j.next_scheduled_time)) AS due_for_secs
-		FROM cron_job j
+			c.next_scheduled_at,
+			c.last_scheduled_at,
+			EXTRACT(EPOCH FROM (now() - c.next_scheduled_at)) AS due_for_secs
+		FROM cron_job_config j
+		JOIN cron_job_cursor c ON c.cron_job_id = j.id
 		LEFT JOIN consumer_group_config g ON g.id = j.consumer_group_id
 		LEFT JOIN topic_config t ON t.id = COALESCE(j.topic_id, g.topic_id)     -- group rows reach their topic through the group
 		ORDER BY j.name;
@@ -44,7 +45,7 @@ func (d *MetricsDatastore) cronJobSnapshots(ctx context.Context) ([]CronJobSnaps
 	for rows.Next() {
 		var data CronJobSnapshotData
 		if err := rows.Scan(&data.Name, &data.SystemId, &data.TopicId, &data.ConsumerGroupId, &data.TopicName, &data.GroupName,
-			&data.Schedule, &data.Suspended, &data.NextScheduledTime, &data.LastScheduledTime, &data.DueForSecs); err != nil {
+			&data.Schedule, &data.Suspended, &data.NextScheduledAt, &data.LastScheduledAt, &data.DueForSecs); err != nil {
 			return nil, err
 		}
 		jobs = append(jobs, data)

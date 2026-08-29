@@ -122,7 +122,7 @@ func seedingSection(ctx context.Context) {
 	if partitionCountJob == nil {
 		die("RegisterSystem must seed the " + partitioncount.JobName + " cron job")
 	}
-	seeded, err := alertcontroller.ToJobData(partitionCountJob.Data)
+	seeded, err := alertcontroller.ToJobPayload(partitionCountJob.Payload)
 	must(err)
 	if seeded.Threshold != 0 || partitionCountJob.Concurrency != common.ConcurrencyDefer {
 		die(fmt.Sprintf("seeded job: want threshold 0 + defer, got %d %s", seeded.Threshold, partitionCountJob.Concurrency))
@@ -170,7 +170,7 @@ func seedingSection(ctx context.Context) {
 
 	reread, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
 	must(err)
-	redeclared, err := alertcontroller.ToJobData(reread.Data)
+	redeclared, err := alertcontroller.ToJobPayload(reread.Payload)
 	must(err)
 	if redeclared.Threshold != 7 {
 		die(fmt.Sprintf("declared threshold must apply on re-register, got %d", redeclared.Threshold))

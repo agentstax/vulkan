@@ -55,9 +55,9 @@ SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));`, declared.Name); err
 		return nil, err
 	}
 
-	insertSql := `
+	insertConfigSql := `
 		-- vulkan: cron.register
-		INSERT INTO cron_job (
+		INSERT INTO cron_job_config (
 			system_id,
 			topic_id,
 			consumer_group_id,
@@ -65,31 +65,31 @@ SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));`, declared.Name); err
 			schedule,
 			concurrency,
 			timeout_ns,
-			data,
-			metadata,
-			next_scheduled_time
+			payload,
+			metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '{}'::jsonb), COALESCE($9, '{}'::jsonb), $10)
-		RETURNING
-			id,
-			COALESCE(system_id, 0),
-			COALESCE(topic_id, 0),
-			COALESCE(consumer_group_id, 0),
-			name,
-			schedule,
-			concurrency,
-			timeout_ns,
-			suspended,
-			data,
-			metadata,
-			next_scheduled_time,
-			last_scheduled_time;
+		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '{}'::jsonb), COALESCE($9, '{}'::jsonb))
+		RETURNING id;
 	`
-	job, err := d.scanCronJobData(tx.QueryRow(ctx, insertSql,
+	var id int64
+	if err := tx.QueryRow(ctx, insertConfigSql,
 		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(),
 		declared.Name, declared.Schedule.String(), declared.Concurrency, declared.TimeoutNs,
-		declared.Data, declared.Metadata, next,
-	))
+		declared.Payload, declared.Metadata,
+	).Scan(&id); err != nil {
+		return nil, err
+	}
+
+	insertCursorSql := `
+		-- vulkan: cron.register
+		INSERT INTO cron_job_cursor (cron_job_id, next_scheduled_at)
+		VALUES ($1, $2);
+	`
+	if _, err := tx.Exec(ctx, insertCursorSql, id, next); err != nil {
+		return nil, err
+	}
+
+	job, err := d.get(ctx, tx, declared.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +98,6 @@ SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));`, declared.Name); err
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "cron job registered (created)", "cron_job", job.Name, "cron_job_id", job.Id, "schedule", job.Schedule, "next_scheduled_time", job.NextScheduledTime)
+	d.Logger.InfoContext(ctx, "cron job registered (created)", "cron_job", job.Name, "cron_job_id", job.Id, "schedule", job.Schedule, "next_scheduled_at", job.NextScheduledAt)
 	return job, nil
 }

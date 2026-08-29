@@ -31,7 +31,8 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 	// so every FK's referencing table is gone before its target drops.
 	for _, table := range []string{
 		"migration_log",
-		"cron_job",
+		"cron_job_cursor",
+		"cron_job_config",
 		"worker_instance",
 		"worker_config_log",
 		"worker_config",

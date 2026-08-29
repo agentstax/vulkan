@@ -123,11 +123,11 @@ func validationSection(ctx context.Context) {
 	// single-scheduled-time pass must register it, seeded on a real Feb 29
 	feb29, err := mAdmin.RegisterCronJob(ctx, prefix+".feb29", parse("0 0 29 2 *"), nil, nil)
 	must(err)
-	if feb29.NextScheduledTime.UTC().Month() != time.February || feb29.NextScheduledTime.UTC().Day() != 29 {
-		die(fmt.Sprintf("feb29 job seeded to %v, want a Feb 29", feb29.NextScheduledTime))
+	if feb29.NextScheduledAt.UTC().Month() != time.February || feb29.NextScheduledAt.UTC().Day() != 29 {
+		die(fmt.Sprintf("feb29 job seeded to %v, want a Feb 29", feb29.NextScheduledAt))
 	}
 	must(mAdmin.DestroyCronJob(ctx, prefix+".feb29"))
-	fmt.Printf("  ✓ Feb-29 schedule registered, seeded to %s\n", feb29.NextScheduledTime.UTC().Format("2006-01-02"))
+	fmt.Printf("  ✓ Feb-29 schedule registered, seeded to %s\n", feb29.NextScheduledAt.UTC().Format("2006-01-02"))
 
 	first, err := mAdmin.RegisterCronJob(ctx, prefix+".redeclare", hourly, map[string]string{"kind": "lab"}, nil)
 	must(err)
@@ -147,8 +147,8 @@ func validationSection(ctx context.Context) {
 	if redeclared.Schedule != daily.String() {
 		die(fmt.Sprintf("re-registered schedule = %q, want %q", redeclared.Schedule, daily))
 	}
-	if !redeclared.NextScheduledTime.After(time.Now().UTC()) {
-		die(fmt.Sprintf("a schedule change must re-seed the next scheduled time, got %v", redeclared.NextScheduledTime))
+	if !redeclared.NextScheduledAt.After(time.Now().UTC()) {
+		die(fmt.Sprintf("a schedule change must re-seed the next scheduled time, got %v", redeclared.NextScheduledAt))
 	}
 	if !redeclared.Suspended {
 		die("a re-register must leave a suspended job suspended")
@@ -257,8 +257,8 @@ func suspendSection(ctx context.Context) {
 	must(mAdmin.UnsuspendCronJob(ctx, prefix+".suspend"))
 	unsuspended, err := mAdmin.GetCronJob(ctx, prefix+".suspend")
 	must(err)
-	if !unsuspended.NextScheduledTime.After(time.Now()) {
-		die(fmt.Sprintf("unsuspend must re-seed next_scheduled_time in the future, got %v", unsuspended.NextScheduledTime))
+	if !unsuspended.NextScheduledAt.After(time.Now()) {
+		die(fmt.Sprintf("unsuspend must re-seed next_scheduled_at in the future, got %v", unsuspended.NextScheduledAt))
 	}
 	time.Sleep(5 * schedulerPollRate)
 	if got := messageCount(ctx, key); got != 0 {
@@ -288,7 +288,7 @@ func poisonSection(ctx context.Context) {
 
 	// registration validated the schedule, so corrupt the row directly --
 	// every ClaimDueCronJob's ParseSchedule now fails for this row
-	exec(ctx, `UPDATE cron_job SET schedule = 'not a schedule' WHERE id = $1;`, poisoned.Id)
+	exec(ctx, `UPDATE cron_job_config SET schedule = 'not a schedule' WHERE id = $1;`, poisoned.Id)
 	backdate(ctx, poisoned.Id, time.Now().UTC().Add(-2*time.Hour))
 
 	backdate(ctx, sibling.Id, time.Now().UTC().Add(-10*time.Second))
@@ -532,10 +532,10 @@ func statusSection(ctx context.Context) {
 		mu.Lock()
 		defer mu.Unlock()
 		if firstScheduledTime.IsZero() {
-			firstScheduledTime = request.ScheduledTime
+			firstScheduledTime = request.ScheduledAt
 		}
-		attempts[request.ScheduledTime]++
-		if request.ScheduledTime.Equal(firstScheduledTime) && attempts[request.ScheduledTime] > 1 {
+		attempts[request.ScheduledAt]++
+		if request.ScheduledAt.Equal(firstScheduledTime) && attempts[request.ScheduledAt] > 1 {
 			return nil
 		}
 		return errors.New("scripted failure")
@@ -720,16 +720,16 @@ func cleanupGroups() {
 // --- assertion helpers ---
 
 func backdate(ctx context.Context, jobId int64, to time.Time) {
-	exec(ctx, `UPDATE cron_job SET next_scheduled_time = $1 WHERE id = $2;`, to, jobId)
+	exec(ctx, `UPDATE cron_job_cursor SET next_scheduled_at = $1 WHERE cron_job_id = $2;`, to, jobId)
 }
 
 // waitAdvanced returns once the scheduler has moved the row's
-// next_scheduled_time back into the future -- its tick on the row is done.
+// next_scheduled_at back into the future -- its tick on the row is done.
 func waitAdvanced(ctx context.Context, jobId int64) {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		var advanced bool
-		must(ds.Pool.QueryRow(ctx, `SELECT next_scheduled_time > now() FROM cron_job WHERE id = $1;`, jobId).Scan(&advanced))
+		must(ds.Pool.QueryRow(ctx, `SELECT next_scheduled_at > now() FROM cron_job_cursor WHERE cron_job_id = $1;`, jobId).Scan(&advanced))
 		if advanced {
 			return
 		}
@@ -745,7 +745,7 @@ func messageCount(ctx context.Context, compactionKey string) int64 {
 
 func producedScheduledTimes(ctx context.Context, compactionKey string) []time.Time {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(
-		`SELECT payload->>'scheduled_time' FROM message_log_%d WHERE compaction_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
+		`SELECT payload->>'scheduled_at' FROM message_log_%d WHERE compaction_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
 	must(err)
 	defer rows.Close()
 

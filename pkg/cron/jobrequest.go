@@ -17,30 +17,30 @@ const TopicName = common.SystemTopicPrefix + "job_requests"
 // per due scheduled time (RunCronJob on demand) to __system.job_requests with
 // the job's name as the routing key; consumers bind job names.
 type JobRequest struct {
-	CronJobId     int64           `json:"cron_job_id"`
-	Name          string          `json:"cron_job"`
-	ScheduledTime time.Time       `json:"scheduled_time"` // the scheduled time this request represents, not when it was produced
-	Data          json.RawMessage `json:"data"`
-	Metadata      json.RawMessage `json:"metadata"`
+	CronJobId   int64           `json:"cron_job_id"`
+	Name        string          `json:"cron_job"`
+	ScheduledAt time.Time       `json:"scheduled_at"` // the scheduled time this request represents, not when it was produced
+	Payload     json.RawMessage `json:"payload"`
+	Metadata    json.RawMessage `json:"metadata"`
 }
 
-func NewJobRequest(cronJobId int64, name string, scheduledTime time.Time, data, metadata json.RawMessage) (*JobRequest, error) {
+func NewJobRequest(cronJobId int64, name string, scheduledAt time.Time, payload, metadata json.RawMessage) (*JobRequest, error) {
 	if cronJobId <= 0 {
 		return nil, fmt.Errorf("cronJobId must be > 0, got %d", cronJobId)
 	}
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
-	if scheduledTime.IsZero() {
-		return nil, errors.New("scheduledTime is required")
+	if scheduledAt.IsZero() {
+		return nil, errors.New("scheduledAt is required")
 	}
 
 	return &JobRequest{
-		CronJobId:     cronJobId,
-		Name:          name,
-		ScheduledTime: scheduledTime,
-		Data:          data,
-		Metadata:      metadata,
+		CronJobId:   cronJobId,
+		Name:        name,
+		ScheduledAt: scheduledAt,
+		Payload:     payload,
+		Metadata:    metadata,
 	}, nil
 }
 
@@ -51,9 +51,9 @@ func NewJobRequest(cronJobId int64, name string, scheduledTime time.Time, data, 
 // VERBATIM across the payload bits. NO hash: the idempotency table is shared
 // per-topic, and a same-ms hash collision would silently swallow another
 // job's request.
-func IdempotencyKey(scheduledTime time.Time, cronJobId int64) uuid.UUID {
+func IdempotencyKey(scheduledAt time.Time, cronJobId int64) uuid.UUID {
 	var k uuid.UUID
-	ms := uint64(scheduledTime.UnixMilli())
+	ms := uint64(scheduledAt.UnixMilli())
 	k[0] = byte(ms >> 40)
 	k[1] = byte(ms >> 32)
 	k[2] = byte(ms >> 24)

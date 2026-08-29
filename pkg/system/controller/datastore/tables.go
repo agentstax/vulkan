@@ -188,11 +188,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS worker_config_system_name ON worker_config (na
 		}
 	}
 
-	// cron_job: named schedules. Owner FKs are GC metadata only -- all NULL
-	// = standalone.
-	createCronJobSql := `
+	// cron_job_config: named schedules. Owner FKs are GC metadata only -- all
+	// NULL = standalone.
+	createCronJobConfigSql := `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS cron_job (
+		CREATE TABLE IF NOT EXISTS cron_job_config (
 			id BIGSERIAL PRIMARY KEY,
 			system_id BIGINT REFERENCES system_config (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic_config (id) ON DELETE CASCADE,
@@ -202,24 +202,38 @@ CREATE UNIQUE INDEX IF NOT EXISTS worker_config_system_name ON worker_config (na
 			suspended BOOLEAN NOT NULL DEFAULT false,        -- a suspended job keeps its schedule but never produces
 			concurrency TEXT NOT NULL DEFAULT 'allow',       -- -> MessageOptions.Concurrency
 			timeout_ns BIGINT NOT NULL,                      -- nanoseconds; -> MessageOptions.Timeout
-			data JSONB NOT NULL DEFAULT '{}',                -- opaque payload
+			payload JSONB NOT NULL DEFAULT '{}',             -- the job's opaque document, produced with every request
 			metadata JSONB NOT NULL DEFAULT '{}',
-			next_scheduled_time TIMESTAMPTZ NOT NULL,
-			last_scheduled_time TIMESTAMPTZ,                 -- the scheduled time most recently produced
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
 			CHECK (concurrency IN ('allow', 'defer')),
 			CHECK (timeout_ns > 0)
 		);
 	`
-	if _, err := tx.Exec(ctx, createCronJobSql); err != nil {
+	if _, err := tx.Exec(ctx, createCronJobConfigSql); err != nil {
 		return err
 	}
 
-	createCronJobDueIndexSql := `
+	// cron_job_cursor: the scheduler's position in each job's schedule --
+	// the runtime sibling of the near-static config row, 1:1 by cron_job_id.
+	createCronJobCursorSql := `
 		-- vulkan: system.createSystemTables
-		CREATE INDEX IF NOT EXISTS cron_job_due ON cron_job (next_scheduled_time) WHERE NOT suspended;
+		CREATE TABLE IF NOT EXISTS cron_job_cursor (
+			cron_job_id BIGINT NOT NULL PRIMARY KEY REFERENCES cron_job_config (id) ON DELETE CASCADE,
+			next_scheduled_at TIMESTAMPTZ NOT NULL,
+			last_scheduled_at TIMESTAMPTZ               -- the scheduled time most recently produced
+		);
 	`
-	if _, err := tx.Exec(ctx, createCronJobDueIndexSql); err != nil {
+	if _, err := tx.Exec(ctx, createCronJobCursorSql); err != nil {
+		return err
+	}
+
+	// the due scan; suspended lives on the config row, so the filter is the
+	// scan's join, not this index
+	createCronJobCursorDueIndexSql := `
+		-- vulkan: system.createSystemTables
+		CREATE INDEX IF NOT EXISTS cron_job_cursor_due ON cron_job_cursor (next_scheduled_at);
+	`
+	if _, err := tx.Exec(ctx, createCronJobCursorDueIndexSql); err != nil {
 		return err
 	}
 

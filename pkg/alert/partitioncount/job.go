@@ -22,7 +22,7 @@ func NewJob(cfg *JobConfig) (*alertcontroller.Job, error) {
 		return nil, err
 	}
 
-	data, err := alert.NewJobData(cfg.Threshold)
+	data, err := alert.NewJobPayload(cfg.Threshold)
 	if err != nil {
 		return nil, err
 	}

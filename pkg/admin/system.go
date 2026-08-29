@@ -58,7 +58,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 	for _, job := range []*alertcontroller.Job{partitionCountJob, compactionReadCostJob} {
-		if _, err := a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Data, job.Config); err != nil {
+		if _, err := a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Payload, job.Config); err != nil {
 			return err
 		}
 	}

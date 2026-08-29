@@ -22,40 +22,51 @@ func (d *CronJobDatastore) replaceConfig(ctx context.Context, found *CronJobData
 		next = &seeded
 	}
 
-	sql := `
+	tx, err := d.Datastore.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	updateConfigSql := `
 		-- vulkan: cron.replaceConfig
-		UPDATE cron_job
+		UPDATE cron_job_config
 		SET
 			schedule = $2,
 			concurrency = $3,
 			timeout_ns = $4,
-			data = COALESCE($5, '{}'::jsonb),
-			metadata = COALESCE($6, '{}'::jsonb),
-			next_scheduled_time = COALESCE($7, next_scheduled_time)
-		WHERE id = $1
-		RETURNING
-			id,
-			COALESCE(system_id, 0),
-			COALESCE(topic_id, 0),
-			COALESCE(consumer_group_id, 0),
-			name,
-			schedule,
-			concurrency,
-			timeout_ns,
-			suspended,
-			data,
-			metadata,
-			next_scheduled_time,
-			last_scheduled_time;
+			payload = COALESCE($5, '{}'::jsonb),
+			metadata = COALESCE($6, '{}'::jsonb)
+		WHERE id = $1;
 	`
-	row := d.Datastore.Pool.QueryRow(ctx, sql, found.Id,
-		declared.Schedule.String(), declared.Concurrency, declared.TimeoutNs, declared.Data, declared.Metadata, next)
-	updated, err := d.scanCronJobData(row)
+	tag, err := tx.Exec(ctx, updateConfigSql, found.Id,
+		declared.Schedule.String(), declared.Concurrency, declared.TimeoutNs, declared.Payload, declared.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, cron.ErrDeclarationInterrupted.With("cron_job", found.Name)
+	}
+
+	if next != nil {
+		if _, err := tx.Exec(ctx, `
+			-- vulkan: cron.replaceConfig
+			UPDATE cron_job_cursor SET next_scheduled_at = $2 WHERE cron_job_id = $1;
+		`, found.Id, *next); err != nil {
+			return nil, err
+		}
+	}
+
+	updated, err := d.get(ctx, tx, found.Name)
 	if err != nil {
 		return nil, err
 	}
 	if updated == nil {
 		return nil, cron.ErrDeclarationInterrupted.With("cron_job", found.Name)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 
 	changes := configChanges(found, updated)
@@ -66,7 +77,7 @@ func (d *CronJobDatastore) replaceConfig(ctx context.Context, found *CronJobData
 
 	// the only signal that two services declare this job differently
 	d.Logger.InfoContext(ctx, "cron job registered (config replaced)",
-		append([]any{"cron_job", updated.Name, "cron_job_id", updated.Id, "next_scheduled_time", updated.NextScheduledTime}, changes...)...)
+		append([]any{"cron_job", updated.Name, "cron_job_id", updated.Id, "next_scheduled_at", updated.NextScheduledAt}, changes...)...)
 	return updated, nil
 }
 
@@ -90,8 +101,8 @@ func configChanges(found *CronJobData, updated *CronJobData) []any {
 
 	// both sides are jsonb-normalized by the database, so equal values print
 	// identical text
-	if string(found.Data) != string(updated.Data) {
-		changes = append(changes, "data", replaced(string(found.Data), string(updated.Data)))
+	if string(found.Payload) != string(updated.Payload) {
+		changes = append(changes, "payload", replaced(string(found.Payload), string(updated.Payload)))
 	}
 	if string(found.Metadata) != string(updated.Metadata) {
 		changes = append(changes, "metadata", replaced(string(found.Metadata), string(updated.Metadata)))

@@ -28,7 +28,7 @@ func NewCronJobController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfi
 		return nil, err
 	}
 
-	cronJobDatastore, err := datastore.NewCronJobDatastore(ds, &datastore.CronJobDatastoreConfig{
+	cronJobPayloadstore, err := datastore.NewCronJobDatastore(ds, &datastore.CronJobDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -38,6 +38,6 @@ func NewCronJobController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfi
 
 	return &CronJobController{
 		Logger:    cfg.Logger,
-		datastore: cronJobDatastore,
+		datastore: cronJobPayloadstore,
 	}, nil
 }

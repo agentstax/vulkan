@@ -44,12 +44,14 @@ The renames: `binding_log.attempt_at`→`attempted_at`,
 `cron_job.data`→`payload` — a public-surface change:
 `cron.CronJob.Data` and `cron.JobRequest.Data` become `Payload`,
 wire tag `data`→`payload`, plus the declare path's field.
+`JobRequest.ScheduledTime`→`ScheduledAt` (wire `scheduled_at`)
+rides the instants rule. `alert.Alert.Data` stays — the alert
+message's own field, an open candidate, not cron payload plumbing.
 
 ## Consequences
 
-- Unchanged and now deliberate: `head_id` and the cursor's
-  role-named message ids, `error`/`last_error`, bare-vs-prefixed
-  `token`, `status`, `can_run_after`.
+- Unchanged and deliberate: `head_id`, the cursor's role-named
+  message ids, `error`/`last_error`, `token`, `can_run_after`.
 - The `_at`/`_after` and `_ns` rules are machine-checkable — a
   tools/conventions walk over the schema (or tbls `schema.json`)
   should enforce them so drift cannot recur.

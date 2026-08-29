@@ -13,19 +13,19 @@ import (
 
 // DueCronJob is the locked row snapshot one producing transaction works from.
 type DueCronJob struct {
-	Id                int64
-	Name              string
-	Schedule          string
-	Concurrency       common.ConcurrencyPolicy
-	Timeout           time.Duration
-	Data              json.RawMessage
-	Metadata          json.RawMessage
-	NextScheduledTime time.Time
-	DbNow             time.Time
+	Id              int64
+	Name            string
+	Schedule        string
+	Concurrency     common.ConcurrencyPolicy
+	Timeout         time.Duration
+	Payload         json.RawMessage
+	Metadata        json.RawMessage
+	NextScheduledAt time.Time
+	DbNow           time.Time
 }
 
 // ListDue returns the ids of every unsuspended row whose
-// next_scheduled_time has passed, newest-due first.
+// next_scheduled_at has passed, newest-due first.
 func (c *CronSchedulerController) ListDue(ctx context.Context) ([]int64, error) {
 	return c.datastore.ListDue(ctx)
 }
@@ -63,7 +63,7 @@ func (c *CronSchedulerController) Advance(ctx context.Context, q iDatastore.Quer
 }
 
 // Suspend sets the row suspended, in the caller's producing
-// transaction -- next_scheduled_time is NOT NULL and an unsatisfiable
+// transaction -- next_scheduled_at is NOT NULL and an unsatisfiable
 // schedule has no honest value for it.
 func (c *CronSchedulerController) Suspend(ctx context.Context, q iDatastore.Querier, id int64, produced time.Time) error {
 	if id <= 0 {

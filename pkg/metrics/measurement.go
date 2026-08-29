@@ -23,7 +23,7 @@ const (
 // cron-job schedule health, fleet-wide
 const (
 	MetricOverdueJobs   = "vulkan.cron.state.overdue_jobs"   // unsuspended jobs due past the overdue threshold -- nothing is producing them
-	MetricOldestDueAge  = "vulkan.cron.state.oldest_due_age" // largest now() - next_scheduled_time among unsuspended jobs, in ms
+	MetricOldestDueAge  = "vulkan.cron.state.oldest_due_age" // largest now() - next_scheduled_at among unsuspended jobs, in ms
 	MetricSuspendedJobs = "vulkan.cron.state.suspended_jobs" // jobs with suspended = true, excluded from the overdue count
 )
 

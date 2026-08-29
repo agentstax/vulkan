@@ -12,18 +12,18 @@ import (
 type Job struct {
 	Name     string
 	Schedule *cron.Schedule
-	Data     *alert.JobData
+	Payload  *alert.JobPayload
 	Config   *croncontroller.CronJobConfig
 }
 
 // NewJob parses schedule so a bad expression fails here, not at register.
 // cfg may be nil.
-func NewJob(name string, schedule string, data *alert.JobData, cfg *croncontroller.CronJobConfig) (*Job, error) {
+func NewJob(name string, schedule string, payload *alert.JobPayload, cfg *croncontroller.CronJobConfig) (*Job, error) {
 	if name == "" {
 		return nil, errors.New("job name is required")
 	}
-	if data == nil {
-		return nil, errors.New("job data is required")
+	if payload == nil {
+		return nil, errors.New("job payload is required")
 	}
 
 	parsed, err := cron.ParseSchedule(schedule)
@@ -33,7 +33,7 @@ func NewJob(name string, schedule string, data *alert.JobData, cfg *croncontroll
 	return &Job{
 		Name:     name,
 		Schedule: parsed,
-		Data:     data,
+		Payload:  payload,
 		Config:   cfg,
 	}, nil
 }

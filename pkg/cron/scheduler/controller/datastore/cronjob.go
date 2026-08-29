@@ -24,9 +24,11 @@ func (d *CronSchedulerDatastore) ListDue(ctx context.Context) ([]int64, error) {
 func (d *CronSchedulerDatastore) listDue(ctx context.Context) ([]int64, error) {
 	sql := `
 		-- vulkan: cronscheduler.listDue
-		SELECT id FROM cron_job
-		WHERE next_scheduled_time <= now() AND NOT suspended
-		ORDER BY next_scheduled_time;
+		SELECT cron_job_config.id
+		FROM cron_job_cursor
+		JOIN cron_job_config ON cron_job_config.id = cron_job_cursor.cron_job_id
+		WHERE cron_job_cursor.next_scheduled_at <= now() AND NOT cron_job_config.suspended
+		ORDER BY cron_job_cursor.next_scheduled_at;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -55,26 +57,31 @@ func (d *CronSchedulerDatastore) ClaimDue(ctx context.Context, q datastore.Queri
 }
 
 func (d *CronSchedulerDatastore) claimDue(ctx context.Context, q datastore.Querier, id int64) (*DueCronJobData, error) {
+	// FOR UPDATE locks both joined rows -- the cursor row Advance writes and
+	// the config row Suspend writes
 	sql := `
 		-- vulkan: cronscheduler.claimDue
 		SELECT
-			id,
-			name,
-			schedule,
-			concurrency,
-			timeout_ns,
-			data,
-			metadata,
-			next_scheduled_time,
+			cron_job_config.id,
+			cron_job_config.name,
+			cron_job_config.schedule,
+			cron_job_config.concurrency,
+			cron_job_config.timeout_ns,
+			cron_job_config.payload,
+			cron_job_config.metadata,
+			cron_job_cursor.next_scheduled_at,
 			now()
-		FROM cron_job
-		WHERE id = $1 AND next_scheduled_time <= now() AND NOT suspended
+		FROM cron_job_cursor
+		JOIN cron_job_config ON cron_job_config.id = cron_job_cursor.cron_job_id
+		WHERE cron_job_config.id = $1
+			AND cron_job_cursor.next_scheduled_at <= now()
+			AND NOT cron_job_config.suspended
 		FOR UPDATE SKIP LOCKED;
 	`
 	var data DueCronJobData
 	var timeoutNs int64
 	err := q.QueryRow(ctx, sql, id).Scan(&data.Id, &data.Name, &data.Schedule, &data.Concurrency,
-		&timeoutNs, &data.Data, &data.Metadata, &data.NextScheduledTime, &data.DbNow)
+		&timeoutNs, &data.Payload, &data.Metadata, &data.NextScheduledAt, &data.DbNow)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -93,20 +100,31 @@ func (d *CronSchedulerDatastore) Advance(ctx context.Context, q datastore.Querie
 }
 
 func (d *CronSchedulerDatastore) advance(ctx context.Context, q datastore.Querier, id int64, next time.Time, produced time.Time) error {
-	_, err := q.Exec(ctx, `-- vulkan: cronscheduler.advance
-UPDATE cron_job SET next_scheduled_time = $2, last_scheduled_time = $3 WHERE id = $1;`, id, next, produced)
+	_, err := q.Exec(ctx, `
+		-- vulkan: cronscheduler.advance
+		UPDATE cron_job_cursor SET next_scheduled_at = $2, last_scheduled_at = $3 WHERE cron_job_id = $1;
+	`, id, next, produced)
 	return err
 }
 
 // Suspend sets the row suspended, in the caller's producing transaction
-// -- next_scheduled_time is NOT NULL and an unsatisfiable schedule has no
+// -- next_scheduled_at is NOT NULL and an unsatisfiable schedule has no
 // honest value for it. No retry, the transaction owns its own error handling.
 func (d *CronSchedulerDatastore) Suspend(ctx context.Context, q datastore.Querier, id int64, produced time.Time) error {
 	return d.suspend(ctx, q, id, produced)
 }
 
 func (d *CronSchedulerDatastore) suspend(ctx context.Context, q datastore.Querier, id int64, produced time.Time) error {
-	_, err := q.Exec(ctx, `-- vulkan: cronscheduler.suspend
-UPDATE cron_job SET suspended = true, last_scheduled_time = $2 WHERE id = $1;`, id, produced)
+	if _, err := q.Exec(ctx, `
+		-- vulkan: cronscheduler.suspend
+		UPDATE cron_job_config SET suspended = true WHERE id = $1;
+	`, id); err != nil {
+		return err
+	}
+
+	_, err := q.Exec(ctx, `
+		-- vulkan: cronscheduler.suspend
+		UPDATE cron_job_cursor SET last_scheduled_at = $2 WHERE cron_job_id = $1;
+	`, id, produced)
 	return err
 }

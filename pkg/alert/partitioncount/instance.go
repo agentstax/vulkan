@@ -87,7 +87,7 @@ func (i *PartitionCountInstance) consume(ctx context.Context) error {
 }
 
 func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
-	jobData, err := alertcontroller.ToJobData(request.Data)
+	jobPayload, err := alertcontroller.ToJobPayload(request.Payload)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, request *cr
 			continue
 		}
 
-		found, err := i.provisioner.controller.Evaluate(ctx, owner, jobData.Threshold)
+		found, err := i.provisioner.controller.Evaluate(ctx, owner, jobPayload.Threshold)
 		if err != nil {
 			failed++
 			errs = errors.Join(errs, err)

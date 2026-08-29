@@ -119,19 +119,19 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 // cronJobDocument is one cron_job row's json shape -- the get-shape every
 // cron-job-echoing command shares. Durations render with units.
 type cronJobDocument struct {
-	CronJobId         int64           `json:"cron_job_id"`
-	SystemId          int64           `json:"system_id"`
-	TopicId           int64           `json:"topic_id"`
-	GroupId           int64           `json:"group_id"`
-	CronJob           string          `json:"cron_job"`
-	Schedule          string          `json:"schedule"`
-	Concurrency       string          `json:"concurrency"`
-	Timeout           string          `json:"timeout"`
-	Suspended         bool            `json:"suspended"`
-	Data              json.RawMessage `json:"data"`
-	Metadata          json.RawMessage `json:"metadata"`
-	NextScheduledTime time.Time       `json:"next_scheduled_time"`
-	LastScheduledTime *time.Time      `json:"last_scheduled_time"` // null until the scheduler first produces the job
+	CronJobId       int64           `json:"cron_job_id"`
+	SystemId        int64           `json:"system_id"`
+	TopicId         int64           `json:"topic_id"`
+	GroupId         int64           `json:"group_id"`
+	CronJob         string          `json:"cron_job"`
+	Schedule        string          `json:"schedule"`
+	Concurrency     string          `json:"concurrency"`
+	Timeout         string          `json:"timeout"`
+	Suspended       bool            `json:"suspended"`
+	Payload         json.RawMessage `json:"payload"`
+	Metadata        json.RawMessage `json:"metadata"`
+	NextScheduledAt time.Time       `json:"next_scheduled_at"`
+	LastScheduledAt *time.Time      `json:"last_scheduled_at"` // null until the scheduler first produces the job
 }
 
 // cronJobGetDocument is cron get's json result; the not-found case is data
@@ -146,19 +146,19 @@ type cronJobGetDocument struct {
 
 func toCronJobDocument(job *cron.CronJob) cronJobDocument {
 	return cronJobDocument{
-		CronJobId:         job.Id,
-		SystemId:          job.SystemId,
-		TopicId:           job.TopicId,
-		GroupId:           job.ConsumerGroupId,
-		CronJob:           job.Name,
-		Schedule:          job.Schedule,
-		Concurrency:       string(job.Concurrency),
-		Timeout:           job.Timeout.String(),
-		Suspended:         job.Suspended,
-		Data:              job.Data,
-		Metadata:          job.Metadata,
-		NextScheduledTime: job.NextScheduledTime,
-		LastScheduledTime: job.LastScheduledTime,
+		CronJobId:       job.Id,
+		SystemId:        job.SystemId,
+		TopicId:         job.TopicId,
+		GroupId:         job.ConsumerGroupId,
+		CronJob:         job.Name,
+		Schedule:        job.Schedule,
+		Concurrency:     string(job.Concurrency),
+		Timeout:         job.Timeout.String(),
+		Suspended:       job.Suspended,
+		Payload:         job.Payload,
+		Metadata:        job.Metadata,
+		NextScheduledAt: job.NextScheduledAt,
+		LastScheduledAt: job.LastScheduledAt,
 	}
 }
 
@@ -193,10 +193,10 @@ func printCronJobDetail(w io.Writer, job *cron.CronJob) {
 	fmt.Fprintf(tw, "  Timeout\t%s\n", job.Timeout)
 	fmt.Fprintf(tw, "  Suspended\t%t\n", job.Suspended)
 	fmt.Fprintf(tw, "  Owner\t%s\n", cronOwnerCell(job))
-	fmt.Fprintf(tw, "  Data\t%s\n", job.Data)
+	fmt.Fprintf(tw, "  Payload\t%s\n", job.Payload)
 	fmt.Fprintf(tw, "  Metadata\t%s\n", job.Metadata)
-	fmt.Fprintf(tw, "  NextScheduledTime\t%s\n", cronNextCell(job))
-	fmt.Fprintf(tw, "  LastScheduledTime\t%s\n", cronLastCell(job))
+	fmt.Fprintf(tw, "  NextScheduledAt\t%s\n", cronNextCell(job))
+	fmt.Fprintf(tw, "  LastScheduledAt\t%s\n", cronLastCell(job))
 	tw.Flush()
 }
 
@@ -229,10 +229,10 @@ func printCronJobRequests(w io.Writer, statuses []*cron.JobRequestStatus) {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  REQUEST\tSCHEDULED\tPRODUCED\tGROUP\tOUTCOME")
 	for _, status := range statuses {
-		// ScheduledTime is decoded from the payload in UTC -- render it in
+		// ScheduledAt is decoded from the payload in UTC -- render it in
 		// the driver's zone like the columns beside it
 		fmt.Fprintf(tw, "  %d\t%s\t%s\t%s\t%s\n",
-			status.MessageId, timeCell(status.ScheduledTime.Local()), timeCell(status.ProducedAt), status.ConsumerGroup, requestOutcomeCell(status))
+			status.MessageId, timeCell(status.ScheduledAt.Local()), timeCell(status.ProducedAt), status.ConsumerGroup, requestOutcomeCell(status))
 	}
 	tw.Flush()
 }
@@ -259,19 +259,19 @@ func cronOwnerCell(job *cron.CronJob) string {
 	return "none"
 }
 
-// cronNextCell - a suspended job's next_scheduled_time is stale by design
+// cronNextCell - a suspended job's next_scheduled_at is stale by design
 // (unsuspend re-seeds it), so show the state instead of a misleading time.
 func cronNextCell(job *cron.CronJob) string {
 	if job.Suspended {
 		return "suspended"
 	}
-	return timeCell(job.NextScheduledTime)
+	return timeCell(job.NextScheduledAt)
 }
 
 // cronLastCell - NULL until the scheduler first produces this job.
 func cronLastCell(job *cron.CronJob) string {
-	if job.LastScheduledTime == nil {
+	if job.LastScheduledAt == nil {
 		return "never"
 	}
-	return timeCell(*job.LastScheduledTime)
+	return timeCell(*job.LastScheduledAt)
 }

@@ -15,17 +15,17 @@ var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
 // CronJob is one row of cron_job.
 type CronJob struct {
-	Id                int64                    `json:"cron_job_id"`
-	SystemId          int64                    `json:"system_id"`
-	TopicId           int64                    `json:"topic_id"`
-	ConsumerGroupId   int64                    `json:"group_id"`
-	Name              string                   `json:"cron_job"`
-	Schedule          string                   `json:"schedule"`
-	Concurrency       common.ConcurrencyPolicy `json:"concurrency"`
-	Timeout           time.Duration            `json:"timeout"`
-	Suspended         bool                     `json:"suspended"`
-	Data              json.RawMessage          `json:"data"`
-	Metadata          json.RawMessage          `json:"metadata"`
-	NextScheduledTime time.Time                `json:"next_scheduled_time"`
-	LastScheduledTime *time.Time               `json:"last_scheduled_time"`
+	Id              int64                    `json:"cron_job_id"`
+	SystemId        int64                    `json:"system_id"`
+	TopicId         int64                    `json:"topic_id"`
+	ConsumerGroupId int64                    `json:"group_id"`
+	Name            string                   `json:"cron_job"`
+	Schedule        string                   `json:"schedule"`
+	Concurrency     common.ConcurrencyPolicy `json:"concurrency"`
+	Timeout         time.Duration            `json:"timeout"`
+	Suspended       bool                     `json:"suspended"`
+	Payload         json.RawMessage          `json:"payload"`
+	Metadata        json.RawMessage          `json:"metadata"`
+	NextScheduledAt time.Time                `json:"next_scheduled_at"`
+	LastScheduledAt *time.Time               `json:"last_scheduled_at"`
 }

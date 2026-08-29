@@ -118,12 +118,12 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 		// is at most one schedule rate; older due scheduled times are dropped,
 		// not produced late. The IsZero guard keeps an unsatisfiable schedule
 		// from spinning.
-		scheduledTime := row.NextScheduledTime
+		scheduledTime := row.NextScheduledAt
 		for next := schedule.Next(scheduledTime); !next.IsZero() && !next.After(row.DbNow); next = schedule.Next(scheduledTime) {
 			scheduledTime = next
 		}
 
-		request, err := cron.NewJobRequest(row.Id, row.Name, scheduledTime, row.Data, row.Metadata)
+		request, err := cron.NewJobRequest(row.Id, row.Name, scheduledTime, row.Payload, row.Metadata)
 		if err != nil {
 			return err
 		}
@@ -152,7 +152,7 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 		if produced.Duplicate {
 			// an earlier tick's ambiguous commit published this request, then
 			// failed to advance the row
-			i.Logger.WarnContext(ctx, cron.EventJobRequestAlreadyPublished.Message, "code", cron.EventJobRequestAlreadyPublished.Code, "cron_job_id", row.Id, "cron_job", row.Name, "scheduled_time", scheduledTime)
+			i.Logger.WarnContext(ctx, cron.EventJobRequestAlreadyPublished.Message, "code", cron.EventJobRequestAlreadyPublished.Code, "cron_job_id", row.Id, "cron_job", row.Name, "scheduled_at", scheduledTime)
 		}
 
 		// next scheduled time from the DB clock ONLY -- Go/DB skew
@@ -160,7 +160,7 @@ func (i *CronSchedulerInstance) produceJobRequest(ctx context.Context, id int64)
 		next := schedule.Next(row.DbNow)
 		if next.IsZero() {
 			// schedule went unsatisfiable (tzdata drift): keep the produce,
-			// suspend the row -- it has no honest next_scheduled_time
+			// suspend the row -- it has no honest next_scheduled_at
 			i.Logger.WarnContext(ctx, "cron job schedule has no next scheduled time -- suspending", "cron_job_id", row.Id, "cron_job", row.Name, "schedule", row.Schedule)
 			return i.controller.Suspend(ctx, tx, row.Id, scheduledTime)
 		}
