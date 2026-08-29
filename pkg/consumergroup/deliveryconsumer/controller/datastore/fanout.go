@@ -30,7 +30,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			c.pending_head
 		FROM %s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.CursorTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
 
 	var snapshotHead, committed, pendingHead int64
 	var snapshotXmax string
@@ -78,20 +78,20 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			LIMIT $2
 		),
 		materialized AS (
-			INSERT INTO %[1]s (consumer_group_id, message_id, status) -- [1] = delivery table
+			INSERT INTO %[1]s (consumer_group_id, message_id, status) -- [1] = exception_queue table
 			SELECT $1, b.id, 'ready'
 			FROM batch b
 			WHERE (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
-					SELECT 1 FROM %[4]s bi                         -- [4] = binding table
+					SELECT 1 FROM %[4]s bi                         -- [4] = binding_config table
 					WHERE bi.consumer_group_id = $1
 				)
 				-- bindings for consumer_group exists and match routing_key pattern
 				OR EXISTS (
 					SELECT 1 FROM %[4]s bi
 					WHERE bi.consumer_group_id = $1
-						AND b.routing_key ~ bi.pattern
+						AND b.routing_key ~ bi.pattern_regex
 				)
 				-- if bindings exist but our routing_key does not match any of them
 				-- no row is materialized for this message at all
@@ -161,7 +161,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			pending_xmax = GREATEST(c.pending_xmax, $4::xid8) -- also skips the initial NULL
 		FROM mark
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.CursorTable(topicId), iTopic.BindingTable(topicId), iTopic.CompactionHeadTable(topicId))
+	`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.CompactionHeadTable(topicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {

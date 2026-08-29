@@ -58,9 +58,9 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 func (d *SystemDatastore) seedSystem(ctx context.Context, tx pgx.Tx) (*SystemData, error) {
 	seedSystemSql := `
 		-- vulkan: system.seedSystem
-		INSERT INTO system (created_at, updated_at)
+		INSERT INTO system_config (created_at, updated_at)
 		SELECT NOW(), NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM system)
+		WHERE NOT EXISTS (SELECT 1 FROM system_config)
 		RETURNING id, created_at, updated_at;
 	`
 	seeded, err := d.scanSystemData(tx.QueryRow(ctx, seedSystemSql))
@@ -113,7 +113,7 @@ func (d *SystemDatastore) get(ctx context.Context, q datastore.Querier) (*System
 	sql := `
 		-- vulkan: system.get
 		SELECT id, created_at, updated_at
-		FROM system;
+		FROM system_config;
 	`
 	return d.scanSystemData(q.QueryRow(ctx, sql))
 }

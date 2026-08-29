@@ -16,9 +16,9 @@ SELECT
 	token,
 	low,
 	high,
-	until,
+	expires_at,
 	reclaims
-FROM lease_{topic_id}
+FROM claim_lease_{topic_id}
 WHERE consumer_group_id = {group_id}
 ORDER BY low;`),
 		diagnostic.NewQuery("what the reclaimed range left behind", `
@@ -27,7 +27,7 @@ SELECT
 	status,
 	attempts,
 	last_error
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id BETWEEN {low} AND {high}
 ORDER BY message_id;`),
@@ -48,7 +48,7 @@ SELECT
 	attempts,
 	can_run_after,
 	last_error
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id BETWEEN {low} AND {high}
 ORDER BY message_id;`),
@@ -76,13 +76,13 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY updated_at DESC;`),
 		diagnostic.NewQuery("which errors account for them", `
 SELECT last_error, count(*) AS dead_count
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 GROUP BY last_error
@@ -102,7 +102,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`),
 		diagnostic.NewQuery("every attempt it made, oldest first", `
@@ -138,7 +138,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`),
 		diagnostic.NewQuery("the attempts that exhausted its budget", `
@@ -167,7 +167,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY updated_at DESC;`),

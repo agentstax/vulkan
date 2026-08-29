@@ -22,5 +22,5 @@ type Declaration struct {
 	Patterns      []string           `json:"patterns"` // empty = the whole topic
 	DeclaredBy    string             `json:"declared_by"`
 	DeclaredAt    time.Time          `json:"declared_at"`
-	AttemptAt     time.Time          `json:"attempt_at"`
+	AttemptedAt   time.Time          `json:"attempted_at"`
 }

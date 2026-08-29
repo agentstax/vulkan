@@ -36,7 +36,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts, 'success', ''
 			FROM deleted;
-		`, iTopic.DeliveryTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordSuccess
@@ -44,7 +44,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuccess(ctx context.Context, exc
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, iTopic.DeliveryTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId))
 	}
 
 	if keyClaim == nil {
@@ -73,14 +73,14 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 			SET
 				status = 'ready',
 				lease_token = NULL,
-				lease_until = NULL,
+				lease_expires_at = NULL,
 				last_error = $3,
 				can_run_after = now() + make_interval(secs => $4),
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $5;
-		`, iTopic.DeliveryTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: exceptionconsumer.recordFailure
@@ -89,7 +89,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 				SET
 					status = 'ready',
 					lease_token = NULL,
-					lease_until = NULL,
+					lease_expires_at = NULL,
 					last_error = $3,
 					can_run_after = now() + make_interval(secs => $4),
 					updated_at = now()
@@ -101,7 +101,7 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $6, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.DeliveryTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - 1).Seconds(), exception.LeaseToken}
@@ -132,13 +132,13 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 			SET
 				status = 'dead',
 				lease_token = NULL,
-				lease_until = NULL,
+				lease_expires_at = NULL,
 				last_error = $3,
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $4;
-		`, iTopic.DeliveryTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT ... WHERE EXISTS keeps the UPDATE and its
 		// delivery_log_<topic_id> row atomic
@@ -149,7 +149,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 				SET
 					status = 'dead',
 					lease_token = NULL,
-					lease_until = NULL,
+					lease_expires_at = NULL,
 					last_error = $3,
 					updated_at = now()
 				WHERE consumer_group_id = $1
@@ -160,7 +160,7 @@ func (d *ExceptionConsumerGroupDatastore) recordTerminal(ctx context.Context, ex
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $5, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.DeliveryTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), exception.LeaseToken}
@@ -200,12 +200,12 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 				status = 'superseded',
 				attempts = attempts - 1,
 				lease_token = NULL,
-				lease_until = NULL,
+				lease_expires_at = NULL,
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2
 				AND lease_token = $3;
-		`, iTopic.DeliveryTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId))
 	} else {
 		// updated CTE + INSERT keeps the mark and its delivery_log_<topic_id>
 		// row atomic
@@ -217,7 +217,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 					status = 'superseded',
 					attempts = attempts - 1,
 					lease_token = NULL,
-					lease_until = NULL,
+					lease_expires_at = NULL,
 					updated_at = now()
 				WHERE consumer_group_id = $1
 					AND message_id = $2
@@ -227,7 +227,7 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts + 1, 'superseded', $4
 			FROM updated;
-		`, iTopic.DeliveryTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	}
 
 	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}

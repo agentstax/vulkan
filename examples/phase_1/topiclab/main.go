@@ -229,7 +229,7 @@ func advance(ctx context.Context, cursorAdvancerDatastore *cursoradvancerdatasto
 }
 
 func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, claimed, committed int64) {
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
 	must(err)
 }
 

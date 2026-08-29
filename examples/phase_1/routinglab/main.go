@@ -168,16 +168,16 @@ func reset(ctx context.Context, ds *iDatastore.PostgresDatastore, cd *consumergr
 	for _, g := range groups {
 		gID := mustGroupID(cd.RegisterGroup(ctx, topicId, g))
 		gids[g] = gID
-		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM lease_%d WHERE consumer_group_id=$1`, topicId), gID)
+		_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), gID)
 		must(err)
-		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicId), gID)
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), gID)
 		must(err)
 		_, err = cd.DeclareBindings(ctx, topicId, gID, nil, time.Now())
 		must(err)
 		// settled/pending must ride along -- the claim gate assumes
 		// gate >= settled >= claimed; bumping claimed alone breaks that and a
 		// poll where the fresh pair doesn't prove would regress the cursor
-		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE cursor_%d SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), gID, head)
+		_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=$2, committed=$2, settled_head=$2, pending_head=$2, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), gID, head)
 		must(err)
 	}
 	return head, gids

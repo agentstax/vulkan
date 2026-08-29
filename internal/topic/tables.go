@@ -14,9 +14,10 @@ func MessageLogPartitionTable(topicID, n int64) string {
 	return fmt.Sprintf("%s_%d", MessageLogTable(topicID), n)
 }
 
-// DeliveryTable is topicID's own physical delivery table.
-func DeliveryTable(topicID int64) string {
-	return fmt.Sprintf("delivery_%d", topicID)
+// ExceptionQueueTable is topicID's own physical exception queue -- deliveries
+// off the mainline path: ready-to-retry, deferred, dead.
+func ExceptionQueueTable(topicID int64) string {
+	return fmt.Sprintf("exception_queue_%d", topicID)
 }
 
 // DeliveryLogTable is topicID's own physical delivery audit log -- it exists
@@ -30,14 +31,14 @@ func IdempotencyKeyTable(topicID int64) string {
 	return fmt.Sprintf("idempotency_key_%d", topicID)
 }
 
-// CursorTable is topicID's own physical consumer-group cursor table.
-func CursorTable(topicID int64) string {
-	return fmt.Sprintf("cursor_%d", topicID)
+// ConsumerGroupCursorTable is topicID's own physical consumer-group cursor table.
+func ConsumerGroupCursorTable(topicID int64) string {
+	return fmt.Sprintf("consumer_group_cursor_%d", topicID)
 }
 
-// LeaseTable is topicID's own physical claimed-range lease table.
-func LeaseTable(topicID int64) string {
-	return fmt.Sprintf("lease_%d", topicID)
+// ClaimLeaseTable is topicID's own physical claimed-range lease table.
+func ClaimLeaseTable(topicID int64) string {
+	return fmt.Sprintf("claim_lease_%d", topicID)
 }
 
 // KeyLeaseTable is topicID's own physical compaction-key lease table.
@@ -50,12 +51,12 @@ func CompactionHeadTable(topicID int64) string {
 	return fmt.Sprintf("compaction_head_%d", topicID)
 }
 
-// BindingTable is topicID's own physical routing-rule table.
-func BindingTable(topicID int64) string {
-	return fmt.Sprintf("binding_%d", topicID)
+// BindingConfigTable is topicID's own physical routing-rule table.
+func BindingConfigTable(topicID int64) string {
+	return fmt.Sprintf("binding_config_%d", topicID)
 }
 
-// BindingLogTable is topicID's own physical binding declaration log.
-func BindingLogTable(topicID int64) string {
-	return fmt.Sprintf("binding_log_%d", topicID)
+// BindingConfigLogTable is topicID's own physical binding declaration log.
+func BindingConfigLogTable(topicID int64) string {
+	return fmt.Sprintf("binding_config_log_%d", topicID)
 }

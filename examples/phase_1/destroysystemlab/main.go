@@ -32,12 +32,12 @@ import (
 
 // every table createSystemTables creates -- the teardown assertion list
 var controlPlaneTables = []string{
-	"system",
-	"topic",
-	"topic_log",
-	"consumer_group",
-	"worker",
-	"worker_log",
+	"system_config",
+	"topic_config",
+	"topic_config_log",
+	"consumer_group_config",
+	"worker_config",
+	"worker_config_log",
 	"worker_instance",
 	"cron_job",
 	"migration_log",
@@ -108,7 +108,7 @@ func main() {
 	// a system topic's id, so the teardown assert can cover a physical
 	// table the destroy itself must drop (not one DestroyTopic already took)
 	var alertsTopicId int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic WHERE name = '__system.alerts';`).Scan(&alertsTopicId))
+	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = '__system.alerts';`).Scan(&alertsTopicId))
 
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	must(mAdmin.DestroySystem(ctx, admin.DestroyOptions{}))
@@ -128,7 +128,7 @@ func main() {
 		assertTableExists(ctx, table, true)
 	}
 	var topicCount int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic;`).Scan(&topicCount))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic_config;`).Scan(&topicCount))
 	assertTrue(fmt.Sprintf("the 3 system topics re-registered (got %d)", topicCount), topicCount == 3)
 
 	fmt.Println("\n✅ DESTROY SYSTEM LAB PASSED")

@@ -27,6 +27,6 @@ type RangeLease struct {
 	ConsumerGroupId int64
 	Low             int64
 	High            int64
-	Until           time.Time
+	ExpiresAt       time.Time
 	Reclaims        int
 }

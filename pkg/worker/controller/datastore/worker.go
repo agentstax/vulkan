@@ -33,7 +33,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	// ON CONFLICT target names the one this row lands on
 	insertSql := `
 		-- vulkan: worker.registerWorker
-		INSERT INTO worker (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
+		INSERT INTO worker_config (system_id, topic_id, consumer_group_id, name, metadata, target_instances)
 		VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
 		ON CONFLICT DO NOTHING
 		RETURNING id;
@@ -59,7 +59,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	readSql := `
 		-- vulkan: worker.registerWorker
 		SELECT id, metadata, metadata = COALESCE($5, '{}'::jsonb) AS unchanged
-		FROM worker
+		FROM worker_config
 		WHERE name = $4
 			AND system_id IS NOT DISTINCT FROM $1
 			AND topic_id IS NOT DISTINCT FROM $2
@@ -83,7 +83,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 
 	updateSql := `
 		-- vulkan: worker.registerWorker
-		UPDATE worker
+		UPDATE worker_config
 		SET metadata = COALESCE($2, '{}'::jsonb)
 		WHERE id = $1
 		RETURNING metadata;
@@ -116,14 +116,14 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 func (d *WorkerDatastore) appendWorkerLog(ctx context.Context, q datastore.Querier, workerId int64, declaredBy string) error {
 	sql := `
 		-- vulkan: worker.appendWorkerLog
-		INSERT INTO worker_log (worker_id, name, metadata, target_instances, declared_by)
+		INSERT INTO worker_config_log (worker_id, name, metadata, target_instances, declared_by)
 		SELECT
 			id,
 			name,
 			metadata,
 			target_instances,
 			$2
-		FROM worker
+		FROM worker_config
 		WHERE id = $1;
 	`
 	_, err := q.Exec(ctx, sql, workerId, declaredBy)
@@ -159,9 +159,9 @@ func (d *WorkerDatastore) listWorkers(ctx context.Context, owner *common.Owner) 
 			COALESCE(t.id, 0),
 			COALESCE(t.name, ''),
 			COALESCE(g.name, '')
-		FROM worker w
-		LEFT JOIN consumer_group g ON g.id = w.consumer_group_id
-		LEFT JOIN topic t ON t.id = COALESCE(w.topic_id, g.topic_id)
+		FROM worker_config w
+		LEFT JOIN consumer_group_config g ON g.id = w.consumer_group_id
+		LEFT JOIN topic_config t ON t.id = COALESCE(w.topic_id, g.topic_id)
 		WHERE w.system_id = $1
 			OR w.topic_id = $2
 			OR w.consumer_group_id = $3
@@ -209,7 +209,7 @@ func (d *WorkerDatastore) getWorker(ctx context.Context, name string, owner *com
 			name, 
 			metadata, 
 			target_instances
-		FROM worker
+		FROM worker_config
 		WHERE name = $1
 			AND system_id IS NOT DISTINCT FROM $2
 			AND topic_id IS NOT DISTINCT FROM $3

@@ -98,7 +98,7 @@ func main() {
 	}
 	must(deliveryConsumers.RecordFailure(ctx, 3, &claimedLifecycle[0], errors.New("seed failure"), tp.DeliveryLogMode))
 
-	for _, table := range []string{"cursor", "lease", "binding"} {
+	for _, table := range []string{"consumer_group_cursor", "claim_lease", "binding_config"} {
 		assertGroupRowCount(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), groupId, 1, "before Destroy")
 	}
 	assertCompactionHeadCount(ctx, ds, tp.Id, 1, "before Destroy")
@@ -114,8 +114,8 @@ func main() {
 
 	assertGroupGone(ctx, ds, groupId)
 	for _, table := range []string{
-		"message_log", "delivery", "delivery_log", "idempotency_key",
-		"cursor", "lease", "key_lease", "compaction_head", "binding", "binding_log",
+		"message_log", "exception_queue", "delivery_log", "idempotency_key",
+		"consumer_group_cursor", "claim_lease", "key_lease", "compaction_head", "binding_config", "binding_config_log",
 	} {
 		assertTableExists(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), false)
 	}
@@ -149,7 +149,7 @@ func assertCompactionHeadCount(ctx context.Context, ds *iDatastore.PostgresDatas
 // the topic's groups are destroyed WITH it, via the topic_id FK cascade.
 func assertGroupGone(ctx context.Context, ds *iDatastore.PostgresDatastore, groupId int64) {
 	var rows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`, groupId).Scan(&rows))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, groupId).Scan(&rows))
 	if rows != 0 {
 		die(fmt.Sprintf("consumer_group %d survived its topic's Destroy", groupId))
 	}
@@ -161,11 +161,11 @@ func assertGroupGone(ctx context.Context, ds *iDatastore.PostgresDatastore, grou
 // in the table name), so it can't go through assertRowCount's generic form.
 func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int, when string) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("delivery_%d has %d rows %s, want %d", topicId, count, when, want))
+		die(fmt.Sprintf("exception_queue_%d has %d rows %s, want %d", topicId, count, when, want))
 	}
-	fmt.Printf("  ✓ delivery_%d has %d row(s) %s\n", topicId, count, when)
+	fmt.Printf("  ✓ exception_queue_%d has %d row(s) %s\n", topicId, count, when)
 }
 
 // assertDeliveryLogRowCount counts delivery_log_<topicId>'s rows directly --

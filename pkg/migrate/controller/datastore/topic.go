@@ -9,7 +9,7 @@ import (
 
 func (d *MigrateDatastore) ListTopics(ctx context.Context, conn *pgxpool.Conn) ([]*common.Owner, error) {
 	rows, err := conn.Query(ctx, `-- vulkan: migrate.ListTopics
-SELECT id, system_id, name FROM topic ORDER BY id;`)
+SELECT id, system_id, name FROM topic_config ORDER BY id;`)
 	if err != nil {
 		return nil, err
 	}

@@ -195,7 +195,7 @@ type tableStats struct {
 // the catalog.
 func compactionHeadTable(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string) string {
 	var id int64
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic WHERE name = $1;`, topicName).Scan(&id))
+	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = $1;`, topicName).Scan(&id))
 	return fmt.Sprintf("compaction_head_%d", id)
 }
 

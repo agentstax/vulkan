@@ -164,17 +164,17 @@ func createPartition(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 
 func reset(ctx context.Context, cd *consumergroupcontroller.ConsumerGroupController, ds *iDatastore.PostgresDatastore, topicId int64, group string) {
 	groupId = mustGroupID(cd.RegisterGroup(ctx, topicId, group))
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), groupId)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE cursor_%d SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), groupId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=0, committed=0, settled_head=0, pending_head=0, pending_xmax=NULL WHERE consumer_group_id=$1`, topicId), groupId)
 	must(err)
 }
 
 func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, group string, claimed, committed int64) {
 	_ = group // groups are id-keyed; the name stays in the signature for the call sites' readability
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`UPDATE consumer_group_cursor_%d SET claimed=$2, committed=$3 WHERE consumer_group_id=$1`, topicId), groupId, claimed, committed)
 	must(err)
 }
 

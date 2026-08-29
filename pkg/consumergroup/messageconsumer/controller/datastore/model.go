@@ -23,7 +23,7 @@ type LeaseData struct {
 	ConsumerGroupId int64       `db:"consumer_group_id"`
 	Low             int64       `db:"low"`
 	High            int64       `db:"high"`
-	Until           time.Time   `db:"until"`
+	ExpiresAt       time.Time   `db:"expires_at"`
 	Reclaims        int         `db:"reclaims"`
 }
 

@@ -8,7 +8,7 @@ import (
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 )
 
-// SweepExpiredWaitingDeclarations deletes waiting binding_log rows whose
+// SweepExpiredWaitingDeclarations deletes waiting binding_config_log rows whose
 // attempt ran more than ttl ago -- one batched DELETE per topic's table, at
 // most batchSize rows each -- and returns how many were deleted in total.
 func (d *JanitorDatastore) SweepExpiredWaitingDeclarations(ctx context.Context, ttl time.Duration, batchSize int) (int64, error) {
@@ -53,16 +53,16 @@ func (d *JanitorDatastore) sweepTopicWaitingDeclarations(ctx context.Context, to
 		)
 		DELETE FROM %[1]s
 		WHERE id IN (
-			SELECT binding_log.id
-			FROM %[1]s binding_log
-			JOIN newest_waiting ON newest_waiting.consumer_group_id = binding_log.consumer_group_id
-				AND newest_waiting.declared_by = binding_log.declared_by
-			WHERE binding_log.status = 'waiting'
-			AND binding_log.attempt_at < $1
-			AND binding_log.id < newest_waiting.newest_id
+			SELECT binding_config_log.id
+			FROM %[1]s binding_config_log
+			JOIN newest_waiting ON newest_waiting.consumer_group_id = binding_config_log.consumer_group_id
+				AND newest_waiting.declared_by = binding_config_log.declared_by
+			WHERE binding_config_log.status = 'waiting'
+			AND binding_config_log.attempted_at < $1
+			AND binding_config_log.id < newest_waiting.newest_id
 			LIMIT $2
 		);
-	`, iTopic.BindingLogTable(topicId))
+	`, iTopic.BindingConfigLogTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, cutoff, batchSize)
 	if err != nil {
 		return 0, err
@@ -70,13 +70,13 @@ func (d *JanitorDatastore) sweepTopicWaitingDeclarations(ctx context.Context, to
 	return tag.RowsAffected(), nil
 }
 
-// listGroupTopicIds is every topic id with registered groups. A binding_log
+// listGroupTopicIds is every topic id with registered groups. A binding_config_log
 // row cascades with its group, so these topics cover every declaration.
 func (d *JanitorDatastore) listGroupTopicIds(ctx context.Context) ([]int64, error) {
 	sql := `
 		-- vulkan: consumergroupjanitor.listGroupTopicIds
 		SELECT DISTINCT topic_id
-		FROM consumer_group
+		FROM consumer_group_config
 		ORDER BY topic_id;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)

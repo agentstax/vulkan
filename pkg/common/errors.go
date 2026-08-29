@@ -34,7 +34,7 @@ SELECT
 	status,
 	attempts,
 	updated_at
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 ORDER BY updated_at DESC
 LIMIT 20;`),
@@ -43,8 +43,8 @@ SELECT
 	token,
 	low,
 	high,
-	until,
+	expires_at,
 	reclaims
-FROM lease_{topic_id}
+FROM claim_lease_{topic_id}
 WHERE consumer_group_id = {group_id};`),
 	)

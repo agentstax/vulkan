@@ -225,7 +225,7 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.Until.Before(time.Now().Add(resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
+	if item.lease.ExpiresAt.Before(time.Now().Add(resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
 		r.buffer.markStale(item.lease.Token)
 		return
 	}

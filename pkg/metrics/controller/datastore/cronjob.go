@@ -30,8 +30,8 @@ func (d *MetricsDatastore) cronJobSnapshots(ctx context.Context) ([]CronJobSnaps
 			j.last_scheduled_time,
 			EXTRACT(EPOCH FROM (now() - j.next_scheduled_time)) AS due_for_secs
 		FROM cron_job j
-		LEFT JOIN consumer_group g ON g.id = j.consumer_group_id
-		LEFT JOIN topic t ON t.id = COALESCE(j.topic_id, g.topic_id)     -- group rows reach their topic through the group
+		LEFT JOIN consumer_group_config g ON g.id = j.consumer_group_id
+		LEFT JOIN topic_config t ON t.id = COALESCE(j.topic_id, g.topic_id)     -- group rows reach their topic through the group
 		ORDER BY j.name;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)

@@ -24,7 +24,7 @@ func toRangeLease(data datastore.LeaseData) RangeLease {
 		ConsumerGroupId: data.ConsumerGroupId,
 		Low:             data.Low,
 		High:            data.High,
-		Until:           data.Until,
+		ExpiresAt:       data.ExpiresAt,
 		Reclaims:        data.Reclaims,
 	}
 }

@@ -336,7 +336,7 @@ func main() {
 	// exhausted-looking or not, a 'deferred' row is outside the kill
 	// backstop's 'inflight' predicate. Driven directly so no consumer touches
 	// the row mid-check.
-	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 99, lease_until = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
+	execSql(ctx, fmt.Sprintf(`UPDATE exception_queue_%d SET attempts = 99, lease_expires_at = now() - interval '1 minute' WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
 	if _, err := exceptionConsumers.Kill(ctx, tp.Id, g8, 3, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("Kill: %v", err))
 	}
@@ -351,7 +351,7 @@ func main() {
 	}
 	// the unexpired key_lease alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
-	execSql(ctx, fmt.Sprintf(`UPDATE delivery_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
+	execSql(ctx, fmt.Sprintf(`UPDATE exception_queue_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
 	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
@@ -736,7 +736,7 @@ func leaseCount(ctx context.Context, groupId int64) int {
 // deliveryCount counts the group's delivery rows; status "" counts them all.
 func deliveryCount(ctx context.Context, groupId int64, status string) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d WHERE consumer_group_id = $1 AND ($2 = '' OR status = $2)`, topicId)
+	sql := fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = $1 AND ($2 = '' OR status = $2)`, topicId)
 	must(ds.Pool.QueryRow(ctx, sql, groupId, status).Scan(&n))
 	return n
 }
@@ -744,14 +744,14 @@ func deliveryCount(ctx context.Context, groupId int64, status string) int {
 // deliveryStatus returns "" when the message has no delivery row.
 func deliveryStatus(ctx context.Context, groupId int64, messageId int64) string {
 	var s string
-	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT COALESCE(MAX(status), '') FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&s))
 	return s
 }
 
 func deliveryAttempts(ctx context.Context, groupId int64, messageId int64) int {
 	var n int
-	sql := fmt.Sprintf(`SELECT attempts FROM delivery_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
+	sql := fmt.Sprintf(`SELECT attempts FROM exception_queue_%d WHERE consumer_group_id = $1 AND message_id = $2`, topicId)
 	must(ds.Pool.QueryRow(ctx, sql, groupId, messageId).Scan(&n))
 	return n
 }

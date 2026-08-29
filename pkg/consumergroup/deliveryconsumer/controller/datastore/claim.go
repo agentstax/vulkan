@@ -57,7 +57,7 @@ func (d *DeliveryConsumerGroupDatastore) claimMessagesWithLifecycle(ctx context.
 		FROM claimed c
 		JOIN %[2]s m ON m.id = c.message_id
 		ORDER BY c.message_id;
-	`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
+	`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId))
 
 	rows, err := d.Datastore.Pool.Query(ctx, sql, groupId, limit, topicId)
 	if err != nil {

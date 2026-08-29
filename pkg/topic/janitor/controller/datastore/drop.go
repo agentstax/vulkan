@@ -108,7 +108,7 @@ SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
 		DELETE FROM %s
 		WHERE message_id >= $1
 			AND message_id < $2;
-	`, iTopic.DeliveryTable(topicId))
+	`, iTopic.ExceptionQueueTable(topicId))
 	if _, err := tx.Exec(ctx, orphanSql, low, high); err != nil {
 		return false, err
 	}

@@ -9,7 +9,7 @@ type GroupData struct {
 	CreatedAt time.Time `db:"created_at"`
 }
 
-// BindingLogStatus is the binding_log.status column's value set.
+// BindingLogStatus is the binding_config_log.status column's value set.
 type BindingLogStatus string
 
 const (
@@ -17,7 +17,7 @@ const (
 	BindingLogWaiting   BindingLogStatus = "waiting"   // an attempt blocked by a live instance's different set
 )
 
-// BindingLogData is one binding_log row joined to the names
+// BindingLogData is one binding_config_log row joined to the names
 // a listing shows.
 type BindingLogData struct {
 	Id              int64            `db:"id"`
@@ -29,5 +29,5 @@ type BindingLogData struct {
 	Patterns        []string         `db:"patterns"`
 	DeclaredBy      string           `db:"declared_by"`
 	DeclaredAt      time.Time        `db:"declared_at"`
-	AttemptAt       time.Time        `db:"attempt_at"`
+	AttemptedAt     time.Time        `db:"attempted_at"`
 }

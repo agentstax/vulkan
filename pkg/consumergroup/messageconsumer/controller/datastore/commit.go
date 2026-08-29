@@ -38,7 +38,7 @@ func (d *MessageConsumerGroupDatastore) commit(ctx context.Context, topicId int6
 		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.LeaseTable(topicId))
+	`, iTopic.ClaimLeaseTable(topicId))
 	tag, err := tx.Exec(ctx, freeSql, groupId, token)
 	if err != nil {
 		return err
@@ -93,7 +93,7 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 		SET low = $3
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.LeaseTable(topicId))
+	`, iTopic.ClaimLeaseTable(topicId))
 	tag, err := tx.Exec(ctx, truncateSql, groupId, token, lastProcessed)
 	if err != nil {
 		return err
@@ -143,7 +143,7 @@ func deliveryStatement(topicId int64) string {
 			now() + make_interval(secs => $5),
 			$4
 		);
-	`, iTopic.DeliveryTable(topicId))
+	`, iTopic.ExceptionQueueTable(topicId))
 }
 
 // a freshly written delivery row is always the first recorded attempt (0)

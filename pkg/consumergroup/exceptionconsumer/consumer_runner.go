@@ -82,7 +82,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 	// sat behind the batch too long for the lease to cover a full run
 	// try to renew it rather than start a run the lease can't protect
 	leaseDuration := resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin
-	if exception.LeaseUntil.Before(time.Now().Add(leaseDuration)) {
+	if exception.LeaseExpiresAt.Before(time.Now().Add(leaseDuration)) {
 		renewed, err := r.consumers.RenewLease(ctx, exception, leaseDuration)
 		if err != nil {
 			return err

@@ -39,7 +39,7 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT $1, $2, attempts, 'success', ''
 			FROM updated;
-		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
+		`, iTopic.ExceptionQueueTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordSuccess
@@ -50,7 +50,7 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, iTopic.DeliveryTable(delivery.TopicId))
+		`, iTopic.ExceptionQueueTable(delivery.TopicId))
 	}
 
 	_, err := d.Datastore.Pool.Exec(ctx, sql, delivery.ConsumerGroupId, delivery.MessageId)
@@ -60,7 +60,7 @@ func (d *DeliveryConsumerGroupDatastore) recordSuccess(ctx context.Context, deli
 // RecordFailure handles a processing error: retry until attempts are exhausted,
 // then hand off to RecordTerminal (the per-group DLQ). attempts was already
 // incremented at claim time, so >= maxAttempts means this was the last try.
-// No retry backoff (the delivery table carries no can_run_after) -- a
+// No retry backoff (the exception_queue table carries no can_run_after) -- a
 // 'ready' row is simply re-claimed on the next poll.
 func (d *DeliveryConsumerGroupDatastore) RecordFailure(ctx context.Context, maxAttempts int, delivery *DeliveryData, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
@@ -88,7 +88,7 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, iTopic.DeliveryTable(delivery.TopicId))
+		`, iTopic.ExceptionQueueTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordFailure
@@ -105,7 +105,7 @@ func (d *DeliveryConsumerGroupDatastore) recordFailure(ctx context.Context, maxA
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
+		`, iTopic.ExceptionQueueTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 		args = append(args, delivery.Attempts)
 	}
 
@@ -135,7 +135,7 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 				updated_at = now()
 			WHERE consumer_group_id = $1
 				AND message_id = $2;
-		`, iTopic.DeliveryTable(delivery.TopicId))
+		`, iTopic.ExceptionQueueTable(delivery.TopicId))
 	} else {
 		sql = fmt.Sprintf(`
 			-- vulkan: deliveryconsumer.recordTerminal
@@ -152,7 +152,7 @@ func (d *DeliveryConsumerGroupDatastore) recordTerminal(ctx context.Context, del
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, $2, $4, $3
 			WHERE EXISTS (SELECT 1 FROM updated);
-		`, iTopic.DeliveryTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
+		`, iTopic.ExceptionQueueTable(delivery.TopicId), iTopic.DeliveryLogTable(delivery.TopicId))
 		args = append(args, delivery.Attempts)
 	}
 

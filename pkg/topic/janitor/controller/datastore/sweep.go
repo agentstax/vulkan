@@ -100,7 +100,7 @@ func (d *JanitorDatastore) sweepBatch(ctx context.Context, topicId int64, n int6
 			-- vulkan: topicjanitor.sweepBatch
 			DELETE FROM %s
 			WHERE message_id = ANY($1);
-		`, iTopic.DeliveryTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId))
 		if _, err := tx.Exec(ctx, orphanSql, ids); err != nil {
 			return 0, err
 		}

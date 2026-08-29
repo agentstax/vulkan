@@ -35,7 +35,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 			c.pending_head
 		FROM %s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.CursorTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
 
 	var snapshotHead, claimed, settledHead, pendingHead int64
 	var snapshotXmax string
@@ -163,7 +163,7 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 		--                                                       snapshot read it -> error
 		--
 		SELECT u.low, u.high FROM updated u;
-	`, iTopic.CursorTable(topicId), iTopic.CursorTable(topicId))
+	`, iTopic.ConsumerGroupCursorTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
 	cursorRows, err := tx.Query(ctx, cursorSql, groupId, limit, snapshotHead, snapshotXmax)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 	// get new lease associated with range
 	leaseSql := fmt.Sprintf(`
 		-- vulkan: messageconsumer.claimMessages
-		INSERT INTO %s (consumer_group_id, low, high, until)
+		INSERT INTO %s (consumer_group_id, low, high, expires_at)
 		VALUES (
 			$1,
 			$2,
@@ -210,9 +210,9 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 			consumer_group_id,
 			low,
 			high,
-			until,
+			expires_at,
 			reclaims;
-	`, iTopic.LeaseTable(topicId))
+	`, iTopic.ClaimLeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, leaseSql, groupId, low, high, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err

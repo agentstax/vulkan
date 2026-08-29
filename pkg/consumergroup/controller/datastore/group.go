@@ -28,7 +28,7 @@ func (d *ConsumerGroupDatastore) getGroup(ctx context.Context, q datastore.Queri
 	sql := `
 		-- vulkan: consumergroup.getGroup
 		SELECT id, topic_id, name, created_at
-		FROM consumer_group
+		FROM consumer_group_config
 		WHERE topic_id = $1 AND name = $2;
 	`
 	var group GroupData
@@ -88,7 +88,7 @@ SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint,
 
 	insertSql := `
 		-- vulkan: consumergroup.registerGroup
-		INSERT INTO consumer_group (topic_id, name)
+		INSERT INTO consumer_group_config (topic_id, name)
 		VALUES ($1, $2)
 		RETURNING id, topic_id, name, created_at;
 	`
@@ -106,7 +106,7 @@ SELECT pg_advisory_xact_lock(hashtext(format('consumer_group:%s:%s', $1::bigint,
 		-- vulkan: consumergroup.registerGroup
 		INSERT INTO %s (consumer_group_id)
 		VALUES ($1);
-	`, iTopic.CursorTable(topicId))
+	`, iTopic.ConsumerGroupCursorTable(topicId))
 	if _, err := tx.Exec(ctx, cursorSql, group.Id); err != nil {
 		return nil, err
 	}
@@ -133,9 +133,9 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	}
 	defer tx.Rollback(ctx)
 
-	// no cascade -- nothing references the per-topic lease table
+	// no cascade -- nothing references the per-topic claim_lease table
 	leaseSql := fmt.Sprintf(`-- vulkan: consumergroup.deleteGroup
-DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.LeaseTable(topicId))
+DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.ClaimLeaseTable(topicId))
 	if _, err := tx.Exec(ctx, leaseSql, groupId); err != nil {
 		return err
 	}
@@ -147,9 +147,9 @@ DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.KeyLeaseTable(topicId))
 		return err
 	}
 
-	// no cascade -- nothing references the per-topic delivery table
+	// no cascade -- nothing references the per-topic exception_queue table
 	deliverySql := fmt.Sprintf(`-- vulkan: consumergroup.deleteGroup
-DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryTable(topicId))
+DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.ExceptionQueueTable(topicId))
 	if _, err := tx.Exec(ctx, deliverySql, groupId); err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ DELETE FROM %s WHERE consumer_group_id = $1;`, iTopic.DeliveryLogTable(topicId))
 	// cascades: cursor, binding, migration_log, group-owned worker and
 	// cron_job rows; worker_instance follows its worker
 	if _, err := tx.Exec(ctx, `-- vulkan: consumergroup.deleteGroup
-DELETE FROM consumer_group WHERE id = $1;`, groupId); err != nil {
+DELETE FROM consumer_group_config WHERE id = $1;`, groupId); err != nil {
 		return err
 	}
 

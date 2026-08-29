@@ -122,14 +122,14 @@ func countPartitions(ctx context.Context, ds *iDatastore.PostgresDatastore, topi
 // partitions named anywhere in the plan -- pruned partitions never appear.
 func explainReadMessages(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, low, high int64, want int) {
 	logTable := fmt.Sprintf("message_log_%d", topicId)
-	bindingTable := fmt.Sprintf("binding_%d", topicId)
+	bindingTable := fmt.Sprintf("binding_config_%d", topicId)
 	sql := fmt.Sprintf(`
 		EXPLAIN SELECT m.id, m.payload, m.created_at FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
 				NOT EXISTS (SELECT 1 FROM %s b WHERE b.consumer_group_id = $3)
-				OR EXISTS (SELECT 1 FROM %s b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern)
+				OR EXISTS (SELECT 1 FROM %s b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern_regex)
 			)
 		ORDER BY m.id;
 	`, logTable, bindingTable, bindingTable)

@@ -47,7 +47,7 @@ func (d *JanitorDatastore) cursorFloor(ctx context.Context, q datastore.Querier,
 		-- vulkan: topicjanitor.cursorFloor
 		SELECT MIN(committed)
 		FROM %s;
-	`, iTopic.CursorTable(topicId))
+	`, iTopic.ConsumerGroupCursorTable(topicId))
 
 	var floor *int64
 	err := q.QueryRow(ctx, sql).Scan(&floor)

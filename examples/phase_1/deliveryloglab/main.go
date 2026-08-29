@@ -372,11 +372,11 @@ func assertDeliveryLogCount(ctx context.Context, ds *iDatastore.PostgresDatastor
 
 func assertDeliveryRowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, want int) {
 	var count int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d;`, topicId)).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d;`, topicId)).Scan(&count))
 	if count != want {
-		die(fmt.Sprintf("delivery_%d has %d rows, want %d", topicId, count, want))
+		die(fmt.Sprintf("exception_queue_%d has %d rows, want %d", topicId, count, want))
 	}
-	fmt.Printf("  ✓ delivery_%d has %d row(s)\n", topicId, count)
+	fmt.Printf("  ✓ exception_queue_%d has %d row(s)\n", topicId, count)
 }
 
 func assertTableExists(ctx context.Context, ds *iDatastore.PostgresDatastore, table string, want bool) {

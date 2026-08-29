@@ -23,6 +23,6 @@ func toDeclaration(data *datastore.BindingLogData) *consumergroup.Declaration {
 		Patterns:      data.Patterns,
 		DeclaredBy:    data.DeclaredBy,
 		DeclaredAt:    data.DeclaredAt,
-		AttemptAt:     data.AttemptAt,
+		AttemptedAt:   data.AttemptedAt,
 	}
 }

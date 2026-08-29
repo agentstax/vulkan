@@ -35,7 +35,7 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 	// counts both see room under target and both insert
 	var target int
 	err = tx.QueryRow(ctx, `-- vulkan: worker.claimInstance
-SELECT target_instances FROM worker WHERE id = $1 FOR UPDATE;`, workerId).Scan(&target)
+SELECT target_instances FROM worker_config WHERE id = $1 FOR UPDATE;`, workerId).Scan(&target)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

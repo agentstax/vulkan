@@ -23,7 +23,7 @@ SELECT
 	name,
 	schema_version,
 	created_at
-FROM topic
+FROM topic_config
 WHERE name = '{topic}';`),
 		diagnostic.NewQuery("the topic row behind an id, if that is what the line carried", `
 SELECT
@@ -31,10 +31,10 @@ SELECT
 	name,
 	schema_version,
 	created_at
-FROM topic
+FROM topic_config
 WHERE id = {topic_id};`),
 		diagnostic.NewQuery("every registered topic, if the name itself is wrong", `
-SELECT name, schema_version FROM topic ORDER BY name;`),
+SELECT name, schema_version FROM topic_config ORDER BY name;`),
 	)
 
 // ErrTopicNotEmpty means Destroy was called on a topic that still holds

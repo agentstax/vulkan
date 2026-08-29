@@ -15,7 +15,7 @@ import (
 )
 
 // Delivery is one (consumer_group_id, message_id) row of the per-topic
-// delivery table: the mutable per-consumer lifecycle state that lives off the
+// exception_queue table: the mutable per-consumer lifecycle state that lives off the
 // immutable message_log. Payload is joined back in from message_log at claim
 // time rather than stored on the row.
 type Delivery struct {
@@ -83,7 +83,7 @@ func (c *DeliveryConsumerGroupController) RecordSuccess(ctx context.Context, del
 }
 
 // RecordFailure retries until attempts are exhausted, then dead-letters. No
-// retry backoff -- the delivery table carries no can_run_after, so a 'ready'
+// retry backoff -- the exception_queue table carries no can_run_after, so a 'ready'
 // row is simply re-claimed on the next poll.
 func (c *DeliveryConsumerGroupController) RecordFailure(ctx context.Context, maxAttempts int, delivery *Delivery, failureErr error, deliveryLogMode topic.DeliveryLogMode) error {
 	if delivery == nil {

@@ -58,7 +58,7 @@ func (d *MetricsDatastore) resolveMetricsTopicId(ctx context.Context) (int64, er
 	var id int64
 	err := d.Datastore.Pool.QueryRow(ctx,
 		`-- vulkan: metrics.resolveMetricsTopicId
-SELECT id FROM topic WHERE name = $1 AND schema_version = 1;`, metrics.TopicName,
+SELECT id FROM topic_config WHERE name = $1 AND schema_version = 1;`, metrics.TopicName,
 	).Scan(&id)
 	if err != nil {
 		return 0, err

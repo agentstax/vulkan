@@ -33,12 +33,12 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		UPDATE %s
 		SET
 			reclaims = reclaims + 1,
-			until = now() + make_interval(secs => $2),
+			expires_at = now() + make_interval(secs => $2),
 			token = gen_random_uuid()
 		WHERE (token, consumer_group_id) IN (
 			SELECT token, consumer_group_id FROM %s
 			WHERE consumer_group_id = $1
-				AND until < now()
+				AND expires_at < now()
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
@@ -47,9 +47,9 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 			consumer_group_id,
 			low,
 			high,
-			until,
+			expires_at,
 			reclaims;
-	`, iTopic.LeaseTable(topicId), iTopic.LeaseTable(topicId))
+	`, iTopic.ClaimLeaseTable(topicId), iTopic.ClaimLeaseTable(topicId))
 	leaseRows, err := tx.Query(ctx, reclaimSql, groupId, leaseDuration.Seconds())
 	if err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
-		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId))
 	} else {
 		// inserted CTE + INSERT keeps the range-wide write and its delivery_log_<topic_id>
 		// rows atomic -- one log row per message written, same first-recorded-attempt
@@ -127,7 +127,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 			)
 			INSERT INTO %[3]s (consumer_group_id, message_id, attempt, error)
 			SELECT $1, message_id, 0, last_error FROM inserted;
-		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId))
 	}
 	if _, err := tx.Exec(ctx, deliverySql, groupId, lease.Low, lease.High); err != nil {
 		return err
@@ -138,7 +138,7 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 		DELETE FROM %s
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.LeaseTable(topicId))
+	`, iTopic.ClaimLeaseTable(topicId))
 	_, err := tx.Exec(ctx, freeSql, groupId, lease.Token)
 	return err
 }
@@ -159,12 +159,12 @@ func (d *MessageConsumerGroupDatastore) forceReclaimRange(ctx context.Context, t
 		-- vulkan: messageconsumer.forceReclaimRange
 		UPDATE %s
 		SET
-			until = now(),
+			expires_at = now(),
 			reclaims = GREATEST(reclaims - 1, -1), -- should never go under -1
 			token = gen_random_uuid()              -- rotate token so any retry matches 0 rows instead of double decrementing
 		WHERE consumer_group_id = $1
 			AND token = $2;
-	`, iTopic.LeaseTable(topicId))
+	`, iTopic.ClaimLeaseTable(topicId))
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, groupId, token)
 	if err != nil {
 		return err

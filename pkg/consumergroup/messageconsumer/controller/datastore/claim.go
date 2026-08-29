@@ -61,7 +61,7 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 				OR EXISTS (
 					SELECT 1 FROM %s b
 					WHERE b.consumer_group_id = $3
-						AND m.routing_key ~ b.pattern
+						AND m.routing_key ~ b.pattern_regex
 				)
 				-- if bindings exist but our routing_key does not match any of them
 				-- we do not return anything
@@ -79,7 +79,7 @@ func (d *MessageConsumerGroupDatastore) readMessages(ctx context.Context, tx pgx
 		-- rows MUST come back in id order or a batch LIMIT could
 		-- return an arbitrary subset and the cursor would advance past unread offsets
 		ORDER BY m.id;
-	`, iTopic.MessageLogTable(topicId), iTopic.BindingTable(topicId), iTopic.BindingTable(topicId), iTopic.CompactionHeadTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.CompactionHeadTable(topicId))
 
 	rows, err := tx.Query(ctx, sql, low, high, groupId)
 	if err != nil {

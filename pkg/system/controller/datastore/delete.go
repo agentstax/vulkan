@@ -33,12 +33,12 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		"migration_log",
 		"cron_job",
 		"worker_instance",
-		"worker_log",
-		"worker",
-		"consumer_group",
-		"topic_log",
-		"topic",
-		"system",
+		"worker_config_log",
+		"worker_config",
+		"consumer_group_config",
+		"topic_config_log",
+		"topic_config",
+		"system_config",
 	} {
 		if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: system.delete
 DROP TABLE IF EXISTS %s;`, table)); err != nil {

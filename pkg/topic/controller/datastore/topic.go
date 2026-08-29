@@ -37,7 +37,7 @@ func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name stri
 			delivery_log_mode,
 			created_at,
 			updated_at
-		FROM topic
+		FROM topic_config
 		WHERE name = $1 AND schema_version = $2;
 	`
 	return d.scanTopicData(q.QueryRow(ctx, sql, name, schemaVersion))
@@ -69,7 +69,7 @@ func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicData, err
 			delivery_log_mode,
 			created_at,
 			updated_at
-		FROM topic
+		FROM topic_config
 		WHERE id = $1;
 	`
 	return d.scanTopicData(d.Datastore.Pool.QueryRow(ctx, sql, id))
@@ -100,7 +100,7 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 			delivery_log_mode,
 			created_at,
 			updated_at
-		FROM topic
+		FROM topic_config
 		ORDER BY name, schema_version;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
@@ -172,7 +172,7 @@ SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err !=
 
 	insertSql := `
 		-- vulkan: topic.register
-		INSERT INTO topic (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
+		INSERT INTO topic_config (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, created_at, updated_at;
 	`
@@ -231,7 +231,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 
 	sql := `
 		-- vulkan: topic.rename
-		UPDATE topic
+		UPDATE topic_config
 		SET name = $2, updated_at = NOW()
 		WHERE name = $1
 		RETURNING
@@ -293,7 +293,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 func (d *TopicDatastore) appendTopicLog(ctx context.Context, q datastore.Querier, data *TopicData, declaredBy string) error {
 	sql := `
 		-- vulkan: topic.appendTopicLog
-		INSERT INTO topic_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
+		INSERT INTO topic_config_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 	`
 	_, err := q.Exec(ctx, sql, data.Id, data.Name, data.PartitionSize, data.RetentionTTLNs, data.AllowDropPastCommitted, data.IdempotencyKeyTTLNs, data.DeliveryLogMode, declaredBy)

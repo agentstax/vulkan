@@ -13,20 +13,20 @@ var ErrGroupNotFound = diagnostic.NewError("VK0014", diagnostic.Permanent,
 	Diagnose(
 		diagnostic.NewQuery("every group registered on this topic", `
 SELECT
-	consumer_group.id,
-	consumer_group.name,
-	consumer_group.created_at
-FROM consumer_group
-JOIN topic ON topic.id = consumer_group.topic_id
-WHERE topic.name = '{topic}'
-ORDER BY consumer_group.name;`),
+	consumer_group_config.id,
+	consumer_group_config.name,
+	consumer_group_config.created_at
+FROM consumer_group_config
+JOIN topic_config ON topic_config.id = consumer_group_config.topic_id
+WHERE topic_config.name = '{topic}'
+ORDER BY consumer_group_config.name;`),
 		diagnostic.NewQuery("the group row behind an id, if that is what the line carried", `
 SELECT
 	id,
 	topic_id,
 	name,
 	created_at
-FROM consumer_group
+FROM consumer_group_config
 WHERE id = {group_id};`),
 	)
 
@@ -40,13 +40,13 @@ var ErrGroupLive = diagnostic.NewError("VK0015", diagnostic.Permanent,
 	Diagnose(
 		diagnostic.NewQuery("the instances still heartbeating on this group", `
 SELECT
-	worker.name AS worker,
+	worker_config.name AS worker,
 	worker_instance.id,
 	worker_instance.expires_at,
 	worker_instance.attempts
 FROM worker_instance
-JOIN worker ON worker.id = worker_instance.worker_id
-WHERE worker.consumer_group_id = {group_id}
+JOIN worker_config ON worker_config.id = worker_instance.worker_id
+WHERE worker_config.consumer_group_id = {group_id}
 	AND worker_instance.expires_at > now()
 ORDER BY worker_instance.expires_at;`),
 	)
@@ -63,7 +63,7 @@ var ErrGroupDeliveriesPending = diagnostic.NewError("VK0016", diagnostic.Permane
 	Diagnose(
 		diagnostic.NewQuery("what the delivery rows would discard, by status", `
 SELECT status, count(*) AS row_count
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 GROUP BY status;`),
 		diagnostic.NewQuery("the dead ones, whose dead-letter record goes with them", `
@@ -72,7 +72,7 @@ SELECT
 	attempts,
 	last_error,
 	updated_at
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY message_id;`),

@@ -95,7 +95,7 @@ func main() {
 		must(err)
 	}
 	var raceRows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicA.Id, race).Scan(&raceRows))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race).Scan(&raceRows))
 	if raceRows != 1 {
 		die(fmt.Sprintf("race group has %d registry rows, want 1", raceRows))
 	}
@@ -104,14 +104,14 @@ func main() {
 	step("destroying a topic destroys ITS groups and no one else's")
 	must(mAdmin.DestroyTopic(ctx, topicB.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	var bRows int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`, other.Id).Scan(&bRows))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, other.Id).Scan(&bRows))
 	if bRows != 0 {
 		die("topicB's group survived its topic's Destroy")
 	}
 	// topicB's per-topic tables are dropped with it -- the cursor rows are
 	// gone because their whole table is
 	var cursorTable *string
-	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("cursor_%d", topicB.Id)).Scan(&cursorTable))
+	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("consumer_group_cursor_%d", topicB.Id)).Scan(&cursorTable))
 	if cursorTable != nil {
 		die("topicB's cursor table survived its topic's Destroy")
 	}
@@ -122,7 +122,7 @@ func main() {
 	fmt.Printf("  ✓ topicB's group + children cascaded away, topicA's same-named group untouched\n")
 
 	step("deleting a group row cascades its cursor")
-	if _, err := ds.Pool.Exec(ctx, `DELETE FROM consumer_group WHERE id = $1;`, registered.Id); err != nil {
+	if _, err := ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE id = $1;`, registered.Id); err != nil {
 		die(err.Error())
 	}
 	gone, err := cd.GetGroup(ctx, topicA.Id, group)
@@ -136,7 +136,7 @@ func main() {
 	destroySection(ctx, ds, mAdmin, cd, topicA, suffix)
 
 	// cleanup
-	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
+	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
 	must(err)
 	must(mAdmin.DestroyTopic(ctx, topicA.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
@@ -184,9 +184,9 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 
 	// delivery rows refuse it; force discards them along with the rows no FK
 	// reaches (lease, key_lease, delivery_log)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_%d (consumer_group_id, message_id, status) VALUES ($1, 1, 'ready');`, topicA.Id), doomed.Id)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status) VALUES ($1, 1, 'ready');`, topicA.Id), doomed.Id)
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO lease_%d (consumer_group_id, low, high, until) VALUES ($1, 1, 10, now() + interval '1 minute');`, topicA.Id), doomed.Id)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO claim_lease_%d (consumer_group_id, low, high, expires_at) VALUES ($1, 1, 10, now() + interval '1 minute');`, topicA.Id), doomed.Id)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, 1, 1, 'failure', 'lab');`, topicA.Id), doomed.Id)
 	must(err)
@@ -198,14 +198,14 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	must(mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{Force: true}))
 
 	for what, sql := range map[string]string{
-		"group rows":        `SELECT COUNT(*) FROM consumer_group WHERE id = $1;`,
-		"cursor rows":       fmt.Sprintf(`SELECT COUNT(*) FROM cursor_%d WHERE consumer_group_id = $1;`, topicA.Id),
-		"binding rows":      fmt.Sprintf(`SELECT COUNT(*) FROM binding_%d WHERE consumer_group_id = $1;`, topicA.Id),
-		"worker rows":       `SELECT COUNT(*) FROM worker WHERE consumer_group_id = $1;`,
-		"instance rows":     `SELECT COUNT(*) FROM worker_instance wi WHERE wi.worker_id IN (SELECT id FROM worker WHERE consumer_group_id = $1);`,
-		"lease rows":        fmt.Sprintf(`SELECT COUNT(*) FROM lease_%d WHERE consumer_group_id = $1;`, topicA.Id),
+		"group rows":        `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`,
+		"cursor rows":       fmt.Sprintf(`SELECT COUNT(*) FROM consumer_group_cursor_%d WHERE consumer_group_id = $1;`, topicA.Id),
+		"binding rows":      fmt.Sprintf(`SELECT COUNT(*) FROM binding_config_%d WHERE consumer_group_id = $1;`, topicA.Id),
+		"worker rows":       `SELECT COUNT(*) FROM worker_config WHERE consumer_group_id = $1;`,
+		"instance rows":     `SELECT COUNT(*) FROM worker_instance wi WHERE wi.worker_id IN (SELECT id FROM worker_config WHERE consumer_group_id = $1);`,
+		"lease rows":        fmt.Sprintf(`SELECT COUNT(*) FROM claim_lease_%d WHERE consumer_group_id = $1;`, topicA.Id),
 		"key lease rows":    fmt.Sprintf(`SELECT COUNT(*) FROM key_lease_%d WHERE consumer_group_id = $1;`, topicA.Id),
-		"delivery rows":     fmt.Sprintf(`SELECT COUNT(*) FROM delivery_%d WHERE consumer_group_id = $1;`, topicA.Id),
+		"delivery rows":     fmt.Sprintf(`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = $1;`, topicA.Id),
 		"delivery log rows": fmt.Sprintf(`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = $1;`, topicA.Id),
 	} {
 		var count int
@@ -223,7 +223,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 // together with the registry row (want 1 or 0).
 func assertChildren(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, want int, when string) {
 	var cursors int
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM cursor_%d WHERE consumer_group_id = $1;`, topicId), groupId).Scan(&cursors))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM consumer_group_cursor_%d WHERE consumer_group_id = $1;`, topicId), groupId).Scan(&cursors))
 	if cursors != want {
 		die(fmt.Sprintf("group %d has %d cursors %s, want %d", groupId, cursors, when, want))
 	}

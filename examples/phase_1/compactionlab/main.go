@@ -262,8 +262,8 @@ func explainNoCompactionSubplan(ctx context.Context, ds *iDatastore.PostgresData
 		WHERE m.id > $1
 			AND m.id <= $2
 			AND (
-				NOT EXISTS (SELECT 1 FROM binding_%d b WHERE b.consumer_group_id = $3)
-				OR EXISTS (SELECT 1 FROM binding_%d b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern)
+				NOT EXISTS (SELECT 1 FROM binding_config_%d b WHERE b.consumer_group_id = $3)
+				OR EXISTS (SELECT 1 FROM binding_config_%d b WHERE b.consumer_group_id = $3 AND m.routing_key ~ b.pattern_regex)
 			)
 			AND (
 				m.compaction_key IS NULL

@@ -22,7 +22,7 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId in
 func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
 	var consumerGroupId int64
 	if err := d.Datastore.Pool.QueryRow(ctx, `-- vulkan: metrics.consumerGroupSnapshot
-SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
+SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
 		return nil, err
 	}
 
@@ -67,7 +67,7 @@ SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`, topicId, cons
 			), 0) AS open_leases
 		FROM %[4]s c
 		WHERE c.consumer_group_id = $1;
-	`, iTopic.MessageLogTable(topicId), iTopic.DeliveryTable(topicId), iTopic.LeaseTable(topicId), iTopic.CursorTable(topicId))
+	`, iTopic.MessageLogTable(topicId), iTopic.ExceptionQueueTable(topicId), iTopic.ClaimLeaseTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
 
 	var data ConsumerGroupSnapshotData
 	err := d.Datastore.Pool.QueryRow(ctx, sql, consumerGroupId).Scan(
@@ -104,7 +104,7 @@ func (d *MetricsDatastore) listConsumerGroups(ctx context.Context, topicId int64
 	sql := `
 		-- vulkan: metrics.listConsumerGroups
 		SELECT name
-		FROM consumer_group
+		FROM consumer_group_config
 		WHERE topic_id = $1 ORDER BY name;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql, topicId)

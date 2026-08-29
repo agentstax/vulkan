@@ -32,7 +32,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				SET
 					status = 'inflight',
 					lease_token = gen_random_uuid(),
-					lease_until = now() + make_interval(secs => $3),
+					lease_expires_at = now() + make_interval(secs => $3),
 					attempts = attempts + 1,
 					updated_at = now()
 				WHERE (consumer_group_id, message_id) IN
@@ -42,7 +42,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 						AND d.attempts < $5
 						AND (
 							(d.status = 'ready' AND d.can_run_after <= now()) OR
-							(d.status = 'inflight' AND d.lease_until < now()) OR
+							(d.status = 'inflight' AND d.lease_expires_at < now()) OR
 							(d.status = 'deferred')
 						)
 						-- never claim a row whose compaction key is under an unexpired key_lease
@@ -58,7 +58,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					LIMIT $2
 					FOR UPDATE OF d SKIP LOCKED
 				)
-				RETURNING consumer_group_id, message_id, attempts, lease_token, lease_until
+				RETURNING consumer_group_id, message_id, attempts, lease_token, lease_expires_at
 			)
 			SELECT
 				c.consumer_group_id,
@@ -66,7 +66,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				c.message_id,
 				c.attempts,
 				c.lease_token,
-				c.lease_until,
+				c.lease_expires_at,
 				m.payload,
 				m.created_at,
 				COALESCE(m.routing_key, '') AS routing_key,
@@ -76,7 +76,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.KeyLeaseTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.KeyLeaseTable(topicId))
 	} else {
 		// eligible is split out so it can remember each row's pre-claim status
 		// and attempts -- the expired_logged CTE needs both, atomically with
@@ -90,7 +90,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					AND d.attempts < $5
 					AND (
 						(d.status = 'ready' AND d.can_run_after <= now()) OR
-						(d.status = 'inflight' AND d.lease_until < now()) OR
+						(d.status = 'inflight' AND d.lease_expires_at < now()) OR
 						(d.status = 'deferred')
 					)
 					-- never claim a row whose compaction key is under an unexpired key_lease
@@ -110,13 +110,13 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				SET
 					status = 'inflight',
 					lease_token = gen_random_uuid(),
-					lease_until = now() + make_interval(secs => $3),
+					lease_expires_at = now() + make_interval(secs => $3),
 					attempts = d.attempts + 1,
 					updated_at = now()
 				FROM eligible e
 				WHERE d.consumer_group_id = e.consumer_group_id
 					AND d.message_id = e.message_id
-				RETURNING d.consumer_group_id, d.message_id, d.attempts, d.lease_token, d.lease_until
+				RETURNING d.consumer_group_id, d.message_id, d.attempts, d.lease_token, d.lease_expires_at
 			), expired_logged AS (
 				-- an expired 'inflight' row is a claim nobody recorded: its
 				-- current attempt number is provably absent from the log (any
@@ -132,7 +132,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				c.message_id,
 				c.attempts,
 				c.lease_token,
-				c.lease_until,
+				c.lease_expires_at,
 				m.payload,
 				m.created_at,
 				COALESCE(m.routing_key, '') AS routing_key,
@@ -142,7 +142,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 			FROM claimed c
 			JOIN %[2]s m ON m.id = c.message_id
 			ORDER BY c.message_id;
-		`, iTopic.DeliveryTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId), iTopic.KeyLeaseTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId), iTopic.KeyLeaseTable(topicId))
 	}
 
 	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupId, limit, leaseDuration.Seconds(), topicId, maxRetries)
@@ -170,12 +170,12 @@ func (d *ExceptionConsumerGroupDatastore) renewLease(ctx context.Context, except
 		-- vulkan: exceptionconsumer.renewLease
 		UPDATE %s
 		SET
-			lease_until = now() + make_interval(secs => $4),
+			lease_expires_at = now() + make_interval(secs => $4),
 			updated_at = now()
 		WHERE consumer_group_id = $1
 			AND message_id = $2
 			AND lease_token = $3;
-	`, iTopic.DeliveryTable(exception.TopicId))
+	`, iTopic.ExceptionQueueTable(exception.TopicId))
 
 	tag, err := d.Datastore.Pool.Exec(ctx, sql, exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, duration.Seconds())
 	if err != nil {

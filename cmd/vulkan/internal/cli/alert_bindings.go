@@ -62,7 +62,7 @@ func printDeclarationsTable(w io.Writer, declarations []*consumergroup.Declarati
 			patternsCell(declaration.Patterns),
 			declaration.DeclaredBy,
 			timeCell(declaration.DeclaredAt),
-			timeCell(declaration.AttemptAt))
+			timeCell(declaration.AttemptedAt))
 	}
 	tw.Flush()
 

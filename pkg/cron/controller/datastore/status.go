@@ -55,16 +55,16 @@ func (d *CronJobDatastore) matchingGroups(ctx context.Context, jobRequestsTopicI
 	sql := fmt.Sprintf(`
 		-- vulkan: cron.matchingGroups
 		SELECT cg.id, cg.name
-		FROM consumer_group cg
+		FROM consumer_group_config cg
 		WHERE cg.topic_id = $1
 		  AND (
 			-- a group with no bindings receives every routing key
 			NOT EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id)
 			-- otherwise a binding must match the job's name ($2)
-			OR EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern)
+			OR EXISTS (SELECT 1 FROM %[1]s b WHERE b.consumer_group_id = cg.id AND $2 ~ b.pattern_regex)
 		  )
 		ORDER BY cg.name;
-	`, iTopic.BindingTable(jobRequestsTopicId))
+	`, iTopic.BindingConfigTable(jobRequestsTopicId))
 	rows, err := d.Datastore.Pool.Query(ctx, sql, jobRequestsTopicId, name)
 	if err != nil {
 		return nil, err

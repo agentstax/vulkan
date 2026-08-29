@@ -21,14 +21,9 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- Table naming + column audit before final public surface / documentation
-  - DDL diagram pipeline SHIPPED 2026-08-29: `just schema-diagram` /
-    `schema-diagram-fresh` (tbls snapshot per scripts/database/tbls.yml,
-    Liam ERD explorer under bin/schema/erd, `schema-diagram-serve`)
-  - table naming scheme settled [0611]; message-key promotion settled
-    [0612]; column naming rules settled [0613] — all awaiting one
-    implementation sweep (rename + produce-path change, doc page first
-    per [0612]; conventions schema walk for the _at/_ns rules)
+- Table naming + column rename, message-key promotion [0611][0612][0613]
+  — settled 2026-08-29, expanded in TODO.md (DDL diagram pipeline
+  shipped same day: `just schema-diagram`)
 
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real

@@ -150,7 +150,7 @@ func seedingSection(ctx context.Context) {
 	}
 
 	partitionCountGroup = scalarInt64(ctx,
-		`SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`,
+		`SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
 		jobRequests.Id, partitioncount.JobName)
 	groupOwner, err = common.NewConsumerGroupOwner(jobRequests.SystemId, jobRequests.Id, partitionCountGroup, partitioncount.JobName)
 	must(err)
@@ -391,7 +391,7 @@ func executorSection(ctx context.Context) {
 	}
 	for _, foreignGroup := range []int64{otherGroup, bindinglessGroup} {
 		claimed := scalarInt64(ctx, fmt.Sprintf(
-			`SELECT COUNT(*) FROM delivery_%d WHERE consumer_group_id = %d;`, jobRequests.Id, foreignGroup))
+			`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = %d;`, jobRequests.Id, foreignGroup))
 		logged := scalarInt64(ctx, fmt.Sprintf(
 			`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d;`, jobRequests.Id, foreignGroup))
 		if claimed != 0 || logged != 0 {
@@ -533,10 +533,10 @@ func cleanup() {
 	must(mAdmin.DestroyTopic(ctx, labTopic.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
-		fmt.Sprintf(`DELETE FROM delivery_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM consumer_group WHERE name LIKE '%s.%%';`, prefix),
+		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
+		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
+		fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
+		fmt.Sprintf(`DELETE FROM consumer_group_config WHERE name LIKE '%s.%%';`, prefix),
 	} {
 		exec(ctx, sql)
 	}

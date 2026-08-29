@@ -21,7 +21,7 @@ type ClaimedException struct {
 	MessageId       int64
 	Attempts        int
 	LeaseToken      uuid.UUID
-	LeaseUntil      time.Time
+	LeaseExpiresAt      time.Time
 	Payload         json.RawMessage
 	CreatedAt       time.Time
 	RoutingKey      string

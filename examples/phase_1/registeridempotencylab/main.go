@@ -93,7 +93,7 @@ func main() {
 // topic_log, so the lab asserts on the table itself.
 func topicLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int {
 	var count int
-	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic_log WHERE topic_id = $1;`, topicId).Scan(&count))
+	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM topic_config_log WHERE topic_id = $1;`, topicId).Scan(&count))
 	return count
 }
 

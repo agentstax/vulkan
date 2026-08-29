@@ -30,14 +30,14 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 			SET
 				status = 'dead',
 				lease_token = NULL,
-				lease_until = NULL,
+				lease_expires_at = NULL,
 				updated_at = now(),
 				last_error = concat(last_error, ' [killed: crash-loop hit max attempts]')
 			WHERE consumer_group_id = $1
 				AND status = 'inflight'
-				AND lease_until < now()
+				AND lease_expires_at < now()
 				AND attempts >= $2;
-		`, iTopic.DeliveryTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
 		// atomic in one statement.
@@ -48,19 +48,19 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 				SET
 					status = 'dead',
 					lease_token = NULL,
-					lease_until = NULL,
+					lease_expires_at = NULL,
 					updated_at = now(),
 					last_error = concat(last_error, ' [killed: crash-loop hit max attempts]')
 				WHERE consumer_group_id = $1
 					AND status = 'inflight'
-					AND lease_until < now()
+					AND lease_expires_at < now()
 					AND attempts >= $2
 				RETURNING consumer_group_id, message_id, attempts, last_error
 			)
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
 			SELECT consumer_group_id, message_id, attempts, 'killed', last_error
 			FROM killed;
-		`, iTopic.DeliveryTable(topicId), iTopic.DeliveryLogTable(topicId))
+		`, iTopic.ExceptionQueueTable(topicId), iTopic.DeliveryLogTable(topicId))
 	}
 	killTag, err := d.Datastore.Pool.Exec(ctx, killSql, groupId, maxRetries)
 	if err != nil {

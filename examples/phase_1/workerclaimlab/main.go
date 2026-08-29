@@ -79,7 +79,7 @@ func main() {
 	for i := range consumers {
 		running = append(running, start(ctx, ds, tp.Name, i))
 	}
-	groupId := scalar(ctx, ds, `SELECT id FROM consumer_group WHERE topic_id=$1 AND name=$2`, tp.Id, group)
+	groupId := scalar(ctx, ds, `SELECT id FROM consumer_group_config WHERE topic_id=$1 AND name=$2`, tp.Id, group)
 
 	// ===== phase 1: N consumers, one live instance per target-1 row =====
 	step("PHASE 1: 3 consumers for 8s -- janitor/cursor-advancer hold exactly 1 live instance, never 3")
@@ -117,7 +117,7 @@ func main() {
 
 	// ===== the workers actually did their jobs =====
 	step("END STATE: the coordinated workers did real work")
-	assertInt("committed reached head", scalar(ctx, ds, fmt.Sprintf(`SELECT c.committed FROM cursor_%d c JOIN consumer_group g ON g.id = c.consumer_group_id WHERE g.name=$1`, tp.Id), group), head)
+	assertInt("committed reached head", scalar(ctx, ds, fmt.Sprintf(`SELECT c.committed FROM consumer_group_cursor_%d c JOIN consumer_group_config g ON g.id = c.consumer_group_id WHERE g.name=$1`, tp.Id), group), head)
 
 	fmt.Println("\n✅ WORKER CLAIM LAB PASSED")
 	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")
@@ -172,7 +172,7 @@ func sampleLive(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId i
 	for time.Now().Before(deadline) {
 		rows, err := ds.Pool.Query(ctx, `
 			SELECT w.name, COUNT(i.id) FILTER (WHERE i.expires_at > now())
-			FROM worker w
+			FROM worker_config w
 			LEFT JOIN worker_instance i ON i.worker_id = w.id
 			WHERE w.topic_id = $1
 				OR w.consumer_group_id = $2

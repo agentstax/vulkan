@@ -8,13 +8,13 @@ dsn: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}
 docPath: bin/schema
 
 include:
-  - system
-  - topic
-  - topic_log
-  - consumer_group
-  - worker
+  - system_config
+  - topic_config
+  - topic_config_log
+  - consumer_group_config
+  - worker_config
+  - worker_config_log
   - worker_instance
-  - worker_log
   - cron_job
   - migration_log
   - "*_1"
@@ -27,37 +27,37 @@ exclude:
 # The per-topic family declares no foreign keys -- the family is DROPped
 # wholesale on topic destroy -- so its relations are declared here instead.
 relations:
-  - table: binding_1
+  - table: binding_config_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
-  - table: binding_log_1
+  - table: binding_config_log_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
-  - table: cursor_1
+  - table: consumer_group_cursor_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
-  - table: lease_1
+  - table: claim_lease_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
   - table: key_lease_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
-  - table: delivery_1
+  - table: exception_queue_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
-  - table: delivery_1
+  - table: exception_queue_1
     columns: [message_id]
     parentTable: message_log_1
     parentColumns: [id]
   - table: delivery_log_1
     columns: [consumer_group_id]
-    parentTable: consumer_group
+    parentTable: consumer_group_config
     parentColumns: [id]
   - table: delivery_log_1
     columns: [message_id]

@@ -19,8 +19,8 @@ SELECT
 	worker_instance.expires_at,
 	worker_instance.attempts
 FROM worker_instance
-JOIN worker ON worker.id = worker_instance.worker_id
-WHERE worker.name = '{worker}'
+JOIN worker_config ON worker_config.id = worker_instance.worker_id
+WHERE worker_config.name = '{worker}'
 ORDER BY worker_instance.expires_at DESC;`),
 	)
 
@@ -39,7 +39,7 @@ SELECT
 	system_id,
 	topic_id,
 	consumer_group_id
-FROM worker
+FROM worker_config
 WHERE target_instances = 0
 ORDER BY name;`),
 	)
@@ -54,13 +54,13 @@ var EventTickBackoffCurveExhausted = diagnostic.NewEvent("VK0036",
 	Diagnose(
 		diagnostic.NewQuery("this worker's rows and their failure streaks", `
 SELECT
-	worker.id,
-	worker.target_instances,
+	worker_config.id,
+	worker_config.target_instances,
 	worker_instance.expires_at,
 	worker_instance.attempts
-FROM worker
-LEFT JOIN worker_instance ON worker_instance.worker_id = worker.id
-WHERE worker.name = '{worker}'
+FROM worker_config
+LEFT JOIN worker_instance ON worker_instance.worker_id = worker_config.id
+WHERE worker_config.name = '{worker}'
 ORDER BY worker_instance.attempts DESC;`),
 	)
 

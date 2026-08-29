@@ -47,22 +47,22 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 	defer tx.Rollback(ctx)
 
 	if _, err := tx.Exec(ctx, `-- vulkan: topic.delete
-DELETE FROM topic WHERE id = $1;`, topicId); err != nil {
+DELETE FROM topic_config WHERE id = $1;`, topicId); err != nil {
 		return err
 	}
 
 	// the now-empty message_log parent and every other per-topic table
 	for _, table := range []string{
 		iTopic.MessageLogTable(topicId),
-		iTopic.DeliveryTable(topicId),
+		iTopic.ExceptionQueueTable(topicId),
 		iTopic.DeliveryLogTable(topicId),
 		iTopic.IdempotencyKeyTable(topicId),
-		iTopic.CursorTable(topicId),
-		iTopic.LeaseTable(topicId),
+		iTopic.ConsumerGroupCursorTable(topicId),
+		iTopic.ClaimLeaseTable(topicId),
 		iTopic.KeyLeaseTable(topicId),
 		iTopic.CompactionHeadTable(topicId),
-		iTopic.BindingTable(topicId),
-		iTopic.BindingLogTable(topicId),
+		iTopic.BindingConfigTable(topicId),
+		iTopic.BindingConfigLogTable(topicId),
 	} {
 		dropSql := fmt.Sprintf(`
 			-- vulkan: topic.delete

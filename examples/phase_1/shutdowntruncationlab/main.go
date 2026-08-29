@@ -223,15 +223,15 @@ type leaseBounds struct{ low, high int64 }
 
 func onlyLease(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) leaseBounds {
 	var lb leaseBounds
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT low, high FROM lease_%d WHERE consumer_group_id=$1`, topicId), groupId).Scan(&lb.low, &lb.high))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT low, high FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), groupId).Scan(&lb.low, &lb.high))
 	return lb
 }
 
 func leases(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM claim_lease_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 func deliveries(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM delivery_%d WHERE consumer_group_id=$1`, topicId), groupId)
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM exception_queue_%d WHERE consumer_group_id=$1`, topicId), groupId)
 }
 
 func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, args ...any) int64 {
@@ -242,7 +242,7 @@ func scalar(ctx context.Context, ds *iDatastore.PostgresDatastore, q string, arg
 
 func assertStatus(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, messageId int64, want string) {
 	var got string
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM delivery_%d WHERE consumer_group_id=$1 AND message_id=$2`, topicId), groupId, messageId).Scan(&got))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT status FROM exception_queue_%d WHERE consumer_group_id=$1 AND message_id=$2`, topicId), groupId, messageId).Scan(&got))
 	if got != want {
 		die(fmt.Sprintf("message %d status: got %q, want %q", messageId, got, want))
 	}

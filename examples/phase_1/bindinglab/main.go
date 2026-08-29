@@ -71,7 +71,7 @@ func main() {
 	incumbentConsumer := newConsumer()
 	incumbent, err := incumbentConsumer.Register(ctx, groupName, topicName, topic.SchemaVersion(1), []string{"orders.*"})
 	must(err)
-	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group WHERE topic_id = $1 AND name = $2;`,
+	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
 		registered.Id, groupName).Scan(&groupId))
 	assertInt("one installed row", installedRows(ctx), 1)
 	assertString("binding rows", bindingDisplays(ctx), "orders.*")
@@ -169,7 +169,7 @@ func main() {
 	syntheticNewestId := insertSyntheticWaits(ctx)
 	beforeSweep := waitingRows(ctx)
 	_, err = ds.Pool.Exec(ctx,
-		fmt.Sprintf(`UPDATE binding_log_%d SET attempt_at = attempt_at - interval '8 days' WHERE consumer_group_id = $1;`, topicId),
+		fmt.Sprintf(`UPDATE binding_config_log_%d SET attempted_at = attempted_at - interval '8 days' WHERE consumer_group_id = $1;`, topicId),
 		groupId)
 	must(err)
 
@@ -183,7 +183,7 @@ func main() {
 
 	var survivingSyntheticId int64
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT id FROM binding_log_%d WHERE consumer_group_id = $1 AND declared_by = 'bindinglab.dead-declarer';`, topicId),
+		fmt.Sprintf(`SELECT id FROM binding_config_log_%d WHERE consumer_group_id = $1 AND declared_by = 'bindinglab.dead-declarer';`, topicId),
 		groupId).Scan(&survivingSyntheticId))
 	if survivingSyntheticId != syntheticNewestId {
 		die(fmt.Sprintf("the dead declarer's newest waiting row must survive: got id %d, want %d", survivingSyntheticId, syntheticNewestId))
@@ -217,8 +217,8 @@ func waitLiveInstance(ctx context.Context) {
 			SELECT EXISTS (
 				SELECT 1
 				FROM worker_instance
-				JOIN worker ON worker.id = worker_instance.worker_id
-				WHERE worker.consumer_group_id = $1 AND worker_instance.expires_at > now()
+				JOIN worker_config ON worker_config.id = worker_instance.worker_id
+				WHERE worker_config.consumer_group_id = $1 AND worker_instance.expires_at > now()
 			);`, groupId).Scan(&live))
 		if live {
 			return
@@ -237,7 +237,7 @@ func insertSyntheticWaits(ctx context.Context) int64 {
 	var newestId int64
 	for range 3 {
 		must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`
-			INSERT INTO binding_log_%d (consumer_group_id, status, patterns, declared_by, declared_at)
+			INSERT INTO binding_config_log_%d (consumer_group_id, status, patterns, declared_by, declared_at)
 			VALUES ($1, 'waiting', '{"refunds.*"}', 'bindinglab.dead-declarer', now())
 			RETURNING id;`, topicId), groupId).Scan(&newestId))
 	}
@@ -247,7 +247,7 @@ func insertSyntheticWaits(ctx context.Context) int64 {
 func installedRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM binding_log_%d WHERE consumer_group_id = $1 AND status = 'installed';`, topicId),
+		fmt.Sprintf(`SELECT COUNT(*) FROM binding_config_log_%d WHERE consumer_group_id = $1 AND status = 'installed';`, topicId),
 		groupId).Scan(&count))
 	return count
 }
@@ -255,7 +255,7 @@ func installedRows(ctx context.Context) int {
 func waitingRows(ctx context.Context) int {
 	var count int
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COUNT(*) FROM binding_log_%d WHERE consumer_group_id = $1 AND status = 'waiting';`, topicId),
+		fmt.Sprintf(`SELECT COUNT(*) FROM binding_config_log_%d WHERE consumer_group_id = $1 AND status = 'waiting';`, topicId),
 		groupId).Scan(&count))
 	return count
 }
@@ -263,7 +263,7 @@ func waitingRows(ctx context.Context) int {
 func bindingDisplays(ctx context.Context) string {
 	var displays string
 	must(ds.Pool.QueryRow(ctx,
-		fmt.Sprintf(`SELECT COALESCE(string_agg(display, ',' ORDER BY display), '') FROM binding_%d WHERE consumer_group_id = $1;`, topicId),
+		fmt.Sprintf(`SELECT COALESCE(string_agg(pattern, ',' ORDER BY pattern), '') FROM binding_config_%d WHERE consumer_group_id = $1;`, topicId),
 		groupId).Scan(&displays))
 	return displays
 }

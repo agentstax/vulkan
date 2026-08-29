@@ -12,22 +12,22 @@ import (
 //
 // - message_log_<id>
 // - idempotency_key_<id>
-// - delivery_<id>
+// - exception_queue_<id>
 // - delivery_log_<id>
-// - cursor_<id>
-// - lease_<id>
+// - consumer_group_cursor_<id>
+// - claim_lease_<id>
 // - key_lease_<id>
 // - compaction_head_<id>
-// - binding_<id>
-// - binding_log_<id>
+// - binding_config_<id>
+// - binding_config_log_<id>
 //
 // Per-topic tables instead of shared ones:
 //   - partition drops wait on every cursor in the table -> one lagging group
 //     on topic A would block drops for unrelated topic B
 //   - retention reads each partition's age -> the youngest topic sharing a
 //     partition would set every other topic's expiry
-//   - a failure outage churns delivery_<id> with insert+delete -> shared, that
-//     churn would slow every other topic's claim queries
+//   - a failure outage churns exception_queue_<id> with insert+delete ->
+//     shared, that churn would slow every other topic's claim queries
 //   - the create-ahead partition math needs ids dense from the topic's own
 //     sequence -> a shared BIGSERIAL scatters them
 func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id int64, partitionSize int64) error {
@@ -95,7 +95,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		return err
 	}
 
-	createDeliverySql := fmt.Sprintf(`
+	createExceptionQueueSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			consumer_group_id BIGINT NOT NULL,                -- PK
@@ -105,13 +105,13 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries
 			last_error TEXT,
 			lease_token UUID,
-			lease_until TIMESTAMPTZ,
+			lease_expires_at TIMESTAMPTZ,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (consumer_group_id, message_id)
 		);
-	`, iTopic.DeliveryTable(id))
-	if _, err := tx.Exec(ctx, createDeliverySql); err != nil {
+	`, iTopic.ExceptionQueueTable(id))
+	if _, err := tx.Exec(ctx, createExceptionQueueSql); err != nil {
 		return err
 	}
 
@@ -139,13 +139,13 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		return err
 	}
 
-	// consumer group cursors for tracking offset in message_log_<id>.
+	// consumer group cursors for tracking position in message_log_<id>.
 	// UNIQUE keeps group <-> cursor 1:1
-	createCursorSql := fmt.Sprintf(`
+	createConsumerGroupCursorSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group (id) ON DELETE CASCADE,
+			consumer_group_id BIGINT NOT NULL UNIQUE REFERENCES consumer_group_config (id) ON DELETE CASCADE,
 			claimed BIGINT NOT NULL DEFAULT 0,      -- the read frontier 'inflight' work
 			committed BIGINT NOT NULL DEFAULT 0,    -- every message id > committed is in an end state done / dead
 			-- the snapshot fence: claims stop at settled_head, not the raw MAX(id),
@@ -154,24 +154,24 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			pending_head BIGINT NOT NULL DEFAULT 0, -- candidate head awaiting that proof
 			pending_xmax XID8                       -- txid fence read in the same snapshot as pending_head
 		);
-	`, iTopic.CursorTable(id))
-	if _, err := tx.Exec(ctx, createCursorSql); err != nil {
+	`, iTopic.ConsumerGroupCursorTable(id))
+	if _, err := tx.Exec(ctx, createConsumerGroupCursorSql); err != nil {
 		return err
 	}
 
-	createLeaseSql := fmt.Sprintf(`
+	createClaimLeaseSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			token UUID NOT NULL DEFAULT gen_random_uuid(),
 			consumer_group_id BIGINT NOT NULL,
 			low BIGINT NOT NULL,             -- low of claimed range of lease
 			high BIGINT NOT NULL,            -- high of claimed range of lease
-			until TIMESTAMPTZ NOT NULL,      -- when the lease is considered expired and should be reclaimed
+			expires_at TIMESTAMPTZ NOT NULL, -- past it the lease is reclaimed
 			reclaims INT NOT NULL DEFAULT 0, -- times this range has been reclaimed; past MaxReclaims it's quarantined
 			PRIMARY KEY (token, consumer_group_id)
 		);
-	`, iTopic.LeaseTable(id))
-	if _, err := tx.Exec(ctx, createLeaseSql); err != nil {
+	`, iTopic.ClaimLeaseTable(id))
+	if _, err := tx.Exec(ctx, createClaimLeaseSql); err != nil {
 		return err
 	}
 
@@ -206,41 +206,41 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		return err
 	}
 
-	// bindings: routing rules. A group with no binding matches all events; a
-	// group WITH a binding only receives events whose routing_key matches
-	// `pattern`.
-	createBindingSql := fmt.Sprintf(`
+	// bindings: routing rules. A group with no binding matches all messages; a
+	// group WITH a binding only receives messages whose routing_key matches
+	// `pattern_regex`.
+	createBindingConfigSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
-			pattern TEXT NOT NULL,                -- POSIX regex translated from the NATS-style pattern
-			display TEXT,                         -- original NATS pattern, for humans
-			UNIQUE (consumer_group_id, pattern)   -- its index also serves the group lookup
+			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			pattern_regex TEXT NOT NULL,              -- POSIX regex translated from the declared pattern
+			pattern TEXT,                             -- the declared NATS-style pattern, for humans
+			UNIQUE (consumer_group_id, pattern_regex) -- its index also serves the group lookup
 		);
-	`, iTopic.BindingTable(id))
-	if _, err := tx.Exec(ctx, createBindingSql); err != nil {
+	`, iTopic.BindingConfigTable(id))
+	if _, err := tx.Exec(ctx, createBindingConfigSql); err != nil {
 		return err
 	}
 
-	// binding_log_<id>: one row appended per declaration attempt, never
+	// binding_config_log_<id>: one row appended per declaration attempt, never
 	// updated or deleted.
 	// newest installed row per group -> the effective set's declaration
 	// newest waiting row per declarer -> its latest still-blocked retry
-	// Claims never read this table; the effective set stays in binding rows.
-	createBindingLogSql := fmt.Sprintf(`
+	// Claims never read this table; the effective set stays in binding_config rows.
+	createBindingConfigLogSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
-			status TEXT NOT NULL,                          -- 'installed' | 'waiting'
-			patterns TEXT[] NOT NULL,                      -- the full declared set, original NATS-style; empty = whole topic
-			declared_by TEXT NOT NULL,                     -- hostname:pid:<random> of the declaring process, display only
-			declared_at TIMESTAMPTZ NOT NULL,              -- when this declarer first stated this set; constant across its retries
-			attempt_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when this attempt ran; an installed row's declared_at -> attempt_at is the wait it ended
+			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			status TEXT NOT NULL,                            -- 'installed' | 'waiting'
+			patterns TEXT[] NOT NULL,                        -- the full declared set, original NATS-style; empty = whole topic
+			declared_by TEXT NOT NULL,                       -- hostname:pid:<random> of the declaring process, display only
+			declared_at TIMESTAMPTZ NOT NULL,                -- when this declarer first stated this set; constant across its retries
+			attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()  -- when this attempt ran; an installed row's declared_at -> attempted_at is the wait it ended
 		);
-	`, iTopic.BindingLogTable(id))
-	if _, err := tx.Exec(ctx, createBindingLogSql); err != nil {
+	`, iTopic.BindingConfigLogTable(id))
+	if _, err := tx.Exec(ctx, createBindingConfigLogSql); err != nil {
 		return err
 	}
 
@@ -249,7 +249,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	createBindingLogIndexSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE INDEX IF NOT EXISTS %s_group ON %s (consumer_group_id, status, declared_by, id);
-	`, iTopic.BindingLogTable(id), iTopic.BindingLogTable(id))
+	`, iTopic.BindingConfigLogTable(id), iTopic.BindingConfigLogTable(id))
 	_, err := tx.Exec(ctx, createBindingLogIndexSql)
 	return err
 }

@@ -29,7 +29,7 @@ func (d *MigrateDatastore) systemOwner(ctx context.Context) (*common.Owner, erro
 func SystemOwner(ctx context.Context, q datastore.Querier) (*common.Owner, error) {
 	var id int64
 	if err := q.QueryRow(ctx, `-- vulkan: migrate.SystemOwner
-SELECT id FROM system;`).Scan(&id); err != nil {
+SELECT id FROM system_config;`).Scan(&id); err != nil {
 		return nil, registrationError(err)
 	}
 	return common.NewSystemOwner(id)

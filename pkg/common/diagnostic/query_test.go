@@ -8,7 +8,7 @@ import (
 const deliverySql = `SELECT
 	status,
 	attempts
-FROM delivery_{topic_id}
+FROM exception_queue_{topic_id}
 WHERE consumer_group_id = {group_id}
 	AND message_id = {message_id};`
 
