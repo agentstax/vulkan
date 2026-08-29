@@ -35,6 +35,32 @@ const triggerPublishes = int64(80)
 const totalPublishes = int64(105)
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
@@ -52,6 +78,7 @@ func main() {
 	fmt.Println("\n✅ CREATE-AHEAD LAB PASSED")
 	fmt.Println("   Every append path created the next partition at the 80% trigger point,")
 	fmt.Println("   the boundary insert landed without a heal, and no id was burned.")
+	return nil
 }
 
 // perCallScenario: ProduceFunc publishes one at a time -- the single-id
@@ -258,8 +285,7 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }
 func assertInt(label string, got, want int64) {
 	if got != want {

@@ -18,6 +18,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -34,6 +35,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	concurrencyPtr := flag.Int("concurrency", 8, "worker pool size")
 	countPtr := flag.Int("count", 0, "messages to process before a clean stop")
 	logPtr := flag.String("log", "/tmp/crashlab_processed.log", "append each processed id here (the app's record)")
@@ -45,14 +53,12 @@ func main() {
 	conc := *concurrencyPtr
 	target := int64(*countPtr)
 	if target < 1 {
-		fmt.Println("-count must be >= 1")
-		os.Exit(1)
+		return errors.New("-count must be >= 1")
 	}
 
 	logFile, err := os.OpenFile(*logPtr, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	defer logFile.Close()
 	w := bufio.NewWriter(logFile)
@@ -65,29 +71,24 @@ func main() {
 		Pass: "example_password", MaxConns: *maxConnsPtr,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	defer ds.Close()
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	if t == nil {
-		fmt.Printf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
-		os.Exit(1)
+		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
 	// Short lease (= Timeout+QueueMargin+RecordMargin = 4s) so in-flight rows
@@ -103,14 +104,12 @@ func main() {
 		RecordMargin:       1 * time.Second,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	var mu sync.Mutex
@@ -134,7 +133,8 @@ func main() {
 	if err != nil {
 		// DB crash drops the connection mid-run; that's expected in this lab.
 		fmt.Printf("consume ended with error (expected if Postgres was killed): %v  processed=%d\n", err, processed)
-		os.Exit(0)
+		return nil
 	}
 	fmt.Printf("clean stop  processed=%d\n", processed)
+	return nil
 }

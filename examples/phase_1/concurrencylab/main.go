@@ -45,6 +45,32 @@ import (
 const slowMs = 1000
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
@@ -76,6 +102,7 @@ func main() {
 	fmt.Println("   a slow message only blocks the rest of its batch when the pool can't run")
 	fmt.Println("   around it (N=1) -- at N>1 the fast messages finish while it's still running,")
 	fmt.Println("   and total throughput scales with pool size instead of message count alone.")
+	return nil
 }
 
 // ---- scenario 1: ordering ----
@@ -242,6 +269,5 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }

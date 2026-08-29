@@ -44,6 +44,32 @@ import (
 const group = "metricslab"
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 	run := time.Now().UnixNano()
 
@@ -166,6 +192,7 @@ func main() {
 	wg.Wait()
 
 	fmt.Println("\n✅ METRICS LAB PASSED")
+	return nil
 }
 
 // ---- release gates: lets consumerFunc block per-message until the test says go ----
@@ -239,6 +266,5 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }

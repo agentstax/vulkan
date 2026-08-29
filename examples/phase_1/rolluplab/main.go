@@ -45,6 +45,32 @@ const (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
@@ -60,6 +86,7 @@ func main() {
 
 	fmt.Println("\n✅ ROLLUP LAB — numbers gathered; decision record [0301] (docs/decisions/)")
 	fmt.Println("   holds the lazy-vs-synchronous decision these numbers drove.")
+	return nil
 }
 
 // ---- scenario 1: staleness ----
@@ -417,8 +444,7 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }
 
 func mustGroupID(g *consumergroup.Group, err error) int64 { must(err); return g.Id }

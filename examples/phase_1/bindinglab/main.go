@@ -47,9 +47,34 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
-	var err error
 	ds, err = iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
@@ -195,6 +220,7 @@ func main() {
 	fmt.Println("  ✓ superseded rows swept; each declarer's newest waiting row and all installed rows kept")
 
 	fmt.Println("\n✅ BINDING LAB PASSED")
+	return nil
 }
 
 func newConsumer() *consumer.Consumer[labMessage] {
@@ -314,13 +340,12 @@ func assertString(name string, got string, want string) {
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
 
-func die(message string) {
-	fmt.Fprintln(os.Stderr, "FAIL: "+message)
-	os.Exit(1)
-}
-
 func must(err error) {
 	if err != nil {
 		die(err.Error())
 	}
+}
+
+func die(msg string) {
+	panic(labFailure{message: msg})
 }

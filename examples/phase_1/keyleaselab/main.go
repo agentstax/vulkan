@@ -55,9 +55,34 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
-	var err error
 	ds, err = iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
@@ -281,6 +306,7 @@ func main() {
 	fmt.Println("  ✓ destroy dropped the table")
 
 	fmt.Println("\n✅ KEY LEASE LAB PASSED")
+	return nil
 }
 
 func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key string, msgID int64, d time.Duration) *keyleasecontroller.KeyLeaseClaim {
@@ -325,6 +351,5 @@ func must(err error) {
 }
 
 func die(msg string) {
-	fmt.Println("❌ " + msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }

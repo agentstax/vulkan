@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -32,6 +33,13 @@ type completion struct {
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	concurrencyPtr := flag.Int("concurrency", 8, "worker pool size")
 	countPtr := flag.Int("count", 0, "total messages to expect, then stop")
 	slowMsPtr := flag.Int("slow-threshold-ms", 1000, "payload sleep >= this counts as 'slow' in the report")
@@ -42,8 +50,7 @@ func main() {
 	conc := *concurrencyPtr
 	target := int64(*countPtr)
 	if target < 1 {
-		fmt.Println("-count must be >= 1 (the number of seeded rows)")
-		os.Exit(1)
+		return errors.New("-count must be >= 1 (the number of seeded rows)")
 	}
 
 	ctx, stop := context.WithCancel(context.Background())
@@ -54,29 +61,24 @@ func main() {
 		Pass: "example_password", MaxConns: 20,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	defer ds.Close()
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	if t == nil {
-		fmt.Printf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
-		os.Exit(1)
+		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
 	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
@@ -89,14 +91,12 @@ func main() {
 		RecordMargin:       2 * time.Second,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	var mu sync.Mutex
@@ -118,11 +118,11 @@ func main() {
 		return nil
 	})
 	if err != nil {
-		fmt.Println("consume error:", err)
-		os.Exit(1)
+		return fmt.Errorf("consume error: %w", err)
 	}
 
 	report(comps, conc)
+	return nil
 }
 
 func report(comps []completion, conc int) {

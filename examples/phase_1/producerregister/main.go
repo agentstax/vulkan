@@ -26,6 +26,32 @@ type Message struct {
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := datastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &datastore.PostgresConnectionConfig{Pass: "example_password"})
@@ -79,6 +105,7 @@ func main() {
 	fmt.Println("\n✅ PRODUCER REGISTER LAB PASSED")
 	fmt.Println("   Register only builds: instances hold no lifetime, a cancelled Produce ctx")
 	fmt.Println("   refuses that one message, and the handle stays valid for the next call.")
+	return nil
 }
 
 // ---- helpers ----
@@ -99,6 +126,5 @@ func must(err error) {
 }
 
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }

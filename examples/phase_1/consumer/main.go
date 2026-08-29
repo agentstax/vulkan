@@ -19,6 +19,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	// FLAGS
 
 	groupPtr := flag.String("group", "learning.v1", "consumer group name")
@@ -44,29 +51,24 @@ func main() {
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 	defer ds.Close()
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 	if t == nil {
-		fmt.Printf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
-		os.Exit(1)
+		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
 	workConsumer, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
@@ -79,14 +81,12 @@ func main() {
 		RecordMargin:       1 * time.Second,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	workInstance, err := workConsumer.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// WORK
@@ -115,7 +115,7 @@ func main() {
 		return nil
 	})
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
+	return nil
 }

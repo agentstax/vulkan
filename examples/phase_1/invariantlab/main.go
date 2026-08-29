@@ -35,6 +35,32 @@ const (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
@@ -89,6 +115,7 @@ func main() {
 
 	fmt.Println("\n✅ INVARIANT LAB PASSED")
 	fmt.Println("   migrate-to-N == fresh-at-N; Down inverts Up; both directions idempotent.")
+	return nil
 }
 
 // fixture builds a 3-column table across versions 2..4. Every step is
@@ -209,7 +236,10 @@ func check(cond bool, msg string) {
 
 func must(err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		die(err.Error())
 	}
+}
+
+func die(msg string) {
+	panic(labFailure{message: msg})
 }

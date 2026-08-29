@@ -57,9 +57,34 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
-	var err error
 	ds, err = iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	must(err)
 	defer ds.Close()
@@ -89,6 +114,7 @@ func main() {
 	fmt.Println("   key order holds across concurrent batchers); reverse-ordered")
 	fmt.Println("   InTransaction callers raised exactly one 40P01, classified transient,")
 	fmt.Println("   and a caller-side rerun landed both -- heads converged either way.")
+	return nil
 }
 
 // batcherAbsenceScenario hammers default Produce from several producer
@@ -326,13 +352,12 @@ func assertInt64(name string, got int64, want int64) {
 
 func step(s string) { fmt.Printf("\n--- %s ---\n", s) }
 
-func die(message string) {
-	fmt.Fprintln(os.Stderr, "FAIL: "+message)
-	os.Exit(1)
-}
-
 func must(err error) {
 	if err != nil {
 		die(err.Error())
 	}
+}
+
+func die(msg string) {
+	panic(labFailure{message: msg})
 }

@@ -14,6 +14,32 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 	run := time.Now().UnixNano()
 	topicId := run // no real topic needs to exist -- the events just carry this id as data
@@ -83,6 +109,7 @@ func main() {
 	assertInt64("Outstanding", isolated.Outstanding, 0)
 
 	fmt.Println("\n✅ ABANDONED ROUTINE SNAPSHOT LAB PASSED")
+	return nil
 }
 
 func waitFor(timeout time.Duration, cond func() (bool, error)) error {
@@ -123,6 +150,5 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }

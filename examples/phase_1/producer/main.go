@@ -17,6 +17,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	// FLAGS
 
 	// -count n
@@ -38,36 +45,30 @@ func main() {
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 	defer ds.Close()
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 	wpInstance, err := wp.Register(ctx, t.Name, topic.SchemaVersion(1))
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// WORK
@@ -81,10 +82,10 @@ func main() {
 			return work, nil
 		}, producer.ProduceOptions{RoutingKey: *routingKeyPtr})
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		fmt.Printf("successfully produced message: work=%s id=%d\n", produced.Message.Id, produced.Id)
 	}
+	return nil
 }

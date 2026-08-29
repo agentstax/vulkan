@@ -47,6 +47,32 @@ var fn = func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, e
 }
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
@@ -65,6 +91,7 @@ func main() {
 	fmt.Println("   never touches the other's work or reruns a side effect between them, a")
 	fmt.Println("   Commit-time failure surfaces completely unclassified, and rerunning the")
 	fmt.Println("   closure under caller-supplied keys dedups instead of double-publishing.")
+	return nil
 }
 
 func atomicPublishScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
@@ -279,6 +306,5 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }

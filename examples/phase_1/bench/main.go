@@ -25,6 +25,13 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	concurrencyPtr := flag.Int("concurrency", 5, "worker pool size (concurrent consumerFuncs)")
 	batchPtr := flag.Int("batch", 100, "claim batch limit (held constant across the sweep)")
 	countPtr := flag.Int("count", 20000, "messages to process before stopping (should be <= seeded rows)")
@@ -48,29 +55,24 @@ func main() {
 		MaxConns: *maxConnsPtr,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	defer ds.Close()
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 	if t == nil {
-		fmt.Printf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
-		os.Exit(1)
+		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
 	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
@@ -84,14 +86,12 @@ func main() {
 		RecordMargin:       5 * time.Second,
 	})
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
 
 	var counter atomic.Int64
@@ -110,8 +110,7 @@ func main() {
 		return nil // no-op: measures the queue machinery ceiling, not handler work
 	})
 	if err != nil {
-		fmt.Println("consume error:", err)
-		os.Exit(1)
+		return fmt.Errorf("consume error: %w", err)
 	}
 
 	processed := counter.Load()
@@ -125,4 +124,5 @@ func main() {
 
 	fmt.Printf("RESULT concurrency=%d batch=%d processed=%d seconds=%.3f throughput=%.1f\n",
 		conc, batch, processed, secs, tput)
+	return nil
 }

@@ -45,6 +45,32 @@ const (
 var exclusive = []string{"topic_janitor", "cursor_advancer"}
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{Pass: "example_password"})
@@ -122,6 +148,7 @@ func main() {
 	fmt.Println("\n✅ WORKER CLAIM LAB PASSED")
 	fmt.Println("   3 consumers -> one live instance per target-1 worker row, failover to the")
 	fmt.Println("   survivor within a reconcile tick, full release when the last one exits.")
+	return nil
 }
 
 // runningConsumer is one Consumer's lifecycle handle: cancel stops it, done
@@ -211,8 +238,7 @@ func must(err error) {
 }
 
 func die(msg string) {
-	fmt.Println("❌ " + msg)
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }
 
 func assertInt(label string, got, want int64) {

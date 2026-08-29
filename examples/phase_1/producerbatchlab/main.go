@@ -49,6 +49,32 @@ import (
 const largePartitionSize = int64(1_000_000) // never rolls -- partition churn is its own scenario
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
+		os.Exit(1)
+	}
+}
+
+// labFailure is what die panics with; run recovers it into its error so
+// main's deferred cleanup runs on a failed assertion.
+type labFailure struct {
+	message string
+}
+
+func (f labFailure) Error() string {
+	return f.message
+}
+
+func run() (err error) {
+	defer func() {
+		switch recovered := recover().(type) {
+		case nil:
+		case labFailure:
+			err = recovered
+		default:
+			panic(recovered)
+		}
+	}()
 	ctx := context.Background()
 
 	ds, err := iDatastore.NewPostgresDatastore(ctx, "example_user", "localhost", "example_db", &iDatastore.PostgresConnectionConfig{
@@ -70,6 +96,7 @@ func main() {
 	fmt.Println("   once, poisoned payloads fail only their own caller, hot compaction keys")
 	fmt.Println("   never deadlock, bursts self-heal missing partitions, and the throughput")
 	fmt.Println("   numbers above show what batching buys over the per-call paths.")
+	return nil
 }
 
 // batchedExactlyOnceScenario: 50 goroutines x 20 payload-only Produce calls
@@ -456,6 +483,5 @@ func must(err error) {
 	}
 }
 func die(msg string) {
-	fmt.Printf("\n❌ LAB FAILED: %s\n", strings.TrimSpace(msg))
-	os.Exit(1)
+	panic(labFailure{message: msg})
 }
