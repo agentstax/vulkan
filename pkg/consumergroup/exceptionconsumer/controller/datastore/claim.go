@@ -50,9 +50,8 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 						AND NOT EXISTS (
 							SELECT 1
 							FROM %[3]s kl
-							JOIN %[2]s m ON m.id = d.message_id
 							WHERE kl.consumer_group_id = d.consumer_group_id
-								AND kl.message_key = m.message_key
+								AND kl.message_key = d.message_key
 								AND kl.expires_at >= now()
 						)
 					ORDER BY d.message_id
@@ -100,9 +99,8 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					AND NOT EXISTS (
 						SELECT 1
 						FROM %[4]s kl
-						JOIN %[2]s m ON m.id = d.message_id
 						WHERE kl.consumer_group_id = d.consumer_group_id
-							AND kl.message_key = m.message_key
+							AND kl.message_key = d.message_key
 							AND kl.expires_at >= now()
 					)
 				ORDER BY d.message_id

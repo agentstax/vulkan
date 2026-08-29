@@ -71,15 +71,15 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			-- InitPlan feeding an index cond, O(batch). joining old_values in
 			-- plans the same bound as a join FILTER over an in-id-order index
 			-- walk from 0 -- O(whole log) per tick, measured 660x slower at 200k
-			SELECT m.id, m.routing_key, m.message_key, m.compaction_rank
+			SELECT m.id, m.routing_key, m.message_key, m.compaction_rank, m.options
 			FROM %[2]s m                                           -- [2] = message_log table
 			WHERE m.id > (SELECT committed FROM old_values)
 			ORDER BY m.id
 			LIMIT $2
 		),
 		materialized AS (
-			INSERT INTO %[1]s (consumer_group_id, message_id, status) -- [1] = exception_queue table
-			SELECT $1, b.id, 'ready'
+			INSERT INTO %[1]s (consumer_group_id, message_id, status, message_key, concurrency) -- [1] = exception_queue table
+			SELECT $1, b.id, 'ready', b.message_key, COALESCE(b.options->>'concurrency', 'parallel')
 			FROM batch b
 			WHERE (
 				-- no bindings for consumer_group exists

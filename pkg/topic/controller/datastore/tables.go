@@ -101,6 +101,8 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			consumer_group_id BIGINT NOT NULL,                -- PK
 			message_id BIGINT NOT NULL,                       -- PK
 			status TEXT NOT NULL,                             -- 'ready' | 'processing' | 'inflight' | 'deferred' | 'done' | 'dead'
+			message_key TEXT,                                 -- the message's key; NULL = keyless
+			concurrency TEXT NOT NULL,                        -- 'parallel' | 'exclusive' -- the policy the group resolved for the message when it wrote the row
 			attempts INT NOT NULL default 0,                  -- runs so far; the retry budget is attempts - delays
 			delays INT NOT NULL DEFAULT 0,                    -- later runs the handler requested, never counted as failures
 			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries, or the handler's requested delay
@@ -113,6 +115,15 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		);
 	`, iTopic.ExceptionQueueTable(id))
 	if _, err := tx.Exec(ctx, createExceptionQueueSql); err != nil {
+		return err
+	}
+
+	// the same-key predecessor lookup: an earlier unresolved row on this key
+	createExceptionQueueMessageKeyIndexSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
+		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (consumer_group_id, message_key, message_id);
+	`, iTopic.ExceptionQueueTable(id), iTopic.ExceptionQueueTable(id))
+	if _, err := tx.Exec(ctx, createExceptionQueueMessageKeyIndexSql); err != nil {
 		return err
 	}
 

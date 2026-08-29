@@ -46,10 +46,12 @@ func toOutcomeData(outcomes []MessageOutcome) []datastore.OutcomeData {
 	data := make([]datastore.OutcomeData, 0, len(outcomes))
 	for _, outcome := range outcomes {
 		data = append(data, datastore.OutcomeData{
-			MessageId: outcome.MessageId,
-			Kind:      datastore.OutcomeKind(outcome.Kind),
-			Err:       outcome.Err,
-			Delay:     outcome.Delay,
+			MessageId:   outcome.MessageId,
+			MessageKey:  outcome.MessageKey,
+			Concurrency: outcome.Concurrency,
+			Kind:        datastore.OutcomeKind(outcome.Kind),
+			Err:         outcome.Err,
+			Delay:       outcome.Delay,
 		})
 	}
 	return data

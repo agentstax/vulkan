@@ -105,8 +105,23 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		deliverySql = fmt.Sprintf(`
 			-- vulkan: messageconsumer.quarantine
-			INSERT INTO %s (consumer_group_id, message_id, status, attempts, last_error)
-			SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
+			INSERT INTO %s (
+				consumer_group_id,
+				message_id,
+				status,
+				message_key,
+				concurrency,
+				attempts,
+				last_error
+			)
+			SELECT
+				$1,
+				id,
+				'ready',
+				message_key,
+				COALESCE(options->>'concurrency', 'parallel'),
+				0,
+				'quarantined: range reclaimed too many times'
 			FROM %s
 			WHERE id > $2
 				AND id <= $3;
@@ -118,8 +133,23 @@ func (d *MessageConsumerGroupDatastore) quarantine(ctx context.Context, tx pgx.T
 		deliverySql = fmt.Sprintf(`
 			-- vulkan: messageconsumer.quarantine
 			WITH inserted AS (
-				INSERT INTO %[1]s (consumer_group_id, message_id, status, attempts, last_error)
-				SELECT $1, id, 'ready', 0, 'quarantined: range reclaimed too many times'
+				INSERT INTO %[1]s (
+					consumer_group_id,
+					message_id,
+					status,
+					message_key,
+					concurrency,
+					attempts,
+					last_error
+				)
+				SELECT
+					$1,
+					id,
+					'ready',
+					message_key,
+					COALESCE(options->>'concurrency', 'parallel'),
+					0,
+					'quarantined: range reclaimed too many times'
 				FROM %[2]s
 				WHERE id > $2
 					AND id <= $3

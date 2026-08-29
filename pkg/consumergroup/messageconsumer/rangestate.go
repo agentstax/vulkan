@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 )
 
@@ -45,10 +46,11 @@ func (k outcomeKind) toOutcomeKind() (controller.OutcomeKind, bool) {
 // done gates kind/err via atomics release/acquire: kind/err are written
 // FIRST, done SECOND, so Load()==true guarantees those writes are visible.
 type result struct {
-	done  atomic.Bool
-	kind  outcomeKind
-	err   string        // empty for success
-	delay time.Duration // kindDelayed only
+	done        atomic.Bool
+	kind        outcomeKind
+	err         string                   // empty for success
+	delay       time.Duration            // kindDelayed only
+	concurrency common.ConcurrencyPolicy // the policy resolved for the run
 }
 
 // zero value is the correct initial (pending) state -- resolve fills kind/err/done in later
@@ -58,10 +60,11 @@ func newResult() result {
 
 // resolve writes kind/err THEN done -- done gates their visibility via
 // atomics release/acquire, so the Store must come last.
-func (r *result) resolve(kind outcomeKind, err string, delay time.Duration) {
+func (r *result) resolve(kind outcomeKind, err string, delay time.Duration, concurrency common.ConcurrencyPolicy) {
 	r.kind = kind
 	r.err = err
 	r.delay = delay
+	r.concurrency = concurrency
 	r.done.Store(true)
 }
 
@@ -81,7 +84,8 @@ func newRangeSnapshot(lease controller.RangeLease, outcomes []controller.Message
 // calls resolve* on it -- so no two goroutines ever touch the same memory.
 type rangeState struct {
 	lease controller.RangeLease
-	ids   []int64 // message id per result index -- set once, read-only after
+	ids   []int64  // message id per result index -- set once, read-only after
+	keys  []string // message key per result index, "" if unset -- set once, read-only after
 	total int
 
 	// includeSuccesses adds success outcomes to the collected walks -- only
@@ -97,14 +101,17 @@ type rangeState struct {
 
 func newRangeState(claimed *controller.ClaimedRange, includeSuccesses bool) *rangeState {
 	ids := make([]int64, len(claimed.Messages))
+	keys := make([]string, len(claimed.Messages))
 	results := make([]result, len(claimed.Messages))
 	for i, claimedMessage := range claimed.Messages {
 		ids[i] = claimedMessage.Id
+		keys[i] = claimedMessage.MessageKey
 		results[i] = newResult()
 	}
 	return &rangeState{
 		lease:            claimed.Lease,
 		ids:              ids,
+		keys:             keys,
 		total:            len(claimed.Messages),
 		includeSuccesses: includeSuccesses,
 		results:          results,
@@ -115,8 +122,8 @@ func (r *rangeState) neverDispatched() bool {
 	return r.dispatched.Load() == 0
 }
 
-func (r *rangeState) resolve(index int, kind outcomeKind, err string, delay time.Duration) {
-	r.results[index].resolve(kind, err, delay)
+func (r *rangeState) resolve(index int, kind outcomeKind, err string, delay time.Duration, concurrency common.ConcurrencyPolicy) {
+	r.results[index].resolve(kind, err, delay, concurrency)
 	r.resolved.Add(1)
 }
 
@@ -159,7 +166,7 @@ func (r *rangeState) contiguousResolved() (lastProcessed int64, outcomes []contr
 		}
 		lastProcessed = r.ids[i]
 		if kind, ok := current.kind.toOutcomeKind(); ok && (r.includeSuccesses || kind != controller.OutcomeSuccess) {
-			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: current.err, Delay: current.delay})
+			outcomes = append(outcomes, r.outcome(i, kind))
 		}
 	}
 	return lastProcessed, outcomes
@@ -170,8 +177,20 @@ func (r *rangeState) contiguousResolved() (lastProcessed int64, outcomes []contr
 func (r *rangeState) resolvedOutcomes() (outcomes []controller.MessageOutcome) {
 	for i := range r.results {
 		if kind, ok := r.results[i].kind.toOutcomeKind(); ok && (r.includeSuccesses || kind != controller.OutcomeSuccess) {
-			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: r.results[i].err, Delay: r.results[i].delay})
+			outcomes = append(outcomes, r.outcome(i, kind))
 		}
 	}
 	return outcomes
+}
+
+func (r *rangeState) outcome(index int, kind controller.OutcomeKind) controller.MessageOutcome {
+	current := &r.results[index]
+	return controller.MessageOutcome{
+		MessageId:   r.ids[index],
+		MessageKey:  r.keys[index],
+		Concurrency: current.concurrency,
+		Kind:        kind,
+		Err:         current.err,
+		Delay:       current.delay,
+	}
 }

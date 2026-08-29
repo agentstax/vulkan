@@ -55,10 +55,12 @@ const (
 
 // OutcomeData is one resolved message of a claimed range.
 type OutcomeData struct {
-	MessageId int64
-	Kind      OutcomeKind
-	Err       string
-	Delay     time.Duration // OutcomeDelayed only: how far out can_run_after moves
+	MessageId   int64
+	MessageKey  string                   // "" if unset
+	Concurrency common.ConcurrencyPolicy // the policy the group resolved for the message
+	Kind        OutcomeKind
+	Err         string
+	Delay       time.Duration // OutcomeDelayed only: how far out can_run_after moves
 }
 
 // Low == High means cursor exists but is already at the proven head (nothing to claim)

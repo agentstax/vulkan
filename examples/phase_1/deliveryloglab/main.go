@@ -334,7 +334,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
 	var messageId int64
 	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (message_key, payload) VALUES ('k', '{}') RETURNING id`, tp.Id)).Scan(&messageId))
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status, attempts) VALUES ($1, $2, 'deferred', 0)`, tp.Id), groupId, messageId)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status, concurrency, attempts) VALUES ($1, $2, 'deferred', 'exclusive', 0)`, tp.Id), groupId, messageId)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, $2, 0, 'deferred', '')`, tp.Id), groupId, messageId)
 	must(err)

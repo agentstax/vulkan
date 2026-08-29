@@ -5,6 +5,7 @@ import { createMessageKeyIndexSql } from './create-message-key-index';
 import { createIdempotencyKeySql } from './create-idempotency-key';
 import { createIdempotencyKeyCreatedAtIndexSql } from './create-idempotency-key-created-at-index';
 import { createExceptionQueueSql } from './create-exception-queue';
+import { createExceptionQueueMessageKeyIndexSql } from './create-exception-queue-message-key-index';
 import { createDeliveryLogSql } from './create-delivery-log';
 import { createDeliveryLogAttemptIndexSql } from './create-delivery-log-attempt-index';
 import { createConsumerGroupCursorSql } from './create-consumer-group-cursor';
@@ -23,6 +24,7 @@ export function createTopicTablesStatements(topicId: number, partitionSize: numb
 		createIdempotencyKeySql(topicId),
 		createIdempotencyKeyCreatedAtIndexSql(topicId),
 		createExceptionQueueSql(topicId),
+		createExceptionQueueMessageKeyIndexSql(topicId),
 		createDeliveryLogSql(topicId),
 		createDeliveryLogAttemptIndexSql(topicId),
 		createConsumerGroupCursorSql(topicId),

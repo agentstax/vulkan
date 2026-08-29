@@ -78,9 +78,11 @@ Suffix `1` throughout — the topic's id from the catalog.
   the key's winning message id, upserted in the same transaction as
   every compacted produce.
 - **`exception_queue_1`** — deliveries off the mainline path,
-  `PRIMARY KEY (consumer_group_id, message_id)`: status, attempts,
+  `PRIMARY KEY (consumer_group_id, message_id)`: status, the message's
+  key and the concurrency policy the group resolved for it, attempts,
   `can_run_after` backoff, last error, and a per-row lease. The
-  statuses are the [lifecycle](/concepts/lifecycle/) state machine.
+  statuses are the [lifecycle](/concepts/lifecycle/) state machine; the
+  key column is what a same-key predecessor lookup reads.
 - **`delivery_log_1`** — the event trail, append-only, keyed by its own
   `id`; `attempt` is the run each event belongs to, and a run can have
   more than one (a claim handed back at a busy key gate, then the run).

@@ -3,15 +3,19 @@ package controller
 import (
 	"fmt"
 	"time"
+
+	"github.com/agentstax/vulkan/pkg/common"
 )
 
 // MessageOutcome is one resolved message of a claimed range, written by
 // Commit or PartialCommit.
 type MessageOutcome struct {
-	MessageId int64
-	Kind      OutcomeKind
-	Err       string
-	Delay     time.Duration // OutcomeDelayed only: how far out can_run_after moves
+	MessageId   int64
+	MessageKey  string                   // "" if unset
+	Concurrency common.ConcurrencyPolicy // the policy the group resolved for the message
+	Kind        OutcomeKind
+	Err         string
+	Delay       time.Duration // OutcomeDelayed only: how far out can_run_after moves
 }
 
 // OutcomeKind is how one message of a claimed range resolved.

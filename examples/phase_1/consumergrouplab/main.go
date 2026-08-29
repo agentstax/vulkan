@@ -264,7 +264,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 
 	// delivery rows refuse it; force discards them along with the rows no FK
 	// reaches (claim_lease, message_key_lease, delivery_log)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status) VALUES ($1, 1, 'ready');`, topicA.Id), doomed.Id)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status, concurrency) VALUES ($1, 1, 'ready', 'parallel');`, topicA.Id), doomed.Id)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO claim_lease_%d (consumer_group_id, low, high, expires_at) VALUES ($1, 1, 10, now() + interval '1 minute');`, topicA.Id), doomed.Id)
 	must(err)

@@ -49,7 +49,7 @@ func newMessageRunner[Message any](base *consumerbase.BaseConsumer[Message], con
 	}
 
 	// only DeliveryLogModeAll wants success outcomes collected at commit
-	buffer, err := newClaimBuffer(queue, base.Topic.DeliveryLogMode == topic.DeliveryLogModeAll)
+	buffer, err := newClaimBuffer(queue, cfg, base.Topic.DeliveryLogMode == topic.DeliveryLogModeAll)
 	if err != nil {
 		return nil, err
 	}
@@ -220,17 +220,15 @@ func (r *messageRunner[Message]) dispatch(ctx context.Context, wg *sync.WaitGrou
 }
 
 func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffered) {
-	resolvedOptions := r.cfg.resolveMessageOptions(item.row.Options)
-
 	// sat in the queue too long to safely start -- surrendering the whole
 	// range beats risking a lease overrun (another worker reclaiming the
 	// same range while this message is still being worked).
-	if item.lease.ExpiresAt.Before(time.Now().Add(resolvedOptions.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
+	if item.lease.ExpiresAt.Before(time.Now().Add(item.options.Timeout + r.cfg.TimeoutGrace + r.cfg.RecordMargin)) {
 		r.buffer.markStale(item.lease.Token)
 		return
 	}
 
-	r.runItem(ctx, item, resolvedOptions)
+	r.runItem(ctx, item)
 
 	if !r.buffer.isRangeResolved(item.lease.Token) {
 		return
@@ -244,9 +242,9 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 
 // a message's concurrency policy can resolve it (superseded or deferred)
 // without ever running consumerFunc
-func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, resolvedOptions *common.MessageOptions) {
-	if item.row.MessageKey != "" && resolvedOptions.Concurrency == common.ConcurrencyExclusive {
-		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, resolvedOptions)
+func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered) {
+	if item.row.MessageKey != "" && item.options.Concurrency == common.ConcurrencyExclusive {
+		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, item.options)
 		switch {
 		case err != nil:
 			// record as an exception so it still runs later
@@ -272,8 +270,8 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 		return
 	}
 
-	runCtx := consumergroup.WithMeta(ctx, toMessageMeta(item.row, resolvedOptions))
-	err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, resolvedOptions.Timeout)
+	runCtx := consumergroup.WithMeta(ctx, toMessageMeta(item.row, item.options))
+	err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, item.options.Timeout)
 
 	switch consumerbase.ClassifyHandlerError(err) {
 	case consumerbase.HandlerOutcomeTerminal:

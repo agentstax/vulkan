@@ -134,11 +134,23 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 func deliveryStatement(topicId int64) string {
 	return fmt.Sprintf(`
 		-- vulkan: messageconsumer.deliveryStatement
-		INSERT INTO %s (consumer_group_id, message_id, status, attempts, delays, can_run_after, last_error)
+		INSERT INTO %s (
+			consumer_group_id,
+			message_id,
+			status,
+			message_key,
+			concurrency,
+			attempts,
+			delays,
+			can_run_after,
+			last_error
+		)
 		VALUES (
 			$1,
 			$2,
 			$3,
+			NULLIF($7, ''),
+			$8,
 			0,
 			$6,
 			now() + make_interval(secs => $5),
@@ -164,14 +176,14 @@ func queueOutcomes(batch *pgx.Batch, deliverySql string, logSql string, groupId 
 	for _, outcome := range outcomes {
 		switch outcome.Kind {
 		case OutcomeException:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, initialBackoff.Seconds(), 0)
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, initialBackoff.Seconds(), 0, outcome.MessageKey, outcome.Concurrency)
 		case OutcomeTerminal:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "dead", outcome.Err, initialBackoff.Seconds(), 0)
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "dead", outcome.Err, initialBackoff.Seconds(), 0, outcome.MessageKey, outcome.Concurrency)
 			terminals++
 		case OutcomeDeferred:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "deferred", nil, 0.0, 0)
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "deferred", nil, 0.0, 0, outcome.MessageKey, outcome.Concurrency)
 		case OutcomeDelayed:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, outcome.Delay.Seconds(), 1)
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, outcome.Delay.Seconds(), 1, outcome.MessageKey, outcome.Concurrency)
 		}
 		if deliveryLogMode != topic.DeliveryLogModeOff {
 			batch.Queue(logSql, groupId, outcome.MessageId, outcomeLogStatus(outcome.Kind), outcome.Err)
