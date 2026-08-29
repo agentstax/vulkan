@@ -36,8 +36,10 @@ func (d *CronJobDatastore) register(ctx context.Context, owner *common.Owner, de
 	defer tx.Rollback(ctx)
 
 	// txn-scoped, per-name -- auto-released at commit/rollback
-	if _, err := tx.Exec(ctx, `-- vulkan: cron.register
-SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));`, declared.Name); err != nil {
+	if _, err := tx.Exec(ctx, `
+		-- vulkan: cron.register
+		SELECT pg_advisory_xact_lock(hashtext('cron_job:' || $1));
+	`, declared.Name); err != nil {
 		return nil, err
 	}
 

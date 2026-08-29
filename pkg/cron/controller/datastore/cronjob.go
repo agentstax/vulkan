@@ -104,8 +104,10 @@ func (d *CronJobDatastore) Suspend(ctx context.Context, name string) error {
 }
 
 func (d *CronJobDatastore) suspend(ctx context.Context, name string) error {
-	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: cron.suspend
-UPDATE cron_job_config SET suspended = true WHERE name = $1;`, name)
+	tag, err := d.Datastore.Pool.Exec(ctx, `
+		-- vulkan: cron.suspend
+		UPDATE cron_job_config SET suspended = true WHERE name = $1;
+	`, name)
 	if err != nil {
 		return err
 	}
@@ -178,8 +180,10 @@ func (d *CronJobDatastore) unsuspend(ctx context.Context, name string) error {
 // clocks, getting time from db normalizes to a single source.
 func (d *CronJobDatastore) dbNow(ctx context.Context, q datastore.Querier) (time.Time, error) {
 	var now time.Time
-	err := q.QueryRow(ctx, `-- vulkan: cron.dbNow
-SELECT now();`).Scan(&now)
+	err := q.QueryRow(ctx, `
+		-- vulkan: cron.dbNow
+		SELECT now();
+	`).Scan(&now)
 	return now, err
 }
 

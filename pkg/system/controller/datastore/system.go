@@ -30,8 +30,10 @@ func (d *SystemDatastore) register(ctx context.Context) (*SystemData, error) {
 	defer tx.Rollback(ctx)
 
 	// txn-scoped -- acquired here, auto-released at commit.
-	if _, err := tx.Exec(ctx, `-- vulkan: system.register
-SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := tx.Exec(ctx, `
+		-- vulkan: system.register
+		SELECT pg_advisory_xact_lock($1);
+	`, common.AdvisoryLock); err != nil {
 		return nil, err
 	}
 

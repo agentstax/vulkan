@@ -57,8 +57,10 @@ func (d *MetricsDatastore) eventTimestamps(ctx context.Context, routingKey strin
 func (d *MetricsDatastore) resolveMetricsTopicId(ctx context.Context) (int64, error) {
 	var id int64
 	err := d.Datastore.Pool.QueryRow(ctx,
-		`-- vulkan: metrics.resolveMetricsTopicId
-SELECT id FROM topic_config WHERE name = $1 AND schema_version = 1;`, metrics.TopicName,
+		`
+			-- vulkan: metrics.resolveMetricsTopicId
+			SELECT id FROM topic_config WHERE name = $1 AND schema_version = 1;
+		`, metrics.TopicName,
 	).Scan(&id)
 	if err != nil {
 		return 0, err

@@ -116,12 +116,18 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 
 	// one worker of each name per owner: system, topic, group
 	for _, indexSql := range []string{
-		`-- vulkan: system.createSystemTables
-CREATE UNIQUE INDEX IF NOT EXISTS worker_config_topic_name ON worker_config (name, topic_id) WHERE topic_id IS NOT NULL;`,
-		`-- vulkan: system.createSystemTables
-CREATE UNIQUE INDEX IF NOT EXISTS worker_config_group_name ON worker_config (name, consumer_group_id) WHERE consumer_group_id IS NOT NULL;`,
-		`-- vulkan: system.createSystemTables
-CREATE UNIQUE INDEX IF NOT EXISTS worker_config_system_name ON worker_config (name, system_id) WHERE system_id IS NOT NULL;`,
+		`
+			-- vulkan: system.createSystemTables
+			CREATE UNIQUE INDEX IF NOT EXISTS worker_config_topic_name ON worker_config (name, topic_id) WHERE topic_id IS NOT NULL;
+		`,
+		`
+			-- vulkan: system.createSystemTables
+			CREATE UNIQUE INDEX IF NOT EXISTS worker_config_group_name ON worker_config (name, consumer_group_id) WHERE consumer_group_id IS NOT NULL;
+		`,
+		`
+			-- vulkan: system.createSystemTables
+			CREATE UNIQUE INDEX IF NOT EXISTS worker_config_system_name ON worker_config (name, system_id) WHERE system_id IS NOT NULL;
+		`,
 	} {
 		if _, err := tx.Exec(ctx, indexSql); err != nil {
 			return err

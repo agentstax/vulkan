@@ -20,8 +20,10 @@ func (d *TopicDatastore) IsEmpty(ctx context.Context, topicId int64) (bool, erro
 
 func (d *TopicDatastore) isEmpty(ctx context.Context, topicId int64) (bool, error) {
 	// Partition-pruned and LIMIT 1'd, so it stays cheap regardless of topic size.
-	sql := fmt.Sprintf(`-- vulkan: topic.isEmpty
-SELECT EXISTS (SELECT 1 FROM %s LIMIT 1);`, iTopic.MessageLogTable(topicId))
+	sql := fmt.Sprintf(`
+		-- vulkan: topic.isEmpty
+		SELECT EXISTS (SELECT 1 FROM %s LIMIT 1);
+	`, iTopic.MessageLogTable(topicId))
 	var notEmpty bool
 	if err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&notEmpty); err != nil {
 		return false, err
@@ -46,8 +48,10 @@ func (d *TopicDatastore) delete(ctx context.Context, topicId int64, name string)
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `-- vulkan: topic.delete
-DELETE FROM topic_config WHERE id = $1;`, topicId); err != nil {
+	if _, err := tx.Exec(ctx, `
+		-- vulkan: topic.delete
+		DELETE FROM topic_config WHERE id = $1;
+	`, topicId); err != nil {
 		return err
 	}
 

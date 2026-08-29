@@ -28,8 +28,10 @@ func (d *MigrateDatastore) systemOwner(ctx context.Context) (*common.Owner, erro
 // ErrNotRegistered if the row (or the table itself, 42P01) isn't there.
 func SystemOwner(ctx context.Context, q datastore.Querier) (*common.Owner, error) {
 	var id int64
-	if err := q.QueryRow(ctx, `-- vulkan: migrate.SystemOwner
-SELECT id FROM system_config;`).Scan(&id); err != nil {
+	if err := q.QueryRow(ctx, `
+		-- vulkan: migrate.SystemOwner
+		SELECT id FROM system_config;
+	`).Scan(&id); err != nil {
 		return nil, registrationError(err)
 	}
 	return common.NewSystemOwner(id)

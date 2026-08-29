@@ -34,8 +34,10 @@ func (d *WorkerDatastore) claimInstance(ctx context.Context, workerId int64, ttl
 	// the worker row lock serializes claimants: without it two concurrent
 	// counts both see room under target and both insert
 	var target int
-	err = tx.QueryRow(ctx, `-- vulkan: worker.claimInstance
-SELECT target_instances FROM worker_config WHERE id = $1 FOR UPDATE;`, workerId).Scan(&target)
+	err = tx.QueryRow(ctx, `
+		-- vulkan: worker.claimInstance
+		SELECT target_instances FROM worker_config WHERE id = $1 FOR UPDATE;
+	`, workerId).Scan(&target)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -190,8 +192,10 @@ func (d *WorkerDatastore) SweepExpiredInstances(ctx context.Context) (int64, err
 }
 
 func (d *WorkerDatastore) sweepExpiredInstances(ctx context.Context) (int64, error) {
-	tag, err := d.Datastore.Pool.Exec(ctx, `-- vulkan: worker.sweepExpiredInstances
-DELETE FROM worker_instance WHERE expires_at <= now();`)
+	tag, err := d.Datastore.Pool.Exec(ctx, `
+		-- vulkan: worker.sweepExpiredInstances
+		DELETE FROM worker_instance WHERE expires_at <= now();
+	`)
 	if err != nil {
 		return 0, err
 	}

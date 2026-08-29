@@ -21,8 +21,10 @@ func (d *MetricsDatastore) ConsumerGroupSnapshot(ctx context.Context, topicId in
 
 func (d *MetricsDatastore) consumerGroupSnapshot(ctx context.Context, topicId int64, consumerGroup string) (*ConsumerGroupSnapshotData, error) {
 	var consumerGroupId int64
-	if err := d.Datastore.Pool.QueryRow(ctx, `-- vulkan: metrics.consumerGroupSnapshot
-SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
+	if err := d.Datastore.Pool.QueryRow(ctx, `
+		-- vulkan: metrics.consumerGroupSnapshot
+		SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;
+	`, topicId, consumerGroup).Scan(&consumerGroupId); err != nil {
 		return nil, err
 	}
 

@@ -20,8 +20,10 @@ func (d *MetricsDatastore) IsCompacted(ctx context.Context, topicId int64) (bool
 }
 
 func (d *MetricsDatastore) isCompacted(ctx context.Context, topicId int64) (bool, error) {
-	sql := fmt.Sprintf(`-- vulkan: metrics.isCompacted
-SELECT EXISTS (SELECT 1 FROM %s);`, iTopic.CompactionHeadTable(topicId))
+	sql := fmt.Sprintf(`
+		-- vulkan: metrics.isCompacted
+		SELECT EXISTS (SELECT 1 FROM %s);
+	`, iTopic.CompactionHeadTable(topicId))
 	var compacted bool
 	err := d.Datastore.Pool.QueryRow(ctx, sql).Scan(&compacted)
 	return compacted, err

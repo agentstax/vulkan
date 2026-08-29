@@ -82,8 +82,10 @@ func (d *JanitorDatastore) dropPartition(ctx context.Context, topicId int64, n i
 	defer tx.Rollback(ctx)
 
 	// also cap the orphan DELETEs' row-lock waits
-	if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: topicjanitor.dropPartition
-SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds())); err != nil {
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`
+		-- vulkan: topicjanitor.dropPartition
+		SET LOCAL lock_timeout = '%dms';
+	`, ddlLockTimeout.Milliseconds())); err != nil {
 		return false, err
 	}
 

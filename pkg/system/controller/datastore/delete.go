@@ -22,8 +22,10 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 
 	// txn-scoped, same lock Register takes -- a concurrent register
 	// waits here and recreates the schema after the drop commits.
-	if _, err := tx.Exec(ctx, `-- vulkan: system.delete
-SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := tx.Exec(ctx, `
+		-- vulkan: system.delete
+		SELECT pg_advisory_xact_lock($1);
+	`, common.AdvisoryLock); err != nil {
 		return err
 	}
 
@@ -41,8 +43,10 @@ SELECT pg_advisory_xact_lock($1);`, common.AdvisoryLock); err != nil {
 		"topic_config",
 		"system_config",
 	} {
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`-- vulkan: system.delete
-DROP TABLE IF EXISTS %s;`, table)); err != nil {
+		if _, err := tx.Exec(ctx, fmt.Sprintf(`
+			-- vulkan: system.delete
+			DROP TABLE IF EXISTS %s;
+		`, table)); err != nil {
 			return err
 		}
 	}

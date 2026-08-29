@@ -52,13 +52,17 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 	// instead of leaking it to whatever might use this pooled connection next,
 	// and releases the advisory lock at commit
 	batch := &pgx.Batch{}
-	batch.Queue(fmt.Sprintf(`-- vulkan: producer.ensureCoveringPartition
-SET LOCAL lock_timeout = '%dms';`, ddlLockTimeout.Milliseconds()))
+	batch.Queue(fmt.Sprintf(`
+		-- vulkan: producer.ensureCoveringPartition
+		SET LOCAL lock_timeout = '%dms';
+	`, ddlLockTimeout.Milliseconds()))
 
 	// one winner runs the CREATE; every concurrent caller sleeps here (bounded
 	// by the lock_timeout above) until that commit.
-	batch.Queue(`-- vulkan: producer.ensureCoveringPartition
-SELECT pg_advisory_xact_lock($1);`, lockKey)
+	batch.Queue(`
+		-- vulkan: producer.ensureCoveringPartition
+		SELECT pg_advisory_xact_lock($1);
+	`, lockKey)
 	batch.Queue(createPartitionSql)
 
 	results := d.Datastore.Pool.SendBatch(ctx, batch)

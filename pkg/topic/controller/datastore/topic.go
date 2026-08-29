@@ -156,8 +156,10 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 	defer tx.Rollback(ctx)
 
 	// txn-scoped, per-name -- auto-released at commit/rollback
-	if _, err := tx.Exec(ctx, `-- vulkan: topic.register
-SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));`, declared.Name); err != nil {
+	if _, err := tx.Exec(ctx, `
+		-- vulkan: topic.register
+		SELECT pg_advisory_xact_lock(hashtext('topic:' || $1));
+	`, declared.Name); err != nil {
 		return nil, err
 	}
 

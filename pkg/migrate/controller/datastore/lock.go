@@ -40,8 +40,10 @@ func (d *MigrateDatastore) AcquireLock(ctx context.Context) (*pgxpool.Conn, erro
 	if err != nil {
 		return nil, err
 	}
-	if _, err := conn.Exec(ctx, `-- vulkan: migrate.AcquireLock
-SELECT pg_advisory_lock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := conn.Exec(ctx, `
+		-- vulkan: migrate.AcquireLock
+		SELECT pg_advisory_lock($1);
+	`, common.AdvisoryLock); err != nil {
 		conn.Release()
 		return nil, err
 	}
@@ -52,8 +54,10 @@ SELECT pg_advisory_lock($1);`, common.AdvisoryLock); err != nil {
 // migration must not also leak the session lock.
 func (d *MigrateDatastore) ReleaseLock(ctx context.Context, conn *pgxpool.Conn) {
 	ctx = context.WithoutCancel(ctx)
-	if _, err := conn.Exec(ctx, `-- vulkan: migrate.ReleaseLock
-SELECT pg_advisory_unlock($1);`, common.AdvisoryLock); err != nil {
+	if _, err := conn.Exec(ctx, `
+		-- vulkan: migrate.ReleaseLock
+		SELECT pg_advisory_unlock($1);
+	`, common.AdvisoryLock); err != nil {
 		d.Logger.ErrorContext(ctx, "could not release migration advisory lock", "error", err)
 	}
 	conn.Release()
