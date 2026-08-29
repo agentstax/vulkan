@@ -21,6 +21,229 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
+- **Step 1 -- finish the playground catalog review.** The catalog below
+  is the measuring instrument for every step after it; review and
+  clean its 11 scenarios first (headers accurate, traps verified).
+  Lease extend (scenario 11) is already designed as *Lease
+  heartbeat/renewal (9b)* in the parking lot -- promote on its merit
+  once the three gaps below ship.
+  - **Public-API scenario catalog** (built 2026-08-29): `examples/playground/`
+    holds 11 programs written as a user would against the CURRENT library --
+    produce-only, produce-in-tx, consume-plain, retry+dead, compacted KV,
+    cron, new-group-deep-topic, manager+consumer, idempotent produce, keyed
+    ordering, slow handler. Each file's header is its scorecard: concepts
+    held before domain code, and the traps hit. The catalog is the measuring
+    instrument for every choice below: an API change is judged by re-writing
+    the affected scenario, not by line count. Runtime-verified: RegisterTopic
+    accepts nil cfg; CAS = InTransaction + GetCompactionHeadInTx + ProduceInTx
+    works today; IdempotencyKey returns id=0 Duplicate=true. Gaps with no
+    verb at all: start-from-now (07), lease extend (11), handler terminal /
+    delay (04, settled above), KV Put/Update/History as named verbs (05).
+- **Step 2 -- build the three gaps the catalog found.** Each is a
+  predicate, a classification, or one INSERT clause on rows that
+  already exist; docs page first per the record rules, then a
+  decision record, then code. Order: handler outcome (settled),
+  start from now (sketched, one statement), strict per-key FIFO
+  (sketched, DDL edit).
+  - Added 2026-08-29 (agreed): the handler cannot reach the outcome kinds.
+    `OutcomeException` / `OutcomeTerminal` / `OutcomeDeferred` exist
+    internally, but `ConsumerFunc` returns nil or error and every error
+    becomes an exception row (only an unmarshal failure goes straight to
+    dead). River (`JobCancel`/`JobSnooze`) and JetStream (`Term`/
+    `NakWithDelay`) give the handler that voice as a return value. The fix
+    is not new machinery but letting the existing classification flow
+    through at messageconsumer/consumer_runner.go's CallSafely error
+    branch: a Permanent error -> terminal; a Transient (or plain) error ->
+    exception; snooze = a Transient error carrying a can_run_after, which
+    the exception path already stores. This also dissolves part of the
+    ConsumerConfig.Retry vs Message.Retry confusion: the policy becomes
+    the default the handler can override per delivery. SETTLED
+    2026-08-29: terminal is spelled by classification (the runner checks
+    diagnostic Permanent on the handler's own error; a named wrapper value
+    works for free since it is itself Permanent); a handler-requested
+    later run does NOT count toward Retry.MaxRetries (research: NATS/SQS
+    always-count -> surprise dead-letters; River/Oban never-count -> Oban
+    added a separate visible counter after users lost track) -- it writes
+    can_run_after, bumps its own running-count column beside `reclaims`,
+    with an optional ceiling on RetryPolicy beside MaxRetries. Name
+    settled 2026-08-29: handler returns `consumergroup.Delay(d)`, column
+    `exception_queue.delays`, cap `RetryPolicy.MaxDelays`; "snooze" is
+    banned (add the Vocabulary row when built).
+  - A new consumer group has no "start from now" option — its cursor
+    starts at 0, so on a deep-retention topic every new group reads the
+    full history before it sees live traffic.
+    - Sketched 2026-08-29 (playground scenario 07). Today
+      consumergroup.registerGroup's cursor insert is `INSERT INTO
+      consumer_group_cursor_<id> (consumer_group_id) VALUES ($1)` -- every
+      position column defaults to 0. Peers: Kafka auto.offset.reset
+      (consulted ONLY when the group has no committed offset), JetStream
+      DeliverPolicy new/last/by-start-time (fixed at consumer creation).
+      Both are declaration-time config that applies once, on first
+      registration, and is ignored after -- that is the shape, not an
+      admin verb. Delta, one statement: when the declared start is
+      "latest", the cursor insert becomes `INSERT ... SELECT $1,
+      COALESCE(MAX(id), 0) AS claimed, same AS committed, same AS
+      settled_head FROM message_log_<id>` in the register transaction.
+      Semantics = "messages produced after the group was declared"; a
+      produce in flight with a lower id that commits after the register
+      is skipped -- identical to Kafka latest / JetStream new, document
+      it. (Exactness would reuse the freshclaim.go xid8 fence:
+      pending_head/pending_xmax at register, first claim settles it --
+      only if the edge turns out to matter.) Surface: a ConsumerConfig
+      field naming the cursor's starting position, zero = beginning,
+      name open under the vocabulary rules (cursor, not offset). Id/time
+      targets are the replay guide's PROPOSED RewindGroup verb pointed
+      forward -- same admin verb, and it inherits that guide's spec
+      questions (delivery rows in the window, safety rail, retention);
+      the new-group flag has none of them because no rows exist yet, so
+      it ships first and alone. Fan-out (deliveryconsumer) reads the same
+      cursor row, so bindings need nothing extra.
+  - Added 2026-08-29 (sketched, not built): strict per-key FIFO -- the
+    third no-verb gap, playground scenario 10. Today `defer` is
+    exclusivity only: the key lease is held for the run and released when
+    the outcome is recorded, so a failed delivery's `ready` row leaves the
+    key free and the next same-key message runs before the retry (deltas
+    reorder). The rule, from SQS FIFO MessageGroupId / Kafka partitions:
+    a keyed message may not run while an earlier same-key delivery for
+    this group is unresolved (`ready`/`inflight`/`deferred`); `dead` does
+    not block -- dead-letter is the escape valve, so MaxRetries is the
+    stall bound. The delta, three places and no new table: (1)
+    `exception_queue` gains a `message_key` column (baseline DDL edit) so
+    the predecessor check is an index lookup on (consumer_group_id,
+    message_key, message_id) -- today the exception claim joins
+    message_log for the key, which is the hole; (2) `claimUncompacted`'s
+    INSERT gains `WHERE NOT EXISTS (earlier unresolved same-key row)` --
+    no row back is already KeyLeaseBusy -> the existing `deferred`
+    outcome, cursor advances as it does for any deferred row; (3) the
+    exception claim (already ORDER BY message_id, already skips leased
+    keys) adds the same predicate, so the lower-id retry is claimed
+    first and a deferred later message waits until the earlier one is
+    gone or dead. Shape: a THIRD ConcurrencyPolicy value, `defer` stays
+    as the cheaper exclusivity-only guarantee; name open under the
+    vocabulary rules ("runs only after every earlier delivery on its key
+    is resolved"). Errors at produce time with Compaction.Enable
+    (compaction supersedes, FIFO delivers every message -- contradictory;
+    same shape as defer-without-key). Docs page first, per the record
+    rules; ordering.mdx's PROPOSED aside is the seed.
+- **Step 3 -- re-write the affected playground scenarios** (04 retry+dead,
+  07 new-group-deep-topic, 10 keyed-ordering) against the shipped
+  verbs, and add scenarios any new surface needs. Their headers drop
+  the trap and keep the concept count -- the before/after is the
+  evidence the gap closed.
+- **Step 4 -- the public-API review**, resumed where the gaps interrupted
+  it. Everything below is that review, in the order it was already
+  sequenced.
+- **Library work the doc pass surfaced.**
+  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
+    comments and maybe a log line recommending against production use.
+    UNBLOCKED: this was sequenced behind the quickstart rewrite so the
+    Default constructors would be built against observed friction rather
+    than guessed, and that rewrite shipped in [0581].
+    - The friction it observed: a consumer needs a MessageAdmin and
+      RegisterSystem just to GetTopic; `topic.SchemaVersion(1)` is
+      repeated three times per program; Consume's cancellable-ctx
+      requirement is a context.Background() trap; ConsumerConfig.Retry and
+      Message.Retry are confusable; produce-only deployments silently get
+      no upkeep unless someone runs `vulkan manager run`; RegisterTopic
+      wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
+      struct for the common case — whether nil works is unverified);
+      pkg/common and pkg/topic invite aliasing in user code.
+  - Go doc comments on the public API — the surfaces the worker and cron
+    rounds finalized never got a doc-comment pass. [0581] fixed
+    RoutingKey's in passing; the rest are unreviewed.
+
+- **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
+  decide and document. Weigh Go 1.27's new generics/type-inference features
+  before finalizing.
+- **Compaction API shape** (for the v1 review; the standalone-head-read move
+  into pkg/compaction/controller shipped 2026-08-13):
+  - A dedicated compacted-topic handle — Compact(Producer|Consumer) idea;
+    NATS JetStream KV precedent: one typed handle doing Get + CAS-produce
+    with CompactionKey required. Would sit on top of the compaction
+    controller unchanged.
+    - 2026-08-29 research note (public-API pass): `GetHead(topicId, key)`
+      and `ListHeads(topicId)` exist today; writing is a plain Produce
+      with a message key. JetStream KV's handle is `Get(key) -> (value,
+      revision)`, `Put(key, value)`, `Update(key, value, expectedRevision)`
+      -- the last fails if someone wrote since you read. That is the
+      read-modify-write primitive a KV needs (increment a counter, merge a
+      document) and Vulkan has no way to say "produce under key K only if
+      the head is still message id N". `MessageRow` already carries the
+      id, so the "revision" exists; the missing verb is a conditional
+      produce. The CAS is the piece that makes the handle a KV rather
+      than a cache. Explore leaning fully into the KV mental model as the
+      simplification of compaction -- Get / Put / Update, plus History()
+      (the key's prior messages; `ListKeyMessages` is the existing read)
+      and possibly Watch. To be worked through in this pass.
+  - consumerFunc could hand users a common.MessageRow[Message] instead of
+    payload-arg + context MessageMeta — the typed row moved to pkg/common
+    2026-08-13, so both sides could share it; the consumer's raw internal
+    row (payload + options columns) stays its own struct either way.
+- **`ProduceInTx` value-taking form** ([0581] ergonomics gap) — a static
+  payload inside a caller-owned transaction costs an inline three-arg
+  closure per topic. Decide whether it earns surface.
+- **Public surface trim** (decisions settled 2026-08-01, recorded in
+  _public-surface.md; build pending — deliberately late so the decisions get
+  re-confirmed after living with the surface through the passes above):
+  - `concurrency` pkg hidden entirely — consumers build queue + pool
+    internally from ConsumerConfig, constructors drop the two params (also
+    removes the consumer.Buffered leak).
+  - All three sub-consumer constructors stay public; full maintain surface
+    stays public.
+  - `migrate` pkg + both migrations.Registry vars move to internal/ —
+    admin.MigrateTopic(s)/MigrateSystem are the only user migration entry;
+    CLI keeps access via the import-path prefix rule. MigrateTopic +
+    MigrateTopics both stay — distinct ops.
+  - Broader internal/ moves were deferred 2026-08-19 (LIFECYCLE demotion
+    shipped instead) — re-decide here, alongside the removed
+    datastore-interfaces question's "re-add if desired" revisit.
+  - Also demoted: common.NewDefaultRetryPolicy/RetryableFunc (IsRetryable
+    was deleted outright with the marker types, [0551]; retry merged into
+    pkg/common 2026-08-17, [0528] — demotion is now an unexport inside
+    common; config Retry fields stay nil, WithDefaults fills them). The ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
+    demotion shipped 2026-08-19 (see the file-structure cleanup item).
+  - Trim redundant pairs generally: e.g. DestroyTopic + DestroyTopicVersion
+    can only confuse — consider one DestroyTopic with a version option.
+  - Decide whether the field-less system config stub (RegisterSystem cfg /
+    AlterSystem / `vulkan system alter`) stays in the v1 public surface or
+    gets deleted until a real system-wide knob exists ([0516]).
+- **Named-return-params house style** — decide and apply consistently across
+  the reviewed surface.
+- **Comment conventions for public surfaces** — a standard: description,
+  defaults, errors, doc links. Plus standardized SQL formatting.
+- **Comment sweeps:**
+  - fanOut (pkg/consumer/deliveryconsumer/controller/datastore/fanout.go) —
+    both the Go comments and the ones inside snapshotSql/scanSql. SQL
+    comments ship to Postgres, so every comment edit needs a live lab re-run
+    (routing-lab is cheapest). (Verified 2026-08-13: pgx sends comments
+    verbatim, but default QueryExecModeCacheStatement sends query text only
+    at prepare time — once per connection per unique query — so the cost is
+    observability noise, not network bytes.)
+  - pkg/metrics; pkg/admin (health/metrics specifically);
+    pkg/consumer/metrics (comments specifically).
+  - The config-struct comment boilerplate ("pass your own *slog.Logger (own
+    Handler)...", the Retry field comment, "Validate runs after
+    WithDefaults...") is copied verbatim across ~40 config files — improving
+    it must be ONE codebase-wide sweep so the files stay identical, never a
+    per-package rewording. The "(own Handler)" fragment looks like a copy
+    artifact to fix in that same sweep.
+
+## Next
+
+**The 14b cleanup / public API design pass** — naming, shape, comments, and
+internal cleanup; no new behavior. Locks the surface before v1.
+
+Ordered: internal restructuring first, public-surface decisions late so they
+stay revisable, text polish (naming/errors/logging/comments) last.
+
+- **Potential project rename away from "vulkan".** No candidate yet; decide
+  before v1 -- after v1 the name is public API. A rename ripples through the
+  module path, the CLI binary, the docs site (docsBaseURL const in
+  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
+  plus every declared code -- codes never renumber after v1, so the prefix
+  must be final first).
+  - need to make sure we build out new logo sheet as well
+
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
@@ -68,113 +291,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   recorded there are Setup/Action/Assert prose from a scratch harness;
   implement as a real pkg/producer/pkg/consumer test suite once the API
   stops moving.
-
-
-## Next
-
-**The 14b cleanup / public API design pass** — naming, shape, comments, and
-internal cleanup; no new behavior. Locks the surface before v1.
-
-Ordered: internal restructuring first, public-surface decisions late so they
-stay revisable, text polish (naming/errors/logging/comments) last.
-
-
-
-- **Potential project rename away from "vulkan".** No candidate yet; decide
-  before v1 -- after v1 the name is public API. A rename ripples through the
-  module path, the CLI binary, the docs site (docsBaseURL const in
-  pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
-  plus every declared code -- codes never renumber after v1, so the prefix
-  must be final first).
-  - need to make sure we build out new logo sheet as well
-
-- **Library work the doc pass surfaced.**
-  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
-    comments and maybe a log line recommending against production use.
-    UNBLOCKED: this was sequenced behind the quickstart rewrite so the
-    Default constructors would be built against observed friction rather
-    than guessed, and that rewrite shipped in [0581].
-    - The friction it observed: a consumer needs a MessageAdmin and
-      RegisterSystem just to GetTopic; `topic.SchemaVersion(1)` is
-      repeated three times per program; Consume's cancellable-ctx
-      requirement is a context.Background() trap; ConsumerConfig.Retry and
-      Message.Retry are confusable; produce-only deployments silently get
-      no upkeep unless someone runs `vulkan manager run`; RegisterTopic
-      wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
-      struct for the common case — whether nil works is unverified);
-      pkg/common and pkg/topic invite aliasing in user code.
-  - Go doc comments on the public API — the surfaces the worker and cron
-    rounds finalized never got a doc-comment pass. [0581] fixed
-    RoutingKey's in passing; the rest are unreviewed.
-
-- **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
-  decide and document. Weigh Go 1.27's new generics/type-inference features
-  before finalizing.
-- **Compaction API shape** (for the v1 review; the standalone-head-read move
-  into pkg/compaction/controller shipped 2026-08-13):
-  - A dedicated compacted-topic handle — Compact(Producer|Consumer) idea;
-    NATS JetStream KV precedent: one typed handle doing Get + CAS-produce
-    with CompactionKey required. Would sit on top of the compaction
-    controller unchanged.
-  - consumerFunc could hand users a common.MessageRow[Message] instead of
-    payload-arg + context MessageMeta — the typed row moved to pkg/common
-    2026-08-13, so both sides could share it; the consumer's raw internal
-    row (payload + options columns) stays its own struct either way.
-- **Two ergonomics gaps the docs pass recorded** ([0581]) — decide in this
-  pass whether either earns surface:
-  - `ProduceInTx` accepts only a ProducerFunc, so a static payload inside
-    a caller-owned transaction costs an inline three-arg closure per
-    topic. No value-taking form exists.
-  - A new consumer group has no "start from now" option — its cursor
-    starts at 0, so on a deep-retention topic every new group reads the
-    full history before it sees live traffic.
-- **Public surface trim** (decisions settled 2026-08-01, recorded in
-  _public-surface.md; build pending — deliberately late so the decisions get
-  re-confirmed after living with the surface through the passes above):
-  - `concurrency` pkg hidden entirely — consumers build queue + pool
-    internally from ConsumerConfig, constructors drop the two params (also
-    removes the consumer.Buffered leak).
-  - All three sub-consumer constructors stay public; full maintain surface
-    stays public.
-  - `migrate` pkg + both migrations.Registry vars move to internal/ —
-    admin.MigrateTopic(s)/MigrateSystem are the only user migration entry;
-    CLI keeps access via the import-path prefix rule. MigrateTopic +
-    MigrateTopics both stay — distinct ops.
-  - Broader internal/ moves were deferred 2026-08-19 (LIFECYCLE demotion
-    shipped instead) — re-decide here, alongside the removed
-    datastore-interfaces question's "re-add if desired" revisit.
-  - Also demoted: common.NewDefaultRetryPolicy/RetryableFunc (IsRetryable
-    was deleted outright with the marker types, [0551]; retry merged into
-    pkg/common 2026-08-17, [0528] — demotion is now an unexport inside
-    common; config Retry fields stay nil, WithDefaults fills them). The ConsumerType + CURSOR/LIFECYCLE + ConsumerConfig.Type
-    demotion shipped 2026-08-19 (see the file-structure cleanup item).
-  - Trim redundant pairs generally: e.g. DestroyTopic + DestroyTopicVersion
-    can only confuse — consider one DestroyTopic with a version option.
-  - Decide whether the field-less system config stub (RegisterSystem cfg /
-    AlterSystem / `vulkan system alter`) stays in the v1 public surface or
-    gets deleted until a real system-wide knob exists ([0516]).
-- **Named-return-params house style** — decide and apply consistently across
-  the reviewed surface.
-- **Comment conventions for public surfaces** — a standard: description,
-  defaults, errors, doc links. Plus standardized SQL formatting.
-- **Comment sweeps:**
-  - fanOut (pkg/consumer/deliveryconsumer/controller/datastore/fanout.go) —
-    both the Go comments and the ones inside snapshotSql/scanSql. SQL
-    comments ship to Postgres, so every comment edit needs a live lab re-run
-    (routing-lab is cheapest). (Verified 2026-08-13: pgx sends comments
-    verbatim, but default QueryExecModeCacheStatement sends query text only
-    at prepare time — once per connection per unique query — so the cost is
-    observability noise, not network bytes.)
-  - pkg/metrics; pkg/admin (health/metrics specifically);
-    pkg/consumer/metrics (comments specifically).
-  - The config-struct comment boilerplate ("pass your own *slog.Logger (own
-    Handler)...", the Retry field comment, "Validate runs after
-    WithDefaults...") is copied verbatim across ~40 config files — improving
-    it must be ONE codebase-wide sweep so the files stay identical, never a
-    per-package rewording. The "(own Handler)" fragment looks like a copy
-    artifact to fix in that same sweep.
-
-
 
 ## Later
 

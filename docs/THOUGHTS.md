@@ -14,3 +14,5 @@ we need a long 1hr repeatable live test:
 - Might make sense to roll this into bench as a correctness or reliability benchmark
 
 need another review to make sure we are not logging any sensitive information like payload
+
+At end we should put up roadmap as github issues to get liked etc

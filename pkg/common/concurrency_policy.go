@@ -7,7 +7,7 @@ type ConcurrencyPolicy string
 
 const (
 	ConcurrencyAllow ConcurrencyPolicy = "allow" // current key busy -> new same-keyed message runs concurrently
-	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message waits; when the key frees, only the key's most recent head runs
+	ConcurrencyDefer ConcurrencyPolicy = "defer" // current key busy -> new same-keyed message waits; when the key frees the oldest waiting one runs (with compaction: the key's current head)
 )
 
 func (p ConcurrencyPolicy) Validate() error {
