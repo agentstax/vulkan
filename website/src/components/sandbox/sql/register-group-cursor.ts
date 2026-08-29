@@ -1,7 +1,7 @@
 // verbatim from pkg/consumergroup/controller/datastore/group.go registerGroup -- the
 // template is drift-checked byte-exact; the function mirrors the fmt.Sprintf call
 import { interpolate } from './interpolate';
-import { cursorTable } from './table-names';
+import { consumerGroupCursorTable } from './table-names';
 
 export const registerGroupCursorSqlTemplate = `
 		-- vulkan: consumergroup.registerGroup
@@ -10,5 +10,5 @@ export const registerGroupCursorSqlTemplate = `
 	`;
 
 export function registerGroupCursorSql(topicId: number): string {
-	return interpolate(registerGroupCursorSqlTemplate, cursorTable(topicId));
+	return interpolate(registerGroupCursorSqlTemplate, consumerGroupCursorTable(topicId));
 }

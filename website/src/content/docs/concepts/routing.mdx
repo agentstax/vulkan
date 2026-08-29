@@ -95,16 +95,17 @@ skipped) keep the outcome they had.
 
 Each topic owns a physical binding table, named by the topic's id
 ([table design](/concepts/table-design/)). The
-`display` column keeps the pattern as you wrote it:
+`pattern` column keeps the pattern as you wrote it; the POSIX
+translation it matches with sits beside it as `pattern_regex`:
 
 ```sql
-SELECT g.name AS consumer_group, b.display AS pattern
-FROM binding_1 b JOIN consumer_group g ON g.id = b.consumer_group_id
+SELECT g.name AS consumer_group, b.pattern
+FROM binding_config_1 b JOIN consumer_group_config g ON g.id = b.consumer_group_id
 ORDER BY 1;
 ```
 
 Every declaration attempt — installed and waiting alike — is also
-appended to the topic's `binding_log` table with who declared it and
+appended to the topic's `binding_config_log` table with who declared it and
 when, so "who changed the routing and when" is a query, not a mystery.
 
 ## What routing is not (yet)

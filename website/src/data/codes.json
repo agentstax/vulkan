@@ -39,21 +39,21 @@
       "queries": [
         {
           "label": "every schema version registered under this name",
-          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE name = '{topic}';",
+          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic_config\nWHERE name = '{topic}';",
           "placeholders": [
             "topic"
           ]
         },
         {
           "label": "the topic row behind an id, if that is what the line carried",
-          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE id = {topic_id};",
+          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic_config\nWHERE id = {topic_id};",
           "placeholders": [
             "topic_id"
           ]
         },
         {
           "label": "every registered topic, if the name itself is wrong",
-          "sql": "SELECT name, schema_version FROM topic ORDER BY name;",
+          "sql": "SELECT name, schema_version FROM topic_config ORDER BY name;",
           "placeholders": []
         }
       ]
@@ -142,14 +142,14 @@
       "queries": [
         {
           "label": "every group registered on this topic",
-          "sql": "SELECT\n\tconsumer_group.id,\n\tconsumer_group.name,\n\tconsumer_group.created_at\nFROM consumer_group\nJOIN topic ON topic.id = consumer_group.topic_id\nWHERE topic.name = '{topic}'\nORDER BY consumer_group.name;",
+          "sql": "SELECT\n\tconsumer_group_config.id,\n\tconsumer_group_config.name,\n\tconsumer_group_config.created_at\nFROM consumer_group_config\nJOIN topic_config ON topic_config.id = consumer_group_config.topic_id\nWHERE topic_config.name = '{topic}'\nORDER BY consumer_group_config.name;",
           "placeholders": [
             "topic"
           ]
         },
         {
           "label": "the group row behind an id, if that is what the line carried",
-          "sql": "SELECT\n\tid,\n\ttopic_id,\n\tname,\n\tcreated_at\nFROM consumer_group\nWHERE id = {group_id};",
+          "sql": "SELECT\n\tid,\n\ttopic_id,\n\tname,\n\tcreated_at\nFROM consumer_group_config\nWHERE id = {group_id};",
           "placeholders": [
             "group_id"
           ]
@@ -165,7 +165,7 @@
       "queries": [
         {
           "label": "the instances still heartbeating on this group",
-          "sql": "SELECT\n\tworker.name AS worker,\n\tworker_instance.id,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_instance\nJOIN worker ON worker.id = worker_instance.worker_id\nWHERE worker.consumer_group_id = {group_id}\n\tAND worker_instance.expires_at \u003e now()\nORDER BY worker_instance.expires_at;",
+          "sql": "SELECT\n\tworker_config.name AS worker,\n\tworker_instance.id,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_instance\nJOIN worker_config ON worker_config.id = worker_instance.worker_id\nWHERE worker_config.consumer_group_id = {group_id}\n\tAND worker_instance.expires_at \u003e now()\nORDER BY worker_instance.expires_at;",
           "placeholders": [
             "group_id"
           ]
@@ -181,7 +181,7 @@
       "queries": [
         {
           "label": "what the delivery rows would discard, by status",
-          "sql": "SELECT status, count(*) AS row_count\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\nGROUP BY status;",
+          "sql": "SELECT status, count(*) AS row_count\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\nGROUP BY status;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -189,7 +189,7 @@
         },
         {
           "label": "the dead ones, whose dead-letter record goes with them",
-          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY message_id;",
+          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY message_id;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -218,7 +218,7 @@
       "queries": [
         {
           "label": "whether the outcomes landed -- rows updated at the commit",
-          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\nORDER BY updated_at DESC\nLIMIT 20;",
+          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\nORDER BY updated_at DESC\nLIMIT 20;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -226,7 +226,7 @@
         },
         {
           "label": "the range lease whose expiry settles it either way",
-          "sql": "SELECT\n\ttoken,\n\tlow,\n\thigh,\n\tuntil,\n\treclaims\nFROM lease_{topic_id}\nWHERE consumer_group_id = {group_id};",
+          "sql": "SELECT\n\ttoken,\n\tlow,\n\thigh,\n\texpires_at,\n\treclaims\nFROM claim_lease_{topic_id}\nWHERE consumer_group_id = {group_id};",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -328,7 +328,7 @@
       "queries": [
         {
           "label": "the leases this group holds now",
-          "sql": "SELECT\n\ttoken,\n\tlow,\n\thigh,\n\tuntil,\n\treclaims\nFROM lease_{topic_id}\nWHERE consumer_group_id = {group_id}\nORDER BY low;",
+          "sql": "SELECT\n\ttoken,\n\tlow,\n\thigh,\n\texpires_at,\n\treclaims\nFROM claim_lease_{topic_id}\nWHERE consumer_group_id = {group_id}\nORDER BY low;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -336,7 +336,7 @@
         },
         {
           "label": "what the reclaimed range left behind",
-          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tlast_error\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id BETWEEN {low} AND {high}\nORDER BY message_id;",
+          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tlast_error\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id BETWEEN {low} AND {high}\nORDER BY message_id;",
           "placeholders": [
             "topic_id",
             "group_id",
@@ -353,7 +353,7 @@
       "queries": [
         {
           "label": "the exceptions the quarantine wrote",
-          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tcan_run_after,\n\tlast_error\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id BETWEEN {low} AND {high}\nORDER BY message_id;",
+          "sql": "SELECT\n\tmessage_id,\n\tstatus,\n\tattempts,\n\tcan_run_after,\n\tlast_error\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id BETWEEN {low} AND {high}\nORDER BY message_id;",
           "placeholders": [
             "topic_id",
             "group_id",
@@ -379,7 +379,7 @@
       "queries": [
         {
           "label": "every dead row this group holds, newest first",
-          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY updated_at DESC;",
+          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY updated_at DESC;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -387,7 +387,7 @@
         },
         {
           "label": "which errors account for them",
-          "sql": "SELECT last_error, count(*) AS dead_count\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nGROUP BY last_error\nORDER BY dead_count DESC;",
+          "sql": "SELECT last_error, count(*) AS dead_count\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nGROUP BY last_error\nORDER BY dead_count DESC;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -402,7 +402,7 @@
       "queries": [
         {
           "label": "the delivery row the dead-lettering wrote",
-          "sql": "SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};",
+          "sql": "SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};",
           "placeholders": [
             "topic_id",
             "group_id",
@@ -435,7 +435,7 @@
       "queries": [
         {
           "label": "the exception row now recorded dead",
-          "sql": "SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};",
+          "sql": "SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};",
           "placeholders": [
             "topic_id",
             "group_id",
@@ -460,7 +460,7 @@
       "queries": [
         {
           "label": "the rows the backstop marked dead",
-          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY updated_at DESC;",
+          "sql": "SELECT\n\tmessage_id,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND status = 'dead'\nORDER BY updated_at DESC;",
           "placeholders": [
             "topic_id",
             "group_id"
@@ -493,7 +493,7 @@
       "queries": [
         {
           "label": "the instances holding this worker's rows now",
-          "sql": "SELECT\n\tworker_instance.id,\n\tworker_instance.token,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_instance\nJOIN worker ON worker.id = worker_instance.worker_id\nWHERE worker.name = '{worker}'\nORDER BY worker_instance.expires_at DESC;",
+          "sql": "SELECT\n\tworker_instance.id,\n\tworker_instance.token,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_instance\nJOIN worker_config ON worker_config.id = worker_instance.worker_id\nWHERE worker_config.name = '{worker}'\nORDER BY worker_instance.expires_at DESC;",
           "placeholders": [
             "worker"
           ]
@@ -507,7 +507,7 @@
       "queries": [
         {
           "label": "every suspended worker row -- target_instances 0",
-          "sql": "SELECT\n\tid,\n\tname,\n\tsystem_id,\n\ttopic_id,\n\tconsumer_group_id\nFROM worker\nWHERE target_instances = 0\nORDER BY name;",
+          "sql": "SELECT\n\tid,\n\tname,\n\tsystem_id,\n\ttopic_id,\n\tconsumer_group_id\nFROM worker_config\nWHERE target_instances = 0\nORDER BY name;",
           "placeholders": []
         }
       ]
@@ -519,7 +519,7 @@
       "queries": [
         {
           "label": "this worker's rows and their failure streaks",
-          "sql": "SELECT\n\tworker.id,\n\tworker.target_instances,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker\nLEFT JOIN worker_instance ON worker_instance.worker_id = worker.id\nWHERE worker.name = '{worker}'\nORDER BY worker_instance.attempts DESC;",
+          "sql": "SELECT\n\tworker_config.id,\n\tworker_config.target_instances,\n\tworker_instance.expires_at,\n\tworker_instance.attempts\nFROM worker_config\nLEFT JOIN worker_instance ON worker_instance.worker_id = worker_config.id\nWHERE worker_config.name = '{worker}'\nORDER BY worker_instance.attempts DESC;",
           "placeholders": [
             "worker"
           ]
@@ -573,7 +573,7 @@
       "name": "vulkan.consumer.session.superseded",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "messages resolved without running -- a newer message on their compaction key had already arrived"
+      "description": "messages resolved without running -- a newer version of their compacted message key had already arrived"
     },
     "VK0045": {
       "code": "VK0045",
@@ -589,7 +589,7 @@
       "name": "vulkan.consumer.session.deferred",
       "metric_kind": "counter",
       "unit": "{message}",
-      "description": "delivery rows written 'deferred' -- another delivery held their compaction key"
+      "description": "delivery rows written 'deferred' -- another delivery held their message key"
     },
     "VK0047": {
       "code": "VK0047",

@@ -7,18 +7,18 @@ describe('sqlSegments', () => {
 	});
 
 	it('splits keywords out of the surrounding text', () => {
-		expect(sqlSegments('SELECT id FROM topic')).toEqual([
+		expect(sqlSegments('SELECT id FROM topic_config')).toEqual([
 			{ text: 'SELECT', kind: 'keyword' },
 			{ text: ' id ', kind: 'plain' },
 			{ text: 'FROM', kind: 'keyword' },
-			{ text: ' topic', kind: 'plain' },
+			{ text: ' topic_config', kind: 'plain' },
 		]);
 	});
 
 	it('marks a placeholder inside an identifier without breaking the table name', () => {
-		expect(sqlSegments('FROM delivery_{topic_id}')).toEqual([
+		expect(sqlSegments('FROM exception_queue_{topic_id}')).toEqual([
 			{ text: 'FROM', kind: 'keyword' },
-			{ text: ' delivery_', kind: 'plain' },
+			{ text: ' exception_queue_', kind: 'plain' },
 			{ text: '{topic_id}', kind: 'placeholder' },
 		]);
 	});
@@ -61,13 +61,13 @@ describe('sqlSegments', () => {
 describe('fillSegments', () => {
 	it('substitutes an identifier position bare', () => {
 		const filled = fillSegments(
-			sqlSegments('FROM delivery_{topic_id}'),
+			sqlSegments('FROM exception_queue_{topic_id}'),
 			new Map([['topic_id', '7']]),
 		);
 
 		expect(filled).toEqual([
 			{ text: 'FROM', kind: 'keyword' },
-			{ text: ' delivery_', kind: 'plain' },
+			{ text: ' exception_queue_', kind: 'plain' },
 			{ text: '7', kind: 'value' },
 		]);
 	});
@@ -100,14 +100,14 @@ describe('fillSegments', () => {
 	it('leaves a bare position alone when the value is not an identifier', () => {
 		const filled = fillSegments(
 			sqlSegments('WHERE id = {message_id};'),
-			new Map([['message_id', '1; DROP TABLE topic']]),
+			new Map([['message_id', '1; DROP TABLE topic_config']]),
 		);
 
 		expect(filled[2]).toEqual({ text: '{message_id}', kind: 'placeholder' });
 	});
 
 	it('leaves a placeholder nothing filled as a blank', () => {
-		const filled = fillSegments(sqlSegments('FROM delivery_{topic_id}'), new Map());
+		const filled = fillSegments(sqlSegments('FROM exception_queue_{topic_id}'), new Map());
 
 		expect(filled[2]).toEqual({ text: '{topic_id}', kind: 'placeholder' });
 	});

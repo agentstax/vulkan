@@ -3,7 +3,7 @@
 import { interpolate } from './interpolate';
 import { idempotencyKeyTable, messageLogTable } from './table-names';
 
-export const protectedInsertKeylessSqlTemplate = `
+export const protectedInsertUncompactedSqlTemplate = `
 			-- vulkan: producer.protectedInsert
 			WITH claim AS (
 				INSERT INTO %s (idempotency_key)
@@ -11,18 +11,19 @@ export const protectedInsertKeylessSqlTemplate = `
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, options)
+			INSERT INTO %s (payload, routing_key, message_key, options)
 			SELECT
 				$2,
 				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
-				$4
+				NULLIF($4, ''), -- if message_key is empty string '' insert as NULL
+				$5
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
 		`;
 
-export function protectedInsertKeylessSql(topicId: number): string {
+export function protectedInsertUncompactedSql(topicId: number): string {
 	return interpolate(
-		protectedInsertKeylessSqlTemplate,
+		protectedInsertUncompactedSqlTemplate,
 		idempotencyKeyTable(topicId),
 		messageLogTable(topicId),
 	);

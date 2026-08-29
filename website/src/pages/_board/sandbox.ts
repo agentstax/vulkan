@@ -20,7 +20,7 @@ export type SandboxShell = {
 export async function sandboxShell(): Promise<SandboxShell> {
 	const database = await createVulkanDatabase(() => {});
 	const messages = await panelShell(database, 'message_log_1', messageLogSql);
-	const cursors = await panelShell(database, 'cursor_1', cursorSql);
+	const cursors = await panelShell(database, 'consumer_group_cursor_1', cursorSql);
 	await database.close();
 	return { messages, cursors };
 }

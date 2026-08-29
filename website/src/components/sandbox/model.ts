@@ -21,7 +21,7 @@ export type LeaseRow = {
 	consumer_group_id: number;
 	low: number;
 	high: number;
-	until: Date;
+	expires_at: Date;
 	reclaims: number;
 };
 
@@ -30,8 +30,9 @@ export type MessageRow = {
 	payload: unknown;
 	created_at: Date;
 	routing_key: string;
-	compaction_key: string;
+	message_key: string;
 	compaction_rank: number;
+	compacted: boolean;
 	options: unknown;
 };
 
@@ -40,8 +41,8 @@ export type MessageRow = {
 // order of its own -- so a caller that prints it names the two fields.
 export type OrderPayload = { order_id: number; desc: string };
 
-// one message the claim's range made readable -- the keyed rows a newer message
-// on their compaction key replaced never reach this. The payload is jsonb, so
+// one message the claim's range made readable -- the compacted rows a newer
+// message on their message key replaced never reach this. The payload is jsonb, so
 // what comes back is whatever was produced: the caller narrows it.
 export type ClaimedMessage = { id: number; payload: unknown };
 

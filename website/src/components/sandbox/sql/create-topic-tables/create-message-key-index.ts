@@ -3,15 +3,15 @@
 import { interpolate } from '../interpolate';
 import { messageLogTable } from '../table-names';
 
-export const createCompactionKeyIndexSqlTemplate = `
+export const createMessageKeyIndexSqlTemplate = `
 		-- vulkan: topic.createTopicTables
-		CREATE INDEX IF NOT EXISTS %s_compaction_key ON %s (compaction_key, id)
-			WHERE compaction_key IS NOT NULL;
+		CREATE INDEX IF NOT EXISTS %s_message_key ON %s (message_key, id)
+			WHERE message_key IS NOT NULL;
 	`;
 
-export function createCompactionKeyIndexSql(topicId: number): string {
+export function createMessageKeyIndexSql(topicId: number): string {
 	return interpolate(
-		createCompactionKeyIndexSqlTemplate,
+		createMessageKeyIndexSqlTemplate,
 		messageLogTable(topicId),
 		messageLogTable(topicId),
 	);

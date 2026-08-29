@@ -76,7 +76,7 @@ is to make `lost` read anything but zero.
    not discarded:
 
    ```sql
-   SELECT count(*) FROM delivery_1 WHERE status = 'dead';
+   SELECT count(*) FROM exception_queue_1 WHERE status = 'dead';
    ```
 
    Dead-lettered messages aren't lost messages. They're messages
@@ -142,9 +142,9 @@ can run them yourself in `psql` mid-attack:
 
 ```sql
 SELECT
-  (SELECT count(*) FROM message_log_1)                    AS produced,
-  (SELECT min(committed) FROM cursor_1)                   AS resolved_through,
-  (SELECT count(*) FROM delivery_1 WHERE status = 'dead') AS dead_lettered;
+  (SELECT count(*) FROM message_log_1)                           AS produced,
+  (SELECT min(committed) FROM consumer_group_cursor_1)           AS resolved_through,
+  (SELECT count(*) FROM exception_queue_1 WHERE status = 'dead') AS dead_lettered;
 ```
 
 `committed` is the load-bearing number: every message at or below it

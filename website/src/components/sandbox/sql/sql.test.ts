@@ -4,20 +4,20 @@ import { describe, expect, test } from 'vitest';
 import { createSystemTablesStatements } from './create-system-tables/statements';
 import { createTableSqlTemplate } from './create-topic-tables/create-table';
 import { createPartitionSqlTemplate } from './create-topic-tables/create-partition';
-import { createCompactionKeyIndexSqlTemplate } from './create-topic-tables/create-compaction-key-index';
+import { createMessageKeyIndexSqlTemplate } from './create-topic-tables/create-message-key-index';
 import { createIdempotencyKeySqlTemplate } from './create-topic-tables/create-idempotency-key';
 import { createIdempotencyKeyCreatedAtIndexSqlTemplate } from './create-topic-tables/create-idempotency-key-created-at-index';
-import { createDeliverySqlTemplate } from './create-topic-tables/create-delivery';
+import { createExceptionQueueSqlTemplate } from './create-topic-tables/create-exception-queue';
 import { createDeliveryLogSqlTemplate } from './create-topic-tables/create-delivery-log';
-import { createCursorSqlTemplate } from './create-topic-tables/create-cursor';
-import { createLeaseSqlTemplate } from './create-topic-tables/create-lease';
-import { createKeyLeaseSqlTemplate } from './create-topic-tables/create-key-lease';
+import { createConsumerGroupCursorSqlTemplate } from './create-topic-tables/create-consumer-group-cursor';
+import { createClaimLeaseSqlTemplate } from './create-topic-tables/create-claim-lease';
+import { createMessageKeyLeaseSqlTemplate } from './create-topic-tables/create-message-key-lease';
 import { createCompactionHeadSqlTemplate } from './create-topic-tables/create-compaction-head';
-import { createBindingSqlTemplate } from './create-topic-tables/create-binding';
-import { createBindingLogSqlTemplate } from './create-topic-tables/create-binding-log';
-import { createBindingLogIndexSqlTemplate } from './create-topic-tables/create-binding-log-index';
-import { protectedInsertKeyedSqlTemplate } from './protected-insert-keyed';
-import { protectedInsertKeylessSqlTemplate } from './protected-insert-keyless';
+import { createBindingConfigSqlTemplate } from './create-topic-tables/create-binding-config';
+import { createBindingConfigLogSqlTemplate } from './create-topic-tables/create-binding-config-log';
+import { createBindingConfigLogIndexSqlTemplate } from './create-topic-tables/create-binding-config-log-index';
+import { protectedInsertCompactedSqlTemplate } from './protected-insert-compacted';
+import { protectedInsertUncompactedSqlTemplate } from './protected-insert-uncompacted';
 import { getGroupSql } from './get-group';
 import { registerGroupLockSql } from './register-group-lock';
 import { registerGroupInsertSql } from './register-group-insert';
@@ -31,23 +31,23 @@ import { freeLeaseSqlTemplate } from './free-lease';
 const createTopicTablesTemplates = [
 	createTableSqlTemplate,
 	createPartitionSqlTemplate,
-	createCompactionKeyIndexSqlTemplate,
+	createMessageKeyIndexSqlTemplate,
 	createIdempotencyKeySqlTemplate,
 	createIdempotencyKeyCreatedAtIndexSqlTemplate,
-	createDeliverySqlTemplate,
+	createExceptionQueueSqlTemplate,
 	createDeliveryLogSqlTemplate,
-	createCursorSqlTemplate,
-	createLeaseSqlTemplate,
-	createKeyLeaseSqlTemplate,
+	createConsumerGroupCursorSqlTemplate,
+	createClaimLeaseSqlTemplate,
+	createMessageKeyLeaseSqlTemplate,
 	createCompactionHeadSqlTemplate,
-	createBindingSqlTemplate,
-	createBindingLogSqlTemplate,
-	createBindingLogIndexSqlTemplate,
+	createBindingConfigSqlTemplate,
+	createBindingConfigLogSqlTemplate,
+	createBindingConfigLogIndexSqlTemplate,
 ];
 
 const protectedInsertTemplates = [
-	protectedInsertKeyedSqlTemplate,
-	protectedInsertKeylessSqlTemplate,
+	protectedInsertCompactedSqlTemplate,
+	protectedInsertUncompactedSqlTemplate,
 ];
 
 const registerGroupTemplates = [

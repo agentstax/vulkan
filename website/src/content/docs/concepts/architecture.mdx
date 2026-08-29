@@ -14,25 +14,27 @@ library. Everything below is rows.
                      │                     POSTGRES                     │
   producers          │                                                  │      consumers
                      │  shared control plane:                           │
-  app ──produce────▶ │    topic · consumer_group · worker · cron_job    │
-  app ──produce────▶ │                                                  │
-    (in your txn)    │  one table family per topic (suffix = topic id): │
+  app ──produce────▶ │    topic_config · consumer_group_config          │
+  app ──produce────▶ │    worker_config · cron_job_config               │
+    (in your txn)    │                                                  │
+                     │  one table family per topic (suffix = topic id): │
                      │    message_log_1  immutable log, id-partitioned  │ ◀──claim ranges── instance
-                     │    cursor_1       per-group claimed / committed  │ ◀──claim ranges── instance
-                     │    binding_1      routing patterns               │
-                     │    delivery_1     per-group failure lifecycle    │ ◀──retry claims── instance
-                     │    delivery_log_1 per-attempt audit trail        │
-                     │    lease_1 · key_lease_1 · compaction_head_1     │
-                     │    idempotency_key_1                             │
+                     │    consumer_group_cursor_1  claimed / committed  │ ◀──claim ranges── instance
+                     │    binding_config_1   routing patterns           │
+                     │    exception_queue_1  failure lifecycle          │ ◀──retry claims── instance
+                     │    delivery_log_1  per-attempt audit trail       │
+                     │    claim_lease_1 · message_key_lease_1           │
+                     │    compaction_head_1 · idempotency_key_1         │
                      └──────────────────────────────────────────────────┘
 ```
 
 ## Two kinds of table
 
 **The shared control plane** — created once by `RegisterSystem` (or
-`vulkan migrate init`): the topic catalog (`system`, `topic`,
-`topic_log`, `consumer_group`), the worker fleet (`worker`,
-`worker_log`, `worker_instance`, `cron_job`), and migration history
+`vulkan migrate init`): the topic catalog (`system_config`,
+`topic_config`, `topic_config_log`, `consumer_group_config`), the
+worker fleet (`worker_config`, `worker_config_log`, `worker_instance`,
+`cron_job_config`, `cron_job_cursor`), and migration history
 (`migration_log`).
 
 **One physical family per topic** — created by `RegisterTopic`, named
@@ -43,8 +45,8 @@ deliberate, not decorative:
 
 - Retention drops wait on every cursor in a table — shared tables would
   let one lagging group on topic A block cleanup for unrelated topic B.
-- A failure outage churns `delivery` with inserts and deletes — shared,
-  that churn would slow every other topic's claims.
+- A failure outage churns `exception_queue` with inserts and deletes —
+  shared, that churn would slow every other topic's claims.
 - Destroying a topic is `DROP TABLE` on its family, not a cross-table
   `DELETE` sweep.
 
@@ -57,21 +59,21 @@ producer creates the next partition ahead as the current one fills, and
 retention expires whole partitions with a `DROP` — no million-row
 deletes, no vacuum debt.
 
-**`cursor_<id>` — the happy path.** One row per consumer group:
+**`consumer_group_cursor_<id>` — the happy path.** One row per consumer group:
 `claimed` (the read frontier) and `committed` (everything at or below
 it is resolved). Consumer instances claim contiguous *ranges* of the
 log under a lease; messages that succeed are simply swept past. Fan-out
 to another group costs one more cursor row, and per-group **lag** is
 `max(id) - committed`.
 
-**`delivery_<id>` — the failure lifecycle.** One row per *failed*
+**`exception_queue_<id>` — the failure lifecycle.** One row per *failed*
 message per group: status, attempts, backoff timestamp, last error,
 lease. The [state machine](/concepts/lifecycle/) lives here, claimed
 with `FOR UPDATE SKIP LOCKED` so any number of instances compete
 safely. `delivery_log_<id>` keeps the per-attempt audit trail beside
 it.
 
-**`binding_<id>` — the routing.** Which groups receive which messages,
+**`binding_config_<id>` — the routing.** Which groups receive which messages,
 decided when deliveries materialize, by matching the message's routing
 key against stored patterns ([routing →](/concepts/routing/)).
 
@@ -87,7 +89,7 @@ key against stored patterns ([routing →](/concepts/routing/)).
    the handler runs unlocked — a ten-minute handler never holds a
    database lock.
 3. **Resolve.** Success: nothing to write; the committed cursor sweeps
-   past. Failure: a delivery row materializes and retries with backoff
+   past. Failure: an exception-queue row materializes and retries with backoff
    until it succeeds (row deleted) or exhausts its budget (`dead`).
    Instance crashed? Its lease expires and the range is reclaimed —
    recovery is a property of the data, not of any process that can die.
@@ -103,7 +105,7 @@ deferred until polling latency is a *measured* problem.
 
 ## The maintenance fleet
 
-Upkeep runs as **workers** — rows in the `worker` table, claimed and
+Upkeep runs as **workers** — rows in the `worker_config` table, claimed and
 executed by whatever processes are around. Every `Consume` embeds a
 manager that runs the fleet; a deployment that only produces runs
 `vulkan manager run` instead. Replicas coordinate through worker
@@ -120,7 +122,7 @@ claims, so running N copies is safe.
 
 ## Costs, honestly
 
-Failure costs writes: a message that fails gets a delivery row, a log
+Failure costs writes: a message that fails gets an exception-queue row, a log
 row per attempt, and updates per retry. Success costs almost nothing
 per message — the cursor advance amortizes over the whole range. That
 inverts the usual per-subscription trade (Pulsar pays per-message

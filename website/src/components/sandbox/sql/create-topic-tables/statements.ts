@@ -1,34 +1,34 @@
 // the statement order of createTopicTables -- one entry per Exec in the Go method
 import { createTableSql } from './create-table';
 import { createPartitionSql } from './create-partition';
-import { createCompactionKeyIndexSql } from './create-compaction-key-index';
+import { createMessageKeyIndexSql } from './create-message-key-index';
 import { createIdempotencyKeySql } from './create-idempotency-key';
 import { createIdempotencyKeyCreatedAtIndexSql } from './create-idempotency-key-created-at-index';
-import { createDeliverySql } from './create-delivery';
+import { createExceptionQueueSql } from './create-exception-queue';
 import { createDeliveryLogSql } from './create-delivery-log';
-import { createCursorSql } from './create-cursor';
-import { createLeaseSql } from './create-lease';
-import { createKeyLeaseSql } from './create-key-lease';
+import { createConsumerGroupCursorSql } from './create-consumer-group-cursor';
+import { createClaimLeaseSql } from './create-claim-lease';
+import { createMessageKeyLeaseSql } from './create-message-key-lease';
 import { createCompactionHeadSql } from './create-compaction-head';
-import { createBindingSql } from './create-binding';
-import { createBindingLogSql } from './create-binding-log';
-import { createBindingLogIndexSql } from './create-binding-log-index';
+import { createBindingConfigSql } from './create-binding-config';
+import { createBindingConfigLogSql } from './create-binding-config-log';
+import { createBindingConfigLogIndexSql } from './create-binding-config-log-index';
 
 export function createTopicTablesStatements(topicId: number, partitionSize: number): string[] {
 	return [
 		createTableSql(topicId),
 		createPartitionSql(topicId, partitionSize),
-		createCompactionKeyIndexSql(topicId),
+		createMessageKeyIndexSql(topicId),
 		createIdempotencyKeySql(topicId),
 		createIdempotencyKeyCreatedAtIndexSql(topicId),
-		createDeliverySql(topicId),
+		createExceptionQueueSql(topicId),
 		createDeliveryLogSql(topicId),
-		createCursorSql(topicId),
-		createLeaseSql(topicId),
-		createKeyLeaseSql(topicId),
+		createConsumerGroupCursorSql(topicId),
+		createClaimLeaseSql(topicId),
+		createMessageKeyLeaseSql(topicId),
 		createCompactionHeadSql(topicId),
-		createBindingSql(topicId),
-		createBindingLogSql(topicId),
-		createBindingLogIndexSql(topicId),
+		createBindingConfigSql(topicId),
+		createBindingConfigLogSql(topicId),
+		createBindingConfigLogIndexSql(topicId),
 	];
 }

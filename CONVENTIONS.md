@@ -76,6 +76,7 @@ surfaces it.
 | attr, attrs | shorthand for a word the reader should never have to expand | attribute; log attribute (`slog.Attr` is stdlib and keeps its name) |
 | hole (a template's blank) | coinage for a blank the reader fills in | placeholder |
 | park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
+| compaction key (the message's key) | the key is a message property; compaction is one of its two readers [0612] | message key (compaction_head's own compaction_key column keeps its name) |
 
 ## Structure
 
@@ -316,15 +317,40 @@ The domain layers:
 Every table is either shared control-plane schema or a member of one
 topic's family -- never both.
 
-- Shared: the catalog (system, topic, topic_log, consumer_group), the
-  fleet (worker, worker_instance, cron_job), and cross-scope history
-  (migration_log). Created by system createSystemTables.
-- Per-topic: everything else -- message_log, idempotency_key, delivery,
-  delivery_log, cursor, lease, key_lease, compaction_head, binding,
-  binding_log -- one physical table per topic, created by topic
-  createTopicTables. Library code names them ONLY through internal/topic's
-  table-name funcs; labs, which cannot import internal/, interpolate the
-  name inline.
+- Shared: the catalog (system_config, topic_config, topic_config_log,
+  consumer_group_config), the fleet (worker_config, worker_config_log,
+  worker_instance, cron_job_config, cron_job_cursor), and cross-scope
+  history (migration_log). Created by system createSystemTables.
+- Per-topic: everything else -- message_log, idempotency_key,
+  exception_queue, delivery_log, consumer_group_cursor, claim_lease,
+  message_key_lease, compaction_head, binding_config, binding_config_log
+  -- one physical table per topic, created by topic createTopicTables.
+  Library code names them ONLY through internal/topic's table-name funcs;
+  labs, which cannot import internal/, interpolate the name inline.
+- Every table name is `<root>_<kind>` [0611]: the leading words name the
+  resource a row is about, the trailing word the table's kind --
+  `_config` (declared state, written by declaration verbs), `_config_log`
+  (that config table's declaration trail), `_log` (append-only event
+  history; an event root stands alone with no sibling table --
+  message_log, delivery_log, migration_log), `_queue` (mutable work
+  rows), `_lease` (expiring locks, prefixed by what is leased),
+  `_instance` (live copies), `_cursor`/`_head` (singleton runtime state).
+  A table 1:1 with another resource's rows carries that owner's name
+  (consumer_group_cursor, cron_job_cursor). FK columns keep the
+  resource's noun (topic_id), never the table's name. idempotency_key is
+  the standing exception outside the kind set.
+- Column names [0613]: instants end `_at` -- past events as past
+  participles (created_at, attempted_at), expiry always expires_at -- and
+  a lower-bound gate ends `_after` (can_run_after). Durations are BIGINT
+  nanoseconds ending `_ns`. The user's opaque document is `payload`
+  everywhere. A fact about the row itself is bare; a fact about an
+  attached concept carries that concept's prefix (claim_lease.token vs
+  exception_queue.lease_token); `last_` marks latest-of-many. Singular =
+  ordinal (attempt), plural = running count (attempts, reclaims) -- the
+  logging registry's rule, extended to columns.
+- tools/conventions walks the baseline DDL for the machine-checkable
+  half of these rules: table kinds, `_at`/`_after` on TIMESTAMPTZ
+  columns, `_ns` on durations.
 - A new table splits per-topic when every row has exactly one owning topic
   (directly or through its consumer group) and no reader needs the table
   before knowing the topic. It stays shared when rows can exist at system
@@ -385,6 +411,10 @@ topic's family -- never both.
   `-- vulkan: <package>.<method>`. Constant text per query, so statement
   caching is unaffected; pg_stat_statements and the server log attribute
   load back to library verbs.
+- A SQL literal is a raw string shaped one way everywhere: opening
+  backtick then newline, the `-- vulkan:` owner comment and the statement
+  indented one level past the declaring line, closing backtick on its own
+  line at the declaring line's indent.
 
 ## Errors
 

@@ -2,7 +2,7 @@
 // readMessages -- the template is drift-checked byte-exact; the function mirrors
 // the fmt.Sprintf call
 import { interpolate } from './interpolate';
-import { bindingTable, compactionHeadTable, messageLogTable } from './table-names';
+import { bindingConfigTable, compactionHeadTable, messageLogTable } from './table-names';
 
 export const readMessagesSqlTemplate = `
 		-- vulkan: messageconsumer.readMessages
@@ -11,8 +11,9 @@ export const readMessagesSqlTemplate = `
 			m.payload,
 			m.created_at,
 			COALESCE(m.routing_key, '') AS routing_key,
-			COALESCE(m.compaction_key, '') AS compaction_key,
-			m.compaction_rank,
+			COALESCE(m.message_key, '') AS message_key,
+			COALESCE(m.compaction_rank, 0) AS compaction_rank,
+			(m.compaction_rank IS NOT NULL) AS compacted,
 			m.options
 		FROM %s m
 		WHERE m.id > $1
@@ -27,19 +28,19 @@ export const readMessagesSqlTemplate = `
 				OR EXISTS (
 					SELECT 1 FROM %s b
 					WHERE b.consumer_group_id = $3
-						AND m.routing_key ~ b.pattern
+						AND m.routing_key ~ b.pattern_regex
 				)
 				-- if bindings exist but our routing_key does not match any of them
 				-- we do not return anything
 			)
 			AND (
-				-- unkeyed rows are never compacted
-				m.compaction_key IS NULL
-				-- keyed rows are eligible only if they're compaction_head's current
-				-- pointer for their key -- O(1) lookup, no per-row scan
+				-- uncompacted rows (keyless or keyed) are never superseded
+				m.compaction_rank IS NULL
+				-- compacted rows are eligible only if they're compaction_head's
+				-- current pointer for their key -- O(1) lookup, no per-row scan
 				OR m.id = (
 					SELECT head_id FROM %s
-					WHERE compaction_key = m.compaction_key
+					WHERE compaction_key = m.message_key
 				)
 			)
 		-- rows MUST come back in id order or a batch LIMIT could
@@ -51,8 +52,8 @@ export function readMessagesSql(topicId: number): string {
 	return interpolate(
 		readMessagesSqlTemplate,
 		messageLogTable(topicId),
-		bindingTable(topicId),
-		bindingTable(topicId),
+		bindingConfigTable(topicId),
+		bindingConfigTable(topicId),
 		compactionHeadTable(topicId),
 	);
 }

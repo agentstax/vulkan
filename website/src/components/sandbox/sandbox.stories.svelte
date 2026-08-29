@@ -17,8 +17,8 @@
 				],
 			},
 			cursors: {
-				table: 'cursor_1',
-				sql: 'SELECT g.name, c.claimed\nFROM cursor_1 c\nJOIN consumer_group g\n  ON g.id = c.consumer_group_id;',
+				table: 'consumer_group_cursor_1',
+				sql: 'SELECT g.name, c.claimed\nFROM consumer_group_cursor_1 c\nJOIN consumer_group_config g\n  ON g.id = c.consumer_group_id;',
 				columns: ['name', 'claimed'],
 				rows: [],
 			},
@@ -31,8 +31,8 @@
 	name="Groups declared"
 	args={{
 		cursors: {
-			table: 'cursor_1',
-			sql: 'SELECT g.name, c.claimed\nFROM cursor_1 c\nJOIN consumer_group g\n  ON g.id = c.consumer_group_id;',
+			table: 'consumer_group_cursor_1',
+			sql: 'SELECT g.name, c.claimed\nFROM consumer_group_cursor_1 c\nJOIN consumer_group_config g\n  ON g.id = c.consumer_group_id;',
 			columns: ['name', 'claimed'],
 			rows: [
 				['billing', '2'],

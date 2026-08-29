@@ -16,7 +16,7 @@
 		queries: [
 			{
 				label: 'the delivery row the dead-lettering wrote',
-				sql: 'SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};',
+				sql: 'SELECT\n\tstatus,\n\tattempts,\n\tlast_error,\n\tupdated_at\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id}\n\tAND message_id = {message_id};',
 				placeholders: ['topic_id', 'group_id', 'message_id'],
 			},
 			{
@@ -35,7 +35,7 @@
 		queries: [
 			{
 				label: 'the topic rows registered under that name',
-				sql: "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic\nWHERE name = '{topic}';",
+				sql: "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic_config\nWHERE name = '{topic}';",
 				placeholders: ['topic'],
 			},
 		],

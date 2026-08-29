@@ -23,19 +23,19 @@
 />
 <Story
 	name="Lowercase keywords"
-	args={{ sql: "select count(*) from delivery_1 where status = 'dead';" }}
+	args={{ sql: "select count(*) from exception_queue_1 where status = 'dead';" }}
 />
 <Story
 	name="Declared query with placeholders"
 	args={{
-		sql: 'SELECT status, attempts\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id};',
+		sql: 'SELECT status, attempts\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id};',
 	}}
 />
 
 <Story
 	name="Placeholders filled from a log line"
 	args={{
-		sql: 'SELECT status, attempts\nFROM delivery_{topic_id}\nWHERE consumer_group_id = {group_id};',
+		sql: 'SELECT status, attempts\nFROM exception_queue_{topic_id}\nWHERE consumer_group_id = {group_id};',
 		values: new Map([
 			['topic_id', '1'],
 			['group_id', '2'],
@@ -47,7 +47,7 @@
 <Story
 	name="Text literal filled"
 	args={{
-		sql: "SELECT id, name FROM topic\nWHERE name = '{topic}';",
+		sql: "SELECT id, name FROM topic_config\nWHERE name = '{topic}';",
 		values: new Map([['topic', 'orders']]),
 	}}
 />

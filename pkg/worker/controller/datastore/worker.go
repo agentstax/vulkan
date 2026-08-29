@@ -13,7 +13,7 @@ import (
 )
 
 // RegisterWorker creates the (name, owner) worker row, or writes metadata onto
-// the existing one -- the newest declaration wins -- appending a worker_log
+// the existing one -- the newest declaration wins -- appending a worker_config_log
 // snapshot in the same transaction. targetInstances is set at creation
 // only: 0 is how a worker is suspended, and a redeclaration would resume it.
 func (d *WorkerDatastore) RegisterWorker(ctx context.Context, name string, owner *common.Owner, metadata any, targetInstances int, declaredBy string) error {
@@ -111,7 +111,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	return nil
 }
 
-// appendWorkerLog writes the worker row's full snapshot as one worker_log
+// appendWorkerLog writes the worker row's full snapshot as one worker_config_log
 // row, inside the transaction that changed the worker row.
 func (d *WorkerDatastore) appendWorkerLog(ctx context.Context, q datastore.Querier, workerId int64, declaredBy string) error {
 	sql := `

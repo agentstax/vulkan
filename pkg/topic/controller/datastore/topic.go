@@ -211,7 +211,7 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 }
 
 // Rename moves every version under oldName to newName in one transaction,
-// appending each version's topic_log row beside the update.
+// appending each version's topic_config_log row beside the update.
 // Returns (nil, nil) if no version is registered under oldName
 // ErrTopicNameTaken if newName already has any (name, version) registered.
 func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string, declaredBy string) ([]TopicData, error) {
@@ -290,7 +290,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 	return topics, nil
 }
 
-// appendTopicLog writes data's full snapshot as one topic_log row, inside
+// appendTopicLog writes data's full snapshot as one topic_config_log row, inside
 // the transaction that changed the topic row.
 func (d *TopicDatastore) appendTopicLog(ctx context.Context, q datastore.Querier, data *TopicData, declaredBy string) error {
 	sql := `

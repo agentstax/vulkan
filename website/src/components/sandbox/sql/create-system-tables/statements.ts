@@ -1,38 +1,40 @@
 // the statement order of createSystemTables -- one entry per Exec in the Go method
-import { createSystemSql } from './create-system';
-import { createTopicSql } from './create-topic';
-import { createTopicLogSql } from './create-topic-log';
-import { createTopicLogIndexSql } from './create-topic-log-index';
-import { createConsumerGroupSql } from './create-consumer-group';
-import { createWorkerSql } from './create-worker';
-import { createWorkerTopicNameIndexSql } from './create-worker-topic-name-index';
-import { createWorkerGroupNameIndexSql } from './create-worker-group-name-index';
-import { createWorkerSystemNameIndexSql } from './create-worker-system-name-index';
-import { createWorkerLogSql } from './create-worker-log';
-import { createWorkerLogIndexSql } from './create-worker-log-index';
+import { createSystemConfigSql } from './create-system-config';
+import { createTopicConfigSql } from './create-topic-config';
+import { createTopicConfigLogSql } from './create-topic-config-log';
+import { createTopicConfigLogIndexSql } from './create-topic-config-log-index';
+import { createConsumerGroupConfigSql } from './create-consumer-group-config';
+import { createWorkerConfigSql } from './create-worker-config';
+import { createWorkerConfigTopicNameIndexSql } from './create-worker-config-topic-name-index';
+import { createWorkerConfigGroupNameIndexSql } from './create-worker-config-group-name-index';
+import { createWorkerConfigSystemNameIndexSql } from './create-worker-config-system-name-index';
+import { createWorkerConfigLogSql } from './create-worker-config-log';
+import { createWorkerConfigLogIndexSql } from './create-worker-config-log-index';
 import { createWorkerInstanceSql } from './create-worker-instance';
 import { createWorkerInstanceWorkerIndexSql } from './create-worker-instance-worker-index';
 import { createWorkerInstanceExpiryIndexSql } from './create-worker-instance-expiry-index';
-import { createCronJobSql } from './create-cron-job';
-import { createCronJobDueIndexSql } from './create-cron-job-due-index';
+import { createCronJobConfigSql } from './create-cron-job-config';
+import { createCronJobCursorSql } from './create-cron-job-cursor';
+import { createCronJobCursorDueIndexSql } from './create-cron-job-cursor-due-index';
 import { createMigrationLogSql } from './create-migration-log';
 
 export const createSystemTablesStatements: string[] = [
-	createSystemSql,
-	createTopicSql,
-	createTopicLogSql,
-	createTopicLogIndexSql,
-	createConsumerGroupSql,
-	createWorkerSql,
-	createWorkerTopicNameIndexSql,
-	createWorkerGroupNameIndexSql,
-	createWorkerSystemNameIndexSql,
-	createWorkerLogSql,
-	createWorkerLogIndexSql,
+	createSystemConfigSql,
+	createTopicConfigSql,
+	createTopicConfigLogSql,
+	createTopicConfigLogIndexSql,
+	createConsumerGroupConfigSql,
+	createWorkerConfigSql,
+	createWorkerConfigTopicNameIndexSql,
+	createWorkerConfigGroupNameIndexSql,
+	createWorkerConfigSystemNameIndexSql,
+	createWorkerConfigLogSql,
+	createWorkerConfigLogIndexSql,
 	createWorkerInstanceSql,
 	createWorkerInstanceWorkerIndexSql,
 	createWorkerInstanceExpiryIndexSql,
-	createCronJobSql,
-	createCronJobDueIndexSql,
+	createCronJobConfigSql,
+	createCronJobCursorSql,
+	createCronJobCursorDueIndexSql,
 	createMigrationLogSql,
 ];

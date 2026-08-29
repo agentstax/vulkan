@@ -67,7 +67,7 @@ trails the head of the log:
 ```sql
 SELECT g.name AS consumer_group, c.claimed, c.committed,
        (SELECT max(id) FROM message_log_1) - c.committed AS backlog
-FROM cursor_1 c JOIN consumer_group g ON g.id = c.consumer_group_id;
+FROM consumer_group_cursor_1 c JOIN consumer_group_config g ON g.id = c.consumer_group_id;
 ```
 
 The same numbers ship as metrics — head, claimed, committed, backlog,

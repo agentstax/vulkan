@@ -107,9 +107,9 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    ```
 
    `RegisterTopic` is idempotent, and it creates the topic's own physical
-   tables — its message log, delivery, and cursor tables — in the same
-   call. Registering the system first is required; a topic cannot exist
-   without the control plane it rides on.
+   tables — its message log, exception queue, and cursor tables — in the
+   same call. Registering the system first is required; a topic cannot
+   exist without the control plane it rides on.
 
 4. **Consume it**
 
@@ -201,7 +201,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    the catalog:
 
    ```sql
-   SELECT id FROM topic WHERE name = 'signup.welcome-email' AND schema_version = 1;
+   SELECT id FROM topic_config WHERE name = 'signup.welcome-email' AND schema_version = 1;
    ```
 
    Say it returned `1`. Then (make your handler return an error and
@@ -217,7 +217,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    ```sql
    SELECT g.name AS consumer_group, d.status, count(*), max(d.attempts) AS attempts
-   FROM delivery_1 d JOIN consumer_group g ON g.id = d.consumer_group_id
+   FROM exception_queue_1 d JOIN consumer_group_config g ON g.id = d.consumer_group_id
    GROUP BY 1, 2;
    ```
 
@@ -225,7 +225,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    ```sql
    SELECT d.message_id, m.payload, d.attempts, d.last_error
-   FROM delivery_1 d JOIN message_log_1 m ON m.id = d.message_id
+   FROM exception_queue_1 d JOIN message_log_1 m ON m.id = d.message_id
    WHERE d.status = 'dead';
    ```
 
@@ -241,9 +241,9 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    backoff; after the retry budget is spent the row's status becomes
    `dead`, with the payload and `last_error` intact — nothing expires
    behind your back. One honesty note: a delivery that *succeeds* is
-   deleted, not kept — the delivery table shows in-flight and failed work,
-   while every failed attempt is preserved in the `delivery_log_1` audit
-   trail.
+   deleted, not kept — the exception queue shows in-flight and failed
+   work, while every failed attempt is preserved in the `delivery_log_1`
+   audit trail.
 
 6. **The headline: produce inside your own transaction**
 

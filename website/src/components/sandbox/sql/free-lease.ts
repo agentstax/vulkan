@@ -2,7 +2,7 @@
 // commit -- the template is drift-checked byte-exact; the function mirrors the
 // fmt.Sprintf call
 import { interpolate } from './interpolate';
-import { leaseTable } from './table-names';
+import { claimLeaseTable } from './table-names';
 
 export const freeLeaseSqlTemplate = `
 		-- vulkan: messageconsumer.commit
@@ -12,5 +12,5 @@ export const freeLeaseSqlTemplate = `
 	`;
 
 export function freeLeaseSql(topicId: number): string {
-	return interpolate(freeLeaseSqlTemplate, leaseTable(topicId));
+	return interpolate(freeLeaseSqlTemplate, claimLeaseTable(topicId));
 }

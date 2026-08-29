@@ -1,9 +1,9 @@
 // verbatim from pkg/system/controller/datastore/tables.go createSystemTables -- drift-checked byte-exact
-export const createTopicLogSql = `
+export const createTopicConfigLogSql = `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS topic_log (
+		CREATE TABLE IF NOT EXISTS topic_config_log (
 			id BIGSERIAL PRIMARY KEY,
-			topic_id BIGINT NOT NULL REFERENCES topic (id) ON DELETE CASCADE,
+			topic_id BIGINT NOT NULL REFERENCES topic_config (id) ON DELETE CASCADE,
 			name TEXT NOT NULL,                          -- the topic's name as of this declaration
 			partition_size BIGINT NOT NULL,
 			retention_ttl_ns BIGINT NOT NULL,

@@ -10,19 +10,15 @@ import (
 
 // SystemDatastore owns the shared control-plane schema.
 // Tables:
-// - system
-// - topic
-// - topic_log
-// - consumer_group
-// - cursor
-// - lease
-// - message_key_lease
-// - worker
+// - system_config
+// - topic_config
+// - topic_config_log
+// - consumer_group_config
+// - worker_config
+// - worker_config_log
 // - worker_instance
-// - binding
-// - binding_log
-// - compaction_head
-// - cron_job
+// - cron_job_config
+// - cron_job_cursor
 // - migration_log
 type SystemDatastore struct {
 	Datastore      *datastore.PostgresDatastore

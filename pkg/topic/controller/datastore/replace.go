@@ -10,7 +10,7 @@ import (
 
 // replaceConfig overwrites an already-registered topic's mutable config
 // with declared's -- the newest declaration wins -- and appends the new
-// snapshot to topic_log in the same transaction.
+// snapshot to topic_config_log in the same transaction.
 // partition_size is not mutable config.
 func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData, declaredBy string) (*TopicData, error) {
 	if found.PartitionSize != declared.PartitionSize {

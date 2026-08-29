@@ -2,7 +2,7 @@
 // freshClaimMessagesWithCursor -- the template is drift-checked byte-exact; the
 // function mirrors the fmt.Sprintf call
 import { interpolate } from './interpolate';
-import { cursorTable, messageLogTable } from './table-names';
+import { consumerGroupCursorTable, messageLogTable } from './table-names';
 
 export const claimSnapshotSqlTemplate = `
 		-- vulkan: messageconsumer.freshClaimMessagesWithCursor
@@ -17,5 +17,9 @@ export const claimSnapshotSqlTemplate = `
 	`;
 
 export function claimSnapshotSql(topicId: number): string {
-	return interpolate(claimSnapshotSqlTemplate, messageLogTable(topicId), cursorTable(topicId));
+	return interpolate(
+		claimSnapshotSqlTemplate,
+		messageLogTable(topicId),
+		consumerGroupCursorTable(topicId),
+	);
 }

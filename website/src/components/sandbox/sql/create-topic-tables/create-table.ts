@@ -12,8 +12,8 @@ export const createTableSqlTemplate = `
 			-- sequence hands out out-of-order id blocks
 
 			routing_key TEXT,
-			compaction_key TEXT,
-			compaction_rank BIGINT NOT NULL DEFAULT 0,
+			message_key TEXT,
+			compaction_rank BIGINT, -- NULL = this message never opted into compaction
 			payload JSONB NOT NULL,
 			options JSONB,                                -- sparse MessageOptions
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

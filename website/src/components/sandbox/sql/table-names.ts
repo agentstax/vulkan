@@ -12,34 +12,34 @@ export function idempotencyKeyTable(topicId: number): string {
 	return `idempotency_key_${topicId}`;
 }
 
-export function deliveryTable(topicId: number): string {
-	return `delivery_${topicId}`;
+export function exceptionQueueTable(topicId: number): string {
+	return `exception_queue_${topicId}`;
 }
 
 export function deliveryLogTable(topicId: number): string {
 	return `delivery_log_${topicId}`;
 }
 
-export function cursorTable(topicId: number): string {
-	return `cursor_${topicId}`;
+export function consumerGroupCursorTable(topicId: number): string {
+	return `consumer_group_cursor_${topicId}`;
 }
 
-export function leaseTable(topicId: number): string {
-	return `lease_${topicId}`;
+export function claimLeaseTable(topicId: number): string {
+	return `claim_lease_${topicId}`;
 }
 
-export function keyLeaseTable(topicId: number): string {
-	return `key_lease_${topicId}`;
+export function messageKeyLeaseTable(topicId: number): string {
+	return `message_key_lease_${topicId}`;
 }
 
 export function compactionHeadTable(topicId: number): string {
 	return `compaction_head_${topicId}`;
 }
 
-export function bindingTable(topicId: number): string {
-	return `binding_${topicId}`;
+export function bindingConfigTable(topicId: number): string {
+	return `binding_config_${topicId}`;
 }
 
-export function bindingLogTable(topicId: number): string {
-	return `binding_log_${topicId}`;
+export function bindingConfigLogTable(topicId: number): string {
+	return `binding_config_log_${topicId}`;
 }

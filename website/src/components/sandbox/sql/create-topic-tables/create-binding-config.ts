@@ -1,19 +1,19 @@
 // verbatim from pkg/topic/controller/datastore/tables.go createTopicTables -- the
 // template is drift-checked byte-exact; the function mirrors the fmt.Sprintf call
 import { interpolate } from '../interpolate';
-import { bindingTable } from '../table-names';
+import { bindingConfigTable } from '../table-names';
 
-export const createBindingSqlTemplate = `
+export const createBindingConfigSqlTemplate = `
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGSERIAL PRIMARY KEY,
-			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group (id) ON DELETE CASCADE,
-			pattern TEXT NOT NULL,                -- POSIX regex translated from the NATS-style pattern
-			display TEXT,                         -- original NATS pattern, for humans
-			UNIQUE (consumer_group_id, pattern)   -- its index also serves the group lookup
+			consumer_group_id BIGINT NOT NULL REFERENCES consumer_group_config (id) ON DELETE CASCADE,
+			pattern_regex TEXT NOT NULL,              -- POSIX regex translated from the declared pattern
+			pattern TEXT,                             -- the declared NATS-style pattern, for humans
+			UNIQUE (consumer_group_id, pattern_regex) -- its index also serves the group lookup
 		);
 	`;
 
-export function createBindingSql(topicId: number): string {
-	return interpolate(createBindingSqlTemplate, bindingTable(topicId));
+export function createBindingConfigSql(topicId: number): string {
+	return interpolate(createBindingConfigSqlTemplate, bindingConfigTable(topicId));
 }

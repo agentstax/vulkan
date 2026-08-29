@@ -2,11 +2,11 @@
 // claimMessages -- the template is drift-checked byte-exact; the function mirrors
 // the fmt.Sprintf call
 import { interpolate } from './interpolate';
-import { leaseTable } from './table-names';
+import { claimLeaseTable } from './table-names';
 
 export const claimLeaseSqlTemplate = `
 		-- vulkan: messageconsumer.claimMessages
-		INSERT INTO %s (consumer_group_id, low, high, until)
+		INSERT INTO %s (consumer_group_id, low, high, expires_at)
 		VALUES (
 			$1,
 			$2,
@@ -18,10 +18,10 @@ export const claimLeaseSqlTemplate = `
 			consumer_group_id,
 			low,
 			high,
-			until,
+			expires_at,
 			reclaims;
 	`;
 
 export function claimLeaseSql(topicId: number): string {
-	return interpolate(claimLeaseSqlTemplate, leaseTable(topicId));
+	return interpolate(claimLeaseSqlTemplate, claimLeaseTable(topicId));
 }

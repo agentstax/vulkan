@@ -22,7 +22,7 @@ import { createSystemTablesStatements } from './sql/create-system-tables/stateme
 import { createTopicTablesStatements } from './sql/create-topic-tables/statements';
 import { freeLeaseSql } from './sql/free-lease';
 import { getGroupSql } from './sql/get-group';
-import { protectedInsertKeylessSql } from './sql/protected-insert-keyless';
+import { protectedInsertUncompactedSql } from './sql/protected-insert-uncompacted';
 import { readMessagesSql } from './sql/read-messages';
 import { registerGroupCursorSql } from './sql/register-group-cursor';
 import { registerGroupInsertSql } from './sql/register-group-insert';
@@ -40,9 +40,8 @@ const batchLimit = 1;
 // Timeout 30s + TimeoutGrace 100ms + QueueMargin 5s + RecordMargin 2s
 const leaseSeconds = 37.1;
 
-// the seeded log, one order per message. The first two go through the keyless
-// produce statement and the rest through the keyed one -- both are the
-// library's own, and the sandbox runs both.
+// the seeded log, one order per message, all through the library's own
+// uncompacted produce statement -- no seed sets a message key.
 const seedOrders = [
 	'ship pallet',
 	'refund card',
@@ -67,8 +66,8 @@ FROM message_log_1
 ORDER BY id DESC;`;
 
 export const cursorSql = `SELECT g.name, c.claimed
-FROM cursor_1 c
-JOIN consumer_group g ON g.id = c.consumer_group_id;`;
+FROM consumer_group_cursor_1 c
+JOIN consumer_group_config g ON g.id = c.consumer_group_id;`;
 
 export type DatabaseStage = 'downloading' | 'starting postgres' | 'creating tables';
 
@@ -112,10 +111,11 @@ export class VulkanDatabase {
 	// the reader's own message, produced through the same statement the seed
 	// uses -- a fresh idempotency key every time, so every click lands a row
 	async produce(description: string): Promise<void> {
-		await this.db.query(protectedInsertKeylessSql(demoTopicId), [
+		await this.db.query(protectedInsertUncompactedSql(demoTopicId), [
 			crypto.randomUUID(),
 			orderPayload(this.nextOrderId, description),
 			'orders.eu.created',
+			'',
 			null,
 		]);
 		this.nextOrderId += 1;
@@ -205,7 +205,7 @@ export class VulkanDatabase {
 	// Commit frees the range's lease and nothing else. The handler above succeeds
 	// on every message, and under the demo topic's delivery_log_mode -- the
 	// library default 'failures' -- a successful outcome is never collected, so
-	// commit's batch is empty: no delivery_1 row and no delivery_log_1 row.
+	// commit's batch is empty: no exception_queue_1 row and no delivery_log_1 row.
 	async commit(groupId: number, token: string): Promise<void> {
 		const freed = await this.db.query(freeLeaseSql(demoTopicId), [groupId, token]);
 		if (freed.affectedRows === 0) {
@@ -215,7 +215,7 @@ export class VulkanDatabase {
 
 	async listGroups(): Promise<string[]> {
 		const groups = await this.db.query<GroupNameRow>(
-			`SELECT name FROM consumer_group WHERE topic_id = $1 ORDER BY id;`,
+			`SELECT name FROM consumer_group_config WHERE topic_id = $1 ORDER BY id;`,
 			[demoTopicId],
 		);
 		return groups.rows.map((group) => group.name);
@@ -272,18 +272,19 @@ function noCursor(groupId: number): Error {
 // catalog rows are plain setup inserts; the messages go through the library's
 // own produce statement -- that path is the page's claim, so it stays verbatim
 async function seed(db: PGlite): Promise<void> {
-	await db.query(`INSERT INTO system DEFAULT VALUES`);
+	await db.query(`INSERT INTO system_config DEFAULT VALUES`);
 	await db.query(
-		`INSERT INTO topic (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
+		`INSERT INTO topic_config (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
 		[1, demoTopicName, 1, demoPartitionSize],
 	);
 
 	for (const [index, description] of seedOrders.entries()) {
 		const orderId = firstOrderId + index;
-		await db.query<ProducedRow>(protectedInsertKeylessSql(demoTopicId), [
+		await db.query<ProducedRow>(protectedInsertUncompactedSql(demoTopicId), [
 			crypto.randomUUID(),
 			orderPayload(orderId, description),
 			'orders.eu.created',
+			'',
 			null,
 		]);
 	}

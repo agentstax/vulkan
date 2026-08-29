@@ -1,9 +1,9 @@
 // verbatim from pkg/system/controller/datastore/tables.go createSystemTables -- drift-checked byte-exact
-export const createTopicSql = `
+export const createTopicConfigSql = `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS topic (
+		CREATE TABLE IF NOT EXISTS topic_config (
 			id BIGSERIAL PRIMARY KEY,                                           -- corresponding id for table interpolation ie message_log_<id>
-			system_id BIGINT NOT NULL REFERENCES system (id) ON DELETE CASCADE, -- owning system
+			system_id BIGINT NOT NULL REFERENCES system_config (id) ON DELETE CASCADE, -- owning system
 			name TEXT NOT NULL,                                                 -- user defined and displayed name
 			schema_version BIGINT NOT NULL,                                     -- a version bump is a whole new topic row; unrelated to migration_log.migration_version below (the DB-migration axis)
 			partition_size BIGINT NOT NULL,                                     -- immutable after creation; message_log_<id>'s partition boundaries depend on it staying fixed

@@ -37,11 +37,11 @@ concerns in separate tables:
 - **The message log** (`message_log_<topic id>`) — immutable,
   append-only facts, ordered by id. Retention, fan-out, and routing
   live here.
-- **Per-group delivery state** (`delivery_<topic id>`, one row per
-  *failed* message per group) — claims, attempts, backoff,
+- **Per-group delivery state** (`exception_queue_<topic id>`, one row
+  per *failed* message per group) — claims, attempts, backoff,
   dead-lettering live here.
-- **Per-group cursors** (`cursor_<topic id>`) — how far each group has
-  read and resolved.
+- **Per-group cursors** (`consumer_group_cursor_<topic id>`) — how far
+  each group has read and resolved.
 
 And the load-bearing detail: every consumer group gets **both**, with
 the split falling exactly where the cost is. The cursor sweeps the

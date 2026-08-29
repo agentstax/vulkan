@@ -96,15 +96,35 @@ No cron doc page exists on the site, so there was nothing to gate on;
   Consequences); batcher sorts on the key only when Compaction is
   enabled (uncompacted produces take no head lock)
 
-### 5. Conventions enforcement + rule files
+### 5. Conventions enforcement + rule files -- DONE 2026-08-29
 
-- tools/conventions walk over the baseline DDL literals: timestamptz
-  columns end _at/_after, duration columns end _ns, table names end in
-  a known kind; sabotage-test it before trusting it
-- CONVENTIONS ## Tables gains the [0611] naming rule + [0613] column
-  rules; ## Vocabulary rows: compaction key -> message key
-- doc-site prose sweep for old table/column names (website/, VOICE.md
-  pass on touched pages)
+- tools/conventions/table_ddl_test.go: three walks over every CREATE
+  TABLE literal under pkg/ plus internal/topic's name funcs -- table
+  kinds (idempotency_key the explicit exception), _at/_after on
+  TIMESTAMPTZ, _ns durations (whole-word match; "settled" contains
+  "ttl"). Sabotage-tested five ways, all caught; first sabotage run
+  false-passed on the go test cache -- use -count=1
+- CONVENTIONS: ## Tables gained the [0611] kind rule + [0613] column
+  rules + current table names; ## Vocabulary row compaction key ->
+  message key (Vale Vulkan/Vocabulary.yml row added, suggestion level
+  -- compaction_head's own column keeps the name); ## SQL gained the
+  raw-string block shape bullet
+- doc-site sweep went well past prose: 12 mdx pages (table-design +
+  architecture diagrams redrawn), routing.mdx still SELECTed the
+  renamed b.display column; data/codes.json was stale generated
+  output (fixed by tools/codeexport rerun); the sandbox SQL mirror
+  had drifted since chunk 1 (sql.test.ts byte-exact check failing
+  7/9) -- all templates re-synced from Go source, new
+  create-cron-job-cursor.ts, mirror files/identifiers renamed to the
+  new table names, database.ts produce args gained the message_key
+  '' param, model.ts rows follow (expires_at, message_key,
+  compacted); stale Go comments fixed (topic_log/worker_log,
+  SystemDatastore table list)
+- verified: Go build + tools tests (20); website vitest 100/100,
+  astro check clean, eslint/remark clean, svelte-check + prettier
+  only pre-existing failures (board-stats story, member-profile),
+  full astro build (sandbox seed runs the new DDL + insert in Node),
+  playwright 18/18
 
 ### 6. Close-out checkpoint
 
