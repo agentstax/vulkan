@@ -21,29 +21,9 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Library work the doc pass surfaced.**
-  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
-    comments and maybe a log line recommending against production use.
-    UNBLOCKED: this was sequenced behind the quickstart rewrite so the
-    Default constructors would be built against observed friction rather
-    than guessed, and that rewrite shipped in [0581].
-    - The friction it observed: a consumer needs a MessageAdmin and
-      RegisterSystem just to GetTopic; `topic.SchemaVersion(1)` is
-      repeated three times per program; Consume's cancellable-ctx
-      requirement is a context.Background() trap; ConsumerConfig.Retry and
-      Message.Retry are confusable; produce-only deployments silently get
-      no upkeep unless someone runs `vulkan manager run`; RegisterTopic
-      wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
-      struct for the common case — whether nil works is unverified);
-      pkg/common and pkg/topic invite aliasing in user code.
-  - Go doc comments on the public API — the surfaces the worker and cron
-    rounds finalized never got a doc-comment pass. [0581] fixed
-    RoutingKey's in passing; the rest are unreviewed.
-  - After the next `just site-deploy` (always ask before deploying):
-    confirm the deployed /errors/ pages resolve at the Docs() URLs
-    (exact-case /errors/VK0005), then drop the placeholder TODO comment on
-    docsBaseURL — it lives in pkg/common/diagnostic/registry.go, not
-    pkg/common/error.go.
+- Need an actual good table DDL generator. Ideally something that can do it live, probably some tool for it
+  - need to exaimine a table DDL diagram before doing final public surface / documentation
+    related should audit / evaluate all table columns for consistency in naming
 
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
@@ -88,6 +68,10 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   real complexity, only if (2) measurably fails. Prior: rung 1 carries to
   ~1k rows, rung 2 well past 10k, rung 3 never earns it.
 
+- **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
+  recorded there are Setup/Action/Assert prose from a scratch harness;
+  implement as a real pkg/producer/pkg/consumer test suite once the API
+  stops moving.
 
 
 ## Next
@@ -98,12 +82,34 @@ internal cleanup; no new behavior. Locks the surface before v1.
 Ordered: internal restructuring first, public-surface decisions late so they
 stay revisable, text polish (naming/errors/logging/comments) last.
 
+
+
 - **Potential project rename away from "vulkan".** No candidate yet; decide
   before v1 -- after v1 the name is public API. A rename ripples through the
   module path, the CLI binary, the docs site (docsBaseURL const in
   pkg/common/error.go), and the VK error-code prefix (isErrorCode validation
   plus every declared code -- codes never renumber after v1, so the prefix
   must be final first).
+  - need to make sure we build out new logo sheet as well
+
+- **Library work the doc pass surfaced.**
+  - **DefaultProducer / DefaultConsumer** for easier quickstarts, with
+    comments and maybe a log line recommending against production use.
+    UNBLOCKED: this was sequenced behind the quickstart rewrite so the
+    Default constructors would be built against observed friction rather
+    than guessed, and that rewrite shipped in [0581].
+    - The friction it observed: a consumer needs a MessageAdmin and
+      RegisterSystem just to GetTopic; `topic.SchemaVersion(1)` is
+      repeated three times per program; Consume's cancellable-ctx
+      requirement is a context.Background() trap; ConsumerConfig.Retry and
+      Message.Retry are confusable; produce-only deployments silently get
+      no upkeep unless someone runs `vulkan manager run`; RegisterTopic
+      wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
+      struct for the common case — whether nil works is unverified);
+      pkg/common and pkg/topic invite aliasing in user code.
+  - Go doc comments on the public API — the surfaces the worker and cron
+    rounds finalized never got a doc-comment pass. [0581] fixed
+    RoutingKey's in passing; the rest are unreviewed.
 
 - **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
   decide and document. Weigh Go 1.27's new generics/type-inference features
@@ -172,10 +178,7 @@ stay revisable, text polish (naming/errors/logging/comments) last.
     per-package rewording. The "(own Handler)" fragment looks like a copy
     artifact to fix in that same sweep.
 
-- **TEST.md expand and refine** (14c) — the shutdown/interruption scenarios
-  recorded there are Setup/Action/Assert prose from a scratch harness;
-  implement as a real pkg/producer/pkg/consumer test suite once the API
-  stops moving.
+
 
 ## Later
 

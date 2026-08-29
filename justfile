@@ -41,6 +41,32 @@ database-delete:
 system-register:
   go run examples/phase_1/systemregister/main.go
 
+### SCHEMA ###
+
+# live-schema snapshot + interactive ER diagram. Needs the dev DB up with the
+# system registered (`just system-register` -- its first reserved topic owns
+# the *_1 family scripts/database/tbls.yml documents; every family shares the
+# same DDL). tbls (brew install k1LoW/tap/tbls) reads the live schema; Liam
+# ERD renders it explorable. Output is all under bin/schema/ (gitignored):
+# per-table markdown + SVGs, schema.json, and the erd/ site.
+schema-diagram:
+  tbls doc -c scripts/database/tbls.yml --force
+  tbls out -c scripts/database/tbls.yml -t json -o bin/schema/schema.json
+  npx --yes @liam-hq/cli erd build --format tbls --input bin/schema/schema.json
+  rm -rf bin/schema/erd && mv dist bin/schema/erd
+  @echo "open with: just schema-diagram-serve"
+
+schema-diagram-serve:
+  python3 -m http.server 8377 -d bin/schema/erd
+
+# fresh-run flow: recreate the dev DB, register the system (which creates the
+# reserved topics and their families), then snapshot. DESTROYS all dev DB data.
+schema-diagram-fresh:
+  docker-compose -f ./scripts/database/docker-compose.yaml down -v
+  docker-compose -f ./scripts/database/docker-compose.yaml up -d --wait postgres
+  just system-register
+  just schema-diagram
+
 ### TESTING ###
 
 # EX: just consume

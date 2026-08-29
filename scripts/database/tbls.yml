@@ -1,0 +1,69 @@
+# tbls config: snapshot the live dev database's schema (just schema-diagram).
+# Documents the shared control-plane tables plus ONE per-topic family. Every
+# family shares the same DDL (topic createTopicTables), so which topic's
+# family is shown does not matter; *_1 belongs to the first topic
+# RegisterSystem creates (__system.metrics) and always exists.
+dsn: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+
+docPath: bin/schema
+
+include:
+  - system
+  - topic
+  - topic_log
+  - consumer_group
+  - worker
+  - worker_instance
+  - worker_log
+  - cron_job
+  - migration_log
+  - "*_1"
+
+# message_log partitions its rows into child tables (message_log_1_0, ...);
+# the parent carries the structure, the children add nothing to the diagram.
+exclude:
+  - "message_log_1_*"
+
+# The per-topic family declares no foreign keys -- the family is DROPped
+# wholesale on topic destroy -- so its relations are declared here instead.
+relations:
+  - table: binding_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: binding_log_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: cursor_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: lease_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: key_lease_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: delivery_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: delivery_1
+    columns: [message_id]
+    parentTable: message_log_1
+    parentColumns: [id]
+  - table: delivery_log_1
+    columns: [consumer_group_id]
+    parentTable: consumer_group
+    parentColumns: [id]
+  - table: delivery_log_1
+    columns: [message_id]
+    parentTable: message_log_1
+    parentColumns: [id]
+  - table: compaction_head_1
+    columns: [head_id]
+    parentTable: message_log_1
+    parentColumns: [id]

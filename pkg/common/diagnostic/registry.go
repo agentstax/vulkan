@@ -6,7 +6,6 @@ import (
 	"sync"
 )
 
-// TODO - fill with actual docsite once created
 const docsBaseURL = "https://vulkan-5ss.pages.dev/errors/"
 
 // Declaration is one registered VK-coded declaration. The registry stores
