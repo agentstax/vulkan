@@ -5,6 +5,43 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — table renames, column rules, message-key promotion
+
+- Every table is now `<root>_<kind>` [0611]: config tables gained
+  `_config` (+ `_config_log` trails), delivery→exception_queue,
+  cursor→consumer_group_cursor, lease→claim_lease,
+  key_lease→message_key_lease; cron's runtime columns split out to a
+  new 1:1 cron_job_cursor (next/last_scheduled_at + the due index),
+  so per-fire churn leaves the config row alone. Column rules [0613]
+  landed with it: `_at`/`_after` instants, `_ns` durations, `payload`
+  everywhere (cron data→payload including the public Data→Payload and
+  ScheduledTime→ScheduledAt), binding display→pattern with
+  pattern→pattern_regex.
+- The message key was promoted out of compaction [0612]:
+  `ProduceOptions.MessageKey` top-level; `CompactionOptions{Enable,
+  Rank}` (pointer kept, Enable user-settled for reading clarity);
+  `compaction_rank` is nullable and its NULL is the row-level
+  never-opted-into-compaction fact every eligibility filter branches
+  on. Defer now needs only a key — serialized-by-key delivery with
+  full history — via the claimCompacted/claimUncompacted split; a
+  same-batch key collision re-defers the loser through the new
+  exceptionconsumer RecordDeferred verb instead of parking it
+  inflight until lease expiry. concepts/message-key.mdx was the
+  proposal page; ordering.mdx rewrote around it.
+- Enforcement: tools/conventions walks every baseline CREATE TABLE
+  literal for table kinds, `_at`/`_after` on TIMESTAMPTZ, and `_ns`
+  durations (sabotage-tested); CONVENTIONS ## Tables/## SQL carry the
+  rules and ## Vocabulary bans "compaction key" for the message's key.
+- The sweep reached everything that spells a table name: all SQL
+  literals and labs, tbls.yml, the doc site's 12 stale pages plus
+  both ASCII diagrams, the regenerated codes.json, and the sandbox's
+  byte-exact SQL mirror (drifted 7/9 owners; re-synced, renamed, and
+  its produce path updated for the new insert shape).
+- Verified at close-out: full fresh-DB suite 42/42 (the one failure
+  was destroy-system-lab's own stale table list), the deferlab flake
+  did not recur, `just schema-diagram-fresh` snapshot matches the
+  records' final shape, site build + playwright 18/18.
+
 ## 2026-08-28 — the table-design page
 
 - concepts/table-design ships the DDL diagram, closing the last

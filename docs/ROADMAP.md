@@ -21,10 +21,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- Table naming + column rename, message-key promotion [0611][0612][0613]
-  — settled 2026-08-29, expanded in TODO.md (DDL diagram pipeline
-  shipped same day: `just schema-diagram`)
-
 - **Benchmark-recording pipeline** (14c) — decide where lab throughput
   numbers get saved so regressions are visible over time. First real
   workload: a thorough multi-topic throughput/latency benchmark under high
