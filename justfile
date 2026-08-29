@@ -92,6 +92,9 @@ reclaim-lab:
 exception-lab:
   go run examples/phase_1/exceptionlab/main.go
 
+outcome-lab:
+  go run examples/phase_1/outcomelab/main.go
+
 # routing lab: bindings gate what a group receives, not what gets claimed.
 # Deterministic, self-verifying, self-seeding -- registers its own topic and
 # publishes its own messages.

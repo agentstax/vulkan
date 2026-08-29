@@ -49,6 +49,7 @@ func toOutcomeData(outcomes []MessageOutcome) []datastore.OutcomeData {
 			MessageId: outcome.MessageId,
 			Kind:      datastore.OutcomeKind(outcome.Kind),
 			Err:       outcome.Err,
+			Delay:     outcome.Delay,
 		})
 	}
 	return data

@@ -3,6 +3,7 @@ package datastore
 import (
 	"context"
 	"fmt"
+	"time"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -104,7 +105,70 @@ func (d *ExceptionConsumerGroupDatastore) recordFailure(ctx context.Context, ret
 		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	}
 
-	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - 1).Seconds(), exception.LeaseToken}
+	args := []any{exception.ConsumerGroupId, exception.MessageId, failureErr.Error(), retryPolicy.CalculateDelay(exception.Attempts - exception.Delays - 1).Seconds(), exception.LeaseToken}
+	if deliveryLogMode != topic.DeliveryLogModeOff {
+		args = append(args, exception.Attempts)
+	}
+
+	if keyClaim == nil {
+		return d.record(ctx, sql, args...)
+	}
+	return d.recordAndReleaseKey(ctx, keyClaim, sql, args...)
+}
+
+// RecordDelayed resets the row 'ready' at the handler's requested delay and
+// counts it in delays, not as a failure. The delivery_log row lands at this
+// attempt with status 'delayed'.
+// A non-nil keyClaim frees the key in the same transaction.
+func (d *ExceptionConsumerGroupDatastore) RecordDelayed(ctx context.Context, delay time.Duration, exception *ExceptionData, delayErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+	return d.DatastoreRetry.Wrap(ctx, func() error {
+		return d.recordDelayed(ctx, delay, exception, delayErr, deliveryLogMode, keyClaim)
+	})
+}
+
+func (d *ExceptionConsumerGroupDatastore) recordDelayed(ctx context.Context, delay time.Duration, exception *ExceptionData, delayErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *KeyLeaseData) error {
+	var sql string
+	if deliveryLogMode == topic.DeliveryLogModeOff {
+		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordDelayed
+			UPDATE %s
+			SET
+				status = 'ready',
+				delays = delays + 1,
+				lease_token = NULL,
+				lease_expires_at = NULL,
+				last_error = $3,
+				can_run_after = now() + make_interval(secs => $4),
+				updated_at = now()
+			WHERE consumer_group_id = $1
+				AND message_id = $2
+				AND lease_token = $5;
+		`, iTopic.ExceptionQueueTable(exception.TopicId))
+	} else {
+		sql = fmt.Sprintf(`
+			-- vulkan: exceptionconsumer.recordDelayed
+			WITH updated AS (
+				UPDATE %[1]s
+				SET
+					status = 'ready',
+					delays = delays + 1,
+					lease_token = NULL,
+					lease_expires_at = NULL,
+					last_error = $3,
+					can_run_after = now() + make_interval(secs => $4),
+					updated_at = now()
+				WHERE consumer_group_id = $1
+					AND message_id = $2
+					AND lease_token = $5
+				RETURNING 1
+			)
+			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
+			SELECT $1, $2, $6, 'delayed', $3
+			WHERE EXISTS (SELECT 1 FROM updated);
+		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
+	}
+
+	args := []any{exception.ConsumerGroupId, exception.MessageId, delayErr.Error(), delay.Seconds(), exception.LeaseToken}
 	if deliveryLogMode != topic.DeliveryLogModeOff {
 		args = append(args, exception.Attempts)
 	}

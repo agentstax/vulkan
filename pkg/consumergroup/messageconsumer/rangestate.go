@@ -3,6 +3,7 @@ package messageconsumer
 import (
 	"errors"
 	"sync/atomic"
+	"time"
 
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 )
@@ -20,6 +21,7 @@ const (
 	kindTerminal
 	kindSuperseded // dropped unrun -- its compacted message key has a newer version
 	kindDeferred   // key busy at dispatch -- the commit writes its 'deferred' row
+	kindDelayed    // the handler asked to run later -- the commit writes its 'ready' row at the delay
 )
 
 func (k outcomeKind) toOutcomeKind() (controller.OutcomeKind, bool) {
@@ -34,6 +36,8 @@ func (k outcomeKind) toOutcomeKind() (controller.OutcomeKind, bool) {
 		return controller.OutcomeSuperseded, true
 	case kindDeferred:
 		return controller.OutcomeDeferred, true
+	case kindDelayed:
+		return controller.OutcomeDelayed, true
 	}
 	return "", false
 }
@@ -41,9 +45,10 @@ func (k outcomeKind) toOutcomeKind() (controller.OutcomeKind, bool) {
 // done gates kind/err via atomics release/acquire: kind/err are written
 // FIRST, done SECOND, so Load()==true guarantees those writes are visible.
 type result struct {
-	done atomic.Bool
-	kind outcomeKind
-	err  string // empty for success
+	done  atomic.Bool
+	kind  outcomeKind
+	err   string        // empty for success
+	delay time.Duration // kindDelayed only
 }
 
 // zero value is the correct initial (pending) state -- resolve fills kind/err/done in later
@@ -53,9 +58,10 @@ func newResult() result {
 
 // resolve writes kind/err THEN done -- done gates their visibility via
 // atomics release/acquire, so the Store must come last.
-func (r *result) resolve(kind outcomeKind, err string) {
+func (r *result) resolve(kind outcomeKind, err string, delay time.Duration) {
 	r.kind = kind
 	r.err = err
+	r.delay = delay
 	r.done.Store(true)
 }
 
@@ -109,8 +115,8 @@ func (r *rangeState) neverDispatched() bool {
 	return r.dispatched.Load() == 0
 }
 
-func (r *rangeState) resolve(index int, kind outcomeKind, err string) {
-	r.results[index].resolve(kind, err)
+func (r *rangeState) resolve(index int, kind outcomeKind, err string, delay time.Duration) {
+	r.results[index].resolve(kind, err, delay)
 	r.resolved.Add(1)
 }
 
@@ -153,7 +159,7 @@ func (r *rangeState) contiguousResolved() (lastProcessed int64, outcomes []contr
 		}
 		lastProcessed = r.ids[i]
 		if kind, ok := current.kind.toOutcomeKind(); ok && (r.includeSuccesses || kind != controller.OutcomeSuccess) {
-			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: current.err})
+			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: current.err, Delay: current.delay})
 		}
 	}
 	return lastProcessed, outcomes
@@ -164,7 +170,7 @@ func (r *rangeState) contiguousResolved() (lastProcessed int64, outcomes []contr
 func (r *rangeState) resolvedOutcomes() (outcomes []controller.MessageOutcome) {
 	for i := range r.results {
 		if kind, ok := r.results[i].kind.toOutcomeKind(); ok && (r.includeSuccesses || kind != controller.OutcomeSuccess) {
-			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: r.results[i].err})
+			outcomes = append(outcomes, controller.MessageOutcome{MessageId: r.ids[i], Kind: kind, Err: r.results[i].err, Delay: r.results[i].delay})
 		}
 	}
 	return outcomes

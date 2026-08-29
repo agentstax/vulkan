@@ -5,6 +5,31 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — handler outcomes: Terminal and Delay [0614]
+
+- A consumerFunc's error is classified at both live handler paths
+  (messageconsumer range commit, exceptionconsumer) and on the on-hold
+  deliveryconsumer path: a `diagnostic.Permanent` chain dead-letters on
+  this attempt, `consumergroup.Delay(d)` runs the delivery again after
+  `d` with no failure counted, anything else retries as before.
+  `consumergroup.Terminal(cause)` (VK0055) is the user's spelling for
+  Permanent -- the diagnostic registry admits only VK codes, so users
+  cannot declare their own; `Delay` returns a `*DelayedDelivery`
+  unwrapping to VK0054.
+- `exception_queue.delays` (baseline DDL + sandbox mirror); `attempts`
+  stays the monotonic run count and the retry budget reads
+  `attempts - delays` in the claim gate, kill backstop, terminal check,
+  and backoff index. `RetryPolicy.MaxDelays` (0 = none) dead-letters a
+  Delay returned at the cap; clamped per message like MaxRetries.
+  Delivery_log gains status `delayed`. `MessageMeta` gains
+  `Attempts`/`Delays`.
+- Doc site: guides/handler-outcomes (written first as the proposal),
+  errors VK0054/VK0055, lifecycle / dead-letters / quickstart pointers;
+  "snooze" banned in CONVENTIONS ## Vocabulary + the Vale rule.
+  `just outcome-lab` drives all four outcomes through a real Consume;
+  exception / delivery-log / defer / reclaim / key-lease / binding labs
+  green, `just verify` green.
+
 ## 2026-08-29 — public-API scenario catalog, lab exit refactor
 
 - `examples/playground/` holds 11 programs written as a user would

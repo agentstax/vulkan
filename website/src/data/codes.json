@@ -642,6 +642,18 @@
       "problem": "could not take a lock needed by the migration step",
       "recovery": "transient",
       "fix": "end the blocking session (pg_stat_activity), then run the migration again"
+    },
+    "VK0054": {
+      "code": "VK0054",
+      "kind": "error",
+      "problem": "could not complete the delivery yet, the handler asked to run it later",
+      "recovery": "transient"
+    },
+    "VK0055": {
+      "code": "VK0055",
+      "kind": "error",
+      "problem": "delivery cannot succeed",
+      "recovery": "permanent"
     }
   }
 }

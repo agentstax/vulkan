@@ -101,8 +101,9 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			consumer_group_id BIGINT NOT NULL,                -- PK
 			message_id BIGINT NOT NULL,                       -- PK
 			status TEXT NOT NULL,                             -- 'ready' | 'processing' | 'inflight' | 'deferred' | 'done' | 'dead'
-			attempts INT NOT NULL default 0,
-			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries
+			attempts INT NOT NULL default 0,                  -- runs so far; the retry budget is attempts - delays
+			delays INT NOT NULL DEFAULT 0,                    -- later runs the handler requested, never counted as failures
+			can_run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- backoff between retries, or the handler's requested delay
 			last_error TEXT,
 			lease_token UUID,
 			lease_expires_at TIMESTAMPTZ,

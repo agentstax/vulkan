@@ -29,33 +29,9 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   page first per the record rules, then a decision record, then code.
   Lease extend (scenario 11) is already designed as *Lease
   heartbeat/renewal (9b)* in the parking lot -- promote on its merit
-  once these ship. Order: handler outcome (settled),
-  start from now (sketched, one statement), strict per-key FIFO
-  (sketched, DDL edit).
-  - Added 2026-08-29 (agreed): the handler cannot reach the outcome kinds.
-    `OutcomeException` / `OutcomeTerminal` / `OutcomeDeferred` exist
-    internally, but `ConsumerFunc` returns nil or error and every error
-    becomes an exception row (only an unmarshal failure goes straight to
-    dead). River (`JobCancel`/`JobSnooze`) and JetStream (`Term`/
-    `NakWithDelay`) give the handler that voice as a return value. The fix
-    is not new machinery but letting the existing classification flow
-    through at messageconsumer/consumer_runner.go's CallSafely error
-    branch: a Permanent error -> terminal; a Transient (or plain) error ->
-    exception; snooze = a Transient error carrying a can_run_after, which
-    the exception path already stores. This also dissolves part of the
-    ConsumerConfig.Retry vs Message.Retry confusion: the policy becomes
-    the default the handler can override per delivery. SETTLED
-    2026-08-29: terminal is spelled by classification (the runner checks
-    diagnostic Permanent on the handler's own error; a named wrapper value
-    works for free since it is itself Permanent); a handler-requested
-    later run does NOT count toward Retry.MaxRetries (research: NATS/SQS
-    always-count -> surprise dead-letters; River/Oban never-count -> Oban
-    added a separate visible counter after users lost track) -- it writes
-    can_run_after, bumps its own running-count column beside `reclaims`,
-    with an optional ceiling on RetryPolicy beside MaxRetries. Name
-    settled 2026-08-29: handler returns `consumergroup.Delay(d)`, column
-    `exception_queue.delays`, cap `RetryPolicy.MaxDelays`; "snooze" is
-    banned (add the Vocabulary row when built).
+  once these ship. Handler outcome shipped 2026-08-29 [0614] (see
+  HISTORY). Order for the rest: start from now (sketched, one
+  statement), strict per-key FIFO (sketched, DDL edit).
   - A new consumer group has no "start from now" option — its cursor
     starts at 0, so on a deep-retention topic every new group reads the
     full history before it sees live traffic.

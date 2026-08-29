@@ -118,9 +118,18 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 	}
 
 	runCtx := consumergroup.WithMeta(ctx, toExceptionMessageMeta(exception, resolvedOptions))
-	if err := r.CallSafely(runCtx, &payload, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.Timeout); err != nil {
+	err := r.CallSafely(runCtx, &payload, exception.MessageId, exception.Attempts, exception.Options, resolvedOptions.Timeout)
+
+	switch consumerbase.ClassifyHandlerError(err) {
+	case consumerbase.HandlerOutcomeTerminal:
+		return r.recordTerminal(ctx, exception, err, keyClaim)
+	case consumerbase.HandlerOutcomeDelayed:
+		return r.recordDelayed(ctx, exception, resolvedOptions, err, keyClaim)
+	}
+	if err != nil {
 		return r.recordFailure(ctx, exception, resolvedOptions, err, keyClaim)
 	}
+
 	return r.recordSuccess(ctx, exception, keyClaim)
 }
 
@@ -141,7 +150,7 @@ func (r *exceptionRunner[Message]) recordSuccess(ctx context.Context, exception 
 
 func (r *exceptionRunner[Message]) recordFailure(ctx context.Context, exception *controller.ClaimedException, resolvedOptions *common.MessageOptions, runErr error, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
 	// out of attempts -- this failure is terminal, not another retry
-	if exception.Attempts >= resolvedOptions.Retry.MaxRetries {
+	if exception.Attempts-exception.Delays >= resolvedOptions.Retry.MaxRetries {
 		return r.recordTerminal(ctx, exception, runErr, keyClaim)
 	}
 
@@ -149,6 +158,23 @@ func (r *exceptionRunner[Message]) recordFailure(ctx context.Context, exception 
 	defer cancel()
 
 	err := r.consumers.RecordFailure(recordCtx, resolvedOptions.Retry, exception, runErr, r.Topic.DeliveryLogMode, keyClaim)
+	if err == nil {
+		r.Metrics.RecordReady(1)
+	}
+	return r.absorbLostLease(ctx, exception, err)
+}
+
+func (r *exceptionRunner[Message]) recordDelayed(ctx context.Context, exception *controller.ClaimedException, resolvedOptions *common.MessageOptions, runErr error, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
+	// out of delays -- the handler asked for more waiting than the policy allows
+	if resolvedOptions.Retry.MaxDelays > 0 && exception.Delays >= resolvedOptions.Retry.MaxDelays {
+		return r.recordTerminal(ctx, exception, runErr, keyClaim)
+	}
+
+	recordCtx, cancel := r.recordContext(ctx, keyClaim)
+	defer cancel()
+
+	delayed, _ := errors.AsType[*consumergroup.DelayedDelivery](runErr)
+	err := r.consumers.RecordDelayed(recordCtx, delayed.Delay, exception, runErr, r.Topic.DeliveryLogMode, keyClaim)
 	if err == nil {
 		r.Metrics.RecordReady(1)
 	}

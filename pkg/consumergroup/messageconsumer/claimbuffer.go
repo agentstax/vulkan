@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/concurrency"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	"github.com/google/uuid"
 )
@@ -103,31 +104,35 @@ func (b *claimBuffer) waitForNext(ctx context.Context) (*buffered, error) {
 }
 
 func (b *claimBuffer) resolveSuccess(item *buffered) {
-	b.resolve(item, kindSuccess, "")
+	b.resolve(item, kindSuccess, "", 0)
 }
 
 func (b *claimBuffer) resolveException(item *buffered, err error) {
-	b.resolve(item, kindException, err.Error())
+	b.resolve(item, kindException, err.Error(), 0)
 }
 
 func (b *claimBuffer) resolveTerminal(item *buffered, err error) {
-	b.resolve(item, kindTerminal, err.Error())
+	b.resolve(item, kindTerminal, err.Error(), 0)
 }
 
 func (b *claimBuffer) resolveSuperseded(item *buffered) {
-	b.resolve(item, kindSuperseded, "a newer version of the same message key superseded this delivery")
+	b.resolve(item, kindSuperseded, "a newer version of the same message key superseded this delivery", 0)
 }
 
 func (b *claimBuffer) resolveDeferred(item *buffered) {
-	b.resolve(item, kindDeferred, "another delivery held the message key at dispatch")
+	b.resolve(item, kindDeferred, "another delivery held the message key at dispatch", 0)
 }
 
-func (b *claimBuffer) resolve(item *buffered, kind outcomeKind, err string) {
+func (b *claimBuffer) resolveDelayed(item *buffered, delayed *consumergroup.DelayedDelivery) {
+	b.resolve(item, kindDelayed, delayed.Error(), delayed.Delay)
+}
+
+func (b *claimBuffer) resolve(item *buffered, kind outcomeKind, err string, delay time.Duration) {
 	state := b.lookup(item.lease.Token)
 	if state == nil {
 		return // already settled elsewhere -- fences a drain-timeout straggler
 	}
-	state.resolve(item.index, kind, err)
+	state.resolve(item.index, kind, err, delay)
 }
 
 func (b *claimBuffer) isRangeResolved(token uuid.UUID) bool {

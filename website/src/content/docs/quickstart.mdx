@@ -116,7 +116,9 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    Consumption is a consumer group: an independent reader with its own
    cursor, its own retry budget, and its own dead-lettered messages. The
    handler receives your typed payload; returning an error schedules a
-   retry with exponential backoff.
+   retry with exponential backoff (`consumergroup.Terminal` and
+   `consumergroup.Delay` are the other two answers —
+   [handler outcomes](/guides/handler-outcomes/)).
 
    ```go
    package main

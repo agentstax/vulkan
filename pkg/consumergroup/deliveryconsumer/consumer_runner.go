@@ -98,7 +98,15 @@ func (r *deliveryRunner[Message]) deliveryClaim(ctx context.Context) error {
 
 		resolvedOptions := r.cfg.resolveMessageOptions(delivery.Options)
 		if err := r.CallSafely(ctx, &payload, delivery.MessageId, delivery.Attempts, delivery.Options, resolvedOptions.Timeout); err != nil {
-			// processing error -> retry until attempts exhaust, then dead-letter
+			// a Permanent error dead-letters now; anything else (a requested
+			// delay included -- this claim reads no can_run_after) retries
+			// until attempts exhaust, then dead-letters
+			if consumerbase.ClassifyHandlerError(err) == consumerbase.HandlerOutcomeTerminal {
+				if recordErr := r.consumers.RecordTerminal(ctx, &delivery, err, r.Topic.DeliveryLogMode); recordErr != nil {
+					return recordErr
+				}
+				continue
+			}
 			if recordErr := r.consumers.RecordFailure(ctx, resolvedOptions.Retry.MaxRetries, &delivery, err, r.Topic.DeliveryLogMode); recordErr != nil {
 				return recordErr
 			}

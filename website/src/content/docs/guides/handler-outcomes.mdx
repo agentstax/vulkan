@@ -1,0 +1,172 @@
+---
+title: Handler Outcomes
+description: What your consumerFunc's return value means — success, retry, dead now, or run me later — and the row each one writes.
+---
+
+A consumerFunc returns one value and that value is the delivery's
+outcome. There are four, and the runner reads them off the error's own
+classification instead of a second return value:
+
+| you return | outcome | the row |
+| --- | --- | --- |
+| `nil` | success | none written; an existing retry row is deleted |
+| any error | retry | `ready`, `can_run_after` = now + backoff, dead after `MaxRetries` failures |
+| `consumergroup.Terminal(err)` | dead now | `dead` on this attempt, no retry |
+| `consumergroup.Delay(d)` | run later | `ready`, `can_run_after` = now + `d`, `delays` + 1, no failure counted |
+
+The second row is the default for any error you don't classify. The
+third and fourth are the two things a retry-only handler cannot say:
+"no retry will fix this" and "come back later, nothing went wrong".
+
+## The same handler, four ways
+
+The `charge-cards` group on `payments.requested` (topic id `1`):
+
+```go
+import "github.com/agentstax/vulkan/pkg/consumergroup"
+
+err := payments.Consume(ctx, func(ctx context.Context, payment *PaymentRequested) error {
+	result, err := gateway.Charge(ctx, payment)
+	switch {
+	case errors.Is(err, gateway.ErrDeclined):
+		return consumergroup.Terminal(err)          // dead now, one attempt
+	case err != nil:
+		return err                                  // retry on the backoff curve, same as today
+	case result.SettlesAt.After(time.Now()):
+		return consumergroup.Delay(time.Until(result.SettlesAt)) // run again then
+	}
+	return nil
+})
+```
+
+Say messages 41, 42, 43 and 44 hit each branch in turn, with
+`MaxRetries: 3`:
+
+- 41 (`nil`) -> no row in `exception_queue_1`. The cursor sweeps past it.
+- 42 (a plain error) -> `ready`, `attempts` 0, `can_run_after` a few
+  seconds out. Claimed again -> `attempts` 1 -> fails again -> and so
+  on to `dead` when the failures reach 3. Today's lifecycle, unchanged.
+- 43 (`Terminal`) -> `dead` at once, `attempts` 0, `last_error`
+  `delivery cannot succeed [VK0055]: card declined`. Returned as a plain
+  error it would run three more times over a backoff curve to reach the
+  same row.
+- 44 (`Delay(6h)`) -> `ready`, `can_run_after` six hours out, `delays`
+  1, `attempts` 0. Six hours later it is claimed like any ready row. If
+  it delays again the row reads `delays` 2 — the failure count never
+  moves.
+
+## Terminal means dead now
+
+`consumergroup.Terminal(err)` wraps your cause in a declared Permanent
+error ([VK0055](/errors/VK0055/)); the cause stays reachable through
+`errors.Is` and is rendered after the code in `last_error`. The runner
+asks the returned error one question: does its chain carry a
+`diagnostic.Permanent` classification? It uses `errors.As`, so
+`fmt.Errorf("charge: %w", consumergroup.Terminal(err))` classifies the
+same as the bare value. A plain `errors.New` stays a retry: an
+unclassified error is treated as transient, because the wrong default
+here loses a message and the other one only costs a backoff curve.
+
+One consequence to know about: Vulkan's own Permanent errors count.
+A handler that produces to another topic and gets `ErrTopicNotFound`
+(Permanent) back dead-letters the delivery it was handling. That is
+the classification being honest — an unchanged retry could not
+succeed — but it is a wider net than `Terminal`, so wrap what you
+mean when the cause came from somewhere else.
+
+Dead-lettering by classification writes the same row and the same
+`delivery_log_1` entry (status `failure`) as running out of retries,
+and fires the same [dead-lettered event](/errors/VK0028/). Triage is
+the [dead-letters guide](/guides/dead-letters/), unchanged.
+
+## Delay means run later, nothing failed
+
+`consumergroup.Delay(d)` is an error value — it is how a handler with
+one return type says something that is not success and not failure.
+The runner finds it with `errors.As` through any wrapping, writes the
+row `ready` with `can_run_after = now() + d` and `last_error` =
+`could not complete the delivery yet, the handler asked to run it later: delay 6h0m0s [VK0054]`, adds one to
+`delays`, and leaves the failure count alone. A `d` of zero or less makes the row
+claimable on the next poll; there is no upper bound, and a delay longer
+than the topic's retention is a message that will be dropped before it
+runs.
+
+Why a delay must not count as a failure, and why it must be visible:
+NATS and SQS count a requested delay as a delivery, so a handler that
+waits ten times for a bank to settle dead-letters a payment that never
+failed. River and Oban don't count it, and Oban later added a separate
+counter because operators lost track of rows that had been "retrying"
+for days without one recorded failure. Vulkan takes the second design
+with the counter from day one: `delays` is a column beside `attempts`.
+
+`RetryPolicy.MaxDelays` is the ceiling, default `0` = none. A handler
+that returns `Delay` with `delays` already at the ceiling dead-letters
+the message with the delay's own text as `last_error` — the same shape
+as `MaxRetries`, a budget spent is a `dead` row. Per-message
+`MessageOptions.Retry.MaxDelays` clamps to the consumer's the way
+`MaxRetries` does.
+
+## How the counts fit together
+
+`attempts` is the number of times the handler ran — the retry claim
+adds one before each run, and every run gets its own `delivery_log_1`
+row keyed by that number. A delayed run therefore has an attempt
+number: its log row carries status `delayed`. What a delay does not do
+is count toward the retry budget, so the budget is measured as
+`attempts - delays`:
+
+```sql
+-- claimable while the failures are under the budget
+WHERE d.attempts - d.delays < 3     -- MaxRetries
+```
+
+`MaxDelays` is not in the claim: a row at the ceiling is still claimed
+and run, and only another `Delay` from that run dead-letters it.
+
+I considered giving the attempt back on a delay (`attempts - 1`)
+instead; that reuses an attempt number the log has already recorded,
+and the next failure at that number collides with the delayed row. So
+`attempts` stays monotonic and `delays` is subtracted where the budget
+is read — one predicate in the claim, one comparison in the record
+path, and the backoff curve indexed by `attempts - delays` so a delay
+never inflates the next retry's wait.
+
+## Look inside
+
+```sql
+-- what is waiting on the handler's own say-so, and for how long
+SELECT d.message_id, d.attempts, d.delays, d.can_run_after - now() AS runs_in
+FROM exception_queue_1 d
+JOIN consumer_group_config g ON g.id = d.consumer_group_id
+WHERE g.name = 'charge-cards' AND d.status = 'ready' AND d.delays > 0
+ORDER BY d.can_run_after;
+```
+
+```sql
+-- one message's history: failures, delays, and the dead row if any
+SELECT attempt, status, error, attempted_at
+FROM delivery_log_1
+WHERE message_id = 44
+ORDER BY attempt;
+```
+
+Delayed rows count under `vulkan.consumer.exceptions.ready` — they are
+ready rows with a future `can_run_after`, nothing separate — and the
+`delayed` log status is the per-message trail.
+
+## Deciding inside the handler
+
+`consumergroup.MetaFromContext(ctx)` carries the two counts, so a
+handler can decide "wait once more or give up" without a query:
+
+```go
+meta, _ := consumergroup.MetaFromContext(ctx)
+if meta.Delays >= 3 {
+	return consumergroup.Terminal(errSettlementOverdue) // dead now, with the real cause
+}
+return consumergroup.Delay(time.Until(result.SettlesAt))
+```
+
+`meta.Attempts` is the number of runs before this one (0 on the first
+delivery), `meta.Delays` the delays so far — the same two columns the
+row carries.

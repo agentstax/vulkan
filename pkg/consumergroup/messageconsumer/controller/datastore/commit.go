@@ -134,12 +134,13 @@ func (d *MessageConsumerGroupDatastore) partialCommit(ctx context.Context, topic
 func deliveryStatement(topicId int64) string {
 	return fmt.Sprintf(`
 		-- vulkan: messageconsumer.deliveryStatement
-		INSERT INTO %s (consumer_group_id, message_id, status, attempts, can_run_after, last_error)
+		INSERT INTO %s (consumer_group_id, message_id, status, attempts, delays, can_run_after, last_error)
 		VALUES (
 			$1,
 			$2,
 			$3,
 			0,
+			$6,
 			now() + make_interval(secs => $5),
 			$4
 		);
@@ -163,12 +164,14 @@ func queueOutcomes(batch *pgx.Batch, deliverySql string, logSql string, groupId 
 	for _, outcome := range outcomes {
 		switch outcome.Kind {
 		case OutcomeException:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, initialBackoff.Seconds())
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, initialBackoff.Seconds(), 0)
 		case OutcomeTerminal:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "dead", outcome.Err, initialBackoff.Seconds())
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "dead", outcome.Err, initialBackoff.Seconds(), 0)
 			terminals++
 		case OutcomeDeferred:
-			batch.Queue(deliverySql, groupId, outcome.MessageId, "deferred", nil, 0.0)
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "deferred", nil, 0.0, 0)
+		case OutcomeDelayed:
+			batch.Queue(deliverySql, groupId, outcome.MessageId, "ready", outcome.Err, outcome.Delay.Seconds(), 1)
 		}
 		if deliveryLogMode != topic.DeliveryLogModeOff {
 			batch.Queue(logSql, groupId, outcome.MessageId, outcomeLogStatus(outcome.Kind), outcome.Err)
@@ -177,8 +180,8 @@ func queueOutcomes(batch *pgx.Batch, deliverySql string, logSql string, groupId 
 	return terminals
 }
 
-// an outcome's delivery_log status: both failure kinds log as 'failure', the other
-// two log under their own name.
+// an outcome's delivery_log status: both failure kinds log as 'failure', the
+// others log under their own name.
 func outcomeLogStatus(kind OutcomeKind) string {
 	switch kind {
 	case OutcomeException, OutcomeTerminal:

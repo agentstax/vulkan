@@ -36,7 +36,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 			WHERE consumer_group_id = $1
 				AND status = 'inflight'
 				AND lease_expires_at < now()
-				AND attempts >= $2;
+				AND attempts - delays >= $2;
 		`, iTopic.ExceptionQueueTable(topicId))
 	} else {
 		// killed CTE + INSERT keeps the kill and its delivery_log_<topic_id> row
@@ -54,7 +54,7 @@ func (d *ExceptionConsumerGroupDatastore) kill(ctx context.Context, topicId int6
 				WHERE consumer_group_id = $1
 					AND status = 'inflight'
 					AND lease_expires_at < now()
-					AND attempts >= $2
+					AND attempts - delays >= $2
 				RETURNING consumer_group_id, message_id, attempts, last_error
 			)
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)

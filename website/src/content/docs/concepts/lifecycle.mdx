@@ -34,6 +34,12 @@ machine:
                                             └──────┘   all kept, all queryable
 ```
 
+The handler has two more answers than nil-or-error.
+`consumergroup.Terminal(err)` skips the retries and writes the row
+`dead` on this attempt; `consumergroup.Delay(d)` writes a `ready` row
+with `can_run_after` = now + `d` and counts it in `delays`, not as a
+failure. [Handler outcomes](/guides/handler-outcomes/) has the table.
+
 All of it is **per consumer group**. Group A dead-lettering message 5
 doesn't affect group B — for group B the message never even had a row.
 And a `dead` row never blocks the group's cursor: the rest of the topic

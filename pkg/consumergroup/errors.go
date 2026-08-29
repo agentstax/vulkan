@@ -77,3 +77,15 @@ WHERE consumer_group_id = {group_id}
 	AND status = 'dead'
 ORDER BY message_id;`),
 	)
+
+// ErrDeliveryTerminal is what Terminal returns: the handler declared that no
+// retry could succeed, so the delivery dead-letters on this attempt.
+var ErrDeliveryTerminal = diagnostic.NewError("VK0055", diagnostic.Permanent,
+	"delivery cannot succeed",
+	"")
+
+// ErrDeliveryDelayed is what Delay returns: the handler asked for a later
+// run, so the delivery waits out the delay and no failure is counted.
+var ErrDeliveryDelayed = diagnostic.NewError("VK0054", diagnostic.Transient,
+	"could not complete the delivery yet, the handler asked to run it later",
+	"")

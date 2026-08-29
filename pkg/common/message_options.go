@@ -137,6 +137,9 @@ func validateSparsePolicy(policy *RetryPolicy) error {
 	if policy.MaxRetries < 0 {
 		return fmt.Errorf("MaxRetries must be >= 0, got %d", policy.MaxRetries)
 	}
+	if policy.MaxDelays < 0 {
+		return fmt.Errorf("MaxDelays must be >= 0, got %d", policy.MaxDelays)
+	}
 	if policy.BaseDelay < 0 {
 		return fmt.Errorf("BaseDelay must be >= 0, got %v", policy.BaseDelay)
 	}
@@ -168,6 +171,9 @@ func fillPolicy(policy, defaults *RetryPolicy) *RetryPolicy {
 	if merged.MaxRetries == 0 {
 		merged.MaxRetries = d.MaxRetries
 	}
+	if merged.MaxDelays == 0 {
+		merged.MaxDelays = d.MaxDelays
+	}
 	if merged.BaseDelay == 0 {
 		merged.BaseDelay = d.BaseDelay
 	}
@@ -195,6 +201,7 @@ func clampPolicy(policy, minimum, maximum *RetryPolicy) *RetryPolicy {
 	}
 	clamped := *policy
 	clamped.MaxRetries = clampInt(clamped.MaxRetries, lo.MaxRetries, hi.MaxRetries)
+	clamped.MaxDelays = clampInt(clamped.MaxDelays, lo.MaxDelays, hi.MaxDelays)
 	clamped.BaseDelay = clampDuration(clamped.BaseDelay, lo.BaseDelay, hi.BaseDelay)
 	clamped.MaxDelay = clampDuration(clamped.MaxDelay, lo.MaxDelay, hi.MaxDelay)
 	clamped.Exponent = clampInt(clamped.Exponent, lo.Exponent, hi.Exponent)

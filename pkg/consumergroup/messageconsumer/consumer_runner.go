@@ -273,12 +273,25 @@ func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered, re
 	}
 
 	runCtx := consumergroup.WithMeta(ctx, toMessageMeta(item.row, resolvedOptions))
-	if err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, resolvedOptions.Timeout); err != nil {
-		r.buffer.resolveException(item, err)
-	} else {
-		r.Metrics.RecordSuccess(1)
-		r.buffer.resolveSuccess(item)
+	err := r.CallSafely(runCtx, &payload, item.row.Id, 0, item.row.Options, resolvedOptions.Timeout)
+
+	switch consumerbase.ClassifyHandlerError(err) {
+	case consumerbase.HandlerOutcomeTerminal:
+		r.buffer.resolveTerminal(item, err)
+		return
+	case consumerbase.HandlerOutcomeDelayed:
+		// a first delivery has no delays yet, so MaxDelays cannot be reached here
+		delayed, _ := errors.AsType[*consumergroup.DelayedDelivery](err)
+		r.buffer.resolveDelayed(item, delayed)
+		return
 	}
+	if err != nil {
+		r.buffer.resolveException(item, err)
+		return
+	}
+
+	r.Metrics.RecordSuccess(1)
+	r.buffer.resolveSuccess(item)
 }
 
 func (r *messageRunner[Message]) releaseKey(ctx context.Context, claim *keyleasecontroller.KeyLeaseClaim) {
@@ -355,7 +368,7 @@ func (r *messageRunner[Message]) cursorPartialCommit(ctx context.Context, lastPr
 func (r *messageRunner[Message]) countDeliveryRows(outcomes []controller.MessageOutcome) {
 	for _, outcome := range outcomes {
 		switch outcome.Kind {
-		case controller.OutcomeException:
+		case controller.OutcomeException, controller.OutcomeDelayed:
 			r.Metrics.RecordReady(1)
 		case controller.OutcomeDeferred:
 			r.Metrics.RecordDeferred(1)

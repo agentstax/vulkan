@@ -76,6 +76,7 @@ surfaces it.
 | attr, attrs | shorthand for a word the reader should never have to expand | attribute; log attribute (`slog.Attr` is stdlib and keeps its name) |
 | hole (a template's blank) | coinage for a blank the reader fills in | placeholder |
 | park, give-back, IOU, slot, settle, cede | coined mechanism shorthand | the row/column/status/action it literally is |
+| snooze | a job-queue verb for what is a handler-requested later run | delay; `consumergroup.Delay`, the `delays` column, `RetryPolicy.MaxDelays` |
 | compaction key (the message's key) | the key is a message property; compaction is one of its two readers [0612] | message key (compaction_head's own compaction_key column keeps its name) |
 
 ## Structure

@@ -10,8 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Claim claims 'ready', expired 'inflight', and 'deferred' rows up
-// to maxRetries attempts. A leased message key excludes its rows.
+// Claim claims 'ready', expired 'inflight', and 'deferred' rows whose
+// failures (attempts - delays) are under maxRetries. A leased message key
+// excludes its rows.
 func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimed []ExceptionData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
@@ -39,7 +40,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				(
 					SELECT d.consumer_group_id, d.message_id FROM %[1]s d
 					WHERE d.consumer_group_id = $1
-						AND d.attempts < $5
+						AND d.attempts - d.delays < $5
 						AND (
 							(d.status = 'ready' AND d.can_run_after <= now()) OR
 							(d.status = 'inflight' AND d.lease_expires_at < now()) OR
@@ -58,13 +59,14 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					LIMIT $2
 					FOR UPDATE OF d SKIP LOCKED
 				)
-				RETURNING consumer_group_id, message_id, attempts, lease_token, lease_expires_at
+				RETURNING consumer_group_id, message_id, attempts, delays, lease_token, lease_expires_at
 			)
 			SELECT
 				c.consumer_group_id,
 				$4::bigint AS topic_id,
 				c.message_id,
 				c.attempts,
+				c.delays,
 				c.lease_token,
 				c.lease_expires_at,
 				m.payload,
@@ -88,7 +90,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				SELECT d.consumer_group_id, d.message_id, d.status, d.attempts
 				FROM %[1]s d
 				WHERE d.consumer_group_id = $1
-					AND d.attempts < $5
+					AND d.attempts - d.delays < $5
 					AND (
 						(d.status = 'ready' AND d.can_run_after <= now()) OR
 						(d.status = 'inflight' AND d.lease_expires_at < now()) OR
@@ -117,7 +119,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				FROM eligible e
 				WHERE d.consumer_group_id = e.consumer_group_id
 					AND d.message_id = e.message_id
-				RETURNING d.consumer_group_id, d.message_id, d.attempts, d.lease_token, d.lease_expires_at
+				RETURNING d.consumer_group_id, d.message_id, d.attempts, d.delays, d.lease_token, d.lease_expires_at
 			), expired_logged AS (
 				-- an expired 'inflight' row is a claim nobody recorded: its
 				-- current attempt number is provably absent from the log (any
@@ -132,6 +134,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				$4::bigint AS topic_id,
 				c.message_id,
 				c.attempts,
+				c.delays,
 				c.lease_token,
 				c.lease_expires_at,
 				m.payload,

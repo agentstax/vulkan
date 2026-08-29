@@ -49,6 +49,7 @@ const (
 	OutcomeTerminal   OutcomeKind = "terminal"   // no retry could ever succeed -- writes the delivery row straight to 'dead'
 	OutcomeSuperseded OutcomeKind = "superseded" // its compacted message key has a newer version -- log row only, never a delivery row
 	OutcomeDeferred   OutcomeKind = "deferred"   // another delivery held its key -- writes a 'deferred' delivery row for the exception window
+	OutcomeDelayed    OutcomeKind = "delayed"    // the handler asked to run later -- writes a 'ready' delivery row at its delay, delays 1, no failure counted
 	OutcomeSuccess    OutcomeKind = "success"    // ran clean -- log row only, never a delivery row; callers include it only under DeliveryLogModeAll
 )
 
@@ -57,6 +58,7 @@ type OutcomeData struct {
 	MessageId int64
 	Kind      OutcomeKind
 	Err       string
+	Delay     time.Duration // OutcomeDelayed only: how far out can_run_after moves
 }
 
 // Low == High means cursor exists but is already at the proven head (nothing to claim)

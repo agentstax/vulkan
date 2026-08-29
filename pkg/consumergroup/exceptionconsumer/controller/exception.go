@@ -20,6 +20,7 @@ type ClaimedException struct {
 	TopicId         int64
 	MessageId       int64
 	Attempts        int
+	Delays          int
 	LeaseToken      uuid.UUID
 	LeaseExpiresAt  time.Time
 	Payload         json.RawMessage
@@ -119,6 +120,20 @@ func (c *ExceptionConsumerGroupController) RecordFailure(ctx context.Context, re
 	}
 
 	return c.datastore.RecordFailure(ctx, retryPolicy, toExceptionData(exception), failureErr, deliveryLogMode, toKeyLeaseData(keyClaim))
+}
+
+// RecordDelayed resets the row 'ready' after the handler's requested delay,
+// counted in delays rather than as a failure.
+// A non-nil keyClaim frees the key in the same transaction.
+func (c *ExceptionConsumerGroupController) RecordDelayed(ctx context.Context, delay time.Duration, exception *ClaimedException, delayErr error, deliveryLogMode topic.DeliveryLogMode, keyClaim *keyleasecontroller.KeyLeaseClaim) error {
+	if exception == nil {
+		return errors.New("exception must not be nil")
+	}
+	if delayErr == nil {
+		return errors.New("delayErr must not be nil")
+	}
+
+	return c.datastore.RecordDelayed(ctx, delay, toExceptionData(exception), delayErr, deliveryLogMode, toKeyLeaseData(keyClaim))
 }
 
 // RecordTerminal marks the row 'dead' -- no retry could succeed.

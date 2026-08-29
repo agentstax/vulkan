@@ -25,6 +25,7 @@ type ExceptionData struct {
 	TopicId         int64                  `db:"topic_id"`
 	MessageId       int64                  `db:"message_id"`
 	Attempts        int                    `db:"attempts"`
+	Delays          int                    `db:"delays"`
 	LeaseToken      pgtype.UUID            `db:"lease_token"`
 	LeaseExpiresAt  time.Time              `db:"lease_expires_at"`
 	Payload         json.RawMessage        `db:"payload"`

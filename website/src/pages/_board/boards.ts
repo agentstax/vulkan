@@ -42,6 +42,7 @@ export const boards: Board[] = [
 			'guides/side-effects-and-retries',
 			'guides/replay',
 			'guides/dead-letters',
+			'guides/handler-outcomes',
 			'guides/consumer-timeouts',
 			'guides/migrations',
 		],

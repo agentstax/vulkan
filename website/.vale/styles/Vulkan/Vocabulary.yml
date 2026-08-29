@@ -13,5 +13,6 @@ swap:
   DLQ: dead-lettered messages
   offset: message id; cursor
   publish: produce
+  snooze: delay
   subscribe: consume
   "visibility timeout": lease

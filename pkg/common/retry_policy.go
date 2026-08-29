@@ -11,6 +11,7 @@ const MIN_DELAY = 0
 // RetryPolicy is the tunable retry config
 type RetryPolicy struct {
 	MaxRetries int           `json:"max_retries,omitempty"`
+	MaxDelays  int           `json:"max_delays,omitempty"` // handler-requested later runs before the delivery dead-letters; 0 = no cap. Redelivery only -- meaningless for datastore retries
 	BaseDelay  time.Duration `json:"base_delay,omitempty"`
 	MaxDelay   time.Duration `json:"max_delay,omitempty"`
 	Exponent   int           `json:"exponent,omitempty"`
@@ -82,6 +83,9 @@ func (p *RetryPolicy) Validate() error {
 	// without ever calling the wrapped func, a silent fake success
 	if p.MaxRetries < 1 {
 		return fmt.Errorf("MaxRetries must be >= 1, got %d", p.MaxRetries)
+	}
+	if p.MaxDelays < 0 {
+		return fmt.Errorf("MaxDelays must be >= 0, got %d", p.MaxDelays)
 	}
 
 	// non-positive BaseDelay/MaxDelay clamp every backoff to 0 -- transient
