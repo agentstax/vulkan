@@ -738,14 +738,14 @@ func waitAdvanced(ctx context.Context, jobId int64) {
 	die(fmt.Sprintf("timed out waiting for cron_job %d to advance", jobId))
 }
 
-func messageCount(ctx context.Context, compactionKey string) int64 {
+func messageCount(ctx context.Context, messageKey string) int64 {
 	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id), compactionKey)
+		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id), messageKey)
 }
 
-func producedScheduledTimes(ctx context.Context, compactionKey string) []time.Time {
+func producedScheduledTimes(ctx context.Context, messageKey string) []time.Time {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(
-		`SELECT payload->>'scheduled_at' FROM message_log_%d WHERE message_key = $1 ORDER BY id;`, jobRequests.Id), compactionKey)
+		`SELECT payload->>'scheduled_at' FROM message_log_%d WHERE message_key = $1 ORDER BY id;`, jobRequests.Id), messageKey)
 	must(err)
 	defer rows.Close()
 

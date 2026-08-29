@@ -116,7 +116,7 @@ func newCronGetCmd(g *globalFlags) *cobra.Command {
 	return cmd
 }
 
-// cronJobDocument is one cron_job row's json shape -- the get-shape every
+// cronJobDocument is one cron job's json shape -- the get-shape every
 // cron-job-echoing command shares. Durations render with units.
 type cronJobDocument struct {
 	CronJobId       int64           `json:"cron_job_id"`

@@ -67,7 +67,7 @@ type cellResult struct {
 }
 
 func main() {
-	cardinality := flag.Int("cardinality", 1, "distinct compaction keys; 0 = unkeyed baseline")
+	cardinality := flag.Int("cardinality", 1, "distinct message keys (compaction enabled); 0 = unkeyed baseline")
 	producers := flag.Int("producers", 3, "producer instances (each its own batcher)")
 	goroutines := flag.Int("goroutines", 128, "concurrent Produce callers, split across producers")
 	warmupSeconds := flag.Int("warmup", 5, "seconds produced but not measured")

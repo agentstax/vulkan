@@ -184,7 +184,7 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 		return nil, err
 	}
 
-	if err := d.appendTopicLog(ctx, tx, &created, declaredBy); err != nil {
+	if err := d.appendTopicConfigLog(ctx, tx, &created, declaredBy); err != nil {
 		return nil, err
 	}
 
@@ -277,7 +277,7 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 	}
 
 	for _, data := range topics {
-		if err := d.appendTopicLog(ctx, tx, &data, declaredBy); err != nil {
+		if err := d.appendTopicConfigLog(ctx, tx, &data, declaredBy); err != nil {
 			return nil, err
 		}
 	}
@@ -290,11 +290,11 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 	return topics, nil
 }
 
-// appendTopicLog writes data's full snapshot as one topic_config_log row, inside
+// appendTopicConfigLog writes data's full snapshot as one topic_config_log row, inside
 // the transaction that changed the topic row.
-func (d *TopicDatastore) appendTopicLog(ctx context.Context, q datastore.Querier, data *TopicData, declaredBy string) error {
+func (d *TopicDatastore) appendTopicConfigLog(ctx context.Context, q datastore.Querier, data *TopicData, declaredBy string) error {
 	sql := `
-		-- vulkan: topic.appendTopicLog
+		-- vulkan: topic.appendTopicConfigLog
 		INSERT INTO topic_config_log (topic_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode, declared_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 	`

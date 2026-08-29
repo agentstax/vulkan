@@ -8,7 +8,7 @@ import (
 // workers where any number of live instances is correct, like the manager.
 const NoInstanceTarget = -1
 
-// Worker is one row of the worker table.
+// Worker is one row of the worker_config table.
 type Worker struct {
 	Id       int64         `json:"id"`
 	Name     string        `json:"worker"`

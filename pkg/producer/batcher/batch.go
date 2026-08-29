@@ -11,8 +11,9 @@ type batch[Message any] struct {
 }
 
 func newBatch[Message any](operations []*batchOperation[Message]) *batch[Message] {
-	// ascending compaction key -> every batch txn takes its compaction_head row
-	// locks in one global order: hot keys queue batch-to-batch, never deadlock
+	// ascending message key (compacted only) -> every batch txn takes its
+	// compaction_head row locks in one global order: hot keys queue
+	// batch-to-batch, never deadlock
 	slices.SortStableFunc(operations, func(a, b *batchOperation[Message]) int {
 		return cmp.Compare(compactionSortKey(a), compactionSortKey(b))
 	})

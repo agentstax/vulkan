@@ -74,9 +74,9 @@ Suffix `1` throughout — the topic's id from the catalog.
   and a sparse `options` document.
 - **`idempotency_key_1`** — produce dedup. The key uuid is the primary
   key; rows expire on a TTL sweep.
-- **`compaction_head_1`** — one row per compaction key naming the
-  key's winning message id, upserted in the same transaction as every
-  compacted produce.
+- **`compaction_head_1`** — one row per compacted message key naming
+  the key's winning message id, upserted in the same transaction as
+  every compacted produce.
 - **`exception_queue_1`** — deliveries off the mainline path,
   `PRIMARY KEY (consumer_group_id, message_id)`: status, attempts,
   `can_run_after` backoff, last error, and a per-row lease. The

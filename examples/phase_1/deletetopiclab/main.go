@@ -115,7 +115,7 @@ func main() {
 	assertGroupGone(ctx, ds, groupId)
 	for _, table := range []string{
 		"message_log", "exception_queue", "delivery_log", "idempotency_key",
-		"consumer_group_cursor", "claim_lease", "key_lease", "compaction_head", "binding_config", "binding_config_log",
+		"consumer_group_cursor", "claim_lease", "message_key_lease", "compaction_head", "binding_config", "binding_config_log",
 	} {
 		assertTableExists(ctx, ds, fmt.Sprintf("%s_%d", table, tp.Id), false)
 	}

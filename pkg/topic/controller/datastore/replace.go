@@ -69,7 +69,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 		return nil, topic.ErrTopicDeclarationInterrupted.With("topic", found.Name, "version", found.SchemaVersion)
 	}
 
-	if err := d.appendTopicLog(ctx, tx, updated, declaredBy); err != nil {
+	if err := d.appendTopicConfigLog(ctx, tx, updated, declaredBy); err != nil {
 		return nil, err
 	}
 

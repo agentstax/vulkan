@@ -197,9 +197,9 @@ documentation; the latter want a surface that has stopped moving.
   from.
 
 - **Doc-site pages the 2026-08-28 link sweep found missing** — a
-  compaction concept page (concepts/ordering leans on compaction keys and
-  NewCompactionOptions with nowhere to point; architecture's diagram
-  shows compaction_head unexplained) and a workers/maintenance-fleet
+  compaction concept page (concepts/message-key now covers the basics
+  [0612], but the deep mechanics — compaction_head, rank rules,
+  retention interplay — still have no page) and a workers/maintenance-fleet
   page (the fleet is a table in concepts/architecture plus one
   quickstart caution; `vulkan manager run` and cron jobs have no home).
 
@@ -370,8 +370,10 @@ prerequisite if quorum-as-a-fraction wins.
     same change.
 - **FIFO partitions** (Phase 12) — ordering on demand, paid only where opted
   in. `partition_key` on message rows (nullable = no ordering; a second key
-  beside compaction_key on purpose: compaction_key is a read-time "what's
-  current" filter, partition_key a claim-time "don't run two at once" gate).
+  beside message_key on purpose: message_key is a read-time "what's
+  current" filter, partition_key a claim-time "don't run two at once" gate
+  — sketch predates [0612], which already made message_key defer's
+  claim-time gate; re-derive on pickup).
   The bare claim-from-log path is unordered under concurrent workers, so
   FIFO is an opt-in on the lifecycle path: keyed claim skips rows whose key
   already has an in-flight delivery in the group (null key = full
@@ -413,7 +415,7 @@ prerequisite if quorum-as-a-fraction wins.
   - Could redo both concurrency-deferral and exception claiming on this
     table: retries land in the unordered backlog, materialize near the front
     soon after; a concurrent defer waits to enter the ordered index until
-    the compaction key frees.
+    the message key frees.
   - Overload policies to mine from the Uber resilient-DB talk
     (https://www.youtube.com/watch?v=g7FmEc5GLWs&t=387s): FIFO->LIFO as a
     load-shedding gauge (lag growing -> skip older work until caught up);
@@ -454,7 +456,7 @@ prerequisite if quorum-as-a-fraction wins.
 - **Lease heartbeat/renewal** (9b) — for jobs whose legitimate runtime
   exceeds WorkTimeout but still want fast crash reclaim: an opt-in
   heartbeat()/touch() handle passed to consumerFunc; the lease extends only
-  when touched (`UPDATE ... SET lease_until = now()+ext WHERE id=$1 AND
+  when touched (`UPDATE ... SET lease_expires_at = now()+ext WHERE id=$1 AND
   lease_token=$2`); RowsAffected==0 on renew means already reclaimed ->
   cancel the work context (the row is another worker's now — never retry the
   renew). Settled gotchas: renewal is PROGRESS-based (Temporal
@@ -594,7 +596,7 @@ prerequisite if quorum-as-a-fraction wins.
   attempt near the front of the ordered index, picked up soon after because
   materialization runs only slightly ahead of claiming.
 - **Delivery rows delete on completion** instead of persisting as 'done' —
-  the delivery table's irreducible job is a dispatch index over pending
+  the exception queue's irreducible job is a dispatch index over pending
   messages, not a completion record; deleting on success makes storage
   O(pending window) instead of O(history). Composes with success-by-absence
   audit: "was message X processed by group Y" = id <= the group's frontier
@@ -625,10 +627,10 @@ prerequisite if quorum-as-a-fraction wins.
   into drops. Benchmark-gated: create-ahead must ride the producer's
   partition self-heal, and the hot claim table takes on partitioned-table
   planner overhead.
-- **topic_log / worker_log retention** — both are unbounded today; rows
-  append only on actual config change, so growth tracks change frequency,
-  not traffic. Revisit whether they want a TTL sweep like binding_log's
-  ([0573]) once real deployments show the volume.
+- **topic_config_log / worker_config_log retention** — both are unbounded
+  today; rows append only on actual config change, so growth tracks change
+  frequency, not traffic. Revisit whether they want a TTL sweep like
+  binding_config_log's ([0573]) once real deployments show the volume.
 - **BRIN indexes** — look into using them for different tables.
 - **DeadLetterTopic consumer** — consume on events to the DLQ.
 - **Shadow/Mirror functionality** — watch exactly the same cursor as another

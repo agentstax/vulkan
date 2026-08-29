@@ -113,7 +113,7 @@ claims, so running N copies is safe.
 
 | Worker | Maintains |
 | --- | --- |
-| `topic_janitor` | drops/sweeps expired partitions, idempotency keys, key leases |
+| `topic_janitor` | drops/sweeps expired partitions, idempotency keys, message-key leases |
 | `cursor_advancer` | advances each group's `committed` behind resolved work |
 | `consumer_group_janitor` | sweeps superseded binding declarations |
 | `cron_scheduler` | produces one request per due cron job |

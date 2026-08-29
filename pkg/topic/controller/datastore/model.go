@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// TopicData models the topic table row exactly.
+// TopicData models the topic_config table row exactly.
 type TopicData struct {
 	Id                     int64     `db:"id"`
 	SystemId               int64     `db:"system_id"`

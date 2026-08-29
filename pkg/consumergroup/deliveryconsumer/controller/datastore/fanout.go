@@ -51,7 +51,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 		-- vulkan: deliveryconsumer.fanOut
 		WITH old_values AS (
 			SELECT committed, pending_head, pending_xmax
-			FROM %[3]s                                             -- [3] = cursor table
+			FROM %[3]s                                             -- [3] = consumer_group_cursor table
 			WHERE consumer_group_id = $1
 			-- FOR UPDATE so a racing same-group peer's committed advance is
 			-- visible to our scan start (same race as the cursor claim path)

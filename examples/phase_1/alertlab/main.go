@@ -637,19 +637,19 @@ func partitionCountKey(owner *common.Owner) string {
 	return key
 }
 
-func alertMessageCount(ctx context.Context, compactionKey string) int64 {
+func alertMessageCount(ctx context.Context, messageKey string) int64 {
 	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, alertsTopic.Id), compactionKey)
+		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, alertsTopic.Id), messageKey)
 }
 
-func headId(ctx context.Context, compactionKey string) int64 {
+func headId(ctx context.Context, messageKey string) int64 {
 	return scalarInt64(ctx, fmt.Sprintf(
 		`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, alertsTopic.Id),
-		compactionKey)
+		messageKey)
 }
 
 // headStatus is "" when the key has no head or its payload carries no status.
-func headStatus(ctx context.Context, compactionKey string) string {
+func headStatus(ctx context.Context, messageKey string) string {
 	sql := fmt.Sprintf(`
 		SELECT m.payload->>'status'
 		FROM compaction_head_%d h
@@ -657,7 +657,7 @@ func headStatus(ctx context.Context, compactionKey string) string {
 		WHERE h.compaction_key = $1;
 	`, alertsTopic.Id, alertsTopic.Id)
 	var status *string
-	err := ds.Pool.QueryRow(ctx, sql, compactionKey).Scan(&status)
+	err := ds.Pool.QueryRow(ctx, sql, messageKey).Scan(&status)
 	must(err)
 	if status == nil {
 		return ""

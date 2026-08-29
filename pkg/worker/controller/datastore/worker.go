@@ -41,7 +41,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	var createdId int64
 	err = tx.QueryRow(ctx, insertSql, owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(), name, metadata, targetInstances).Scan(&createdId)
 	if err == nil {
-		if err := d.appendWorkerLog(ctx, tx, createdId, declaredBy); err != nil {
+		if err := d.appendWorkerConfigLog(ctx, tx, createdId, declaredBy); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -97,7 +97,7 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 		return err
 	}
 
-	if err := d.appendWorkerLog(ctx, tx, workerId, declaredBy); err != nil {
+	if err := d.appendWorkerConfigLog(ctx, tx, workerId, declaredBy); err != nil {
 		return err
 	}
 
@@ -111,11 +111,11 @@ func (d *WorkerDatastore) registerWorker(ctx context.Context, name string, owner
 	return nil
 }
 
-// appendWorkerLog writes the worker row's full snapshot as one worker_config_log
+// appendWorkerConfigLog writes the worker row's full snapshot as one worker_config_log
 // row, inside the transaction that changed the worker row.
-func (d *WorkerDatastore) appendWorkerLog(ctx context.Context, q datastore.Querier, workerId int64, declaredBy string) error {
+func (d *WorkerDatastore) appendWorkerConfigLog(ctx context.Context, q datastore.Querier, workerId int64, declaredBy string) error {
 	sql := `
-		-- vulkan: worker.appendWorkerLog
+		-- vulkan: worker.appendWorkerConfigLog
 		INSERT INTO worker_config_log (worker_id, name, metadata, target_instances, declared_by)
 		SELECT
 			id,

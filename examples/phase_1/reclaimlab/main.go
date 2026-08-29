@@ -165,11 +165,11 @@ func main() {
 	}
 	assert("committed reached head", committedCol(ctx, ds, tp.Id), head)
 	assert("no leases left open", leases(ctx, ds, tp.Id), 0)
-	assert("delivery table stayed empty the whole lab", deliveries(ctx, ds, tp.Id), 0)
+	assert("exception queue stayed empty the whole lab", deliveries(ctx, ds, tp.Id), 0)
 
 	fmt.Println("\n✅ PHASE 6.5b LAB PASSED")
 	fmt.Println("   crash mid-range -> lease expired -> exact range reclaimed (token rotated) ->")
-	fmt.Println("   reprocessed -> committed pinned at lo then jumped to head -> delivery table empty.")
+	fmt.Println("   reprocessed -> committed pinned at lo then jumped to head -> exception queue empty.")
 }
 
 // ---- helpers ----

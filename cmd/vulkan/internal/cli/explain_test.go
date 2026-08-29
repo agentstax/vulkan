@@ -40,12 +40,12 @@ func TestRenderDiagnoseQueriesNamesEveryValueOnce(t *testing.T) {
 func TestRenderDiagnoseQueriesDropsTheSubstitutionLineWithNothingToFillIn(t *testing.T) {
 	var builder strings.Builder
 	renderDiagnoseQueries(&builder, []*diagnostic.Query{
-		diagnostic.NewQuery("every registered topic", "SELECT name FROM topic;"),
+		diagnostic.NewQuery("every registered topic", "SELECT name FROM topic_config;"),
 	})
 
 	want := "\ndiagnose:\n" +
 		"\n  -- every registered topic\n" +
-		"  SELECT name FROM topic;\n"
+		"  SELECT name FROM topic_config;\n"
 	if builder.String() != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", builder.String(), want)
 	}

@@ -113,7 +113,7 @@ func main() {
 	var cursorTable *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("consumer_group_cursor_%d", topicB.Id)).Scan(&cursorTable))
 	if cursorTable != nil {
-		die("topicB's cursor table survived its topic's Destroy")
+		die("topicB's consumer_group_cursor table survived its topic's Destroy")
 	}
 	if g, err := cd.GetGroup(ctx, topicA.Id, group); err != nil || g == nil || g.Id != registered.Id {
 		die(fmt.Sprintf("topic destroy touched the OTHER topic's group: %+v err=%v", g, err))

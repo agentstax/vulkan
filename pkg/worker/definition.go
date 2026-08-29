@@ -9,7 +9,7 @@ import (
 
 // A Definition is what one worker kind declares: the row's name, the config
 // written onto it, who may own it, and how many instances may live at once.
-// Declaring writes it to the worker table; the manager reads the row back
+// Declaring writes it to the worker_config table; the manager reads the row back
 // and hands it to the kind's Provisioner.
 type Definition struct {
 	Name     string

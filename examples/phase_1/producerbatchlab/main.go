@@ -15,7 +15,7 @@ package main
 //   - faultIsolationScenario: one server-side-poisoned payload (jsonb
 //     rejects \u0000) and one client-side-unencodable payload each fail ONLY
 //     their own caller -- everyone sharing their batches still lands.
-//   - hotCompactionKeysScenario: hot compaction keys inside concurrent
+//   - hotCompactedKeysScenario: hot compacted message keys inside concurrent
 //     batches -- the per-batch key sort keeps compaction_head lock order global,
 //     so nothing deadlocks and every compaction_head row ends at its key's max id.
 //   - partitionHealScenario: a burst that outruns the janitor's create-ahead
@@ -61,7 +61,7 @@ func main() {
 	batchedExactlyOnceScenario(ctx, ds)
 	produceBatchScenario(ctx, ds)
 	faultIsolationScenario(ctx, ds)
-	hotCompactionKeysScenario(ctx, ds)
+	hotCompactedKeysScenario(ctx, ds)
 	partitionHealScenario(ctx, ds)
 	throughputScenario(ctx, ds)
 
@@ -247,13 +247,13 @@ func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total-2, "every good payload landed despite sharing batches with the bad ones")
 }
 
-// hotCompactionKeysScenario: 20 goroutines x 20 keyed produces across only 3
+// hotCompactedKeysScenario: 20 goroutines x 20 keyed produces across only 3
 // hot keys, with a tiny batch cap so multiple workers commit concurrently --
 // real cross-batch compaction_head contention. A deadlock would surface as an
 // evicted operation's error; zero errors + every compaction_head row at its key's
 // max id is the pass.
-func hotCompactionKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
-	step("hot compaction keys: concurrent batches contend on compaction_head without deadlock")
+func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+	step("hot compacted keys: concurrent batches contend on compaction_head without deadlock")
 
 	const producers, msgs, keys = 20, 20, 3
 	tp, cleanup := registerTopic(ctx, ds, "hotkeys", largePartitionSize)

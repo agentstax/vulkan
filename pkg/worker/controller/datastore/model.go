@@ -4,7 +4,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// WorkerData models the worker table row exactly.
+// WorkerData models the worker_config table row exactly.
 type WorkerData struct {
 	Id              int64  `db:"id"`
 	SystemId        *int64 `db:"system_id"`

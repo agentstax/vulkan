@@ -34,7 +34,7 @@
 //     through an abandoned (past-Timeout) holder and head churn -- only the
 //     final head ever runs, exactly once, every other version audits out
 //     'superseded'.
-//   - destroying the topic drops the delivery table cleanly.
+//   - destroying the topic drops the exception queue cleanly.
 package main
 
 import (
@@ -601,7 +601,7 @@ func main() {
 	}
 	fmt.Printf("  ✓ v4 ran once, v1-v3 audited out superseded (v1=%d v2=%d v3=%d v4=%d)\n", tv1, tv2, tv3, tv4)
 
-	step("destroying the topic drops the delivery table")
+	step("destroying the topic drops the exception queue")
 	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
 	fmt.Println("  ✓ destroyed")
 
