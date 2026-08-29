@@ -5,6 +5,18 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — delivery_log keyed by its own id [0615]
+
+- The composite PK on `attempt` collided when a retry claim handed its
+  number back at a busy key gate (logging `deferred` under it) and the
+  next claim's outcome logged under the same number -- 23505, row stuck
+  `inflight`, consumer stopped (reproduced with the real verbs).
+  `delivery_log_<id>` now has `id BIGSERIAL PRIMARY KEY` plus an index
+  on `(consumer_group_id, message_id, attempt)`; `attempt` is the run
+  an event belongs to and a run can carry more than one event. No verb
+  changed. Sandbox mirror + table-design page updated; deliveryloglab
+  scenario 6 is the regression.
+
 ## 2026-08-29 — handler outcomes: Terminal and Delay [0614]
 
 - A consumerFunc's error is classified at both live handler paths

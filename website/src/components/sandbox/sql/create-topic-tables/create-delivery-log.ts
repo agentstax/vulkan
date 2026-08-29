@@ -6,13 +6,13 @@ import { deliveryLogTable } from '../table-names';
 export const createDeliveryLogSqlTemplate = `
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
-			consumer_group_id BIGINT NOT NULL,    -- PK
-			message_id BIGINT NOT NULL,           -- PK
-			attempt INT NOT NULL,                 -- PK
+			id BIGSERIAL PRIMARY KEY,
+			consumer_group_id BIGINT NOT NULL,
+			message_id BIGINT NOT NULL,
+			attempt INT NOT NULL,                 -- the run this event belongs to; a claim handed back at the key gate logs under the number it returned
 			status TEXT NOT NULL DEFAULT 'failure',
 			error TEXT NOT NULL,
-			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (consumer_group_id, message_id, attempt)
+			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 	`;
 

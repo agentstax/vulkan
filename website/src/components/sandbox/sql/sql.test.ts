@@ -9,6 +9,7 @@ import { createIdempotencyKeySqlTemplate } from './create-topic-tables/create-id
 import { createIdempotencyKeyCreatedAtIndexSqlTemplate } from './create-topic-tables/create-idempotency-key-created-at-index';
 import { createExceptionQueueSqlTemplate } from './create-topic-tables/create-exception-queue';
 import { createDeliveryLogSqlTemplate } from './create-topic-tables/create-delivery-log';
+import { createDeliveryLogAttemptIndexSqlTemplate } from './create-topic-tables/create-delivery-log-attempt-index';
 import { createConsumerGroupCursorSqlTemplate } from './create-topic-tables/create-consumer-group-cursor';
 import { createClaimLeaseSqlTemplate } from './create-topic-tables/create-claim-lease';
 import { createMessageKeyLeaseSqlTemplate } from './create-topic-tables/create-message-key-lease';
@@ -36,6 +37,7 @@ const createTopicTablesTemplates = [
 	createIdempotencyKeyCreatedAtIndexSqlTemplate,
 	createExceptionQueueSqlTemplate,
 	createDeliveryLogSqlTemplate,
+	createDeliveryLogAttemptIndexSqlTemplate,
 	createConsumerGroupCursorSqlTemplate,
 	createClaimLeaseSqlTemplate,
 	createMessageKeyLeaseSqlTemplate,

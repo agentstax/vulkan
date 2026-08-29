@@ -25,6 +25,9 @@ package main
 //  5. retention (dropPartition's whole-partition removal, sweepBatch's
 //     individually-expired-row reap) actually drains old delivery_log rows,
 //     not just delivery_<id>'s.
+//  6. a retry claim handed back at a busy key gate logs 'deferred' under the
+//     number it returned, and the next claim's failure logs under that same
+//     number beside it -- two events for one run, no key collision [0615].
 
 import (
 	"context"
@@ -96,6 +99,7 @@ func run() (err error) {
 	scenarioDeliveryLogAll(ctx, ds)
 	scenarioRetentionDropPartition(ctx, ds)
 	scenarioRetentionSweepBatch(ctx, ds)
+	scenarioRedeferralSharesAttempt(ctx, ds)
 
 	fmt.Println("\n✅ DELIVERY LOG LAB PASSED")
 	fmt.Println("   a failure logs exactly one row, retries append distinct rows instead of")
@@ -313,6 +317,47 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDat
 	fmt.Println("PASS: sweepBatch reaped the dormant message's delivery_log row, left the alive one")
 }
 
+// ---- scenario 6: a gate re-deferral and the run after it share an attempt ----
+
+func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.PostgresDatastore) {
+	step("SCENARIO 6: a claim handed back at the key gate and the next run log under the same attempt")
+
+	tp, _, _, groupId := newTopic(ctx, ds, "scenario6", topiccontroller.TopicConfig{})
+	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
+	must(err)
+	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
+	must(err)
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	}()
+
+	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
+	var messageId int64
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (message_key, payload) VALUES ('k', '{}') RETURNING id`, tp.Id)).Scan(&messageId))
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status, attempts) VALUES ($1, $2, 'deferred', 0)`, tp.Id), groupId, messageId)
+	must(err)
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, $2, 0, 'deferred', '')`, tp.Id), groupId, messageId)
+	must(err)
+
+	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, 5*time.Second, tp.DeliveryLogMode)
+	must(err)
+	if len(claimed) != 1 || claimed[0].Attempts != 1 {
+		die(fmt.Sprintf("expected one claim at attempts 1, got %+v", claimed))
+	}
+	must(exceptionConsumers.RecordDeferred(ctx, &claimed[0], tp.DeliveryLogMode))
+
+	claimed, err = exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, 5*time.Second, tp.DeliveryLogMode)
+	must(err)
+	if len(claimed) != 1 || claimed[0].Attempts != 1 {
+		die(fmt.Sprintf("expected the handed-back number 1 to be claimed again, got %+v", claimed))
+	}
+	must(exceptionConsumers.RecordFailure(ctx, (&iCommon.RetryPolicy{MaxRetries: 3}).WithDefaults(), &claimed[0], fmt.Errorf("attempt 1 failure"), tp.DeliveryLogMode, nil))
+
+	assertDeliveryLogStatusesAt(ctx, ds, tp.Id, groupId, messageId, 1, []string{"deferred", "failure"})
+	assertDeliveryLogCount(ctx, ds, tp.Id, groupId, messageId, 3)
+	fmt.Println("PASS: the gate deferral and the run after it both logged under attempt 1")
+}
+
 // ---- helpers ----
 
 func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix string, cfg topiccontroller.TopicConfig) (*topic.Topic, *messageconsumergroupcontroller.MessageConsumerGroupController, *producer.ProducerInstance[common.Work], int64) {
@@ -386,6 +431,24 @@ func assertDeliveryLogStatus(ctx context.Context, ds *iDatastore.PostgresDatasto
 		die(fmt.Sprintf("delivery_log_%d[message=%d attempt=%d] status=%q, want %q", topicId, messageId, attempt, gotStatus, wantStatus))
 	}
 	fmt.Printf("  ✓ delivery_log_%d[message=%d attempt=%d] status=%q\n", topicId, messageId, attempt, gotStatus)
+}
+
+// assertDeliveryLogStatusesAt checks every event logged under one attempt, in
+// insertion order.
+func assertDeliveryLogStatusesAt(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, attempt int, want []string) {
+	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(`SELECT status FROM delivery_log_%d WHERE consumer_group_id = $1 AND message_id = $2 AND attempt = $3 ORDER BY id;`, topicId), groupId, messageId, attempt)
+	must(err)
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var status string
+		must(rows.Scan(&status))
+		got = append(got, status)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		die(fmt.Sprintf("delivery_log_%d[message=%d attempt=%d] statuses=%v, want %v", topicId, messageId, attempt, got, want))
+	}
+	fmt.Printf("  ✓ delivery_log_%d[message=%d attempt=%d] statuses=%v\n", topicId, messageId, attempt, got)
 }
 
 func assertDeliveryLogCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, groupId int64, messageId int64, want int) {

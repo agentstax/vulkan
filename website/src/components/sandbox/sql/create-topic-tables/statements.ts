@@ -6,6 +6,7 @@ import { createIdempotencyKeySql } from './create-idempotency-key';
 import { createIdempotencyKeyCreatedAtIndexSql } from './create-idempotency-key-created-at-index';
 import { createExceptionQueueSql } from './create-exception-queue';
 import { createDeliveryLogSql } from './create-delivery-log';
+import { createDeliveryLogAttemptIndexSql } from './create-delivery-log-attempt-index';
 import { createConsumerGroupCursorSql } from './create-consumer-group-cursor';
 import { createClaimLeaseSql } from './create-claim-lease';
 import { createMessageKeyLeaseSql } from './create-message-key-lease';
@@ -23,6 +24,7 @@ export function createTopicTablesStatements(topicId: number, partitionSize: numb
 		createIdempotencyKeyCreatedAtIndexSql(topicId),
 		createExceptionQueueSql(topicId),
 		createDeliveryLogSql(topicId),
+		createDeliveryLogAttemptIndexSql(topicId),
 		createConsumerGroupCursorSql(topicId),
 		createClaimLeaseSql(topicId),
 		createMessageKeyLeaseSql(topicId),

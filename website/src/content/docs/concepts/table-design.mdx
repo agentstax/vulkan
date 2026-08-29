@@ -81,8 +81,9 @@ Suffix `1` throughout — the topic's id from the catalog.
   `PRIMARY KEY (consumer_group_id, message_id)`: status, attempts,
   `can_run_after` backoff, last error, and a per-row lease. The
   statuses are the [lifecycle](/concepts/lifecycle/) state machine.
-- **`delivery_log_1`** — the per-attempt trail,
-  `PRIMARY KEY (consumer_group_id, message_id, attempt)`, append-only.
+- **`delivery_log_1`** — the event trail, append-only, keyed by its own
+  `id`; `attempt` is the run each event belongs to, and a run can have
+  more than one (a claim handed back at a busy key gate, then the run).
 - **`consumer_group_cursor_1`** — one row per group (`consumer_group_id UNIQUE`):
   `claimed` and `committed`, plus the snapshot-fence columns
   (`settled_head`, `pending_head`, `pending_xmax`) that keep claims

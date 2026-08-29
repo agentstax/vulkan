@@ -119,6 +119,7 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	// delivery_log_<id> exists for every topic, whatever its delivery_log_mode.
 	// One row per delivery event:
 	//   - 'failure': the attempt ran and returned an error
+	//   - 'delayed': the attempt ran and asked to run again later -- counted in exception_queue.delays, never as a failure
 	//   - 'superseded': dropped unrun -- a compacted message key has a newer version
 	//   - 'deferred': never ran -- another delivery held its message key
 	//   - 'expired': a claim's lease ran out with no outcome recorded -- logged by the claim that takes the row over
@@ -127,16 +128,26 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 	createDeliveryLogSql := fmt.Sprintf(`
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
-			consumer_group_id BIGINT NOT NULL,    -- PK
-			message_id BIGINT NOT NULL,           -- PK
-			attempt INT NOT NULL,                 -- PK
+			id BIGSERIAL PRIMARY KEY,
+			consumer_group_id BIGINT NOT NULL,
+			message_id BIGINT NOT NULL,
+			attempt INT NOT NULL,                 -- the run this event belongs to; a claim handed back at the key gate logs under the number it returned
 			status TEXT NOT NULL DEFAULT 'failure',
 			error TEXT NOT NULL,
-			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (consumer_group_id, message_id, attempt)
+			attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 	`, iTopic.DeliveryLogTable(id))
 	if _, err := tx.Exec(ctx, createDeliveryLogSql); err != nil {
+		return err
+	}
+
+	// the per-message history walk, and the key the old composite PK used to
+	// give the triage joins
+	createDeliveryLogAttemptIndexSql := fmt.Sprintf(`
+		-- vulkan: topic.createTopicTables
+		CREATE INDEX IF NOT EXISTS %s_attempt ON %s (consumer_group_id, message_id, attempt);
+	`, iTopic.DeliveryLogTable(id), iTopic.DeliveryLogTable(id))
+	if _, err := tx.Exec(ctx, createDeliveryLogAttemptIndexSql); err != nil {
 		return err
 	}
 
