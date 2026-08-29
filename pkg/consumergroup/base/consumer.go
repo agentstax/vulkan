@@ -66,7 +66,7 @@ func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], own
 // unwinding, and recording the outcome.
 func (b *BaseConsumer[Message]) ClaimKeyedRun(ctx context.Context, key string, messageId int64, compacted bool, resolved *common.MessageOptions) (*controller.KeyLeaseClaim, error) {
 	duration := resolved.Timeout + b.Config.TimeoutGrace + b.Config.RecordMargin
-	return b.keyLeases.Claim(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, compacted, duration)
+	return b.keyLeases.Claim(ctx, b.Topic.Id, b.Owner.ConsumerGroupId, key, messageId, compacted, resolved.Concurrency, duration)
 }
 
 // ReleaseKeyedRun frees a claim ClaimKeyedRun acquired.

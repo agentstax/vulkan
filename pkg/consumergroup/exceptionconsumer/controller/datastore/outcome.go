@@ -305,13 +305,13 @@ func (d *ExceptionConsumerGroupDatastore) recordSuperseded(ctx context.Context, 
 // claim reached the gate, so no run started. The claim's attempts increment
 // is decremented back and the log row lands at that attempt; the next claim
 // takes the row once the key frees.
-func (d *ExceptionConsumerGroupDatastore) RecordDeferred(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerGroupDatastore) RecordDeferred(ctx context.Context, exception *ExceptionData, concurrency common.ConcurrencyPolicy, deliveryLogMode topic.DeliveryLogMode) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.recordDeferred(ctx, exception, deliveryLogMode)
+		return d.recordDeferred(ctx, exception, concurrency, deliveryLogMode)
 	})
 }
 
-func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, exception *ExceptionData, deliveryLogMode topic.DeliveryLogMode) error {
+func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, exception *ExceptionData, concurrency common.ConcurrencyPolicy, deliveryLogMode topic.DeliveryLogMode) error {
 	var sql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		sql = fmt.Sprintf(`
@@ -319,6 +319,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 			UPDATE %s
 			SET
 				status = 'deferred',
+				concurrency = $4,
 				attempts = attempts - 1,
 				lease_token = NULL,
 				lease_expires_at = NULL,
@@ -336,6 +337,7 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 				UPDATE %[1]s
 				SET
 					status = 'deferred',
+					concurrency = $4,
 					attempts = attempts - 1,
 					lease_token = NULL,
 					lease_expires_at = NULL,
@@ -346,12 +348,12 @@ func (d *ExceptionConsumerGroupDatastore) recordDeferred(ctx context.Context, ex
 				RETURNING attempts
 			)
 			INSERT INTO %[2]s (consumer_group_id, message_id, attempt, status, error)
-			SELECT $1, $2, attempts + 1, 'deferred', $4
+			SELECT $1, $2, attempts + 1, 'deferred', $5
 			FROM updated;
 		`, iTopic.ExceptionQueueTable(exception.TopicId), iTopic.DeliveryLogTable(exception.TopicId))
 	}
 
-	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken}
+	args := []any{exception.ConsumerGroupId, exception.MessageId, exception.LeaseToken, concurrency}
 	if deliveryLogMode != topic.DeliveryLogModeOff {
 		args = append(args, "another delivery held the message key when this claim reached its gate")
 	}

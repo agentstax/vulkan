@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/admin"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
@@ -311,7 +312,7 @@ func run() (err error) {
 }
 
 func claim(ctx context.Context, cd *keyleasecontroller.KeyLeaseController, key string, msgID int64, d time.Duration) *keyleasecontroller.KeyLeaseClaim {
-	c, err := cd.Claim(ctx, topicId, groupId, key, msgID, true, d)
+	c, err := cd.Claim(ctx, topicId, groupId, key, msgID, true, common.ConcurrencyExclusive, d)
 	must(err)
 	return c
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -28,13 +29,16 @@ type KeyLeaseClaim struct {
 	Token           uuid.UUID
 }
 
-// Claim attempts to acquire the exclusive right to run a keyed
-// message. For a compacted message, KeyLeaseAcquired also guarantees it was
+// Claim attempts to acquire the exclusive right to run a keyed message.
+// For a compacted message, KeyLeaseAcquired also guarantees it was
 // still its key's compaction head after the lease was won; an uncompacted
 // message is never superseded.
+// For ConcurrencyOrdered the claim is also refused (busy) while an earlier
+// same-key message is unresolved for the group; a compacted message keeps
+// the compaction head as its gate whatever the policy says.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, duration time.Duration) (*KeyLeaseClaim, error) {
+func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, policy common.ConcurrencyPolicy, duration time.Duration) (*KeyLeaseClaim, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -47,6 +51,9 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 	if messageId <= 0 {
 		return nil, fmt.Errorf("messageId must be > 0, got %d", messageId)
 	}
+	if err := policy.Validate(); err != nil {
+		return nil, fmt.Errorf("policy: %w", err)
+	}
 	if duration <= 0 {
 		return nil, fmt.Errorf("duration must be > 0, got %v", duration)
 	}
@@ -58,7 +65,7 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 		return nil, err
 	}
 
-	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, compacted, duration, toTokenData(token))
+	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, compacted, policy, duration, toTokenData(token))
 	if err != nil || data == nil {
 		return nil, err
 	}

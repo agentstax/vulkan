@@ -344,7 +344,7 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 	if len(claimed) != 1 || claimed[0].Attempts != 1 {
 		die(fmt.Sprintf("expected one claim at attempts 1, got %+v", claimed))
 	}
-	must(exceptionConsumers.RecordDeferred(ctx, &claimed[0], tp.DeliveryLogMode))
+	must(exceptionConsumers.RecordDeferred(ctx, &claimed[0], iCommon.ConcurrencyExclusive, tp.DeliveryLogMode))
 
 	claimed, err = exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)

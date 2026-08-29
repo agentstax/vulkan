@@ -94,7 +94,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 	}
 
 	var keyClaim *keyleasecontroller.KeyLeaseClaim
-	if exception.MessageKey != "" && resolvedOptions.Concurrency == common.ConcurrencyExclusive {
+	if exception.MessageKey != "" && resolvedOptions.Concurrency.HoldsKey() {
 		claim, err := r.ClaimKeyedRun(ctx, exception.MessageKey, exception.MessageId, exception.Compacted, resolvedOptions)
 		switch {
 		case err != nil:
@@ -106,7 +106,7 @@ func (r *exceptionRunner[Message]) processException(ctx context.Context, excepti
 			// usually a same-batch sibling on the key started first -- the row
 			// returns to 'deferred' and the next claim takes it once the key frees
 			r.Logger.DebugContext(ctx, "key busy at gate -- delivery re-deferred", "group", r.Owner.Name, "topic_id", r.Topic.Id, "message_id", exception.MessageId, "message_key", exception.MessageKey)
-			return r.recordDeferred(ctx, exception)
+			return r.recordDeferred(ctx, exception, resolvedOptions.Concurrency)
 		}
 		keyClaim = claim
 	}
@@ -200,11 +200,11 @@ func (r *exceptionRunner[Message]) recordSuperseded(ctx context.Context, excepti
 	return r.absorbLostLease(ctx, exception, err)
 }
 
-func (r *exceptionRunner[Message]) recordDeferred(ctx context.Context, exception *controller.ClaimedException) error {
+func (r *exceptionRunner[Message]) recordDeferred(ctx context.Context, exception *controller.ClaimedException, concurrency common.ConcurrencyPolicy) error {
 	// no run started -- the row waits out the key's current holder
 	r.Metrics.RecordDeferred(1)
 
-	err := r.consumers.RecordDeferred(ctx, exception, r.Topic.DeliveryLogMode)
+	err := r.consumers.RecordDeferred(ctx, exception, concurrency, r.Topic.DeliveryLogMode)
 	return r.absorbLostLease(ctx, exception, err)
 }
 

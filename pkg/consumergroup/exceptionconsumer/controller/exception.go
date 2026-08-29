@@ -161,11 +161,15 @@ func (c *ExceptionConsumerGroupController) RecordSuperseded(ctx context.Context,
 
 // RecordDeferred returns the row to 'deferred' -- its key was busy at the
 // gate, so no run started. The claim's attempts increment is decremented
-// back and the log row lands at that attempt.
-func (c *ExceptionConsumerGroupController) RecordDeferred(ctx context.Context, exception *ClaimedException, deliveryLogMode topic.DeliveryLogMode) error {
+// back, the log row lands at that attempt, and the row's concurrency is
+// set to the policy the gate resolved.
+func (c *ExceptionConsumerGroupController) RecordDeferred(ctx context.Context, exception *ClaimedException, concurrency common.ConcurrencyPolicy, deliveryLogMode topic.DeliveryLogMode) error {
 	if exception == nil {
 		return errors.New("exception must not be nil")
 	}
+	if err := concurrency.Validate(); err != nil {
+		return fmt.Errorf("concurrency: %w", err)
+	}
 
-	return c.datastore.RecordDeferred(ctx, toExceptionData(exception), deliveryLogMode)
+	return c.datastore.RecordDeferred(ctx, toExceptionData(exception), concurrency, deliveryLogMode)
 }

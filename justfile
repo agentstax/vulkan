@@ -95,6 +95,9 @@ exception-lab:
 outcome-lab:
   go run examples/phase_1/outcomelab/main.go
 
+ordered-lab:
+  go run examples/phase_1/orderedlab/main.go
+
 # routing lab: bindings gate what a group receives, not what gets claimed.
 # Deterministic, self-verifying, self-seeding -- registers its own topic and
 # publishes its own messages.

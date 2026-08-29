@@ -7,6 +7,7 @@ import (
 	"time"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
+	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -18,21 +19,25 @@ import (
 // is never superseded, so only the lease itself is contested.
 // Expiry does not stop a holder: the next claim on the key takes the lease
 // over, and the two runs can overlap until the old one returns.
-func (d *KeyLeaseDatastore) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
+func (d *KeyLeaseDatastore) Claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, policy common.ConcurrencyPolicy, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
 	var claim *KeyLeaseData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claim, err = d.claim(ctx, topicId, groupId, key, messageId, compacted, duration, token)
+		claim, err = d.claim(ctx, topicId, groupId, key, messageId, compacted, policy, duration, token)
 		return err
 	})
 	return claim, err
 }
 
-func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
-	if compacted {
+func (d *KeyLeaseDatastore) claim(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, compacted bool, policy common.ConcurrencyPolicy, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
+	switch {
+	case compacted:
 		return d.claimCompacted(ctx, topicId, groupId, key, messageId, duration, token)
+	case policy == common.ConcurrencyOrdered:
+		return d.claimOrdered(ctx, topicId, groupId, key, messageId, duration, token)
+	default:
+		return d.claimUncompacted(ctx, topicId, groupId, key, duration, token)
 	}
-	return d.claimUncompacted(ctx, topicId, groupId, key, duration, token)
 }
 
 // claimCompacted gates the lease on the key's compaction head: a superseded
@@ -139,6 +144,56 @@ func (d *KeyLeaseDatastore) claimUncompacted(ctx context.Context, topicId int64,
 
 	claim := KeyLeaseData{TopicId: topicId, ConsumerGroupId: groupId, MessageKey: key}
 	err := d.Datastore.Pool.QueryRow(ctx, sql, groupId, key, token, duration.Seconds()).Scan(&claim.Token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		claim.Verdict = KeyLeaseBusy
+		return &claim, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	claim.Verdict = KeyLeaseAcquired
+	return &claim, nil
+}
+
+// claimOrdered takes the lease only when:
+// - no earlier same-key message is unresolved for the group
+// - no exception row still ready/inflight/deferred
+// - no same-key message_log id between the group's committed cursor and this message
+func (d *KeyLeaseDatastore) claimOrdered(ctx context.Context, topicId int64, groupId int64, key string, messageId int64, duration time.Duration, token pgtype.UUID) (*KeyLeaseData, error) {
+	sql := fmt.Sprintf(`
+		-- vulkan: consumerbase.claimOrdered
+		INSERT INTO %[1]s AS kl (consumer_group_id, message_key, lease_token, expires_at)
+		SELECT $1, $2, $3, now() + make_interval(secs => $4)
+		-- no exception row still ready/inflight/deferred
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM %[2]s earlier
+			WHERE earlier.consumer_group_id = $1
+				AND earlier.message_key = $2
+				AND earlier.message_id < $5
+				AND earlier.status IN ('ready', 'inflight', 'deferred')
+		)
+		-- no same-key message_log id between the group's committed cursor and this message
+		AND NOT EXISTS (
+			SELECT 1
+			FROM %[3]s m
+			WHERE m.message_key = $2
+				AND m.id < $5
+				AND m.id > (SELECT committed FROM %[4]s WHERE consumer_group_id = $1)
+		)
+		ON CONFLICT (consumer_group_id, message_key) DO UPDATE
+		SET
+			lease_token = $3,
+			expires_at = now() + make_interval(secs => $4)
+		-- the token match lets a retry after an ambiguous commit re-take its
+		-- own lease instead of reading it as busy
+		WHERE kl.expires_at < now() OR kl.lease_token = $3
+		RETURNING lease_token;
+	`, iTopic.MessageKeyLeaseTable(topicId), iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId))
+
+	claim := KeyLeaseData{TopicId: topicId, ConsumerGroupId: groupId, MessageKey: key}
+	err := d.Datastore.Pool.QueryRow(ctx, sql, groupId, key, token, duration.Seconds(), messageId).Scan(&claim.Token)
 	if errors.Is(err, pgx.ErrNoRows) {
 		claim.Verdict = KeyLeaseBusy
 		return &claim, nil

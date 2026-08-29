@@ -243,7 +243,7 @@ func (r *messageRunner[Message]) processClaim(ctx context.Context, item *buffere
 // a message's concurrency policy can resolve it (superseded or deferred)
 // without ever running consumerFunc
 func (r *messageRunner[Message]) runItem(ctx context.Context, item *buffered) {
-	if item.row.MessageKey != "" && item.options.Concurrency == common.ConcurrencyExclusive {
+	if item.row.MessageKey != "" && item.options.Concurrency.HoldsKey() {
 		claim, err := r.ClaimKeyedRun(ctx, item.row.MessageKey, item.row.Id, item.row.Compacted, item.options)
 		switch {
 		case err != nil:

@@ -59,8 +59,11 @@ type ProduceOptions struct {
 // Validate rejects nonsensical option combinations.
 // Must be called after Fill().
 func (o ProduceOptions) Validate() error {
-	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyExclusive && o.MessageKey == "" {
-		return errors.New("Concurrency 'exclusive' set without MessageKey -- exclusive runs deliveries one at a time per key, set ProduceOptions.MessageKey")
+	if o.Message != nil && o.Message.Concurrency.HoldsKey() && o.MessageKey == "" {
+		return fmt.Errorf("Concurrency %q set without MessageKey -- it runs deliveries one at a time per key, set ProduceOptions.MessageKey", o.Message.Concurrency)
+	}
+	if o.Message != nil && o.Message.Concurrency == common.ConcurrencyOrdered && o.Compaction != nil && o.Compaction.Enable {
+		return errors.New("Concurrency 'ordered' set with Compaction enabled -- compaction supersedes older versions, ordered delivers every one; choose one")
 	}
 	if o.Compaction != nil && o.Compaction.Enable && o.MessageKey == "" {
 		return errors.New("Compaction enabled without MessageKey -- compaction picks a winner per key, set ProduceOptions.MessageKey")

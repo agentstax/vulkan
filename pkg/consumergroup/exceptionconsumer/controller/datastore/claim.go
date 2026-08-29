@@ -54,6 +54,18 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 								AND kl.message_key = d.message_key
 								AND kl.expires_at >= now()
 						)
+						-- an ordered row waits for every earlier same-key row to resolve
+						AND NOT (
+							d.concurrency = 'ordered'
+							AND EXISTS (
+								SELECT 1
+								FROM %[1]s earlier
+								WHERE earlier.consumer_group_id = d.consumer_group_id
+									AND earlier.message_key = d.message_key
+									AND earlier.message_id < d.message_id
+									AND earlier.status IN ('ready', 'inflight', 'deferred')
+							)
+						)
 					ORDER BY d.message_id
 					LIMIT $2
 					FOR UPDATE OF d SKIP LOCKED
@@ -102,6 +114,18 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 						WHERE kl.consumer_group_id = d.consumer_group_id
 							AND kl.message_key = d.message_key
 							AND kl.expires_at >= now()
+					)
+					-- an ordered row waits for every earlier same-key row to resolve
+					AND NOT (
+						d.concurrency = 'ordered'
+						AND EXISTS (
+							SELECT 1
+							FROM %[1]s earlier
+							WHERE earlier.consumer_group_id = d.consumer_group_id
+								AND earlier.message_key = d.message_key
+								AND earlier.message_id < d.message_id
+								AND earlier.status IN ('ready', 'inflight', 'deferred')
+						)
 					)
 				ORDER BY d.message_id
 				LIMIT $2
