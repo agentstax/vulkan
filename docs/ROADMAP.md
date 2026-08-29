@@ -21,28 +21,15 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
 2026-08-23 [0582] [0583] [0584], the consumer-flow sandbox 2026-08-25
 [0585] [0586] [0587]. All three are in HISTORY.md.
 
-- **Step 1 -- finish the playground catalog review.** The catalog below
-  is the measuring instrument for every step after it; review and
-  clean its 11 scenarios first (headers accurate, traps verified).
+- **Step 1 -- build the three gaps the playground catalog found**
+  (`examples/playground/`, shipped 2026-08-29 -- see HISTORY; each
+  scenario's header is its scorecard and the catalog is the measuring
+  instrument for every step here). Each gap is a predicate, a
+  classification, or one INSERT clause on rows that already exist; docs
+  page first per the record rules, then a decision record, then code.
   Lease extend (scenario 11) is already designed as *Lease
   heartbeat/renewal (9b)* in the parking lot -- promote on its merit
-  once the three gaps below ship.
-  - **Public-API scenario catalog** (built 2026-08-29): `examples/playground/`
-    holds 11 programs written as a user would against the CURRENT library --
-    produce-only, produce-in-tx, consume-plain, retry+dead, compacted KV,
-    cron, new-group-deep-topic, manager+consumer, idempotent produce, keyed
-    ordering, slow handler. Each file's header is its scorecard: concepts
-    held before domain code, and the traps hit. The catalog is the measuring
-    instrument for every choice below: an API change is judged by re-writing
-    the affected scenario, not by line count. Runtime-verified: RegisterTopic
-    accepts nil cfg; CAS = InTransaction + GetCompactionHeadInTx + ProduceInTx
-    works today; IdempotencyKey returns id=0 Duplicate=true. Gaps with no
-    verb at all: start-from-now (07), lease extend (11), handler terminal /
-    delay (04, settled above), KV Put/Update/History as named verbs (05).
-- **Step 2 -- build the three gaps the catalog found.** Each is a
-  predicate, a classification, or one INSERT clause on rows that
-  already exist; docs page first per the record rules, then a
-  decision record, then code. Order: handler outcome (settled),
+  once these ship. Order: handler outcome (settled),
   start from now (sketched, one statement), strict per-key FIFO
   (sketched, DDL edit).
   - Added 2026-08-29 (agreed): the handler cannot reach the outcome kinds.
@@ -125,12 +112,12 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     (compaction supersedes, FIFO delivers every message -- contradictory;
     same shape as defer-without-key). Docs page first, per the record
     rules; ordering.mdx's PROPOSED aside is the seed.
-- **Step 3 -- re-write the affected playground scenarios** (04 retry+dead,
+- **Step 2 -- re-write the affected playground scenarios** (04 retry+dead,
   07 new-group-deep-topic, 10 keyed-ordering) against the shipped
   verbs, and add scenarios any new surface needs. Their headers drop
   the trap and keep the concept count -- the before/after is the
   evidence the gap closed.
-- **Step 4 -- the public-API review**, resumed where the gaps interrupted
+- **Step 3 -- the public-API review**, resumed where the gaps interrupted
   it. Everything below is that review, in the order it was already
   sequenced.
 - **Library work the doc pass surfaced.**

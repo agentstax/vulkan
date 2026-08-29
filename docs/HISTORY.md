@@ -5,6 +5,28 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-29 — public-API scenario catalog, lab exit refactor
+
+- `examples/playground/` holds 11 programs written as a user would
+  against the current library (produce-only, produce-in-tx,
+  consume-plain, retry+dead, compacted KV, cron, new-group-deep-topic,
+  manager+consumer, idempotent produce, keyed ordering, slow handler);
+  each header is its scorecard -- concepts held before domain code and
+  the traps hit. Built from a Kafka / River / RabbitMQ / JetStream / SQS
+  research pass; it is the measuring instrument for the public-API
+  review and surfaced the three no-verb gaps now sketched in ROADMAP
+  Now (handler outcome, start from now, strict per-key FIFO). Runtime
+  facts settled on the way: RegisterTopic accepts nil cfg; CAS on a
+  compacted key = InTransaction + GetCompactionHeadInTx + ProduceInTx;
+  IdempotencyKey stays uuid.UUID with uuid.NewSHA1 as the external-key
+  path. The ConcurrencyDefer const comment was corrected (defer alone
+  runs every message oldest-first; only defer+compaction supersedes).
+- Every phase_1 lab and playground program now runs as `main` ->
+  `run() error`: labs' `die` panics a labFailure value that `run`
+  recovers into its return, so deferred cleanup (DestroyTopic) runs on
+  a failed assertion instead of being skipped by os.Exit. 42/42
+  fresh-DB suite green.
+
 ## 2026-08-29 — table renames, column rules, message-key promotion
 
 - Every table is now `<root>_<kind>` [0611]: config tables gained
