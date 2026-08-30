@@ -3,9 +3,9 @@ package controller
 import (
 	"encoding/json"
 	"github.com/agentstax/vulkan/pkg/topic"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
-	"github.com/google/uuid"
 )
 
 func toAppendData[Message topic.Versioned](idempotencyKey uuid.UUID, payload *Message, options ProduceOptions) *datastore.AppendData[Message] {

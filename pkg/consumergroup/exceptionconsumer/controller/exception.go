@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 )
 
 // one exception claimed off the exception window for (re)processing -- the

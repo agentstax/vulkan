@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
@@ -39,7 +40,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -108,7 +108,7 @@ func duplicateKeyScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
-	key := uuid.Must(uuid.NewV7()).String()
+	key := uuid.NewV7().String()
 	opts := producer.ProduceOptions{IdempotencyKey: key}
 
 	calls := 0
@@ -160,7 +160,7 @@ func distinctKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	must(err)
 
 	for range 5 {
-		key := uuid.Must(uuid.NewV7()).String()
+		key := uuid.NewV7().String()
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ string) (*common.Work, error) {
 			return common.NewWork(30, "admin@example.com")
 		}, producer.ProduceOptions{IdempotencyKey: key})

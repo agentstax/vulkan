@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 )
 
 // Batcher groups concurrent payload-only produces for one topic into shared
@@ -57,11 +57,7 @@ func (b *Batcher[Message]) Produce(ctx context.Context, message *Message, option
 	}
 
 	// always minted fresh -- fresh V7 keys cannot collide inside the shared txn
-	idempotencyKey, err := uuid.NewV7()
-	if err != nil {
-		return nil, fmt.Errorf("minting idempotency key for topic %d: %w", b.topicId, err)
-	}
-	options.IdempotencyKey = idempotencyKey.String()
+	options.IdempotencyKey = uuid.NewV7().String()
 
 	operation := newBatchOperation(message, options)
 

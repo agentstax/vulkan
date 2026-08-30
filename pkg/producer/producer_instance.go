@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	"github.com/agentstax/vulkan/pkg/producer/batcher"
 	"github.com/agentstax/vulkan/pkg/producer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 )
 
 // ProducerInstance is a registered producer: it appends messages to the topic
@@ -209,10 +209,6 @@ func (p *ProducerInstance[Message]) toAppend(item *ProduceItem[Message]) (*contr
 
 	options := item.Options
 	options.Message = options.Message.Fill(p.Config.Message)
-	idempotencyKey, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
-	options.IdempotencyKey = idempotencyKey.String()
+	options.IdempotencyKey = uuid.NewV7().String()
 	return controller.NewAppend(item.Message, options)
 }

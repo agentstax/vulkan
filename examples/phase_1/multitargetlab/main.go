@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/examples/phase_1/common"
 	"github.com/agentstax/vulkan/pkg/admin"
@@ -38,7 +39,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -225,8 +225,8 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	topicB, wpB, cleanupB := newTarget(ctx, ds, "b", 1000)
 	defer cleanupB()
 
-	keyA := uuid.Must(uuid.NewV7()).String()
-	keyB := uuid.Must(uuid.NewV7()).String()
+	keyA := uuid.NewV7().String()
+	keyB := uuid.NewV7().String()
 
 	closure := func(ctx context.Context, tx producer.Tx) error {
 		if _, err := wpA.ProduceInTx(ctx, tx, fn, producer.ProduceOptions{IdempotencyKey: keyA}); err != nil {

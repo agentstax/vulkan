@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/worker"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )

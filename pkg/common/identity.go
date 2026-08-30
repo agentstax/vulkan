@@ -3,8 +3,7 @@ package common
 import (
 	"fmt"
 	"os"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // ProcessIdentity is hostname:pid:<random tiebreak>, computed once at startup
@@ -16,5 +15,5 @@ var ProcessIdentity = func() string {
 	if err != nil {
 		hostname = "unknown"
 	}
-	return fmt.Sprintf("%s:%d:%s", hostname, os.Getpid(), uuid.NewString()[:8])
+	return fmt.Sprintf("%s:%d:%s", hostname, os.Getpid(), uuid.New().String()[:8])
 }()

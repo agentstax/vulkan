@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
@@ -14,7 +15,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/datastore"
 	metricsproducer "github.com/agentstax/vulkan/pkg/metrics/producer"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -118,10 +118,7 @@ func (i *ConsumerInstance[Message]) Consume(ctx context.Context, consumerFunc Co
 
 	// a Consume call is one session: counters restart at zero and the flushed
 	// series gets a fresh identity
-	session, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
+	session := uuid.NewV7()
 	i.metrics.ResetCounters()
 
 	i.Logger.InfoContext(ctx, "consumer starting", "group", i.Owner.Name, "topic_id", i.Owner.TopicId, "vulkan_version", common.BuildVersion(), "message_timeout", i.Config.Message.Timeout, "shutdown_timeout", i.Config.ShutdownTimeout, "batch_limit", i.Config.BatchLimit)

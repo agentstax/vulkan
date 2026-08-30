@@ -6,7 +6,7 @@ each func param has explicit type, never combined
 
 ## Dependencies
 
-- Main module deps stay minimal: std lib + pgx + google/uuid + x/sync. Never
+- Main module deps stay minimal: std lib + pgx + x/sync. Never
   `go get` a new dep for domain logic.
 - When battle-tested code exists for a problem (e.g. cron parsing), VENDOR it:
   copy the needed source files + their tests + license verbatim into the owning

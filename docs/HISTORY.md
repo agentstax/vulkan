@@ -5,6 +5,16 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — std uuid replaces github.com/google/uuid [0623]
+
+Every import moved to Go 1.27's std `uuid` package; google/uuid left
+go.mod, so main-module deps are std + pgx + x/sync. NewV7 error checks
+collapsed (std is infallible), `resolveIdempotencyKey` lost its error
+return, and the v5 hash it needs is vendored verbatim from google/uuid
+v1.6.0 with a provenance header (`producer/controller/uuid_hash.go`),
+tested against the RFC 9562 example vector. pgx encodes the std type
+natively; wire and storage shapes unchanged.
+
 ## 2026-08-30 — IdempotencyKey is a caller string [0622]
 
 `ProduceOptions.IdempotencyKey` went from `uuid.UUID` to `string`: ""
@@ -13,8 +23,7 @@ verbatim, any other string hashes to a deterministic UUIDv5 under a
 namespace frozen in producer/controller. `ProduceFunc` closures now
 receive the resolved key as a string. Schema untouched; the original
 string is never stored. Playground 09 lost its derive-a-UUID trap;
-guides and ~35 labs/playgrounds swept. Affected labs 6/6, conventions
-green.
+guides and ~35 labs/playgrounds swept. Full fresh-DB lab suite 44/44.
 
 ## 2026-08-30 — a schedule is a producer on a cron expression; "cron job" renamed "schedule" [0621]
 

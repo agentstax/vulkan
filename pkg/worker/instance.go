@@ -1,7 +1,7 @@
 package worker
 
 import (
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // WorkerInstance is one live copy of a worker.

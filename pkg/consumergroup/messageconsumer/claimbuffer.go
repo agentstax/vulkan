@@ -5,12 +5,12 @@ import (
 	"errors"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
-	"github.com/google/uuid"
 )
 
 var errRangeNotTracked = errors.New("range not tracked -- settled elsewhere")

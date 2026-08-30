@@ -2,9 +2,9 @@ package schedule
 
 import (
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/google/uuid"
 )
 
 // TopicName is __system.schedules -- the target topic of the system-owned

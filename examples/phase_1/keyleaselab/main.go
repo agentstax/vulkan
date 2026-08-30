@@ -29,6 +29,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
@@ -39,7 +40,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
-	"github.com/google/uuid"
 )
 
 const group = "keyleaselab.group"
@@ -135,8 +135,8 @@ func run() (err error) {
 
 	step("head message acquires when free; second attempt is busy")
 	held := claim(ctx, keyLeases, "user:1", headID, 30*time.Second)
-	if held.Verdict != keyleasecontroller.KeyLeaseAcquired || held.Token == uuid.Nil {
-		die(fmt.Sprintf("want acquired with a token, got %s valid=%v", held.Verdict, held.Token != uuid.Nil))
+	if held.Verdict != keyleasecontroller.KeyLeaseAcquired || held.Token == uuid.Nil() {
+		die(fmt.Sprintf("want acquired with a token, got %s valid=%v", held.Verdict, held.Token != uuid.Nil()))
 	}
 	if c := claim(ctx, keyLeases, "user:1", headID, 30*time.Second); c.Verdict != keyleasecontroller.KeyLeaseBusy {
 		die(fmt.Sprintf("want busy while held, got %s", c.Verdict))

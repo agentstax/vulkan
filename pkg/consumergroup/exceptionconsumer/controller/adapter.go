@@ -3,8 +3,8 @@ package controller
 import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/exceptionconsumer/controller/datastore"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"uuid"
 )
 
 func toClaimedException(data datastore.ExceptionData) ClaimedException {

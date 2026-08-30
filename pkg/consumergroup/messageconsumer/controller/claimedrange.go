@@ -2,8 +2,7 @@ package controller
 
 import (
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // a leased window of work -- the messages to process plus the lease that guards

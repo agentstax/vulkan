@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 )
 
 // ClaimMessagesWithCursor picks up a crashed range (an expired lease) first and

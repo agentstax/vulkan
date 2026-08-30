@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/google/uuid"
 )
 
 // KeyLeaseVerdict classifies a Claim attempt.
@@ -80,10 +80,7 @@ func (c *KeyLeaseController) Claim(ctx context.Context, topicId int64, groupId i
 
 	// minted once, before the datastore's retry loop -- claimSql's token match
 	// lets a retry after an ambiguous commit re-take its own lease
-	token, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
+	token := uuid.NewV7()
 
 	data, err := c.datastore.Claim(ctx, topicId, groupId, key, messageId, compacted, policy, ownRange.Low, ownRange.High, duration, toTokenData(token))
 	if err != nil || data == nil {

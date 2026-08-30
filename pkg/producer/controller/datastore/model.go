@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/google/uuid"
 )
 
 // AppendData is one message append's inputs, insert-arg exact.

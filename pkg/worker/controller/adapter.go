@@ -4,7 +4,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller/datastore"
-	"github.com/google/uuid"
+	"uuid"
 )
 
 func toWorker(data datastore.ListWorkersData) (*worker.Worker, error) {

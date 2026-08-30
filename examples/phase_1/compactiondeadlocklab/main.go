@@ -26,12 +26,12 @@ import (
 	"os"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -243,8 +243,8 @@ type callerResult struct {
 // committed survivor.
 func runCallerWithRetry(ctx context.Context, firstKey string, secondKey string, holdOnce *sync.Once, holdsFirst chan struct{}, peerHoldsFirst chan struct{}) callerResult {
 	// fixed per-produce keys make the rerun dedup-safe, the documented pattern
-	firstIdempotencyKey := uuid.Must(uuid.NewV7()).String()
-	secondIdempotencyKey := uuid.Must(uuid.NewV7()).String()
+	firstIdempotencyKey := uuid.NewV7().String()
+	secondIdempotencyKey := uuid.NewV7().String()
 
 	result := callerResult{}
 	for range 5 {

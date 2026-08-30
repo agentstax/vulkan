@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/concurrency"
@@ -15,7 +16,6 @@ import (
 	keyleasecontroller "github.com/agentstax/vulkan/pkg/consumergroup/base/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -197,11 +197,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 
 func (r *messageRunner[Message]) dispatch(ctx context.Context, wg *sync.WaitGroup) error {
 	for {
-		permitOwner, err := uuid.NewV7()
-		if err != nil {
-			return err // something is very wrong if this happens
-		}
-
+		permitOwner := uuid.NewV7()
 		if err := r.poolLimiter.WaitForPermit(ctx, permitOwner.String()); err != nil {
 			return err // ctx cancelled -- shutdown
 		}

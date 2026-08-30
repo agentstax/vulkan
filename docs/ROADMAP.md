@@ -673,6 +673,4 @@ prerequisite if quorum-as-a-fraction wins.
 - should look into using https://go.dev/doc/go1.27#goroutineleak-profiles instead
   of potentially our custom goroutine tracking - might simplify things / make it
   easier for users as well
-- should also look into using https://pkg.go.dev/uuid instead of the google impl
-  and package
 - should make more use of vale for standardized writing style its an interesting idea

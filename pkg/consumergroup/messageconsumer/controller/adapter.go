@@ -2,8 +2,8 @@ package controller
 
 import (
 	"github.com/agentstax/vulkan/pkg/consumergroup/messageconsumer/controller/datastore"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"uuid"
 )
 
 func toMessage(data datastore.MessageData) Message {

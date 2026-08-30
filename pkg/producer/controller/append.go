@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
-	"github.com/google/uuid"
 )
 
 // idempotencyKeyNamespace is the UUIDv5 namespace a non-UUID IdempotencyKey
@@ -50,10 +50,7 @@ func (c *ProducerController) AppendMessage[Message topic.Versioned](ctx context.
 		return nil, err
 	}
 
-	idempotencyKey, err := resolveIdempotencyKey(options.IdempotencyKey)
-	if err != nil {
-		return nil, err
-	}
+	idempotencyKey := resolveIdempotencyKey(options.IdempotencyKey)
 
 	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
@@ -78,10 +75,7 @@ func (c *ProducerController) AppendMessageInTx[Message topic.Versioned](ctx cont
 		return nil, err
 	}
 
-	idempotencyKey, err := resolveIdempotencyKey(options.IdempotencyKey)
-	if err != nil {
-		return nil, err
-	}
+	idempotencyKey := resolveIdempotencyKey(options.IdempotencyKey)
 
 	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
@@ -107,10 +101,7 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 		if item.Options.IdempotencyKey == "" {
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
-		resolved, err := resolveIdempotencyKey(item.Options.IdempotencyKey)
-		if err != nil {
-			return nil, -1, err
-		}
+		resolved := resolveIdempotencyKey(item.Options.IdempotencyKey)
 		appendData = append(appendData, toAppendData(resolved, item.Payload, item.Options))
 	}
 
@@ -133,12 +124,12 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 // resolveIdempotencyKey resolves the caller's key to the UUID the claim
 // table stores: "" mints a fresh UUIDv7, a string that parses as a UUID is
 // used verbatim, anything else hashes to a deterministic UUIDv5.
-func resolveIdempotencyKey(key string) (uuid.UUID, error) {
+func resolveIdempotencyKey(key string) uuid.UUID {
 	if key == "" {
 		return uuid.NewV7()
 	}
 	if parsed, err := uuid.Parse(key); err == nil {
-		return parsed, nil
+		return parsed
 	}
-	return uuid.NewSHA1(idempotencyKeyNamespace, []byte(key)), nil
+	return newSHA1UUID(idempotencyKeyNamespace, []byte(key))
 }

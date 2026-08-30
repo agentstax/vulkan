@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/agentstax/vulkan/pkg/worker"
-	"github.com/google/uuid"
 )
 
 // ClaimInstance claims one live copy of the worker. nil = declined (already
@@ -82,7 +82,7 @@ func validInstanceInputs(instanceId int64, token uuid.UUID) error {
 	if instanceId <= 0 {
 		return fmt.Errorf("instanceId must be > 0, got %d", instanceId)
 	}
-	if token == uuid.Nil {
+	if token == uuid.Nil() {
 		return errors.New("token is required")
 	}
 	return nil

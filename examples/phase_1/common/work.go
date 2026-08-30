@@ -1,7 +1,7 @@
 package common
 
 import (
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // TODO - must validate json serializable for producer / consumer
@@ -18,13 +18,10 @@ type Work struct {
 func (Work) SchemaVersion() int { return 1 }
 
 func NewWork(age int, email string) (*Work, error) {
-	uuid, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
+	id := uuid.NewV7()
 
 	return &Work{
-		Id:    uuid.String(),
+		Id:    id.String(),
 		Age:   age,
 		Email: email,
 	}, nil

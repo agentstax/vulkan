@@ -3,8 +3,6 @@ package schedule
 import (
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 func TestIdempotencyKey(t *testing.T) {
@@ -20,11 +18,11 @@ func TestIdempotencyKey(t *testing.T) {
 	if k == IdempotencyKey(scheduledTime.Add(time.Minute), 42) {
 		t.Error("different scheduled times of the same found must produce different keys")
 	}
-	if v := k.Version(); v != 7 {
-		t.Errorf("version = %d, want 7", v)
+	if version := k[6] >> 4; version != 7 {
+		t.Errorf("version bits = %d, want 7", version)
 	}
-	if k.Variant() != uuid.RFC4122 {
-		t.Errorf("variant = %v, want RFC 4122", k.Variant())
+	if variant := k[8] & 0xc0; variant != 0x80 {
+		t.Errorf("variant bits = %#x, want 0x80 (RFC 4122)", variant)
 	}
 
 	// the id is stored verbatim -- decode it back out of the payload bits

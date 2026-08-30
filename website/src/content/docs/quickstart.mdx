@@ -258,10 +258,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    and never be lost for a committed one.
 
    ```go
-   import "github.com/google/uuid"
-
    produced, err := instance.ProduceFunc(ctx,
-   	func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*WelcomeEmail, error) {
+   	func(ctx context.Context, tx producer.Tx, _ string) (*WelcomeEmail, error) {
    		if _, err := tx.Exec(ctx, `INSERT INTO users (id) VALUES ($1)`, "user-123"); err != nil {
    			return nil, err
    		}
