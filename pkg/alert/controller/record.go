@@ -23,7 +23,7 @@ func (c *AlertController) Record(ctx context.Context, name string, owner *common
 		return "", err
 	}
 
-	head, err := c.heads.GetHead(ctx, c.alerts.Topic.Id, messageKey)
+	head, err := c.heads.GetHead[alert.Alert](ctx, c.alerts.Topic.Id, messageKey)
 	if err != nil {
 		return "", err
 	}

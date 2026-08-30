@@ -20,5 +20,5 @@ func (a *MessageAdmin) ListAlerts(ctx context.Context) ([]*producer.MessageRow[a
 	if found == nil {
 		return nil, migrate.ErrNotRegistered.With("topic", alert.TopicName)
 	}
-	return a.alertHeads.ListHeads(ctx, found.Id)
+	return a.heads.ListHeads[alert.Alert](ctx, found.Id)
 }

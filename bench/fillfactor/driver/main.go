@@ -179,7 +179,7 @@ func main() {
 
 	// a short retry curve so a designated failure's whole exception cycle
 	// (claim, outcome, eventual dead) lands inside the cell
-	benchConsumer, err := consumer.NewConsumer[benchMessage](ds, &consumer.ConsumerConfig{
+	benchConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		BatchLimit:              *batchLimit,
 		QueueSize:               *batchLimit * 2,
 		MessageConcurrency:      *messageConcurrency,
@@ -202,7 +202,7 @@ func main() {
 
 	var consumeWg sync.WaitGroup
 	for group := range *groups {
-		instance, err := benchConsumer.Register(ctx, fmt.Sprintf("bench-group-%02d", group), topicName, nil)
+		instance, err := benchConsumer.Register[benchMessage](ctx, fmt.Sprintf("bench-group-%02d", group), topicName, nil)
 		must(err)
 
 		consumeWg.Add(1)
@@ -274,9 +274,9 @@ func main() {
 func prefillTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string, prefill int, failureRate float64, record func(error)) {
 	instances := make([]*producer.ProducerInstance[benchMessage], prefillProducers)
 	for i := range instances {
-		wp, err := producer.NewProducer[benchMessage](ds, nil)
+		wp, err := producer.NewProducer(ds, nil)
 		must(err)
-		instance, err := wp.Register(ctx, topicName)
+		instance, err := wp.Register[benchMessage](ctx, topicName)
 		must(err)
 		instances[i] = instance
 	}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/cron"
 	cronschedulercontroller "github.com/agentstax/vulkan/pkg/cron/scheduler/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -22,7 +21,7 @@ type CronSchedulerProvisioner struct {
 	ds         *iDatastore.PostgresDatastore
 	workers    *controller.WorkerController
 	controller *cronschedulercontroller.CronSchedulerController
-	producer   *producer.Producer[cron.JobRequest] // each Provision registers its own instance from it
+	producer   *producer.Producer // each Provision registers its own instance from it
 
 	definition *worker.Definition
 }
@@ -57,7 +56,7 @@ func NewCronSchedulerProvisioner(ds *iDatastore.PostgresDatastore, cfg *CronSche
 		return nil, err
 	}
 
-	jobProducer, err := producer.NewProducer[cron.JobRequest](ds, &producer.ProducerConfig{
+	jobProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

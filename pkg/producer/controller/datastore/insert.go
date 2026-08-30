@@ -22,7 +22,7 @@ type ProduceFunc[Message any] func(ctx context.Context, tx Tx, idempotencyKey uu
 
 // runInsert runs produceFunc + the claim-protected message insert against an
 // already-open tx.
-func (d *ProducerDatastore[Message]) runInsert(ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) runInsert[Message any](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	payload, err := produceFunc(ctx, tx, data.IdempotencyKey)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func (d *ProducerDatastore[Message]) runInsert(ctx context.Context, tx Tx, topic
 // runInsertSavepoint wraps produceFunc + the message insert in a SAVEPOINT
 // scoped to just this call, so a missing-partition retry can't touch
 // anything else already done in tx.
-func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) runInsertSavepoint[Message any](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	if err := commitToSavepoint(ctx, tx, produceInTxSavepoint); err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (d *ProducerDatastore[Message]) runInsertSavepoint(ctx context.Context, tx 
 // SAVEPOINT as one round trip -- always a single statement regardless of
 // compaction, so it always fully batches. duplicate=true means the claim
 // already existed.
-func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+func (d *ProducerDatastore) insertProtectedSavepoint[Message any](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
 
 	batch := &pgx.Batch{}
@@ -90,7 +90,7 @@ func (d *ProducerDatastore[Message]) insertProtectedSavepoint(ctx context.Contex
 // insertProtected runs the idempotency claim + message insert (+ compaction_head
 // upsert when compacted) in one round trip. duplicate=true means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
-func (d *ProducerDatastore[Message]) insertProtected(ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+func (d *ProducerDatastore) insertProtected[Message any](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
 
 	err = q.QueryRow(ctx, sql, args...).Scan(&id)

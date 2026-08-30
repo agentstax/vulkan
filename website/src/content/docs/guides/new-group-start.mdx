@@ -11,12 +11,12 @@ group's cursor row; an existing group keeps its position no matter
 what the config says on a later `Register`.
 
 ```go
-scoringConsumer, err := consumer.NewConsumer[OrderPlaced](ds, &consumer.ConsumerConfig{
+scoringConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 	Start: consumergroup.Head(),
 })
 must(err)
 
-scoring, err := scoringConsumer.Register(ctx, "fraud-scoring",
+scoring, err := scoringConsumer.Register[OrderPlaced](ctx, "fraud-scoring",
 	"orders.placed", nil)
 must(err)
 must(scoring.Consume(ctx, scoreOrder))

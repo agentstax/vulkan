@@ -3,12 +3,10 @@ package collector
 import (
 	"errors"
 
-	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
@@ -25,8 +23,8 @@ type MetricsCollectorProvisioner struct {
 	workers    *controller.WorkerController
 	metrics    *metricscontroller.MetricsController
 	topics     *topiccontroller.TopicController
-	alertHeads *compactioncontroller.CompactionController[alert.Alert]
-	producer   *producer.Producer[metrics.Measurement] // each Provision registers its own instance from it
+	alertHeads *compactioncontroller.CompactionController
+	producer   *producer.Producer // each Provision registers its own instance from it
 
 	definition *worker.Definition
 }
@@ -69,7 +67,7 @@ func NewMetricsCollectorProvisioner(ds *iDatastore.PostgresDatastore, cfg *Metri
 		return nil, err
 	}
 
-	alertHeads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, &compactioncontroller.ControllerConfig{
+	alertHeads, err := compactioncontroller.NewCompactionController(ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -77,7 +75,7 @@ func NewMetricsCollectorProvisioner(ds *iDatastore.PostgresDatastore, cfg *Metri
 		return nil, err
 	}
 
-	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, &producer.ProducerConfig{
+	measurementProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})

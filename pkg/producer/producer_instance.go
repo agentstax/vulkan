@@ -16,16 +16,16 @@ import (
 // ProducerInstance is a registered producer: it appends messages to the topic
 // Register resolved. Shutdown is per call -- a cancelled ctx refuses that
 // call's message, the instance itself never stops accepting work.
-type ProducerInstance[Message any] struct {
+type ProducerInstance[Message topic.Versioned] struct {
 	Topic  *topic.Topic
 	Config *ProducerConfig
 
-	controller *controller.ProducerController[Message]
+	controller *controller.ProducerController
 	batcher    *batcher.Batcher[Message]
 }
 
 // cfg is already resolved (WithDefaults + Validate) by NewProducer.
-func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerController *controller.ProducerController[Message], cfg *ProducerConfig) (*ProducerInstance[Message], error) {
+func NewProducerInstance[Message topic.Versioned](resolvedTopic *topic.Topic, producerController *controller.ProducerController, cfg *ProducerConfig) (*ProducerInstance[Message], error) {
 	if resolvedTopic == nil {
 		return nil, errors.New("topic must not be nil")
 	}
@@ -36,7 +36,7 @@ func NewProducerInstance[Message any](resolvedTopic *topic.Topic, producerContro
 		return nil, errors.New("config must not be nil")
 	}
 
-	topicBatcher, err := batcher.NewBatcher(producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &cfg.Batch)
+	topicBatcher, err := batcher.NewBatcher[Message](producerController, resolvedTopic.Id, resolvedTopic.PartitionSize, &cfg.Batch)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (p *ProducerInstance[Message]) ProduceInTx(ctx context.Context, tx Tx, prod
 // It does so within the transaction and locks the found row in a FOR UPDATE
 // allowing for race-free compare and set.
 func (p *ProducerInstance[Message]) GetCompactionHeadInTx(ctx context.Context, tx Tx, messageKey string) (*MessageRow[Message], error) {
-	return p.controller.GetCompactionHeadInTx(ctx, tx, p.Topic.Id, messageKey)
+	return p.controller.GetCompactionHeadInTx[Message](ctx, tx, p.Topic.Id, messageKey)
 }
 
 // warnSlowProduce logs one line when a produce entry point ran past the

@@ -70,7 +70,7 @@ func run() error {
 		return fmt.Errorf("topic %q is not registered -- `just produce` declares it\n", *topicPtr)
 	}
 
-	workConsumer, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
+	workConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		BatchLimit:         10,
 		QueueSize:          concurrencyLimit * 10,
 		MessageConcurrency: concurrencyLimit,
@@ -83,7 +83,7 @@ func run() error {
 		return err
 	}
 
-	workInstance, err := workConsumer.Register(ctx, *groupPtr, t.Name, nil)
+	workInstance, err := workConsumer.Register[common.Work](ctx, *groupPtr, t.Name, nil)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,7 @@ func (d *CronSchedulerProvisioner) Provision(ctx context.Context, declared *work
 
 	// producer registration before the claim: a failure here leaves no
 	// claimed instance behind to block reconciles until its TTL lapses
-	producerInstance, err := d.producer.Register(ctx, cron.TopicName)
+	producerInstance, err := d.producer.Register[cron.JobRequest](ctx, cron.TopicName)
 	if err != nil {
 		return nil, err
 	}

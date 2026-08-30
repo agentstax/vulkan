@@ -255,9 +255,9 @@ func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label stri
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 	return tp, wpInstance, func() {
 		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))

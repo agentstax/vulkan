@@ -8,7 +8,7 @@ import (
 // missing partition and retrying transient errors. The caller resolves
 // data.IdempotencyKey once, outside the retry -- that's what makes a retried
 // attempt safe after an ambiguous commit instead of a double-publish.
-func (d *ProducerDatastore[Message]) AppendMessage(ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) AppendMessage[Message any](ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	var appended *AppendedData[Message]
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
@@ -20,7 +20,7 @@ func (d *ProducerDatastore[Message]) AppendMessage(ctx context.Context, topicId 
 
 // appendMessage self-heals a missing-partition insert: the first insert past
 // a partition boundary fails -> creates the partition -> and retries.
-func (d *ProducerDatastore[Message]) appendMessage(ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) appendMessage[Message any](ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.appendMessageTransaction(ctx, topicId, produceFunc, data)
 	if isMissingPartition(err) {
 		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
@@ -44,7 +44,7 @@ func (d *ProducerDatastore[Message]) appendMessage(ctx context.Context, topicId 
 
 // appendMessageTransaction opens the append's own transaction: produceFunc +
 // the claim-protected insert, committed together.
-func (d *ProducerDatastore[Message]) appendMessageTransaction(ctx context.Context, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) appendMessageTransaction[Message any](ctx context.Context, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func (d *ProducerDatastore[Message]) appendMessageTransaction(ctx context.Contex
 // (runInsertSavepoint), so retrying here can't undo an earlier target's
 // insert or rerun a caller side effect between calls. No retry: the tx owns
 // its own error handling.
-func (d *ProducerDatastore[Message]) AppendMessageInTx(ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) AppendMessageInTx[Message any](ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
 	if isMissingPartition(err) {
 		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)

@@ -372,9 +372,9 @@ func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix stri
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 	return tp, messageConsumers, wpInstance, groupId
 }

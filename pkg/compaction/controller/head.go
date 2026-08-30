@@ -10,7 +10,7 @@ import (
 
 // GetHead returns the current compaction head under messageKey,
 // or nil if nothing has been published under it.
-func (c *CompactionController[Message]) GetHead(ctx context.Context, topicId int64, messageKey string) (*common.MessageRow[Message], error) {
+func (c *CompactionController) GetHead[Message any](ctx context.Context, topicId int64, messageKey string) (*common.MessageRow[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -27,7 +27,7 @@ func (c *CompactionController[Message]) GetHead(ctx context.Context, topicId int
 
 // ListHeads returns every key's current head on the topic, ordered
 // by message key.
-func (c *CompactionController[Message]) ListHeads(ctx context.Context, topicId int64) ([]*common.MessageRow[Message], error) {
+func (c *CompactionController) ListHeads[Message any](ctx context.Context, topicId int64) ([]*common.MessageRow[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}

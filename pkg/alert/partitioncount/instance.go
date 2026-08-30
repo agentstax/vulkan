@@ -62,7 +62,7 @@ func (i *PartitionCountInstance) Run(ctx context.Context) error {
 // claim applies the claimed row's repeat_interval against the alerts topic's
 // live retention.
 func (i *PartitionCountInstance) consume(ctx context.Context) error {
-	registered, err := i.provisioner.alertProducer.Register(ctx, alert.TopicName)
+	registered, err := i.provisioner.producer.Register[alert.Alert](ctx, alert.TopicName)
 	if err != nil {
 		return err
 	}
@@ -72,13 +72,13 @@ func (i *PartitionCountInstance) consume(ctx context.Context) error {
 	}
 	i.alerts = alerts
 
-	measurements, err := i.provisioner.measurementProducer.Register(ctx, metrics.TopicName)
+	measurements, err := i.provisioner.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
 	if err != nil {
 		return err
 	}
 	i.measurements = measurements
 
-	instance, err := i.provisioner.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, []string{JobName})
+	instance, err := i.provisioner.jobRequestConsumer.Register[cron.JobRequest](ctx, JobName, cron.TopicName, []string{JobName})
 	if err != nil {
 		return err
 	}

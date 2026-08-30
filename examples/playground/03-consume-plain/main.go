@@ -7,7 +7,7 @@
 //
 // Concepts held before domain code (9): datastore, LifecycleContext,
 // MessageAdmin, RegisterSystem, GetTopic, the Message type's SchemaVersion,
-// Consumer[T], consumer group name, bindings (nil).
+// Consumer, Register[T], consumer group name, bindings (nil).
 //
 // Traps hit:
 //   - context.Background() into Consume fails with VK0002; the fix is a
@@ -57,11 +57,11 @@ func run() error {
 	}
 	defer ds.Close()
 
-	orderConsumer, err := consumer.NewConsumer[OrderPlacedV1](ds, nil)
+	orderConsumer, err := consumer.NewConsumer(ds, nil)
 	if err != nil {
 		return err
 	}
-	receipts, err := orderConsumer.Register(ctx, "email-receipts", "orders.placed", nil)
+	receipts, err := orderConsumer.Register[OrderPlacedV1](ctx, "email-receipts", "orders.placed", nil)
 	if err != nil {
 		return err
 	}

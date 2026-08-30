@@ -15,13 +15,13 @@ import (
 // where Metrics, the Exporter's /metrics endpoint, and the vulkan metrics
 // CLI read them beside Vulkan's own.
 type MetricsProducer struct {
-	producer *producer.Producer[metrics.Measurement]
+	producer *producer.Producer
 }
 
 // cfg may be nil or a sparse struct -- the underlying producer defaults and
 // validates it.
 func NewMetricsProducer(ds *iDatastore.PostgresDatastore, cfg *producer.ProducerConfig) (*MetricsProducer, error) {
-	measurementProducer, err := producer.NewProducer[metrics.Measurement](ds, cfg)
+	measurementProducer, err := producer.NewProducer(ds, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func NewMetricsProducer(ds *iDatastore.PostgresDatastore, cfg *producer.Producer
 // Produce. Callable many times -- each call returns an independent instance.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (p *MetricsProducer) Register(ctx context.Context) (*MetricsProducerInstance, error) {
-	instance, err := p.producer.Register(ctx, metrics.TopicName)
+	instance, err := p.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
 	}

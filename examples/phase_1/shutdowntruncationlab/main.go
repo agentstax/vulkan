@@ -117,9 +117,9 @@ func run() (err error) {
 	must(err)
 	cursorAdvancerDatastore, err := cursoradvancerdatastore.NewCursorAdvancerDatastore(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
 	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))

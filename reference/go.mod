@@ -1,6 +1,6 @@
 module github.com/agentstax/vulkan/reference
 
-go 1.26.4
+go 1.27.0
 
 // Dev-only module: keeps the waterline reference implementation out of the
 // root library module's published zip and its `go test ./...` surface.

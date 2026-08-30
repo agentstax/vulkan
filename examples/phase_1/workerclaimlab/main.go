@@ -87,9 +87,9 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 	for range seedRows {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -163,7 +163,7 @@ func (rc *runningConsumer) stop() {
 }
 
 func start(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName string, i int) *runningConsumer {
-	c, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
+	c, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		BatchLimit:         50,
 		QueueSize:          64,
 		MessageConcurrency: 4,
@@ -173,7 +173,7 @@ func start(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName stri
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	cInstance, err := c.Register(lifecycleCtx, group, topicName, nil)
+	cInstance, err := c.Register[common.Work](lifecycleCtx, group, topicName, nil)
 	must(err)
 
 	done := make(chan error, 1)

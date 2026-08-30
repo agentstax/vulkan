@@ -18,7 +18,7 @@ type AlertController struct {
 	Logger logging.Logger
 
 	alerts *producer.ProducerInstance[alert.Alert]
-	heads  *compactioncontroller.CompactionController[alert.Alert]
+	heads  *compactioncontroller.CompactionController
 	repeat time.Duration
 }
 
@@ -28,7 +28,7 @@ type AlertController struct {
 // ctx is for the clamp warning only. cfg may be nil or a sparse struct --
 // WithDefaults fills every field left unset, Validate rejects what's out of
 // range.
-func NewAlertController(ctx context.Context, alerts *producer.ProducerInstance[alert.Alert], heads *compactioncontroller.CompactionController[alert.Alert], repeat time.Duration, cfg *ControllerConfig) (*AlertController, error) {
+func NewAlertController(ctx context.Context, alerts *producer.ProducerInstance[alert.Alert], heads *compactioncontroller.CompactionController, repeat time.Duration, cfg *ControllerConfig) (*AlertController, error) {
 	if alerts == nil {
 		return nil, errors.New("alert producer instance must not be nil")
 	}

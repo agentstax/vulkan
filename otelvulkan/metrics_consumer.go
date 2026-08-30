@@ -12,13 +12,13 @@ import (
 // publish, Vulkan's own and yours -- for forwarding into your own backend
 // without an otel pipeline.
 type MetricsConsumer struct {
-	consumer *consumer.Consumer[metrics.Measurement]
+	consumer *consumer.Consumer
 }
 
 // cfg may be nil or a sparse struct -- the underlying consumer defaults and
 // validates it.
 func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.ConsumerConfig) (*MetricsConsumer, error) {
-	measurementConsumer, err := consumer.NewConsumer[metrics.Measurement](ds, cfg)
+	measurementConsumer, err := consumer.NewConsumer(ds, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -31,5 +31,5 @@ func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.Consumer
 // nil = every metric.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string, names []string) (*consumer.ConsumerInstance[metrics.Measurement], error) {
-	return c.consumer.Register(ctx, consumerGroup, metrics.TopicName, names)
+	return c.consumer.Register[metrics.Measurement](ctx, consumerGroup, metrics.TopicName, names)
 }

@@ -702,7 +702,7 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 // startConsumer runs one consumer instance on the group until the returned
 // stop is called.
 func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *cron.JobRequest) error) func() {
-	jobRequestConsumer, err := consumer.NewConsumer[cron.JobRequest](ds, &consumer.ConsumerConfig{
+	jobRequestConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		ClaimPollRate:           schedulerPollRate,
 		MessageConcurrency:      concurrency,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
@@ -710,7 +710,7 @@ func startConsumer(ctx context.Context, group string, bindings []string, concurr
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := jobRequestConsumer.Register(lifecycleCtx, group, cron.TopicName, bindings)
+	instance, err := jobRequestConsumer.Register[cron.JobRequest](lifecycleCtx, group, cron.TopicName, bindings)
 	must(err)
 	done := make(chan struct{})
 	go func() {

@@ -24,7 +24,7 @@ type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
 // Consumer runs a consumer group on one topic. Failed messages retry with
 // backoff, and the topic's upkeep (partitions, retention, committed advance) runs
 // alongside consumption.
-type Consumer[Message topic.Versioned] struct {
+type Consumer struct {
 	Config *ConsumerConfig
 	Logger logging.Logger
 
@@ -35,7 +35,7 @@ type Consumer[Message topic.Versioned] struct {
 	evaluators      []alert.Evaluator
 }
 
-func NewConsumer[Message topic.Versioned](ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
+func NewConsumer(ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -80,7 +80,7 @@ func NewConsumer[Message topic.Versioned](ds *datastore.PostgresDatastore, cfg *
 		return nil, err
 	}
 
-	return &Consumer[Message]{
+	return &Consumer{
 		Config:          cfg,
 		Logger:          cfg.Logger,
 		ds:              ds,
@@ -91,11 +91,12 @@ func NewConsumer[Message topic.Versioned](ds *datastore.PostgresDatastore, cfg *
 }
 
 // Register resolves the named topic and registers the consumer group on it,
-// returning an instance ready to Consume. Callable many times -- each call
-// returns an independent instance.
+// returning an instance that consumes Message from it. Callable many times,
+// with a different Message per call -- each call returns an independent
+// instance.
 // bindings is the group's full set; nil = the whole topic.
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
+func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
 	if consumerGroup == "" {
 		return nil, errors.New("consumer group is required")
 	}

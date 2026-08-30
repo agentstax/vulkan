@@ -93,7 +93,7 @@ func run() error {
 	// Short lease (= Timeout+QueueMargin+RecordMargin = 4s) so in-flight rows
 	// reclaim quickly after the crash. High MaxRetries so reprocessing never
 	// dead-letters — we want pure at-least-once redelivery, not the DLQ path.
-	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		BatchLimit:         100,
 		QueueSize:          100 + conc,
 		MessageConcurrency: conc,
@@ -106,7 +106,7 @@ func run() error {
 		return err
 	}
 
-	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, nil)
+	wcInstance, err := wc.Register[common.Work](ctx, *groupPtr, t.Name, nil)
 	if err != nil {
 		return err
 	}

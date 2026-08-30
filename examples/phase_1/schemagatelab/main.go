@@ -92,20 +92,20 @@ func run() (err error) {
 
 	// 1. supported schema -> Register succeeds -----------------------------------
 	section("producer Register succeeds at the supported schema (v1)")
-	_, err = newProducer(ds).Register(ctx, name)
+	_, err = newProducer(ds).Register[event](ctx, name)
 	check(err == nil, "Register accepted at v1")
 
 	// 2. additive skew: schema ahead, nothing breaking -> Register succeeds ------
 	section("system schema ahead by an additive step -> Register still succeeds")
 	bump(ctx, pool, sysOwner, 2, 0)
-	_, err = newProducer(ds).Register(ctx, name)
+	_, err = newProducer(ds).Register[event](ctx, name)
 	check(err == nil, "Register accepted at v2 with no breaking step -- the rolling-deploy window")
 	unbump(ctx, pool, sysOwner, 2)
 
 	// 3. breaking step past the binary (system) -> Register refused --------------
 	section("system schema ahead by a breaking step -> Register refused")
 	bump(ctx, pool, sysOwner, 2, 2)
-	_, err = newProducer(ds).Register(ctx, name)
+	_, err = newProducer(ds).Register[event](ctx, name)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind system, version 2") && strings.Contains(err.Error(), "min_compatible_version 2") && strings.Contains(err.Error(), "upgrade the binary"),
 		"refused, naming the system version, the requirement, and the fix")
@@ -115,11 +115,11 @@ func run() (err error) {
 	section("breaking step past one topic -> that topic refused, sibling accepted")
 	topicOwner := mustOwner(common.NewTopicOwner(topicRow.SystemId, topicRow.Id, topicRow.Name))
 	bump(ctx, pool, topicOwner, 2, 2)
-	_, err = newProducer(ds).Register(ctx, name)
+	_, err = newProducer(ds).Register[event](ctx, name)
 	show(err)
 	check(errors.Is(err, migrate.ErrSchemaNewerThanBuild) && strings.Contains(err.Error(), "kind topic, version 2") && strings.Contains(err.Error(), "min_compatible_version 2"),
 		"refused, naming the topic version and the requirement")
-	_, err = newProducer(ds).Register(ctx, siblingName)
+	_, err = newProducer(ds).Register[event](ctx, siblingName)
 	check(err == nil, "sibling topic still registers -- each family gates on its own rows")
 	unbump(ctx, pool, topicOwner, 2)
 
@@ -128,8 +128,8 @@ func run() (err error) {
 	return nil
 }
 
-func newProducer(ds *iDatastore.PostgresDatastore) *producer.Producer[event] {
-	p, err := producer.NewProducer[event](ds, nil)
+func newProducer(ds *iDatastore.PostgresDatastore) *producer.Producer {
+	p, err := producer.NewProducer(ds, nil)
 	must(err)
 	return p
 }

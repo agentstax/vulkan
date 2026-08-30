@@ -102,7 +102,7 @@ func run() (err error) {
 	step("seed 6 topics x 2 groups x 5 messages -- more topics than TopicConcurrency")
 	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	workProducer, err := producer.NewProducer[common.Work](ds, nil)
+	workProducer, err := producer.NewProducer(ds, nil)
 	must(err)
 
 	topicNames := make([]string, 0, topicCount)
@@ -124,7 +124,7 @@ func run() (err error) {
 			must(err)
 		}
 
-		instance, err := workProducer.Register(ctx, name)
+		instance, err := workProducer.Register[common.Work](ctx, name)
 		must(err)
 		for range messagesPerTopic {
 			work, err := common.NewWork(30, "admin@example.com")

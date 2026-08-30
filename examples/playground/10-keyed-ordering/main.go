@@ -70,13 +70,13 @@ func run() error {
 		return err
 	}
 
-	balanceProducer, err := producer.NewProducer[BalanceChanged](ds, &producer.ProducerConfig{
+	balanceProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
 		Message: &common.MessageOptions{Concurrency: common.ConcurrencyOrdered},
 	})
 	if err != nil {
 		return err
 	}
-	balances, err := balanceProducer.Register(ctx, registered.Name)
+	balances, err := balanceProducer.Register[BalanceChanged](ctx, registered.Name)
 	if err != nil {
 		return err
 	}
@@ -89,13 +89,13 @@ func run() error {
 		}
 	}
 
-	ledgerConsumer, err := consumer.NewConsumer[BalanceChanged](ds, &consumer.ConsumerConfig{
+	ledgerConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		MessageConcurrency: 8,
 	})
 	if err != nil {
 		return err
 	}
-	ledger, err := ledgerConsumer.Register(ctx, "ledger", registered.Name, nil)
+	ledger, err := ledgerConsumer.Register[BalanceChanged](ctx, "ledger", registered.Name, nil)
 	if err != nil {
 		return err
 	}

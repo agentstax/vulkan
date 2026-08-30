@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -34,7 +35,7 @@ func NewAppend[Message any](payload *Message, options ProduceOptions) (*Append[M
 // AppendMessage appends one message in its own transaction, returning once it
 // is durably committed: produceFunc runs inside it and returns the payload to
 // store.
-func (c *ProducerController[Message]) AppendMessage(ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], options ProduceOptions) (*Appended[Message], error) {
+func (c *ProducerController) AppendMessage[Message topic.Versioned](ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], options ProduceOptions) (*Appended[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -50,7 +51,7 @@ func (c *ProducerController[Message]) AppendMessage(ctx context.Context, topicId
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(c.schemaVersion), options))
+	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(topic.SchemaVersionOf[Message]()), options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func (c *ProducerController[Message]) AppendMessage(ctx context.Context, topicId
 
 // AppendMessageInTx appends produceFunc's message inside a transaction the
 // caller owns -- it commits or rolls back with everything else in tx.
-func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], options ProduceOptions) (*Appended[Message], error) {
+func (c *ProducerController) AppendMessageInTx[Message topic.Versioned](ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], options ProduceOptions) (*Appended[Message], error) {
 	if tx == nil {
 		return nil, errors.New("tx must not be nil")
 	}
@@ -78,7 +79,7 @@ func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx 
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(c.schemaVersion), options))
+	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(topic.SchemaVersionOf[Message]()), options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx 
 
 // AppendMessageBatch commits every append in one transaction. failedIdx is
 // the FIRST failure in pipeline order, -1 when the failure carries no index.
-func (c *ProducerController[Message]) AppendMessageBatch(ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
+func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*Append[Message]) ([]Appended[Message], int, error) {
 	if topicId <= 0 {
 		return nil, -1, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -102,7 +103,7 @@ func (c *ProducerController[Message]) AppendMessageBatch(ctx context.Context, to
 		if item.Options.IdempotencyKey == uuid.Nil {
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
-		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, int64(c.schemaVersion), item.Options))
+		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, int64(topic.SchemaVersionOf[Message]()), item.Options))
 	}
 
 	appendedData, failedIdx, err := c.datastore.AppendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appendData)

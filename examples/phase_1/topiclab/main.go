@@ -116,13 +116,13 @@ func run() (err error) {
 
 	// ===== PROOF 1: independent physical tables, independent dense id sequences =====
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
-	wpA, err := producer.NewProducer[common.Work](ds, nil)
+	wpA, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpAInstance, err := wpA.Register(ctx, topicA.Name)
+	wpAInstance, err := wpA.Register[common.Work](ctx, topicA.Name)
 	must(err)
-	wpB, err := producer.NewProducer[common.Work](ds, nil)
+	wpB, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpBInstance, err := wpB.Register(ctx, topicB.Name)
+	wpBInstance, err := wpB.Register[common.Work](ctx, topicB.Name)
 	must(err)
 	for range 3 {
 		publish(ctx, wpAInstance, "")
@@ -155,9 +155,9 @@ func run() (err error) {
 
 	// ===== PROOF 3: routing_key/bindings still behave as Phase 7/routinglab proved, now scoped to one topic =====
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
-	wpC, err := producer.NewProducer[common.Work](ds, nil)
+	wpC, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpCInstance, err := wpC.Register(ctx, topicC.Name)
+	wpCInstance, err := wpC.Register[common.Work](ctx, topicC.Name)
 	must(err)
 	groupRoute := "topiclab.route"
 	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consumergroup.Beginning()))
@@ -184,9 +184,9 @@ func run() (err error) {
 
 	// ===== PROOF 4: two routing_key slices sharing ONE topic still share that topic's floor =====
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
-	wpD, err := producer.NewProducer[common.Work](ds, nil)
+	wpD, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpDInstance, err := wpD.Register(ctx, topicD.Name)
+	wpDInstance, err := wpD.Register[common.Work](ctx, topicD.Name)
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging

@@ -10,7 +10,7 @@ import (
 
 // ListKeyMessages returns messageKey's retained messages, newest
 // first. limit is required: an unbounded read spans the whole retention window.
-func (c *CompactionController[Message]) ListKeyMessages(ctx context.Context, topicId int64, messageKey string, limit int) ([]*common.MessageRow[Message], error) {
+func (c *CompactionController) ListKeyMessages[Message any](ctx context.Context, topicId int64, messageKey string, limit int) ([]*common.MessageRow[Message], error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}

@@ -146,9 +146,9 @@ func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *adm
 
 	warns, err := NewWarnCounter(logging.NewDefaultLogger(os.Stdout))
 	must(err)
-	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Logger: warns})
+	wp, err := producer.NewProducer(ds, &producer.ProducerConfig{Logger: warns})
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
 	cleanup := func() {

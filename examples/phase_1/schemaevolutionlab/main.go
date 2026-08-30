@@ -125,9 +125,9 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
 	}()
 
-	wp1, err := producer.NewProducer[V1Order](ds, nil)
+	wp1, err := producer.NewProducer(ds, nil)
 	must(err)
-	wp1Instance, err := wp1.Register(ctx, name)
+	wp1Instance, err := wp1.Register[V1Order](ctx, name)
 	must(err)
 
 	step("the topic holds live keyed V1Order traffic for 5 users")
@@ -141,9 +141,9 @@ func run() (err error) {
 	}
 
 	step("a V2Order producer registers on the same topic -- its rows carry schema_version 2")
-	wp2, err := producer.NewProducer[V2Order](ds, nil)
+	wp2, err := producer.NewProducer(ds, nil)
 	must(err)
-	wp2Instance, err := wp2.Register(ctx, name)
+	wp2Instance, err := wp2.Register[V2Order](ctx, name)
 	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
@@ -260,7 +260,7 @@ func bridgeIdempotencyKey(sourceID int64) uuid.UUID {
 // margins and a short ExceptionInitialBackoff keep the crash/retry path fast
 // instead of waiting out the library's production-sized defaults.
 func newBridgeConsumer(ctx context.Context, ds *iDatastore.PostgresDatastore, name string) *consumer.ConsumerInstance[V1Order] {
-	c, err := consumer.NewConsumer[V1Order](ds, &consumer.ConsumerConfig{
+	c, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		BatchLimit:              1,
 		QueueSize:               4,
 		MessageConcurrency:      1,
@@ -272,7 +272,7 @@ func newBridgeConsumer(ctx context.Context, ds *iDatastore.PostgresDatastore, na
 		DisableGracefulShutdown: true,
 	})
 	must(err)
-	cInstance, err := c.Register(ctx, group, name, nil)
+	cInstance, err := c.Register[V1Order](ctx, group, name, nil)
 	must(err)
 	return cInstance
 }

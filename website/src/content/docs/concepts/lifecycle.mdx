@@ -56,7 +56,7 @@ consumer, or requested per message at produce time (messages *request*,
 consumers *clamp*):
 
 ```go
-fraudConsumer, err := consumer.NewConsumer[OrderCreated](ds, &consumer.ConsumerConfig{
+fraudConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 	Message: &common.MessageOptions{
 		Timeout: 30 * time.Second,
 		Retry:   &common.RetryPolicy{MaxRetries: 5, BaseDelay: 2 * time.Second},

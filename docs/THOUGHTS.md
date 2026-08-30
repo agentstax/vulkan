@@ -10,7 +10,6 @@ doc decision indexing
 need metric / alert example playground scenarios
 
 ---
-- topic.SchemaVersion(1) ?????
 - no generics necessary?
 - RegisterCronJob better mirrors producer and consumer (have consumerFunc as handler on cronjob config?? and run is just consume?)
 - Public runnables Producer or Consumer or Cronjob etc should also just run system manager
@@ -22,8 +21,10 @@ need metric / alert example playground scenarios
 - RegisterCronJob returns
 ---
 
-01 should func (OrderPlacedV2) SchemaVersion() topic.SchemaVersion { return 2 } return type be topic.SchemaVersion
-   or should it just be an int
+01 reconsider this postgres per param layout and having password in optional config
+   and / or have a connection string option
+
+01 produceOptions being required is not great orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, producer.ProduceOptions{})
 
 01 reconsider having to call register system
 - it needs to be called but it doesn't really do anything as it has no config so its always the same call and idempotent

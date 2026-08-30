@@ -2,28 +2,23 @@ package controller
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/common/logging"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer/controller/datastore"
 )
 
-type ProducerController[Message any] struct {
+type ProducerController struct {
 	Logger logging.Logger
 
-	schemaVersion int
-	datastore     *datastore.ProducerDatastore[Message]
+	datastore *datastore.ProducerDatastore
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducerController[Message any](ds *iDatastore.PostgresDatastore, schemaVersion int, cfg *ControllerConfig) (*ProducerController[Message], error) {
+func NewProducerController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*ProducerController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
-	}
-	if schemaVersion < 1 {
-		return nil, fmt.Errorf("schemaVersion must be >= 1, got %d", schemaVersion)
 	}
 	if cfg == nil {
 		cfg = &ControllerConfig{}
@@ -33,7 +28,7 @@ func NewProducerController[Message any](ds *iDatastore.PostgresDatastore, schema
 		return nil, err
 	}
 
-	producerDatastore, err := datastore.NewProducerDatastore[Message](ds, &datastore.ProducerDatastoreConfig{
+	producerDatastore, err := datastore.NewProducerDatastore(ds, &datastore.ProducerDatastoreConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -41,9 +36,8 @@ func NewProducerController[Message any](ds *iDatastore.PostgresDatastore, schema
 		return nil, err
 	}
 
-	return &ProducerController[Message]{
-		Logger:        cfg.Logger,
-		schemaVersion: schemaVersion,
-		datastore:     producerDatastore,
+	return &ProducerController{
+		Logger:    cfg.Logger,
+		datastore: producerDatastore,
 	}, nil
 }

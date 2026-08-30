@@ -73,19 +73,19 @@ func run() error {
 		return err
 	}
 
-	orderProducer, err := producer.NewProducer[OrderPlacedV1](ds, nil)
+	orderProducer, err := producer.NewProducer(ds, nil)
 	if err != nil {
 		return err
 	}
-	orders, err := orderProducer.Register(ctx, "orders.placed")
+	orders, err := orderProducer.Register[OrderPlacedV1](ctx, "orders.placed")
 	if err != nil {
 		return err
 	}
-	inventoryProducer, err := producer.NewProducer[InventoryReservedV1](ds, nil)
+	inventoryProducer, err := producer.NewProducer(ds, nil)
 	if err != nil {
 		return err
 	}
-	inventory, err := inventoryProducer.Register(ctx, "inventory.reserved")
+	inventory, err := inventoryProducer.Register[InventoryReservedV1](ctx, "inventory.reserved")
 	if err != nil {
 		return err
 	}

@@ -102,9 +102,9 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[labMessage](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err = wp.Register(ctx, topicName)
+	wpInstance, err = wp.Register[labMessage](ctx, topicName)
 	must(err)
 
 	batcherAbsenceScenario(ctx)
@@ -128,9 +128,9 @@ func batcherAbsenceScenario(ctx context.Context) {
 
 	instances := make([]*producer.ProducerInstance[labMessage], producerCount)
 	for i := range instances {
-		wp, err := producer.NewProducer[labMessage](ds, nil)
+		wp, err := producer.NewProducer(ds, nil)
 		must(err)
-		instance, err := wp.Register(ctx, topicName)
+		instance, err := wp.Register[labMessage](ctx, topicName)
 		must(err)
 		instances[i] = instance
 	}

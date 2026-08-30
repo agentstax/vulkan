@@ -25,7 +25,7 @@ const createAheadAttemptAllowance = 3 * ddlLockTimeout
 
 // ensureCoveringPartition creates the partition after head's, so the retry's
 // fresh id has somewhere to land.
-func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64) error {
+func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64) error {
 	headSql := fmt.Sprintf(`
 		-- vulkan: producer.ensureCoveringPartition
 		SELECT COALESCE(MAX(id), 0) FROM %s;
@@ -89,7 +89,7 @@ func (d *ProducerDatastore[Message]) ensureCoveringPartition(ctx context.Context
 
 // createPartitionAhead creates the next partition early, in the background.
 // Best-effort: a failure warns and drops.
-func (d *ProducerDatastore[Message]) createPartitionAhead(topicId int64, partitionSize int64) {
+func (d *ProducerDatastore) createPartitionAhead(topicId int64, partitionSize int64) {
 	go func() {
 		// the produce ctx dies with its caller, so the run carries its own
 		ctx, cancel := context.WithTimeout(context.Background(), d.createAheadTimeout)

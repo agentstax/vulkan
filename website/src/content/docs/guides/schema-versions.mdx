@@ -18,21 +18,25 @@ type OrderPlacedV2 struct {
 
 func (OrderPlacedV2) SchemaVersion() int { return 2 }
 
-orders, err := producer.NewProducer[OrderPlacedV2](ds, nil)
+orders, err := producer.NewProducer(ds, nil)
 must(err)
-instance, err := orders.Register(ctx, "orders.placed")
+instance, err := orders.Register[OrderPlacedV2](ctx, "orders.placed")
 must(err)
 ```
 
-`NewProducer` and `NewConsumer` constrain `Message` to
-`topic.Versioned`, one method: `SchemaVersion()`. Forget it and the
-program does not compile, which is the same guarantee the positional
-parameter gave (no way to bind a type to a topic without saying which
-version) moved from a runtime check to the type checker. The struct
-name and its version sit two lines apart, so the `V2` suffix and the
-`2` are read together. The method is the only source. There is no
-config field that overrides it, because two places to say one fact is
-how they drift.
+`Register` is where a type meets a topic, on both the producer and the
+consumer, and it constrains `Message` to `topic.Versioned`, one method:
+`SchemaVersion()`. Forget it and the program does not compile, which is
+the same guarantee the positional parameter gave (no way to bind a type
+to a topic without saying which version) moved from a runtime check to
+the type checker. The struct name and its version sit two lines apart,
+so the `V2` suffix and the `2` are read together. The method is the
+only source. There is no config field that overrides it, because two
+places to say one fact is how they drift.
+
+`NewProducer` and `NewConsumer` take no type argument. One producer
+handle registers as many types as the process emits; the type argument
+sits on the call that names the topic it goes to.
 
 Every produce writes the method's value into the row:
 
@@ -46,9 +50,9 @@ One topic, one log, one id space, rows of any version interleaved.
 ## A group reads its own version and steps over the rest
 
 ```go
-scoring, err := consumer.NewConsumer[OrderPlacedV2](ds, nil)
+scoring, err := consumer.NewConsumer(ds, nil)
 must(err)
-instance, err := scoring.Register(ctx, "fraud-scoring", "orders.placed", nil)
+instance, err := scoring.Register[OrderPlacedV2](ctx, "fraud-scoring", "orders.placed", nil)
 must(err)
 ```
 

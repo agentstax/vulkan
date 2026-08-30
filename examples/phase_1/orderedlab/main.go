@@ -90,9 +90,9 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
-	adjustmentProducer, err := producer.NewProducer[Adjustment](ds, nil)
+	adjustmentProducer, err := producer.NewProducer(ds, nil)
 	must(err)
-	adjustments, err := adjustmentProducer.Register(ctx, tp.Name)
+	adjustments, err := adjustmentProducer.Register[Adjustment](ctx, tp.Name)
 	must(err)
 
 	step("produce-time guards")
@@ -121,7 +121,7 @@ func run() (err error) {
 		produce("acct-4", seq)
 	}
 
-	adjustmentConsumer, err := consumer.NewConsumer[Adjustment](ds, &consumer.ConsumerConfig{
+	adjustmentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		BatchLimit:              50,
 		MessageConcurrency:      4,
 		ClaimPollRate:           100 * time.Millisecond,
@@ -132,7 +132,7 @@ func run() (err error) {
 		},
 	})
 	must(err)
-	instance, err := adjustmentConsumer.Register(ctx, group, tp.Name, nil)
+	instance, err := adjustmentConsumer.Register[Adjustment](ctx, group, tp.Name, nil)
 	must(err)
 	groupId := groupIdOf(ctx, ds, tp.Id)
 

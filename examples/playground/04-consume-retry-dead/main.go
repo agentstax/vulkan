@@ -62,7 +62,7 @@ func run() error {
 	}
 	defer ds.Close()
 
-	paymentConsumer, err := consumer.NewConsumer[PaymentRequestedV1](ds, &consumer.ConsumerConfig{
+	paymentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		Message: &common.MessageOptions{
 			Timeout: 10 * time.Second,
 			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
@@ -71,7 +71,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	payments, err := paymentConsumer.Register(ctx, "charge-cards", "payments.requested", nil)
+	payments, err := paymentConsumer.Register[PaymentRequestedV1](ctx, "charge-cards", "payments.requested", nil)
 	if err != nil {
 		return err
 	}

@@ -93,9 +93,9 @@ func run() (err error) {
 	must(err)
 	messageConsumers, err := messageconsumergroupcontroller.NewMessageConsumerGroupController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[RankedRecord](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[RankedRecord](ctx, tp.Name)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 

@@ -33,7 +33,7 @@ func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.Messag
 	if found == nil {
 		return nil, migrate.ErrNotRegistered.With("topic", metrics.TopicName)
 	}
-	return a.measurementHeads.ListHeads(ctx, found.Id)
+	return a.heads.ListHeads[metrics.Measurement](ctx, found.Id)
 }
 
 // ListMeasurementMessages returns one series' retained measurements, newest first.
@@ -47,5 +47,5 @@ func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, messageKey s
 	if found == nil {
 		return nil, migrate.ErrNotRegistered.With("topic", metrics.TopicName)
 	}
-	return a.measurementHeads.ListKeyMessages(ctx, found.Id, messageKey, limit)
+	return a.heads.ListKeyMessages[metrics.Measurement](ctx, found.Id, messageKey, limit)
 }

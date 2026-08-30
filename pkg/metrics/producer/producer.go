@@ -25,8 +25,7 @@ type MetricsProducer struct {
 	Config *ProducerConfig
 	Logger logging.Logger
 
-	producer     *iProducer.Producer[metrics.GoRoutineEvent]
-	measurements *iProducer.Producer[metrics.Measurement]
+	producer *iProducer.Producer
 
 	// abandoned/cleared events wait here for the next flush tick; capped,
 	// drop-on-full -- the queue never blocks a caller or grows unbounded
@@ -66,14 +65,7 @@ func NewMetricsProducer(ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*
 		return nil, err
 	}
 
-	p, err := iProducer.NewProducer[metrics.GoRoutineEvent](ds, &iProducer.ProducerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-	measurements, err := iProducer.NewProducer[metrics.Measurement](ds, &iProducer.ProducerConfig{
+	p, err := iProducer.NewProducer(ds, &iProducer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -82,10 +74,9 @@ func NewMetricsProducer(ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*
 	}
 
 	return &MetricsProducer{
-		Config:       cfg,
-		Logger:       cfg.Logger,
-		producer:     p,
-		measurements: measurements,
+		Config:   cfg,
+		Logger:   cfg.Logger,
+		producer: p,
 	}, nil
 }
 
@@ -95,11 +86,11 @@ func NewMetricsProducer(ds *datastore.PostgresDatastore, cfg *ProducerConfig) (*
 // carries the final totals. Each call registers its own producer instances,
 // so Run is callable again after it returns.
 func (p *MetricsProducer) Run(ctx context.Context, group string, topicName string, version int, sessionId string) error {
-	events, err := p.producer.Register(ctx, metrics.TopicName)
+	events, err := p.producer.Register[metrics.GoRoutineEvent](ctx, metrics.TopicName)
 	if err != nil {
 		return err
 	}
-	measurements, err := p.measurements.Register(ctx, metrics.TopicName)
+	measurements, err := p.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
 	if err != nil {
 		return err
 	}

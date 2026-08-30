@@ -231,11 +231,11 @@ func classifySection(ctx context.Context) {
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
 
-	alertProducer, err := producer.NewProducer[alert.Alert](ds, nil)
+	alertProducer, err := producer.NewProducer(ds, nil)
 	must(err)
-	instance, err := alertProducer.Register(ctx, alert.TopicName)
+	instance, err := alertProducer.Register[alert.Alert](ctx, alert.TopicName)
 	must(err)
-	heads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, nil)
+	heads, err := compactioncontroller.NewCompactionController(ds, nil)
 	must(err)
 	capture := newCaptureLogger()
 	alerts, err := alertcontroller.NewAlertController(ctx, instance, heads, classifyRepeat, &alertcontroller.ControllerConfig{Logger: capture})
@@ -330,9 +330,9 @@ func executorSection(ctx context.Context) {
 	step("executor: threshold-1 run alerts, repeat-interval run is quiet, foreign groups untouched")
 
 	// one write gives the lab topic its first partition
-	labProducer, err := producer.NewProducer[labMessage](ds, nil)
+	labProducer, err := producer.NewProducer(ds, nil)
 	must(err)
-	labInstance, err := labProducer.Register(ctx, labTopic.Name)
+	labInstance, err := labProducer.Register[labMessage](ctx, labTopic.Name)
 	must(err)
 	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, producer.ProduceOptions{})
 	must(err)

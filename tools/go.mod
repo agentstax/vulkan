@@ -1,6 +1,6 @@
 module github.com/agentstax/vulkan/tools
 
-go 1.26.4
+go 1.27.0
 
 // Dev-only module: developer tooling, never imported by production code and
 // never tagged or published. Its dependencies stay out of the root library

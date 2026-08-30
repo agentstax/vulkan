@@ -124,9 +124,9 @@ func run() (err error) {
 	must(err)
 	exceptionConsumers, err := exceptionconsumergroupcontroller.NewExceptionConsumerGroupController(ds, nil)
 	must(err)
-	wp, err := producer.NewProducer[Rec](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[Rec](ctx, tp.Name)
 	must(err)
 
 	step("exclusive on a free key: runs holding the key lease, releases on success")

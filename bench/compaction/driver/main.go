@@ -108,9 +108,9 @@ func main() {
 
 	instances := make([]*producer.ProducerInstance[benchMessage], *producers)
 	for i := range instances {
-		wp, err := producer.NewProducer[benchMessage](ds, nil)
+		wp, err := producer.NewProducer(ds, nil)
 		must(err)
-		instance, err := wp.Register(ctx, topicName)
+		instance, err := wp.Register[benchMessage](ctx, topicName)
 		must(err)
 		instances[i] = instance
 	}

@@ -81,9 +81,9 @@ func run() (err error) {
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
 
 	step("driving a hard timeout so one message gets abandoned then self-clears")
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 	seed(ctx, wpInstance, 3)
 

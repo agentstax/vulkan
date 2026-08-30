@@ -18,18 +18,18 @@ import (
 // live with the datastore.
 type ProducerFunc[Message any] = controller.ProduceFunc[Message]
 
-type Producer[Message topic.Versioned] struct {
+type Producer struct {
 	Config *ProducerConfig
 	Logger logging.Logger
 
-	controller      *controller.ProducerController[Message]
+	controller      *controller.ProducerController
 	topicController *topiccontroller.TopicController
 	evaluators      []alert.Evaluator
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducer[Message topic.Versioned](ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
+func NewProducer(ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -43,7 +43,7 @@ func NewProducer[Message topic.Versioned](ds *iDatastore.PostgresDatastore, cfg 
 
 	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
 
-	producerController, err := controller.NewProducerController[Message](ds, topic.SchemaVersionOf[Message](), &controller.ControllerConfig{
+	producerController, err := controller.NewProducerController(ds, &controller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -74,7 +74,7 @@ func NewProducer[Message topic.Versioned](ds *iDatastore.PostgresDatastore, cfg 
 		return nil, err
 	}
 
-	return &Producer[Message]{
+	return &Producer{
 		Config:          cfg,
 		Logger:          cfg.Logger,
 		controller:      producerController,
@@ -84,9 +84,10 @@ func NewProducer[Message topic.Versioned](ds *iDatastore.PostgresDatastore, cfg 
 }
 
 // Register resolves the named topic against the live topic row and returns an
-// instance that produces to it. Callable many times -- each call returns an
-// independent instance. ctx bounds only this call's I/O.
-func (p *Producer[Message]) Register(ctx context.Context, topicName string) (*ProducerInstance[Message], error) {
+// instance that produces Message to it. Callable many times, with a
+// different Message per call -- each call returns an independent instance.
+// ctx bounds only this call's I/O.
+func (p *Producer) Register[Message topic.Versioned](ctx context.Context, topicName string) (*ProducerInstance[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -106,5 +107,5 @@ func (p *Producer[Message]) Register(ctx context.Context, topicName string) (*Pr
 
 	p.logAlerts(ctx, current)
 
-	return NewProducerInstance(current, p.controller, p.Config)
+	return NewProducerInstance[Message](current, p.controller, p.Config)
 }

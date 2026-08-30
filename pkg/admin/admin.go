@@ -1,17 +1,14 @@
 package admin
 
 import (
-	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
-	"github.com/agentstax/vulkan/pkg/cron"
 	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
@@ -29,16 +26,13 @@ type MessageAdmin struct {
 	topicController    *topiccontroller.TopicController
 	cronJobController  *croncontroller.CronJobController
 	consumerController *consumergroupcontroller.ConsumerGroupController
-	jobRequestProducer *producer.Producer[cron.JobRequest]
-	alertHeads         *compactioncontroller.CompactionController[alert.Alert]
-	// only measurements carry message keys on __system.metrics, so this
-	// Measurement-typed controller's reads never see an abandoned-routine event
-	measurementHeads  *compactioncontroller.CompactionController[metrics.Measurement]
-	metricsController *metricscontroller.MetricsController
-	workerController  *workercontroller.WorkerController
-	migrateController *migratecontroller.Controller
-	alertDeclarers    []worker.Declarer
-	allowDestroy      bool
+	jobRequestProducer *producer.Producer
+	heads              *compactioncontroller.CompactionController
+	metricsController  *metricscontroller.MetricsController
+	workerController   *workercontroller.WorkerController
+	migrateController  *migratecontroller.Controller
+	alertDeclarers     []worker.Declarer
+	allowDestroy       bool
 }
 
 func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (*MessageAdmin, error) {
@@ -115,7 +109,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	jobRequestProducer, err := producer.NewProducer[cron.JobRequest](ds, &producer.ProducerConfig{
+	jobRequestProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -123,15 +117,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	alertHeads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, &compactioncontroller.ControllerConfig{
-		Logger: cfg.Logger,
-		Retry:  cfg.Retry,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	measurementHeads, err := compactioncontroller.NewCompactionController[metrics.Measurement](ds, &compactioncontroller.ControllerConfig{
+	heads, err := compactioncontroller.NewCompactionController(ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -194,8 +180,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		cronJobController:  cronJobController,
 		consumerController: consumerController,
 		jobRequestProducer: jobRequestProducer,
-		alertHeads:         alertHeads,
-		measurementHeads:   measurementHeads,
+		heads:              heads,
 		metricsController:  metricsController,
 		workerController:   workerController,
 		migrateController:  migrateController,

@@ -5,6 +5,22 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — the type argument moves to Register [0619]
+
+- `producer.NewProducer(ds, cfg)` and `consumer.NewConsumer(ds, cfg)`
+  take no type argument; `Register[Message]` is a Go 1.27 generic
+  method on each, so one handle registers every type the process
+  emits or reads. The metrics producer and the alert provisioners
+  drop their second producer field; MessageAdmin its second
+  compaction controller.
+- `ProducerController`, `ProducerDatastore`, and `CompactionController`
+  are plain structs with generic methods -- none held Message-typed
+  state -- built once in `NewProducer` / the owning constructor.
+  `AppendMessage[Message]` reads `topic.SchemaVersionOf` itself; the
+  controller's `schemaVersion` field and param are gone.
+- Every go.mod and go.work is `go 1.27.0`; the quickstart says Go
+  1.27+. All 63 examples and the doc-site samples rewritten.
+
 ## 2026-08-30 — schema version moves onto the message row [0618]
 
 - `message_log_<id>.schema_version` is written from the Message type's

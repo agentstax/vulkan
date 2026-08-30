@@ -70,11 +70,11 @@ func run() error {
 		return err
 	}
 
-	webhookProducer, err := producer.NewProducer[WebhookEvent](ds, nil)
+	webhookProducer, err := producer.NewProducer(ds, nil)
 	if err != nil {
 		return err
 	}
-	webhooks, err := webhookProducer.Register(ctx, registered.Name)
+	webhooks, err := webhookProducer.Register[WebhookEvent](ctx, registered.Name)
 	if err != nil {
 		return err
 	}

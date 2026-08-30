@@ -112,7 +112,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
-	instance, err := a.jobRequestProducer.Register(ctx, cron.TopicName)
+	instance, err := a.jobRequestProducer.Register[cron.JobRequest](ctx, cron.TopicName)
 	if err != nil {
 		return nil, err
 	}

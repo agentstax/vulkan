@@ -71,12 +71,12 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
-	p, err := producer.NewProducer[Message](ds, nil)
+	p, err := producer.NewProducer(ds, nil)
 	must(err)
 
 	// ===== Register on Background =====
 	step("Register(context.Background()) -- a build step, no lifetime to enforce")
-	instance, err := p.Register(ctx, tp.Name)
+	instance, err := p.Register[Message](ctx, tp.Name)
 	must(err)
 	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
 	must(err)
@@ -97,7 +97,7 @@ func run() (err error) {
 
 	// ===== Register many times =====
 	step("Register again -- an independent instance from the same factory")
-	sibling, err := p.Register(ctx, tp.Name)
+	sibling, err := p.Register[Message](ctx, tp.Name)
 	must(err)
 	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, producer.ProduceOptions{})
 	must(err)

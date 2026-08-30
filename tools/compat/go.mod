@@ -1,6 +1,6 @@
 module github.com/agentstax/vulkan/tools/compat
 
-go 1.26.4
+go 1.27.0
 
 // Dev-only module, never tagged or published, and deliberately OUT of the
 // repo-root go.work: the workspace would resolve vulkan to the working tree

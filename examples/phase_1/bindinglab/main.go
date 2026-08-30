@@ -95,14 +95,14 @@ func run() (err error) {
 	// ===== install + join =====
 	step("Register declares the set; a same-set Register joins without writing")
 	incumbentConsumer := newConsumer()
-	incumbent, err := incumbentConsumer.Register(ctx, groupName, topicName, []string{"orders.*"})
+	incumbent, err := incumbentConsumer.Register[labMessage](ctx, groupName, topicName, []string{"orders.*"})
 	must(err)
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
 		registered.Id, groupName).Scan(&groupId))
 	assertInt("one installed row", installedRows(ctx), 1)
 	assertString("binding rows", bindingDisplays(ctx), "orders.*")
 
-	_, err = newConsumer().Register(ctx, groupName, topicName, []string{"orders.*"})
+	_, err = newConsumer().Register[labMessage](ctx, groupName, topicName, []string{"orders.*"})
 	must(err)
 	assertInt("still one installed row after the same set re-registers", installedRows(ctx), 1)
 	fmt.Println("  ✓ installed once, joined on re-register")
@@ -118,7 +118,7 @@ func run() (err error) {
 	}()
 	waitLiveInstance(ctx)
 
-	divergent, err := newConsumer().Register(ctx, groupName, topicName, []string{"payments.*"})
+	divergent, err := newConsumer().Register[labMessage](ctx, groupName, topicName, []string{"payments.*"})
 	must(err)
 	received := make(chan string, 1)
 	divergentCtx, stopDivergent := context.WithCancel(ctx)
@@ -174,9 +174,9 @@ func run() (err error) {
 	}
 	fmt.Println("  ✓ swapped once the incumbent's heartbeats lapsed; wait left the listing")
 
-	wp, err := producer.NewProducer[labMessage](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, topicName)
+	wpInstance, err := wp.Register[labMessage](ctx, topicName)
 	must(err)
 	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, producer.ProduceOptions{RoutingKey: "payments.charge"})
 	must(err)
@@ -224,8 +224,8 @@ func run() (err error) {
 	return nil
 }
 
-func newConsumer() *consumer.Consumer[labMessage] {
-	labConsumer, err := consumer.NewConsumer[labMessage](ds, &consumer.ConsumerConfig{
+func newConsumer() *consumer.Consumer {
+	labConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		ClaimPollRate:        500 * time.Millisecond,
 		InstanceTTL:          2 * time.Second,
 		BindingRetryInterval: 300 * time.Millisecond,

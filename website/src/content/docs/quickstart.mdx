@@ -17,7 +17,7 @@ consumer group. Nothing on this page is pseudocode; every sample compiles
 against the shipped library.
 
 <ThreadAside label="NOTE" title="Prerequisites">
-You need a Postgres connection and Go 1.26+. Vulkan's test suite runs
+You need a Postgres connection and Go 1.27+. Vulkan's test suite runs
 against Postgres 17. Tables are created in your database's default schema
 by Vulkan itself — there is no SQL migration file to apply by hand.
 
@@ -90,9 +90,9 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    		&topiccontroller.TopicConfig{})
    	must(err)
 
-   	emailProducer, err := producer.NewProducer[WelcomeEmail](ds, nil)
+   	emailProducer, err := producer.NewProducer(ds, nil)
    	must(err)
-   	instance, err := emailProducer.Register(ctx, registered.Name)
+   	instance, err := emailProducer.Register[WelcomeEmail](ctx, registered.Name)
    	must(err)
 
    	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, producer.ProduceOptions{})
@@ -164,7 +164,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    		os.Exit(1)
    	}
 
-   	emailConsumer, err := consumer.NewConsumer[WelcomeEmail](ds, &consumer.ConsumerConfig{
+   	emailConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
    		Message: &common.MessageOptions{
    			Timeout: 5 * time.Second,
    			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: time.Second},
@@ -172,7 +172,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	})
    	must(err)
 
-   	instance, err := emailConsumer.Register(ctx, "email-sender", registered.Name, nil)
+   	instance, err := emailConsumer.Register[WelcomeEmail](ctx, "email-sender", registered.Name, nil)
    	must(err)
 
    	must(instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {

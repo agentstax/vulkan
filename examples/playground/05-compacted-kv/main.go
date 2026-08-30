@@ -77,11 +77,11 @@ func run() error {
 		return err
 	}
 
-	configProducer, err := producer.NewProducer[DeviceConfig](ds, nil)
+	configProducer, err := producer.NewProducer(ds, nil)
 	if err != nil {
 		return err
 	}
-	configs, err := configProducer.Register(ctx, registered.Name)
+	configs, err := configProducer.Register[DeviceConfig](ctx, registered.Name)
 	if err != nil {
 		return err
 	}
@@ -99,11 +99,11 @@ func run() error {
 	}
 
 	// Get (outside a transaction) -- a different object, keyed by topic id
-	heads, err := compactioncontroller.NewCompactionController[DeviceConfig](ds, nil)
+	heads, err := compactioncontroller.NewCompactionController(ds, nil)
 	if err != nil {
 		return err
 	}
-	current, err := heads.GetHead(ctx, registered.Id, "dev-7")
+	current, err := heads.GetHead[DeviceConfig](ctx, registered.Id, "dev-7")
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func run() error {
 	}
 
 	// History
-	versions, err := heads.ListKeyMessages(ctx, registered.Id, "dev-7", 10)
+	versions, err := heads.ListKeyMessages[DeviceConfig](ctx, registered.Id, "dev-7", 10)
 	if err != nil {
 		return err
 	}

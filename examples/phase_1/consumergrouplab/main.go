@@ -139,9 +139,9 @@ func run() (err error) {
 	fmt.Printf("  ✓ 10 concurrent registrations -> one registry row\n")
 
 	step("Start: consumergroup.Head() places a new group's cursor at MAX(id); an existing group keeps its position")
-	labProducer, err := producer.NewProducer[labMessage](ds, nil)
+	labProducer, err := producer.NewProducer(ds, nil)
 	must(err)
-	producing, err := labProducer.Register(ctx, topicA.Name)
+	producing, err := labProducer.Register[labMessage](ctx, topicA.Name)
 	must(err)
 	var seededHead int64
 	for n := 1; n <= 3; n++ {
@@ -149,13 +149,13 @@ func run() (err error) {
 		must(err)
 		seededHead = produced.Id
 	}
-	headConsumer, err := consumer.NewConsumer[labMessage](ds, &consumer.ConsumerConfig{
+	headConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		Start:         consumergroup.Head(),
 		ClaimPollRate: 200 * time.Millisecond,
 	})
 	must(err)
 	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
-	headInstance, err := headConsumer.Register(ctx, headGroup, topicA.Name, nil)
+	headInstance, err := headConsumer.Register[labMessage](ctx, headGroup, topicA.Name, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
 	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, producer.ProduceOptions{})
@@ -175,9 +175,9 @@ func run() (err error) {
 		die(fmt.Sprintf("group at the head saw %v, want only the post-register message 4 (id %d)", seen, fresh.Id))
 	}
 	before := readCursor(ctx, ds, topicA.Id, headGroup)
-	beginningConsumer, err := consumer.NewConsumer[labMessage](ds, nil)
+	beginningConsumer, err := consumer.NewConsumer(ds, nil)
 	must(err)
-	_, err = beginningConsumer.Register(ctx, headGroup, topicA.Name, nil)
+	_, err = beginningConsumer.Register[labMessage](ctx, headGroup, topicA.Name, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, before, "after a second Register at the beginning")
 	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)

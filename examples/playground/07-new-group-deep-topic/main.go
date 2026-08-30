@@ -50,14 +50,14 @@ func run() error {
 	}
 	defer ds.Close()
 
-	scoringConsumer, err := consumer.NewConsumer[OrderPlaced](ds, &consumer.ConsumerConfig{
+	scoringConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		Start: consumergroup.Head(),
 	})
 	if err != nil {
 		return err
 	}
 
-	scoring, err := scoringConsumer.Register(ctx, "fraud-scoring", "orders.placed", nil)
+	scoring, err := scoringConsumer.Register[OrderPlaced](ctx, "fraud-scoring", "orders.placed", nil)
 	if err != nil {
 		return err
 	}

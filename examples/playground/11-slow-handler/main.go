@@ -59,14 +59,14 @@ func run() error {
 	}
 	defer ds.Close()
 
-	transcodeConsumer, err := consumer.NewConsumer[TranscodeRequested](ds, &consumer.ConsumerConfig{
+	transcodeConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		Message:    &common.MessageOptions{Timeout: 2 * time.Minute},
 		MessageMax: &common.MessageOptions{Timeout: time.Hour},
 	})
 	if err != nil {
 		return err
 	}
-	transcodes, err := transcodeConsumer.Register(ctx, "transcoder", "videos.transcode", nil)
+	transcodes, err := transcodeConsumer.Register[TranscodeRequested](ctx, "transcoder", "videos.transcode", nil)
 	if err != nil {
 		return err
 	}

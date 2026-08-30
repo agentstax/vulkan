@@ -29,7 +29,7 @@ type MetricsCollectorInstance struct {
 	runner           *controller.InstanceTickRunner
 	metrics          *metricscontroller.MetricsController
 	topics           *topiccontroller.TopicController
-	alertHeads       *compactioncontroller.CompactionController[alert.Alert]
+	alertHeads       *compactioncontroller.CompactionController
 	metadata         *metricsCollectorMetadata
 	producerInstance *producer.ProducerInstance[metrics.Measurement]
 }
@@ -190,7 +190,7 @@ func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	heads, err := i.alertHeads.ListHeads(ctx, alertsTopic.Id)
+	heads, err := i.alertHeads.ListHeads[alert.Alert](ctx, alertsTopic.Id)
 	if err != nil {
 		return err
 	}

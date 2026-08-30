@@ -11,7 +11,7 @@ import (
 // alert jobs evaluate on a schedule, and logs any that hold. Log-only:
 //   - a register path never writes alerts
 //   - a failed measure never fails Register
-func (p *Producer[Message]) logAlerts(ctx context.Context, current *topic.Topic) {
+func (p *Producer) logAlerts(ctx context.Context, current *topic.Topic) {
 	owner, err := common.NewTopicOwner(current.SystemId, current.Id, current.Name)
 	if err != nil {
 		p.Logger.WarnContext(ctx, "could not run register-time alert pass", "topic", current.Name, "error", err)

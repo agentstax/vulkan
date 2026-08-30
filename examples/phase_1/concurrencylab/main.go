@@ -89,9 +89,9 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
 	runOrdering(ctx, ds, wpInstance, tp.Name)
@@ -133,7 +133,7 @@ func runOrdering(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInstan
 // claim -- batchLimit must cover it) at the given pool size, returning the
 // slow message's completion offset from start and each fast message's.
 func drain(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, group string, poolSize, batchLimit int) (time.Duration, []time.Duration) {
-	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              batchLimit,
 		QueueSize:               batchLimit + poolSize,
@@ -143,7 +143,7 @@ func drain(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, gro
 		RecordMargin:            2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, group, topicName, nil)
+	wcInstance, err := wc.Register[common.Work](ctx, group, topicName, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -210,7 +210,7 @@ func runThroughput(ctx context.Context, ds *iDatastore.PostgresDatastore, wpInst
 }
 
 func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, group string, poolSize, target int) time.Duration {
-	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		DisableGracefulShutdown: true,
 		BatchLimit:              target,
 		QueueSize:               target + poolSize,
@@ -220,7 +220,7 @@ func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName
 		RecordMargin:            2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, group, topicName, nil)
+	wcInstance, err := wc.Register[common.Work](ctx, group, topicName, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)

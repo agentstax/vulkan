@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/producer/controller"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
 // Batcher groups concurrent payload-only produces for one topic into shared
 // transactions, amortizing the per-commit fsync in the database.
-type Batcher[Message any] struct {
+type Batcher[Message topic.Versioned] struct {
 	Config *BatcherConfig
 
-	controller    *controller.ProducerController[Message]
+	controller    *controller.ProducerController
 	topicId       int64
 	partitionSize int64
 
@@ -24,7 +25,7 @@ type Batcher[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewBatcher[Message any](producerController *controller.ProducerController[Message], topicId int64, partitionSize int64, cfg *BatcherConfig) (*Batcher[Message], error) {
+func NewBatcher[Message topic.Versioned](producerController *controller.ProducerController, topicId int64, partitionSize int64, cfg *BatcherConfig) (*Batcher[Message], error) {
 	if producerController == nil {
 		return nil, errors.New("controller must not be nil")
 	}

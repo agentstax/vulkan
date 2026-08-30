@@ -70,9 +70,9 @@ Errors:
 - `errors.ErrShutdownRequested`
 
 Funcs:
-- `producer.NewProducer[M]`
+- `producer.NewProducer` / `Producer.Register[M]`
 - `producer.InTransaction`
-- `consumer.NewConsumer[M]`
+- `consumer.NewConsumer` / `Consumer.Register[M]`
 - `consumer.NewMessageConsumer[M]`
 - `consumer.NewDeliveryConsumer[M]`
 - `consumer.NewExceptionConsumer[M]`

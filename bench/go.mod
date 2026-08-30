@@ -1,6 +1,6 @@
 module github.com/agentstax/vulkan/bench
 
-go 1.26.4
+go 1.27.0
 
 // Dev-only module: keeps benchmark harnesses out of the root library
 // module's published zip. Never tagged or published; resolved locally via

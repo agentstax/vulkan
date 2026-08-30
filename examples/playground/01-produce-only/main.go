@@ -4,7 +4,7 @@
 // consumes anything.
 //
 // Concepts held before domain code (7): datastore, MessageAdmin,
-// RegisterSystem, topic name, the Message type's SchemaVersion, Producer[T],
+// RegisterSystem, topic name, the Message type's SchemaVersion, Producer, Register[T],
 // ProducerInstance.
 //
 // Traps hit:
@@ -67,11 +67,11 @@ func run() error {
 	}
 	// END - not needed every time
 
-	orderProducer, err := producer.NewProducer[OrderPlacedV1](ds, nil)
+	orderProducer, err := producer.NewProducer(ds, nil)
 	if err != nil {
 		return err
 	}
-	orders, err := orderProducer.Register(ctx, registered.Name)
+	orders, err := orderProducer.Register[OrderPlacedV1](ctx, registered.Name)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,7 @@ func (d *MetricsCollectorProvisioner) Provision(ctx context.Context, declared *w
 
 	// producer registration before the claim: a failure here leaves no
 	// claimed instance behind to block reconciles until its TTL lapses
-	producerInstance, err := d.producer.Register(ctx, metrics.TopicName)
+	producerInstance, err := d.producer.Register[metrics.Measurement](ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
 	}

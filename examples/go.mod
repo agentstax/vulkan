@@ -1,6 +1,6 @@
 module github.com/agentstax/vulkan/examples
 
-go 1.26.4
+go 1.27.0
 
 // Dev-only module: keeps the labs out of the root library module's published
 // zip and its `go test ./...` surface. The parent module

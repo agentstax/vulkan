@@ -61,11 +61,11 @@ func run() error {
 		return err
 	}
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	if err != nil {
 		return err
 	}
-	wpInstance, err := wp.Register(ctx, t.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, t.Name)
 	if err != nil {
 		return err
 	}

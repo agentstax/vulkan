@@ -102,9 +102,9 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
 	compaction, err := producer.NewCompactionOptions(0)

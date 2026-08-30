@@ -94,9 +94,9 @@ func run() (err error) {
 		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
-	paymentProducer, err := producer.NewProducer[Payment](ds, nil)
+	paymentProducer, err := producer.NewProducer(ds, nil)
 	must(err)
-	payments, err := paymentProducer.Register(ctx, tp.Name)
+	payments, err := paymentProducer.Register[Payment](ctx, tp.Name)
 	must(err)
 
 	ids := map[string]int64{}
@@ -106,7 +106,7 @@ func run() (err error) {
 		ids[branch] = produced.Id
 	}
 
-	paymentConsumer, err := consumer.NewConsumer[Payment](ds, &consumer.ConsumerConfig{
+	paymentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		ClaimPollRate:           100 * time.Millisecond,
 		ExceptionInitialBackoff: 500 * time.Millisecond,
 		Message: &iCommon.MessageOptions{
@@ -115,7 +115,7 @@ func run() (err error) {
 		},
 	})
 	must(err)
-	instance, err := paymentConsumer.Register(ctx, group, tp.Name, nil)
+	instance, err := paymentConsumer.Register[Payment](ctx, group, tp.Name, nil)
 	must(err)
 	groupId := groupIdOf(ctx, ds, tp.Id)
 

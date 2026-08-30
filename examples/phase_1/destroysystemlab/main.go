@@ -86,9 +86,9 @@ func run() (err error) {
 	topicName := fmt.Sprintf("destroysystemlab.%d", time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 	for range 3 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -102,12 +102,12 @@ func run() (err error) {
 	assertErrorIs("ErrTopicsRegistered", err, system.ErrTopicsRegistered)
 
 	step("a running consumer refuses it first -- the worker guard outranks the topic guard")
-	wc, err := consumer.NewConsumer[common.Work](ds, &consumer.ConsumerConfig{
+	wc, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		ClaimPollRate: 500 * time.Millisecond,
 		InstanceTTL:   2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, "destroysystemlab-group", tp.Name, nil)
+	wcInstance, err := wc.Register[common.Work](ctx, "destroysystemlab-group", tp.Name, nil)
 	must(err)
 	consumeCtx, stopConsumer := context.WithCancel(ctx)
 	consumeDone := make(chan error, 1)

@@ -33,7 +33,7 @@ type Metrics struct {
 	Logger logging.Logger
 
 	topics *topiccontroller.TopicController
-	heads  *compactioncontroller.CompactionController[metrics.Measurement]
+	heads  *compactioncontroller.CompactionController
 	meter  metric.Meter
 
 	// instruments can only be created outside the observation callback, so
@@ -67,7 +67,7 @@ func NewMetrics(ds *iDatastore.PostgresDatastore, cfg *MetricsConfig) (*Metrics,
 		return nil, err
 	}
 
-	heads, err := compactioncontroller.NewCompactionController[metrics.Measurement](ds, &compactioncontroller.ControllerConfig{
+	heads, err := compactioncontroller.NewCompactionController(ds, &compactioncontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -102,7 +102,7 @@ func (m *Metrics) RegisterMetricInstruments(ctx context.Context) error {
 		return err
 	}
 
-	rows, err := m.heads.ListHeads(ctx, topicId)
+	rows, err := m.heads.ListHeads[metrics.Measurement](ctx, topicId)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (m *Metrics) observe(ctx context.Context, observer metric.Observer) error {
 	maps.Copy(instruments, m.instruments)
 	m.mutex.Unlock()
 
-	rows, err := m.heads.ListHeads(ctx, topicId)
+	rows, err := m.heads.ListHeads[metrics.Measurement](ctx, topicId)
 	if err != nil {
 		return err
 	}

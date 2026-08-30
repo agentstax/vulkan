@@ -98,9 +98,9 @@ func fixedCostScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
 	unkeyedMs := timeSequential(ctx, wpInstance, n, func(i int) string { return "" })
@@ -187,9 +187,9 @@ func timeConcurrent(ctx context.Context, ds *iDatastore.PostgresDatastore, label
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: largePartitionSize})
 	must(err)
 
-	wp, err := producer.NewProducer[common.Work](ds, nil)
+	wp, err := producer.NewProducer(ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name)
+	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)
 	must(err)
 
 	start := time.Now()

@@ -73,11 +73,11 @@ func run() error {
 		return err
 	}
 
-	jobConsumer, err := consumer.NewConsumer[cron.JobRequest](ds, nil)
+	jobConsumer, err := consumer.NewConsumer(ds, nil)
 	if err != nil {
 		return err
 	}
-	invoices, err := jobConsumer.Register(ctx, "invoice-runner", cron.TopicName, []string{"invoices.nightly"})
+	invoices, err := jobConsumer.Register[cron.JobRequest](ctx, "invoice-runner", cron.TopicName, []string{"invoices.nightly"})
 	if err != nil {
 		return err
 	}

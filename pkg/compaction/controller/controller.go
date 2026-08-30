@@ -11,7 +11,7 @@ import (
 // CompactionController reads compaction heads -- the write side
 // (the head upsert and the FOR UPDATE read inside a produce transaction)
 // belongs to the producer.
-type CompactionController[Message any] struct {
+type CompactionController struct {
 	Logger logging.Logger
 
 	datastore *datastore.CompactionDatastore
@@ -19,7 +19,7 @@ type CompactionController[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewCompactionController[Message any](ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*CompactionController[Message], error) {
+func NewCompactionController(ds *iDatastore.PostgresDatastore, cfg *ControllerConfig) (*CompactionController, error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -39,7 +39,7 @@ func NewCompactionController[Message any](ds *iDatastore.PostgresDatastore, cfg 
 		return nil, err
 	}
 
-	return &CompactionController[Message]{
+	return &CompactionController{
 		Logger:    cfg.Logger,
 		datastore: compactionDatastore,
 	}, nil
