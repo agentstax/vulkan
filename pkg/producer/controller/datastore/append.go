@@ -19,25 +19,23 @@ func (d *ProducerDatastore) AppendMessage[Message any](ctx context.Context, topi
 }
 
 // appendMessage self-heals a missing-partition insert: the first insert past
-// a partition boundary fails -> creates the partition -> and retries.
+// a partition boundary fails -> creates the partition -> the retry schedule
+// reruns the attempt. Rerunning produceFunc is safe because its writes all
+// go through the tx that just rolled back.
 func (d *ProducerDatastore) appendMessage[Message any](ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.appendMessageTransaction(ctx, topicId, produceFunc, data)
 	if isMissingPartition(err) {
-		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
-		if healErr := d.ensureCoveringPartition(ctx, topicId, partitionSize); healErr != nil {
+		if healErr := d.createNextIdPartition(ctx, topicId, partitionSize); healErr != nil {
 			return nil, healErr
 		}
-
-		// Rerunning produceFunc is safe because its
-		// writes all go through the tx that just rolled back
-		appended, err = d.appendMessageTransaction(ctx, topicId, produceFunc, data)
+		return nil, errPartitionMissing.Wrap(err)
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	if d.createAheadGate.shouldTriggerWithId(topicId, partitionSize, appended.Id) {
-		d.createPartitionAhead(topicId, partitionSize)
+		d.createPartitionAhead(topicId, partitionSize, appended.Id)
 	}
 	return appended, nil
 }
@@ -87,8 +85,7 @@ func (d *ProducerDatastore) appendMessageTransaction[Message any](ctx context.Co
 func (d *ProducerDatastore) AppendMessageInTx[Message any](ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	appended, err := d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
 	if isMissingPartition(err) {
-		d.Logger.WarnContext(ctx, "no partition covers the next message id -- creating it", "topic_id", topicId)
-		if healErr := d.ensureCoveringPartition(ctx, topicId, partitionSize); healErr != nil {
+		if healErr := d.createNextIdPartition(ctx, topicId, partitionSize); healErr != nil {
 			return nil, healErr
 		}
 		appended, err = d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
@@ -101,7 +98,7 @@ func (d *ProducerDatastore) AppendMessageInTx[Message any](ctx context.Context, 
 	// empty partition is harmless. The CREATE waits on this tx's own parent
 	// lock, so its first attempts back off until the caller commits.
 	if d.createAheadGate.shouldTriggerWithId(topicId, partitionSize, appended.Id) {
-		d.createPartitionAhead(topicId, partitionSize)
+		d.createPartitionAhead(topicId, partitionSize, appended.Id)
 	}
 	return appended, nil
 }

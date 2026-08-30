@@ -9,6 +9,12 @@ func MessageLogTable(topicID int64) string {
 	return fmt.Sprintf("message_log_%d", topicID)
 }
 
+// MessageLogIdSequence is MessageLogTable's id sequence -- the name BIGSERIAL
+// gives it.
+func MessageLogIdSequence(topicID int64) string {
+	return fmt.Sprintf("%s_id_seq", MessageLogTable(topicID))
+}
+
 // MessageLogPartitionTable is MessageLogTable's nth partition -- message_log_<topic_id>_<n>.
 func MessageLogPartitionTable(topicID, n int64) string {
 	return fmt.Sprintf("%s_%d", MessageLogTable(topicID), n)

@@ -330,7 +330,7 @@ func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	tp, cleanup := registerTopic(ctx, ds, "heal", 10)
 	defer cleanup()
 
-	// cap <= PartitionSize so one heal covers a whole batch
+	// a batch of 5 can straddle a 10-row boundary: the rerun heals a second time
 	wp, err := producer.NewProducer(ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
 	must(err)
 	wpInstance, err := wp.Register[common.Work](ctx, tp.Name)

@@ -214,10 +214,8 @@ func assertCreateAheadWon(ctx context.Context, ds *iDatastore.PostgresDatastore,
 	assertInt("every publish landed", count, totalPublishes)
 	assertInt("ids contiguous -- no id burned at the boundary", maxId, totalPublishes)
 
-	// partition 2 MAY exist: the 95% trigger's detached run reads MAX(id)
-	// when it lands, and under load head can already be past the boundary --
-	// creating after the current head is what ensureCoveringPartition does.
-	// Partition 3 is unreachable with 105 ids: that would be a runaway chain.
+	// a trigger creates the partition after the trigger id's own, so 105 ids
+	// reach partition 1 only; partition 3 would be a runaway chain.
 	if regclassExists(ctx, ds, fmt.Sprintf("message_log_%d_3", topicId)) {
 		die("partition 3 exists -- create-ahead ran away past the trigger's reach")
 	}

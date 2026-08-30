@@ -9,3 +9,10 @@ import (
 var eventPartitionNotCreatedAhead = diagnostic.NewEvent("VK0033",
 	"could not create partition ahead",
 	"the first insert past the boundary will create it")
+
+// eventPartitionCreatedOnInsert means an insert found no partition for its
+// id and created one itself: create-ahead did not run, or a burst
+// outran its triggers.
+var eventPartitionCreatedOnInsert = diagnostic.NewEvent("VK0057",
+	"no partition covers the next message id -- creating it",
+	"that insert pays the creation latency; run a consumer for the topic's upkeep or raise PartitionSize")

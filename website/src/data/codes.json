@@ -654,6 +654,17 @@
       "kind": "error",
       "problem": "delivery cannot succeed",
       "recovery": "permanent"
+    },
+    "VK0056": {
+      "code": "VK0056",
+      "kind": "error",
+      "problem": "could not insert the message, no partition covered its id",
+      "recovery": "transient"
+    },
+    "VK0057": {
+      "code": "VK0057",
+      "kind": "event",
+      "message": "no partition covers the next message id -- creating it -- that insert pays the creation latency; run a consumer for the topic's upkeep or raise PartitionSize"
     }
   }
 }

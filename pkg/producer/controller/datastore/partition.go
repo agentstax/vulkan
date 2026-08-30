@@ -23,20 +23,29 @@ const ddlLockTimeout = 2 * time.Second
 // round-trip slack.
 const createAheadAttemptAllowance = 3 * ddlLockTimeout
 
-// ensureCoveringPartition creates the partition after head's, so the retry's
-// fresh id has somewhere to land.
-func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64) error {
-	headSql := fmt.Sprintf(`
-		-- vulkan: producer.ensureCoveringPartition
-		SELECT COALESCE(MAX(id), 0) FROM %s;
-	`, iTopic.MessageLogTable(topicId))
+// createNextIdPartition creates the partition the next id will land in.
+// can't use the passed id as that id is already likely burned from an
+// attempt in the sequence table.
+func (d *ProducerDatastore) createNextIdPartition(ctx context.Context, topicId int64, partitionSize int64) error {
+	lastValueSql := fmt.Sprintf(`
+		-- vulkan: producer.createNextIdPartition
+		SELECT last_value FROM %s;
+	`, iTopic.MessageLogIdSequence(topicId))
 
-	var head int64
-	if err := d.Datastore.Pool.QueryRow(ctx, headSql).Scan(&head); err != nil {
+	var lastValue int64
+	if err := d.Datastore.Pool.QueryRow(ctx, lastValueSql).Scan(&lastValue); err != nil {
 		return err
 	}
 
-	next := head/partitionSize + 1
+	next := lastValue + 1
+	d.Logger.WarnContext(ctx, eventPartitionCreatedOnInsert.Message, "code", eventPartitionCreatedOnInsert.Code, "topic_id", topicId, "message_id", next)
+
+	return d.ensureCoveringPartition(ctx, topicId, partitionSize, next)
+}
+
+// ensureCoveringPartition creates the partition that covers id.
+func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId int64, partitionSize int64, id int64) error {
+	next := id / partitionSize
 
 	createPartitionSql := fmt.Sprintf(`
 		-- vulkan: producer.ensureCoveringPartition
@@ -87,16 +96,18 @@ func (d *ProducerDatastore) ensureCoveringPartition(ctx context.Context, topicId
 	return closeErr
 }
 
-// createPartitionAhead creates the next partition early, in the background.
-// Best-effort: a failure warns and drops.
-func (d *ProducerDatastore) createPartitionAhead(topicId int64, partitionSize int64) {
+// createPartitionAhead creates the partition after id's early, in the
+// background. Best-effort: a failure warns and drops.
+func (d *ProducerDatastore) createPartitionAhead(topicId int64, partitionSize int64, id int64) {
+	next := (id/partitionSize + 1) * partitionSize
+
 	go func() {
 		// the produce ctx dies with its caller, so the run carries its own
 		ctx, cancel := context.WithTimeout(context.Background(), d.createAheadTimeout)
 		defer cancel()
 
 		err := d.DatastoreRetry.Wrap(ctx, func() error {
-			err := d.ensureCoveringPartition(ctx, topicId, partitionSize)
+			err := d.ensureCoveringPartition(ctx, topicId, partitionSize, next)
 			if isLockNotAvailable(err) {
 				return errPartitionLockTimeout.Wrap(err)
 			}

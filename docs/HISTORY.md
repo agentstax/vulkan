@@ -5,6 +5,17 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — partition heal covers the failing row [0620]
+
+- The self-heal creates the partition covering the id sequence's
+  `last_value + 1` -- where the rerun's id will land -- instead of
+  `MAX(id)+1`, and a
+  miss the heal just covered reruns on the retry schedule as VK0056
+  (transient) -- a batch whose ids straddle a boundary heals twice.
+  Fixes producerbatchlab's 1-in-4 heal-scenario failure. The heal warn
+  is declared as VK0057. Create-ahead
+  creates the partition after the trigger id; no `MAX(id)` read.
+
 ## 2026-08-30 — the type argument moves to Register [0619]
 
 - `producer.NewProducer(ds, cfg)` and `consumer.NewConsumer(ds, cfg)`
