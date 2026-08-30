@@ -18,7 +18,6 @@ func toTopic(data *datastore.TopicData) (*topic.Topic, error) {
 		Id:                     data.Id,
 		SystemId:               data.SystemId,
 		Name:                   data.Name,
-		SchemaVersion:          topic.SchemaVersion(data.SchemaVersion),
 		PartitionSize:          data.PartitionSize,
 		RetentionTTL:           time.Duration(data.RetentionTTLNs),
 		AllowDropPastCommitted: data.AllowDropPastCommitted,
@@ -27,11 +26,10 @@ func toTopic(data *datastore.TopicData) (*topic.Topic, error) {
 	}, nil
 }
 
-func toTopicData(systemId int64, name string, version topic.SchemaVersion, cfg *TopicConfig) *datastore.TopicData {
+func toTopicData(systemId int64, name string, cfg *TopicConfig) *datastore.TopicData {
 	return &datastore.TopicData{
 		SystemId:               systemId,
 		Name:                   name,
-		SchemaVersion:          int64(version),
 		PartitionSize:          cfg.PartitionSize,
 		RetentionTTLNs:         int64(cfg.RetentionTTL),
 		AllowDropPastCommitted: cfg.AllowDropPastCommitted,

@@ -46,6 +46,8 @@ type DeviceConfig struct {
 	Restarts int    `json:"restarts"`
 }
 
+func (DeviceConfig) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -70,7 +72,7 @@ func run() error {
 	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
-	registered, err := messageAdmin.RegisterTopic(ctx, "devices.config", topic.SchemaVersion(1), nil)
+	registered, err := messageAdmin.RegisterTopic(ctx, "devices.config", nil)
 	if err != nil {
 		return err
 	}
@@ -79,7 +81,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	configs, err := configProducer.Register(ctx, registered.Name, topic.SchemaVersion(1))
+	configs, err := configProducer.Register(ctx, registered.Name)
 	if err != nil {
 		return err
 	}

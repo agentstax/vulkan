@@ -5,7 +5,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/metrics"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -30,7 +29,7 @@ func (d *MetricsCollectorProvisioner) Provision(ctx context.Context, declared *w
 
 	// producer registration before the claim: a failure here leaves no
 	// claimed instance behind to block reconciles until its TTL lapses
-	producerInstance, err := d.producer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	producerInstance, err := d.producer.Register(ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
 	}

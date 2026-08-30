@@ -119,11 +119,11 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.Postgres
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 2, 3, 5*time.Second, tp.DeliveryLogMode)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 2, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if claim == nil || len(claim.Messages) != 2 {
 		die("expected a fresh claim of 2 messages")
@@ -149,11 +149,11 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresD
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 1)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 3, 5*time.Second, tp.DeliveryLogMode)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 1, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim")
@@ -167,7 +167,7 @@ func scenarioRetryDistinctAttempts(ctx context.Context, ds *iDatastore.PostgresD
 	const maxAttempts = 5 // stays well below dead-letter for both retries below
 	for _, attempt := range []int{1, 2} {
 		time.Sleep(1500 * time.Millisecond) // outlives both the 300ms initial and CalculateDelay(0)=1s can_run_after
-		claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, maxAttempts, 5*time.Second, tp.DeliveryLogMode)
+		claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, 10, maxAttempts, 5*time.Second, tp.DeliveryLogMode)
 		must(err)
 		if len(claimed) != 1 || claimed[0].MessageId != failingId {
 			die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
@@ -190,7 +190,7 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	// registration creates delivery_log_<id> regardless of the flag -- the
@@ -198,7 +198,7 @@ func scenarioDeliveryLogOff(ctx context.Context, ds *iDatastore.PostgresDatastor
 	assertTableExists(ctx, ds, fmt.Sprintf("delivery_log_%d", tp.Id), true)
 
 	seed(ctx, wp, 1)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 3, 5*time.Second, tp.DeliveryLogMode)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 1, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim")
@@ -223,11 +223,11 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastor
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	seed(ctx, wp, 2)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 2, 3, 5*time.Second, tp.DeliveryLogMode)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 2, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if claim == nil || len(claim.Messages) != 2 {
 		die("expected a fresh claim of 2 messages")
@@ -249,7 +249,7 @@ func scenarioDeliveryLogAll(ctx context.Context, ds *iDatastore.PostgresDatastor
 	// the unresolved exception now succeeds on its retry -- the delivery row's
 	// deletion and its 'success' log row are one statement
 	time.Sleep(1500 * time.Millisecond) // outlives the 300ms initial can_run_after
-	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 5, 5*time.Second, tp.DeliveryLogMode)
+	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, 10, 5, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if len(claimed) != 1 || claimed[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimed))
@@ -273,7 +273,7 @@ func scenarioRetentionDropPartition(ctx context.Context, ds *iDatastore.Postgres
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 4) // fills partition 0 (ids 1-4), fails id 1
@@ -300,7 +300,7 @@ func scenarioRetentionSweepBatch(ctx context.Context, ds *iDatastore.PostgresDat
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	dormantId := failOne(ctx, cd, wp, tp, groupId, 1)
@@ -328,25 +328,25 @@ func scenarioRedeferralSharesAttempt(ctx context.Context, ds *iDatastore.Postgre
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	// a keyed message with its first-delivery 'deferred' row, as the cursor path writes it
 	var messageId int64
-	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (message_key, payload) VALUES ('k', '{}') RETURNING id`, tp.Id)).Scan(&messageId))
+	must(ds.Pool.QueryRow(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (message_key, schema_version, payload) VALUES ('k', 1, '{}') RETURNING id`, tp.Id)).Scan(&messageId))
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO exception_queue_%d (consumer_group_id, message_id, status, concurrency, attempts) VALUES ($1, $2, 'deferred', 'exclusive', 0)`, tp.Id), groupId, messageId)
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO delivery_log_%d (consumer_group_id, message_id, attempt, status, error) VALUES ($1, $2, 0, 'deferred', '')`, tp.Id), groupId, messageId)
 	must(err)
 
-	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, 5*time.Second, tp.DeliveryLogMode)
+	claimed, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, 10, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if len(claimed) != 1 || claimed[0].Attempts != 1 {
 		die(fmt.Sprintf("expected one claim at attempts 1, got %+v", claimed))
 	}
 	must(exceptionConsumers.RecordDeferred(ctx, &claimed[0], iCommon.ConcurrencyExclusive, tp.DeliveryLogMode))
 
-	claimed, err = exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, 5*time.Second, tp.DeliveryLogMode)
+	claimed, err = exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, 10, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if len(claimed) != 1 || claimed[0].Attempts != 1 {
 		die(fmt.Sprintf("expected the handed-back number 1 to be claimed again, got %+v", claimed))
@@ -364,7 +364,7 @@ func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix stri
 	name := fmt.Sprintf("phase11.deliveryloglab.%s.%d", suffix, time.Now().UnixNano())
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &cfg)
+	tp, err := mAdmin.RegisterTopic(ctx, name, &cfg)
 	must(err)
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -374,7 +374,7 @@ func newTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, suffix stri
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	return tp, messageConsumers, wpInstance, groupId
 }
@@ -393,7 +393,7 @@ func seed(ctx context.Context, wpInstance *producer.ProducerInstance[common.Work
 // per range, not the retry-distinctness scenario 2 already covers.
 func failOne(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, wpInstance *producer.ProducerInstance[common.Work], tp *topic.Topic, groupId int64, n int) int64 {
 	seed(ctx, wpInstance, n)
-	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, n, 3, 5*time.Second, tp.DeliveryLogMode)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, n, 3, 5*time.Second, tp.DeliveryLogMode)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim")

@@ -30,7 +30,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -113,11 +112,11 @@ func run() (err error) {
 	}
 	for t := range topicCount {
 		name := fmt.Sprintf("metricscollectorlab.%d.%d", run, t)
-		registered, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+		registered, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{})
 		must(err)
 		topicNames = append(topicNames, name)
 		defer func() {
-			must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+			must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
 		}()
 
 		for _, group := range groupNames {
@@ -125,7 +124,7 @@ func run() (err error) {
 			must(err)
 		}
 
-		instance, err := workProducer.Register(ctx, name, topic.SchemaVersion(1))
+		instance, err := workProducer.Register(ctx, name)
 		must(err)
 		for range messagesPerTopic {
 			work, err := common.NewWork(30, "admin@example.com")
@@ -185,12 +184,12 @@ func run() (err error) {
 	}
 	for _, topicName := range topicNames {
 		expected[metrics.MeasurementKey(metrics.MetricTopicCompacted, map[string]string{
-			"topic": topicName, "version": "1",
+			"topic": topicName,
 		})] = false
 		for _, group := range groupNames {
 			for _, name := range groupMetricNames {
 				expected[metrics.MeasurementKey(name, map[string]string{
-					"group": group, "topic": topicName, "version": "1",
+					"group": group, "topic": topicName,
 				})] = false
 			}
 		}
@@ -226,10 +225,10 @@ func run() (err error) {
 	}
 	for _, topicName := range topicNames {
 		assertValue(byKey, metrics.MetricTopicCompacted, map[string]string{
-			"topic": topicName, "version": "1",
+			"topic": topicName,
 		}, 0)
 		for _, group := range groupNames {
-			attributes := map[string]string{"group": group, "topic": topicName, "version": "1"}
+			attributes := map[string]string{"group": group, "topic": topicName}
 			assertValue(byKey, metrics.MetricCursorHead, attributes, messagesPerTopic)
 			assertValue(byKey, metrics.MetricCursorBacklog, attributes, messagesPerTopic)
 			assertValue(byKey, metrics.MetricCursorClaimed, attributes, 0)
@@ -241,7 +240,7 @@ func run() (err error) {
 
 	step("history accumulates under the head -- one row per collection pass")
 	historyKey := metrics.MeasurementKey(metrics.MetricCursorBacklog, map[string]string{
-		"group": groupNames[0], "topic": topicNames[0], "version": "1",
+		"group": groupNames[0], "topic": topicNames[0],
 	})
 	must(waitFor(10*time.Second, func() (bool, error) {
 		history, err := mAdmin.ListMeasurementMessages(ctx, historyKey, 10)
@@ -281,8 +280,8 @@ func run() (err error) {
 	for _, series := range []string{
 		"vulkan_worker_state_unclaimed_workers ",
 		"vulkan_cron_state_overdue_jobs ",
-		fmt.Sprintf("vulkan_consumer_cursor_backlog{group=%q,topic=%q,version=\"1\"} %d", groupNames[0], topicNames[0], messagesPerTopic),
-		fmt.Sprintf("vulkan_topic_state_compacted{topic=%q,version=\"1\"} 0", topicNames[topicCount-1]),
+		fmt.Sprintf("vulkan_consumer_cursor_backlog{group=%q,topic=%q} %d", groupNames[0], topicNames[0], messagesPerTopic),
+		fmt.Sprintf("vulkan_topic_state_compacted{topic=%q} 0", topicNames[topicCount-1]),
 	} {
 		if !strings.Contains(scrape, series) {
 			die(fmt.Sprintf("scrape missing %q", series))

@@ -17,9 +17,8 @@ import (
 
 func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 	var (
-		schemaVersion int64
-		force         bool
-		yes           bool
+		force bool
+		yes   bool
 	)
 
 	cmd := &cobra.Command{
@@ -44,7 +43,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 
 			// Check order matters: a doomed call must never waste a prompt.
 			// 1. exists?
-			found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(schemaVersion))
+			found, err := mAdmin.GetTopic(ctx, name)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -76,7 +75,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 				if !empty { // implies --force by the gate above
 					fmt.Fprintf(out, "%s topic %q still holds messages -- --force will delete them along with the topic.\n", glyphWarn(), name)
 				}
-				fmt.Fprintf(out, "This will PERMANENTLY delete topic %q v%d (id=%d) and every message it holds.\n", name, found.SchemaVersion, found.Id)
+				fmt.Fprintf(out, "This will PERMANENTLY delete topic %q (id=%d) and every message it holds.\n", name, found.Id)
 				fmt.Fprintln(out, "This cannot be undone.")
 				fmt.Fprintln(out)
 				fmt.Fprint(out, "Type the topic name to confirm: ")
@@ -93,7 +92,7 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying %q... ", name)
 			}
-			if err := mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(schemaVersion), admin.DestroyOptions{Force: force}); err != nil {
+			if err := mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}
@@ -103,20 +102,18 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 			if g.jsonOutput() {
 				writeJSON(out, topicDestroyedDocument{
 					Topic:     name,
-					Version:   int64(found.SchemaVersion),
 					TopicId:   found.Id,
 					Destroyed: true,
 				})
 				return nil
 			}
 			fmt.Fprintln(out, "done")
-			fmt.Fprintf(out, "%s topic %q v%d destroyed\n", glyphOK(), name, found.SchemaVersion)
+			fmt.Fprintf(out, "%s topic %q destroyed\n", glyphOK(), name)
 			return nil
 		},
 	}
 
 	f := cmd.Flags()
-	f.Int64Var(&schemaVersion, "schema-version", 1, "which registered version of the topic to destroy")
 	f.BoolVar(&force, "force", false, "required to destroy a topic that still holds messages")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd
@@ -126,7 +123,6 @@ func newTopicDestroyCmd(g *globalFlags) *cobra.Command {
 // what-happened record, never the dead row.
 type topicDestroyedDocument struct {
 	Topic     string `json:"topic"`
-	Version   int64  `json:"version"`
 	TopicId   int64  `json:"topic_id"`
 	Destroyed bool   `json:"destroyed"`
 }

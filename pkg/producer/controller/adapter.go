@@ -7,9 +7,10 @@ import (
 	"github.com/google/uuid"
 )
 
-func toAppendData[Message any](idempotencyKey uuid.UUID, payload *Message, options ProduceOptions) *datastore.AppendData[Message] {
+func toAppendData[Message any](idempotencyKey uuid.UUID, payload *Message, schemaVersion int64, options ProduceOptions) *datastore.AppendData[Message] {
 	data := &datastore.AppendData[Message]{
 		IdempotencyKey: idempotencyKey,
+		SchemaVersion:  schemaVersion,
 		Payload:        payload,
 		RoutingKey:     options.RoutingKey,
 		MessageKey:     options.MessageKey,

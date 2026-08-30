@@ -32,7 +32,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 type InvoiceRun struct {
@@ -78,7 +77,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	invoices, err := jobConsumer.Register(ctx, "invoice-runner", cron.TopicName, topic.SchemaVersion(1), []string{"invoices.nightly"})
+	invoices, err := jobConsumer.Register(ctx, "invoice-runner", cron.TopicName, []string{"invoices.nightly"})
 	if err != nil {
 		return err
 	}

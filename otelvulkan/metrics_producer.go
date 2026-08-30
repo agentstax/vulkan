@@ -9,7 +9,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // MetricsProducer publishes your own measurements to __system.metrics,
@@ -33,7 +32,7 @@ func NewMetricsProducer(ds *iDatastore.PostgresDatastore, cfg *producer.Producer
 // Produce. Callable many times -- each call returns an independent instance.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (p *MetricsProducer) Register(ctx context.Context) (*MetricsProducerInstance, error) {
-	instance, err := p.producer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	instance, err := p.producer.Register(ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
 	}

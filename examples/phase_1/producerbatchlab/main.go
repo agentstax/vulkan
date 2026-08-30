@@ -29,7 +29,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -111,7 +110,7 @@ func batchedExactlyOnceScenario(ctx context.Context, ds *iDatastore.PostgresData
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -160,14 +159,14 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	tp, cleanup := registerTopic(ctx, ds, "producebatch", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[json.RawMessage](ds, nil)
+	wp, err := producer.NewProducer[rawPayload](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
-	items := make([]*producer.ProduceItem[json.RawMessage], 0, total)
+	items := make([]*producer.ProduceItem[rawPayload], 0, total)
 	for s := range total {
-		payload := json.RawMessage(fmt.Sprintf(`{"seq": %d}`, s))
+		payload := rawPayload(fmt.Sprintf(`{"seq": %d}`, s))
 		item, err := producer.NewProduceItem(&payload, producer.ProduceOptions{})
 		must(err)
 		items = append(items, item)
@@ -195,11 +194,11 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 
 	// all-or-nothing: item 2 is rejected server-side (jsonb refuses \u0000),
 	// so items 0-1 that already appended must roll back with it
-	badItems := make([]*producer.ProduceItem[json.RawMessage], 0, 5)
+	badItems := make([]*producer.ProduceItem[rawPayload], 0, 5)
 	for s := range 5 {
-		payload := json.RawMessage(fmt.Sprintf(`{"seq": %d}`, s))
+		payload := rawPayload(fmt.Sprintf(`{"seq": %d}`, s))
 		if s == 2 {
-			payload = json.RawMessage(`{"seq": "\u0000"}`)
+			payload = rawPayload(`{"seq": "\u0000"}`)
 		}
 		item, err := producer.NewProduceItem(&payload, producer.ProduceOptions{})
 		must(err)
@@ -215,7 +214,7 @@ func produceBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore)
 	assertCount(ctx, ds, fmt.Sprintf("message_log_%d", tp.Id), total, "the poisoned batch rolled back whole -- nothing landed")
 
 	// caller keys are single-Produce-only; an empty batch is a usage error
-	keyedPayload := json.RawMessage(`{"seq": 0}`)
+	keyedPayload := rawPayload(`{"seq": 0}`)
 	if _, err := producer.NewProduceItem(&keyedPayload, producer.ProduceOptions{IdempotencyKey: uuid.Must(uuid.NewV7())}); err == nil {
 		die("NewProduceItem accepted a caller IdempotencyKey")
 	}
@@ -237,21 +236,21 @@ func faultIsolationScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	tp, cleanup := registerTopic(ctx, ds, "faults", largePartitionSize)
 	defer cleanup()
 
-	wp, err := producer.NewProducer[json.RawMessage](ds, nil)
+	wp, err := producer.NewProducer[rawPayload](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	errs := make([]error, total)
 	var wg sync.WaitGroup
 	for s := range total {
 		wg.Go(func() {
-			payload := json.RawMessage(fmt.Sprintf(`{"seq": %d}`, s))
+			payload := rawPayload(fmt.Sprintf(`{"seq": %d}`, s))
 			switch s {
 			case poisonSeq:
-				payload = json.RawMessage(`{"seq": "\u0000"}`)
+				payload = rawPayload(`{"seq": "\u0000"}`)
 			case brokenSeq:
-				payload = json.RawMessage(`{"broken`)
+				payload = rawPayload(`{"broken`)
 			}
 			_, errs[s] = wpInstance.Produce(ctx, &payload, producer.ProduceOptions{})
 		})
@@ -289,7 +288,7 @@ func hotCompactedKeysScenario(ctx context.Context, ds *iDatastore.PostgresDatast
 	// tiny cap -> backlog pressure -> concurrent workers -> real lock contention
 	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	produceConcurrently(producers, msgs, func(p, s int) error {
@@ -334,7 +333,7 @@ func partitionHealScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	// cap <= PartitionSize so one heal covers a whole batch
 	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Batch: batcher.BatcherConfig{MaxSize: 5}})
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	for range 15 {
@@ -403,7 +402,7 @@ func timeArm(ctx context.Context, ds *iDatastore.PostgresDatastore, label string
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	// warm pool connections so the first arm doesn't pay the dial cost
@@ -439,10 +438,10 @@ func registerTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, label 
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("producerbatchlab.%s.%d", label, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	return tp, func() {
-		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
 	}
 }
 
@@ -484,4 +483,18 @@ func must(err error) {
 }
 func die(msg string) {
 	panic(labFailure{message: msg})
+}
+
+// rawPayload carries hand-written JSON bytes so the lab can produce a
+// deliberately broken document; encoding/json validates MarshalJSON's
+// output exactly as it does json.RawMessage's.
+type rawPayload []byte
+
+func (rawPayload) SchemaVersion() topic.SchemaVersion { return 1 }
+
+func (p rawPayload) MarshalJSON() ([]byte, error) { return p, nil }
+
+func (p *rawPayload) UnmarshalJSON(data []byte) error {
+	*p = append((*p)[:0], data...)
+	return nil
 }

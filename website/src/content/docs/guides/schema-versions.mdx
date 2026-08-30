@@ -1,26 +1,16 @@
 ---
 title: Schema Versions
-description: Proposed — the payload version lives on the message row and is declared by the Message type, so a topic is one name and Register never asks for a version.
+description: The payload version lives on the message row and is declared by the Message type, so a topic is one name and Register never asks for a version.
 ---
 
-import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
-
 A message's schema version is a column on its row, written from the Go
-type that produced it. Today it is a topic key: `topic.SchemaVersion(1)`
-on every `RegisterTopic`, `Register`, and `GetTopic`, and a version bump
-is a whole new physical topic. This page is the spec for moving it.
-
-<ThreadAside label="NOTE" title="Proposed">
-Nothing on this page is shipped. The shipped shape is the
-`(name, schema_version)` topic key the quickstart shows. The code
-below is what the API looks like after the change.
-
-</ThreadAside>
+type that produced it. A topic is one name with one log; rows of
+different versions sit in it side by side, and a consumer group reads
+only the rows at its own type's version.
 
 ## The type declares its version
 
 ```go
-// PROPOSED -- not shipped API.
 type OrderPlacedV2 struct {
 	OrderId string `json:"order_id"`
 	Total   Money  `json:"total"`
@@ -56,7 +46,6 @@ One topic, one log, one id space, rows of any version interleaved.
 ## A group reads its own version and steps over the rest
 
 ```go
-// PROPOSED -- not shipped API.
 scoring, err := consumer.NewConsumer[OrderPlacedV2](ds, nil)
 must(err)
 instance, err := scoring.Register(ctx, "fraud-scoring", "orders.placed", nil)
@@ -81,19 +70,26 @@ group `fraud-scoring-v2` on `OrderPlacedV2` does the opposite. When the
 v1 group's lag is 0 and no v1 rows remain, stop it. Nothing ever
 decoded a v1 row with the v2 struct.
 
-## What changes for compacted topics
+## Compacted topics
 
-Compaction is per key per topic, so a v2 write for `acct-1` becomes the
-key's head and the v1 row stops being claimable. The bridge pattern
-(consume the old version, re-produce as the new one at
-`CompactionRank -1` so a live rank-0 write always wins) is unchanged,
-except it is now a group on the same topic instead of a copy across two.
+Compaction is per key per topic, and the winner compare reads the
+version first: `(schema_version, compaction_rank, id)`. A v2 write for
+`acct-1` becomes the key's head whatever its rank, and the v1 row stops
+being claimable. Inside one version, rank then id decide as before.
 
-Retirement stops being a guess. Today `FamilyHealth` refuses to ever
-call a compacted version safe, because from lag alone it cannot know
-whether every key's state was carried over. With the version on the
-row that is a query: heads whose row is still `schema_version = 1`,
-plus unconsumed v1 rows per group. Zero of both is the verdict.
+That ordering is what makes the bridge pattern work on one topic. A
+group bound to the old type consumes each key's current head and
+re-produces it as the new type at `CompactionRank -1`. Being v2, the
+copy beats the v1 head it was made from; being rank -1, it loses to any
+live rank-0 v2 write for the same key, in either arrival order.
+`examples/phase_1/schemaevolutionlab` runs that end to end, including
+a crash mid-drain.
+
+Retirement is a query, not a guess. `MessageAdmin.TopicHealth` lists
+every version present in the log with the compaction heads still at it
+and each group's unread rows at it; zero of both is the verdict. A
+version with heads at it reads "compaction heads remain" no matter how
+drained the groups are.
 
 ## What it costs
 
@@ -102,11 +98,10 @@ plus unconsumed v1 rows per group. Zero of both is the verdict.
 - Partitions and retention are shared across versions. A version cannot
   be sized or retained on its own.
 - Eight bytes per row.
-- `AlterTopic`, `DestroyTopic`, `GetTopic`, `RenameTopic`, and the CLI's
-  `--schema-version` flag all lose the version. `FamilyHealth` becomes
-  per-version counts inside one topic.
+- `GetTopic`, `DestroyTopic`, `RenameTopic` and the CLI take a name only;
+  there is no `--schema-version` flag anywhere.
 
-## Not in this change
+## Not shipped
 
 Reading an older version through a converter (Confluent's reader
 schema, Temporal's data converter) instead of skipping it is a separate

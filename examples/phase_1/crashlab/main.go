@@ -31,7 +31,6 @@ import (
 	iCommon "github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func main() {
@@ -83,7 +82,7 @@ func run() error {
 		return err
 	}
 
-	t, err := mAdmin.GetTopic(ctx, *topicPtr, topic.SchemaVersion(1))
+	t, err := mAdmin.GetTopic(ctx, *topicPtr)
 	if err != nil {
 		return err
 	}
@@ -107,7 +106,7 @@ func run() error {
 		return err
 	}
 
-	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, topic.SchemaVersion(1), nil)
+	wcInstance, err := wc.Register(ctx, *groupPtr, t.Name, nil)
 	if err != nil {
 		return err
 	}

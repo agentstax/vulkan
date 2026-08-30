@@ -1,6 +1,10 @@
 package metrics
 
-import "time"
+import (
+	"time"
+
+	"github.com/agentstax/vulkan/pkg/topic"
+)
 
 type GoRoutineEvent struct {
 	EventType EventType `json:"type"`
@@ -10,6 +14,8 @@ type GoRoutineEvent struct {
 	Attempt   int       `json:"attempt"`
 	At        time.Time `json:"at"` // needed for accurate timing with draining behavior
 }
+
+func (GoRoutineEvent) SchemaVersion() topic.SchemaVersion { return 1 }
 
 func NewGoRoutineEvent(eventType EventType, topicId int64, group string, messageId int64, attempt int, at time.Time) *GoRoutineEvent {
 	return &GoRoutineEvent{

@@ -10,14 +10,11 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/spf13/cobra"
 )
 
 func newGroupConfigGetCmd(g *globalFlags) *cobra.Command {
-	var schemaVersion int64
-
 	cmd := &cobra.Command{
 		Use:   "get <topic> <group> [key]",
 		Short: "Show the group's config",
@@ -43,7 +40,7 @@ field.`,
 			}
 			defer closeAdmin()
 
-			workers, err := mAdmin.GetGroup(ctx, topicName, topic.SchemaVersion(schemaVersion), groupName)
+			workers, err := mAdmin.GetGroup(ctx, topicName, groupName)
 			if err != nil {
 				return groupError(topicName, groupName, err)
 			}
@@ -57,7 +54,7 @@ field.`,
 			}
 
 			if g.jsonOutput() {
-				writeJSON(out, toGroupConfigDocument(topicName, schemaVersion, groupName, lines))
+				writeJSON(out, toGroupConfigDocument(topicName, groupName, lines))
 				return nil
 			}
 
@@ -73,8 +70,6 @@ field.`,
 		},
 	}
 
-	f := cmd.Flags()
-	f.Int64Var(&schemaVersion, "schema-version", 1, "which registered version of the topic the group belongs to")
 	return cmd
 }
 
@@ -89,7 +84,6 @@ type groupConfigLine struct {
 // with the worker row it came from, as the table renders them.
 type groupConfigDocument struct {
 	Topic   string                    `json:"topic"`
-	Version int64                     `json:"version"`
 	Group   string                    `json:"group"`
 	Keys    []groupConfigLineDocument `json:"keys"`
 }
@@ -100,12 +94,12 @@ type groupConfigLineDocument struct {
 	Value  string `json:"value"`
 }
 
-func toGroupConfigDocument(topicName string, schemaVersion int64, groupName string, lines []groupConfigLine) groupConfigDocument {
+func toGroupConfigDocument(topicName string, groupName string, lines []groupConfigLine) groupConfigDocument {
 	keys := make([]groupConfigLineDocument, 0, len(lines))
 	for _, line := range lines {
 		keys = append(keys, groupConfigLineDocument{Key: line.key, Worker: line.worker, Value: line.value})
 	}
-	return groupConfigDocument{Topic: topicName, Version: schemaVersion, Group: groupName, Keys: keys}
+	return groupConfigDocument{Topic: topicName, Group: groupName, Keys: keys}
 }
 
 // groupConfigLines flattens the rows' metadata into print lines: one per key,

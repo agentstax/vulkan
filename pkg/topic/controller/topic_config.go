@@ -90,12 +90,11 @@ func (c *TopicConfig) Validate() error {
 	return nil
 }
 
-func (c *TopicConfig) ToTopic(id int64, systemId int64, name string, version topic.SchemaVersion) *topic.Topic {
+func (c *TopicConfig) ToTopic(id int64, systemId int64, name string) *topic.Topic {
 	return &topic.Topic{
 		Id:                     id,
 		SystemId:               systemId,
 		Name:                   name,
-		SchemaVersion:          version,
 		PartitionSize:          c.PartitionSize,
 		RetentionTTL:           c.RetentionTTL,
 		AllowDropPastCommitted: c.AllowDropPastCommitted,

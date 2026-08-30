@@ -38,22 +38,22 @@
       "fix": "register it with MessageAdmin.RegisterTopic first",
       "queries": [
         {
-          "label": "every schema version registered under this name",
-          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic_config\nWHERE name = '{topic}';",
+          "label": "the topic row under this name",
+          "sql": "SELECT id, name, created_at FROM topic_config WHERE name = '{topic}';",
           "placeholders": [
             "topic"
           ]
         },
         {
           "label": "the topic row behind an id, if that is what the line carried",
-          "sql": "SELECT\n\tid,\n\tname,\n\tschema_version,\n\tcreated_at\nFROM topic_config\nWHERE id = {topic_id};",
+          "sql": "SELECT id, name, created_at FROM topic_config WHERE id = {topic_id};",
           "placeholders": [
             "topic_id"
           ]
         },
         {
           "label": "every registered topic, if the name itself is wrong",
-          "sql": "SELECT name, schema_version FROM topic_config ORDER BY name;",
+          "sql": "SELECT name FROM topic_config ORDER BY name;",
           "placeholders": []
         }
       ]

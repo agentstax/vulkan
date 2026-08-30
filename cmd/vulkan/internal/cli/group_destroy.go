@@ -14,9 +14,8 @@ import (
 
 func newGroupDestroyCmd(g *globalFlags) *cobra.Command {
 	var (
-		schemaVersion int64
-		force         bool
-		yes           bool
+		force bool
+		yes   bool
 	)
 
 	cmd := &cobra.Command{
@@ -48,7 +47,7 @@ rows are discarded).`,
 			defer closeAdmin()
 
 			// Check order matters: a doomed call must never waste a prompt.
-			found, err := mAdmin.GetTopic(ctx, topicName, topic.SchemaVersion(schemaVersion))
+			found, err := mAdmin.GetTopic(ctx, topicName)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -63,7 +62,7 @@ rows are discarded).`,
 				if force {
 					fmt.Fprintf(out, "%s --force destroys the group even while a consumer runs on it, and discards its delivery rows.\n", glyphWarn())
 				}
-				fmt.Fprintf(out, "This will PERMANENTLY delete consumer group %q on topic %q v%d.\n", groupName, topicName, schemaVersion)
+				fmt.Fprintf(out, "This will PERMANENTLY delete consumer group %q on topic %q.\n", groupName, topicName)
 				fmt.Fprintln(out, "This cannot be undone.")
 				fmt.Fprintln(out)
 				fmt.Fprint(out, "Type the group name to confirm: ")
@@ -79,7 +78,7 @@ rows are discarded).`,
 			if !g.jsonOutput() {
 				fmt.Fprintf(out, "destroying %q... ", groupName)
 			}
-			if err := mAdmin.DestroyGroup(ctx, topicName, topic.SchemaVersion(schemaVersion), groupName, admin.DestroyOptions{Force: force}); err != nil {
+			if err := mAdmin.DestroyGroup(ctx, topicName, groupName, admin.DestroyOptions{Force: force}); err != nil {
 				if !g.jsonOutput() {
 					fmt.Fprintln(out) // end the dangling "destroying..." line
 				}
@@ -89,7 +88,6 @@ rows are discarded).`,
 			if g.jsonOutput() {
 				writeJSON(out, groupDestroyedDocument{
 					Topic:     topicName,
-					Version:   schemaVersion,
 					Group:     groupName,
 					Destroyed: true,
 				})
@@ -102,7 +100,6 @@ rows are discarded).`,
 	}
 
 	f := cmd.Flags()
-	f.Int64Var(&schemaVersion, "schema-version", 1, "which registered version of the topic the group belongs to")
 	f.BoolVar(&force, "force", false, "destroy even while a consumer runs on the group or deliveries await an outcome")
 	f.BoolVarP(&yes, "yes", "y", false, "skip the interactive confirmation (for non-interactive/CI use)")
 	return cmd
@@ -112,7 +109,6 @@ rows are discarded).`,
 // what-happened record, never the dead rows.
 type groupDestroyedDocument struct {
 	Topic     string `json:"topic"`
-	Version   int64  `json:"version"`
 	Group     string `json:"group"`
 	Destroyed bool   `json:"destroyed"`
 }

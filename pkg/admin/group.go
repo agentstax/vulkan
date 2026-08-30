@@ -12,8 +12,8 @@ import (
 
 // GetGroup reads the group's config.
 // Returns ErrTopicNotFound / ErrGroupNotFound when either side is missing.
-func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string) ([]*worker.Worker, error) {
-	groupOwner, err := a.groupOwner(ctx, topicName, version, groupName)
+func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, groupName string) ([]*worker.Worker, error) {
+	groupOwner, err := a.groupOwner(ctx, topicName, groupName)
 	if err != nil {
 		return nil, err
 	}
@@ -33,9 +33,9 @@ func (a *MessageAdmin) GetGroup(ctx context.Context, topicName string, version t
 }
 
 // groupOwner resolves the group registered under groupName on topic
-// (topicName, version) to its owner. Returns ErrTopicNotFound /
+// topicName to its owner. Returns ErrTopicNotFound /
 // ErrGroupNotFound when either side is missing.
-func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string) (*common.Owner, error) {
+func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, groupName string) (*common.Owner, error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
@@ -43,12 +43,12 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 		return nil, errors.New("group name is required")
 	}
 
-	found, err := a.topicController.Get(ctx, topicName, version)
+	found, err := a.topicController.Get(ctx, topicName)
 	if err != nil {
 		return nil, err
 	}
 	if found == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", topicName, "version", version)
+		return nil, topic.ErrTopicNotFound.With("topic", topicName)
 	}
 
 	group, err := a.consumerController.GetGroup(ctx, found.Id, groupName)
@@ -63,7 +63,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 }
 
 // DestroyGroup permanently deletes the consumer group registered under
-// groupName on topic (topicName, version): its cursor, bindings, leases,
+// groupName on topicName: its cursor, bindings, leases,
 // delivery rows, group-owned workers, and group-owned cron jobs. The
 // topic and its messages are untouched.
 //
@@ -72,7 +72,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, version
 // Unless options.Force is set:
 //   - a consumer still runs on the group     -> ErrGroupLive
 //   - the group still holds delivery rows    -> ErrGroupDeliveriesPending
-func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, version topic.SchemaVersion, groupName string, options DestroyOptions) error {
+func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, groupName string, options DestroyOptions) error {
 	if !a.allowDestroy {
 		return topic.ErrDestroyDisabled
 	}
@@ -83,12 +83,12 @@ func (a *MessageAdmin) DestroyGroup(ctx context.Context, topicName string, versi
 		return errors.New("group name is required")
 	}
 
-	found, err := a.topicController.Get(ctx, topicName, version)
+	found, err := a.topicController.Get(ctx, topicName)
 	if err != nil {
 		return err
 	}
 	if found == nil {
-		return topic.ErrTopicNotFound.With("topic", topicName, "version", version)
+		return topic.ErrTopicNotFound.With("topic", topicName)
 	}
 
 	group, err := a.consumerController.GetGroup(ctx, found.Id, groupName)

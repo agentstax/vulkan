@@ -30,6 +30,8 @@ type OrderPlaced struct {
 	Total   int64  `json:"total_cents"`
 }
 
+func (OrderPlaced) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -55,7 +57,7 @@ func run() error {
 		return err
 	}
 
-	scoring, err := scoringConsumer.Register(ctx, "fraud-scoring", "orders.placed", topic.SchemaVersion(1), nil)
+	scoring, err := scoringConsumer.Register(ctx, "fraud-scoring", "orders.placed", nil)
 	if err != nil {
 		return err
 	}

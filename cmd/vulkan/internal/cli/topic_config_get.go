@@ -3,13 +3,10 @@ package cli
 import (
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
 
 func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
-	var schemaVersion int64
-
 	cmd := &cobra.Command{
 		Use:   "get <name> [key]",
 		Short: "Show the topic's config keys: default and current value",
@@ -40,7 +37,7 @@ func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
 			}
 			defer closeAdmin()
 
-			found, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(schemaVersion))
+			found, err := mAdmin.GetTopic(ctx, name)
 			if err != nil {
 				return translateAdminError(err)
 			}
@@ -53,13 +50,11 @@ func newTopicConfigGetCmd(g *globalFlags) *cobra.Command {
 				return nil
 			}
 
-			fmt.Fprintf(out, "%s topic %q v%d (id=%d)\n", glyphOK(), name, found.SchemaVersion, found.Id)
+			fmt.Fprintf(out, "%s topic %q (id=%d)\n", glyphOK(), name, found.Id)
 			printTopicConfigLines(out, found, entries)
 			return nil
 		},
 	}
 
-	f := cmd.Flags()
-	f.Int64Var(&schemaVersion, "schema-version", 1, "which registered version of the topic to read")
 	return cmd
 }

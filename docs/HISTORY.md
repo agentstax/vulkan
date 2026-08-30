@@ -5,6 +5,38 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — schema version moves onto the message row [0618]
+
+- `message_log_<id>.schema_version` is written from the Message type's
+  own `SchemaVersion()` (`topic.Versioned` constrains `NewProducer` /
+  `NewConsumer`; `topic.SchemaVersionOf` reads it); `topic_config` is
+  `UNIQUE (name)`. `RegisterTopic` / `GetTopic` / `DestroyTopic` /
+  `Producer.Register` / `Consumer.Register` / `GetGroup` /
+  `DestroyGroup` / `TopicMetrics` / `MigrateTopic` and the CLI's
+  `--schema-version` flag drop the version; `RenameTopic` returns one
+  topic.
+- A group claims only rows at its type's version -- the predicate sits
+  beside the binding predicate in readMessages, fanOut, and the
+  exception claim (EXISTS on message_log), so a dead-lettered v1 row
+  never replays into a v2 struct. Other versions pass under the cursor.
+- `compaction_head` stores the winner's `schema_version` and the upsert
+  compares `(schema_version, compaction_rank, head_id)`: a newer payload
+  version always takes the key, so the same-topic bridge at rank -1
+  beats the v1 head it copies and still loses to a live v2 write.
+- `FamilyHealth` became `TopicHealth`: every version present in the
+  log with its row count, compaction heads at it, and each group's
+  unread + unresolved rows at it; the compacted verdict is a query
+  ([0406] amended). `vulkan topic get` prints that shape.
+- Internal message types (Measurement, GoRoutineEvent, Alert,
+  JobRequest) declare version 1; topic-level metrics drop the
+  `version` label; schemaevolutionlab rewritten same-topic (a key
+  superseded before the bridge reaches it is skipped, stop point =
+  the bridge's committed cursor); guides/schema-versions shipped, doc
+  samples and the sandbox SQL mirror swept.
+- Verified: `just verify`, 44/44 fresh-DB labs (five needed lab-side
+  edits for the new column / label / lab shape), playground 01/03/07/10,
+  website vitest + astro check. ROADMAP Now item removed.
+
 ## 2026-08-29 — playground scenarios 04 / 07 / 10 rewritten against the shipped verbs
 
 - The catalog is the measuring instrument: 04 returns

@@ -11,12 +11,13 @@ export const protectedInsertUncompactedSqlTemplate = `
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, message_key, options)
+			INSERT INTO %s (payload, routing_key, schema_version, message_key, options)
 			SELECT
 				$2,
 				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
-				NULLIF($4, ''), -- if message_key is empty string '' insert as NULL
-				$5
+				$4,
+				NULLIF($5, ''), -- if message_key is empty string '' insert as NULL
+				$6
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
 		`;

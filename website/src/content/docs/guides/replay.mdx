@@ -29,7 +29,7 @@ starts at zero by default — it reads everything retention still holds
 
 ```go
 indexer, err := searchConsumer.Register(ctx, "search-indexer",
-	registered.Name, topic.SchemaVersion(1), nil)
+	registered.Name, nil)
 must(err)
 must(indexer.Consume(ctx, indexOrder))
 ```
@@ -57,7 +57,7 @@ mis-handles EU orders. Wednesday: you notice. The proposed loop:
    ```go
    // PROPOSED — not shipped API.
    err := messageAdmin.RewindGroup(ctx, "warehouse-sync", registered.Name,
-       topic.SchemaVersion(1), consumergroup.AtTime(tuesdayMorning))
+       consumergroup.AtTime(tuesdayMorning))
    ```
 
    The position is the same `consumergroup.CursorPosition` a new
@@ -93,9 +93,7 @@ keep, set per topic at registration:
 
 ```go
 registered, err := messageAdmin.RegisterTopic(ctx, "orders",
-	topic.SchemaVersion(1), &topiccontroller.TopicConfig{
-		RetentionTTL: 30 * 24 * time.Hour,
-	})
+	&topiccontroller.TopicConfig{RetentionTTL: 30 * 24 * time.Hour})
 ```
 
 The default keeps everything forever; a TTL trades replayable history

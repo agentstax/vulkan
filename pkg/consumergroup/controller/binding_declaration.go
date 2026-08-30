@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -117,9 +116,6 @@ func declarerInstalledAfter(waiting *datastore.BindingLogData, rows []datastore.
 
 func compareDeclarations(left *consumergroup.Declaration, right *consumergroup.Declaration) int {
 	if c := strings.Compare(left.TopicName, right.TopicName); c != 0 {
-		return c
-	}
-	if c := cmp.Compare(left.SchemaVersion, right.SchemaVersion); c != 0 {
 		return c
 	}
 	return strings.Compare(left.GroupName, right.GroupName)

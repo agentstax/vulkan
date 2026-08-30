@@ -141,18 +141,18 @@ func inTxScenario(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin 
 
 func register(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *admin.MessageAdmin, scenario string) (*topic.Topic, *producer.ProducerInstance[common.Work], *WarnCounter, func()) {
 	topicName := fmt.Sprintf("createaheadlab.%s.%d", scenario, time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 
 	warns, err := NewWarnCounter(logging.NewDefaultLogger(os.Stdout))
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, &producer.ProducerConfig{Logger: warns})
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	cleanup := func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}
 	return tp, wpInstance, warns, cleanup
 }

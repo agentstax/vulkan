@@ -47,12 +47,12 @@ func newTopicRenameCmd(g *globalFlags) *cobra.Command {
 				}
 			}
 
-			// echo the rows as they now exist -- the get-shape, one per version
+			// echo the row as it now exists -- the get-shape
 			if g.jsonOutput() {
-				writeJSON(out, toTopicDocuments(renamed))
+				writeJSON(out, toTopicDocument(renamed))
 				return nil
 			}
-			fmt.Fprintf(out, "%s renamed topic %q -> %q (%d version(s))\n", glyphOK(), oldName, newName, len(renamed))
+			fmt.Fprintf(out, "%s renamed topic %q -> %q (id=%d)\n", glyphOK(), oldName, newName, renamed.Id)
 			return nil
 		},
 	}

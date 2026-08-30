@@ -17,24 +17,12 @@ var ErrTopicNotFound = diagnostic.NewError("VK0005", diagnostic.Permanent,
 	"topic not found",
 	"register it with MessageAdmin.RegisterTopic first").
 	Diagnose(
-		diagnostic.NewQuery("every schema version registered under this name", `
-SELECT
-	id,
-	name,
-	schema_version,
-	created_at
-FROM topic_config
-WHERE name = '{topic}';`),
+		diagnostic.NewQuery("the topic row under this name", `
+SELECT id, name, created_at FROM topic_config WHERE name = '{topic}';`),
 		diagnostic.NewQuery("the topic row behind an id, if that is what the line carried", `
-SELECT
-	id,
-	name,
-	schema_version,
-	created_at
-FROM topic_config
-WHERE id = {topic_id};`),
+SELECT id, name, created_at FROM topic_config WHERE id = {topic_id};`),
 		diagnostic.NewQuery("every registered topic, if the name itself is wrong", `
-SELECT name, schema_version FROM topic_config ORDER BY name;`),
+SELECT name FROM topic_config ORDER BY name;`),
 	)
 
 // ErrTopicNotEmpty means Destroy was called on a topic that still holds

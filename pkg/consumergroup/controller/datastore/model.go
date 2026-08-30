@@ -24,7 +24,6 @@ type BindingLogData struct {
 	ConsumerGroupId int64            `db:"consumer_group_id"`
 	GroupName       string           `db:"group_name"`
 	TopicName       string           `db:"topic_name"`
-	SchemaVersion   int64            `db:"schema_version"`
 	Status          BindingLogStatus `db:"status"`
 	Patterns        []string         `db:"patterns"`
 	DeclaredBy      string           `db:"declared_by"`

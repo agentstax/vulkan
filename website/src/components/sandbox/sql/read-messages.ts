@@ -18,6 +18,8 @@ export const readMessagesSqlTemplate = `
 		FROM %s m
 		WHERE m.id > $1
 			AND m.id <= $2
+			-- rows at another payload version pass under the cursor unread
+			AND m.schema_version = $4
 			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (

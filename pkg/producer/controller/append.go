@@ -50,7 +50,7 @@ func (c *ProducerController[Message]) AppendMessage(ctx context.Context, topicId
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
+	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(c.schemaVersion), options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (c *ProducerController[Message]) AppendMessageInTx(ctx context.Context, tx 
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
+	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(c.schemaVersion), options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (c *ProducerController[Message]) AppendMessageBatch(ctx context.Context, to
 		if item.Options.IdempotencyKey == uuid.Nil {
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
-		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, item.Options))
+		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, int64(c.schemaVersion), item.Options))
 	}
 
 	appendedData, failedIdx, err := c.datastore.AppendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appendData)

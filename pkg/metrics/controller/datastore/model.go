@@ -58,3 +58,19 @@ type EventTimestampData struct {
 	Attempt   int       `db:"attempt"`
 	At        time.Time `db:"at"`
 }
+
+// SchemaVersionCountData is one row of SchemaVersionCounts' query: a payload
+// version present in the log, its row count, and the compaction heads at it.
+type SchemaVersionCountData struct {
+	SchemaVersion   int64 `db:"schema_version"`
+	Messages        int64 `db:"messages"`
+	CompactionHeads int64 `db:"compaction_heads"`
+}
+
+// GroupSchemaVersionLagData is one row of GroupSchemaVersionLag's query: a
+// group's unread and unresolved rows at one payload version.
+type GroupSchemaVersionLagData struct {
+	ConsumerGroup        string `db:"consumer_group"`
+	Unconsumed           int64  `db:"unconsumed"`
+	UnresolvedExceptions int64  `db:"unresolved_exceptions"`
+}

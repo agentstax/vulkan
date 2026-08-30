@@ -38,6 +38,8 @@ type InventoryReservedV1 struct {
 	Sku     string `json:"sku"`
 }
 
+func (InventoryReservedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -62,11 +64,11 @@ func run() error {
 	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
-	_, err = messageAdmin.RegisterTopic(ctx, "orders.placed", topic.SchemaVersion(1), nil)
+	_, err = messageAdmin.RegisterTopic(ctx, "orders.placed", nil)
 	if err != nil {
 		return err
 	}
-	_, err = messageAdmin.RegisterTopic(ctx, "inventory.reserved", topic.SchemaVersion(1), nil)
+	_, err = messageAdmin.RegisterTopic(ctx, "inventory.reserved", nil)
 	if err != nil {
 		return err
 	}
@@ -75,7 +77,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	orders, err := orderProducer.Register(ctx, "orders.placed", topic.SchemaVersion(1))
+	orders, err := orderProducer.Register(ctx, "orders.placed")
 	if err != nil {
 		return err
 	}
@@ -83,7 +85,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	inventory, err := inventoryProducer.Register(ctx, "inventory.reserved", topic.SchemaVersion(1))
+	inventory, err := inventoryProducer.Register(ctx, "inventory.reserved")
 	if err != nil {
 		return err
 	}
@@ -123,3 +125,5 @@ func run() error {
 	fmt.Println("two topics committed together")
 	return nil
 }
+
+func (OrderPlacedV1) SchemaVersion() topic.SchemaVersion { return 1 }

@@ -8,7 +8,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/migrate"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -21,7 +20,7 @@ func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.O
 		return err
 	}
 
-	cronTopic, err := d.topics.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
+	cronTopic, err := d.topics.Get(ctx, cron.TopicName)
 	if err != nil {
 		return err
 	}

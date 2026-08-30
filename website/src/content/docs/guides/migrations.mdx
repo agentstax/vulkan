@@ -21,10 +21,10 @@ The schema versions in two independent scopes, both starting at v1:
   cursors, leases). Each topic carries its own counter, so topics can sit at
   different versions mid-migration without breaking each other.
 
-These are Vulkan's internal DDL versions. They are unrelated to your topics'
-`SchemaVersion`, which versions *your message payloads* — a payload-breaking
-change means registering a new topic version, and no Vulkan migration ever
-touches your payloads.
+These are Vulkan's internal DDL versions. They are unrelated to the
+`SchemaVersion` your Message types declare, which versions *your message
+payloads* row by row ([schema versions](/guides/schema-versions/)); no
+Vulkan migration ever touches your payloads.
 
 ## The gate
 

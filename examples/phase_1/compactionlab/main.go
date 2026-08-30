@@ -59,6 +59,8 @@ type KeyedRecord struct {
 	Deleted bool   `json:"deleted,omitempty"`
 }
 
+func (KeyedRecord) SchemaVersion() topic.SchemaVersion { return 1 }
+
 // set by main from RegisterGroup -- helpers are id-keyed
 var cursorGroupID int64
 
@@ -100,10 +102,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8c.compactionlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -116,7 +118,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[KeyedRecord](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	cursorGroupID = mustGroupID(cd.RegisterGroup(ctx, tp.Id, cursorGroup, consumergroup.Beginning()))
 
@@ -132,7 +134,7 @@ func run() (err error) {
 	publish(ctx, wpInstance, "user:2", 1, false) // id 5
 	publish(ctx, wpInstance, "user:2", 2, false) // id 6 <- latest for user:2
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -148,7 +150,7 @@ func run() (err error) {
 	// ===== a delivered version isn't retroactively unsent once superseded (ids 7-8) =====
 	step("user:3 v1 delivered, THEN v2 is published and delivered on its own later read")
 	publish(ctx, wpInstance, "user:3", 1, false) // id 7
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	assertIDs("user:3 v1 delivered -- it's the only version so far", ids(claim.Messages), []int64{7})
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
@@ -156,7 +158,7 @@ func run() (err error) {
 	assertInt("committed", committed, 7)
 
 	publish(ctx, wpInstance, "user:3", 2, false) // id 8, published AFTER v1 already delivered+committed
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	assertIDs("user:3 v2 delivered on its own read -- v1's earlier delivery is untouched", ids(claim.Messages), []int64{8})
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
@@ -167,7 +169,7 @@ func run() (err error) {
 	// ===== the crash/reclaim race (ids 9-10) =====
 	step("WORKER 1 claims user:4 v1, then crashes before Commit")
 	publish(ctx, wpInstance, "user:4", 1, false) // id 9
-	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil")
@@ -183,7 +185,7 @@ func run() (err error) {
 	time.Sleep(lease + 500*time.Millisecond)
 
 	step("WORKER 2 polls: reclaims the exact expired range -- v1 is now superseded")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")
@@ -203,7 +205,7 @@ func run() (err error) {
 	assertInt("committed moves past the (empty) reclaimed range", committed, 9)
 
 	step("v2 still gets its own, independent delivery -- the obligation carried forward")
-	claim3, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim3, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	assertIDs("user:4 v2 delivered", ids(claim3.Messages), []int64{10})
 	must(messageConsumers.Commit(ctx, tp.Id, cursorGroupID, claim3.Lease.Token, nil, 5*time.Second, topic.DeliveryLogModeFailures))
@@ -213,7 +215,7 @@ func run() (err error) {
 	// ===== tombstones are a pure app convention (ids 11-12) =====
 	step("a message marked deleted in its OWN payload is delivered normally on both paths")
 	publish(ctx, wpInstance, "user:5", 1, true) // id 11, CURSOR path
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, 1, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	assertIDs("CURSOR path delivers the deleted-marked message like any other", ids(claim.Messages), []int64{11})
 	assertTrue("payload's own Deleted field survives -- the query never special-cases it", decode(claim.Messages[0].Payload).Deleted)
@@ -223,7 +225,7 @@ func run() (err error) {
 
 	publish(ctx, wpInstance, "user:6", 1, true)                                                              // id 12, LIFECYCLE path
 	lifecycleGroupID := mustGroupID(cd.RegisterGroup(ctx, tp.Id, lifecycleGroup, consumergroup.Beginning())) // fresh group scans from mark 0 -> the whole log
-	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
+	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 1, 100))
 	delivered, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, 20)
 	must(err)
 	assertIDs("FanOut applies the identical compaction predicate across its whole scan, not a range",

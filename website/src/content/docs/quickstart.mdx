@@ -23,7 +23,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
 </ThreadAside>
 
-
 1. **Install the library and CLI**
 
    ```sh
@@ -49,9 +48,10 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
 3. **Register a topic and produce a message**
 
-   A topic is registered once with a name and a schema version; producing
-   is then a typed call. Your payload type is a plain Go struct, stored as
-   JSONB.
+   A topic is registered once by name; producing is then a typed call.
+   Your payload type is a plain Go struct, stored as JSONB, and it
+   declares its own schema version — the number written on every row it
+   produces ([schema versions](/guides/schema-versions/)).
 
    ```go
    package main
@@ -72,6 +72,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	UserId string `json:"user_id"`
    }
 
+   func (WelcomeEmail) SchemaVersion() topic.SchemaVersion { return 1 }
+
    func main() {
    	ctx := context.Background()
 
@@ -85,12 +87,12 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	must(messageAdmin.RegisterSystem(ctx, nil))
 
    	registered, err := messageAdmin.RegisterTopic(ctx, "signup.welcome-email",
-   		topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+   		&topiccontroller.TopicConfig{})
    	must(err)
 
    	emailProducer, err := producer.NewProducer[WelcomeEmail](ds, nil)
    	must(err)
-   	instance, err := emailProducer.Register(ctx, registered.Name, topic.SchemaVersion(1))
+   	instance, err := emailProducer.Register(ctx, registered.Name)
    	must(err)
 
    	produced, err := instance.Produce(ctx, &WelcomeEmail{UserId: "user-123"}, producer.ProduceOptions{})
@@ -140,6 +142,8 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	UserId string `json:"user_id"`
    }
 
+   func (WelcomeEmail) SchemaVersion() topic.SchemaVersion { return 1 }
+
    func main() {
    	ctx, stop := common.LifecycleContext(nil)
    	defer stop()
@@ -153,7 +157,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	must(err)
    	must(messageAdmin.RegisterSystem(ctx, nil))
 
-   	registered, err := messageAdmin.GetTopic(ctx, "signup.welcome-email", topic.SchemaVersion(1))
+   	registered, err := messageAdmin.GetTopic(ctx, "signup.welcome-email")
    	must(err)
    	if registered == nil {
    		fmt.Println("topic not registered -- run the producer first")
@@ -168,7 +172,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    	})
    	must(err)
 
-   	instance, err := emailConsumer.Register(ctx, "email-sender", registered.Name, topic.SchemaVersion(1), nil)
+   	instance, err := emailConsumer.Register(ctx, "email-sender", registered.Name, nil)
    	must(err)
 
    	must(instance.Consume(ctx, func(ctx context.Context, email *WelcomeEmail) error {
@@ -203,7 +207,7 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    the catalog:
 
    ```sql
-   SELECT id FROM topic_config WHERE name = 'signup.welcome-email' AND schema_version = 1;
+   SELECT id FROM topic_config WHERE name = 'signup.welcome-email';
    ```
 
    Say it returned `1`. Then (make your handler return an error and
@@ -237,7 +241,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    SELECT message_id, attempt, status, error, attempted_at
    FROM delivery_log_1 ORDER BY message_id, attempt;
    ```
-
 
    Watch `attempts` climb and `can_run_after` push into the future with
    backoff; after the retry budget is spent the row's status becomes
@@ -274,7 +277,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    The whole story — proving the rollback to yourself, multi-topic
    commits, and what stays yours — is
    [the transactional-produce guide](/guides/transactional-produce/).
-
 
 <ThreadAside label="CAUTION" title="One more thing for real deployments">
 Topic upkeep — creating partitions ahead, enforcing retention, advancing

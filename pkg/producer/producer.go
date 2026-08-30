@@ -3,7 +3,6 @@ package producer
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/agentstax/vulkan/pkg/alert"
 	compactionreadcostcontroller "github.com/agentstax/vulkan/pkg/alert/compactionreadcost/controller"
@@ -19,7 +18,7 @@ import (
 // live with the datastore.
 type ProducerFunc[Message any] = controller.ProduceFunc[Message]
 
-type Producer[Message any] struct {
+type Producer[Message topic.Versioned] struct {
 	Config *ProducerConfig
 	Logger logging.Logger
 
@@ -30,7 +29,7 @@ type Producer[Message any] struct {
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
+func NewProducer[Message topic.Versioned](ds *iDatastore.PostgresDatastore, cfg *ProducerConfig) (*Producer[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -44,7 +43,7 @@ func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerCon
 
 	cfg.Logger = logging.NewPipelineLogger(cfg.Logger, &logging.PipelineLoggerConfig{Buffer: true, Suppress: true})
 
-	producerController, err := controller.NewProducerController[Message](ds, &controller.ControllerConfig{
+	producerController, err := controller.NewProducerController[Message](ds, topic.SchemaVersionOf[Message](), &controller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -87,20 +86,17 @@ func NewProducer[Message any](ds *iDatastore.PostgresDatastore, cfg *ProducerCon
 // Register resolves the named topic against the live topic row and returns an
 // instance that produces to it. Callable many times -- each call returns an
 // independent instance. ctx bounds only this call's I/O.
-func (p *Producer[Message]) Register(ctx context.Context, topicName string, version topic.SchemaVersion) (*ProducerInstance[Message], error) {
+func (p *Producer[Message]) Register(ctx context.Context, topicName string) (*ProducerInstance[Message], error) {
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
 
-	current, err := p.topicController.Get(ctx, topicName, version)
+	current, err := p.topicController.Get(ctx, topicName)
 	if err != nil {
 		return nil, err
 	}
 	if current == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", topicName, "version", version)
+		return nil, topic.ErrTopicNotFound.With("topic", topicName)
 	}
 
 	// fail fast if the db's schema is outside the range this build understands

@@ -13,17 +13,17 @@ import (
 // Claim claims 'ready', expired 'inflight', and 'deferred' rows whose
 // failures (attempts - delays) are under maxRetries. A leased message key
 // excludes its rows.
-func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
+func (d *ExceptionConsumerGroupDatastore) Claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimed []ExceptionData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		claimed, err = d.claim(ctx, topicId, groupId, limit, maxRetries, leaseDuration, deliveryLogMode)
+		claimed, err = d.claim(ctx, topicId, groupId, schemaVersion, limit, maxRetries, leaseDuration, deliveryLogMode)
 		return err
 	})
 	return claimed, err
 }
 
-func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
+func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ExceptionData, error) {
 	var claimSql string
 	if deliveryLogMode == topic.DeliveryLogModeOff {
 		claimSql = fmt.Sprintf(`
@@ -41,6 +41,12 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 					SELECT d.consumer_group_id, d.message_id FROM %[1]s d
 					WHERE d.consumer_group_id = $1
 						AND d.attempts - d.delays < $5
+						-- a row at another payload version stays put -- never decoded by this group
+						AND EXISTS (
+							SELECT 1 FROM %[2]s v
+							WHERE v.id = d.message_id
+								AND v.schema_version = $6
+						)
 						AND (
 							(d.status = 'ready' AND d.can_run_after <= now()) OR
 							(d.status = 'inflight' AND d.lease_expires_at < now()) OR
@@ -102,6 +108,12 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 				FROM %[1]s d
 				WHERE d.consumer_group_id = $1
 					AND d.attempts - d.delays < $5
+					-- a row at another payload version stays put -- never decoded by this group
+					AND EXISTS (
+						SELECT 1 FROM %[2]s v
+						WHERE v.id = d.message_id
+							AND v.schema_version = $6
+					)
 					AND (
 						(d.status = 'ready' AND d.can_run_after <= now()) OR
 						(d.status = 'inflight' AND d.lease_expires_at < now()) OR
@@ -172,7 +184,7 @@ func (d *ExceptionConsumerGroupDatastore) claim(ctx context.Context, topicId int
 		`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.DeliveryLogTable(topicId), iTopic.MessageKeyLeaseTable(topicId))
 	}
 
-	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupId, limit, leaseDuration.Seconds(), topicId, maxRetries)
+	rows, err := d.Datastore.Pool.Query(ctx, claimSql, groupId, limit, leaseDuration.Seconds(), topicId, maxRetries, schemaVersion)
 	if err != nil {
 		return nil, err
 	}

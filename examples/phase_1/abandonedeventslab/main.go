@@ -66,17 +66,17 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	metricsTopic, err := mAdmin.GetTopic(ctx, iMetrics.TopicName, topic.SchemaVersion(1))
+	metricsTopic, err := mAdmin.GetTopic(ctx, iMetrics.TopicName)
 	must(err)
 	if metricsTopic == nil {
 		die("expected __system.metrics to exist after RegisterSystem")
 	}
 
 	topicName := fmt.Sprintf("%s.%d", group, run)
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	before := metricsRowCount(ctx, ds, metricsTopic.Id)
@@ -84,7 +84,7 @@ func run() (err error) {
 	step("driving a hard timeout so one message gets abandoned then self-clears")
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	seed(ctx, wpInstance, 3)
 
@@ -118,7 +118,7 @@ func run() (err error) {
 		return nil
 	}
 
-	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
+	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, 1, abandonedEvents, cfg)
 	must(err)
 	must(definition.Declare(ctx, owner))
 

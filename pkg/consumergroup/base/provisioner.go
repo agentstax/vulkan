@@ -7,6 +7,7 @@ package base
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -31,11 +32,14 @@ type BaseProvisioner[Message any] struct {
 	keyLeases    *controller.KeyLeaseController
 	metrics      *metricsproducer.MetricsProducer
 	consumerFunc func(ctx context.Context, message *Message) error
+
+	// the version the group's Message type declares; the claim reads only rows at it
+	schemaVersion topic.SchemaVersion
 }
 
 // cfg may be nil or a sparse struct -- WithDefaults fills every field left
 // unset, Validate rejects what's out of range.
-func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
+func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition *worker.Definition, consumerFunc func(ctx context.Context, message *Message) error, schemaVersion topic.SchemaVersion, metrics *metricsproducer.MetricsProducer, cfg *BaseProvisionerConfig) (*BaseProvisioner[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -44,6 +48,9 @@ func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition
 	}
 	if consumerFunc == nil {
 		return nil, errors.New("consumerFunc must not be nil")
+	}
+	if schemaVersion < 1 {
+		return nil, fmt.Errorf("schemaVersion must be >= 1, got %d", schemaVersion)
 	}
 	if metrics == nil {
 		return nil, errors.New("metrics must not be nil")
@@ -85,13 +92,14 @@ func NewBaseProvisioner[Message any](ds *datastore.PostgresDatastore, definition
 	definition.TargetInstances = worker.NoInstanceTarget
 
 	return &BaseProvisioner[Message]{
-		definition:   definition,
-		Logger:       cfg.Logger,
-		workers:      workers,
-		topics:       topics,
-		keyLeases:    keyLeases,
-		metrics:      metrics,
-		consumerFunc: consumerFunc,
+		definition:    definition,
+		Logger:        cfg.Logger,
+		workers:       workers,
+		topics:        topics,
+		keyLeases:     keyLeases,
+		metrics:       metrics,
+		consumerFunc:  consumerFunc,
+		schemaVersion: schemaVersion,
 	}, nil
 }
 

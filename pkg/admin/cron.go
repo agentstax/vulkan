@@ -112,7 +112,7 @@ func (a *MessageAdmin) RunCronJob(ctx context.Context, name string, cfg *RunCron
 		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
-	instance, err := a.jobRequestProducer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
+	instance, err := a.jobRequestProducer.Register(ctx, cron.TopicName)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (a *MessageAdmin) CronJobStatus(ctx context.Context, name string) ([]*cron.
 		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
-	jobRequests, err := a.topicController.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
+	jobRequests, err := a.topicController.Get(ctx, cron.TopicName)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (a *MessageAdmin) CronJobRequests(ctx context.Context, name string, limit i
 		return nil, cron.ErrCronJobNotFound.With("cron_job", name)
 	}
 
-	jobRequests, err := a.topicController.Get(ctx, cron.TopicName, topic.SchemaVersion(1))
+	jobRequests, err := a.topicController.Get(ctx, cron.TopicName)
 	if err != nil {
 		return nil, err
 	}

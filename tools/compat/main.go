@@ -37,6 +37,8 @@ const messageCount = 5
 
 type event struct{ Sequence int }
 
+func (event) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -66,7 +68,7 @@ func run() error {
 	}
 
 	name := fmt.Sprintf("compat.lab.%d", time.Now().UnixNano())
-	if _, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), nil); err != nil {
+	if _, err := mAdmin.RegisterTopic(ctx, name, nil); err != nil {
 		return err
 	}
 
@@ -87,7 +89,7 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 	if err != nil {
 		return err
 	}
-	pInstance, err := p.Register(ctx, name, topic.SchemaVersion(1))
+	pInstance, err := p.Register(ctx, name)
 	if problem := check(err == nil, "producer Register accepted", err); problem != nil {
 		return problem
 	}
@@ -103,7 +105,7 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 	if err != nil {
 		return err
 	}
-	cInstance, err := c.Register(ctx, "compat.lab.group", name, topic.SchemaVersion(1), nil)
+	cInstance, err := c.Register(ctx, "compat.lab.group", name, nil)
 	if problem := check(err == nil, "consumer Register accepted", err); problem != nil {
 		return problem
 	}
@@ -122,11 +124,11 @@ func roundTrip(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmin *ad
 	}
 
 	section("pinned admin reads and destroys the topic")
-	row, err := mAdmin.GetTopic(ctx, name, topic.SchemaVersion(1))
+	row, err := mAdmin.GetTopic(ctx, name)
 	if problem := check(err == nil && row != nil, "GetTopic returns the row", err); problem != nil {
 		return problem
 	}
-	if err := mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}); err != nil {
+	if err := mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}); err != nil {
 		return err
 	}
 	fmt.Println("  ✓ topic destroyed")
@@ -144,7 +146,7 @@ func refused(ctx context.Context, ds *iDatastore.PostgresDatastore, name string)
 	if err != nil {
 		return err
 	}
-	_, err = p.Register(ctx, name, topic.SchemaVersion(1))
+	_, err = p.Register(ctx, name)
 	fmt.Printf("  error: %v\n", err)
 	if problem := check(errors.Is(err, migrate.ErrSchemaNewerThanBuild), "refused with ErrSchemaNewerThanBuild", err); problem != nil {
 		return problem

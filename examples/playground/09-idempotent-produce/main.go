@@ -37,6 +37,8 @@ type WebhookEvent struct {
 	Kind    string `json:"kind"`
 }
 
+func (WebhookEvent) SchemaVersion() topic.SchemaVersion { return 1 }
+
 var webhookNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 func main() {
@@ -63,7 +65,7 @@ func run() error {
 	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
-	registered, err := messageAdmin.RegisterTopic(ctx, "webhooks.received", topic.SchemaVersion(1), nil)
+	registered, err := messageAdmin.RegisterTopic(ctx, "webhooks.received", nil)
 	if err != nil {
 		return err
 	}
@@ -72,7 +74,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	webhooks, err := webhookProducer.Register(ctx, registered.Name, topic.SchemaVersion(1))
+	webhooks, err := webhookProducer.Register(ctx, registered.Name)
 	if err != nil {
 		return err
 	}

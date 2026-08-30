@@ -28,17 +28,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
   (scenario 11) is designed as *Lease heartbeat/renewal (9b)* in the
   parking lot -- promote on its merit. Everything below is that review,
   in the order it was already sequenced.
-- **Schema version moves onto the message row** [0618] (settled
-  2026-08-30 from playground scenario 01): `message_log.schema_version`
-  written from the Message type's `SchemaVersion()` method
-  (`topic.Versioned` constraint, the only source); topic_config keyed
-  by name alone; a group claims only rows at its type's version, other
-  versions pass under the cursor like a binding miss; every
-  version-addressed verb and `--schema-version` drop the parameter;
-  bridge becomes same-topic; FamilyHealth's compacted verdict becomes a
-  query. Spec: guides/schema-versions (Proposed). Sweep: playground
-  headers, quickstart, replay/fan-out/routing/new-group-start samples,
-  schemaevolutionlab, migrations.mdx "two counters" paragraph.
 - **IdempotencyKey stays uuid.UUID; rescope the v7-not-v4 warning**
   (settled 2026-08-29 from playground scenario 09): scenario 09's
   derived v5 key from an upstream event id is the canonical
@@ -52,8 +41,7 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     Default constructors would be built against observed friction rather
     than guessed, and that rewrite shipped in [0581].
     - The friction it observed: a consumer needs a MessageAdmin and
-      RegisterSystem just to GetTopic; `topic.SchemaVersion(1)` is
-      repeated three times per program; Consume's cancellable-ctx
+      RegisterSystem just to GetTopic; Consume's cancellable-ctx
       requirement is a context.Background() trap; ConsumerConfig.Retry and
       Message.Retry are confusable; produce-only deployments silently get
       no upkeep unless someone runs `vulkan manager run`; RegisterTopic

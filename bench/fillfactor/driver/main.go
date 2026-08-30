@@ -44,6 +44,8 @@ type benchMessage struct {
 	Fail bool
 }
 
+func (benchMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+
 const (
 	phaseWarmup int32 = iota
 	phaseMeasure
@@ -123,10 +125,10 @@ func main() {
 
 	// fresh topic per cell -- clean tables, no cross-cell contamination
 	topicName := fmt.Sprintf("fillfactorbench.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
+	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	// the tables are empty here, so ALTER alone is enough -- every page they
@@ -201,7 +203,7 @@ func main() {
 
 	var consumeWg sync.WaitGroup
 	for group := range *groups {
-		instance, err := benchConsumer.Register(ctx, fmt.Sprintf("bench-group-%02d", group), topicName, topic.SchemaVersion(1), nil)
+		instance, err := benchConsumer.Register(ctx, fmt.Sprintf("bench-group-%02d", group), topicName, nil)
 		must(err)
 
 		consumeWg.Add(1)
@@ -275,7 +277,7 @@ func prefillTopic(ctx context.Context, ds *iDatastore.PostgresDatastore, topicNa
 	for i := range instances {
 		wp, err := producer.NewProducer[benchMessage](ds, nil)
 		must(err)
-		instance, err := wp.Register(ctx, topicName, topic.SchemaVersion(1))
+		instance, err := wp.Register(ctx, topicName)
 		must(err)
 		instances[i] = instance
 	}

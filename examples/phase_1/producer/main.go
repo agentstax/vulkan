@@ -11,7 +11,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
@@ -57,7 +56,7 @@ func run() error {
 		return err
 	}
 
-	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topiccontroller.TopicConfig{})
 	if err != nil {
 		return err
 	}
@@ -66,7 +65,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	wpInstance, err := wp.Register(ctx, t.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, t.Name)
 	if err != nil {
 		return err
 	}

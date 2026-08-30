@@ -37,9 +37,10 @@ exists; this page is the map of what's actually there.
 `system_config` -> `topic_config` -> `consumer_group_config` is the
 ownership spine, each link a real foreign key with
 `ON DELETE CASCADE`. The `topic_config` row is where a topic's
-identity and config live: `(name, schema_version)` is unique — a
-payload schema bump is a whole new topic row — and its `id` is what
-names the family's physical tables. `partition_size` is immutable
+identity and config live: `name` is unique, and its `id` is what
+names the family's physical tables. A payload schema bump is not a
+new row here — the version sits on each `message_log` row
+([schema versions](/guides/schema-versions/)). `partition_size` is immutable
 after creation because the log's partition boundaries depend on it
 staying fixed.
 

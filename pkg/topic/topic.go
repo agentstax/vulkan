@@ -8,16 +8,28 @@ import (
 // topic name can't contain '*' as it's the binding wildcard
 var SlugPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
 
-// SchemaVersion is a contract for a topic's message compatibility.
+// SchemaVersion is the payload's compatibility version, written on every
+// message row from the Message type's own SchemaVersion method.
 //
 // Bump only on a BREAKING change to Message:
 // - a field has a different type
 // - a field has been renamed
 // - a field has been removed
 //
-// Bumping SchemaVersion creates a brand new physical
-// topic under the same name.
+// A consumer group reads only rows at its Message type's version.
 type SchemaVersion int64
+
+// Versioned is what every Message type declares: the version its payload
+// is. A value receiver, so the zero value answers.
+type Versioned interface {
+	SchemaVersion() SchemaVersion
+}
+
+// SchemaVersionOf reads the version a Message type declares.
+func SchemaVersionOf[Message Versioned]() SchemaVersion {
+	var message Message
+	return message.SchemaVersion()
+}
 
 // DeliveryLogMode selects which delivery outcomes write delivery_log_<id> rows.
 type DeliveryLogMode string
@@ -33,7 +45,6 @@ type Topic struct {
 	Id                     int64           `json:"topic_id"`
 	SystemId               int64           `json:"system_id"`
 	Name                   string          `json:"topic"`
-	SchemaVersion          SchemaVersion   `json:"version"`
 	PartitionSize          int64           `json:"partition_size"`
 	RetentionTTL           time.Duration   `json:"retention_ttl"`
 	AllowDropPastCommitted bool            `json:"allow_drop_past_committed"`

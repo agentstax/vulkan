@@ -68,6 +68,8 @@ type Rec struct {
 	Version int    `json:"version"`
 }
 
+func (Rec) SchemaVersion() topic.SchemaVersion { return 1 }
+
 var (
 	ds      *iDatastore.PostgresDatastore
 	topicId int64
@@ -114,7 +116,7 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("exclusivelab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	topicId = tp.Id
 
@@ -124,7 +126,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[Rec](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	step("exclusive on a free key: runs holding the key lease, releases on success")
@@ -372,7 +374,7 @@ func run() (err error) {
 	if s := deliveryStatus(ctx, g8, v7); s != "deferred" {
 		die(fmt.Sprintf("the kill backstop must never touch a 'deferred' row, got status %q", s))
 	}
-	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
+	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 1, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if n := deliveryAttempts(ctx, g8, v7); n != 99 {
@@ -381,7 +383,7 @@ func run() (err error) {
 	// the unexpired message_key_lease row alone must exclude the row -- attempts back at
 	// 0, well under the ceiling
 	execSql(ctx, fmt.Sprintf(`UPDATE exception_queue_%d SET attempts = 0 WHERE consumer_group_id = $1 AND message_id = $2`, topicId), g8, v7)
-	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
+	if _, err := exceptionConsumers.Claim(ctx, tp.Id, g8, 1, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures); err != nil {
 		die(fmt.Sprintf("ClaimExceptions: %v", err))
 	}
 	if s, n := deliveryStatus(ctx, g8, v7), deliveryAttempts(ctx, g8, v7); s != "deferred" || n != 0 {
@@ -628,7 +630,7 @@ func run() (err error) {
 	fmt.Printf("  ✓ v4 ran once, v1-v3 audited out superseded (v1=%d v2=%d v3=%d v4=%d)\n", tv1, tv2, tv3, tv4)
 
 	step("destroying the topic drops the exception queue")
-	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	fmt.Println("  ✓ destroyed")
 
 	fmt.Println("\n✅ EXCLUSIVE LAB PASSED")
@@ -648,7 +650,7 @@ func consume(ctx context.Context, topicName, group string, cfg *messageconsumer.
 	cfg.MessageConcurrency = pool
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, 1, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -682,7 +684,7 @@ func startConsumer(ctx context.Context, topicName, group string, cfg *messagecon
 	cfg.MessageConcurrency = pool
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, 1, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -708,7 +710,7 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *e
 	cfg.ClaimPollRate = 50 * time.Millisecond
 
 	owner := groupOwner(ctx, topicName, group)
-	definition, err := exceptionconsumer.NewExceptionConsumerProvisioner(ds, consumerFunc, abandonedEventProducer(ctx), cfg)
+	definition, err := exceptionconsumer.NewExceptionConsumerProvisioner(ds, consumerFunc, 1, abandonedEventProducer(ctx), cfg)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -726,7 +728,7 @@ func startExceptionConsumer(ctx context.Context, topicName, group string, cfg *e
 func groupOwner(ctx context.Context, topicName string, group string) *common.Owner {
 	topicController, err := topiccontroller.NewTopicController(ds, nil)
 	must(err)
-	tp, err := topicController.Get(ctx, topicName, topic.SchemaVersion(1))
+	tp, err := topicController.Get(ctx, topicName)
 	must(err)
 
 	consumerDatastore, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)

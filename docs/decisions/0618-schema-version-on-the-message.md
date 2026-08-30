@@ -43,10 +43,15 @@ nothing.
   `--schema-version` flag drop the version parameter. Log/metric
   `version` attribute now names the row's version where a line is
   about a message, else is absent.
-- `FamilyHealth` becomes per-version counts inside one topic; a
-  compacted version's retire verdict is now answerable -- heads whose
-  row is still the old version, plus unconsumed rows per group -- so
-  [0406]'s permanent refusal ends.
+- `compaction_head` stores the winner's `schema_version` and the upsert
+  compares `(schema_version, compaction_rank, head_id)`: a newer payload
+  version always wins the key; rank then id decide inside a version.
+  Without it a same-topic bridge write at rank -1 would lose to the v1
+  head it was made from.
+- `FamilyHealth` becomes `TopicHealth`: per-version counts inside one
+  topic (rows, compaction heads at the version, each group's unread and
+  unresolved rows at it); a compacted version's retire verdict is now
+  answerable, so [0406]'s permanent refusal ends.
 
 ## Consequences
 

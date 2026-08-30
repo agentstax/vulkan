@@ -28,7 +28,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	janitordatastore "github.com/agentstax/vulkan/pkg/topic/janitor/controller/datastore"
 	"github.com/google/uuid"
@@ -92,15 +91,15 @@ func dropPartitionScenario(ctx context.Context, ds *iDatastore.PostgresDatastore
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8c.compactionheadretentionlab.drop.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)
@@ -135,15 +134,15 @@ func sweepBatchScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadretentionlab.sweep.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	janitorDatastore, err := janitordatastore.NewJanitorDatastore(ds, nil)
 	must(err)

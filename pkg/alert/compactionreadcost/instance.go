@@ -13,7 +13,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -63,7 +62,7 @@ func (i *CompactionReadCostInstance) Run(ctx context.Context) error {
 // claim applies the claimed row's repeat_interval against the alerts topic's
 // live retention.
 func (i *CompactionReadCostInstance) consume(ctx context.Context) error {
-	registered, err := i.provisioner.alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
+	registered, err := i.provisioner.alertProducer.Register(ctx, alert.TopicName)
 	if err != nil {
 		return err
 	}
@@ -73,13 +72,13 @@ func (i *CompactionReadCostInstance) consume(ctx context.Context) error {
 	}
 	i.alerts = alerts
 
-	measurements, err := i.provisioner.measurementProducer.Register(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	measurements, err := i.provisioner.measurementProducer.Register(ctx, metrics.TopicName)
 	if err != nil {
 		return err
 	}
 	i.measurements = measurements
 
-	instance, err := i.provisioner.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, topic.SchemaVersion(1), []string{JobName})
+	instance, err := i.provisioner.jobRequestConsumer.Register(ctx, JobName, cron.TopicName, []string{JobName})
 	if err != nil {
 		return err
 	}

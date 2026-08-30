@@ -31,6 +31,7 @@ import { registerGroupLockSql } from './sql/register-group-lock';
 // the seeded demo topic: id 1, the library's default partition size
 const demoTopicId = 1;
 const demoPartitionSize = 1_000_000;
+const demoSchemaVersion = 1;
 
 // ConsumerConfig.BatchLimit's default -- claimed advances by one id per claim,
 // so one tick is one step
@@ -115,6 +116,7 @@ export class VulkanDatabase {
 			crypto.randomUUID(),
 			orderPayload(this.nextOrderId, description),
 			'orders.eu.created',
+			demoSchemaVersion,
 			'',
 			null,
 		]);
@@ -190,6 +192,7 @@ export class VulkanDatabase {
 				range.low,
 				range.high,
 				group.id,
+				demoSchemaVersion,
 			]);
 
 			return {
@@ -273,10 +276,11 @@ function noCursor(groupId: number): Error {
 // own produce statement -- that path is the page's claim, so it stays verbatim
 async function seed(db: PGlite): Promise<void> {
 	await db.query(`INSERT INTO system_config DEFAULT VALUES`);
-	await db.query(
-		`INSERT INTO topic_config (system_id, name, schema_version, partition_size) VALUES ($1, $2, $3, $4)`,
-		[1, demoTopicName, 1, demoPartitionSize],
-	);
+	await db.query(`INSERT INTO topic_config (system_id, name, partition_size) VALUES ($1, $2, $3)`, [
+		1,
+		demoTopicName,
+		demoPartitionSize,
+	]);
 
 	for (const [index, description] of seedOrders.entries()) {
 		const orderId = firstOrderId + index;
@@ -284,6 +288,7 @@ async function seed(db: PGlite): Promise<void> {
 			crypto.randomUUID(),
 			orderPayload(orderId, description),
 			'orders.eu.created',
+			demoSchemaVersion,
 			'',
 			null,
 		]);

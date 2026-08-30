@@ -39,13 +39,13 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 	}
 
 	// registerTopic, not RegisterTopic -- the latter guards the __system. prefix
-	if _, err := a.registerTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), metricscontroller.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, metrics.TopicName, metricscontroller.TopicConfig()); err != nil {
 		return err
 	}
-	if _, err := a.registerTopic(ctx, alert.TopicName, topic.SchemaVersion(1), alertcontroller.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, alert.TopicName, alertcontroller.TopicConfig()); err != nil {
 		return err
 	}
-	if _, err := a.registerTopic(ctx, cron.TopicName, topic.SchemaVersion(1), croncontroller.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, cron.TopicName, croncontroller.TopicConfig()); err != nil {
 		return err
 	}
 

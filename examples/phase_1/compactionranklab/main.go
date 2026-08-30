@@ -43,6 +43,8 @@ type RankedRecord struct {
 	Label string `json:"label"`
 }
 
+func (RankedRecord) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
@@ -81,10 +83,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase14a.compactionranklab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -93,7 +95,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[RankedRecord](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	groupId := mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
 
@@ -109,7 +111,7 @@ func run() (err error) {
 
 	assertInt("compaction_head still points at the pin despite two higher-id normal writes after it", headID(ctx, ds, tp.Id, "user:1"), 2)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
@@ -129,7 +131,7 @@ func run() (err error) {
 	publish(ctx, wpInstance, "user:3", "live", 0)      // id 8 <- wins, same as any normal update would
 	assertInt("compaction_head points at the live write", headID(ctx, ds, tp.Id, "user:3"), 8)
 
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 10, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")

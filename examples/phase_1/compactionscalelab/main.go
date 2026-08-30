@@ -30,7 +30,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 )
 
@@ -93,10 +92,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8c.compactionscalelab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	step("insert the never-superseded row -- id=1, message_key=\"stale\"")
@@ -150,7 +149,7 @@ func run() (err error) {
 // ---- helpers ----
 
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
-	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, message_key, compaction_rank) VALUES ('{}'::jsonb, 'stale', 0);`, topicId)
+	sql := fmt.Sprintf(`INSERT INTO message_log_%d (payload, schema_version, message_key, compaction_rank) VALUES ('{}'::jsonb, 1, 'stale', 0);`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql)
 	must(err)
 }
@@ -181,8 +180,8 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		return
 	}
 	sql := fmt.Sprintf(`
-		INSERT INTO message_log_%d (payload, message_key)
-		SELECT '{}'::jsonb, NULL FROM generate_series(1, $1);
+		INSERT INTO message_log_%d (payload, schema_version, message_key)
+		SELECT '{}'::jsonb, 1, NULL FROM generate_series(1, $1);
 	`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql, count)
 	must(err)

@@ -18,11 +18,12 @@ import (
 // BaseConsumer is built fresh per claimed life, so a respawned runner never
 // shares state with a predecessor still draining.
 type BaseConsumer[Message any] struct {
-	Owner   *common.Owner
-	Topic   *topic.Topic
-	Config  *BaseConsumerConfig
-	Logger  logging.Logger
-	Metrics *metricsproducer.MetricsProducer
+	Owner         *common.Owner
+	Topic         *topic.Topic
+	SchemaVersion topic.SchemaVersion
+	Config        *BaseConsumerConfig
+	Logger        logging.Logger
+	Metrics       *metricsproducer.MetricsProducer
 
 	keyLeases    *controller.KeyLeaseController
 	consumerFunc func(ctx context.Context, message *Message) error
@@ -50,13 +51,14 @@ func NewBaseConsumer[Message any](baseProvisioner *BaseProvisioner[Message], own
 	}
 
 	return &BaseConsumer[Message]{
-		Owner:        owner,
-		Topic:        resolvedTopic,
-		Config:       cfg,
-		Logger:       baseProvisioner.Logger,
-		Metrics:      baseProvisioner.metrics,
-		keyLeases:    baseProvisioner.keyLeases,
-		consumerFunc: baseProvisioner.consumerFunc,
+		Owner:         owner,
+		Topic:         resolvedTopic,
+		SchemaVersion: baseProvisioner.schemaVersion,
+		Config:        cfg,
+		Logger:        baseProvisioner.Logger,
+		Metrics:       baseProvisioner.metrics,
+		keyLeases:     baseProvisioner.keyLeases,
+		consumerFunc:  baseProvisioner.consumerFunc,
 	}, nil
 }
 

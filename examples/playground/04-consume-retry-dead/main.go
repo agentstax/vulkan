@@ -37,6 +37,8 @@ type PaymentRequestedV1 struct {
 	Card    string `json:"card"` // "declined" | "gateway-down" | "settles-later" | anything else succeeds
 }
 
+func (PaymentRequestedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+
 var (
 	errCardDeclined = errors.New("card declined")
 	errGatewayDown  = errors.New("could not reach gateway")
@@ -69,7 +71,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	payments, err := paymentConsumer.Register(ctx, "charge-cards", "payments.requested", topic.SchemaVersion(1), nil)
+	payments, err := paymentConsumer.Register(ctx, "charge-cards", "payments.requested", nil)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentstax/vulkan/pkg/topic"
+
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/google/uuid"
 )
@@ -23,6 +25,8 @@ type JobRequest struct {
 	Payload     json.RawMessage `json:"payload"`
 	Metadata    json.RawMessage `json:"metadata"`
 }
+
+func (JobRequest) SchemaVersion() topic.SchemaVersion { return 1 }
 
 func NewJobRequest(cronJobId int64, name string, scheduledAt time.Time, payload, metadata json.RawMessage) (*JobRequest, error) {
 	if cronJobId <= 0 {

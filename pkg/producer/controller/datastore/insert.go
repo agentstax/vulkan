@@ -121,7 +121,7 @@ func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savep
 // compacted) CTE -- shared with the savepoint-batched path so both run the
 // exact same statement. Claims against idempotency_key_<topicId>
 func protectedInsertSQL[Message any](topicId int64, payload *Message, data *AppendData[Message]) (string, []any) {
-	args := []any{data.IdempotencyKey, payload, data.RoutingKey}
+	args := []any{data.IdempotencyKey, payload, data.RoutingKey, data.SchemaVersion}
 
 	var sql string
 	if data.Compacted {
@@ -135,22 +135,22 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			), inserted AS (
-				INSERT INTO %s (payload, routing_key, message_key, compaction_rank, options)
-				SELECT $2, NULLIF($3, ''), $4, $5, $6  -- if routing_key $3 is empty string '' insert as NULL
+				INSERT INTO %s (payload, routing_key, schema_version, message_key, compaction_rank, options)
+				SELECT $2, NULLIF($3, ''), $4, $5, $6, $7  -- if routing_key $3 is empty string '' insert as NULL
 				WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 				RETURNING id
 			), latest AS (
-				INSERT INTO %s AS h (compaction_key, head_id, compaction_rank)
-				SELECT $4, id, $5 FROM inserted
+				INSERT INTO %s AS h (compaction_key, head_id, schema_version, compaction_rank)
+				SELECT $5, id, $4, $6 FROM inserted
 				ON CONFLICT (compaction_key) DO UPDATE
-				SET head_id = EXCLUDED.head_id, compaction_rank = EXCLUDED.compaction_rank
-				-- compare rank first, if rank equal -> head_id is compared
-				WHERE (h.compaction_rank, h.head_id) < (EXCLUDED.compaction_rank, EXCLUDED.head_id)
+				SET head_id = EXCLUDED.head_id, schema_version = EXCLUDED.schema_version, compaction_rank = EXCLUDED.compaction_rank
+				-- a newer payload version always wins; within a version rank first, then head_id
+				WHERE (h.schema_version, h.compaction_rank, h.head_id) < (EXCLUDED.schema_version, EXCLUDED.compaction_rank, EXCLUDED.head_id)
 			)
 			SELECT id FROM inserted;
 		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId), iTopic.CompactionHeadTable(topicId))
 
-		args = append(args, data.MessageKey, data.CompactionRank, data.Options) // $4, $5, $6
+		args = append(args, data.MessageKey, data.CompactionRank, data.Options) // $5, $6, $7
 	} else {
 		// claim + insert in one round trip -- WHERE EXISTS only fires if the
 		// claim CTE landed a row, so a conflict makes both match zero rows.
@@ -163,17 +163,18 @@ func protectedInsertSQL[Message any](topicId int64, payload *Message, data *Appe
 				ON CONFLICT (idempotency_key) DO NOTHING
 				RETURNING idempotency_key
 			)
-			INSERT INTO %s (payload, routing_key, message_key, options)
+			INSERT INTO %s (payload, routing_key, schema_version, message_key, options)
 			SELECT
 				$2,
 				NULLIF($3, ''), -- if routing_key is empty string '' insert as NULL
-				NULLIF($4, ''), -- if message_key is empty string '' insert as NULL
-				$5
+				$4,
+				NULLIF($5, ''), -- if message_key is empty string '' insert as NULL
+				$6
 			WHERE EXISTS (SELECT 1 FROM claim) -- if claim CTE didn't return anything skip this
 			RETURNING id;
 		`, iTopic.IdempotencyKeyTable(topicId), iTopic.MessageLogTable(topicId))
 
-		args = append(args, data.MessageKey, data.Options) // $4, $5
+		args = append(args, data.MessageKey, data.Options) // $5, $6
 	}
 
 	return sql, args

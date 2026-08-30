@@ -54,7 +54,7 @@ func run() (err error) {
 
 	step("RegisterSystem creates __system.metrics idempotently")
 	must(mAdmin.RegisterSystem(ctx, nil))
-	metricsTopic, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	metricsTopic, err := mAdmin.GetTopic(ctx, metrics.TopicName)
 	must(err)
 	if metricsTopic == nil {
 		die("expected __system.metrics to exist after RegisterSystem")
@@ -63,26 +63,26 @@ func run() (err error) {
 		metricsTopic.Id, metricsTopic.RetentionTTL, metricsTopic.PartitionSize, metricsTopic.DeliveryLogMode)
 
 	step("RegisterTopic rejects a user name under the reserved prefix")
-	_, err = mAdmin.RegisterTopic(ctx, common.SystemTopicPrefix+"evil", topic.SchemaVersion(1), nil)
+	_, err = mAdmin.RegisterTopic(ctx, common.SystemTopicPrefix+"evil", nil)
 	assertReserved("RegisterTopic(__system.evil)", err)
 
 	step("RenameTopic refused both directions")
 	_, err = mAdmin.RenameTopic(ctx, metrics.TopicName, fmt.Sprintf("reservedtopiclab.stolen.%d", run))
 	assertReserved("RenameTopic(__system.metrics -> user name)", err)
 
-	userTopic, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("reservedtopiclab.user.%d", run), topic.SchemaVersion(1), nil)
+	userTopic, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("reservedtopiclab.user.%d", run), nil)
 	must(err)
 	_, err = mAdmin.RenameTopic(ctx, userTopic.Name, common.SystemTopicPrefix+"evil")
 	assertReserved("RenameTopic(user name -> __system.evil)", err)
-	must(mAdmin.DestroyTopic(ctx, userTopic.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, userTopic.Name, admin.DestroyOptions{Force: true}))
 
 	step("DestroyTopic refused on the system topic")
-	err = mAdmin.DestroyTopic(ctx, metrics.TopicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true})
+	err = mAdmin.DestroyTopic(ctx, metrics.TopicName, admin.DestroyOptions{Force: true})
 	assertReserved("DestroyTopic(__system.metrics)", err)
 
 	step("re-running RegisterSystem keeps the same row and re-declares its config")
 	must(mAdmin.RegisterSystem(ctx, nil))
-	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	afterRerun, err := mAdmin.GetTopic(ctx, metrics.TopicName)
 	must(err)
 	assertInt64("topic id unchanged across re-run", afterRerun.Id, metricsTopic.Id)
 	assertDuration("declared retention across re-run", afterRerun.RetentionTTL, metricscontroller.TopicConfig().RetentionTTL)

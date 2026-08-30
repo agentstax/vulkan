@@ -13,6 +13,7 @@ type AppendData[Message any] struct {
 	// resolved once by the caller and reused across every retry -- that reuse
 	// is what makes a retried attempt safe after an ambiguous commit
 	IdempotencyKey uuid.UUID
+	SchemaVersion  int64    // the producing Message type's version
 	Payload        *Message // nil when a ProduceFunc supplies it inside the transaction
 	RoutingKey     string
 	MessageKey     string

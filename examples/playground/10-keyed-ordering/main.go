@@ -38,6 +38,8 @@ type BalanceChanged struct {
 	Delta     int64  `json:"delta_cents"`
 }
 
+func (BalanceChanged) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -63,7 +65,7 @@ func run() error {
 	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
-	registered, err := messageAdmin.RegisterTopic(ctx, "accounts.balance", topic.SchemaVersion(1), nil)
+	registered, err := messageAdmin.RegisterTopic(ctx, "accounts.balance", nil)
 	if err != nil {
 		return err
 	}
@@ -74,7 +76,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	balances, err := balanceProducer.Register(ctx, registered.Name, topic.SchemaVersion(1))
+	balances, err := balanceProducer.Register(ctx, registered.Name)
 	if err != nil {
 		return err
 	}
@@ -93,7 +95,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	ledger, err := ledgerConsumer.Register(ctx, "ledger", registered.Name, topic.SchemaVersion(1), nil)
+	ledger, err := ledgerConsumer.Register(ctx, "ledger", registered.Name, nil)
 	if err != nil {
 		return err
 	}

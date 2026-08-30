@@ -52,12 +52,11 @@ func printDeclarationsTable(w io.Writer, declarations []*consumergroup.Declarati
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "GROUP\tTOPIC\tVERSION\tSTATUS\tPATTERNS\tDECLARED BY\tDECLARED AT\tLAST ATTEMPT")
+	fmt.Fprintln(tw, "GROUP\tTOPIC\tSTATUS\tPATTERNS\tDECLARED BY\tDECLARED AT\tLAST ATTEMPT")
 	for _, declaration := range declarations {
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			declaration.GroupName,
 			declaration.TopicName,
-			declaration.SchemaVersion,
 			string(declaration.Status),
 			patternsCell(declaration.Patterns),
 			declaration.DeclaredBy,

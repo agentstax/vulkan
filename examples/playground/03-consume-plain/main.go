@@ -2,12 +2,12 @@
 //
 // A service that only handles OrderPlaced. It owns no topic and needs no
 // admin verbs -- yet has to build a MessageAdmin and call RegisterSystem
-// just to check the topic exists, and then Register repeats the name and
-// version anyway.
+// just to check the topic exists, and then Register repeats the name
+// anyway.
 //
 // Concepts held before domain code (9): datastore, LifecycleContext,
-// MessageAdmin, RegisterSystem, GetTopic, SchemaVersion, Consumer[T],
-// consumer group name, bindings (nil).
+// MessageAdmin, RegisterSystem, GetTopic, the Message type's SchemaVersion,
+// Consumer[T], consumer group name, bindings (nil).
 //
 // Traps hit:
 //   - context.Background() into Consume fails with VK0002; the fix is a
@@ -37,6 +37,8 @@ type OrderPlacedV1 struct {
 	Total   int64  `json:"total_cents"`
 }
 
+func (OrderPlacedV1) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -59,7 +61,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	receipts, err := orderConsumer.Register(ctx, "email-receipts", "orders.placed", topic.SchemaVersion(1), nil)
+	receipts, err := orderConsumer.Register(ctx, "email-receipts", "orders.placed", nil)
 	if err != nil {
 		return err
 	}

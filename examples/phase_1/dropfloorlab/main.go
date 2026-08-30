@@ -93,10 +93,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8a.dropfloorlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -107,7 +107,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	step("publish ids 1-4 into message_log_<id>_0, then let them age past ttl")
@@ -206,7 +206,7 @@ func setCursor(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId in
 }
 
 func freshClaim(ctx context.Context, cd *messageconsumergroupcontroller.MessageConsumerGroupController, topicId int64, group string, limit int) *messageconsumergroupcontroller.ClaimedRange {
-	claim, err := cd.ClaimMessagesWithCursor(ctx, topicId, groupId, limit, 3, 30*time.Second, topic.DeliveryLogModeFailures)
+	claim, err := cd.ClaimMessagesWithCursor(ctx, topicId, groupId, 1, limit, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die(fmt.Sprintf("%s: expected a claim, got nil (already caught up?)", group))

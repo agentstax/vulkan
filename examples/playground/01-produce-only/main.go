@@ -4,7 +4,8 @@
 // consumes anything.
 //
 // Concepts held before domain code (7): datastore, MessageAdmin,
-// RegisterSystem, topic name, SchemaVersion, Producer[T], ProducerInstance.
+// RegisterSystem, topic name, the Message type's SchemaVersion, Producer[T],
+// ProducerInstance.
 //
 // Traps hit:
 //   - Nothing here runs topic upkeep (partition create-ahead, retention).
@@ -12,7 +13,6 @@
 //     runs `vulkan manager run`. No log line says so.
 //   - RegisterSystem is required even though this program never reads
 //     system state; forgetting it fails at RegisterTopic with VK0013.
-//   - SchemaVersion(1) is spelled twice (RegisterTopic, Register).
 //   - RegisterTopic accepts nil cfg (verified) -- the quickstart's
 //     &topiccontroller.TopicConfig{} and its import are unnecessary.
 package main
@@ -32,6 +32,8 @@ type OrderPlacedV1 struct {
 	OrderId string `json:"order_id"`
 	Total   int64  `json:"total_cents"`
 }
+
+func (OrderPlacedV1) SchemaVersion() topic.SchemaVersion { return 1 }
 
 func main() {
 	if err := run(); err != nil {
@@ -59,7 +61,7 @@ func run() error {
 		return err
 	}
 
-	registered, err := messageAdmin.RegisterTopic(ctx, "orders.placed", topic.SchemaVersion(1), nil)
+	registered, err := messageAdmin.RegisterTopic(ctx, "orders.placed", nil)
 	if err != nil {
 		return err
 	}
@@ -69,7 +71,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	orders, err := orderProducer.Register(ctx, registered.Name, topic.SchemaVersion(1))
+	orders, err := orderProducer.Register(ctx, registered.Name)
 	if err != nil {
 		return err
 	}

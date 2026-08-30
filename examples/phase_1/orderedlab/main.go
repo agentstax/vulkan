@@ -46,6 +46,8 @@ type Adjustment struct {
 	Seq     int    `json:"seq"`
 }
 
+func (Adjustment) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
@@ -83,15 +85,15 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	adjustmentProducer, err := producer.NewProducer[Adjustment](ds, nil)
 	must(err)
-	adjustments, err := adjustmentProducer.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	adjustments, err := adjustmentProducer.Register(ctx, tp.Name)
 	must(err)
 
 	step("produce-time guards")
@@ -131,7 +133,7 @@ func run() (err error) {
 		},
 	})
 	must(err)
-	instance, err := adjustmentConsumer.Register(ctx, group, tp.Name, topic.SchemaVersion(1), nil)
+	instance, err := adjustmentConsumer.Register(ctx, group, tp.Name, nil)
 	must(err)
 	groupId := groupIdOf(ctx, ds, tp.Id)
 

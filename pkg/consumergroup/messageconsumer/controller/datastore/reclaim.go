@@ -18,7 +18,7 @@ import (
 // mid-range doesn't strand those offsets. past maxRangeReclaims the range is
 // POISON -- quarantine it into the sparse exception window instead of handing it
 // out again, so one bad message can't crash-loop the whole range forever.
-func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, topicId int64, groupId int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRangeData, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (d *MessageConsumerGroupDatastore) reclaimWithCursor(ctx context.Context, t
 		return &ClaimedRangeData{Lease: lease, Quarantined: true}, nil
 	}
 
-	messages, err := d.readMessages(ctx, tx, topicId, groupId, lease.Low, lease.High)
+	messages, err := d.readMessages(ctx, tx, topicId, groupId, schemaVersion, lease.Low, lease.High)
 	if err != nil {
 		return nil, err
 	}

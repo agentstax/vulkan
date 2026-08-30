@@ -17,7 +17,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/migrate"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -199,7 +198,7 @@ func (m *Metrics) resolveTopicId(ctx context.Context) (int64, error) {
 	if m.topicId != 0 {
 		return m.topicId, nil
 	}
-	found, err := m.topics.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	found, err := m.topics.Get(ctx, metrics.TopicName)
 	if err != nil {
 		return 0, err
 	}

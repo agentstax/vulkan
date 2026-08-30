@@ -18,7 +18,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/topic/janitor"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -70,10 +69,10 @@ func run() (err error) {
 	topicName := fmt.Sprintf("dutybackofflab.%d", time.Now().UnixNano())
 	// retention on: the sweep's drop pass reads message_log's head every tick,
 	// which is the read the rename below breaks
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{RetentionTTL: time.Hour})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{RetentionTTL: time.Hour})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	janitorProvisioner, err := janitor.NewJanitorProvisioner(ds, &janitor.JanitorConfig{

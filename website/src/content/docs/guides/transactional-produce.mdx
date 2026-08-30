@@ -111,7 +111,7 @@ workaround (send-after-commit hooks, with their own failure window).
    that id; say it returned `1`):
 
    ```sql
-   SELECT id FROM topic_config WHERE name = 'orders.created' AND schema_version = 1;
+   SELECT id FROM topic_config WHERE name = 'orders.created';
 
    SELECT count(*) FROM orders;        -- 0
    SELECT count(*) FROM message_log_1; -- 0

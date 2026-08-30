@@ -5,7 +5,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/cron"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -30,7 +29,7 @@ func (d *CronSchedulerProvisioner) Provision(ctx context.Context, declared *work
 
 	// producer registration before the claim: a failure here leaves no
 	// claimed instance behind to block reconciles until its TTL lapses
-	producerInstance, err := d.producer.Register(ctx, cron.TopicName, topic.SchemaVersion(1))
+	producerInstance, err := d.producer.Register(ctx, cron.TopicName)
 	if err != nil {
 		return nil, err
 	}

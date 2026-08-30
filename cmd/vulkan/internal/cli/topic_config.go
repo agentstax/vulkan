@@ -96,7 +96,6 @@ func errUnknownTopicConfigKey(key string) error {
 // them.
 type topicConfigDocument struct {
 	Topic   string                   `json:"topic"`
-	Version int64                    `json:"version"`
 	TopicId int64                    `json:"topic_id"`
 	Keys    []topicConfigKeyDocument `json:"keys"`
 }
@@ -108,7 +107,7 @@ type topicConfigKeyDocument struct {
 }
 
 func toTopicConfigDocument(found *topic.Topic, entries []topicConfigKey) topicConfigDocument {
-	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "", 1)
+	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
 
 	keys := make([]topicConfigKeyDocument, 0, len(entries))
 	for _, entry := range entries {
@@ -120,14 +119,13 @@ func toTopicConfigDocument(found *topic.Topic, entries []topicConfigKey) topicCo
 	}
 	return topicConfigDocument{
 		Topic:   found.Name,
-		Version: int64(found.SchemaVersion),
 		TopicId: found.Id,
 		Keys:    keys,
 	}
 }
 
 func printTopicConfigLines(w io.Writer, found *topic.Topic, entries []topicConfigKey) {
-	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "", 1)
+	defaults := (&topiccontroller.TopicConfig{}).WithDefaults().ToTopic(0, 0, "")
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(tw, "  KEY\tDEFAULT\tVALUE")
 	for _, entry := range entries {

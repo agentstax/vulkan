@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, leaseDuration time.Duration) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, leaseDuration time.Duration) (*ClaimedRangeData, error) {
 	tx, err := d.Datastore.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -185,12 +185,12 @@ func (d *MessageConsumerGroupDatastore) freshClaimMessagesWithCursor(ctx context
 		return nil, nil
 	}
 
-	return d.claimMessages(ctx, tx, topicId, groupId, claimedRange.Low, claimedRange.High, leaseDuration)
+	return d.claimMessages(ctx, tx, topicId, groupId, schemaVersion, claimedRange.Low, claimedRange.High, leaseDuration)
 }
 
 // low and high come from the cursor statement above, never from a caller --
 // this guard catches a cursor row that went backwards, not bad input.
-func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRangeData, error) {
+func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pgx.Tx, topicId int64, groupId int64, schemaVersion int64, low int64, high int64, leaseDuration time.Duration) (*ClaimedRangeData, error) {
 	if low >= high {
 		return nil, fmt.Errorf("claimed range must advance: low %d, high %d", low, high)
 	}
@@ -223,7 +223,7 @@ func (d *MessageConsumerGroupDatastore) claimMessages(ctx context.Context, tx pg
 		return nil, err
 	}
 
-	messages, err := d.readMessages(ctx, tx, topicId, groupId, low, high)
+	messages, err := d.readMessages(ctx, tx, topicId, groupId, schemaVersion, low, high)
 	if err != nil {
 		return nil, err
 	}

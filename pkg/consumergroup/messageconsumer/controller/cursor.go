@@ -12,7 +12,7 @@ import (
 // ClaimMessagesWithCursor picks up a crashed range (an expired lease) first and
 // only claims fresh work from the frontier when there is nothing to reclaim, so
 // crashed ranges drain ahead of new work. Returns (nil, nil) when caught up.
-func (c *MessageConsumerGroupController) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRange, error) {
+func (c *MessageConsumerGroupController) ClaimMessagesWithCursor(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRangeReclaims int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) (*ClaimedRange, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -29,7 +29,7 @@ func (c *MessageConsumerGroupController) ClaimMessagesWithCursor(ctx context.Con
 		return nil, fmt.Errorf("leaseDuration must be > 0, got %v", leaseDuration)
 	}
 
-	data, err := c.datastore.ClaimMessagesWithCursor(ctx, topicId, groupId, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
+	data, err := c.datastore.ClaimMessagesWithCursor(ctx, topicId, groupId, schemaVersion, limit, maxRangeReclaims, leaseDuration, deliveryLogMode)
 	if err != nil || data == nil {
 		return nil, err
 	}

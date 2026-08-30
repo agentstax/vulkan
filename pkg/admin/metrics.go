@@ -10,13 +10,13 @@ import (
 )
 
 // TopicMetrics runs the monitor one-shot
-func (a *MessageAdmin) TopicMetrics(ctx context.Context, name string, version topic.SchemaVersion) (*metrics.TopicSnapshot, error) {
-	t, err := a.GetTopic(ctx, name, version)
+func (a *MessageAdmin) TopicMetrics(ctx context.Context, name string) (*metrics.TopicSnapshot, error) {
+	t, err := a.GetTopic(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	if t == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", name, "version", version)
+		return nil, topic.ErrTopicNotFound.With("topic", name)
 	}
 
 	return a.metricsController.TopicSnapshot(ctx, t.Id)
@@ -26,7 +26,7 @@ func (a *MessageAdmin) TopicMetrics(ctx context.Context, name string, version to
 // series on __system.metrics.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
 func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.MessageRow[metrics.Measurement], error) {
-	found, err := a.topicController.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	found, err := a.topicController.Get(ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func (a *MessageAdmin) ListMeasurements(ctx context.Context) ([]*producer.Messag
 // messageKey is metrics.MeasurementKey(name, attributes); limit is required.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
 func (a *MessageAdmin) ListMeasurementMessages(ctx context.Context, messageKey string, limit int) ([]*producer.MessageRow[metrics.Measurement], error) {
-	found, err := a.topicController.Get(ctx, metrics.TopicName, topic.SchemaVersion(1))
+	found, err := a.topicController.Get(ctx, metrics.TopicName)
 	if err != nil {
 		return nil, err
 	}

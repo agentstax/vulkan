@@ -50,6 +50,8 @@ type Payment struct {
 	Branch string `json:"branch"` // "ok" | "retry" | "declined" | "settles-later"
 }
 
+func (Payment) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
@@ -87,15 +89,15 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, tp.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
 
 	paymentProducer, err := producer.NewProducer[Payment](ds, nil)
 	must(err)
-	payments, err := paymentProducer.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	payments, err := paymentProducer.Register(ctx, tp.Name)
 	must(err)
 
 	ids := map[string]int64{}
@@ -114,7 +116,7 @@ func run() (err error) {
 		},
 	})
 	must(err)
-	instance, err := paymentConsumer.Register(ctx, group, tp.Name, topic.SchemaVersion(1), nil)
+	instance, err := paymentConsumer.Register(ctx, group, tp.Name, nil)
 	must(err)
 	groupId := groupIdOf(ctx, ds, tp.Id)
 

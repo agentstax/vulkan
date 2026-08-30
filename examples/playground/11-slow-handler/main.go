@@ -39,6 +39,8 @@ type TranscodeRequested struct {
 	Minutes int    `json:"minutes"`
 }
 
+func (TranscodeRequested) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -64,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	transcodes, err := transcodeConsumer.Register(ctx, "transcoder", "videos.transcode", topic.SchemaVersion(1), nil)
+	transcodes, err := transcodeConsumer.Register(ctx, "transcoder", "videos.transcode", nil)
 	if err != nil {
 		return err
 	}

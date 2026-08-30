@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"sort"
 	"strings"
 	"time"
@@ -133,6 +134,8 @@ type Measurement struct {
 	Attributes map[string]string `json:"attributes"`
 	At         time.Time         `json:"at"`
 }
+
+func (Measurement) SchemaVersion() topic.SchemaVersion { return 1 }
 
 func NewMeasurement(name string, kind Kind, value float64, unit Unit, attributes map[string]string, at time.Time) (*Measurement, error) {
 	if name == "" {

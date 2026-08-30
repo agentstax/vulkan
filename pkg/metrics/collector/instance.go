@@ -3,7 +3,6 @@ package collector
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
@@ -187,7 +186,7 @@ func (i *MetricsCollectorInstance) collectCronJobs(ctx context.Context) error {
 }
 
 func (i *MetricsCollectorInstance) collectAlerts(ctx context.Context) error {
-	alertsTopic, err := i.topics.Get(ctx, alert.TopicName, topic.SchemaVersion(1))
+	alertsTopic, err := i.topics.Get(ctx, alert.TopicName)
 	if err != nil {
 		return err
 	}
@@ -250,7 +249,6 @@ func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *to
 		return err
 	}
 
-	version := strconv.FormatInt(int64(current.SchemaVersion), 10)
 	at := time.Now()
 
 	compacted := float64(0)
@@ -258,8 +256,7 @@ func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *to
 		compacted = 1
 	}
 	measurement, err := metrics.NewMeasurement(metrics.MetricTopicCompacted, metrics.KindGauge, compacted, "", map[string]string{
-		"topic":   current.Name,
-		"version": version,
+		"topic": current.Name,
 	}, at)
 	if err != nil {
 		return err
@@ -270,9 +267,8 @@ func (i *MetricsCollectorInstance) collectTopic(ctx context.Context, current *to
 
 	for _, group := range snapshot.Groups {
 		attributes := map[string]string{
-			"group":   group.ConsumerGroup,
-			"topic":   current.Name,
-			"version": version,
+			"group": group.ConsumerGroup,
+			"topic": current.Name,
 		}
 		if err := i.collectConsumerGroup(ctx, &group, attributes, at); err != nil {
 			return err

@@ -55,6 +55,8 @@ type labMessage struct {
 	Value string
 }
 
+func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+
 var (
 	ds     *iDatastore.PostgresDatastore
 	mAdmin *admin.MessageAdmin
@@ -107,9 +109,9 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	jobRequests, err = mAdmin.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	jobRequests, err = mAdmin.GetTopic(ctx, cron.TopicName)
 	must(err)
-	alertsTopic, err = mAdmin.GetTopic(ctx, alert.TopicName, topic.SchemaVersion(1))
+	alertsTopic, err = mAdmin.GetTopic(ctx, alert.TopicName)
 	must(err)
 	if jobRequests == nil || alertsTopic == nil {
 		die("RegisterSystem must create the job_requests and alerts topics")
@@ -224,14 +226,14 @@ func classifySection(ctx context.Context) {
 	step("classify: edge WARN, quiet hold, repeat republish, silent severity change, resolve INFO")
 
 	var err error
-	labTopic, err = mAdmin.RegisterTopic(ctx, prefix+".topic", topic.SchemaVersion(1), nil)
+	labTopic, err = mAdmin.RegisterTopic(ctx, prefix+".topic", nil)
 	must(err)
 	labTopicOwner, err = common.NewTopicOwner(labTopic.SystemId, labTopic.Id, labTopic.Name)
 	must(err)
 
 	alertProducer, err := producer.NewProducer[alert.Alert](ds, nil)
 	must(err)
-	instance, err := alertProducer.Register(ctx, alert.TopicName, topic.SchemaVersion(1))
+	instance, err := alertProducer.Register(ctx, alert.TopicName)
 	must(err)
 	heads, err := compactioncontroller.NewCompactionController[alert.Alert](ds, nil)
 	must(err)
@@ -330,7 +332,7 @@ func executorSection(ctx context.Context) {
 	// one write gives the lab topic its first partition
 	labProducer, err := producer.NewProducer[labMessage](ds, nil)
 	must(err)
-	labInstance, err := labProducer.Register(ctx, labTopic.Name, topic.SchemaVersion(1))
+	labInstance, err := labProducer.Register(ctx, labTopic.Name)
 	must(err)
 	_, err = labInstance.Produce(ctx, &labMessage{Value: "seed"}, producer.ProduceOptions{})
 	must(err)
@@ -556,7 +558,7 @@ func cleanup() {
 	exec(ctx, fmt.Sprintf(`DELETE FROM compaction_head_%d WHERE compaction_key = ANY($1);`, alertsTopic.Id), keys)
 	exec(ctx, fmt.Sprintf(`DELETE FROM message_log_%d WHERE message_key = ANY($1);`, alertsTopic.Id), keys)
 
-	must(mAdmin.DestroyTopic(ctx, labTopic.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, labTopic.Name, admin.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
 		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),

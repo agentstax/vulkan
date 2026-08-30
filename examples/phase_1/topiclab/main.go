@@ -91,7 +91,7 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	register := func(name string) *topic.Topic {
-		t, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: partitionSize})
+		t, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})
 		must(err)
 		return t
 	}
@@ -101,7 +101,7 @@ func run() (err error) {
 	topicD := register(fmt.Sprintf("phase8b.topiclab.d.%d", run))
 	defer func() {
 		for _, t := range []*topic.Topic{topicA, topicB, topicC, topicD} {
-			must(mAdmin.DestroyTopic(ctx, t.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+			must(mAdmin.DestroyTopic(ctx, t.Name, admin.DestroyOptions{Force: true}))
 		}
 	}()
 
@@ -118,11 +118,11 @@ func run() (err error) {
 	step("PROOF 1: two topics get independent physical tables and dense id sequences")
 	wpA, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpAInstance, err := wpA.Register(ctx, topicA.Name, topic.SchemaVersion(1))
+	wpAInstance, err := wpA.Register(ctx, topicA.Name)
 	must(err)
 	wpB, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpBInstance, err := wpB.Register(ctx, topicB.Name, topic.SchemaVersion(1))
+	wpBInstance, err := wpB.Register(ctx, topicB.Name)
 	must(err)
 	for range 3 {
 		publish(ctx, wpAInstance, "")
@@ -157,7 +157,7 @@ func run() (err error) {
 	step("PROOF 3: routing_key/bindings behave as Phase 7 proved, scoped within one topic (condensed -- full suite in routinglab)")
 	wpC, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpCInstance, err := wpC.Register(ctx, topicC.Name, topic.SchemaVersion(1))
+	wpCInstance, err := wpC.Register(ctx, topicC.Name)
 	must(err)
 	groupRoute := "topiclab.route"
 	groupRouteID := mustGroupID(cd.RegisterGroup(ctx, topicC.Id, groupRoute, consumergroup.Beginning()))
@@ -171,7 +171,7 @@ func run() (err error) {
 	fmt.Printf("  published ids %d,%d,%d (only %d predates the binding, only %d and %d match its pattern)\n",
 		headBefore+1, headBefore+2, headBefore+3, headBefore+1, headBefore+1, headBefore+2)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicC.Id, groupRouteID, 1, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil")
@@ -186,7 +186,7 @@ func run() (err error) {
 	step("PROOF 4: two routing_key slices sharing ONE topic still share that topic's drop floor (deliberately not fixed)")
 	wpD, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpDInstance, err := wpD.Register(ctx, topicD.Name, topic.SchemaVersion(1))
+	wpDInstance, err := wpD.Register(ctx, topicD.Name)
 	must(err)
 	groupX := "topiclab.sliceX" // reads only sliceX.* -- will be fully caught up
 	groupY := "topiclab.sliceY" // reads only sliceY.* -- registered but stays lagging
@@ -204,7 +204,7 @@ func run() (err error) {
 	publish(ctx, wpDInstance, "sliceX.event") // id 5, landing in the partition that is already there
 	time.Sleep(ttl + ttlMargin)
 
-	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
+	claimX, err := messageConsumers.ClaimMessagesWithCursor(ctx, topicD.Id, groupXID, 1, 10, 3, 30*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claimX == nil {
 		die("expected groupX to claim a fresh range")

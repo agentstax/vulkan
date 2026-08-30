@@ -12,13 +12,13 @@ import (
 // FanOut materializes one delivery row per message this group is bound to
 // receive. Scans only above the group's mark (cursor.committed), so
 // steady-state cost is O(new messages) per tick, not O(whole log).
-func (d *DeliveryConsumerGroupDatastore) FanOut(ctx context.Context, topicId int64, groupId int64, limit int) error {
+func (d *DeliveryConsumerGroupDatastore) FanOut(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int) error {
 	return d.DatastoreRetry.Wrap(ctx, func() error {
-		return d.fanOut(ctx, topicId, groupId, limit)
+		return d.fanOut(ctx, topicId, groupId, schemaVersion, limit)
 	})
 }
 
-func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int64, groupId int64, limit int) error {
+func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int) error {
 	// take the (head, xmax) pair the scan statement's gate below proves
 	// against.
 	snapshotSql := fmt.Sprintf(`
@@ -71,7 +71,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			-- InitPlan feeding an index cond, O(batch). joining old_values in
 			-- plans the same bound as a join FILTER over an in-id-order index
 			-- walk from 0 -- O(whole log) per tick, measured 660x slower at 200k
-			SELECT m.id, m.routing_key, m.message_key, m.compaction_rank, m.options
+			SELECT m.id, m.schema_version, m.routing_key, m.message_key, m.compaction_rank, m.options
 			FROM %[2]s m                                           -- [2] = message_log table
 			WHERE m.id > (SELECT committed FROM old_values)
 			ORDER BY m.id
@@ -81,7 +81,9 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 			INSERT INTO %[1]s (consumer_group_id, message_id, status, message_key, concurrency) -- [1] = exception_queue table
 			SELECT $1, b.id, 'ready', b.message_key, COALESCE(b.options->>'concurrency', 'parallel')
 			FROM batch b
-			WHERE (
+			-- rows at another payload version advance the mark without a delivery row
+			WHERE b.schema_version = $5
+			AND (
 				-- no bindings for consumer_group exists
 				NOT EXISTS (
 					SELECT 1 FROM %[4]s bi                         -- [4] = binding_config table
@@ -164,7 +166,7 @@ func (d *DeliveryConsumerGroupDatastore) fanOut(ctx context.Context, topicId int
 		WHERE c.consumer_group_id = $1;
 	`, iTopic.ExceptionQueueTable(topicId), iTopic.MessageLogTable(topicId), iTopic.ConsumerGroupCursorTable(topicId), iTopic.BindingConfigTable(topicId), iTopic.CompactionHeadTable(topicId))
 
-	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, limit, snapshotHead, snapshotXmax)
+	tag, err := d.Datastore.Pool.Exec(ctx, scanSql, groupId, limit, snapshotHead, snapshotXmax, schemaVersion)
 	if err != nil {
 		return err
 	}

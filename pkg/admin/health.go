@@ -10,80 +10,73 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
+// VersionHealth is one payload version's retire verdict on a topic: safe
+// once no compaction head points at it and every group has read past it.
 type VersionHealth struct {
-	Topic     *topic.Topic                    `json:"topic"`
-	Compacted bool                            `json:"compacted"`
-	Groups    []metrics.ConsumerGroupSnapshot `json:"groups"`
-	Safe      bool                            `json:"safe"`
-	Reason    string                          `json:"reason"`
+	Topic           *topic.Topic                    `json:"topic"`
+	Version         topic.SchemaVersion             `json:"version"`
+	Messages        int64                           `json:"messages"`
+	CompactionHeads int64                           `json:"compaction_heads"`
+	Groups          []metrics.GroupSchemaVersionLag `json:"groups"`
+	Safe            bool                            `json:"safe"`
+	Reason          string                          `json:"reason"`
 }
 
-// FamilyHealth is every topic's (name, version) registered, each with its own
-// retire verdict -- the decision is per version, not per family.
-func (a *MessageAdmin) FamilyHealth(ctx context.Context, name string) ([]*VersionHealth, error) {
+// TopicHealth is every payload version present in the named topic's log,
+// each with its own retire verdict. Returns ErrTopicNotFound if name isn't
+// registered; an empty topic has no versions.
+func (a *MessageAdmin) TopicHealth(ctx context.Context, name string) ([]*VersionHealth, error) {
 	if name == "" {
 		return nil, errors.New("topic name is required")
 	}
 
-	all, err := a.topicController.List(ctx)
+	found, err := a.topicController.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, topic.ErrTopicNotFound.With("topic", name)
+	}
+
+	snapshots, err := a.metricsController.SchemaVersionSnapshots(ctx, found.Id)
 	if err != nil {
 		return nil, err
 	}
 
-	// ListTopics is already ORDER BY name, schema_version -- a name's versions
-	// come out in order, so no separate query or re-sort is needed here.
-	health := make([]*VersionHealth, 0, len(all))
-	for _, listed := range all {
-		if listed.Name != name {
-			continue
+	health := make([]*VersionHealth, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		h := &VersionHealth{
+			Topic:           found,
+			Version:         snapshot.Version,
+			Messages:        snapshot.Messages,
+			CompactionHeads: snapshot.CompactionHeads,
+			Groups:          snapshot.Groups,
 		}
-		h, err := a.versionHealth(ctx, listed)
-		if err != nil {
-			return nil, err
-		}
+		h.evaluate()
 		health = append(health, h)
 	}
 	return health, nil
 }
 
-func (a *MessageAdmin) versionHealth(ctx context.Context, found *topic.Topic) (*VersionHealth, error) {
-	snapshot, err := a.metricsController.TopicSnapshot(ctx, found.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	h := &VersionHealth{Topic: found, Compacted: snapshot.Compacted, Groups: snapshot.Groups}
-	h.evaluate()
-
-	return h, nil
-}
-
-// evaluate settles Safe/Reason from Compacted and Groups. Compacted always
-// wins -- retention never reclaims a compacted key's winner, so no amount of
-// group drain makes destroying it safe; that requires the bridge pattern
-// (user-space, re-produce into the new version) instead.
+// evaluate settles Safe/Reason. A compaction head at this version is live
+// state no group drain removes -- the bridge must re-produce it first.
 func (h *VersionHealth) evaluate() {
-	if h.Compacted {
-		h.Reason = "compacted: requires bridge, never safe to retire on lag alone"
-		return
-	}
-	if len(h.Groups) == 0 {
-		h.Safe = true
-		h.Reason = "safe: no consumer group has ever registered a cursor against this version"
+	if h.CompactionHeads > 0 {
+		h.Reason = fmt.Sprintf("compaction heads remain: %d keys still resolve to this version", h.CompactionHeads)
 		return
 	}
 
 	var lagging []string
 	for _, group := range h.Groups {
-		lag := group.GroupLag()
-		if lag.Lag > 0 || lag.UnresolvedExceptions > 0 {
+		if group.Unconsumed > 0 || group.UnresolvedExceptions > 0 {
 			lagging = append(lagging, group.ConsumerGroup)
 		}
 	}
-	if len(lagging) == 0 {
-		h.Safe = true
-		h.Reason = "safe: every bound group has drained"
+	if len(lagging) > 0 {
+		h.Reason = fmt.Sprintf("not drained: %s", strings.Join(lagging, ", "))
 		return
 	}
-	h.Reason = fmt.Sprintf("not drained: %s", strings.Join(lagging, ", "))
+
+	h.Safe = true
+	h.Reason = "safe: no compaction head points at this version and every group has read past it"
 }

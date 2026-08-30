@@ -1,36 +1,40 @@
 package main
 
-// schema evolution bridge lab: the end-to-end proof of the whole
-// epoch/CompactionRank design -- Chunk 6/7's reference implementation of the
-// user-space BRIDGE pattern the library documents but doesn't ship a verb for.
+// schema evolution bridge lab: the end-to-end proof of the payload-version
+// design on one topic -- the reference implementation of the user-space
+// BRIDGE pattern the library documents but doesn't ship a verb for.
 //
-// Scenario: v1 already holds live keyed traffic. v2 is registered alongside
-// it. A bridge consumer group on v1 transforms each key's current winner and
-// re-produces it into v2 at CompactionRank -1 (a backfill, never a live
-// write), while the application's real producers write straight to v2 at
-// rank 0 for keys that have already cut over. Confirms, against the real
+// Scenario: one topic holds live keyed traffic written by a V1Order
+// producer. The application evolves to V2Order (adds Currency). A bridge
+// consumer group bound to V1Order reads each key's current head and
+// re-produces it as V2Order at CompactionRank -1 (a backfill, never a live
+// write), while the application's real producers write V2Order straight in
+// at rank 0 for keys that have already cut over. Confirms, against the real
 // claim/lease/cursor machinery, not just the SQL-level guarantee
 // compactionranklab proves in isolation:
-//   - zero-pause: a v2 key with a live rank-0 write never loses to the
-//     bridge's rank-1 copy of the same key, in EITHER arrival order (user:1
-//     is live-before-bridge, user:2 is bridge-before-live).
+//   - a v2 row always beats the key's v1 head: the compaction winner compares
+//     (schema_version, compaction_rank, head_id), so the bridge's rank -1 copy
+//     supersedes the v1 row it was made from.
+//   - zero-pause: a key with a live rank-0 v2 write never loses to the
+//     bridge's rank -1 copy of the same key, in EITHER arrival order (user:1
+//     is live-before-bridge, user:2 is bridge-before-live). A key whose
+//     head already moved to v2 before the bridge reached it (user:1) is
+//     never bridged at all: its v1 row stopped being the head, so the claim
+//     skips it as superseded.
 //   - crash + restart: stopping the bridge mid-drain and starting a fresh
 //     instance on the same consumer group resumes from the persisted cursor
-//     instead of re-walking v1 from the start, and the source-id-derived
+//     instead of re-walking the log from the start, and the source-id-derived
 //     IdempotencyKey means however that boundary message gets settled (clean
-//     commit vs. redelivered), v2 ends up with exactly one row per bridged
-//     key -- never a duplicate. This lab picks a deterministic stop point
-//     (distinct-key count, not a timer) to stay non-flaky; it is not trying
-//     to win a race against an in-flight commit -- idempotencykeysracelab
-//     already covers dedup-under-true-concurrency.
-//   - drain telegraphing never lies: FamilyHealth(v1) keeps reporting
-//     "compacted: requires bridge" even once this lab's own verification
-//     proves the migration complete -- retiring v1 stays an operator
-//     decision informed by that proof, never something the library asserts
-//     for a compacted topic on its own.
+//     commit vs. redelivered), exactly one bridged row lands per key -- never
+//     a duplicate. This lab picks a deterministic stop point (distinct-key
+//     count, not a timer) to stay non-flaky; it is not trying to win a race
+//     against an in-flight commit -- idempotencykeysracelab already covers
+//     dedup-under-true-concurrency.
+//   - the retire verdict is a query: TopicHealth reports v1 safe once no
+//     compaction head points at a v1 row and the bridge group has read past
+//     every v1 row, and v2 not safe while the heads are at v2.
 //
-// Self-contained: registers both topic versions, destroys v2 on exit,
-// destroys v1 explicitly once its retirement is proven.
+// Self-contained: registers the topic, destroys it on exit.
 
 import (
 	"context"
@@ -60,19 +64,23 @@ var bridgeNamespace = uuid.MustParse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d")
 
 var keys = []string{"user:1", "user:2", "user:3", "user:4", "user:5"}
 
-// V1Order is what v1's producers wrote before the schema evolved.
+// V1Order is what the producers wrote before the schema evolved.
 type V1Order struct {
 	Key   string `json:"key"`
 	Cents int64  `json:"cents"`
 }
 
-// V2Order adds Currency -- the additive change the bridge exists to carry
-// forward; rows the bridge itself writes default it to "USD".
+func (V1Order) SchemaVersion() topic.SchemaVersion { return 1 }
+
+// V2Order adds Currency -- the change the bridge exists to carry forward;
+// rows the bridge itself writes default it to "USD".
 type V2Order struct {
 	Key      string `json:"key"`
 	Cents    int64  `json:"cents"`
 	Currency string `json:"currency"`
 }
+
+func (V2Order) SchemaVersion() topic.SchemaVersion { return 2 }
 
 func main() {
 	if err := run(); err != nil {
@@ -112,41 +120,39 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("phase14a.schemaevolutionlab.%d", time.Now().UnixNano())
-	v1, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	registered, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{})
 	must(err)
+	defer func() {
+		must(mAdmin.DestroyTopic(ctx, name, admin.DestroyOptions{Force: true}))
+	}()
 
 	wp1, err := producer.NewProducer[V1Order](ds, nil)
 	must(err)
-	wp1Instance, err := wp1.Register(ctx, name, topic.SchemaVersion(1))
+	wp1Instance, err := wp1.Register(ctx, name)
 	must(err)
 
-	step("v1 holds live keyed traffic for 5 users")
+	step("the topic holds live keyed V1Order traffic for 5 users")
 	for i, key := range keys {
 		cents := int64(i+1) * 100
 		compaction, err := producer.NewCompactionOptions(0)
 		must(err)
 		_, err = wp1Instance.Produce(ctx, &V1Order{Key: key, Cents: cents}, producer.ProduceOptions{MessageKey: key, Compaction: compaction})
 		must(err)
-		fmt.Printf("  wrote %s cents=%d to v1\n", key, cents)
+		fmt.Printf("  wrote %s cents=%d as V1Order\n", key, cents)
 	}
 
-	step("register v2 alongside v1 -- same name, a new physical topic")
-	v2, err := mAdmin.RegisterTopic(ctx, name, topic.SchemaVersion(2), &topiccontroller.TopicConfig{})
-	must(err)
-	defer func() {
-		must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(2), admin.DestroyOptions{Force: true}))
-	}()
-
+	step("a V2Order producer registers on the same topic -- its rows carry schema_version 2")
 	wp2, err := producer.NewProducer[V2Order](ds, nil)
 	must(err)
-	wp2Instance, err := wp2.Register(ctx, name, topic.SchemaVersion(2))
+	wp2Instance, err := wp2.Register(ctx, name)
 	must(err)
 
 	step("user:1 cuts over to v2 BEFORE the bridge ever sees it (live-then-backfill)")
 	must(liveWrite(ctx, wp2Instance, "user:1", 999, "EUR"))
 
 	// processed counts successful bridge writes; crashGate blocks the 3rd
-	// message (user:3) until we've confirmed exactly 2 landed, then run1's
+	// message the bridge reaches (user:4 -- user:1 is already superseded)
+	// until we've confirmed exactly 2 landed, then run1's
 	// ctx is cancelled while it's mid-block -- a deterministic, DB-timing-
 	// independent stand-in for "the process died right here."
 	var processed atomic.Int64
@@ -179,7 +185,7 @@ func run() (err error) {
 		return err
 	}
 
-	step("bridge run 1: drains user:1 and user:2, then \"crashes\" mid-user:3")
+	step("bridge run 1: skips superseded user:1, drains user:2 and user:3, then \"crashes\" mid-user:4")
 	run1Ctx, cancelRun1 := context.WithCancel(ctx)
 	go func() {
 		for processed.Load() < 2 {
@@ -193,42 +199,43 @@ func run() (err error) {
 
 	step("user:2 cuts over to v2 AFTER the bridge already copied it (backfill-then-live)")
 	must(liveWrite(ctx, wp2Instance, "user:2", 888, "EUR"))
-	close(crashGate) // release user:3, wherever it's stuck (fresh claim or a retried exception)
+	close(crashGate) // release user:4, wherever it's stuck (fresh claim or a retried exception)
 
 	step("bridge run 2: a fresh instance, same group, resumes from the persisted cursor")
 	run2Ctx, cancelRun2 := context.WithCancel(ctx)
 	bridge2 := newBridgeConsumer(ctx, ds, name)
-	go func() { must(waitForDistinctCount(run2Ctx, ds, v2.Id, int64(len(keys)), 10*time.Second, cancelRun2)) }()
+	go func() {
+		must(waitForCommitted(run2Ctx, ds, registered.Id, 10*time.Second, cancelRun2))
+	}()
 	must(bridge2.Consume(run2Ctx, bridgeFunc))
 
 	step("verify the winners: live always beats the bridge, regardless of which arrived first")
-	assertWinner(ctx, ds, v2.Id, "user:1", 999, "EUR") // live arrived first, still wins
-	assertWinner(ctx, ds, v2.Id, "user:2", 888, "EUR") // live arrived second, still wins
-	assertWinner(ctx, ds, v2.Id, "user:3", 300, "USD") // bridge only
-	assertWinner(ctx, ds, v2.Id, "user:4", 400, "USD") // bridge only
-	assertWinner(ctx, ds, v2.Id, "user:5", 500, "USD") // bridge only
+	assertWinner(ctx, ds, registered.Id, "user:1", 999, "EUR") // live arrived first, still wins
+	assertWinner(ctx, ds, registered.Id, "user:2", 888, "EUR") // live arrived second, still wins
+	assertWinner(ctx, ds, registered.Id, "user:3", 300, "USD") // bridge only
+	assertWinner(ctx, ds, registered.Id, "user:4", 400, "USD") // bridge only
+	assertWinner(ctx, ds, registered.Id, "user:5", 500, "USD") // bridge only
 
-	step("verify exactly-once: the crash/restart never left a duplicate row in v2")
-	assertInt("v1 untouched by the bridge -- still exactly 5 physical rows", rowCount(ctx, ds, v1.Id), 5)
-	assertInt("v2 has exactly one row per bridged key plus the two live overrides", rowCount(ctx, ds, v2.Id), 7)
+	step("verify exactly-once: the crash/restart never left a duplicate row")
+	assertInt("5 v1 rows, 4 bridged v2 rows (user:1 was superseded before the bridge reached it), 2 live v2 rows", rowCount(ctx, ds, registered.Id), 11)
+	assertInt("every v1 row still physically present -- superseded, never rewritten", rowCountAtVersion(ctx, ds, registered.Id, 1), 5)
 
-	step("drain telegraphing never lies about a compacted topic, even once it's actually safe")
-	health, err := mAdmin.FamilyHealth(ctx, name)
+	step("the retire verdict is a query: v1 safe, v2 not")
+	health, err := mAdmin.TopicHealth(ctx, name)
 	must(err)
 	v1Health := versionHealth(health, 1)
-	assertTrue("v1 is reported compacted", v1Health.Compacted)
-	assertTrue("FamilyHealth refuses to call it Safe on its own", !v1Health.Safe)
-	fmt.Printf("  verdict: %s\n", v1Health.Reason)
-	fmt.Println("  (this lab's own row-count/winner checks above are what actually prove the bridge finished --")
-	fmt.Println("   FamilyHealth correctly never asserts that for a compacted topic)")
-
-	step("retire v1 -- an operator decision informed by the proof above, not by FamilyHealth.Safe")
-	must(mAdmin.DestroyTopic(ctx, name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	assertInt("no compaction head still points at a v1 row", v1Health.CompactionHeads, 0)
+	assertTrue("v1 is safe to retire", v1Health.Safe)
+	fmt.Printf("  verdict v1: %s\n", v1Health.Reason)
+	v2Health := versionHealth(health, 2)
+	assertInt("every key's head is a v2 row", v2Health.CompactionHeads, int64(len(keys)))
+	assertTrue("v2 is not safe to retire", !v2Health.Safe)
+	fmt.Printf("  verdict v2: %s\n", v2Health.Reason)
 
 	fmt.Println("\n✅ SCHEMA EVOLUTION BRIDGE LAB PASSED")
-	fmt.Println("   live writes beat the bridge in either arrival order -> a crashed bridge resumes")
-	fmt.Println("   from its cursor with no duplicates -> drain telegraphing never calls a compacted")
-	fmt.Println("   topic safe, even once it demonstrably is.")
+	fmt.Println("   a v2 row beats the v1 head -> live writes beat the bridge in either arrival order ->")
+	fmt.Println("   a crashed bridge resumes from its cursor with no duplicates -> the retire verdict")
+	fmt.Println("   reads the log instead of guessing.")
 	return nil
 }
 
@@ -266,18 +273,20 @@ func newBridgeConsumer(ctx context.Context, ds *iDatastore.PostgresDatastore, na
 		DisableGracefulShutdown: true,
 	})
 	must(err)
-	cInstance, err := c.Register(ctx, group, name, topic.SchemaVersion(1), nil)
+	cInstance, err := c.Register(ctx, group, name, nil)
 	must(err)
 	return cInstance
 }
 
-// waitForDistinctCount polls v2's compaction_head until it holds want distinct
-// keys, then cancels stop -- a durable, DB-observed stop signal instead of a
-// timer, so the crash point is reproducible run to run.
-func waitForDistinctCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId, want int64, timeout time.Duration, stop context.CancelFunc) error {
+// waitForCommitted polls the bridge group's cursor until committed has
+// passed the last v1 row -- a durable, DB-observed stop signal instead of a
+// timer, taken after the commit so the retire verdict below reads a settled
+// cursor.
+func waitForCommitted(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, timeout time.Duration, stop context.CancelFunc) error {
+	lastV1 := scalar(ctx, ds, fmt.Sprintf(`SELECT max(id) FROM message_log_%d WHERE schema_version = 1;`, topicId))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if distinctKeyCount(ctx, ds, topicId) >= want {
+		if committed(ctx, ds, topicId) >= lastV1 {
 			stop()
 			return nil
 		}
@@ -287,13 +296,13 @@ func waitForDistinctCount(ctx context.Context, ds *iDatastore.PostgresDatastore,
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	die(fmt.Sprintf("timed out waiting for %d distinct keys in v2's compaction_head", want))
+	die(fmt.Sprintf("timed out waiting for the bridge's committed cursor to reach %d", lastV1))
 	return nil
 }
 
 func versionHealth(all []*admin.VersionHealth, version topic.SchemaVersion) *admin.VersionHealth {
 	for _, h := range all {
-		if h.Topic.SchemaVersion == version {
+		if h.Version == version {
 			return h
 		}
 	}
@@ -301,12 +310,19 @@ func versionHealth(all []*admin.VersionHealth, version topic.SchemaVersion) *adm
 	return nil
 }
 
-func distinctKeyCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
-	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM compaction_head_%d;`, topicId))
+func committed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`
+		SELECT c.committed FROM consumer_group_cursor_%d c
+		JOIN consumer_group_config g ON g.id = c.consumer_group_id
+		WHERE g.name = $1;`, topicId), group)
 }
 
 func rowCount(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) int64 {
 	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d`, topicId))
+}
+
+func rowCountAtVersion(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, version int64) int64 {
+	return scalar(ctx, ds, fmt.Sprintf(`SELECT count(*) FROM message_log_%d WHERE schema_version = $1`, topicId), version)
 }
 
 func winner(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64, key string) *V2Order {

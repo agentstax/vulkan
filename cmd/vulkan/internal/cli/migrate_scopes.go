@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/spf13/cobra"
 )
 
@@ -45,10 +44,7 @@ func newMigrateTopicCmd(g *globalFlags) *cobra.Command {
 // directions) share this body -- they differ only in the scope they resolve and
 // the direction they guard. The topic scope alone takes a <name> positional.
 func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
-	var (
-		to            int64
-		schemaVersion int64
-	)
+	var to int64
 
 	use := dir.verb()
 	args := cobra.NoArgs
@@ -90,7 +86,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				return err
 			}
 
-			targets, err := gatherTargets(ctx, mAdmin, controller, s, name, topic.SchemaVersion(schemaVersion))
+			targets, err := gatherTargets(ctx, mAdmin, controller, s, name)
 			if err != nil {
 				return err
 			}
@@ -127,7 +123,7 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 				return failOp("another migration is already in progress (advisory lock held) -- wait for it to finish, or confirm no other migrate process is actually running before retrying")
 			}
 
-			if err := runScopeMigrate(ctx, mAdmin, s, name, topic.SchemaVersion(schemaVersion), to); err != nil {
+			if err := runScopeMigrate(ctx, mAdmin, s, name, to); err != nil {
 				return migrateError(err)
 			}
 
@@ -141,9 +137,6 @@ func newDirectionCmd(g *globalFlags, s scope, dir direction) *cobra.Command {
 	}
 
 	cmd.Flags().Int64Var(&to, "to", 0, "target schema version (required)")
-	if s == scopeTopic {
-		cmd.Flags().Int64Var(&schemaVersion, "schema-version", 1, "which registered version of the topic to migrate")
-	}
 	return cmd
 }
 
@@ -171,12 +164,12 @@ func errToRequired(s scope, dir direction) error {
 	return failUsage("--to is required (e.g. --to %d) -- run `vulkan migrate versions` to see what's available", s.ceiling())
 }
 
-func runScopeMigrate(ctx context.Context, mAdmin *admin.MessageAdmin, s scope, name string, version topic.SchemaVersion, to int64) error {
+func runScopeMigrate(ctx context.Context, mAdmin *admin.MessageAdmin, s scope, name string, to int64) error {
 	switch s {
 	case scopeSystem:
 		return mAdmin.MigrateSystem(ctx, to)
 	case scopeTopic:
-		return mAdmin.MigrateTopic(ctx, name, version, to)
+		return mAdmin.MigrateTopic(ctx, name, to)
 	default:
 		return mAdmin.MigrateTopics(ctx, to)
 	}

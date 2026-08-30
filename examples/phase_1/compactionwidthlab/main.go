@@ -46,6 +46,8 @@ type Record struct {
 	Key string `json:"key"`
 }
 
+func (Record) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
@@ -84,27 +86,27 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	narrowName := fmt.Sprintf("phase8c.compactionwidthlab.narrow.%d", time.Now().UnixNano())
-	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: narrowPartitionSize})
+	narrow, err := mAdmin.RegisterTopic(ctx, narrowName, &topiccontroller.TopicConfig{PartitionSize: narrowPartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, narrowName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, narrowName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wideName := fmt.Sprintf("phase8c.compactionwidthlab.wide.%d", time.Now().UnixNano())
-	wide, err := mAdmin.RegisterTopic(ctx, wideName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: widePartitionSize})
+	wide, err := mAdmin.RegisterTopic(ctx, wideName, &topiccontroller.TopicConfig{PartitionSize: widePartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, wideName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, wideName, admin.DestroyOptions{Force: true}))
 	}()
 
 	step("seed both topics with the identical 40-message workload")
 	narrowProducer, err := producer.NewProducer[Record](ds, nil)
 	must(err)
-	narrowProducerInstance, err := narrowProducer.Register(ctx, narrow.Name, topic.SchemaVersion(1))
+	narrowProducerInstance, err := narrowProducer.Register(ctx, narrow.Name)
 	must(err)
 	wideProducer, err := producer.NewProducer[Record](ds, nil)
 	must(err)
-	wideProducerInstance, err := wideProducer.Register(ctx, wide.Name, topic.SchemaVersion(1))
+	wideProducerInstance, err := wideProducer.Register(ctx, wide.Name)
 	must(err)
 	seed(ctx, narrowProducerInstance)
 	seed(ctx, wideProducerInstance)

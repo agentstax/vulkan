@@ -37,6 +37,8 @@ type OrderPlaced struct {
 	OrderId string `json:"order_id"`
 }
 
+func (OrderPlaced) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err.Error())
@@ -64,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	shipping, err := orderConsumer.Register(ctx, "shipping", "orders.placed", topic.SchemaVersion(1), nil)
+	shipping, err := orderConsumer.Register(ctx, "shipping", "orders.placed", nil)
 	if err != nil {
 		return err
 	}

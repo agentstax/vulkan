@@ -30,15 +30,15 @@ argument — there is no separate bind verb to call one pattern at a time:
 ```go
 // Receipts care about created orders.
 receipts, err := emailConsumer.Register(ctx, "email-receipts",
-	registered.Name, topic.SchemaVersion(1), []string{"orders.*.created"})
+	registered.Name, []string{"orders.*.created"})
 
 // EU compliance wants everything EU.
 compliance, err := auditConsumer.Register(ctx, "eu-compliance",
-	registered.Name, topic.SchemaVersion(1), []string{"orders.eu.*"})
+	registered.Name, []string{"orders.eu.*"})
 
 // The analytics group passes nil: no bindings, the whole topic.
 analytics, err := statsConsumer.Register(ctx, "order-analytics",
-	registered.Name, topic.SchemaVersion(1), nil)
+	registered.Name, nil)
 ```
 
 Produce `orders.eu.created` → `email-receipts`, `eu-compliance`, and

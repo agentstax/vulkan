@@ -50,6 +50,8 @@ type Rec struct {
 	Version int    `json:"version"`
 }
 
+func (Rec) SchemaVersion() topic.SchemaVersion { return 1 }
+
 var (
 	ds      *iDatastore.PostgresDatastore
 	topicId int64
@@ -94,7 +96,7 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("keyleaselab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	topicId = tp.Id
 
@@ -106,7 +108,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[Rec](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	g, err := cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning())
 	must(err)
@@ -299,7 +301,7 @@ func run() (err error) {
 	fmt.Println("  ✓ expired swept, live kept")
 
 	step("destroying the topic drops its message_key_lease table")
-	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	var keyLeaseTable *string
 	must(ds.Pool.QueryRow(ctx, `SELECT to_regclass($1)::text;`, fmt.Sprintf("message_key_lease_%d", topicId)).Scan(&keyLeaseTable))
 	if keyLeaseTable != nil {

@@ -6,7 +6,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // MetricsConsumer reads the measurement stream on __system.metrics -- every
@@ -32,5 +31,5 @@ func NewMetricsConsumer(ds *iDatastore.PostgresDatastore, cfg *consumer.Consumer
 // nil = every metric.
 // Returns ErrTopicNotFound until RegisterSystem has run.
 func (c *MetricsConsumer) Register(ctx context.Context, consumerGroup string, names []string) (*consumer.ConsumerInstance[metrics.Measurement], error) {
-	return c.consumer.Register(ctx, consumerGroup, metrics.TopicName, topic.SchemaVersion(1), names)
+	return c.consumer.Register(ctx, consumerGroup, metrics.TopicName, names)
 }

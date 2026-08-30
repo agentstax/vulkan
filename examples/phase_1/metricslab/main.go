@@ -82,15 +82,15 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("metricslab.%d", run)
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	for range 4 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -137,7 +137,7 @@ func run() (err error) {
 		must(err)
 		go func() { must(abandonedEvents.Run(runCtx, g.Name, tp.Name, topic.SchemaVersion(1), label)) }()
 
-		provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
+		provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, 1, abandonedEvents, cfg)
 		must(err)
 		must(provisioner.Declare(runCtx, owner))
 
@@ -223,7 +223,7 @@ func (g *releaseGates) release(id int64)              { close(g.gate(id)) }
 // ---- helpers ----
 
 func topicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) (*iMetrics.TopicSnapshot, error) {
-	return mAdmin.TopicMetrics(ctx, name, topic.SchemaVersion(1))
+	return mAdmin.TopicMetrics(ctx, name)
 }
 
 func mustTopicMetrics(ctx context.Context, mAdmin *admin.MessageAdmin, name string) *iMetrics.TopicSnapshot {

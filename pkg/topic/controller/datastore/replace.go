@@ -15,13 +15,13 @@ import (
 func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, declared *TopicData, declaredBy string) (*TopicData, error) {
 	if found.PartitionSize != declared.PartitionSize {
 		return nil, topic.ErrTopicConfigMismatch.With(
-			"topic", found.Name, "version", found.SchemaVersion,
+			"topic", found.Name,
 			"existing_partition_size", found.PartitionSize, "declared_partition_size", declared.PartitionSize)
 	}
 
 	changes := configChanges(found, declared)
 	if len(changes) == 0 {
-		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id, "schema_version", found.SchemaVersion)
+		d.Logger.InfoContext(ctx, "topic registered (already existed)", "topic", found.Name, "topic_id", found.Id)
 		return found, nil
 	}
 
@@ -45,7 +45,6 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 			id,
 			system_id,
 			name,
-			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -66,7 +65,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 		return nil, err
 	}
 	if updated == nil {
-		return nil, topic.ErrTopicDeclarationInterrupted.With("topic", found.Name, "version", found.SchemaVersion)
+		return nil, topic.ErrTopicDeclarationInterrupted.With("topic", found.Name)
 	}
 
 	if err := d.appendTopicConfigLog(ctx, tx, updated, declaredBy); err != nil {
@@ -79,7 +78,7 @@ func (d *TopicDatastore) replaceConfig(ctx context.Context, found *TopicData, de
 
 	// the only signal that two services declare this topic differently
 	d.Logger.InfoContext(ctx, "topic registered (config replaced)",
-		append([]any{"topic", updated.Name, "topic_id", updated.Id, "schema_version", updated.SchemaVersion}, changes...)...)
+		append([]any{"topic", updated.Name, "topic_id", updated.Id}, changes...)...)
 	return updated, nil
 }
 

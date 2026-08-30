@@ -46,6 +46,8 @@ type labMessage struct {
 	N int `json:"n"`
 }
 
+func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
@@ -87,9 +89,9 @@ func run() (err error) {
 	must(err)
 
 	suffix := time.Now().UnixNano()
-	topicA, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.a.%d", suffix), topic.SchemaVersion(1), nil)
+	topicA, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.a.%d", suffix), nil)
 	must(err)
-	topicB, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), topic.SchemaVersion(1), nil)
+	topicB, err := mAdmin.RegisterTopic(ctx, fmt.Sprintf("consumergrouplab.b.%d", suffix), nil)
 	must(err)
 
 	step("RegisterGroup registers the group with its children in one txn")
@@ -139,7 +141,7 @@ func run() (err error) {
 	step("Start: consumergroup.Head() places a new group's cursor at MAX(id); an existing group keeps its position")
 	labProducer, err := producer.NewProducer[labMessage](ds, nil)
 	must(err)
-	producing, err := labProducer.Register(ctx, topicA.Name, topic.SchemaVersion(1))
+	producing, err := labProducer.Register(ctx, topicA.Name)
 	must(err)
 	var seededHead int64
 	for n := 1; n <= 3; n++ {
@@ -153,7 +155,7 @@ func run() (err error) {
 	})
 	must(err)
 	headGroup := fmt.Sprintf("consumergrouplab.head.%d", suffix)
-	headInstance, err := headConsumer.Register(ctx, headGroup, topicA.Name, topic.SchemaVersion(1), nil)
+	headInstance, err := headConsumer.Register(ctx, headGroup, topicA.Name, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, seededHead, "after Register at the head")
 	fresh, err := producing.Produce(ctx, &labMessage{N: 4}, producer.ProduceOptions{})
@@ -175,13 +177,13 @@ func run() (err error) {
 	before := readCursor(ctx, ds, topicA.Id, headGroup)
 	beginningConsumer, err := consumer.NewConsumer[labMessage](ds, nil)
 	must(err)
-	_, err = beginningConsumer.Register(ctx, headGroup, topicA.Name, topic.SchemaVersion(1), nil)
+	_, err = beginningConsumer.Register(ctx, headGroup, topicA.Name, nil)
 	must(err)
 	assertCursor(ctx, ds, topicA.Id, headGroup, before, "after a second Register at the beginning")
 	fmt.Printf("  ✓ cursor created at %d, only message 4 delivered, a later Register left the row alone\n", seededHead)
 
 	step("destroying a topic destroys ITS groups and no one else's")
-	must(mAdmin.DestroyTopic(ctx, topicB.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicB.Name, admin.DestroyOptions{Force: true}))
 	var bRows int
 	must(ds.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`, other.Id).Scan(&bRows))
 	if bRows != 0 {
@@ -217,7 +219,7 @@ func run() (err error) {
 	// cleanup
 	_, err = ds.Pool.Exec(ctx, `DELETE FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`, topicA.Id, race)
 	must(err)
-	must(mAdmin.DestroyTopic(ctx, topicA.Name, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicA.Name, admin.DestroyOptions{Force: true}))
 
 	fmt.Printf("\n✅ consumer group registry lab PASSED\n")
 	return nil
@@ -234,10 +236,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 
 	locked, err := admin.NewMessageAdmin(ds, nil)
 	must(err)
-	if err := locked.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, topic.ErrDestroyDisabled) {
+	if err := locked.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{}); !errors.Is(err, topic.ErrDestroyDisabled) {
 		die(fmt.Sprintf("destroy without AllowDestroy: want ErrDestroyDisabled, got %v", err))
 	}
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName+".missing", admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupNotFound) {
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, doomedName+".missing", admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupNotFound) {
 		die(fmt.Sprintf("destroy of an unregistered group: want ErrGroupNotFound, got %v", err))
 	}
 	fmt.Printf("  ✓ AllowDestroy gate and not-found error\n")
@@ -256,7 +258,7 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	if claimed == nil {
 		die("the lab's own worker claim was declined")
 	}
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupLive) {
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupLive) {
 		die(fmt.Sprintf("destroy with a live worker instance: want ErrGroupLive, got %v", err))
 	}
 	must(workers.ReleaseInstance(ctx, claimed.Id, claimed.Token))
@@ -272,10 +274,10 @@ func destroySection(ctx context.Context, ds *iDatastore.PostgresDatastore, mAdmi
 	must(err)
 	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_key_lease_%d (consumer_group_id, message_key, lease_token, expires_at) VALUES ($1, 'labkey', gen_random_uuid(), now());`, topicA.Id), doomed.Id)
 	must(err)
-	if err := mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
+	if err := mAdmin.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{}); !errors.Is(err, consumergroup.ErrGroupDeliveriesPending) {
 		die(fmt.Sprintf("destroy with delivery rows: want ErrGroupDeliveriesPending, got %v", err))
 	}
-	must(mAdmin.DestroyGroup(ctx, topicA.Name, topic.SchemaVersion(1), doomedName, admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyGroup(ctx, topicA.Name, doomedName, admin.DestroyOptions{Force: true}))
 
 	for what, sql := range map[string]string{
 		"group rows":        `SELECT COUNT(*) FROM consumer_group_config WHERE id = $1;`,

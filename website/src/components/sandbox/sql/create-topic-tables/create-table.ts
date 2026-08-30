@@ -11,9 +11,10 @@ export const createTableSqlTemplate = `
 			-- claim fence assumes ids are issued in INSERT order, and a cached
 			-- sequence hands out out-of-order id blocks
 
+			schema_version BIGINT NOT NULL,               -- the payload's version, from the producing Message type
 			routing_key TEXT,
 			message_key TEXT,
-			compaction_rank BIGINT, -- NULL = this message never opted into compaction
+			compaction_rank BIGINT,                       -- NULL = this message never opted into compaction
 			payload JSONB NOT NULL,
 			options JSONB,                                -- sparse MessageOptions
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

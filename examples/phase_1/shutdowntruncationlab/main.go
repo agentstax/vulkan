@@ -103,10 +103,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase9.shutdowntruncationlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -119,7 +119,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
@@ -158,7 +158,7 @@ func run() (err error) {
 	}
 	// claimed straight off the provisioner -- no manager, so nothing respawns the
 	// execution and the truncation the lab asserts on is the only one
-	provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, abandonedEvents, cfg)
+	provisioner, err := messageconsumer.NewMessageConsumerProvisioner(ds, consumerFunc, 1, abandonedEvents, cfg)
 	must(err)
 	must(provisioner.Declare(ctx, owner))
 
@@ -193,7 +193,7 @@ func run() (err error) {
 	time.Sleep(5500 * time.Millisecond)
 
 	step("resolve the exception -- committed jumps to the narrowed low, no need to wait on the untouched suffix's lease")
-	claimedExceptions, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 10, 3, lease, tp.DeliveryLogMode)
+	claimedExceptions, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, 10, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 {
 		die(fmt.Sprintf("expected 1 claimed exception, got %d", len(claimedExceptions)))
@@ -206,7 +206,7 @@ func run() (err error) {
 	// the narrowed lease's 2s duration already elapsed during the 5.5s backoff
 	// sleep above -- no separate wait needed before reclaiming it.
 	step("reclaim: only the untouched suffix comes back, not the resolved prefix")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 3, 3, lease, topic.DeliveryLogModeFailures)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 3, 3, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a reclaim, got nil")

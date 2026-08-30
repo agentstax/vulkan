@@ -52,7 +52,7 @@ func (r *deliveryRunner[Message]) project(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := r.consumers.FanOut(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.FanOutBatchLimit); err != nil {
+			if err := r.consumers.FanOut(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), r.cfg.FanOutBatchLimit); err != nil {
 				return err
 			}
 		}

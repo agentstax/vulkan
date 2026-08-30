@@ -9,7 +9,6 @@ type TopicData struct {
 	Id                     int64     `db:"id"`
 	SystemId               int64     `db:"system_id"`
 	Name                   string    `db:"name"`
-	SchemaVersion          int64     `db:"schema_version"`
 	PartitionSize          int64     `db:"partition_size"`
 	RetentionTTLNs         int64     `db:"retention_ttl_ns"`
 	AllowDropPastCommitted bool      `db:"allow_drop_past_committed"`

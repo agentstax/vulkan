@@ -36,6 +36,8 @@ type labMessage struct {
 	Note string
 }
 
+func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+
 const groupName = "bindinglab.group"
 
 var (
@@ -84,24 +86,24 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName = fmt.Sprintf("bindinglab.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
+	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	// ===== install + join =====
 	step("Register declares the set; a same-set Register joins without writing")
 	incumbentConsumer := newConsumer()
-	incumbent, err := incumbentConsumer.Register(ctx, groupName, topicName, topic.SchemaVersion(1), []string{"orders.*"})
+	incumbent, err := incumbentConsumer.Register(ctx, groupName, topicName, []string{"orders.*"})
 	must(err)
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
 		registered.Id, groupName).Scan(&groupId))
 	assertInt("one installed row", installedRows(ctx), 1)
 	assertString("binding rows", bindingDisplays(ctx), "orders.*")
 
-	_, err = newConsumer().Register(ctx, groupName, topicName, topic.SchemaVersion(1), []string{"orders.*"})
+	_, err = newConsumer().Register(ctx, groupName, topicName, []string{"orders.*"})
 	must(err)
 	assertInt("still one installed row after the same set re-registers", installedRows(ctx), 1)
 	fmt.Println("  ✓ installed once, joined on re-register")
@@ -117,7 +119,7 @@ func run() (err error) {
 	}()
 	waitLiveInstance(ctx)
 
-	divergent, err := newConsumer().Register(ctx, groupName, topicName, topic.SchemaVersion(1), []string{"payments.*"})
+	divergent, err := newConsumer().Register(ctx, groupName, topicName, []string{"payments.*"})
 	must(err)
 	received := make(chan string, 1)
 	divergentCtx, stopDivergent := context.WithCancel(ctx)
@@ -175,7 +177,7 @@ func run() (err error) {
 
 	wp, err := producer.NewProducer[labMessage](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, topicName, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, topicName)
 	must(err)
 	_, err = wpInstance.Produce(ctx, &labMessage{Note: "charged"}, producer.ProduceOptions{RoutingKey: "payments.charge"})
 	must(err)

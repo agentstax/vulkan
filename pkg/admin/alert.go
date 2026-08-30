@@ -6,7 +6,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/alert"
 	"github.com/agentstax/vulkan/pkg/migrate"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // ListAlerts returns the current head per (alert, owner) on __system.alerts --
@@ -14,7 +13,7 @@ import (
 // window.
 // Returns migrate.ErrNotRegistered until RegisterSystem has run.
 func (a *MessageAdmin) ListAlerts(ctx context.Context) ([]*producer.MessageRow[alert.Alert], error) {
-	found, err := a.topicController.Get(ctx, alert.TopicName, topic.SchemaVersion(1))
+	found, err := a.topicController.Get(ctx, alert.TopicName)
 	if err != nil {
 		return nil, err
 	}

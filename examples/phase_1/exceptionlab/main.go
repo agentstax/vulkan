@@ -81,10 +81,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase65c.exceptionlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -97,7 +97,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	groupId = mustGroupID(cd.RegisterGroup(ctx, tp.Id, group, consumergroup.Beginning()))
@@ -116,7 +116,7 @@ func run() (err error) {
 
 	// ===== range 1: message 3 fails, the rest succeed =====
 	step("claim range 1 (ids 1-5), message 3 fails processing")
-	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim1, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim1 == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -134,7 +134,7 @@ func run() (err error) {
 
 	// ===== range 2: fully succeeds, but committed stays pinned on message 3 =====
 	step("claim + commit range 2 (ids 6-10), all succeed")
-	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim2, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim2 == nil {
 		die("expected a fresh claim, got nil")
@@ -153,7 +153,7 @@ func run() (err error) {
 
 	// ===== drain the exception window: message 3 retried and succeeds =====
 	step("ClaimExceptions drains message 3, retry succeeds")
-	claimedExceptions, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, batch, 3, lease, tp.DeliveryLogMode)
+	claimedExceptions, err := exceptionConsumers.Claim(ctx, tp.Id, groupId, 1, batch, 3, lease, tp.DeliveryLogMode)
 	must(err)
 	if len(claimedExceptions) != 1 || claimedExceptions[0].MessageId != failingId {
 		die(fmt.Sprintf("expected to claim exactly message %d, got %+v", failingId, claimedExceptions))
@@ -171,7 +171,7 @@ func run() (err error) {
 	// ===== drain the rest so committed reaches head =====
 	step("drain remaining ranges -> committed reaches head")
 	for range 10 {
-		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+		c, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, batch, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 		must(err)
 		if c == nil {
 			break // caught up

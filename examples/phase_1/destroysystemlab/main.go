@@ -26,7 +26,6 @@ import (
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
 	"github.com/agentstax/vulkan/pkg/system"
-	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/google/uuid"
 )
 
@@ -85,11 +84,11 @@ func run() (err error) {
 
 	step("seed a user topic with messages")
 	topicName := fmt.Sprintf("destroysystemlab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 	for range 3 {
 		_, err := wpInstance.ProduceFunc(ctx, func(ctx context.Context, tx producer.Tx, _ uuid.UUID) (*common.Work, error) {
@@ -108,7 +107,7 @@ func run() (err error) {
 		InstanceTTL:   2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, "destroysystemlab-group", tp.Name, topic.SchemaVersion(1), nil)
+	wcInstance, err := wc.Register(ctx, "destroysystemlab-group", tp.Name, nil)
 	must(err)
 	consumeCtx, stopConsumer := context.WithCancel(ctx)
 	consumeDone := make(chan error, 1)
@@ -136,7 +135,7 @@ func run() (err error) {
 	var alertsTopicId int64
 	must(ds.Pool.QueryRow(ctx, `SELECT id FROM topic_config WHERE name = '__system.alerts';`).Scan(&alertsTopicId))
 
-	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	must(mAdmin.DestroySystem(ctx, admin.DestroyOptions{}))
 
 	for _, table := range controlPlaneTables {

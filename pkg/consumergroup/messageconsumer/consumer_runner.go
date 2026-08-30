@@ -101,7 +101,7 @@ func (r *messageRunner[Message]) drain(ctx context.Context, wg *sync.WaitGroup) 
 	select {
 	case <-done:
 	case <-timer.C:
-		r.Logger.WarnContext(ctx, "in-flight work did not finish before the shutdown timeout -- stragglers settle via lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "version", r.Topic.SchemaVersion, "shutdown_timeout", r.cfg.ShutdownTimeout)
+		r.Logger.WarnContext(ctx, "in-flight work did not finish before the shutdown timeout -- stragglers settle via lease expiry", "group", r.Owner.Name, "topic_id", r.Topic.Id, "version", r.SchemaVersion, "shutdown_timeout", r.cfg.ShutdownTimeout)
 	}
 }
 
@@ -151,7 +151,7 @@ func (r *messageRunner[Message]) prefetch(ctx context.Context) error {
 		leaseDuration := r.cfg.MessageMax.Timeout + r.cfg.TimeoutGrace + r.cfg.QueueMargin + r.cfg.RecordMargin
 		limit := min(room, r.cfg.BatchLimit)
 
-		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, limit, r.cfg.MaxRangeReclaims, leaseDuration, r.Topic.DeliveryLogMode)
+		claimed, err := r.consumers.ClaimMessagesWithCursor(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), limit, r.cfg.MaxRangeReclaims, leaseDuration, r.Topic.DeliveryLogMode)
 		if err != nil {
 			// ctx cancellation is a real shutdown -> propagate and stop
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

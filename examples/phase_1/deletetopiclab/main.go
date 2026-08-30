@@ -75,7 +75,7 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase9.deletetopiclab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: 1000})
 	must(err)
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -86,7 +86,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	step("seed a row in every topic-scoped table")
@@ -105,14 +105,14 @@ func run() (err error) {
 	_, err = wpInstance.ProduceFunc(ctx, fn, producer.ProduceOptions{RoutingKey: "orders.created", MessageKey: "seed-key", Compaction: compaction})
 	must(err)
 
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, groupId, 1, 10, 3, 5*time.Second, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a claim, got nil")
 	}
 	// deliberately never Commit -- leaves the lease open
 
-	must(deliveryConsumers.FanOut(ctx, tp.Id, groupId, 100)) // materializes a 'ready' delivery row, left unclaimed
+	must(deliveryConsumers.FanOut(ctx, tp.Id, groupId, 1, 100)) // materializes a 'ready' delivery row, left unclaimed
 
 	// claim it via the lifecycle path and fail it once -- status flips
 	// ready->inflight->ready in place (still 1 delivery row) while writing one
@@ -136,7 +136,7 @@ func run() (err error) {
 	assertIdempotencyKeyRowCount(ctx, ds, tp.Id, 1, "before Destroy")
 
 	step("Destroy the topic")
-	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 
 	assertGroupGone(ctx, ds, groupId)
 	for _, table := range []string{

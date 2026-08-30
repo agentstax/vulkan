@@ -1,5 +1,14 @@
 # Public API
 
+cronjob coupling
+- coupling a consumer to the cron event producer is wrong
+- should have something like Register() CronJob -> cronjob.ScheduledProducer() <- produces events on schedule
+  then any set of consumers can listen to this
+doc decision indexing
+- is our decision index doing anything? grep and python search is quite powerful
+- can we make our index more like a search engine ie a list of keywords or tags -> loaded in to context on startup
+need metric / alert example playground scenarios
+
 ---
 - topic.SchemaVersion(1) ?????
 - no generics necessary?
@@ -12,6 +21,9 @@
 - where to put consumer.ConsumerConfig ie NewConsumer or Register, same pattern for producer etc
 - RegisterCronJob returns
 ---
+
+01 should func (OrderPlacedV2) SchemaVersion() topic.SchemaVersion { return 2 } return type be topic.SchemaVersion
+   or should it just be an int
 
 01 reconsider having to call register system
 - it needs to be called but it doesn't really do anything as it has no config so its always the same call and idempotent
@@ -72,6 +84,10 @@
 Have specific 'proposal' pages. Like the idea of having an issue and doc proposal page where people can comment and give thoughts etc
 
 # Other
+
+should probably look to see if we could speed up claim query its gotten unruly with ctes and conditionals
+
+need to make sure we do some manual testing for cli, metrics and alerts
 
 cleanup justfile
 

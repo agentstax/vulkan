@@ -25,6 +25,8 @@ type Message struct {
 	Data string
 }
 
+func (Message) SchemaVersion() topic.SchemaVersion { return 1 }
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\n❌ LAB FAILED: %s\n", err.Error())
@@ -63,11 +65,11 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	const topicName = "test.producerregister"
-	_ = mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	_ = mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}) // clean slate from any crashed prior run
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	p, err := producer.NewProducer[Message](ds, nil)
@@ -75,7 +77,7 @@ func run() (err error) {
 
 	// ===== Register on Background =====
 	step("Register(context.Background()) -- a build step, no lifetime to enforce")
-	instance, err := p.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	instance, err := p.Register(ctx, tp.Name)
 	must(err)
 	produced, err := instance.Produce(ctx, &Message{Data: "registered"}, producer.ProduceOptions{})
 	must(err)
@@ -96,7 +98,7 @@ func run() (err error) {
 
 	// ===== Register many times =====
 	step("Register again -- an independent instance from the same factory")
-	sibling, err := p.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	sibling, err := p.Register(ctx, tp.Name)
 	must(err)
 	_, err = sibling.Produce(ctx, &Message{Data: "sibling"}, producer.ProduceOptions{})
 	must(err)

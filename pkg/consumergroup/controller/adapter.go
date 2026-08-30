@@ -16,13 +16,12 @@ func toGroup(data *datastore.GroupData) *consumergroup.Group {
 
 func toDeclaration(data *datastore.BindingLogData) *consumergroup.Declaration {
 	return &consumergroup.Declaration{
-		GroupName:     data.GroupName,
-		TopicName:     data.TopicName,
-		SchemaVersion: data.SchemaVersion,
-		Status:        consumergroup.DeclarationOutcome(data.Status),
-		Patterns:      data.Patterns,
-		DeclaredBy:    data.DeclaredBy,
-		DeclaredAt:    data.DeclaredAt,
-		AttemptedAt:   data.AttemptedAt,
+		GroupName:   data.GroupName,
+		TopicName:   data.TopicName,
+		Status:      consumergroup.DeclarationOutcome(data.Status),
+		Patterns:    data.Patterns,
+		DeclaredBy:  data.DeclaredBy,
+		DeclaredAt:  data.DeclaredAt,
+		AttemptedAt: data.AttemptedAt,
 	}
 }

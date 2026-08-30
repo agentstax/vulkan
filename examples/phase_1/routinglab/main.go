@@ -84,10 +84,10 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase7.routinglab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	cd, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
@@ -100,7 +100,7 @@ func run() (err error) {
 	must(err)
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	head, gids := reset(ctx, ds, cd, tp.Id, cursorGroup, controlGroup, lifecycleGroup)
@@ -131,7 +131,7 @@ func run() (err error) {
 
 	// ===== CURSOR path: cursorGroup only sees the 2 matching messages =====
 	step("cursorGroup claims (head, head+5] -- expect only msg1 and msg2 back")
-	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, limit, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err := messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, cursorGroupID, 1, limit, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -148,7 +148,7 @@ func run() (err error) {
 
 	// ===== CURSOR path: controlGroup has no binding, sees every message =====
 	step("controlGroup claims the identical range -- expect all 5 back, unaffected by cursorGroup's binding")
-	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, limit, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
+	claim, err = messageConsumers.ClaimMessagesWithCursor(ctx, tp.Id, controlGroupID, 1, limit, maxRangeReclaims, lease, topic.DeliveryLogModeFailures)
 	must(err)
 	if claim == nil {
 		die("expected a fresh claim, got nil (no work?)")
@@ -162,7 +162,7 @@ func run() (err error) {
 
 	// ===== LIFECYCLE path: only a matching message ever gets a delivery row =====
 	step("FanOut lifecycleGroup -- expect exactly 1 delivery row (msg4, payments.charge)")
-	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 100))
+	must(deliveryConsumers.FanOut(ctx, tp.Id, lifecycleGroupID, 1, 100))
 	deliveries, err := deliveryConsumers.ClaimMessagesWithLifecycle(ctx, tp.Id, lifecycleGroupID, limit)
 	must(err)
 	fmt.Printf("  claimed deliveries: %v\n", deliveryIDs(deliveries))

@@ -34,7 +34,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/admin"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
@@ -97,15 +96,15 @@ func concurrentRaceScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.race.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: 1000})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: 1000})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	compaction, err := producer.NewCompactionOptions(0)
@@ -138,10 +137,10 @@ func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 	must(err)
 
 	topicName := fmt.Sprintf("phase8c.compactionheadracelab.scale.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{PartitionSize: scalePartitionSize})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{PartitionSize: scalePartitionSize})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	insertStaleRow(ctx, ds, tp.Id)
@@ -181,9 +180,9 @@ func scaleCurveScenario(ctx context.Context, ds *iDatastore.PostgresDatastore) {
 // seeding, this cares about query cost at scale, not seeding realism) so
 // its own compaction_head row is set directly alongside it.
 func insertStaleRow(ctx context.Context, ds *iDatastore.PostgresDatastore, topicId int64) {
-	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, message_key, compaction_rank) VALUES ('{}'::jsonb, 'stale', 0);`, topicId))
+	_, err := ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO message_log_%d (payload, schema_version, message_key, compaction_rank) VALUES ('{}'::jsonb, 1, 'stale', 0);`, topicId))
 	must(err)
-	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO compaction_head_%d (compaction_key, head_id) VALUES ('stale', 1);`, topicId))
+	_, err = ds.Pool.Exec(ctx, fmt.Sprintf(`INSERT INTO compaction_head_%d (compaction_key, head_id, schema_version) VALUES ('stale', 1, 1);`, topicId))
 	must(err)
 }
 
@@ -213,8 +212,8 @@ func bulkInsertFiller(ctx context.Context, ds *iDatastore.PostgresDatastore, top
 		return
 	}
 	sql := fmt.Sprintf(`
-		INSERT INTO message_log_%d (payload, message_key)
-		SELECT '{}'::jsonb, NULL FROM generate_series(1, $1);
+		INSERT INTO message_log_%d (payload, schema_version, message_key)
+		SELECT '{}'::jsonb, 1, NULL FROM generate_series(1, $1);
 	`, topicId)
 	_, err := ds.Pool.Exec(ctx, sql, count)
 	must(err)

@@ -37,7 +37,6 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/producer"
-	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/google/uuid"
 )
@@ -84,15 +83,15 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName := fmt.Sprintf("phase14a.concurrencylab.%d", time.Now().UnixNano())
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), &topiccontroller.TopicConfig{})
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, &topiccontroller.TopicConfig{})
 	must(err)
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wp, err := producer.NewProducer[common.Work](ds, nil)
 	must(err)
-	wpInstance, err := wp.Register(ctx, tp.Name, topic.SchemaVersion(1))
+	wpInstance, err := wp.Register(ctx, tp.Name)
 	must(err)
 
 	runOrdering(ctx, ds, wpInstance, tp.Name)
@@ -144,7 +143,7 @@ func drain(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName, gro
 		RecordMargin:            2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1), nil)
+	wcInstance, err := wc.Register(ctx, group, topicName, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -221,7 +220,7 @@ func drainTimed(ctx context.Context, ds *iDatastore.PostgresDatastore, topicName
 		RecordMargin:            2 * time.Second,
 	})
 	must(err)
-	wcInstance, err := wc.Register(ctx, group, topicName, topic.SchemaVersion(1), nil)
+	wcInstance, err := wc.Register(ctx, group, topicName, nil)
 	must(err)
 
 	runCtx, cancel := context.WithCancel(ctx)

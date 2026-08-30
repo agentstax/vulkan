@@ -10,26 +10,24 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Get resolves topic (name, schemaVersion).
-// Returns (nil, nil) if (name, schemaVersion) is not found.
-func (d *TopicDatastore) Get(ctx context.Context, name string, schemaVersion int64) (*TopicData, error) {
+// Get resolves a topic by name. Returns (nil, nil) if name is not found.
+func (d *TopicDatastore) Get(ctx context.Context, name string) (*TopicData, error) {
 	var topicData *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topicData, err = d.get(ctx, d.Datastore.Pool, name, schemaVersion)
+		topicData, err = d.get(ctx, d.Datastore.Pool, name)
 		return err
 	})
 	return topicData, err
 }
 
-func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string, schemaVersion int64) (*TopicData, error) {
+func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name string) (*TopicData, error) {
 	sql := `
 		-- vulkan: topic.get
 		SELECT
 			id,
 			system_id,
 			name,
-			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -38,9 +36,9 @@ func (d *TopicDatastore) get(ctx context.Context, q datastore.Querier, name stri
 			created_at,
 			updated_at
 		FROM topic_config
-		WHERE name = $1 AND schema_version = $2;
+		WHERE name = $1;
 	`
-	return d.scanTopicData(q.QueryRow(ctx, sql, name, schemaVersion))
+	return d.scanTopicData(q.QueryRow(ctx, sql, name))
 }
 
 // GetById resolves a topic by its id. Returns (nil, nil) if no topic has it.
@@ -61,7 +59,6 @@ func (d *TopicDatastore) getById(ctx context.Context, id int64) (*TopicData, err
 			id,
 			system_id,
 			name,
-			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -92,7 +89,6 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 			id,
 			system_id,
 			name,
-			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -101,7 +97,7 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 			created_at,
 			updated_at
 		FROM topic_config
-		ORDER BY name, schema_version;
+		ORDER BY name;
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
@@ -124,7 +120,7 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 	return topics, nil
 }
 
-// Register resolves declared's (name, schema_version) to its row, creating
+// Register resolves declared's name to its row, creating
 // it (and its per-topic tables) if it doesn't exist. An existing row takes
 // declared's mutable config; its partition_size must match.
 func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData, declaredBy string) (*TopicData, error) {
@@ -141,7 +137,7 @@ func (d *TopicDatastore) Register(ctx context.Context, declared *TopicData, decl
 // This is to prevent race condition errors between two concurrent calls.
 func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, declaredBy string) (*TopicData, error) {
 	// private get, not Get -- otherwise would have nested retries.
-	found, err := d.get(ctx, d.Datastore.Pool, declared.Name, declared.SchemaVersion)
+	found, err := d.get(ctx, d.Datastore.Pool, declared.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +160,7 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 	}
 
 	// re-check under the lock -- a racing register may have committed while we waited
-	found, err = d.get(ctx, tx, declared.Name, declared.SchemaVersion)
+	found, err = d.get(ctx, tx, declared.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -174,12 +170,12 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 
 	insertSql := `
 		-- vulkan: topic.register
-		INSERT INTO topic_config (system_id, name, schema_version, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO topic_config (system_id, name, partition_size, retention_ttl_ns, allow_drop_past_committed, idempotency_key_ttl_ns, delivery_log_mode)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at;
 	`
 	created := *declared
-	if err := tx.QueryRow(ctx, insertSql, declared.SystemId, declared.Name, declared.SchemaVersion, declared.PartitionSize, declared.RetentionTTLNs, declared.AllowDropPastCommitted, declared.IdempotencyKeyTTLNs, declared.DeliveryLogMode).
+	if err := tx.QueryRow(ctx, insertSql, declared.SystemId, declared.Name, declared.PartitionSize, declared.RetentionTTLNs, declared.AllowDropPastCommitted, declared.IdempotencyKeyTTLNs, declared.DeliveryLogMode).
 		Scan(&created.Id, &created.CreatedAt, &created.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -206,25 +202,25 @@ func (d *TopicDatastore) register(ctx context.Context, declared *TopicData, decl
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "topic registered (created)", "topic", created.Name, "topic_id", created.Id, "schema_version", created.SchemaVersion)
+	d.Logger.InfoContext(ctx, "topic registered (created)", "topic", created.Name, "topic_id", created.Id)
 	return &created, nil
 }
 
-// Rename moves every version under oldName to newName in one transaction,
-// appending each version's topic_config_log row beside the update.
-// Returns (nil, nil) if no version is registered under oldName
-// ErrTopicNameTaken if newName already has any (name, version) registered.
-func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string, declaredBy string) ([]TopicData, error) {
-	var topics []TopicData
+// Rename moves the topic under oldName to newName, appending its
+// topic_config_log row beside the update.
+// Returns (nil, nil) if no topic is registered under oldName
+// ErrTopicNameTaken if newName is already registered.
+func (d *TopicDatastore) Rename(ctx context.Context, oldName string, newName string, declaredBy string) (*TopicData, error) {
+	var renamed *TopicData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		topics, err = d.rename(ctx, oldName, newName, declaredBy)
+		renamed, err = d.rename(ctx, oldName, newName, declaredBy)
 		return err
 	})
-	return topics, err
+	return renamed, err
 }
 
-func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string, declaredBy string) ([]TopicData, error) {
+func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName string, declaredBy string) (*TopicData, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -240,7 +236,6 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 			id,
 			system_id,
 			name,
-			schema_version,
 			partition_size,
 			retention_ttl_ns,
 			allow_drop_past_committed,
@@ -249,45 +244,29 @@ func (d *TopicDatastore) rename(ctx context.Context, oldName string, newName str
 			created_at,
 			updated_at;
 	`
-	rows, err := tx.Query(ctx, sql, oldName, newName)
+	renamed, err := d.scanTopicData(tx.QueryRow(ctx, sql, oldName, newName))
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var topics []TopicData
-	for rows.Next() {
-		topicData, err := d.scanTopicData(rows)
-		if err != nil {
-			return nil, err
-		}
-		topics = append(topics, *topicData)
-	}
-	if err := rows.Err(); err != nil {
-		// 23505 = unqiue constraint violation ie name taken
+		// 23505 = unique constraint violation ie name taken
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, topic.ErrTopicNameTaken.With("topic", newName)
 		}
 		return nil, err
 	}
-	rows.Close()
-	if len(topics) == 0 {
+	if renamed == nil {
 		return nil, nil
 	}
 
-	for _, data := range topics {
-		if err := d.appendTopicConfigLog(ctx, tx, &data, declaredBy); err != nil {
-			return nil, err
-		}
+	if err := d.appendTopicConfigLog(ctx, tx, renamed, declaredBy); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 
-	d.Logger.InfoContext(ctx, "topic family renamed", "topic", oldName, "new_name", newName, "version_count", len(topics))
-	return topics, nil
+	d.Logger.InfoContext(ctx, "topic renamed", "topic", oldName, "new_name", newName, "topic_id", renamed.Id)
+	return renamed, nil
 }
 
 // appendTopicConfigLog writes data's full snapshot as one topic_config_log row, inside
@@ -310,7 +289,6 @@ func (d *TopicDatastore) scanTopicData(row pgx.Row) (*TopicData, error) {
 		&data.Id,
 		&data.SystemId,
 		&data.Name,
-		&data.SchemaVersion,
 		&data.PartitionSize,
 		&data.RetentionTTLNs,
 		&data.AllowDropPastCommitted,

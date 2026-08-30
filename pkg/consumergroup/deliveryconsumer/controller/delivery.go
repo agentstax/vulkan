@@ -31,7 +31,7 @@ type Delivery struct {
 // FanOut materializes one delivery row per message this group is bound to
 // receive. Scans only above the group's mark, so steady-state cost is O(new
 // messages) per tick, not O(whole log).
-func (c *DeliveryConsumerGroupController) FanOut(ctx context.Context, topicId int64, groupId int64, limit int) error {
+func (c *DeliveryConsumerGroupController) FanOut(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int) error {
 	if topicId <= 0 {
 		return fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -42,7 +42,7 @@ func (c *DeliveryConsumerGroupController) FanOut(ctx context.Context, topicId in
 		return fmt.Errorf("limit must be >= 1, got %d", limit)
 	}
 
-	return c.datastore.FanOut(ctx, topicId, groupId, limit)
+	return c.datastore.FanOut(ctx, topicId, groupId, schemaVersion, limit)
 }
 
 // ClaimMessagesWithLifecycle moves this group's own 'ready' delivery rows to

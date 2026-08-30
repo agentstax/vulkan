@@ -61,7 +61,7 @@ func (r *exceptionRunner[Message]) exceptionClaim(ctx context.Context) error {
 	}
 	r.Metrics.RecordDead(int(killed))
 
-	claimed, err := r.consumers.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, r.cfg.BatchLimit, r.cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DeliveryLogMode)
+	claimed, err := r.consumers.Claim(ctx, r.Topic.Id, r.Owner.ConsumerGroupId, int64(r.SchemaVersion), r.cfg.BatchLimit, r.cfg.MessageMax.Retry.MaxRetries, leaseDuration, r.Topic.DeliveryLogMode)
 	if err != nil {
 		return err
 	}

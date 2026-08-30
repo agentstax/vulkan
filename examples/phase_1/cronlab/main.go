@@ -92,7 +92,7 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	jobRequests, err = mAdmin.GetTopic(ctx, cron.TopicName, topic.SchemaVersion(1))
+	jobRequests, err = mAdmin.GetTopic(ctx, cron.TopicName)
 	must(err)
 
 	prefix = fmt.Sprintf("cronlab.%d", time.Now().UnixNano())
@@ -188,7 +188,7 @@ func ownershipSection(ctx context.Context) {
 	step("ownership: topic-owned job cascades with its topic, system-owned survives")
 
 	topicName := prefix + ".ownedtopic"
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
+	tp, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 
 	cronJobs, err := croncontroller.NewCronJobController(ds, nil)
@@ -200,7 +200,7 @@ func ownershipSection(ctx context.Context) {
 	_, err = mAdmin.RegisterCronJob(ctx, prefix+".standalone", parse("@hourly"), nil, nil)
 	must(err)
 
-	must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 
 	cascaded, err := mAdmin.GetCronJob(ctx, prefix+".cascade")
 	must(err)
@@ -710,7 +710,7 @@ func startConsumer(ctx context.Context, group string, bindings []string, concurr
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := jobRequestConsumer.Register(lifecycleCtx, group, cron.TopicName, topic.SchemaVersion(1), bindings)
+	instance, err := jobRequestConsumer.Register(lifecycleCtx, group, cron.TopicName, bindings)
 	must(err)
 	done := make(chan struct{})
 	go func() {

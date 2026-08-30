@@ -1,6 +1,9 @@
 package common
 
-import "github.com/google/uuid"
+import (
+	"github.com/agentstax/vulkan/pkg/topic"
+	"github.com/google/uuid"
+)
 
 // TODO - must validate json serializable for producer / consumer
 
@@ -12,6 +15,8 @@ type Work struct {
 	// fast and slow messages (the Phase 3 variance proof). 0 = no artificial sleep.
 	SleepMs int `json:"sleep_ms,omitempty"`
 }
+
+func (Work) SchemaVersion() topic.SchemaVersion { return 1 }
 
 func NewWork(age int, email string) (*Work, error) {
 	uuid, err := uuid.NewV7()

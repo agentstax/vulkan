@@ -17,7 +17,7 @@ scoringConsumer, err := consumer.NewConsumer[OrderPlaced](ds, &consumer.Consumer
 must(err)
 
 scoring, err := scoringConsumer.Register(ctx, "fraud-scoring",
-	"orders.placed", topic.SchemaVersion(1), nil)
+	"orders.placed", nil)
 must(err)
 must(scoring.Consume(ctx, scoreOrder))
 ```

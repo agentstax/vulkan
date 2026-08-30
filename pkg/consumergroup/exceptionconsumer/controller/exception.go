@@ -52,7 +52,7 @@ func (c *ExceptionConsumerGroupController) Kill(ctx context.Context, topicId int
 
 // Claim claims 'ready', expired 'inflight', and 'deferred' rows up
 // to maxRetries attempts. A leased message key excludes its rows.
-func (c *ExceptionConsumerGroupController) Claim(ctx context.Context, topicId int64, groupId int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ClaimedException, error) {
+func (c *ExceptionConsumerGroupController) Claim(ctx context.Context, topicId int64, groupId int64, schemaVersion int64, limit int, maxRetries int, leaseDuration time.Duration, deliveryLogMode topic.DeliveryLogMode) ([]ClaimedException, error) {
 	if topicId <= 0 {
 		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
@@ -69,7 +69,7 @@ func (c *ExceptionConsumerGroupController) Claim(ctx context.Context, topicId in
 		return nil, fmt.Errorf("leaseDuration must be > 0, got %v", leaseDuration)
 	}
 
-	claimed, err := c.datastore.Claim(ctx, topicId, groupId, limit, maxRetries, leaseDuration, deliveryLogMode)
+	claimed, err := c.datastore.Claim(ctx, topicId, groupId, schemaVersion, limit, maxRetries, leaseDuration, deliveryLogMode)
 	if err != nil {
 		return nil, err
 	}

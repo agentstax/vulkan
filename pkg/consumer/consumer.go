@@ -3,7 +3,6 @@ package consumer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/alert"
@@ -25,7 +24,7 @@ type ConsumerFunc[Message any] func(ctx context.Context, message *Message) error
 // Consumer runs a consumer group on one topic. Failed messages retry with
 // backoff, and the topic's upkeep (partitions, retention, committed advance) runs
 // alongside consumption.
-type Consumer[Message any] struct {
+type Consumer[Message topic.Versioned] struct {
 	Config *ConsumerConfig
 	Logger logging.Logger
 
@@ -36,7 +35,7 @@ type Consumer[Message any] struct {
 	evaluators      []alert.Evaluator
 }
 
-func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
+func NewConsumer[Message topic.Versioned](ds *datastore.PostgresDatastore, cfg *ConsumerConfig) (*Consumer[Message], error) {
 	if ds == nil {
 		return nil, errors.New("datastore must not be nil")
 	}
@@ -96,23 +95,20 @@ func NewConsumer[Message any](ds *datastore.PostgresDatastore, cfg *ConsumerConf
 // returns an independent instance.
 // bindings is the group's full set; nil = the whole topic.
 // ctx bounds only this call's I/O; the instance's lifetime is Consume's ctx.
-func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, topicName string, version topic.SchemaVersion, bindings []string) (*ConsumerInstance[Message], error) {
+func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, topicName string, bindings []string) (*ConsumerInstance[Message], error) {
 	if consumerGroup == "" {
 		return nil, errors.New("consumer group is required")
 	}
 	if topicName == "" {
 		return nil, errors.New("topic name is required")
 	}
-	if version < 1 {
-		return nil, fmt.Errorf("SchemaVersion must be >= 1, got %d", version)
-	}
 
-	current, err := c.topicController.Get(ctx, topicName, version)
+	current, err := c.topicController.Get(ctx, topicName)
 	if err != nil {
 		return nil, err
 	}
 	if current == nil {
-		return nil, topic.ErrTopicNotFound.With("topic", topicName, "version", version)
+		return nil, topic.ErrTopicNotFound.With("topic", topicName)
 	}
 	if err := c.topicController.AssertSchemaSupported(ctx, current.SystemId, current.Id); err != nil {
 		return nil, err
@@ -152,5 +148,5 @@ func (c *Consumer[Message]) Register(ctx context.Context, consumerGroup string, 
 		return nil, err
 	}
 
-	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, version, bindings, declaredAt, c.Config)
+	return newConsumerInstance[Message](owner, c.ds, instanceMetrics, c.consumers, topicName, topic.SchemaVersionOf[Message](), bindings, declaredAt, c.Config)
 }

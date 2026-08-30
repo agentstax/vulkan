@@ -6,6 +6,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/metrics/controller/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // overdueThreshold: how long a cron job may sit due and unproduced before it
@@ -133,4 +134,21 @@ func toAbandonedRoutineSnapshot(abandoned []datastore.EventTimestampData, cleare
 		snapshot.SelfClearLatencyAvg = latencySum / time.Duration(matched)
 	}
 	return &snapshot
+}
+
+func toSchemaVersionSnapshot(count *datastore.SchemaVersionCountData, lags []datastore.GroupSchemaVersionLagData) metrics.SchemaVersionSnapshot {
+	groups := make([]metrics.GroupSchemaVersionLag, 0, len(lags))
+	for _, lag := range lags {
+		groups = append(groups, metrics.GroupSchemaVersionLag{
+			ConsumerGroup:        lag.ConsumerGroup,
+			Unconsumed:           lag.Unconsumed,
+			UnresolvedExceptions: lag.UnresolvedExceptions,
+		})
+	}
+	return metrics.SchemaVersionSnapshot{
+		Version:         topic.SchemaVersion(count.SchemaVersion),
+		Messages:        count.Messages,
+		CompactionHeads: count.CompactionHeads,
+		Groups:          groups,
+	}
 }

@@ -40,6 +40,8 @@ type labMessage struct {
 	Note string
 }
 
+func (labMessage) SchemaVersion() topic.SchemaVersion { return 1 }
+
 const (
 	hotKeyCount          = 8
 	producerCount        = 3
@@ -94,16 +96,16 @@ func run() (err error) {
 	must(mAdmin.RegisterSystem(ctx, nil))
 
 	topicName = fmt.Sprintf("compactiondeadlocklab.%d", time.Now().UnixNano())
-	registered, err := mAdmin.RegisterTopic(ctx, topicName, topic.SchemaVersion(1), nil)
+	registered, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 	topicId = registered.Id
 	defer func() {
-		must(mAdmin.DestroyTopic(ctx, topicName, topic.SchemaVersion(1), admin.DestroyOptions{Force: true}))
+		must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
 	}()
 
 	wp, err := producer.NewProducer[labMessage](ds, nil)
 	must(err)
-	wpInstance, err = wp.Register(ctx, topicName, topic.SchemaVersion(1))
+	wpInstance, err = wp.Register(ctx, topicName)
 	must(err)
 
 	batcherAbsenceScenario(ctx)
@@ -129,7 +131,7 @@ func batcherAbsenceScenario(ctx context.Context) {
 	for i := range instances {
 		wp, err := producer.NewProducer[labMessage](ds, nil)
 		must(err)
-		instance, err := wp.Register(ctx, topicName, topic.SchemaVersion(1))
+		instance, err := wp.Register(ctx, topicName)
 		must(err)
 		instances[i] = instance
 	}

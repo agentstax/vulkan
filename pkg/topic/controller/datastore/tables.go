@@ -39,9 +39,10 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 			-- claim fence assumes ids are issued in INSERT order, and a cached
 			-- sequence hands out out-of-order id blocks
 
+			schema_version BIGINT NOT NULL,               -- the payload's version, from the producing Message type
 			routing_key TEXT,
 			message_key TEXT,
-			compaction_rank BIGINT, -- NULL = this message never opted into compaction
+			compaction_rank BIGINT,                       -- NULL = this message never opted into compaction
 			payload JSONB NOT NULL,
 			options JSONB,                                -- sparse MessageOptions
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -221,8 +222,9 @@ func (d *TopicDatastore) createTopicTables(ctx context.Context, tx pgx.Tx, id in
 		-- vulkan: topic.createTopicTables
 		CREATE TABLE IF NOT EXISTS %s (
 			compaction_key  TEXT   NOT NULL PRIMARY KEY,
-			head_id         BIGINT NOT NULL,           -- the winning message_log id for this key
-			compaction_rank BIGINT NOT NULL DEFAULT 0  -- the winner's rank
+			head_id         BIGINT NOT NULL,            -- the winning message_log id for this key
+			schema_version  BIGINT NOT NULL,            -- the winner's payload version; compared before rank
+			compaction_rank BIGINT NOT NULL DEFAULT 0   -- the winner's rank
 		);
 	`, iTopic.CompactionHeadTable(id))
 	if _, err := tx.Exec(ctx, createCompactionHeadSql); err != nil {
