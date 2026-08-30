@@ -52,9 +52,6 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
     rounds finalized never got a doc-comment pass. [0581] fixed
     RoutingKey's in passing; the rest are unreviewed.
 
-- **`Message` generic vs a `struct{}`-based shape** for producer/consumer —
-  decide and document. Weigh Go 1.27's new generics/type-inference features
-  before finalizing.
 - **Compaction API shape** (for the v1 review; the standalone-head-read move
   into pkg/compaction/controller shipped 2026-08-13):
   - A dedicated compacted-topic handle — Compact(Producer|Consumer) idea;

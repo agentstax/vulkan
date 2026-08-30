@@ -10,7 +10,6 @@ doc decision indexing
 need metric / alert example playground scenarios
 
 ---
-- no generics necessary?
 - RegisterCronJob better mirrors producer and consumer (have consumerFunc as handler on cronjob config?? and run is just consume?)
 - Public runnables Producer or Consumer or Cronjob etc should also just run system manager
 - User side idempotency keys should be string, internals can be UUID
@@ -31,19 +30,6 @@ need metric / alert example playground scenarios
 
 01 our comments for New* funcs are abyssmal. These are the first funcs users see
 
-01 reconsider having topic.SchemaVersion(1)
-- only define it on register topic?
-- only define on New(Producer/Consumer)
-- Also should probably rename to something like MessageSchemaVersion <- this is too long but something that says this is your payload schema
-- this one is tough I know why it is there now, but for a second I didn't and its a pretty confusing and random looking param
-
-01 all examples should follow pattern with Message struct *V1 as end to help better encourage schema versioning
-- how can we use this with our topic.SchemaVersion(1) in such a way to connect the dots between the two more obviously
-  something like topic.Schema(V1)
-
-01 is there anyway we can not do the generic in producer.NewProducer[OrderPlacedV1](ds, nil)
-   and just completely infer the type from Produce or Consume? does go 1.27 help?
-
 02 produce-in-tx is nasty it really needs to be cleaned up
 - maybe less closures or required params (get meta context like for consumer)
 - produce options not required in return
@@ -51,7 +37,7 @@ need metric / alert example playground scenarios
 03 looks pretty good
 
 04 should NewConsumer be holding consumer config or should that be on register?
-	paymentConsumer, err := consumer.NewConsumer[PaymentRequested](ds, &consumer.ConsumerConfig{
+	paymentConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		Message: &common.MessageOptions{
 			Timeout: 10 * time.Second,
 			Retry:   &common.RetryPolicy{MaxRetries: 3, BaseDelay: 2 * time.Second},
@@ -61,7 +47,7 @@ need metric / alert example playground scenarios
 05 ignoring this for now
 
 06 RegisterCronJob should return object such that consumer can use its defined topic and binding on it
-- jobConsumer.Register(ctx, "invoice-runner", cron.TopicName, topic.SchemaVersion(1), []string{"invoices.nightly"})
+- jobConsumer.Register[cron.JobRequest](ctx, "invoice-runner", cron.TopicName, []string{"invoices.nightly"})
   bad that we have to know to find topic and binding. should just be cronjob.TopicName, cronjob.Bindings
 
 06 RegisterCronJob should likely be more like producer and consumer ie
