@@ -48,7 +48,7 @@ rewrite-to-the-real-API pass 2026-08-22 [0581], the board rebuild
       wants an `&topiccontroller.TopicConfig{}` (an import plus an empty
       struct for the common case — whether nil works is unverified);
       pkg/common and pkg/topic invite aliasing in user code.
-  - Go doc comments on the public API — the surfaces the worker and cron
+  - Go doc comments on the public API — the surfaces the worker and schedule
     rounds finalized never got a doc-comment pass. [0581] fixed
     RoutingKey's in passing; the rest are unreviewed.
 
@@ -225,7 +225,7 @@ documentation; the latter want a surface that has stopped moving.
   [0612], but the deep mechanics — compaction_head, rank rules,
   retention interplay — still have no page) and a workers/maintenance-fleet
   page (the fleet is a table in concepts/architecture plus one
-  quickstart caution; `vulkan manager run` and cron jobs have no home).
+  quickstart caution; `vulkan manager run` and schedules have no home).
 
 - **`vulkan explain --run`** (or a `vulkan diagnose` verb) — execute a
   declaration's diagnose queries against the operator's own database, since
@@ -345,7 +345,7 @@ prerequisite if quorum-as-a-fraction wins.
   declarations (kind/unit can't drift from the comment). Mechanical
   sweep, ~25 names.
 - **Worker-instance stop-line counters** ([0567] follow-on) — the
-  standalone worker instances (janitor, cron scheduler, metrics
+  standalone worker instances (janitor, schedule producer, metrics
   collector, cursor advancer) still log identity-only stopped lines;
   each would keep its own local lifetime totals (swept, jobs produced,
   measurements collected, advances) and render them the same way. No
@@ -373,7 +373,7 @@ prerequisite if quorum-as-a-fraction wins.
   user might reasonably need to tune and decide, per constant, whether it
   becomes a Config field (WithDefaults keeps today's value) or stays fixed
   with the rationale recorded. Known candidates: logging's
-  logBufferMaxRecords (64) and suppressionWindow (1 minute); the cron
+  logBufferMaxRecords (64) and suppressionWindow (1 minute); the schedule
   snapshot's flat 10-minute overdue threshold; the consumer group
   janitor's waitingDeclarationTTL (7d, [0573]); expect more.
 - **Mechanical enforcement of checkable conventions** — a `just vet`
@@ -671,7 +671,7 @@ prerequisite if quorum-as-a-fraction wins.
   alternative. https://github.com/durable-streams/durable-streams for a
   potential protocol.
 - **WorkerManager split into WorkerScheduler + WorkerSpawner** — scheduler
-  acts like the cron scheduler but submits 'spawn'/'destroy' topic requests
+  acts like the schedule producer but submits 'spawn'/'destroy' topic requests
   (reconciler logic); spawner reads the topic and spawns or destroys
   instances.
 - **Antithesis** (https://antithesis.com) for production hardening and bug

@@ -16,7 +16,7 @@ export const exampleValues: Record<string, string> = {
 	version: '2',
 	build_version: '3',
 	owner_kind: 'topic',
-	cron_job: 'alert.partition_count',
+	schedule: 'alert.partition_count',
 	worker: 'topic_janitor',
 	existing_partition_size: '1000000',
 };

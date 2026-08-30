@@ -27,7 +27,7 @@ func newSystemDestroyCmd(g *globalFlags) *cobra.Command {
 		Use:   "destroy",
 		Short: "Permanently delete the system and everything registered on it",
 		Long: `Permanently delete everything RegisterSystem created: every topic and its
-messages, the system topics, cron jobs, consumer groups, workers, and the
+messages, the system topics, schedules, consumer groups, workers, and the
 shared control-plane tables themselves. The database returns to its
 pre-register state.
 

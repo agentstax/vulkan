@@ -38,8 +38,8 @@ var controlPlaneTables = []string{
 	"worker_config",
 	"worker_config_log",
 	"worker_instance",
-	"cron_job_config",
-	"cron_job_cursor",
+	"schedule_config",
+	"schedule_cursor",
 	"migration_log",
 }
 

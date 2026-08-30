@@ -13,9 +13,9 @@ import { createWorkerConfigLogIndexSql } from './create-worker-config-log-index'
 import { createWorkerInstanceSql } from './create-worker-instance';
 import { createWorkerInstanceWorkerIndexSql } from './create-worker-instance-worker-index';
 import { createWorkerInstanceExpiryIndexSql } from './create-worker-instance-expiry-index';
-import { createCronJobConfigSql } from './create-cron-job-config';
-import { createCronJobCursorSql } from './create-cron-job-cursor';
-import { createCronJobCursorDueIndexSql } from './create-cron-job-cursor-due-index';
+import { createScheduleConfigSql } from './create-schedule-config';
+import { createScheduleCursorSql } from './create-schedule-cursor';
+import { createScheduleCursorDueIndexSql } from './create-schedule-cursor-due-index';
 import { createMigrationLogSql } from './create-migration-log';
 
 export const createSystemTablesStatements: string[] = [
@@ -33,8 +33,8 @@ export const createSystemTablesStatements: string[] = [
 	createWorkerInstanceSql,
 	createWorkerInstanceWorkerIndexSql,
 	createWorkerInstanceExpiryIndexSql,
-	createCronJobConfigSql,
-	createCronJobCursorSql,
-	createCronJobCursorDueIndexSql,
+	createScheduleConfigSql,
+	createScheduleCursorSql,
+	createScheduleCursorDueIndexSql,
 	createMigrationLogSql,
 ];

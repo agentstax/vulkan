@@ -23,7 +23,7 @@ func newManagerRunCmd(g *globalFlags) *cobra.Command {
 		Use:   "run",
 		Short: "Run the system manager until stopped",
 		Long: "run claims the system manager row and keeps every worker in the\n" +
-			"deployment running -- partition upkeep, retention, committed advance, cron\n" +
+			"deployment running -- partition upkeep, retention, committed advance, schedule\n" +
 			"scheduling -- with no consumer required. Safe to run N-way: replicas\n" +
 			"coordinate through worker claims, so each worker's instance target\n" +
 			"holds. With --metrics-address, also serves the deployment's\n" +

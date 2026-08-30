@@ -87,7 +87,7 @@ func (i *MetricsCollectorInstance) collect(ctx context.Context) error {
 	if err := i.collectWorkers(ctx); err != nil {
 		return err
 	}
-	if err := i.collectCronJobs(ctx); err != nil {
+	if err := i.collectSchedules(ctx); err != nil {
 		return err
 	}
 	if err := i.collectAlerts(ctx); err != nil {
@@ -140,29 +140,29 @@ func (i *MetricsCollectorInstance) collectWorkers(ctx context.Context) error {
 	return i.produceMeasurement(ctx, measurement)
 }
 
-func (i *MetricsCollectorInstance) collectCronJobs(ctx context.Context) error {
-	jobs, err := i.metrics.CronJobSnapshots(ctx)
+func (i *MetricsCollectorInstance) collectSchedules(ctx context.Context) error {
+	schedules, err := i.metrics.ScheduleSnapshots(ctx)
 	if err != nil {
 		return err
 	}
 
 	var overdue, suspended int64
 	var oldest time.Duration
-	for _, job := range jobs {
-		if job.Suspended {
+	for _, found := range schedules {
+		if found.Suspended {
 			suspended++
 			continue
 		}
-		if job.Overdue {
+		if found.Overdue {
 			overdue++
 		}
-		if job.DueFor > oldest {
-			oldest = job.DueFor
+		if found.DueFor > oldest {
+			oldest = found.DueFor
 		}
 	}
 
 	at := time.Now()
-	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueJobs, metrics.KindGauge, float64(overdue), metrics.UnitCount("job"), nil, at)
+	measurement, err := metrics.NewMeasurement(metrics.MetricOverdueSchedules, metrics.KindGauge, float64(overdue), metrics.UnitCount("found"), nil, at)
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,7 @@ func (i *MetricsCollectorInstance) collectCronJobs(ctx context.Context) error {
 		return err
 	}
 
-	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedJobs, metrics.KindGauge, float64(suspended), metrics.UnitCount("job"), nil, at)
+	measurement, err = metrics.NewMeasurement(metrics.MetricSuspendedSchedules, metrics.KindGauge, float64(suspended), metrics.UnitCount("found"), nil, at)
 	if err != nil {
 		return err
 	}

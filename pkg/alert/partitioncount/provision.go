@@ -6,8 +6,8 @@ import (
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
-	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -20,25 +20,25 @@ func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.O
 		return err
 	}
 
-	cronTopic, err := d.topics.Get(ctx, cron.TopicName)
+	jobRequestsTopic, err := d.topics.Get(ctx, schedule.TopicName)
 	if err != nil {
 		return err
 	}
-	if cronTopic == nil {
-		return migrate.ErrNotRegistered.With("topic", cron.TopicName)
+	if jobRequestsTopic == nil {
+		return migrate.ErrNotRegistered.With("topic", schedule.TopicName)
 	}
 
-	group, err := d.consumers.RegisterGroup(ctx, cronTopic.Id, JobName, consumergroup.Beginning())
+	group, err := d.consumers.RegisterGroup(ctx, jobRequestsTopic.Id, JobName, consumergroup.Beginning())
 	if err != nil {
 		return err
 	}
 
 	// a waiting outcome is fine -- the consumer retries the declaration in Consume
-	if _, err := d.consumers.DeclareBindings(ctx, cronTopic.Id, group.Id, []string{JobName}, time.Now()); err != nil {
+	if _, err := d.consumers.DeclareBindings(ctx, jobRequestsTopic.Id, group.Id, []string{JobName}, time.Now()); err != nil {
 		return err
 	}
 
-	groupOwner, err := common.NewConsumerGroupOwner(cronTopic.SystemId, cronTopic.Id, group.Id, group.Name)
+	groupOwner, err := common.NewConsumerGroupOwner(jobRequestsTopic.SystemId, jobRequestsTopic.Id, group.Id, group.Name)
 	if err != nil {
 		return err
 	}

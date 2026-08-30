@@ -64,7 +64,7 @@ func (a *MessageAdmin) groupOwner(ctx context.Context, topicName string, groupNa
 
 // DestroyGroup permanently deletes the consumer group registered under
 // groupName on topicName: its cursor, bindings, leases,
-// delivery rows, group-owned workers, and group-owned cron jobs. The
+// delivery rows, group-owned workers, and group-owned schedules. The
 // topic and its messages are untouched.
 //
 // Returns topic.ErrDestroyDisabled unless MessageAdminConfig.AllowDestroy is set,

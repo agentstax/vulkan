@@ -20,11 +20,11 @@ const (
 	MetricFailingWorkers     = "vulkan.worker.state.failing_workers"      // workers with a live instance on a nonzero failure streak
 )
 
-// cron-job schedule health, fleet-wide
+// schedule health, fleet-wide
 const (
-	MetricOverdueJobs   = "vulkan.cron.state.overdue_jobs"   // unsuspended jobs due past the overdue threshold -- nothing is producing them
-	MetricOldestDueAge  = "vulkan.cron.state.oldest_due_age" // largest now() - next_scheduled_at among unsuspended jobs, in ms
-	MetricSuspendedJobs = "vulkan.cron.state.suspended_jobs" // jobs with suspended = true, excluded from the overdue count
+	MetricOverdueSchedules   = "vulkan.schedule.state.overdue"        // unsuspended schedules due past the overdue threshold -- nothing is producing them
+	MetricOldestDueAge       = "vulkan.schedule.state.oldest_due_age" // largest now() - next_scheduled_at among unsuspended schedules, in ms
+	MetricSuspendedSchedules = "vulkan.schedule.state.suspended"      // schedules with suspended = true, excluded from the overdue count
 )
 
 // alert state, fleet-wide

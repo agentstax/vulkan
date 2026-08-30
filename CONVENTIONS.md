@@ -65,7 +65,8 @@ surfaces it.
 | offset | Kafka's position model; Vulkan positions are ids and cursors | message id; cursor |
 | enqueue, publish | extra names for the API's one verb | produce |
 | subscribe | not the API's verb | consume; declare the consumer group |
-| job (the unit a consumer processes) | job-queue framing for what is a message; cron jobs keep their name | message |
+| job (the unit a consumer processes) | job-queue framing for what is a message | message |
+| cron job | a second name for the resource the API calls a schedule | schedule; "cron expression" for the string it runs on |
 | worker (a consuming process) | collides with Vulkan's own worker fleet | consumer instance; "worker" only for Vulkan's maintenance workers |
 | ack, nack | protocol jargon for a protocol Vulkan doesn't have | the handler succeeds / returns an error; the delivery is recorded |
 | reaper | vivid coinage for lease reclaim | "expired leases are reclaimed" |
@@ -321,7 +322,7 @@ topic's family -- never both.
 
 - Shared: the catalog (system_config, topic_config, topic_config_log,
   consumer_group_config), the fleet (worker_config, worker_config_log,
-  worker_instance, cron_job_config, cron_job_cursor), and cross-scope
+  worker_instance, schedule_config, schedule_cursor), and cross-scope
   history (migration_log). Created by system createSystemTables.
 - Per-topic: everything else -- message_log, idempotency_key,
   exception_queue, delivery_log, consumer_group_cursor, claim_lease,
@@ -338,7 +339,7 @@ topic's family -- never both.
   rows), `_lease` (expiring locks, prefixed by what is leased),
   `_instance` (live copies), `_cursor`/`_head` (singleton runtime state).
   A table 1:1 with another resource's rows carries that owner's name
-  (consumer_group_cursor, cron_job_cursor). FK columns keep the
+  (consumer_group_cursor, schedule_cursor). FK columns keep the
   resource's noun (topic_id), never the table's name. idempotency_key is
   the standing exception outside the kind set.
 - Column names [0613]: instants end `_at` -- past events as past
@@ -494,7 +495,7 @@ vulkan command in the CLI).
   query uses, named from the log attribute registry under ## Logging.
   `Error()` and `LogValue()` fill them from the values the raise attached,
   and the fix text carries the quoting its position needs -- the value
-  goes in raw (`register "{cron_job}" with ...`). [0590]
+  goes in raw (`register "{schedule}" with ...`). [0590]
 - A fix placeholder must be attachable at EVERY raise site of its code:
   one fix string serves all of them, so a name one site cannot supply is
   a blank on a real operator's line. A `tools/conventions` walk enforces
@@ -660,8 +661,8 @@ the code is the line's breadcrumb to its own explanation.
       owner_kind    owner kind (Owner.Kind())
       worker        worker name
       message_id    message id
-      cron_job      cron job name
-      cron_job_id   cron job id
+      schedule      schedule name
+      schedule_id   schedule id
       low, high     id range bounds
       committed     the committed cursor id a new group's row was created
                     at -- the registered (created) line

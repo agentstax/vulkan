@@ -123,7 +123,7 @@ func (c *Consumer) Register[Message topic.Versioned](ctx context.Context, consum
 	}
 
 	// a consumer-group owner, not the topic's: it reaches up to the topic's
-	// janitor and the system's cron scheduler, never across to a sibling group
+	// janitor and the system's schedule producer, never across to a sibling group
 	owner, err := common.NewConsumerGroupOwner(current.SystemId, current.Id, group.Id, group.Name)
 	if err != nil {
 		return nil, err

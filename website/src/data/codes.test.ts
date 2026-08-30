@@ -79,7 +79,7 @@ function expectedTitle(record: CodeRecord): string | undefined {
 // pages reads each error page's frontmatter. The fields are one-line
 // `key: "value"` pairs, so the site parses them here rather than carrying a
 // YAML dependency for six keys. A fix that quotes an identifier
-// (`register "{cron_job}" with ...`) is written as a single-quoted scalar,
+// (`register "{schedule}" with ...`) is written as a single-quoted scalar,
 // which is why both quote characters open a value.
 function pages(): Map<string, Record<string, string>> {
 	const found = new Map<string, Record<string, string>>();

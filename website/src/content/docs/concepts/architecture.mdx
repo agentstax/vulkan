@@ -15,7 +15,7 @@ library. Everything below is rows.
   producers          │                                                  │      consumers
                      │  shared control plane:                           │
   app ──produce────▶ │    topic_config · consumer_group_config          │
-  app ──produce────▶ │    worker_config · cron_job_config               │
+  app ──produce────▶ │    worker_config · schedule_config               │
     (in your txn)    │                                                  │
                      │  one table family per topic (suffix = topic id): │
                      │    message_log_1  immutable log, id-partitioned  │ ◀──claim ranges── instance
@@ -34,7 +34,7 @@ library. Everything below is rows.
 `vulkan migrate init`): the topic catalog (`system_config`,
 `topic_config`, `topic_config_log`, `consumer_group_config`), the
 worker fleet (`worker_config`, `worker_config_log`, `worker_instance`,
-`cron_job_config`, `cron_job_cursor`), and migration history
+`schedule_config`, `schedule_cursor`), and migration history
 (`migration_log`).
 
 **One physical family per topic** — created by `RegisterTopic`, named
@@ -116,7 +116,7 @@ claims, so running N copies is safe.
 | `topic_janitor` | drops/sweeps expired partitions, idempotency keys, message-key leases |
 | `cursor_advancer` | advances each group's `committed` behind resolved work |
 | `consumer_group_janitor` | sweeps superseded binding declarations |
-| `cron_scheduler` | produces one request per due cron job |
+| `schedule_producer` | produces one request per due schedule |
 | `metrics_collector` | snapshots lag, backlog, and delivery state as metrics |
 | `alert.*` checks | publish operator warnings to the `__system.alerts` topic |
 

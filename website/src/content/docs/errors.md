@@ -20,7 +20,7 @@ block; paste the message text or code into search to land on its page.
 | [VK0010](/errors/VK0010) | a worker instance is still live | permanent |
 | [VK0011](/errors/VK0011) | topics are still registered | permanent |
 | [VK0012](/errors/VK0012) | worker instance row expired or was removed | permanent |
-| [VK0013](/errors/VK0013) | cron job not found | permanent |
+| [VK0013](/errors/VK0013) | schedule not found | permanent |
 | [VK0014](/errors/VK0014) | consumer group not found | permanent |
 | [VK0015](/errors/VK0015) | consumer group still has a live consumer | permanent |
 | [VK0016](/errors/VK0016) | consumer group still has delivery rows | permanent |
@@ -32,7 +32,7 @@ block; paste the message text or code into search to land on its page.
 | [VK0022](/errors/VK0022) | schema version is older than this build requires | permanent |
 | [VK0023](/errors/VK0023) | schema version is newer than this build understands | permanent |
 | [VK0024](/errors/VK0024) | could not finish the worker declaration | transient |
-| [VK0025](/errors/VK0025) | could not finish the cron job declaration | transient |
+| [VK0025](/errors/VK0025) | could not finish the schedule declaration | transient |
 | [VK0053](/errors/VK0053) | could not take a lock needed by the migration step | transient |
 | [VK0056](/errors/VK0056) | partition creation cannot keep up with the id sequence | permanent |
 
@@ -54,7 +54,7 @@ and the code lands on a page here the same way.
 | [VK0034](/errors/VK0034) | worker instance lost | warn |
 | [VK0035](/errors/VK0035) | manager row suspended | warn |
 | [VK0036](/errors/VK0036) | worker tick backoff curve exhausted | error |
-| [VK0037](/errors/VK0037) | cron job request was already published by an earlier ambiguous commit | warn |
+| [VK0037](/errors/VK0037) | schedule request was already published by an earlier ambiguous commit | warn |
 | [VK0038](/errors/VK0038) | produce exceeded the duration threshold | warn |
 | [VK0039](/errors/VK0039) | delivery dispatch exceeded the duration threshold | warn |
 | [VK0040](/errors/VK0040) | worker tick exceeded its poll rate | warn |

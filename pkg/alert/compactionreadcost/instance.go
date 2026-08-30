@@ -10,9 +10,9 @@ import (
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
-	"github.com/agentstax/vulkan/pkg/cron"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -78,14 +78,14 @@ func (i *CompactionReadCostInstance) consume(ctx context.Context) error {
 	}
 	i.measurements = measurements
 
-	instance, err := i.provisioner.jobRequestConsumer.Register[cron.JobRequest](ctx, JobName, cron.TopicName, []string{JobName})
+	instance, err := i.provisioner.jobRequestConsumer.Register[schedule.JobRequest](ctx, JobName, schedule.TopicName, []string{JobName})
 	if err != nil {
 		return err
 	}
 	return instance.Consume(ctx, i.evaluateTopics)
 }
 
-func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, request *cron.JobRequest) error {
+func (i *CompactionReadCostInstance) evaluateTopics(ctx context.Context, request *schedule.JobRequest) error {
 	jobPayload, err := alertcontroller.ToJobPayload(request.Payload)
 	if err != nil {
 		return err

@@ -200,7 +200,7 @@ func (d *ConsumerGroupDatastore) deleteGroup(ctx context.Context, topicId int64,
 	}
 
 	// cascades: cursor, binding, migration_log, group-owned worker and
-	// cron_job rows; worker_instance follows its worker
+	// schedule rows; worker_instance follows its worker
 	if _, err := tx.Exec(ctx, `
 		-- vulkan: consumergroup.deleteGroup
 		DELETE FROM consumer_group_config WHERE id = $1;

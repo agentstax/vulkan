@@ -30,7 +30,7 @@ The core described throughout these docs is shipped, not planned:
 - **Partition-based retention** — the message log is partitioned by id
   range; expiry is a `DROP`, not a million-row `DELETE`.
 - **The maintenance fleet** — partition upkeep, cursor advancement,
-  expired-lease reclaim, cron jobs, and default alerts run embedded in
+  expired-lease reclaim, schedules, and default alerts run embedded in
   every consumer, or standalone via `vulkan manager run`.
 - **Diagnostics as a system** — every error and operator-facing log event
   carries a `VK` code with a docs page; `vulkan explain` works offline;

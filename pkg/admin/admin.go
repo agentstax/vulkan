@@ -6,13 +6,13 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
-	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
-	"github.com/agentstax/vulkan/pkg/cron/scheduler"
 	"github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/metrics/collector"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	migratecontroller "github.com/agentstax/vulkan/pkg/migrate/controller"
 	"github.com/agentstax/vulkan/pkg/producer"
+	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
+	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
 	systemcontroller "github.com/agentstax/vulkan/pkg/system/controller"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	topicjanitor "github.com/agentstax/vulkan/pkg/topic/janitor"
@@ -24,7 +24,7 @@ import (
 type MessageAdmin struct {
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
-	cronJobController  *croncontroller.CronJobController
+	scheduleController *schedulecontroller.ScheduleController
 	consumerController *consumergroupcontroller.ConsumerGroupController
 	jobRequestProducer *producer.Producer
 	heads              *compactioncontroller.CompactionController
@@ -44,7 +44,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	cronSchedulerProvisioner, err := scheduler.NewCronSchedulerProvisioner(ds, &scheduler.CronSchedulerConfig{
+	scheduleProducerProvisioner, err := scheduleproducer.NewScheduleProducerProvisioner(ds, &scheduleproducer.ScheduleProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -80,7 +80,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	managerProvisioner, err := manager.NewManagerProvisioner(ds, &manager.ManagerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, topicJanitorProvisioner, cronSchedulerProvisioner, metricsCollectorProvisioner)
+	}, topicJanitorProvisioner, scheduleProducerProvisioner, metricsCollectorProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	systemController, err := systemcontroller.NewSystemController(ds, &systemcontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
-	}, cronSchedulerProvisioner, metricsCollectorProvisioner, consumerGroupJanitorProvisioner, managerProvisioner)
+	}, scheduleProducerProvisioner, metricsCollectorProvisioner, consumerGroupJanitorProvisioner, managerProvisioner)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	cronJobController, err := croncontroller.NewCronJobController(ds, &croncontroller.ControllerConfig{
+	scheduleController, err := schedulecontroller.NewScheduleController(ds, &schedulecontroller.ControllerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -177,7 +177,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	return &MessageAdmin{
 		systemController:   systemController,
 		topicController:    topicController,
-		cronJobController:  cronJobController,
+		scheduleController: scheduleController,
 		consumerController: consumerController,
 		jobRequestProducer: jobRequestProducer,
 		heads:              heads,

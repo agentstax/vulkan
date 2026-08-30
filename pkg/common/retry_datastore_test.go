@@ -87,7 +87,7 @@ func TestRetryDatastoreRetriesOnTransientRecovery(t *testing.T) {
 		t.Fatalf("declared error lost through Wrap: %v", err)
 	}
 	if attempts != 3 {
-		t.Fatalf("Transient recovery did not use the schedule: %d attempts", attempts)
+		t.Fatalf("Transient recovery did not use the expression: %d attempts", attempts)
 	}
 }
 

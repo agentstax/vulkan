@@ -174,8 +174,8 @@ alert-lab:
 # skipped while siblings produce, defer behind a running request, run-now
 # default-allow vs cfg-defer, run-now superseding a pending unclaimed
 # request, and consumer end-to-end with per-group status + request listing.
-cron-lab:
-  go run examples/phase_1/cronlab/main.go
+schedule-lab:
+  go run examples/phase_1/schedulelab/main.go
 
 key-lease-lab:
   go run examples/phase_1/keyleaselab/main.go

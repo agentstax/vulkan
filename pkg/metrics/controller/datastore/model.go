@@ -20,9 +20,9 @@ type WorkerSnapshotData struct {
 	UnclaimedForSecs float64 `db:"unclaimed_for_secs"`
 }
 
-// CronJobSnapshotData is one row of CronJobSnapshots' query: the cron_job
+// ScheduleSnapshotData is one row of ScheduleSnapshots' query: the schedule
 // row's owner columns plus its schedule state.
-type CronJobSnapshotData struct {
+type ScheduleSnapshotData struct {
 	Name            string `db:"name"`
 	SystemId        int64  `db:"system_id"`
 	TopicId         int64  `db:"topic_id"`
@@ -30,7 +30,7 @@ type CronJobSnapshotData struct {
 	TopicName       string `db:"topic_name"`
 	GroupName       string `db:"group_name"`
 
-	Schedule        string     `db:"schedule"`
+	Expression      string     `db:"expression"`
 	Suspended       bool       `db:"suspended"`
 	NextScheduledAt time.Time  `db:"next_scheduled_at"`
 	LastScheduledAt *time.Time `db:"last_scheduled_at"` // NULL until the job's first produced request

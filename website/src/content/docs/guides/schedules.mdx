@@ -1,0 +1,179 @@
+---
+title: Schedules
+description: A schedule is a producer on a cron expression. Register it with the message it produces and the topic it produces to; any consumer group on that topic receives it. Proposed shape, written up as the spec.
+---
+
+import ThreadAside from '../../../components/thread-aside/thread-aside.svelte';
+
+A schedule is a producer on a cron expression. You register it with a
+name, an expression, the topic it produces to, and the message it
+produces; the system produces that message onto that topic every time
+the expression comes due. Consuming it is a plain consumer group on
+that topic, and there can be any number of them - the schedule knows
+nothing about who listens.
+
+<ThreadAside label="PROPOSED" title="Not shipped">
+Today's shape is `MessageAdmin.RegisterCronJob`, which produces a
+`cron.JobRequest` envelope onto the `__system.job_requests` topic with
+the job's name as the routing key; a consumer binds that name and
+unmarshals the payload by hand. This page is the spec for replacing
+that, and "cron job" is renamed "schedule" everywhere with it - code,
+admin, CLI, tables, log attributes. Nothing below compiles against the
+shipped library yet.
+
+</ThreadAside>
+
+```go
+type InvoiceRun struct {
+	Region string `json:"region"`
+}
+
+func (InvoiceRun) SchemaVersion() int { return 1 }
+
+invoiceScheduler, err := scheduler.NewScheduler(ds, nil)
+if err != nil {
+	return err
+}
+
+nightly, err := invoiceScheduler.Register[InvoiceRun](ctx, "invoices.nightly", "0 2 * * *",
+	"invoices", &InvoiceRun{Region: "eu"}, nil)
+if err != nil {
+	return err
+}
+
+return nightly.Schedule(ctx)
+```
+
+And in whichever service does the invoicing, nothing about cron:
+
+```go
+invoices, err := invoiceConsumer.Register[InvoiceRun](ctx, "invoice-runner",
+	"invoices", nil)
+if err != nil {
+	return err
+}
+
+return invoices.Consume(ctx, func(ctx context.Context, run *InvoiceRun) error {
+	meta, _ := consumergroup.MetaFromContext(ctx)
+	fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
+	return nil
+})
+```
+
+This is the same three-call shape as the other two handles: `New` a
+handle, `Register[Message]` a named resource on it, run the instance.
+For a producer - `Register` resolves the topic and `Produce` writes.
+For a consumer - `Register` declares the group and `Consume` runs it.
+For a scheduler - `Register` declares the schedule and `Schedule`
+keeps the system producing it.
+
+## What Register stores
+
+`Register` is a declaration, and the newest one wins: calling it again
+with a different expression or payload updates the row, calling it
+with the same values changes nothing. The row is one `schedule_config`
+entry:
+
+| column | from |
+| --- | --- |
+| `name` | the first argument; also the message key every produce carries |
+| `expression` | the cron expression, UTC unless it carries `TZ=` |
+| `topic_id` | the target topic, resolved by name at `Register` |
+| `payload` | the message, marshaled once |
+| `schema_version` | `InvoiceRun.SchemaVersion()`, read from the type argument |
+| `concurrency`, `timeout_ns` | the config's `Concurrency` and `Timeout` |
+
+The type argument is why the payload is safe to store as JSON: the
+schema version is captured at declaration, and every produce carries
+it on the row, so a consumer registered with `InvoiceRun` accepts the
+message the same way it accepts one from a live producer. Bump
+`SchemaVersion` and re-`Register` and the next produce is version 2;
+consumers still on version 1 skip it, as on any topic
+([schema versions](/guides/schema-versions/)).
+
+The payload is the same document every time. A handler that needs to
+know which scheduled time a message is for reads `meta.ScheduledAt`;
+it is not in the payload because the payload never changes.
+
+## What Schedule does
+
+`Schedule` runs the system manager, the same thing `vulkan manager
+run` does. The schedule producer is a system worker; it is what
+actually produces, and it produces every registered schedule, not just
+the one whose instance called `Schedule`. So `Schedule` exists for one
+reason: a program that registers a schedule and exits has registered
+one that never fires unless a manager is running somewhere. Calling
+`Schedule` makes the registering program that somewhere. If a manager
+already runs in the fleet, `Schedule` is one more instance of it, and
+the worker's `target_instances` decides which one holds it.
+
+The produce itself is what a hand-written producer would do, in one
+transaction with the `schedule_cursor` advance:
+
+- `MessageKey` is the schedule name, with compaction on, so a due
+  message nobody claimed yet is superseded by the next one instead of
+  piling up.
+- `Concurrency` and `Timeout` come from the schedule's config, so
+  `exclusive` means a message waits for the previous one to finish.
+- The idempotency key is derived from the scheduled time and the
+  schedule id: a replay after an ambiguous commit dedupes, every other
+  produce lands.
+- After downtime the schedule producer produces the newest due time
+  only; older ones are dropped, not produced late.
+
+## Worked case
+
+`invoices` is topic id `4`. `invoiceScheduler.Register[InvoiceRun]` writes:
+
+```sql
+SELECT id, name, topic_id, expression, payload, schema_version
+FROM schedule_config;
+--  id | name             | topic_id | expression | payload          | schema_version
+--  3  | invoices.nightly | 4        | 0 2 * * *  | {"region":"eu"}  | 1
+```
+
+At `02:00 UTC` the schedule producer claims the row, produces onto
+`message_log_4`, and advances `schedule_cursor` to the next `02:00`:
+
+```sql
+SELECT id, routing_key, message_key, schema_version, payload
+FROM message_log_4
+ORDER BY id DESC LIMIT 1;
+--  id     | routing_key | message_key      | schema_version | payload
+--  88012  |             | invoices.nightly | 1              | {"region":"eu"}
+```
+
+`invoice-runner` claims id `88012` like any other message; a second
+group `invoice-audit` on the same topic claims it too. Neither group
+was named anywhere in the schedule.
+
+## Admin verbs
+
+Everything an operator does to a schedule needs no type argument and
+no running process, so it stays on `MessageAdmin` and the CLI, one
+noun on both:
+
+| admin | CLI | what it does |
+| --- | --- | --- |
+| `RunSchedule(name)` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
+| `SuspendSchedule` / `UnsuspendSchedule` | `vulkan schedule suspend` / `unsuspend` | stops and resumes the schedule; a time that came due while suspended is dropped |
+| `ScheduleStatus`, `ScheduleMessages` | `vulkan schedule status` / `messages` | per-group outcomes, read from the target topic's `delivery_log` by message key |
+| `DestroySchedule` | `vulkan schedule destroy` | deletes the row; gated by `AllowDestroy` |
+
+Temporal and EventBridge Scheduler use the same noun for the same
+thing; "cron job" stays the name of K8s's resource, where what fires
+is a batch job and not a message.
+
+## The message key on a shared topic
+
+The schedule's name is its message key on the target topic. On a topic
+where your producers also key messages, a schedule named the same as
+one of your keys would supersede it. Give a schedule its own topic, or
+key your own messages so the two can't collide - I'm not sure a config
+knob here is worth its weight until someone hits it.
+
+## What this is not
+
+A one-off "run this in ten minutes" is not a schedule; it is a delayed
+delivery, and that is a separate proposal. A schedule repeats, and its
+unit is a message.

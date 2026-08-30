@@ -72,14 +72,14 @@ describe('logAttributes', () => {
 describe('fillText', () => {
 	it('substitutes a name the values carry', () => {
 		const segments = fillText(
-			'register "{cron_job}" with MessageAdmin.RegisterCronJob first',
-			new Map([['cron_job', 'nightly-rollup']]),
+			'register "{schedule}" with MessageAdmin.RegisterSchedule first',
+			new Map([['schedule', 'nightly-rollup']]),
 		);
 
 		expect(segments).toEqual([
 			{ text: 'register "', kind: 'plain' },
 			{ text: 'nightly-rollup', kind: 'value' },
-			{ text: '" with MessageAdmin.RegisterCronJob first', kind: 'plain' },
+			{ text: '" with MessageAdmin.RegisterSchedule first', kind: 'plain' },
 		]);
 	});
 

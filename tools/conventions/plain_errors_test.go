@@ -99,7 +99,7 @@ func plainRaiseSites(t *testing.T) []raiseSite {
 			}
 
 			// vendored source keeps its upstream wording
-			if strings.Contains(path, filepath.Join("cron", "internal", "robfig")) {
+			if strings.Contains(path, filepath.Join("schedule", "internal", "robfig")) {
 				return nil
 			}
 

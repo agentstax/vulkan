@@ -22,7 +22,7 @@ func newGroupDestroyCmd(g *globalFlags) *cobra.Command {
 		Use:   "destroy <topic> <group>",
 		Short: "Permanently delete a consumer group and everything it owns",
 		Long: `Permanently delete a consumer group: its cursor, bindings, leases,
-delivery rows, group-owned workers, and group-owned cron jobs. The topic and
+delivery rows, group-owned workers, and group-owned schedules. The topic and
 its messages are untouched.
 
 Refused while a consumer still runs on the group or the group still holds

@@ -28,7 +28,7 @@ exists; this page is the map of what's actually there.
                                              from │ binding_config_log_1                │
    worker_config ─▶ worker_config_log     cursor, └─────────────────────────────────────┘
      └─▶ worker_instance                  binding
-   cron_job_config ─▶ cron_job_cursor     tables
+   schedule_config ─▶ schedule_cursor     tables
    migration_log
 ```
 
@@ -45,17 +45,17 @@ after creation because the log's partition boundaries depend on it
 staying fixed.
 
 The fleet and history tables hang off the spine with one shared
-pattern: `worker_config`, `cron_job_config`, and `migration_log` each
+pattern: `worker_config`, `schedule_config`, and `migration_log` each
 carry all three owner columns (`system_id`, `topic_id`,
 `consumer_group_id`) and a CHECK that exactly one is set — a worker
 belongs to the system, a topic, or a group, never two.
 `worker_instance` is the live-copy row under a `worker_config`: a
 `token` only its creator can match and a heartbeat-renewed
 `expires_at`, the same lease shape the
-[lifecycle](/concepts/lifecycle/) uses for claims. `cron_job_cursor`
+[lifecycle](/concepts/lifecycle/) uses for claims. `schedule_cursor`
 is the scheduler's position in each job's schedule
 (`next_scheduled_at`, `last_scheduled_at`), a 1:1 runtime row beside
-the near-static `cron_job_config`, so per-fire churn never touches
+the near-static `schedule_config`, so per-fire churn never touches
 the config row.
 
 Two of these are append-only operator trails, never updated:

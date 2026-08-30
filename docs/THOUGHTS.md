@@ -68,6 +68,8 @@ need metric / alert example playground scenarios
 
 # Doc
 
+SEO for markdown - tags
+
 Have specific 'proposal' pages. Like the idea of having an issue and doc proposal page where people can comment and give thoughts etc
 
 # Other

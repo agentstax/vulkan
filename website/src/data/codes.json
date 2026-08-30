@@ -126,11 +126,11 @@
     "VK0013": {
       "code": "VK0013",
       "kind": "error",
-      "problem": "cron job not found",
+      "problem": "schedule not found",
       "recovery": "permanent",
-      "fix": "register \"{cron_job}\" with MessageAdmin.RegisterCronJob first",
+      "fix": "register \"{schedule}\" with MessageAdmin.RegisterSchedule first",
       "fix_placeholders": [
-        "cron_job"
+        "schedule"
       ]
     },
     "VK0014": {
@@ -317,9 +317,9 @@
     "VK0025": {
       "code": "VK0025",
       "kind": "error",
-      "problem": "could not finish the cron job declaration",
+      "problem": "could not finish the schedule declaration",
       "recovery": "transient",
-      "fix": "rerun the declaration if the cron job should still exist"
+      "fix": "rerun the declaration if the schedule should still exist"
     },
     "VK0026": {
       "code": "VK0026",
@@ -529,7 +529,7 @@
     "VK0037": {
       "code": "VK0037",
       "kind": "event",
-      "message": "cron job request was already published by an earlier ambiguous commit"
+      "message": "schedule request was already published by an earlier ambiguous commit"
     },
     "VK0038": {
       "code": "VK0038",

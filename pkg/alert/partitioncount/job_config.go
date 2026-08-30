@@ -3,16 +3,16 @@ package partitioncount
 import (
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/cron"
+	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// JobConfig is NewJob's spec -- the cron job the partition_count alert is
+// JobConfig is NewJob's spec -- the schedule the partition_count alert is
 // evaluated on.
 type JobConfig struct {
-	// Schedule - how often the alert is evaluated, as cron.ParseSchedule
+	// Schedule - how often the alert is evaluated, as schedule.ParseExpression
 	// accepts it.
 	// Default: @hourly.
-	Schedule string
+	Expression string
 
 	// Threshold - the partition count on one topic at or above which the
 	// alert is published.
@@ -22,8 +22,8 @@ type JobConfig struct {
 }
 
 func (c *JobConfig) WithDefaults() *JobConfig {
-	if c.Schedule == "" {
-		c.Schedule = "@hourly"
+	if c.Expression == "" {
+		c.Expression = "@hourly"
 	}
 	return c
 }
@@ -31,7 +31,7 @@ func (c *JobConfig) WithDefaults() *JobConfig {
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
 func (c *JobConfig) Validate() error {
-	if _, err := cron.ParseSchedule(c.Schedule); err != nil {
+	if _, err := schedule.ParseExpression(c.Expression); err != nil {
 		return fmt.Errorf("Schedule: %w", err)
 	}
 	if c.Threshold < 0 {

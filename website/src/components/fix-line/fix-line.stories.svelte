@@ -25,7 +25,7 @@
 <Story
 	name="Quoted identifier"
 	args={{
-		fix: 'register "{cron_job}" with MessageAdmin.RegisterCronJob first',
-		placeholders: ['cron_job'],
+		fix: 'register "{schedule}" with MessageAdmin.RegisterSchedule first',
+		placeholders: ['schedule'],
 	}}
 />

@@ -33,8 +33,8 @@ func (d *SystemDatastore) delete(ctx context.Context) error {
 	// so every FK's referencing table is gone before its target drops.
 	for _, table := range []string{
 		"migration_log",
-		"cron_job_cursor",
-		"cron_job_config",
+		"schedule_cursor",
+		"schedule_config",
 		"worker_instance",
 		"worker_config_log",
 		"worker_config",

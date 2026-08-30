@@ -8,7 +8,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/metrics/controller/datastore"
 )
 
-// overdueThreshold: how long a cron job may sit due and unproduced before it
+// overdueThreshold: how long a schedule may sit due and unproduced before it
 // counts as overdue.
 const overdueThreshold = 10 * time.Minute
 
@@ -54,16 +54,16 @@ func classifyWorker(targetInstances int, liveInstances int) metrics.WorkerStatus
 	}
 }
 
-func toCronJobSnapshot(data datastore.CronJobSnapshotData) (metrics.CronJobSnapshot, error) {
+func toScheduleSnapshot(data datastore.ScheduleSnapshotData) (metrics.ScheduleSnapshot, error) {
 	owner, err := toOwner(data.SystemId, data.TopicId, data.ConsumerGroupId, data.TopicName, data.GroupName)
 	if err != nil {
-		return metrics.CronJobSnapshot{}, err
+		return metrics.ScheduleSnapshot{}, err
 	}
 
-	snapshot := metrics.CronJobSnapshot{
+	snapshot := metrics.ScheduleSnapshot{
 		Owner:           owner,
 		Name:            data.Name,
-		Schedule:        data.Schedule,
+		Expression:      data.Expression,
 		Suspended:       data.Suspended,
 		NextScheduledAt: data.NextScheduledAt,
 		DueFor:          time.Duration(data.DueForSecs * float64(time.Second)),

@@ -9,11 +9,11 @@ import (
 	alertcontroller "github.com/agentstax/vulkan/pkg/alert/controller"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/cron"
-	croncontroller "github.com/agentstax/vulkan/pkg/cron/controller"
 	"github.com/agentstax/vulkan/pkg/metrics"
 	metricscontroller "github.com/agentstax/vulkan/pkg/metrics/controller"
 	"github.com/agentstax/vulkan/pkg/migrate"
+	"github.com/agentstax/vulkan/pkg/schedule"
+	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	"github.com/agentstax/vulkan/pkg/system"
 	systemMigrations "github.com/agentstax/vulkan/pkg/system/migrations"
 	"github.com/agentstax/vulkan/pkg/topic"
@@ -22,7 +22,7 @@ import (
 // RegisterSystem stands up the shared control-plane schema every topic uses;
 // call it once before registering any topic. Safe to call on every startup:
 // cfg is applied on every call, so changing a value and redeploying changes
-// the system's topics and its built-in alerts' cron jobs.
+// the system's topics and its built-in alerts' schedules.
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
 func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemConfig) error {
 	if cfg == nil {
@@ -45,7 +45,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 	if _, err := a.registerTopic(ctx, alert.TopicName, alertcontroller.TopicConfig()); err != nil {
 		return err
 	}
-	if _, err := a.registerTopic(ctx, cron.TopicName, croncontroller.TopicConfig()); err != nil {
+	if _, err := a.registerTopic(ctx, schedule.TopicName, schedulecontroller.TopicConfig()); err != nil {
 		return err
 	}
 
@@ -58,7 +58,7 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 	for _, job := range []*alertcontroller.Job{partitionCountJob, compactionReadCostJob} {
-		if _, err := a.RegisterCronJob(ctx, job.Name, job.Schedule, job.Payload, job.Config); err != nil {
+		if _, err := a.RegisterSchedule(ctx, job.Name, job.Expression, job.Payload, job.Config); err != nil {
 			return err
 		}
 	}
@@ -110,7 +110,7 @@ func (a *MessageAdmin) MigrateSystem(ctx context.Context, targetVersion int64) e
 // DestroySystem permanently deletes:
 // - every registered topic and its messages
 // - the system topics
-// - cron jobs
+// - schedules
 // - consumer groups
 // - workers
 // - shared control-plane tables

@@ -171,14 +171,14 @@ func run() (err error) {
 	collectorDone := make(chan error, 1)
 	go func() { collectorDone <- execution.Run(runCtx) }()
 
-	step("wait for full head coverage: fleet + cron + every lab topic and group")
+	step("wait for full head coverage: fleet + schedules + every lab topic and group")
 	expected := map[string]bool{
 		metrics.MeasurementKey(metrics.MetricUnclaimedWorkers, nil):   false,
 		metrics.MeasurementKey(metrics.MetricOldestUnclaimedAge, nil): false,
 		metrics.MeasurementKey(metrics.MetricFailingWorkers, nil):     false,
-		metrics.MeasurementKey(metrics.MetricOverdueJobs, nil):        false,
+		metrics.MeasurementKey(metrics.MetricOverdueSchedules, nil):        false,
 		metrics.MeasurementKey(metrics.MetricOldestDueAge, nil):       false,
-		metrics.MeasurementKey(metrics.MetricSuspendedJobs, nil):      false,
+		metrics.MeasurementKey(metrics.MetricSuspendedSchedules, nil):      false,
 		metrics.MeasurementKey(metrics.MetricActiveAlerts, nil):       false,
 		metrics.MeasurementKey(metrics.MetricResolvedAlerts, nil):     false,
 	}
@@ -279,7 +279,7 @@ func run() (err error) {
 
 	for _, series := range []string{
 		"vulkan_worker_state_unclaimed_workers ",
-		"vulkan_cron_state_overdue_jobs ",
+		"vulkan_schedule_state_overdue ",
 		fmt.Sprintf("vulkan_consumer_cursor_backlog{group=%q,topic=%q} %d", groupNames[0], topicNames[0], messagesPerTopic),
 		fmt.Sprintf("vulkan_topic_state_compacted{topic=%q} 0", topicNames[topicCount-1]),
 	} {

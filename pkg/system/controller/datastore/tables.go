@@ -101,7 +101,7 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 			system_id BIGINT REFERENCES system_config (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic_config (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group_config (id) ON DELETE CASCADE,
-			name TEXT NOT NULL,                      -- 'janitor' | 'cursor_advancer' | 'cron_scheduler' | user-defined
+			name TEXT NOT NULL,                      -- 'janitor' | 'cursor_advancer' | 'schedule_producer' | user-defined
 			metadata JSONB NOT NULL DEFAULT '{}',    -- per-worker config, written by the declaration that creates the row
 			target_instances INT NOT NULL DEFAULT 1, -- 0 = suspended, -1 = unbounded
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
@@ -192,51 +192,51 @@ func (d *SystemDatastore) createSystemTables(ctx context.Context, tx pgx.Tx) err
 		}
 	}
 
-	// cron_job_config: named schedules. Owner FKs are GC metadata only -- all
+	// schedule_config: named schedules. Owner FKs are GC metadata only -- all
 	// NULL = standalone.
-	createCronJobConfigSql := `
+	createScheduleConfigSql := `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS cron_job_config (
+		CREATE TABLE IF NOT EXISTS schedule_config (
 			id BIGSERIAL PRIMARY KEY,
 			system_id BIGINT REFERENCES system_config (id) ON DELETE CASCADE,
 			topic_id BIGINT REFERENCES topic_config (id) ON DELETE CASCADE,
 			consumer_group_id BIGINT REFERENCES consumer_group_config (id) ON DELETE CASCADE,
 			name TEXT NOT NULL UNIQUE,                       -- also the routing key every job request is produced with
-			schedule TEXT NOT NULL,                          -- cron spec; UTC unless it carries TZ=
-			suspended BOOLEAN NOT NULL DEFAULT false,        -- a suspended job keeps its schedule but never produces
+			expression TEXT NOT NULL,                        -- cron expression; UTC unless it carries TZ=
+			suspended BOOLEAN NOT NULL DEFAULT false,        -- a suspended schedule keeps its expression but never produces
 			concurrency TEXT NOT NULL DEFAULT 'parallel',    -- 'parallel' | 'exclusive' -> MessageOptions.Concurrency
 			timeout_ns BIGINT NOT NULL,                      -- nanoseconds; -> MessageOptions.Timeout
-			payload JSONB NOT NULL DEFAULT '{}',             -- the job's opaque document, produced with every request
+			payload JSONB NOT NULL DEFAULT '{}',             -- the schedule's opaque document, produced with every request
 			metadata JSONB NOT NULL DEFAULT '{}',
 			CHECK (num_nonnulls(system_id, topic_id, consumer_group_id) = 1),
 			CHECK (timeout_ns > 0)
 		);
 	`
-	if _, err := tx.Exec(ctx, createCronJobConfigSql); err != nil {
+	if _, err := tx.Exec(ctx, createScheduleConfigSql); err != nil {
 		return err
 	}
 
-	// cron_job_cursor: the scheduler's position in each job's schedule --
-	// the runtime sibling of the near-static config row, 1:1 by cron_job_id.
-	createCronJobCursorSql := `
+	// schedule_cursor: the schedule producer's position in each schedule --
+	// the runtime sibling of the near-static config row, 1:1 by schedule_id.
+	createScheduleCursorSql := `
 		-- vulkan: system.createSystemTables
-		CREATE TABLE IF NOT EXISTS cron_job_cursor (
-			cron_job_id BIGINT NOT NULL PRIMARY KEY REFERENCES cron_job_config (id) ON DELETE CASCADE,
+		CREATE TABLE IF NOT EXISTS schedule_cursor (
+			schedule_id BIGINT NOT NULL PRIMARY KEY REFERENCES schedule_config (id) ON DELETE CASCADE,
 			next_scheduled_at TIMESTAMPTZ NOT NULL,
 			last_scheduled_at TIMESTAMPTZ               -- the scheduled time most recently produced
 		);
 	`
-	if _, err := tx.Exec(ctx, createCronJobCursorSql); err != nil {
+	if _, err := tx.Exec(ctx, createScheduleCursorSql); err != nil {
 		return err
 	}
 
 	// the due scan; suspended lives on the config row, so the filter is the
 	// scan's join, not this index
-	createCronJobCursorDueIndexSql := `
+	createScheduleCursorDueIndexSql := `
 		-- vulkan: system.createSystemTables
-		CREATE INDEX IF NOT EXISTS cron_job_cursor_due ON cron_job_cursor (next_scheduled_at);
+		CREATE INDEX IF NOT EXISTS schedule_cursor_due ON schedule_cursor (next_scheduled_at);
 	`
-	if _, err := tx.Exec(ctx, createCronJobCursorDueIndexSql); err != nil {
+	if _, err := tx.Exec(ctx, createScheduleCursorDueIndexSql); err != nil {
 		return err
 	}
 

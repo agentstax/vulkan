@@ -6,8 +6,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// RunCronJobConfig is RunCronJob's spec -- every field is optional.
-type RunCronJobConfig struct {
+// RunScheduleConfig is RunSchedule's spec -- every field is optional.
+type RunScheduleConfig struct {
 	// Concurrency - the produced request's concurrent-run policy.
 	// Default: parallel (the request runs even while a previous one is still running).
 	//
@@ -15,7 +15,7 @@ type RunCronJobConfig struct {
 	Concurrency common.ConcurrencyPolicy
 }
 
-func (c *RunCronJobConfig) WithDefaults() *RunCronJobConfig {
+func (c *RunScheduleConfig) WithDefaults() *RunScheduleConfig {
 	if c.Concurrency == "" {
 		c.Concurrency = common.ConcurrencyParallel
 	}
@@ -24,7 +24,7 @@ func (c *RunCronJobConfig) WithDefaults() *RunCronJobConfig {
 
 // Validate runs after WithDefaults -- anything still out of range here was
 // set by the caller, not left unset.
-func (c *RunCronJobConfig) Validate() error {
+func (c *RunScheduleConfig) Validate() error {
 	if err := c.Concurrency.Validate(); err != nil {
 		return fmt.Errorf("Concurrency: %w", err)
 	}

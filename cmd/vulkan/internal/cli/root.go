@@ -86,7 +86,7 @@ func newRootCmd() (*cobra.Command, *globalFlags) {
 
 	root.AddCommand(newTopicCmd(g))
 	root.AddCommand(newGroupCmd(g))
-	root.AddCommand(newCronCmd(g))
+	root.AddCommand(newScheduleCmd(g))
 	root.AddCommand(newAlertCmd(g))
 	root.AddCommand(newMetricsCmd(g))
 	root.AddCommand(newSystemCmd(g))

@@ -3,7 +3,7 @@
 // executor claimed as a real worker.
 //
 // Sections:
-//  1. seeding -- both alert cron jobs + consumer groups + exact declarations + worker
+//  1. seeding -- both alert schedules + consumer groups + exact declarations + worker
 //     rows exist after RegisterSystem; a declared threshold applies on a
 //     re-register and a suspended job survives one
 //  2. classify -- driven through AlertController with a 2s repeat: the active
@@ -35,7 +35,7 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	"github.com/agentstax/vulkan/pkg/cron"
+	"github.com/agentstax/vulkan/pkg/schedule"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
@@ -109,7 +109,7 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	jobRequests, err = mAdmin.GetTopic(ctx, cron.TopicName)
+	jobRequests, err = mAdmin.GetTopic(ctx, schedule.TopicName)
 	must(err)
 	alertsTopic, err = mAdmin.GetTopic(ctx, alert.TopicName)
 	must(err)
@@ -123,11 +123,11 @@ func run() (err error) {
 	seedingSection(ctx)
 	classifySection(ctx)
 
-	// the executor's embedded consumer spawns a cron scheduler -- suspend the
-	// alert cron jobs so only the lab's run-nows produce requests (a suspended
+	// the executor's embedded consumer spawns a schedule producer -- suspend the
+	// alert schedules so only the lab's run-nows produce requests (a suspended
 	// job still runs on run-now)
-	must(mAdmin.SuspendCronJob(ctx, partitioncount.JobName))
-	must(mAdmin.SuspendCronJob(ctx, compactionreadcost.JobName))
+	must(mAdmin.SuspendSchedule(ctx, partitioncount.JobName))
+	must(mAdmin.SuspendSchedule(ctx, compactionreadcost.JobName))
 
 	executorCapture = newCaptureLogger()
 	stopExecutor := startExecutor(ctx)
@@ -145,20 +145,20 @@ func run() (err error) {
 func seedingSection(ctx context.Context) {
 	step("seeding: jobs/groups/bindings/workers exist; declared threshold applies, suspended survives")
 
-	partitionCountJob, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
+	partitionCountJob, err := mAdmin.GetSchedule(ctx, partitioncount.JobName)
 	must(err)
 	if partitionCountJob == nil {
-		die("RegisterSystem must seed the " + partitioncount.JobName + " cron job")
+		die("RegisterSystem must seed the " + partitioncount.JobName + " schedule")
 	}
 	seeded, err := alertcontroller.ToJobPayload(partitionCountJob.Payload)
 	must(err)
 	if seeded.Threshold != 0 || partitionCountJob.Concurrency != common.ConcurrencyExclusive {
 		die(fmt.Sprintf("seeded job: want threshold 0 + defer, got %d %s", seeded.Threshold, partitionCountJob.Concurrency))
 	}
-	readCostJob, err := mAdmin.GetCronJob(ctx, compactionreadcost.JobName)
+	readCostJob, err := mAdmin.GetSchedule(ctx, compactionreadcost.JobName)
 	must(err)
 	if readCostJob == nil {
-		die("RegisterSystem must seed the " + compactionreadcost.JobName + " cron job")
+		die("RegisterSystem must seed the " + compactionreadcost.JobName + " schedule")
 	}
 
 	declarations, err := mAdmin.ListDeclarations(ctx)
@@ -166,7 +166,7 @@ func seedingSection(ctx context.Context) {
 	for _, jobName := range []string{partitioncount.JobName, compactionreadcost.JobName} {
 		declared := false
 		for _, declaration := range declarations {
-			if declaration.GroupName == jobName && declaration.TopicName == cron.TopicName &&
+			if declaration.GroupName == jobName && declaration.TopicName == schedule.TopicName &&
 				declaration.Status == consumergroup.DeclarationInstalled &&
 				len(declaration.Patterns) == 1 && declaration.Patterns[0] == jobName {
 				declared = true
@@ -189,28 +189,28 @@ func seedingSection(ctx context.Context) {
 	if row == nil {
 		die("RegisterSystem must declare the " + partitioncount.JobName + " worker row")
 	}
-	fmt.Println("  ✓ both alert cron jobs, exact declarations, and the worker row exist")
+	fmt.Println("  ✓ both alert schedules, exact declarations, and the worker row exist")
 
 	// a declared threshold applies on every RegisterSystem, and a suspended
 	// alert job stays suspended through one
-	must(mAdmin.SuspendCronJob(ctx, compactionreadcost.JobName))
+	must(mAdmin.SuspendSchedule(ctx, compactionreadcost.JobName))
 	declareThreshold(ctx, 7)
 
-	reread, err := mAdmin.GetCronJob(ctx, partitioncount.JobName)
+	reread, err := mAdmin.GetSchedule(ctx, partitioncount.JobName)
 	must(err)
 	redeclared, err := alertcontroller.ToJobPayload(reread.Payload)
 	must(err)
 	if redeclared.Threshold != 7 {
 		die(fmt.Sprintf("declared threshold must apply on re-register, got %d", redeclared.Threshold))
 	}
-	readCostJob, err = mAdmin.GetCronJob(ctx, compactionreadcost.JobName)
+	readCostJob, err = mAdmin.GetSchedule(ctx, compactionreadcost.JobName)
 	must(err)
 	if !readCostJob.Suspended {
-		die("a suspended alert cron job must survive re-register")
+		die("a suspended alert schedule must survive re-register")
 	}
 
 	declareThreshold(ctx, 0)
-	must(mAdmin.UnsuspendCronJob(ctx, compactionreadcost.JobName))
+	must(mAdmin.UnsuspendSchedule(ctx, compactionreadcost.JobName))
 	fmt.Println("  ✓ declared threshold applied, suspended state survived re-register")
 }
 
@@ -342,7 +342,7 @@ func executorSection(ctx context.Context) {
 
 	declareThreshold(ctx, 1)
 
-	firstRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
+	firstRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
 	must(err)
 	waitDelivered(ctx, firstRun.Id, "success")
 
@@ -351,7 +351,7 @@ func executorSection(ctx context.Context) {
 	must(err)
 	declared := false
 	for _, declaration := range declarations {
-		if declaration.GroupName == partitioncount.JobName && declaration.TopicName == cron.TopicName &&
+		if declaration.GroupName == partitioncount.JobName && declaration.TopicName == schedule.TopicName &&
 			declaration.Status == consumergroup.DeclarationInstalled &&
 			len(declaration.Patterns) == 1 && declaration.Patterns[0] == partitioncount.JobName {
 			declared = true
@@ -387,7 +387,7 @@ func executorSection(ctx context.Context) {
 
 	// inside the system's 4h repeat interval the same finding publishes nothing
 	published := alertMessageCount(ctx, labKey)
-	secondRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
+	secondRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
 	must(err)
 	waitDelivered(ctx, secondRun.Id, "success")
 	if got := alertMessageCount(ctx, labKey); got != published {
@@ -407,9 +407,9 @@ func executorSection(ctx context.Context) {
 
 	// exact-name dispatch: the live consumer never claims another job's
 	// request, and alert traffic leaves other groups alone
-	readCostRun, err := mAdmin.RunCronJob(ctx, compactionreadcost.JobName, nil)
+	readCostRun, err := mAdmin.RunSchedule(ctx, compactionreadcost.JobName, nil)
 	must(err)
-	thirdRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
+	thirdRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
 	must(err)
 	waitDelivered(ctx, thirdRun.Id, "success")
 	if got := scalarInt64(ctx, fmt.Sprintf(
@@ -445,7 +445,7 @@ func isolationSection(ctx context.Context) {
 		`UPDATE message_log_%d SET payload = '"corrupt"'::jsonb WHERE id = $1;`, alertsTopic.Id), corruptedHead)
 
 	declareThreshold(ctx, 0)
-	resolveRun, err := mAdmin.RunCronJob(ctx, partitioncount.JobName, nil)
+	resolveRun, err := mAdmin.RunSchedule(ctx, partitioncount.JobName, nil)
 	must(err)
 
 	// the attempt fails on the corrupted owner -- but the same attempt
@@ -548,8 +548,8 @@ func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 func cleanup() {
 	ctx := context.Background()
 
-	must(mAdmin.UnsuspendCronJob(ctx, partitioncount.JobName))
-	must(mAdmin.UnsuspendCronJob(ctx, compactionreadcost.JobName))
+	must(mAdmin.UnsuspendSchedule(ctx, partitioncount.JobName))
+	must(mAdmin.UnsuspendSchedule(ctx, compactionreadcost.JobName))
 
 	labKey := partitionCountKey(labTopicOwner)
 	checkKey, err := alert.MessageKey(labCheckName, labTopicOwner)
