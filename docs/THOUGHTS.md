@@ -1,23 +1,16 @@
 # Public API
 
-cronjob coupling
-- coupling a consumer to the cron event producer is wrong
-- should have something like Register() CronJob -> cronjob.ScheduledProducer() <- produces events on schedule
-  then any set of consumers can listen to this
 doc decision indexing
 - is our decision index doing anything? grep and python search is quite powerful
 - can we make our index more like a search engine ie a list of keywords or tags -> loaded in to context on startup
 need metric / alert example playground scenarios
 
 ---
-- RegisterCronJob better mirrors producer and consumer (have consumerFunc as handler on cronjob config?? and run is just consume?)
-- Public runnables Producer or Consumer or Cronjob etc should also just run system manager
 - User side idempotency keys should be string, internals can be UUID
 
 - hide RegisterSystem calls
 - improve comments on New*
 - where to put consumer.ConsumerConfig ie NewConsumer or Register, same pattern for producer etc
-- RegisterCronJob returns
 ---
 
 01 reconsider this postgres per param layout and having password in optional config
@@ -45,13 +38,6 @@ need metric / alert example playground scenarios
 	})
 
 05 ignoring this for now
-
-06 RegisterCronJob should return object such that consumer can use its defined topic and binding on it
-- jobConsumer.Register[InvoiceRun](ctx, "invoice-runner", "invoices", nil)
-  bad that we have to know to find topic and binding. should just be cronjob.TopicName, cronjob.Bindings
-
-06 RegisterCronJob should likely be more like producer and consumer ie
-   NewCronJob -> Register -> Run, such that it could run on its own
 
 07 looks pretty good
 

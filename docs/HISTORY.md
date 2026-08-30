@@ -5,6 +5,41 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — a schedule is a producer on a cron expression; "cron job" renamed "schedule" [0621]
+
+- Third API handle, the producer/consumer mirror: `scheduler.NewScheduler(ds,
+  cfg)` -> `Register[Message](ctx, name, expression, topicName, payload,
+  cfg)` -> `*SchedulerInstance[Message]` (`Registered` row, `Payload`) ->
+  `Schedule(ctx)`, which builds and runs a system manager per call. The
+  system produces the stored payload onto the user's own topic; consumers
+  are plain `consumer.Register[T]` groups on it and `scheduled_at` reaches
+  the handler as `consumergroup.MessageMeta.ScheduledAt`. The handle is
+  the one declaration path -- `MessageAdmin` has no RegisterSchedule, and
+  registers the built-in alerts' schedules through its own `Scheduler`.
+- `schedule_config.topic_id` is the target topic and `schema_version` is
+  stored beside the marshaled `payload`; the producer datastore reads the
+  version from the payload value's `SchemaVersion()`, which is what lets
+  `schedule.StoredMessage` replay a stored row through `ProduceInTx`.
+  Message key = the schedule name, compaction on. Every schedule is the
+  system's: the nullable owner pair is gone. Status and message listings
+  read the target topic's `delivery_log` by message key; `Register` warns
+  VK0058 when the target's DeliveryLogMode keeps no success rows.
+  `ScheduleConfig.Metadata` stays as operator annotation.
+- The rename: `pkg/cron` -> `pkg/schedule` (`cron.Schedule` ->
+  `schedule.Expression`), the worker `pkg/schedule/producer`, tables
+  `schedule_config` / `schedule_config_log` / `schedule_cursor` with column
+  `expression`, admin `*Schedule` verbs (`ScheduleMessages`), CLI `vulkan
+  schedule get|list|run|suspend|unsuspend|destroy` (`get --messages`), log
+  keys `schedule` / `schedule_id`, VK0013/VK0025/VK0037 rewordings, the
+  CONVENTIONS vocabulary row banning "cron job". `cron.JobRequest` and
+  `alertcontroller.ToJobPayload` are deleted; alerts consume
+  `alert.JobPayload` from `schedule.TopicName` (`__system.schedules`).
+- Every `[Message any]` outside pkg/producer is `[Message
+  topic.Versioned]`; `common.MessageRow` keeps `any` (infrastructure
+  cannot import the pkg/topic vocabulary root).
+- Spec page guides/schedules is shipped behavior (aside off); playground
+  06 and schedulelab drive the handle. Full fresh-DB lab suite 44/44.
+
 ## 2026-08-30 — partition heal covers the failing row [0620]
 
 - The self-heal creates the partition covering the id sequence's

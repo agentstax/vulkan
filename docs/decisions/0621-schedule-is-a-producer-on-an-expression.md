@@ -56,6 +56,10 @@ website/src/content/docs/guides/schedules.mdx.
 - `cron.JobRequest` and `cron.TopicName` leave the user surface; the
   built-in alerts keep `__system.job_requests` as their own target topic
   and register through the same handle.
+  Amended 2026-08-30 at ship: the alerts' target topic is
+  `schedule.TopicName` = `__system.schedules`, and `MessageAdmin` registers
+  their schedules through its own `Scheduler` -- admin has no
+  RegisterSchedule verb.
 
 ## Consequences
 
