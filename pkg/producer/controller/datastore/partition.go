@@ -23,6 +23,28 @@ const ddlLockTimeout = 2 * time.Second
 // round-trip slack.
 const createAheadAttemptAllowance = 3 * ddlLockTimeout
 
+// insertUntilCovered runs insert until a partition covers it. An insert
+// learns its ids from the sequence, so a rerun can land past the partition
+// the previous heal created; each heal covers the sequence's next id, so
+// the loop only continues while other producers advanced the sequence a
+// whole partition in between. One heal for the boundary itself, then one
+// per configured retry.
+func (d *ProducerDatastore) insertUntilCovered(ctx context.Context, topicId int64, partitionSize int64, insert func() error) error {
+	for heals := 0; ; heals++ {
+		err := insert()
+		if !isMissingPartition(err) {
+			return err
+		}
+		if heals > d.DatastoreRetry.MaxRetries {
+			return errPartitionCreationBehind.Wrap(err).With("topic_id", topicId)
+		}
+
+		if err := d.createNextIdPartition(ctx, topicId, partitionSize); err != nil {
+			return err
+		}
+	}
+}
+
 // createNextIdPartition creates the partition the next id will land in.
 // can't use the passed id as that id is already likely burned from an
 // attempt in the sequence table.

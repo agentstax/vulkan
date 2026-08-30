@@ -34,7 +34,7 @@ block; paste the message text or code into search to land on its page.
 | [VK0024](/errors/VK0024) | could not finish the worker declaration | transient |
 | [VK0025](/errors/VK0025) | could not finish the cron job declaration | transient |
 | [VK0053](/errors/VK0053) | could not take a lock needed by the migration step | transient |
-| [VK0056](/errors/VK0056) | could not insert the message, no partition covered its id | transient |
+| [VK0056](/errors/VK0056) | partition creation cannot keep up with the id sequence | permanent |
 
 Log events share the same `VK` code space: a Warn- or Error-level line
 that is operator-actionable carries its code in the line's `code` attribute,

@@ -658,8 +658,9 @@
     "VK0056": {
       "code": "VK0056",
       "kind": "error",
-      "problem": "could not insert the message, no partition covered its id",
-      "recovery": "transient"
+      "problem": "partition creation cannot keep up with the id sequence",
+      "recovery": "permanent",
+      "fix": "raise PartitionSize, or run a consumer so create-ahead stays ahead of the producers"
     },
     "VK0057": {
       "code": "VK0057",

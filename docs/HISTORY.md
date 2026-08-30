@@ -9,9 +9,10 @@ ledger was created; dates come from the phase git tags.
 
 - The self-heal creates the partition covering the id sequence's
   `last_value + 1` -- where the rerun's id will land -- instead of
-  `MAX(id)+1`, and a
-  miss the heal just covered reruns on the retry schedule as VK0056
-  (transient) -- a batch whose ids straddle a boundary heals twice.
+  `MAX(id)+1`, and one `insertUntilCovered` loop reruns the insert at
+  once after each heal -- a batch whose ids straddle a boundary heals
+  twice -- bounded at one heal plus one per `Retry.MaxRetries`;
+  exhaustion is VK0056 (permanent).
   Fixes producerbatchlab's 1-in-4 heal-scenario failure. The heal warn
   is declared as VK0057. Create-ahead
   creates the partition after the trigger id; no `MAX(id)` read.

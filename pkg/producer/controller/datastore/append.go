@@ -18,18 +18,16 @@ func (d *ProducerDatastore) AppendMessage[Message any](ctx context.Context, topi
 	return appended, err
 }
 
-// appendMessage self-heals a missing-partition insert: the first insert past
-// a partition boundary fails -> creates the partition -> the retry schedule
-// reruns the attempt. Rerunning produceFunc is safe because its writes all
-// go through the tx that just rolled back.
+// appendMessage runs the append's transaction until a partition covers it.
+// Rerunning produceFunc is safe because its writes all go through the tx
+// that just rolled back.
 func (d *ProducerDatastore) appendMessage[Message any](ctx context.Context, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
-	appended, err := d.appendMessageTransaction(ctx, topicId, produceFunc, data)
-	if isMissingPartition(err) {
-		if healErr := d.createNextIdPartition(ctx, topicId, partitionSize); healErr != nil {
-			return nil, healErr
-		}
-		return nil, errPartitionMissing.Wrap(err)
-	}
+	var appended *AppendedData[Message]
+	err := d.insertUntilCovered(ctx, topicId, partitionSize, func() error {
+		var err error
+		appended, err = d.appendMessageTransaction(ctx, topicId, produceFunc, data)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -79,17 +77,16 @@ func (d *ProducerDatastore) appendMessageTransaction[Message any](ctx context.Co
 // AppendMessageInTx runs produceFunc + the message insert against a
 // caller-supplied tx -- no Begin/Commit/Rollback, that's owned by whoever
 // opened tx. Self-heals a missing partition inside its own SAVEPOINT
-// (runInsertSavepoint), so retrying here can't undo an earlier target's
-// insert or rerun a caller side effect between calls. No retry: the tx owns
-// its own error handling.
+// (runInsertSavepoint), so the rerun can't undo an earlier target's insert
+// or rerun a caller side effect between calls. No transient retry: the tx
+// owns its own error handling.
 func (d *ProducerDatastore) AppendMessageInTx[Message any](ctx context.Context, tx Tx, topicId int64, partitionSize int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
-	appended, err := d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
-	if isMissingPartition(err) {
-		if healErr := d.createNextIdPartition(ctx, topicId, partitionSize); healErr != nil {
-			return nil, healErr
-		}
+	var appended *AppendedData[Message]
+	err := d.insertUntilCovered(ctx, topicId, partitionSize, func() error {
+		var err error
 		appended, err = d.runInsertSavepoint(ctx, tx, topicId, produceFunc, data)
-	}
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

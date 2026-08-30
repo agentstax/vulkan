@@ -29,11 +29,13 @@ sequence knows that.
   1` -- every id already drawn is at or below it, so the rerun's fresh
   id is at or past it; create-ahead passes the trigger id and creates
   the partition after its own. The `MAX(id)` read is gone.
-- A miss the heal has just covered is returned as `errPartitionMissing`
-  (VK0056, Transient), so the attempt reruns on `DatastoreRetry`'s
-  schedule -- the existing bound -- instead of a hand-rolled single
-  retry. `AppendMessageInTx` keeps one heal + one rerun: the caller
-  owns the transaction and its retry.
+- `insertUntilCovered` is the one heal loop all three append paths run:
+  insert; while routing fails, create the partition covering the
+  sequence's next id and rerun at once (the partition exists now --
+  there is nothing to back off from). Bounded at one heal for the
+  boundary itself plus one per `Retry.MaxRetries`; exhaustion is
+  `errPartitionCreationBehind` (VK0056, Permanent -- an unchanged retry
+  is exactly what just failed).
 - The heal warn line is declared (VK0057, `eventPartitionCreatedOnInsert`)
   beside VK0033 and carries `message_id`.
 
@@ -44,6 +46,11 @@ sequence knows that.
 - The batch path no longer wraps its heal in a retry of its own: a heal
   lock timeout fails the produce fast on every path, as VK0018's note
   already said for the single-row paths.
+- Rejected on the way: a fixed number of reruns written as consecutive
+  `if isMissingPartition` blocks (a loop with its count hidden), and
+  reclassifying a post-heal miss as Transient so `DatastoreRetry` reruns
+  it (its backoff delayed the rerun for no reason; a 100ms-ttl lab saw
+  the delay as a partition aging past retention).
 - Rejected: an unbounded heal-until-lands loop (no real bound); parsing
   the failing id out of the 23514 DETAIL text (Timescale's
   chunk-for-the-row shape, but a string contract with Postgres that

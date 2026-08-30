@@ -10,9 +10,8 @@ import (
 var errPartitionLockTimeout = diagnostic.NewError("VK0018", diagnostic.Transient,
 	"could not create the covering partition", "")
 
-// errPartitionMissing reclassifies a partition-routing failure (23514) whose
-// partition the heal has just created: the attempt reruns on the retry
-// schedule instead of failing the produce, because a batch's rerun can
-// straddle into a second missing partition.
-var errPartitionMissing = diagnostic.NewError("VK0056", diagnostic.Transient,
-	"could not insert the message, no partition covered its id", "")
+// errPartitionCreationBehind is the heal loop's exhaustion: every rerun of
+// the insert drew ids past the partition the previous heal created.
+var errPartitionCreationBehind = diagnostic.NewError("VK0056", diagnostic.Permanent,
+	"partition creation cannot keep up with the id sequence",
+	"raise PartitionSize, or run a consumer so create-ahead stays ahead of the producers")

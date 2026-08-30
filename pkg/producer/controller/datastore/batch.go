@@ -11,10 +11,9 @@ import (
 
 // AppendMessageBatch commits every append in ONE transaction, absorbing the
 // two recoverable failures: transient errors (retried, each attempt bounded
-// by attemptTimeout) and a missing partition (healed, then retried the same
-// way -- a batch's ids can straddle into a second missing partition).
-// failedIndex is the FIRST failure in pipeline order, -1 when the failure
-// carries no index.
+// by attemptTimeout) and a missing partition (healed, then rerun until a
+// partition covers the batch). failedIndex is the FIRST failure in pipeline
+// order, -1 when the failure carries no index.
 func (d *ProducerDatastore) AppendMessageBatch[Message any](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
 	appended, failedIndex, err := d.appendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appends)
 	if err != nil {
@@ -38,13 +37,13 @@ func (d *ProducerDatastore) appendMessageBatch[Message any](ctx context.Context,
 			fmt.Errorf("batch attempt exceeded Batch.AttemptTimeout (%s) for topic %d", attemptTimeout, topicId))
 		defer cancel()
 
-		results, index, err := d.appendMessageBatchTransaction(attemptCtx, topicId, appends)
-		if isMissingPartition(err) {
-			if healErr := d.createNextIdPartition(ctx, topicId, partitionSize); healErr != nil {
-				return healErr
-			}
-			err = errPartitionMissing.Wrap(err)
-		}
+		var results []AppendedData[Message]
+		var index int
+		err := d.insertUntilCovered(ctx, topicId, partitionSize, func() error {
+			var err error
+			results, index, err = d.appendMessageBatchTransaction(attemptCtx, topicId, appends)
+			return err
+		})
 		if err != nil && attemptCtx.Err() != nil {
 			// the wire error alone doesn't say WHOSE deadline expired
 			err = fmt.Errorf("%w: %w", err, context.Cause(attemptCtx))
