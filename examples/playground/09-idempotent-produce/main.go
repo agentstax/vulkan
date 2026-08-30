@@ -3,7 +3,7 @@
 // A webhook receiver: the upstream retries on any non-2xx, so the same
 // event arrives more than once and must be stored once.
 //
-// Concepts held before domain code (8): the produce set from scenario 01,
+// Concepts held before domain code (7): the produce set from scenario 01,
 // plus IdempotencyKey as an opaque string and ProduceResult.Duplicate.
 //
 // Traps hit:
@@ -52,9 +52,6 @@ func run() error {
 
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
-		return err
-	}
-	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
 	registered, err := messageAdmin.RegisterTopic(ctx, "webhooks.received", nil)

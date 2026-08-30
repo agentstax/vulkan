@@ -4,7 +4,7 @@
 // gateway being down will (retry), and "the bank settles at 02:00" should
 // wait without counting as a failure (delay).
 //
-// Concepts held before domain code (12): the 9 from scenario 03, plus
+// Concepts held before domain code (10): the 7 from scenario 03, plus
 // MessageOptions, RetryPolicy, and the ConsumerConfig.Retry vs
 // ConsumerConfig.Message.Retry distinction.
 //

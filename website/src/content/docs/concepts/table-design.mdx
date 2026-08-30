@@ -4,7 +4,8 @@ description: Every Vulkan table on one page — the shared control plane, the pe
 ---
 
 Every Vulkan table is one of two kinds: shared control-plane schema,
-created once by `RegisterSystem`, or a member of one topic's family,
+created once by `RegisterSystem` (the first `RegisterTopic` runs it), or
+a member of one topic's family,
 created by `RegisterTopic` and named by the topic's id. The
 [architecture page](/concepts/architecture/) explains why the split
 exists; this page is the map of what's actually there.

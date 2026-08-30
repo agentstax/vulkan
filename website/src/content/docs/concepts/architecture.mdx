@@ -30,8 +30,9 @@ library. Everything below is rows.
 
 ## Two kinds of table
 
-**The shared control plane** — created once by `RegisterSystem` (or
-`vulkan migrate init`): the topic catalog (`system_config`,
+**The shared control plane** — created once by `RegisterSystem`, which
+the first `RegisterTopic` against an empty database runs automatically
+(or `vulkan migrate init`): the topic catalog (`system_config`,
 `topic_config`, `topic_config_log`, `consumer_group_config`), the
 worker fleet (`worker_config`, `worker_config_log`, `worker_instance`,
 `schedule_config`, `schedule_cursor`), and migration history

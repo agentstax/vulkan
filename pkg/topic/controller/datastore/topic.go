@@ -101,6 +101,11 @@ func (d *TopicDatastore) list(ctx context.Context) ([]TopicData, error) {
 	`
 	rows, err := d.Datastore.Pool.Query(ctx, sql)
 	if err != nil {
+		// 42P01 = table does not exist -- an unregistered database has no topics
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -282,7 +287,8 @@ func (d *TopicDatastore) appendTopicConfigLog(ctx context.Context, q datastore.Q
 }
 
 // scanTopicData scans a row shaped like getTopic's SELECT -- the column list
-// every one of those queries shares.
+// every one of those queries shares. Returns (nil, nil) when the row -- or
+// topic_config itself, 42P01 -- isn't there yet.
 func (d *TopicDatastore) scanTopicData(row pgx.Row) (*TopicData, error) {
 	var data TopicData
 	err := row.Scan(
@@ -299,6 +305,12 @@ func (d *TopicDatastore) scanTopicData(row pgx.Row) (*TopicData, error) {
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+
+		// 42P01 = table does not exist
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
 			return nil, nil
 		}
 		return nil, err

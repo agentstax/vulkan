@@ -3,16 +3,14 @@
 // A web service that emits an event when an order is placed. It never
 // consumes anything.
 //
-// Concepts held before domain code (7): datastore, MessageAdmin,
-// RegisterSystem, topic name, the Message type's SchemaVersion, Producer, Register[T],
+// Concepts held before domain code (6): datastore, MessageAdmin,
+// topic name, the Message type's SchemaVersion, Producer, Register[T],
 // ProducerInstance.
 //
 // Traps hit:
 //   - Nothing here runs topic upkeep (partition create-ahead, retention).
 //     A deployment of only this binary silently accumulates until someone
 //     runs `vulkan manager run`. No log line says so.
-//   - RegisterSystem is required even though this program never reads
-//     system state; forgetting it fails at RegisterTopic with VK0013.
 //   - RegisterTopic accepts nil cfg (verified) -- the quickstart's
 //     &topiccontroller.TopicConfig{} and its import are unnecessary.
 package main
@@ -55,9 +53,6 @@ func run() error {
 	// START - not needed every time
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
-		return err
-	}
-	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
 

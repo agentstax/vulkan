@@ -4,7 +4,7 @@
 // produces and the topic it produces to, consume that topic like any
 // other.
 //
-// Concepts held before domain code (9): the consume set from scenario 03,
+// Concepts held before domain code (7): the consume set from scenario 03,
 // plus Scheduler, its Register and Schedule, ScheduleConfig,
 // consumergroup.MetaFromContext for the scheduled time, and the fact that
 // Schedule runs the system manager.
@@ -59,9 +59,6 @@ func run() error {
 
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
-		return err
-	}
-	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
 	invoices, err := messageAdmin.RegisterTopic(ctx, "invoices", nil)

@@ -3,7 +3,7 @@
 // A fraud-scoring service is added a year after orders.placed went live.
 // It wants live traffic only.
 //
-// Concepts held before domain code (10): the 9 from scenario 03, plus
+// Concepts held before domain code (8): the 7 from scenario 03, plus
 // ConsumerConfig.Start (consumergroup.Head()).
 //
 // Traps hit:

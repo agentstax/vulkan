@@ -43,8 +43,10 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
    `migrate init` creates the shared control-plane tables (the topic
    catalog, the worker fleet) at their baseline. It is idempotent — a no-op
    against a database that already has them. The same thing happens in code
-   via `RegisterSystem` below, so the CLI step is a convenience, not a
-   requirement.
+   the first time `RegisterTopic` runs against an empty database, so the
+   CLI step is a convenience, not a requirement. `RegisterSystem` stays the
+   explicit call for setting the system's own knobs — the built-in alert
+   schedules — and is safe to run on every startup.
 
 3. **Register a topic and produce a message**
 
@@ -84,7 +86,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
    	must(err)
-   	must(messageAdmin.RegisterSystem(ctx, nil))
 
    	registered, err := messageAdmin.RegisterTopic(ctx, "signup.welcome-email",
    		&topiccontroller.TopicConfig{})
@@ -155,7 +156,6 @@ by Vulkan itself — there is no SQL migration file to apply by hand.
 
    	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
    	must(err)
-   	must(messageAdmin.RegisterSystem(ctx, nil))
 
    	registered, err := messageAdmin.GetTopic(ctx, "signup.welcome-email")
    	must(err)

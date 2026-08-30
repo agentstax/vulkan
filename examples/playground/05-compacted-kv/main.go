@@ -4,7 +4,7 @@
 // current value, write a new one, and increment a counter safely under
 // concurrent writers (read-modify-write).
 //
-// Concepts held before domain code (13): the produce set from scenario 01,
+// Concepts held before domain code (12): the produce set from scenario 01,
 // plus MessageKey, CompactionOptions (+NewCompactionOptions), Rank,
 // InTransaction, GetCompactionHeadInTx, ProduceInTx, MessageRow, and for
 // reads outside a transaction the separate CompactionController with a
@@ -66,9 +66,6 @@ func run() error {
 
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
-		return err
-	}
-	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
 	registered, err := messageAdmin.RegisterTopic(ctx, "devices.config", nil)

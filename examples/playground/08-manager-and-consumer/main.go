@@ -4,7 +4,7 @@
 // consumes and also keeps the system's upkeep running, without a separate
 // `vulkan manager run` process.
 //
-// Concepts held before domain code (11): the consume set from scenario 03,
+// Concepts held before domain code (9): the consume set from scenario 03,
 // plus SystemManager, its Run, errgroup/goroutine wiring, and the
 // knowledge that a consumer already runs its own topic's upkeep so the
 // manager is for everything else.
@@ -16,8 +16,9 @@
 //   - What the manager covers versus what the consumer covers is not
 //     discoverable from the API -- the quickstart's CAUTION aside is the
 //     only place it is written.
-//   - The manager needs RegisterSystem to have run; a consumer does not.
-//     Whether this binary should call it is a guess.
+//   - The manager needs the control-plane schema to exist but registers
+//     no topic itself -- it assumes some producer's RegisterTopic (or
+//     RegisterSystem) already ran.
 package main
 
 import (

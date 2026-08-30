@@ -1,20 +1,15 @@
 // Scenario 03 -- consume, plain.
 //
 // A service that only handles OrderPlaced. It owns no topic and needs no
-// admin verbs -- yet has to build a MessageAdmin and call RegisterSystem
-// just to check the topic exists, and then Register repeats the name
-// anyway.
+// admin verbs -- Register resolves the topic by name itself.
 //
-// Concepts held before domain code (9): datastore, LifecycleContext,
-// MessageAdmin, RegisterSystem, GetTopic, the Message type's SchemaVersion,
-// Consumer, Register[T], consumer group name, bindings (nil).
+// Concepts held before domain code (7): datastore, LifecycleContext,
+// the Message type's SchemaVersion, Consumer, Register[T], consumer group
+// name, bindings (nil).
 //
 // Traps hit:
 //   - context.Background() into Consume fails with VK0002; the fix is a
 //     Vulkan-specific ctx constructor the user must discover.
-//   - The MessageAdmin + RegisterSystem detour: GetTopic is the only reason
-//     admin is imported, and Register would resolve the topic itself --
-//     the pre-check adds a nil branch for something Register already errors on.
 //   - Register's nil last argument is the binding set; a reader cannot
 //     tell what nil means from the call.
 //   - Two `ctx` shapes in one file: the lifecycle ctx for Consume, and the

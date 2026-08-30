@@ -13,9 +13,6 @@ need metric / alert example playground scenarios
 
 01 produceOptions being required is not great orders.Produce(ctx, &OrderPlacedV1{OrderId: "ord-1", Total: 4200}, producer.ProduceOptions{})
 
-01 reconsider having to call register system
-- it needs to be called but it doesn't really do anything as it has no config so its always the same call and idempotent
-
 01 our comments for New* funcs are abyssmal. These are the first funcs users see
 
 02 produce-in-tx is nasty it really needs to be cleaned up

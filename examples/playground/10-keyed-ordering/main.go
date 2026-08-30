@@ -3,7 +3,7 @@
 // Account balance updates for one account must apply in order and never
 // overlap. The producer keys by account; the consumer runs concurrently.
 //
-// Concepts held before domain code (11): the produce set from scenario 01,
+// Concepts held before domain code (10): the produce set from scenario 01,
 // plus MessageKey, MessageOptions.Concurrency (ConcurrencyOrdered), the
 // consumer's MessageConcurrency, ConcurrencyOverride, and the
 // "ordered = every same-key message in id order, one at a time, through
@@ -60,9 +60,6 @@ func run() error {
 
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
-		return err
-	}
-	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
 	registered, err := messageAdmin.RegisterTopic(ctx, "accounts.balance", nil)

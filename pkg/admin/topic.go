@@ -34,7 +34,9 @@ func (a *MessageAdmin) ListTopics(ctx context.Context) ([]*topic.Topic, error) {
 // RegisterTopic creates the named topic if it doesn't exist and returns
 // it. Safe to call on every startup: cfg is applied on every call, so changing
 // a value and redeploying changes the topic -- and two services passing
-// different cfg for one topic will overwrite each other.
+// different cfg for one topic will overwrite each other. Against an empty
+// database it first stands up the control-plane schema -- RegisterSystem
+// with a nil cfg.
 //   - name: must match ^[a-z0-9._-]+$; dot-namespaced by domain and entity
 //     ("orders.created", "billing.invoice.paid"); safe to rename later --
 //     topics are addressed by id internally, not name
@@ -48,6 +50,19 @@ func (a *MessageAdmin) RegisterTopic(ctx context.Context, name string, cfg *topi
 	}
 	if isReservedTopicName(name) {
 		return nil, topic.ErrReservedTopicName.With("topic", name)
+	}
+
+	// no system row means an empty database -- the first topic stands up the
+	// control-plane schema with defaults; a customized system keeps its
+	// declaration, since nothing runs when the row exists
+	sys, err := a.systemController.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if sys == nil {
+		if err := a.RegisterSystem(ctx, nil); err != nil {
+			return nil, err
+		}
 	}
 
 	return a.registerTopic(ctx, name, cfg)

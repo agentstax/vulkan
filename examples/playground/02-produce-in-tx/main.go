@@ -3,7 +3,7 @@
 // Insert the order row and the OrderPlaced message atomically; then the
 // multi-topic form where the caller owns the transaction.
 //
-// Concepts held before domain code (10): the 7 from scenario 01, plus
+// Concepts held before domain code (9): the 6 from scenario 01, plus
 // ProducerFunc, producer.Tx, InTransaction / ProduceInTx.
 //
 // Traps hit:
@@ -58,9 +58,6 @@ func run() error {
 
 	messageAdmin, err := admin.NewMessageAdmin(ds, nil)
 	if err != nil {
-		return err
-	}
-	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
 	_, err = messageAdmin.RegisterTopic(ctx, "orders.placed", nil)

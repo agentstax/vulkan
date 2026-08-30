@@ -5,6 +5,21 @@ Dated ledger of what shipped, newest first — one entry per milestone.
 Entries before 2026-08-13 were reconstructed from the phase notes when this
 ledger was created; dates come from the phase git tags.
 
+## 2026-08-30 — the first RegisterTopic stands up the system [0624]
+
+Public `RegisterTopic` now checks for the system row and runs
+`RegisterSystem(ctx, nil)` when none exists — register-if-absent, never a
+re-declare, so a system registered with custom alert schedules keeps its
+declaration. `RegisterSystem` stays public as the cfg path; every other
+verb keeps its VK0017 gate. Topic catalog reads map 42P01 to absence, so
+a misordered program gets VK0005 instead of a raw undefined-table error.
+First boot needed no new locking (`system.register` already serializes
+under `pg_advisory_xact_lock`); a probe racing six pools calling bare
+RegisterTopic on an empty database converged every round. Quickstart and
+six playgrounds lost the RegisterSystem line; scenario 03 lost its whole
+admin detour. Labs register-idempotency, topic, reserved-topic,
+destroy-system, alert, schema-gate pass; playground 01 runs clean.
+
 ## 2026-08-30 — std uuid replaces github.com/google/uuid [0623]
 
 Every import moved to Go 1.27's std `uuid` package; google/uuid left

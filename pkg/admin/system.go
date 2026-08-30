@@ -19,8 +19,9 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RegisterSystem stands up the shared control-plane schema every topic uses;
-// call it once before registering any topic. Safe to call on every startup:
+// RegisterSystem stands up the shared control-plane schema every topic uses.
+// The first RegisterTopic against an empty database runs it with a nil cfg,
+// so calling it directly matters when cfg does. Safe to call on every startup:
 // cfg is applied on every call, so changing a value and redeploying changes
 // the system's topics and its built-in alerts' schedules.
 //   - cfg: may be nil or sparse -- WithDefaults fills every field left unset
