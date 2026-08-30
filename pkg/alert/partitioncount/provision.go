@@ -12,7 +12,7 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// Declare creates the alert's consumer group on the job_requests topic and its
+// Declare creates the alert's consumer group on the schedules topic and its
 // job-name binding declaration, then writes the alert's config onto the group's
 // worker row -- the newest declaration wins. RegisterSystem runs it every time.
 func (d *PartitionCountProvisioner) Declare(ctx context.Context, owner *common.Owner) error {

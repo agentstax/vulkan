@@ -15,8 +15,8 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "run <name>",
-		Short: "Produce one job request for a schedule immediately",
-		Long: "Produce one job request for a schedule immediately, outside its schedule. The\n" +
+		Short: "Produce a schedule's message immediately",
+		Long: "Produce a schedule's stored message immediately, outside its expression. The\n" +
 			"expression and next scheduled time are untouched, and a suspended row still runs.\n\n" +
 			"The request runs with concurrency 'parallel' regardless of the row's own\n" +
 			"policy -- it runs even while a previous request is still being worked. Pass\n" +
@@ -60,7 +60,7 @@ func newScheduleRunCmd(g *globalFlags) *cobra.Command {
 				writeJSON(cmd.OutOrStdout(), scheduleRunDocument{Schedule: name, MessageId: produced.Id})
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s produced job request for %q (message id=%d)\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "%s produced %q (message id=%d)\n",
 				glyphOK(), name, produced.Id)
 			return nil
 		},

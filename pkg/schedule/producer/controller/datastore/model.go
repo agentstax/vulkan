@@ -13,9 +13,11 @@ type DueScheduleData struct {
 	Id              int64                    `db:"id"`
 	Name            string                   `db:"name"`
 	Expression      string                   `db:"expression"`
+	TopicName       string                   `db:"topic_name"`
 	Concurrency     common.ConcurrencyPolicy `db:"concurrency"`
 	Timeout         time.Duration            `db:"timeout_ns"`
 	Payload         json.RawMessage          `db:"payload"`
+	SchemaVersion   int                      `db:"schema_version"`
 	Metadata        json.RawMessage          `db:"metadata"`
 	NextScheduledAt time.Time                `db:"next_scheduled_at"`
 	DbNow           time.Time                `db:"now"`

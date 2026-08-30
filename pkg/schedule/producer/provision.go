@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/agentstax/vulkan/pkg/common"
-	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/worker"
 	"github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -27,15 +26,9 @@ func (d *ScheduleProducerProvisioner) Provision(ctx context.Context, declared *w
 		return nil, err
 	}
 
-	// producer registration before the claim: a failure here leaves no
-	// claimed instance behind to block reconciles until its TTL lapses
-	producerInstance, err := d.producer.Register[schedule.JobRequest](ctx, schedule.TopicName)
-	if err != nil {
-		return nil, err
-	}
 	claimed, err := d.workers.RegisterInstance(ctx, declared.Id, declared.Owner, common.OwnerSystem, WorkerScheduleProducer, d.Config.InstanceTTL)
 	if err != nil || claimed == nil {
 		return nil, err
 	}
-	return newScheduleProducerInstance(d, declared.Owner, claimed, parsed, producerInstance)
+	return newScheduleProducerInstance(d, declared.Owner, claimed, parsed)
 }

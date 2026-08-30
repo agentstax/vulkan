@@ -23,7 +23,7 @@ its labs pass alone; the full fresh-DB suite runs at the end.
    examples and the vocabulary row ("cron jobs keep their name" ->
    "schedules"), labs (`cronlab`, `just cron-lab`), sandbox SQL
    mirror. ~90 Go files reference cron today.
-2. **Target topic + stored version.** `schedule_config.topic_id` becomes
+2. DONE 2026-08-30 (uncommitted) -- **Target topic + stored version.** `schedule_config.topic_id` becomes
    the target (the owner CHECK narrows to system_id / consumer_group_id);
    add `schema_version`; the produce path takes the row's version --
    the one internal delta, an append that does not compute the version
@@ -35,11 +35,21 @@ its labs pass alone; the full fresh-DB suite runs at the end.
    payload, cfg)` -> `*SchedulerInstance[Message]`, `Schedule(ctx)` =
    system manager. `RegisterSchedule` on admin stays for the CLI (no
    type argument: payload as JSON, version explicit).
-4. **Alerts + JobRequest retirement.** partitioncount /
-   compactionreadcost register through the handle with
-   `__system.job_requests` as target and consume `alert.JobPayload`
-   directly; `cron.JobRequest`, `cron.TopicName`, `cron.NewJobRequest`
-   deleted from the public surface. Playground 06 rewrite; quickstart
-   / architecture / table-design / rabbitmq-sqs pages swept.
+4. **Alerts through the handle + docs sweep.** (JobRequest retirement,
+   alerts consuming `alert.JobPayload`, and the playground 06 rewrite
+   landed with step 2.) partitioncount / compactionreadcost register
+   through the handle; quickstart / architecture / table-design /
+   rabbitmq-sqs pages swept; the schedules page's PROPOSED aside comes
+   off.
 5. Closeout: full fresh-DB suite, `just verify`, PROPOSED aside off,
    HISTORY entry, memory.
+
+Settled during step 2 (2026-08-30): every schedule is the system's --
+the nullable owner pair + `num_nonnulls` CHECK are gone (a group-owned
+schedule would re-couple what [0621] decoupled; add the column
+additively if a real writer appears); `RegisterSchedule` warns VK0058
+when the target's DeliveryLogMode keeps no success rows;
+`ScheduleConfig.Metadata` stays as operator annotation.
+
+Parked for later (user): sweep every `[Message any]` to
+`[Message topic.Versioned]` outside pkg/producer.

@@ -2,17 +2,15 @@ package datastore
 
 import (
 	"context"
-
-	"github.com/agentstax/vulkan/pkg/common"
 )
 
-// Register resolves declared.Name to its row, creating it owned by
-// owner if it doesn't exist. An existing row takes declared's config.
-func (d *ScheduleDatastore) Register(ctx context.Context, owner *common.Owner, declared *RegisterScheduleData) (*ScheduleData, error) {
+// Register resolves declared.Name to its row, creating it if it doesn't
+// exist. An existing row takes declared's config.
+func (d *ScheduleDatastore) Register(ctx context.Context, declared *RegisterScheduleData) (*ScheduleData, error) {
 	var found *ScheduleData
 	err := d.DatastoreRetry.Wrap(ctx, func() error {
 		var err error
-		found, err = d.register(ctx, owner, declared)
+		found, err = d.register(ctx, declared)
 		return err
 	})
 	return found, err
@@ -20,7 +18,7 @@ func (d *ScheduleDatastore) Register(ctx context.Context, owner *common.Owner, d
 
 // register registers behind a per-name advisory lock, NOT ON CONFLICT.
 // This is to prevent race condition errors between two concurrent calls.
-func (d *ScheduleDatastore) register(ctx context.Context, owner *common.Owner, declared *RegisterScheduleData) (*ScheduleData, error) {
+func (d *ScheduleDatastore) register(ctx context.Context, declared *RegisterScheduleData) (*ScheduleData, error) {
 	found, err := d.get(ctx, d.Datastore.Pool, declared.Name)
 	if err != nil {
 		return nil, err
@@ -62,22 +60,22 @@ func (d *ScheduleDatastore) register(ctx context.Context, owner *common.Owner, d
 		INSERT INTO schedule_config (
 			system_id,
 			topic_id,
-			consumer_group_id,
 			name,
 			expression,
 			concurrency,
 			timeout_ns,
 			payload,
+			schema_version,
 			metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '{}'::jsonb), COALESCE($9, '{}'::jsonb))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, '{}'::jsonb))
 		RETURNING id;
 	`
 	var id int64
 	if err := tx.QueryRow(ctx, insertConfigSql,
-		owner.SystemIdColumn(), owner.TopicIdColumn(), owner.ConsumerGroupIdColumn(),
+		declared.SystemId, declared.TopicId,
 		declared.Name, declared.Expression.String(), declared.Concurrency, declared.TimeoutNs,
-		declared.Payload, declared.Metadata,
+		declared.Payload, declared.SchemaVersion, declared.Metadata,
 	).Scan(&id); err != nil {
 		return nil, err
 	}

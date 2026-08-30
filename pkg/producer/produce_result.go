@@ -1,9 +1,12 @@
 package producer
 
-import "errors"
+import (
+	"errors"
+	"github.com/agentstax/vulkan/pkg/topic"
+)
 
 // ProduceResult is one produce call's outcome.
-type ProduceResult[Message any] struct {
+type ProduceResult[Message topic.Versioned] struct {
 	// Message - the payload this call built.
 	//
 	// On a duplicate it is NOT the originally-stored payload: the idempotency
@@ -19,7 +22,7 @@ type ProduceResult[Message any] struct {
 	Duplicate bool `json:"duplicate"`
 }
 
-func NewProduceResult[Message any](message *Message, id int64, duplicate bool) (*ProduceResult[Message], error) {
+func NewProduceResult[Message topic.Versioned](message *Message, id int64, duplicate bool) (*ProduceResult[Message], error) {
 	if message == nil {
 		return nil, errors.New("message must not be nil")
 	}

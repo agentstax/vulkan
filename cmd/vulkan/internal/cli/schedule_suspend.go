@@ -13,7 +13,7 @@ func newScheduleSuspendCmd(g *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "suspend <name>",
 		Short: "Stop the scheduler producing a schedule until unsuspended",
-		Long: "Stop the scheduler producing a schedule until unsuspended. A job request already produced\n" +
+		Long: "Stop the schedule producer producing a schedule until unsuspended. A message already produced\n" +
 			"and not yet consumed is not retracted -- suspend stops future requests only.",
 		Args: requireScheduleName("suspend"),
 		RunE: func(cmd *cobra.Command, args []string) error {

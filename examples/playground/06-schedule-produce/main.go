@@ -1,42 +1,42 @@
 // Scenario 06 -- a schedule.
 //
-// Nightly invoice run: register the schedule once, consume its requests.
+// Nightly invoice run: register the schedule once with the message it
+// produces and the topic it produces to, consume that topic like any
+// other.
 //
-// Concepts held before domain code (12): the consume set from scenario 03,
+// Concepts held before domain code (10): the consume set from scenario 03,
 // plus MessageAdmin (needed here, for RegisterSchedule), schedule.ParseExpression,
-// ScheduleConfig, schedule.JobRequest, schedule.TopicName, the job name doubling
-// as the routing key / binding, and the fact that the scheduler worker
-// runs only under a consumer or `vulkan manager run`.
+// ScheduleConfig, consumergroup.MetaFromContext for the scheduled time, and
+// the fact that the schedule producer worker runs only under a manager.
 //
 // Traps hit:
-//   - The job's requests land on a system topic (schedule.TopicName) and the
-//     binding is the job name: a user must know the topic constant and
-//     that name == routing key to consume their own job.
-//   - The job's payload is `any` at registration but arrives as
-//     json.RawMessage on JobRequest.Payload -- the user unmarshals by hand
-//     with no type linking the two ends.
-//   - Nothing produces if no consumer or manager is running; a
-//     register-and-exit program registers a job that never fires.
+//   - Nothing produces if no manager is running; a register-and-exit
+//     program registers a schedule that never fires.
+//   - The scheduled time is not in the payload (the payload never
+//     changes) -- it is on the delivery's meta, reached through ctx.
 //   - A one-off "run this in 10 minutes" is not this feature; it is
 //     queue-native delayed delivery (future roadmap).
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/agentstax/vulkan/pkg/admin"
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/consumer"
-	"github.com/agentstax/vulkan/pkg/schedule"
+	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
+	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
 type InvoiceRun struct {
 	Region string `json:"region"`
 }
+
+// increment on breaking changes
+func (InvoiceRun) SchemaVersion() int { return 1 }
 
 func main() {
 	if err := run(); err != nil {
@@ -63,31 +63,32 @@ func run() error {
 	if err := messageAdmin.RegisterSystem(ctx, nil); err != nil {
 		return err
 	}
+	invoices, err := messageAdmin.RegisterTopic(ctx, "invoices", nil)
+	if err != nil {
+		return err
+	}
 
 	expression, err := schedule.ParseExpression("0 2 * * *")
 	if err != nil {
 		return err
 	}
-	_, err = messageAdmin.RegisterSchedule(ctx, "invoices.nightly", expression, InvoiceRun{Region: "eu"}, nil)
+	_, err = messageAdmin.RegisterSchedule(ctx, "invoices.nightly", expression, invoices.Name, &InvoiceRun{Region: "eu"}, nil)
 	if err != nil {
 		return err
 	}
 
-	jobConsumer, err := consumer.NewConsumer(ds, nil)
+	invoiceConsumer, err := consumer.NewConsumer(ds, nil)
 	if err != nil {
 		return err
 	}
-	invoices, err := jobConsumer.Register[schedule.JobRequest](ctx, "invoice-runner", schedule.TopicName, []string{"invoices.nightly"})
+	runs, err := invoiceConsumer.Register[InvoiceRun](ctx, "invoice-runner", invoices.Name, nil)
 	if err != nil {
 		return err
 	}
 
-	return invoices.Consume(ctx, func(ctx context.Context, request *schedule.JobRequest) error {
-		var run InvoiceRun
-		if err := json.Unmarshal(request.Payload, &run); err != nil {
-			return err
-		}
-		fmt.Printf("invoicing %s for %s\n", run.Region, request.ScheduledAt.Format("2006-01-02"))
+	return runs.Consume(ctx, func(ctx context.Context, run *InvoiceRun) error {
+		meta, _ := consumergroup.MetaFromContext(ctx)
+		fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
 		return nil
 	})
 }

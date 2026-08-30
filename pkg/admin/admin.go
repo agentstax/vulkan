@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/agentstax/vulkan/pkg/alert/compactionreadcost"
 	"github.com/agentstax/vulkan/pkg/alert/partitioncount"
+	"github.com/agentstax/vulkan/pkg/common/logging"
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
 	consumergroupjanitor "github.com/agentstax/vulkan/pkg/consumergroup/janitor"
@@ -22,11 +23,13 @@ import (
 )
 
 type MessageAdmin struct {
+	Logger logging.Logger
+
 	systemController   *systemcontroller.SystemController
 	topicController    *topiccontroller.TopicController
 	scheduleController *schedulecontroller.ScheduleController
 	consumerController *consumergroupcontroller.ConsumerGroupController
-	jobRequestProducer *producer.Producer
+	scheduleProducer   *producer.Producer
 	heads              *compactioncontroller.CompactionController
 	metricsController  *metricscontroller.MetricsController
 	workerController   *workercontroller.WorkerController
@@ -109,7 +112,7 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 		return nil, err
 	}
 
-	jobRequestProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
+	scheduleProducer, err := producer.NewProducer(ds, &producer.ProducerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -175,11 +178,12 @@ func NewMessageAdmin(ds *datastore.PostgresDatastore, cfg *MessageAdminConfig) (
 	}
 
 	return &MessageAdmin{
+		Logger:             cfg.Logger,
 		systemController:   systemController,
 		topicController:    topicController,
 		scheduleController: scheduleController,
 		consumerController: consumerController,
-		jobRequestProducer: jobRequestProducer,
+		scheduleProducer:   scheduleProducer,
 		heads:              heads,
 		metricsController:  metricsController,
 		workerController:   workerController,

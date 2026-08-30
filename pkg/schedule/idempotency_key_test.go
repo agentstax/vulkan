@@ -7,19 +7,6 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestNewJobRequestRejects(t *testing.T) {
-	now := time.Unix(1000, 0)
-	if _, err := NewJobRequest(0, "j", now, nil, nil); err == nil {
-		t.Error("zero id: expected an error")
-	}
-	if _, err := NewJobRequest(1, "", now, nil, nil); err == nil {
-		t.Error("empty name: expected an error")
-	}
-	if _, err := NewJobRequest(1, "j", time.Time{}, nil, nil); err == nil {
-		t.Error("zero scheduled time: expected an error")
-	}
-}
-
 func TestIdempotencyKey(t *testing.T) {
 	scheduledTime := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,7 +15,7 @@ import (
 // by attemptTimeout) and a missing partition (healed, then rerun until a
 // partition covers the batch). failedIndex is the FIRST failure in pipeline
 // order, -1 when the failure carries no index.
-func (d *ProducerDatastore) AppendMessageBatch[Message any](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
+func (d *ProducerDatastore) AppendMessageBatch[Message topic.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
 	appended, failedIndex, err := d.appendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appends)
 	if err != nil {
 		return appended, failedIndex, err
@@ -29,7 +30,7 @@ func (d *ProducerDatastore) AppendMessageBatch[Message any](ctx context.Context,
 
 // appendMessageBatch reruns one-attempt transactions under the transient-retry
 // policy; the last attempt wins failedIndex.
-func (d *ProducerDatastore) appendMessageBatch[Message any](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) (appended []AppendedData[Message], failedIndex int, err error) {
+func (d *ProducerDatastore) appendMessageBatch[Message topic.Versioned](ctx context.Context, topicId int64, partitionSize int64, attemptTimeout time.Duration, appends []*AppendData[Message]) (appended []AppendedData[Message], failedIndex int, err error) {
 	failedIndex = -1
 	err = d.DatastoreRetry.Wrap(ctx, func() error {
 		// bound each attempt -- a hung database must not hold the batch forever
@@ -56,7 +57,7 @@ func (d *ProducerDatastore) appendMessageBatch[Message any](ctx context.Context,
 
 // appendMessageBatchTransaction is one attempt: ONE plain transaction, every
 // query batched into a single round trip, no savepoints.
-func (d *ProducerDatastore) appendMessageBatchTransaction[Message any](ctx context.Context, topicId int64, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
+func (d *ProducerDatastore) appendMessageBatchTransaction[Message topic.Versioned](ctx context.Context, topicId int64, appends []*AppendData[Message]) ([]AppendedData[Message], int, error) {
 	tx, err := d.Datastore.Pool.Begin(ctx)
 	if err != nil {
 		return nil, -1, err
@@ -109,7 +110,7 @@ func (d *ProducerDatastore) appendMessageBatchTransaction[Message any](ctx conte
 
 // appendedIdRange returns the first and last inserted ids, skipping the zero
 // ids of duplicates; (0, 0) when nothing new was inserted.
-func appendedIdRange[Message any](appended []AppendedData[Message]) (int64, int64) {
+func appendedIdRange[Message topic.Versioned](appended []AppendedData[Message]) (int64, int64) {
 	var firstId int64
 	var lastId int64
 	for _, data := range appended {

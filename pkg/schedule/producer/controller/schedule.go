@@ -16,9 +16,11 @@ type DueSchedule struct {
 	Id              int64
 	Name            string
 	Expression      string
+	TopicName       string
 	Concurrency     common.ConcurrencyPolicy
 	Timeout         time.Duration
 	Payload         json.RawMessage
+	SchemaVersion   int
 	Metadata        json.RawMessage
 	NextScheduledAt time.Time
 	DbNow           time.Time

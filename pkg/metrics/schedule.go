@@ -8,8 +8,9 @@ import (
 
 // ScheduleSnapshot is one schedule row's schedule health.
 type ScheduleSnapshot struct {
-	Owner      *common.Owner `json:"owner"`
+	Owner      *common.Owner `json:"owner"` // the system -- every schedule is its
 	Name       string        `json:"schedule"`
+	Topic      string        `json:"topic"`
 	Expression string        `json:"expression"`
 	Suspended  bool          `json:"suspended"`
 

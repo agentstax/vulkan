@@ -17,19 +17,19 @@ import (
 )
 
 // CompactionReadCostProvisioner is the alert's worker kind: one row owning the
-// alert's consumer group on the job_requests topic.
+// alert's consumer group on the schedules topic.
 type CompactionReadCostProvisioner struct {
 	Config *CompactionReadCostConfig
 	Logger logging.Logger
 
-	ds                 *iDatastore.PostgresDatastore
-	workers            *workercontroller.WorkerController
-	topics             *topiccontroller.TopicController
-	consumers          *consumergroupcontroller.ConsumerGroupController
-	controller         *controller.CompactionReadCostController
-	producer           *producer.Producer
-	alertHeads         *compactioncontroller.CompactionController
-	jobRequestConsumer *consumer.Consumer
+	ds               *iDatastore.PostgresDatastore
+	workers          *workercontroller.WorkerController
+	topics           *topiccontroller.TopicController
+	consumers        *consumergroupcontroller.ConsumerGroupController
+	controller       *controller.CompactionReadCostController
+	producer         *producer.Producer
+	alertHeads       *compactioncontroller.CompactionController
+	scheduleConsumer *consumer.Consumer
 
 	definition *worker.Definition
 }
@@ -96,7 +96,7 @@ func NewCompactionReadCostProvisioner(ds *iDatastore.PostgresDatastore, cfg *Com
 		return nil, err
 	}
 
-	jobRequestConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+	scheduleConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		Logger: cfg.Logger,
 		Retry:  cfg.Retry,
 	})
@@ -110,17 +110,17 @@ func NewCompactionReadCostProvisioner(ds *iDatastore.PostgresDatastore, cfg *Com
 	}
 
 	return &CompactionReadCostProvisioner{
-		Config:             cfg,
-		Logger:             cfg.Logger,
-		ds:                 ds,
-		workers:            workers,
-		topics:             topics,
-		consumers:          consumers,
-		controller:         compactionReadCostController,
-		producer:           alertProducer,
-		alertHeads:         alertHeads,
-		jobRequestConsumer: jobRequestConsumer,
-		definition:         definition,
+		Config:           cfg,
+		Logger:           cfg.Logger,
+		ds:               ds,
+		workers:          workers,
+		topics:           topics,
+		consumers:        consumers,
+		controller:       compactionReadCostController,
+		producer:         alertProducer,
+		alertHeads:       alertHeads,
+		scheduleConsumer: scheduleConsumer,
+		definition:       definition,
 	}, nil
 }
 

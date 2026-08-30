@@ -157,7 +157,7 @@ noun on both:
 | --- | --- | --- |
 | `RunSchedule(name)` | `vulkan schedule run` | produces one message now, off-schedule, from the stored payload |
 | `SuspendSchedule` / `UnsuspendSchedule` | `vulkan schedule suspend` / `unsuspend` | stops and resumes the schedule; a time that came due while suspended is dropped |
-| `ScheduleStatus`, `ScheduleMessages` | `vulkan schedule status` / `messages` | per-group outcomes, read from the target topic's `delivery_log` by message key |
+| `ScheduleStatus`, `ScheduleMessages` | `vulkan schedule status` / `messages` | per-group outcomes, read from the target topic's `delivery_log` by message key; a `succeeded` count needs the target topic's `DeliveryLogMode: all` (the default keeps failures only) - `Register` warns [VK0058](/errors/VK0058) when it isn't |
 | `DestroySchedule` | `vulkan schedule destroy` | deletes the row; gated by `AllowDestroy` |
 
 Temporal and EventBridge Scheduler use the same noun for the same

@@ -176,9 +176,9 @@ func run() (err error) {
 		metrics.MeasurementKey(metrics.MetricUnclaimedWorkers, nil):   false,
 		metrics.MeasurementKey(metrics.MetricOldestUnclaimedAge, nil): false,
 		metrics.MeasurementKey(metrics.MetricFailingWorkers, nil):     false,
-		metrics.MeasurementKey(metrics.MetricOverdueSchedules, nil):        false,
+		metrics.MeasurementKey(metrics.MetricOverdueSchedules, nil):   false,
 		metrics.MeasurementKey(metrics.MetricOldestDueAge, nil):       false,
-		metrics.MeasurementKey(metrics.MetricSuspendedSchedules, nil):      false,
+		metrics.MeasurementKey(metrics.MetricSuspendedSchedules, nil): false,
 		metrics.MeasurementKey(metrics.MetricActiveAlerts, nil):       false,
 		metrics.MeasurementKey(metrics.MetricResolvedAlerts, nil):     false,
 	}

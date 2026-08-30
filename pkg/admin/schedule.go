@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -14,22 +13,28 @@ import (
 	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// RegisterSchedule creates the schedule named name if it doesn't exist and returns
-// it. Safe to call on every startup: schedule, payload and cfg are applied on
-// every call, so changing one and redeploying changes the schedule -- and two
-// services passing different values for one name will overwrite each other.
-//   - name: must not contain '*'.
-//   - schedule: from schedule.ParseExpression; min rate 1m and >= cfg.Timeout.
-//     A changed schedule decides when the schedule next runs -- a run already due
-//     under the old one is dropped, not produced late.
-//   - data: marshaled to the schedule's JSON payload
+// RegisterSchedule creates the schedule named name if it doesn't exist and
+// returns it. Safe to call on every startup: expression, topic, payload and
+// cfg are applied on every call, so changing one and redeploying changes the
+// schedule -- and two services passing different values for one name will
+// overwrite each other.
+//   - name: must not contain '*'; it is the message key and routing key of
+//     every produce.
+//   - expression: from schedule.ParseExpression; min rate 1m and >= cfg.Timeout.
+//     A changed expression decides when the schedule next runs -- a time
+//     already due under the old one is dropped, not produced late.
+//   - topicName: the target topic every produce lands on.
+//   - payload: the message, stored marshaled with Message's schema version.
 //   - cfg: may be nil or sparse
 //
 // A suspended schedule stays suspended across a call -- only SuspendSchedule and
 // UnsuspendSchedule change that.
-func (a *MessageAdmin) RegisterSchedule(ctx context.Context, name string, expression *schedule.Expression, payload any, cfg *schedulecontroller.ScheduleConfig) (*schedule.Schedule, error) {
+func (a *MessageAdmin) RegisterSchedule[Message topic.Versioned](ctx context.Context, name string, expression *schedule.Expression, topicName string, payload *Message, cfg *schedulecontroller.ScheduleConfig) (*schedule.Schedule, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
+	}
+	if topicName == "" {
+		return nil, errors.New("topic name is required")
 	}
 
 	// gate -- a schedule can't exist without the control-plane schema it rides on
@@ -41,14 +46,19 @@ func (a *MessageAdmin) RegisterSchedule(ctx context.Context, name string, expres
 		return nil, migrate.ErrNotRegistered.With("schedule", name)
 	}
 
-	// every schedule row has exactly one owner; admin-registered schedules are the
-	// system's -- they ride its lifecycle, not any one topic's
-	owner, err := common.NewSystemOwner(sys.Id)
+	target, err := a.topicController.Get(ctx, topicName)
 	if err != nil {
 		return nil, err
 	}
+	if target == nil {
+		return nil, topic.ErrTopicNotFound.With("topic", topicName)
+	}
 
-	return a.scheduleController.Register(ctx, owner, name, expression, payload, cfg)
+	if target.DeliveryLogMode != topic.DeliveryLogModeAll {
+		a.Logger.WarnContext(ctx, schedule.EventTargetKeepsNoSuccessRows.Message, "code", schedule.EventTargetKeepsNoSuccessRows.Code, "schedule", name, "topic", target.Name, "delivery_log_mode", string(target.DeliveryLogMode))
+	}
+
+	return a.scheduleController.Register(ctx, sys.Id, name, expression, target.Id, payload, cfg)
 }
 
 // GetSchedule returns (nil, nil), not an error, if name isn't registered.
@@ -81,18 +91,18 @@ func (a *MessageAdmin) UnsuspendSchedule(ctx context.Context, name string) error
 	return a.scheduleController.Unsuspend(ctx, name)
 }
 
-// RunSchedule produces one JobRequest for the named schedule immediately, outside
-// its schedule -- the schedule and next scheduled time are untouched, and a
-// suspended schedule still runs.
+// RunSchedule produces the named schedule's stored message immediately,
+// outside its expression -- the expression and next scheduled time are
+// untouched, and a suspended schedule still runs.
 // cfg may be nil or a sparse struct.
 // Returns ErrScheduleNotFound if name isn't registered.
 //
 // Two deliberate consequences:
-//   - The request's concurrency is cfg.Concurrency, NOT the schedule's own policy
-//     -- by default 'parallel', so it runs even while a previous request is still
-//     running.
-//   - It supersedes a pending JobRequest no consumer has claimed yet.
-func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunScheduleConfig) (*producer.ProduceResult[schedule.JobRequest], error) {
+//   - The message's concurrency is cfg.Concurrency, NOT the schedule's own
+//     policy -- by default 'parallel', so it runs even while a previous
+//     message is still running.
+//   - It supersedes a pending message no consumer has claimed yet.
+func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunScheduleConfig) (*producer.ProduceResult[schedule.StoredMessage], error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}
@@ -112,12 +122,19 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 		return nil, schedule.ErrScheduleNotFound.With("schedule", name)
 	}
 
-	instance, err := a.jobRequestProducer.Register[schedule.JobRequest](ctx, schedule.TopicName)
+	target, err := a.topicController.GetById(ctx, found.TopicId)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil {
+		return nil, topic.ErrTopicNotFound.With("topic_id", found.TopicId)
+	}
+	instance, err := a.scheduleProducer.Register[schedule.StoredMessage](ctx, target.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	request, err := schedule.NewJobRequest(found.Id, found.Name, time.Now().UTC(), found.Payload, found.Metadata)
+	stored, err := schedule.NewStoredMessage(found.Payload, found.SchemaVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -127,21 +144,22 @@ func (a *MessageAdmin) RunSchedule(ctx context.Context, name string, cfg *RunSch
 		return nil, err
 	}
 
-	// no IdempotencyKey: Produce creates a fresh v7 per call, so every produced
-	// run is its own unique schedule.
-	return instance.Produce(ctx, request, producer.ProduceOptions{
+	// no IdempotencyKey: Produce creates a fresh v7 per call, so every run is
+	// its own message
+	return instance.Produce(ctx, stored, producer.ProduceOptions{
 		RoutingKey: found.Name,
-		MessageKey: strconv.FormatInt(found.Id, 10),
+		MessageKey: found.Name,
 		Compaction: compaction,
 		Message: &common.MessageOptions{
 			Concurrency: cfg.Concurrency,
 			Timeout:     found.Timeout,
+			ScheduledAt: time.Now().UTC(),
 		},
 	})
 }
 
 // ScheduleStatus is one GroupStatus per consumer group that receives the
-// schedule's requests. Counts cover the topic's retention window.
+// schedule's messages. Counts cover the target topic's retention window.
 // Returns ErrScheduleNotFound if name isn't registered.
 func (a *MessageAdmin) ScheduleStatus(ctx context.Context, name string) ([]*schedule.GroupStatus, error) {
 	if name == "" {
@@ -156,22 +174,14 @@ func (a *MessageAdmin) ScheduleStatus(ctx context.Context, name string) ([]*sche
 		return nil, schedule.ErrScheduleNotFound.With("schedule", name)
 	}
 
-	jobRequests, err := a.topicController.Get(ctx, schedule.TopicName)
-	if err != nil {
-		return nil, err
-	}
-	if jobRequests == nil {
-		return nil, migrate.ErrNotRegistered.With("topic", schedule.TopicName)
-	}
-
-	return a.scheduleController.Status(ctx, jobRequests.Id, found.Id, found.Name)
+	return a.scheduleController.Status(ctx, found.TopicId, found.Name)
 }
 
-// ScheduleRequests is the schedule's newest requests, one JobRequestStatus
-// per (request, consumer group that receives it), newest request first.
-// Requests older than the topic's retention window are gone.
+// ScheduleMessages is the schedule's newest messages, one MessageStatus
+// per (message, consumer group that receives it), newest message first.
+// Messages older than the target topic's retention window are gone.
 // Returns ErrScheduleNotFound if name isn't registered.
-func (a *MessageAdmin) ScheduleRequests(ctx context.Context, name string, limit int) ([]*schedule.JobRequestStatus, error) {
+func (a *MessageAdmin) ScheduleMessages(ctx context.Context, name string, limit int) ([]*schedule.MessageStatus, error) {
 	if name == "" {
 		return nil, errors.New("schedule name is required")
 	}
@@ -184,15 +194,7 @@ func (a *MessageAdmin) ScheduleRequests(ctx context.Context, name string, limit 
 		return nil, schedule.ErrScheduleNotFound.With("schedule", name)
 	}
 
-	jobRequests, err := a.topicController.Get(ctx, schedule.TopicName)
-	if err != nil {
-		return nil, err
-	}
-	if jobRequests == nil {
-		return nil, migrate.ErrNotRegistered.With("topic", schedule.TopicName)
-	}
-
-	return a.scheduleController.ListRequests(ctx, jobRequests.Id, found.Id, found.Name, limit)
+	return a.scheduleController.ListMessages(ctx, found.TopicId, found.Name, limit)
 }
 
 // DestroySchedule permanently deletes the schedule. Returns topic.ErrDestroyDisabled

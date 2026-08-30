@@ -21,6 +21,7 @@ func toExceptionMessageMeta(exception *controller.ClaimedException, resolved *co
 		MessageKey:     exception.MessageKey,
 		CompactionRank: exception.CompactionRank,
 		CreatedAt:      exception.CreatedAt,
+		ScheduledAt:    resolved.ScheduledAt,
 		Attempts:       exception.Attempts,
 		Delays:         exception.Delays,
 		Options:        resolved,

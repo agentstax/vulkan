@@ -21,14 +21,12 @@ type WorkerSnapshotData struct {
 }
 
 // ScheduleSnapshotData is one row of ScheduleSnapshots' query: the schedule
-// row's owner columns plus its schedule state.
+// row, its target topic, and its schedule state.
 type ScheduleSnapshotData struct {
-	Name            string `db:"name"`
-	SystemId        int64  `db:"system_id"`
-	TopicId         int64  `db:"topic_id"`
-	ConsumerGroupId int64  `db:"consumer_group_id"`
-	TopicName       string `db:"topic_name"`
-	GroupName       string `db:"group_name"`
+	Name      string `db:"name"`
+	SystemId  int64  `db:"system_id"`
+	TopicId   int64  `db:"topic_id"`
+	TopicName string `db:"topic_name"`
 
 	Expression      string     `db:"expression"`
 	Suspended       bool       `db:"suspended"`

@@ -2,16 +2,17 @@ package batcher
 
 import (
 	"github.com/agentstax/vulkan/pkg/producer/controller"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // batchOperation is one produce in flight: what to write, and how the
 // outcome gets back to the waiting caller.
-type batchOperation[Message any] struct {
+type batchOperation[Message topic.Versioned] struct {
 	request  *batchRequest[Message]
 	response *batchResponse[Message]
 }
 
-func newBatchOperation[Message any](message *Message, options controller.ProduceOptions) *batchOperation[Message] {
+func newBatchOperation[Message topic.Versioned](message *Message, options controller.ProduceOptions) *batchOperation[Message] {
 	return &batchOperation[Message]{
 		request:  newBatchRequest(message, options),
 		response: newBatchResponse[Message](),
@@ -19,19 +20,19 @@ func newBatchOperation[Message any](message *Message, options controller.Produce
 }
 
 // batchRequest is the pure input of one produce: message, options.
-type batchRequest[Message any] struct {
+type batchRequest[Message topic.Versioned] struct {
 	message *Message
 	options controller.ProduceOptions // Options.IdempotencyKey is minted at enqueue, reused across every rerun of the batch
 }
 
-func newBatchRequest[Message any](message *Message, options controller.ProduceOptions) *batchRequest[Message] {
+func newBatchRequest[Message topic.Versioned](message *Message, options controller.ProduceOptions) *batchRequest[Message] {
 	return &batchRequest[Message]{
 		message: message,
 		options: options,
 	}
 }
 
-type batchResponse[Message any] struct {
+type batchResponse[Message topic.Versioned] struct {
 	done chan struct{} // closed by record
 	err  error         // written before close(done), read only after <-done
 
@@ -40,7 +41,7 @@ type batchResponse[Message any] struct {
 	appended controller.Appended[Message]
 }
 
-func newBatchResponse[Message any]() *batchResponse[Message] {
+func newBatchResponse[Message topic.Versioned]() *batchResponse[Message] {
 	return &batchResponse[Message]{
 		done: make(chan struct{}),
 	}

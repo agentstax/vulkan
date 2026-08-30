@@ -55,7 +55,7 @@ func classifyWorker(targetInstances int, liveInstances int) metrics.WorkerStatus
 }
 
 func toScheduleSnapshot(data datastore.ScheduleSnapshotData) (metrics.ScheduleSnapshot, error) {
-	owner, err := toOwner(data.SystemId, data.TopicId, data.ConsumerGroupId, data.TopicName, data.GroupName)
+	owner, err := common.NewSystemOwner(data.SystemId)
 	if err != nil {
 		return metrics.ScheduleSnapshot{}, err
 	}
@@ -63,6 +63,7 @@ func toScheduleSnapshot(data datastore.ScheduleSnapshotData) (metrics.ScheduleSn
 	snapshot := metrics.ScheduleSnapshot{
 		Owner:           owner,
 		Name:            data.Name,
+		Topic:           data.TopicName,
 		Expression:      data.Expression,
 		Suspended:       data.Suspended,
 		NextScheduledAt: data.NextScheduledAt,

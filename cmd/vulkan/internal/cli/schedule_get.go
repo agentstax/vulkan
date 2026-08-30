@@ -14,7 +14,7 @@ import (
 func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 	var (
 		quiet    bool
-		requests bool
+		messages bool
 		limit    int
 	)
 
@@ -28,8 +28,8 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 			out := cmd.OutOrStdout()
 			f := cmd.Flags()
 
-			if f.Changed("limit") && !requests {
-				return failUsage("--limit only applies to the --requests listing")
+			if f.Changed("limit") && !messages {
+				return failUsage("--limit only applies to the --messages listing")
 			}
 			if limit <= 0 {
 				return failUsage("--limit must be > 0, got %d", limit)
@@ -60,14 +60,14 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 					return translateAdminError(err)
 				}
 
-				var listed []*schedule.JobRequestStatus
-				if requests {
-					listed, err = mAdmin.ScheduleRequests(ctx, name, limit)
+				var listed []*schedule.MessageStatus
+				if messages {
+					listed, err = mAdmin.ScheduleMessages(ctx, name, limit)
 					if err != nil {
 						return translateAdminError(err)
 					}
 					if listed == nil {
-						listed = make([]*schedule.JobRequestStatus, 0)
+						listed = make([]*schedule.MessageStatus, 0)
 					}
 				}
 
@@ -98,12 +98,12 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 			printScheduleDetail(out, row)
 			printScheduleStatuses(out, statuses)
 
-			if requests {
-				listed, err := mAdmin.ScheduleRequests(ctx, name, limit)
+			if messages {
+				listed, err := mAdmin.ScheduleMessages(ctx, name, limit)
 				if err != nil {
 					return translateAdminError(err)
 				}
-				printScheduleRequests(out, listed)
+				printScheduleMessages(out, listed)
 			}
 			return nil
 		},
@@ -111,8 +111,8 @@ func newScheduleGetCmd(g *globalFlags) *cobra.Command {
 
 	f := cmd.Flags()
 	f.BoolVarP(&quiet, "quiet", "q", false, "no output; exit code is the answer (0 exists, 1 not)")
-	f.BoolVar(&requests, "requests", false, "also list the newest job requests, one line per (request, consumer group)")
-	f.IntVar(&limit, "limit", 20, "how many of the newest requests --requests lists")
+	f.BoolVar(&messages, "messages", false, "also list the newest messages, one line per (message, consumer group)")
+	f.IntVar(&limit, "limit", 20, "how many of the newest messages --messages lists")
 	return cmd
 }
 
@@ -122,7 +122,6 @@ type scheduleDocument struct {
 	ScheduleId      int64           `json:"schedule_id"`
 	SystemId        int64           `json:"system_id"`
 	TopicId         int64           `json:"topic_id"`
-	GroupId         int64           `json:"group_id"`
 	Schedule        string          `json:"schedule"`
 	Expression      string          `json:"expression"`
 	Concurrency     string          `json:"concurrency"`
@@ -137,11 +136,11 @@ type scheduleDocument struct {
 // scheduleGetDocument is schedule get's json result; the not-found case is data
 // (exists false, schedule null), the exit code stays 1.
 type scheduleGetDocument struct {
-	Schedule string                       `json:"schedule"`
-	Exists   bool                         `json:"exists"`
-	Job      *scheduleDocument            `json:"row"`
-	Groups   []*schedule.GroupStatus      `json:"groups"`
-	Requests []*schedule.JobRequestStatus `json:"requests"` // null unless --requests
+	Schedule string                    `json:"schedule"`
+	Exists   bool                      `json:"exists"`
+	Job      *scheduleDocument         `json:"row"`
+	Groups   []*schedule.GroupStatus   `json:"groups"`
+	Messages []*schedule.MessageStatus `json:"messages"` // null unless --messages
 }
 
 func toScheduleDocument(row *schedule.Schedule) scheduleDocument {
@@ -149,7 +148,6 @@ func toScheduleDocument(row *schedule.Schedule) scheduleDocument {
 		ScheduleId:      row.Id,
 		SystemId:        row.SystemId,
 		TopicId:         row.TopicId,
-		GroupId:         row.ConsumerGroupId,
 		Schedule:        row.Name,
 		Expression:      row.Expression,
 		Concurrency:     string(row.Concurrency),
@@ -170,12 +168,12 @@ func toScheduleDocuments(schedules []*schedule.Schedule) []scheduleDocument {
 	return documents
 }
 
-func toScheduleGetDocument(name string, row *schedule.Schedule, groups []*schedule.GroupStatus, requests []*schedule.JobRequestStatus) scheduleGetDocument {
+func toScheduleGetDocument(name string, row *schedule.Schedule, groups []*schedule.GroupStatus, messages []*schedule.MessageStatus) scheduleGetDocument {
 	document := scheduleGetDocument{
 		Schedule: name,
 		Exists:   row != nil,
 		Groups:   make([]*schedule.GroupStatus, 0, len(groups)),
-		Requests: requests,
+		Messages: messages,
 	}
 	document.Groups = append(document.Groups, groups...)
 
@@ -192,7 +190,7 @@ func printScheduleDetail(w io.Writer, row *schedule.Schedule) {
 	fmt.Fprintf(tw, "  Concurrency\t%s\n", row.Concurrency)
 	fmt.Fprintf(tw, "  Timeout\t%s\n", row.Timeout)
 	fmt.Fprintf(tw, "  Suspended\t%t\n", row.Suspended)
-	fmt.Fprintf(tw, "  Owner\t%s\n", scheduleOwnerCell(row))
+	fmt.Fprintf(tw, "  TopicId\t%d\n", row.TopicId)
 	fmt.Fprintf(tw, "  Payload\t%s\n", row.Payload)
 	fmt.Fprintf(tw, "  Metadata\t%s\n", row.Metadata)
 	fmt.Fprintf(tw, "  NextScheduledAt\t%s\n", scheduleNextCell(row))
@@ -201,7 +199,7 @@ func printScheduleDetail(w io.Writer, row *schedule.Schedule) {
 }
 
 // printScheduleStatuses is one line per consumer group whose binding matches
-// the schedule's name -- job request outcomes over the job_requests retention window.
+// the schedule's name -- message outcomes over the target topic's retention window.
 func printScheduleStatuses(w io.Writer, statuses []*schedule.GroupStatus) {
 	fmt.Fprintln(w)
 	if len(statuses) == 0 {
@@ -217,46 +215,33 @@ func printScheduleStatuses(w io.Writer, statuses []*schedule.GroupStatus) {
 	tw.Flush()
 }
 
-// printScheduleRequests is one line per (request, consumer group), newest
-// request first -- requests older than the retention window are gone.
-func printScheduleRequests(w io.Writer, statuses []*schedule.JobRequestStatus) {
+// printScheduleMessages is one line per (message, consumer group), newest
+// message first -- messages older than the retention window are gone.
+func printScheduleMessages(w io.Writer, statuses []*schedule.MessageStatus) {
 	fmt.Fprintln(w)
 	if len(statuses) == 0 {
-		fmt.Fprintln(w, "  no job requests in the retention window")
+		fmt.Fprintln(w, "  no messages in the retention window")
 		return
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(tw, "  REQUEST\tSCHEDULED\tPRODUCED\tGROUP\tOUTCOME")
+	fmt.Fprintln(tw, "  MESSAGE\tSCHEDULED\tPRODUCED\tGROUP\tOUTCOME")
 	for _, status := range statuses {
-		// ScheduledAt is decoded from the payload in UTC -- render it in
-		// the driver's zone like the columns beside it
+		// ScheduledAt is stored in UTC -- render it in the driver's zone like
+		// the columns beside it
 		fmt.Fprintf(tw, "  %d\t%s\t%s\t%s\t%s\n",
-			status.MessageId, timeCell(status.ScheduledAt.Local()), timeCell(status.ProducedAt), status.ConsumerGroup, requestOutcomeCell(status))
+			status.MessageId, timeCell(status.ScheduledAt.Local()), timeCell(status.ProducedAt), status.ConsumerGroup, messageOutcomeCell(status))
 	}
 	tw.Flush()
 }
 
-// requestOutcomeCell names the replacing request inline, where the reader is
+// messageOutcomeCell names the replacing message inline, where the reader is
 // already looking for it.
-func requestOutcomeCell(status *schedule.JobRequestStatus) string {
-	if status.Outcome == schedule.JobRequestSuperseded && status.SupersededBy != nil {
+func messageOutcomeCell(status *schedule.MessageStatus) string {
+	if status.Outcome == schedule.MessageSuperseded && status.SupersededBy != nil {
 		return fmt.Sprintf("superseded by %d at %s", *status.SupersededBy, timeCell(*status.SupersededAt))
 	}
 	return string(status.Outcome)
-}
-
-// scheduleOwnerCell renders the exactly-one owner column the row carries.
-func scheduleOwnerCell(row *schedule.Schedule) string {
-	switch {
-	case row.SystemId != 0:
-		return fmt.Sprintf("system (id=%d)", row.SystemId)
-	case row.TopicId != 0:
-		return fmt.Sprintf("topic (id=%d)", row.TopicId)
-	case row.ConsumerGroupId != 0:
-		return fmt.Sprintf("consumer group (id=%d)", row.ConsumerGroupId)
-	}
-	return "none"
 }
 
 // scheduleNextCell - a suspended schedule's next_scheduled_at is stale by design

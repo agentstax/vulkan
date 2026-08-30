@@ -529,7 +529,7 @@
     "VK0037": {
       "code": "VK0037",
       "kind": "event",
-      "message": "schedule request was already published by an earlier ambiguous commit"
+      "message": "schedule message was already produced by an earlier ambiguous commit"
     },
     "VK0038": {
       "code": "VK0038",
@@ -666,6 +666,11 @@
       "code": "VK0057",
       "kind": "event",
       "message": "no partition covers the next message id -- the insert creates it and pays the creation latency; run a consumer for the topic's upkeep or raise PartitionSize"
+    },
+    "VK0058": {
+      "code": "VK0058",
+      "kind": "event",
+      "message": "schedule target topic keeps no success rows -- ScheduleStatus counts no successes for it; set DeliveryLogMode all on the topic to count them"
     }
   }
 }

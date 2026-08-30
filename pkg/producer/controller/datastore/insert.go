@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/agentstax/vulkan/pkg/topic"
 
 	iTopic "github.com/agentstax/vulkan/internal/topic"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
@@ -18,11 +19,11 @@ const produceInTxSavepoint = "sp_produce_in_tx"
 
 // ProduceFunc runs inside the append's transaction and returns the payload to
 // store -- its writes commit or roll back with the message.
-type ProduceFunc[Message any] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*Message, error)
+type ProduceFunc[Message topic.Versioned] func(ctx context.Context, tx Tx, idempotencyKey uuid.UUID) (*Message, error)
 
 // runInsert runs produceFunc + the claim-protected message insert against an
 // already-open tx.
-func (d *ProducerDatastore) runInsert[Message any](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) runInsert[Message topic.Versioned](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	payload, err := produceFunc(ctx, tx, data.IdempotencyKey)
 	if err != nil {
 		return nil, err
@@ -38,7 +39,7 @@ func (d *ProducerDatastore) runInsert[Message any](ctx context.Context, tx Tx, t
 // runInsertSavepoint wraps produceFunc + the message insert in a SAVEPOINT
 // scoped to just this call, so a missing-partition retry can't touch
 // anything else already done in tx.
-func (d *ProducerDatastore) runInsertSavepoint[Message any](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
+func (d *ProducerDatastore) runInsertSavepoint[Message topic.Versioned](ctx context.Context, tx Tx, topicId int64, produceFunc ProduceFunc[Message], data *AppendData[Message]) (*AppendedData[Message], error) {
 	if err := commitToSavepoint(ctx, tx, produceInTxSavepoint); err != nil {
 		return nil, err
 	}
@@ -61,7 +62,7 @@ func (d *ProducerDatastore) runInsertSavepoint[Message any](ctx context.Context,
 // SAVEPOINT as one round trip -- always a single statement regardless of
 // compaction, so it always fully batches. duplicate=true means the claim
 // already existed.
-func (d *ProducerDatastore) insertProtectedSavepoint[Message any](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+func (d *ProducerDatastore) insertProtectedSavepoint[Message topic.Versioned](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
 
 	batch := &pgx.Batch{}
@@ -90,7 +91,7 @@ func (d *ProducerDatastore) insertProtectedSavepoint[Message any](ctx context.Co
 // insertProtected runs the idempotency claim + message insert (+ compaction_head
 // upsert when compacted) in one round trip. duplicate=true means the claim already
 // existed -- WHERE EXISTS matched nothing, Scan comes back pgx.ErrNoRows.
-func (d *ProducerDatastore) insertProtected[Message any](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
+func (d *ProducerDatastore) insertProtected[Message topic.Versioned](ctx context.Context, q iDatastore.Querier, topicId int64, payload *Message, data *AppendData[Message]) (id int64, duplicate bool, err error) {
 	sql, args := protectedInsertSQL(topicId, payload, data)
 
 	err = q.QueryRow(ctx, sql, args...).Scan(&id)
@@ -120,8 +121,10 @@ func attemptRollbackToSavepoint(ctx context.Context, q iDatastore.Querier, savep
 // protectedInsertSQL builds the claim+insert(+compaction_head upsert when
 // compacted) CTE -- shared with the savepoint-batched path so both run the
 // exact same statement. Claims against idempotency_key_<topicId>
-func protectedInsertSQL[Message any](topicId int64, payload *Message, data *AppendData[Message]) (string, []any) {
-	args := []any{data.IdempotencyKey, payload, data.RoutingKey, data.SchemaVersion}
+func protectedInsertSQL[Message topic.Versioned](topicId int64, payload *Message, data *AppendData[Message]) (string, []any) {
+	// the row's schema_version is the payload's own SchemaVersion(): a constant
+	// per type for user messages, the stored version for a replayed one
+	args := []any{data.IdempotencyKey, payload, data.RoutingKey, int64((*payload).SchemaVersion())}
 
 	var sql string
 	if data.Compacted {

@@ -65,14 +65,17 @@ func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Qu
 			schedule_config.id,
 			schedule_config.name,
 			schedule_config.expression,
+			topic_config.name AS topic_name,
 			schedule_config.concurrency,
 			schedule_config.timeout_ns,
 			schedule_config.payload,
+			schedule_config.schema_version,
 			schedule_config.metadata,
 			schedule_cursor.next_scheduled_at,
 			now()
 		FROM schedule_cursor
 		JOIN schedule_config ON schedule_config.id = schedule_cursor.schedule_id
+		JOIN topic_config ON topic_config.id = schedule_config.topic_id
 		WHERE schedule_config.id = $1
 			AND schedule_cursor.next_scheduled_at <= now()
 			AND NOT schedule_config.suspended
@@ -80,8 +83,8 @@ func (d *ScheduleProducerDatastore) claimDue(ctx context.Context, q datastore.Qu
 	`
 	var data DueScheduleData
 	var timeoutNs int64
-	err := q.QueryRow(ctx, sql, id).Scan(&data.Id, &data.Name, &data.Expression, &data.Concurrency,
-		&timeoutNs, &data.Payload, &data.Metadata, &data.NextScheduledAt, &data.DbNow)
+	err := q.QueryRow(ctx, sql, id).Scan(&data.Id, &data.Name, &data.Expression, &data.TopicName, &data.Concurrency,
+		&timeoutNs, &data.Payload, &data.SchemaVersion, &data.Metadata, &data.NextScheduledAt, &data.DbNow)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

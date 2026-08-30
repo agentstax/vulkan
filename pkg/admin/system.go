@@ -58,12 +58,12 @@ func (a *MessageAdmin) RegisterSystem(ctx context.Context, cfg *RegisterSystemCo
 		return err
 	}
 	for _, job := range []*alertcontroller.Job{partitionCountJob, compactionReadCostJob} {
-		if _, err := a.RegisterSchedule(ctx, job.Name, job.Expression, job.Payload, job.Config); err != nil {
+		if _, err := a.RegisterSchedule(ctx, job.Name, job.Expression, schedule.TopicName, job.Payload, job.Config); err != nil {
 			return err
 		}
 	}
 
-	// declared after the topics: the alert declarers resolve the job_requests
+	// declared after the topics: the alert declarers resolve the schedules
 	// topic to create their consumer groups and worker rows
 	owner, err := common.NewSystemOwner(registered.Id)
 	if err != nil {

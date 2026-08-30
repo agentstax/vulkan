@@ -13,13 +13,14 @@
 //  3. executor -- the real partition_count worker: a threshold-1 run
 //     publishes active heads + WARN edges, a second run inside the repeat
 //     interval publishes nothing, foreign and bindingless groups on the
-//     job_requests topic receive nothing
+//     schedules topic receive nothing
 //  4. isolation -- one owner's corrupted head fails its Record while every
 //     other topic still resolves; fixing the head lets the retry resolve it
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -35,10 +36,10 @@ import (
 	compactioncontroller "github.com/agentstax/vulkan/pkg/compaction/controller"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
-	"github.com/agentstax/vulkan/pkg/schedule"
 	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	iMetrics "github.com/agentstax/vulkan/pkg/metrics"
 	"github.com/agentstax/vulkan/pkg/producer"
+	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/topic"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
@@ -61,7 +62,7 @@ var (
 	ds     *iDatastore.PostgresDatastore
 	mAdmin *admin.MessageAdmin
 
-	jobRequests *topic.Topic
+	schedulesTopic *topic.Topic
 	alertsTopic *topic.Topic
 	prefix      string
 
@@ -109,12 +110,12 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	jobRequests, err = mAdmin.GetTopic(ctx, schedule.TopicName)
+	schedulesTopic, err = mAdmin.GetTopic(ctx, schedule.TopicName)
 	must(err)
 	alertsTopic, err = mAdmin.GetTopic(ctx, alert.TopicName)
 	must(err)
-	if jobRequests == nil || alertsTopic == nil {
-		die("RegisterSystem must create the job_requests and alerts topics")
+	if schedulesTopic == nil || alertsTopic == nil {
+		die("RegisterSystem must create the schedules and alerts topics")
 	}
 
 	prefix = fmt.Sprintf("alertlab.%d", time.Now().UnixNano())
@@ -150,8 +151,8 @@ func seedingSection(ctx context.Context) {
 	if partitionCountJob == nil {
 		die("RegisterSystem must seed the " + partitioncount.JobName + " schedule")
 	}
-	seeded, err := alertcontroller.ToJobPayload(partitionCountJob.Payload)
-	must(err)
+	var seeded alert.JobPayload
+	must(json.Unmarshal(partitionCountJob.Payload, &seeded))
 	if seeded.Threshold != 0 || partitionCountJob.Concurrency != common.ConcurrencyExclusive {
 		die(fmt.Sprintf("seeded job: want threshold 0 + defer, got %d %s", seeded.Threshold, partitionCountJob.Concurrency))
 	}
@@ -179,8 +180,8 @@ func seedingSection(ctx context.Context) {
 
 	partitionCountGroup = scalarInt64(ctx,
 		`SELECT id FROM consumer_group_config WHERE topic_id = $1 AND name = $2;`,
-		jobRequests.Id, partitioncount.JobName)
-	groupOwner, err = common.NewConsumerGroupOwner(jobRequests.SystemId, jobRequests.Id, partitionCountGroup, partitioncount.JobName)
+		schedulesTopic.Id, partitioncount.JobName)
+	groupOwner, err = common.NewConsumerGroupOwner(schedulesTopic.SystemId, schedulesTopic.Id, partitionCountGroup, partitioncount.JobName)
 	must(err)
 	workers, err := workercontroller.NewWorkerController(ds, nil)
 	must(err)
@@ -198,8 +199,8 @@ func seedingSection(ctx context.Context) {
 
 	reread, err := mAdmin.GetSchedule(ctx, partitioncount.JobName)
 	must(err)
-	redeclared, err := alertcontroller.ToJobPayload(reread.Payload)
-	must(err)
+	var redeclared alert.JobPayload
+	must(json.Unmarshal(reread.Payload, &redeclared))
 	if redeclared.Threshold != 7 {
 		die(fmt.Sprintf("declared threshold must apply on re-register, got %d", redeclared.Threshold))
 	}
@@ -363,14 +364,14 @@ func executorSection(ctx context.Context) {
 	fmt.Println("  ✓ the executor declared exactly its job name")
 
 	labKey := partitionCountKey(labTopicOwner)
-	jobRequestsOwner, err := common.NewTopicOwner(jobRequests.SystemId, jobRequests.Id, jobRequests.Name)
+	schedulesOwner, err := common.NewTopicOwner(schedulesTopic.SystemId, schedulesTopic.Id, schedulesTopic.Name)
 	must(err)
-	jobRequestsKey := partitionCountKey(jobRequestsOwner)
+	schedulesKey := partitionCountKey(schedulesOwner)
 	if got := headStatus(ctx, labKey); got != string(alert.StatusActive) {
 		die(fmt.Sprintf("threshold-1 run: want the lab topic's head active, got %q", got))
 	}
-	if got := headStatus(ctx, jobRequestsKey); got != string(alert.StatusActive) {
-		die(fmt.Sprintf("threshold-1 run: want the job_requests topic's head active, got %q", got))
+	if got := headStatus(ctx, schedulesKey); got != string(alert.StatusActive) {
+		die(fmt.Sprintf("threshold-1 run: want the schedules topic's head active, got %q", got))
 	}
 	if got := executorCapture.count("warn", partitioncountcontroller.AlertPartitionCount, labTopic.Name); got != 1 {
 		die(fmt.Sprintf("threshold-1 run: want 1 WARN edge for the lab topic, got %d", got))
@@ -414,14 +415,14 @@ func executorSection(ctx context.Context) {
 	waitDelivered(ctx, thirdRun.Id, "success")
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d;`,
-		jobRequests.Id, partitionCountGroup, readCostRun.Id)); got != 0 {
+		schedulesTopic.Id, partitionCountGroup, readCostRun.Id)); got != 0 {
 		die(fmt.Sprintf("the executor must not claim another job's request, got %d delivery rows", got))
 	}
 	for _, foreignGroup := range []int64{otherGroup, bindinglessGroup} {
 		claimed := scalarInt64(ctx, fmt.Sprintf(
-			`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = %d;`, jobRequests.Id, foreignGroup))
+			`SELECT COUNT(*) FROM exception_queue_%d WHERE consumer_group_id = %d;`, schedulesTopic.Id, foreignGroup))
 		logged := scalarInt64(ctx, fmt.Sprintf(
-			`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d;`, jobRequests.Id, foreignGroup))
+			`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d;`, schedulesTopic.Id, foreignGroup))
 		if claimed != 0 || logged != 0 {
 			die(fmt.Sprintf("group %d must be untouched by alert runs, got %d claims %d log rows", foreignGroup, claimed, logged))
 		}
@@ -433,9 +434,9 @@ func isolationSection(ctx context.Context) {
 	step("isolation: a corrupted head fails its topic's Record, the others still resolve")
 
 	labKey := partitionCountKey(labTopicOwner)
-	jobRequestsOwner, err := common.NewTopicOwner(jobRequests.SystemId, jobRequests.Id, jobRequests.Name)
+	schedulesOwner, err := common.NewTopicOwner(schedulesTopic.SystemId, schedulesTopic.Id, schedulesTopic.Name)
 	must(err)
-	jobRequestsKey := partitionCountKey(jobRequestsOwner)
+	schedulesKey := partitionCountKey(schedulesOwner)
 
 	// the head row stays, but its payload no longer unmarshals into an Alert
 	corruptedHead := headId(ctx, labKey)
@@ -451,10 +452,10 @@ func isolationSection(ctx context.Context) {
 	// the attempt fails on the corrupted owner -- but the same attempt
 	// already resolved every healthy topic
 	waitDelivered(ctx, resolveRun.Id, "failure")
-	if got := headStatus(ctx, jobRequestsKey); got != string(alert.StatusResolved) {
+	if got := headStatus(ctx, schedulesKey); got != string(alert.StatusResolved) {
 		die(fmt.Sprintf("isolation: healthy topics must resolve beside the failure, got %q", got))
 	}
-	if got := executorCapture.count("info", partitioncountcontroller.AlertPartitionCount, jobRequests.Name); got != 1 {
+	if got := executorCapture.count("info", partitioncountcontroller.AlertPartitionCount, schedulesTopic.Name); got != 1 {
 		die(fmt.Sprintf("isolation: want 1 resolve INFO for the healthy topic, got %d", got))
 	}
 	if got := headId(ctx, labKey); got != corruptedHead {
@@ -533,14 +534,14 @@ func startExecutor(ctx context.Context) func() {
 	}
 }
 
-// registerGroup creates a consumer group on the job_requests topic, bound to
+// registerGroup creates a consumer group on the schedules topic, bound to
 // the given job names (none = bindingless), and returns its id.
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name, consumergroup.Beginning())
+	group, err := controller.RegisterGroup(ctx, schedulesTopic.Id, name, consumergroup.Beginning())
 	must(err)
-	_, err = controller.DeclareBindings(ctx, jobRequests.Id, group.Id, bindings, time.Now())
+	_, err = controller.DeclareBindings(ctx, schedulesTopic.Id, group.Id, bindings, time.Now())
 	must(err)
 	return group.Id
 }
@@ -561,9 +562,9 @@ func cleanup() {
 	must(mAdmin.DestroyTopic(ctx, labTopic.Name, admin.DestroyOptions{Force: true}))
 
 	for _, sql := range []string{
-		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
+		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
+		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
+		fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, schedulesTopic.Id, prefix),
 		fmt.Sprintf(`DELETE FROM consumer_group_config WHERE name LIKE '%s.%%';`, prefix),
 	} {
 		exec(ctx, sql)
@@ -698,7 +699,7 @@ func headStatus(ctx context.Context, messageKey string) string {
 func waitDelivered(ctx context.Context, messageId int64, status string) {
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = '%s';`,
-		jobRequests.Id, partitionCountGroup, messageId, status), 1)
+		schedulesTopic.Id, partitionCountGroup, messageId, status), 1)
 }
 
 func waitForCount(ctx context.Context, sql string, want int64) {

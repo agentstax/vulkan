@@ -21,7 +21,7 @@ type ScheduleProducerProvisioner struct {
 	ds         *iDatastore.PostgresDatastore
 	workers    *controller.WorkerController
 	controller *scheduleproducercontroller.ScheduleProducerController
-	producer   *producer.Producer // each Provision registers its own instance from it
+	producer   *producer.Producer // each produce registers an instance on the due row's target topic
 
 	definition *worker.Definition
 }

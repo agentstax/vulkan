@@ -16,7 +16,7 @@ func newScheduleDestroyCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "destroy <name>",
 		Short: "Permanently delete a schedule",
-		Long: "Permanently delete a schedule. A job request already produced and not yet\n" +
+		Long: "Permanently delete a schedule. A message already produced and not yet\n" +
 			"consumed is not retracted -- destroy stops future requests only.",
 		Args: requireScheduleName("destroy"),
 		RunE: func(cmd *cobra.Command, args []string) error {

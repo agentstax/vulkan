@@ -6,6 +6,8 @@ type JobPayload struct {
 	Threshold int64 `json:"threshold"` // 0 = Evaluate derives the alert's live default
 }
 
+func (JobPayload) SchemaVersion() int { return 1 }
+
 func NewJobPayload(threshold int64) (*JobPayload, error) {
 	data := &JobPayload{Threshold: threshold}
 	if err := data.Validate(); err != nil {

@@ -47,7 +47,7 @@ need metric / alert example playground scenarios
 05 ignoring this for now
 
 06 RegisterCronJob should return object such that consumer can use its defined topic and binding on it
-- jobConsumer.Register[cron.JobRequest](ctx, "invoice-runner", cron.TopicName, []string{"invoices.nightly"})
+- jobConsumer.Register[InvoiceRun](ctx, "invoice-runner", "invoices", nil)
   bad that we have to know to find topic and binding. should just be cronjob.TopicName, cronjob.Bindings
 
 06 RegisterCronJob should likely be more like producer and consumer ie

@@ -13,16 +13,16 @@ import (
 
 // ProduceFunc runs inside the append's transaction; the type and its docs
 // live with the datastore.
-type ProduceFunc[Message any] = datastore.ProduceFunc[Message]
+type ProduceFunc[Message topic.Versioned] = datastore.ProduceFunc[Message]
 
 // Append is one message to append: the same input AppendMessage takes as
 // separate params.
-type Append[Message any] struct {
+type Append[Message topic.Versioned] struct {
 	Payload *Message
 	Options ProduceOptions
 }
 
-func NewAppend[Message any](payload *Message, options ProduceOptions) (*Append[Message], error) {
+func NewAppend[Message topic.Versioned](payload *Message, options ProduceOptions) (*Append[Message], error) {
 	if err := options.Validate(); err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (c *ProducerController) AppendMessage[Message topic.Versioned](ctx context.
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(topic.SchemaVersionOf[Message]()), options))
+	appended, err := c.datastore.AppendMessage(ctx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (c *ProducerController) AppendMessageInTx[Message topic.Versioned](ctx cont
 		return nil, err
 	}
 
-	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, int64(topic.SchemaVersionOf[Message]()), options))
+	appended, err := c.datastore.AppendMessageInTx(ctx, tx, topicId, partitionSize, produceFunc, toAppendData[Message](idempotencyKey, nil, options))
 	if err != nil || appended == nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (c *ProducerController) AppendMessageBatch[Message topic.Versioned](ctx con
 		if item.Options.IdempotencyKey == uuid.Nil {
 			return nil, -1, errors.New("append Options.IdempotencyKey is required")
 		}
-		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, int64(topic.SchemaVersionOf[Message]()), item.Options))
+		appendData = append(appendData, toAppendData(item.Options.IdempotencyKey, item.Payload, item.Options))
 	}
 
 	appendedData, failedIdx, err := c.datastore.AppendMessageBatch(ctx, topicId, partitionSize, attemptTimeout, appendData)

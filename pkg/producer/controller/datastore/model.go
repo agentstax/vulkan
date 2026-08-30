@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"encoding/json"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
@@ -9,11 +10,10 @@ import (
 )
 
 // AppendData is one message append's inputs, insert-arg exact.
-type AppendData[Message any] struct {
+type AppendData[Message topic.Versioned] struct {
 	// resolved once by the caller and reused across every retry -- that reuse
 	// is what makes a retried attempt safe after an ambiguous commit
 	IdempotencyKey uuid.UUID
-	SchemaVersion  int64    // the producing Message type's version
 	Payload        *Message // nil when a ProduceFunc supplies it inside the transaction
 	RoutingKey     string
 	MessageKey     string
@@ -23,7 +23,7 @@ type AppendData[Message any] struct {
 }
 
 // AppendedData is one append's outcome.
-type AppendedData[Message any] struct {
+type AppendedData[Message topic.Versioned] struct {
 	Message   *Message // the payload this call built -- never re-read from storage
 	Id        int64    // 0 when Duplicate
 	Duplicate bool     // the idempotency claim already existed

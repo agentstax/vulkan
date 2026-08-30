@@ -33,14 +33,16 @@ func (d *ScheduleDatastore) replaceConfig(ctx context.Context, found *ScheduleDa
 		UPDATE schedule_config
 		SET
 			expression = $2,
-			concurrency = $3,
-			timeout_ns = $4,
-			payload = COALESCE($5, '{}'::jsonb),
-			metadata = COALESCE($6, '{}'::jsonb)
+			topic_id = $3,
+			concurrency = $4,
+			timeout_ns = $5,
+			payload = $6,
+			schema_version = $7,
+			metadata = COALESCE($8, '{}'::jsonb)
 		WHERE id = $1;
 	`
 	tag, err := tx.Exec(ctx, updateConfigSql, found.Id,
-		declared.Expression.String(), declared.Concurrency, declared.TimeoutNs, declared.Payload, declared.Metadata)
+		declared.Expression.String(), declared.TopicId, declared.Concurrency, declared.TimeoutNs, declared.Payload, declared.SchemaVersion, declared.Metadata)
 	if err != nil {
 		return nil, err
 	}

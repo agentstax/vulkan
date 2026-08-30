@@ -5,23 +5,31 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
-// Register resolves name to its schedule, creating it owned by owner if it
-// doesn't exist; an existing schedule takes schedule, payload and cfg -- the newest
-// declaration wins. cfg may be nil or a sparse struct -- WithDefaults fills
-// every field left unset, Validate rejects what's out of range.
-func (c *ScheduleController) Register(ctx context.Context, owner *common.Owner, name string, expression *schedule.Expression, payload any, cfg *ScheduleConfig) (*schedule.Schedule, error) {
-	if owner == nil {
-		return nil, errors.New("owner must not be nil")
+// Register resolves name to its schedule, creating it under systemId if it
+// doesn't exist; an existing schedule takes expression, topic, payload and
+// cfg -- the newest declaration wins. The payload is stored marshaled with
+// Message's schema version; every produce carries both. cfg may be nil or a
+// sparse struct -- WithDefaults fills every field left unset, Validate
+// rejects what's out of range.
+func (c *ScheduleController) Register[Message topic.Versioned](ctx context.Context, systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) (*schedule.Schedule, error) {
+	if systemId <= 0 {
+		return nil, fmt.Errorf("systemId must be > 0, got %d", systemId)
 	}
 	if !schedule.SlugPattern.MatchString(name) {
 		return nil, fmt.Errorf("name must match %s, got %q", schedule.SlugPattern, name)
 	}
 	if expression == nil {
 		return nil, errors.New("expression is required")
+	}
+	if topicId <= 0 {
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
+	}
+	if payload == nil {
+		return nil, errors.New("payload must not be nil")
 	}
 	if cfg == nil {
 		cfg = &ScheduleConfig{}
@@ -34,7 +42,7 @@ func (c *ScheduleController) Register(ctx context.Context, owner *common.Owner, 
 		return nil, fmt.Errorf("timeout %v exceeds expression %q's min rate %v", cfg.Timeout, expression, expression.MinRate())
 	}
 
-	registered, err := c.datastore.Register(ctx, owner, toRegisterScheduleData(name, expression, payload, cfg))
+	registered, err := c.datastore.Register(ctx, toRegisterScheduleData(systemId, name, expression, topicId, payload, cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -100,15 +108,12 @@ func (c *ScheduleController) Delete(ctx context.Context, name string) error {
 	return c.datastore.Delete(ctx, name)
 }
 
-// ListRequests is the schedule's requests, one JobRequestStatus
-// per (request, consumer group that receives it), newest request first.
-// Requests older than the topic's retention window are gone.
-func (c *ScheduleController) ListRequests(ctx context.Context, jobRequestsTopicId int64, scheduleId int64, name string, limit int) ([]*schedule.JobRequestStatus, error) {
-	if jobRequestsTopicId <= 0 {
-		return nil, fmt.Errorf("jobRequestsTopicId must be > 0, got %d", jobRequestsTopicId)
-	}
-	if scheduleId <= 0 {
-		return nil, fmt.Errorf("scheduleId must be > 0, got %d", scheduleId)
+// ListMessages is the schedule's messages on its target topic, one
+// MessageStatus per (message, consumer group that receives it), newest
+// message first. Messages older than the topic's retention window are gone.
+func (c *ScheduleController) ListMessages(ctx context.Context, topicId int64, name string, limit int) ([]*schedule.MessageStatus, error) {
+	if topicId <= 0 {
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if name == "" {
 		return nil, errors.New("name is required")
@@ -117,36 +122,29 @@ func (c *ScheduleController) ListRequests(ctx context.Context, jobRequestsTopicI
 		return nil, fmt.Errorf("limit must be > 0, got %d", limit)
 	}
 
-	listed, err := c.datastore.ListRequests(ctx, jobRequestsTopicId, scheduleId, name, limit)
+	listed, err := c.datastore.ListMessages(ctx, topicId, name, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	var requests []*schedule.JobRequestStatus
+	var messages []*schedule.MessageStatus
 	for _, data := range listed {
-		request, err := toJobRequestStatus(&data)
-		if err != nil {
-			return nil, err
-		}
-		requests = append(requests, request)
+		messages = append(messages, toMessageStatus(&data))
 	}
-	return requests, nil
+	return messages, nil
 }
 
 // Status is one GroupStatus per consumer group that receives the
-// schedule's requests. Counts cover the topic's retention window.
-func (c *ScheduleController) Status(ctx context.Context, jobRequestsTopicId int64, scheduleId int64, name string) ([]*schedule.GroupStatus, error) {
-	if jobRequestsTopicId <= 0 {
-		return nil, fmt.Errorf("jobRequestsTopicId must be > 0, got %d", jobRequestsTopicId)
-	}
-	if scheduleId <= 0 {
-		return nil, fmt.Errorf("scheduleId must be > 0, got %d", scheduleId)
+// schedule's messages. Counts cover the topic's retention window.
+func (c *ScheduleController) Status(ctx context.Context, topicId int64, name string) ([]*schedule.GroupStatus, error) {
+	if topicId <= 0 {
+		return nil, fmt.Errorf("topicId must be > 0, got %d", topicId)
 	}
 	if name == "" {
 		return nil, errors.New("name is required")
 	}
 
-	listed, err := c.datastore.Status(ctx, jobRequestsTopicId, scheduleId, name)
+	listed, err := c.datastore.Status(ctx, topicId, name)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,6 @@ package producer
 import (
 	"context"
 	"errors"
-	"strconv"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/common/logging"
@@ -16,30 +15,27 @@ import (
 	"github.com/google/uuid"
 )
 
-// scans schedule for due rows at the row's poll_rate while a heartbeat holds
-// the claim, producing one JobRequest per due row and advancing each produced
-// row to its next scheduled time
+// scans schedule_config for due rows at the row's poll_rate while a heartbeat
+// holds the claim, producing each due row's stored message onto its target
+// topic and advancing the row to its next scheduled time
 type ScheduleProducerInstance struct {
 	Owner  *common.Owner
 	Config *ScheduleProducerConfig
 	Logger logging.Logger
 
-	runner           *controller.InstanceTickRunner
-	ds               *iDatastore.PostgresDatastore
-	controller       *scheduleproducercontroller.ScheduleProducerController
-	metadata         *scheduleProducerMetadata
-	producerInstance *producer.ProducerInstance[schedule.JobRequest]
+	runner     *controller.InstanceTickRunner
+	ds         *iDatastore.PostgresDatastore
+	controller *scheduleproducercontroller.ScheduleProducerController
+	metadata   *scheduleProducerMetadata
+	producer   *producer.Producer
 }
 
-func newScheduleProducerInstance(scheduleProducer *ScheduleProducerProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, metadata *scheduleProducerMetadata, producerInstance *producer.ProducerInstance[schedule.JobRequest]) (*ScheduleProducerInstance, error) {
+func newScheduleProducerInstance(scheduleProducer *ScheduleProducerProvisioner, owner *common.Owner, claimed *worker.WorkerInstance, metadata *scheduleProducerMetadata) (*ScheduleProducerInstance, error) {
 	if owner == nil {
 		return nil, errors.New("owner must not be nil")
 	}
 	if metadata == nil {
 		return nil, errors.New("metadata must not be nil")
-	}
-	if producerInstance == nil {
-		return nil, errors.New("producerInstance must not be nil")
 	}
 
 	logger := logging.NewPipelineLogger(scheduleProducer.Logger, &logging.PipelineLoggerConfig{Args: []any{"worker", WorkerScheduleProducer, "system_id", owner.SystemId}})
@@ -54,14 +50,14 @@ func newScheduleProducerInstance(scheduleProducer *ScheduleProducerProvisioner, 
 	}
 
 	return &ScheduleProducerInstance{
-		Owner:            owner,
-		Config:           scheduleProducer.Config,
-		Logger:           logger,
-		runner:           runner,
-		ds:               scheduleProducer.ds,
-		controller:       scheduleProducer.controller,
-		metadata:         metadata,
-		producerInstance: producerInstance,
+		Owner:      owner,
+		Config:     scheduleProducer.Config,
+		Logger:     logger,
+		runner:     runner,
+		ds:         scheduleProducer.ds,
+		controller: scheduleProducer.controller,
+		metadata:   metadata,
+		producer:   scheduleProducer.producer,
 	}, nil
 }
 
@@ -87,22 +83,22 @@ func (i *ScheduleProducerInstance) scan(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		if err := i.produceJobRequest(ctx, id); err != nil {
+		if err := i.produceDue(ctx, id); err != nil {
 			if ctx.Err() != nil {
 				return err
 			}
-			i.Logger.WarnContext(ctx, "could not produce schedule request -- siblings proceed", "schedule_id", id, "error", err)
+			i.Logger.WarnContext(ctx, "could not produce schedule message -- siblings proceed", "schedule_id", id, "error", err)
 		}
 	}
 	return nil
 }
 
-// produceJobRequest resolves one due row: recheck under lock, produce the
-// JobRequest for the NEWEST due scheduled time, advance the row. Produce +
-// advance + idempotency claim share the transaction, so an ambiguous-commit
-// replay rolls all three back together and the schedule.IdempotencyKey dedupe
-// covers exactly that replay.
-func (i *ScheduleProducerInstance) produceJobRequest(ctx context.Context, id int64) error {
+// produceDue resolves one due row: recheck under lock, produce the stored
+// message for the NEWEST due scheduled time onto the row's target topic,
+// advance the row. Produce + advance + idempotency claim share the
+// transaction, so an ambiguous-commit replay rolls all three back together
+// and the schedule.IdempotencyKey dedupe covers exactly that replay.
+func (i *ScheduleProducerInstance) produceDue(ctx context.Context, id int64) error {
 	return producer.InTransaction(ctx, i.ds, func(ctx context.Context, tx producer.Tx) error {
 		row, err := i.controller.ClaimDue(ctx, tx, id)
 		if err != nil || row == nil {
@@ -123,7 +119,14 @@ func (i *ScheduleProducerInstance) produceJobRequest(ctx context.Context, id int
 			scheduledTime = next
 		}
 
-		request, err := schedule.NewJobRequest(row.Id, row.Name, scheduledTime, row.Payload, row.Metadata)
+		stored, err := schedule.NewStoredMessage(row.Payload, row.SchemaVersion)
+		if err != nil {
+			return err
+		}
+
+		// registered per produce: the target topic is the row's, and a due
+		// row is minute-scale rare
+		target, err := i.producer.Register[schedule.StoredMessage](ctx, row.TopicName)
 		if err != nil {
 			return err
 		}
@@ -133,27 +136,27 @@ func (i *ScheduleProducerInstance) produceJobRequest(ctx context.Context, id int
 			return err
 		}
 
-		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*schedule.JobRequest, error) {
-			return request, nil
+		passthrough := func(context.Context, producer.Tx, uuid.UUID) (*schedule.StoredMessage, error) {
+			return stored, nil
 		}
-		produced, err := i.producerInstance.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
-			RoutingKey: row.Name,
-			// id not name -- a destroyed name's reuse must not share a key
-			MessageKey:     strconv.FormatInt(row.Id, 10),
+		produced, err := target.ProduceInTx(ctx, tx, passthrough, producer.ProduceOptions{
+			RoutingKey:     row.Name,
+			MessageKey:     row.Name,
 			Compaction:     compaction,
 			IdempotencyKey: schedule.IdempotencyKey(scheduledTime, row.Id),
 			Message: &common.MessageOptions{
 				Concurrency: row.Concurrency,
 				Timeout:     row.Timeout,
+				ScheduledAt: scheduledTime,
 			},
 		})
 		if err != nil {
 			return err
 		}
 		if produced.Duplicate {
-			// an earlier tick's ambiguous commit published this request, then
+			// an earlier tick's ambiguous commit produced this message, then
 			// failed to advance the row
-			i.Logger.WarnContext(ctx, schedule.EventJobRequestAlreadyPublished.Message, "code", schedule.EventJobRequestAlreadyPublished.Code, "schedule_id", row.Id, "schedule", row.Name, "scheduled_at", scheduledTime)
+			i.Logger.WarnContext(ctx, schedule.EventMessageAlreadyProduced.Message, "code", schedule.EventMessageAlreadyProduced.Code, "schedule_id", row.Id, "schedule", row.Name, "scheduled_at", scheduledTime)
 		}
 
 		// next scheduled time from the DB clock ONLY -- Go/DB skew

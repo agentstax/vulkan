@@ -17,7 +17,7 @@ import (
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
 
-// PartitionCountInstance consumes the alert's job requests while a heartbeat
+// PartitionCountInstance consumes the alert's schedule messages while a heartbeat
 // holds the claim.
 type PartitionCountInstance struct {
 	Owner  *common.Owner
@@ -78,18 +78,14 @@ func (i *PartitionCountInstance) consume(ctx context.Context) error {
 	}
 	i.measurements = measurements
 
-	instance, err := i.provisioner.jobRequestConsumer.Register[schedule.JobRequest](ctx, JobName, schedule.TopicName, []string{JobName})
+	instance, err := i.provisioner.scheduleConsumer.Register[alert.JobPayload](ctx, JobName, schedule.TopicName, []string{JobName})
 	if err != nil {
 		return err
 	}
 	return instance.Consume(ctx, i.evaluateTopics)
 }
 
-func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, request *schedule.JobRequest) error {
-	jobPayload, err := alertcontroller.ToJobPayload(request.Payload)
-	if err != nil {
-		return err
-	}
+func (i *PartitionCountInstance) evaluateTopics(ctx context.Context, jobPayload *alert.JobPayload) error {
 
 	topics, err := i.provisioner.topics.List(ctx)
 	if err != nil {

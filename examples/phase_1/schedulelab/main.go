@@ -4,8 +4,8 @@
 // Sections:
 //  1. validation -- charset/star names, sub-minute and no-upcoming schedules,
 //     timeout vs min rate, re-register wins, Feb-29 single-scheduled-time pass
-//  2. ownership -- a topic-owned job dies with its topic, a system-owned
-//     job survives
+//  2. target -- a schedule dies with its target topic; one targeting another
+//     topic survives
 //  3. produce-once -- a backdated row produces ONE message stamped with the
 //     NEWEST due scheduled time, older dues dropped
 //  4. v7 dedupe -- re-backdating to the SAME scheduled time is a Duplicate,
@@ -28,7 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -37,11 +36,12 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	consumergroupcontroller "github.com/agentstax/vulkan/pkg/consumergroup/controller"
+	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
-	iDatastore "github.com/agentstax/vulkan/pkg/datastore"
 	"github.com/agentstax/vulkan/pkg/topic"
+	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
 	workercontroller "github.com/agentstax/vulkan/pkg/worker/controller"
 )
@@ -49,11 +49,20 @@ import (
 const schedulerPollRate = 100 * time.Millisecond
 
 var (
-	ds          *iDatastore.PostgresDatastore
-	mAdmin      *admin.MessageAdmin
-	jobRequests *topic.Topic
-	prefix      string
+	ds     *iDatastore.PostgresDatastore
+	mAdmin *admin.MessageAdmin
+	target *topic.Topic // the lab's own target topic
+	prefix string
 )
+
+// labMessage is what every lab schedule produces.
+type labMessage struct {
+	Kind string `json:"kind"`
+}
+
+func (labMessage) SchemaVersion() int { return 1 }
+
+var payload = &labMessage{Kind: "lab"}
 
 func main() {
 	if err := run(); err != nil {
@@ -92,14 +101,14 @@ func run() (err error) {
 	must(err)
 	must(mAdmin.RegisterSystem(ctx, nil))
 
-	jobRequests, err = mAdmin.GetTopic(ctx, schedule.TopicName)
-	must(err)
-
 	prefix = fmt.Sprintf("schedulelab.%d", time.Now().UnixNano())
-	defer cleanupGroups()
+	// status reads count 'success' rows, so the target keeps every outcome
+	target, err = mAdmin.RegisterTopic(ctx, prefix+".target", &topiccontroller.TopicConfig{DeliveryLogMode: topic.DeliveryLogModeAll})
+	must(err)
+	defer cleanupTarget()
 
 	validationSection(ctx)
-	ownershipSection(ctx)
+	targetSection(ctx)
 
 	// every scheduler-driven section below rides this one claimed instance
 	stopScheduler := startScheduler(ctx)
@@ -125,13 +134,13 @@ func validationSection(ctx context.Context) {
 
 	hourly := parse("@hourly")
 
-	if _, err := mAdmin.RegisterSchedule(ctx, "", hourly, nil, nil); err == nil {
+	if _, err := mAdmin.RegisterSchedule(ctx, "", hourly, target.Name, payload, nil); err == nil {
 		die("empty name must be rejected")
 	}
-	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".Upper", hourly, nil, nil); err == nil {
+	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".Upper", hourly, target.Name, payload, nil); err == nil {
 		die("uppercase name must be rejected")
 	}
-	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".star*", hourly, nil, nil); err == nil {
+	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".star*", hourly, target.Name, payload, nil); err == nil {
 		die("'*' in a name is the binding wildcard and must be rejected")
 	}
 	if _, err := schedule.ParseExpression("@every 30s"); err == nil {
@@ -141,14 +150,14 @@ func validationSection(ctx context.Context) {
 	if _, err := schedule.ParseExpression("0 0 30 2 *"); err == nil {
 		die("a expression with no upcoming scheduled time must be rejected at parse")
 	}
-	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".validate", hourly, nil, &schedulecontroller.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
+	if _, err := mAdmin.RegisterSchedule(ctx, prefix+".validate", hourly, target.Name, payload, &schedulecontroller.ScheduleConfig{Timeout: 2 * time.Hour}); err == nil {
 		die("timeout above the expression's min rate must be rejected")
 	}
 	fmt.Println("  ✓ rejections: empty/uppercase/star name, sub-minute, no-upcoming, timeout > min rate")
 
 	// Feb-29 has under two scheduled times inside the min-rate horizon -- the
 	// single-scheduled-time pass must register it, seeded on a real Feb 29
-	feb29, err := mAdmin.RegisterSchedule(ctx, prefix+".feb29", parse("0 0 29 2 *"), nil, nil)
+	feb29, err := mAdmin.RegisterSchedule(ctx, prefix+".feb29", parse("0 0 29 2 *"), target.Name, payload, nil)
 	must(err)
 	if feb29.NextScheduledAt.UTC().Month() != time.February || feb29.NextScheduledAt.UTC().Day() != 29 {
 		die(fmt.Sprintf("feb29 job seeded to %v, want a Feb 29", feb29.NextScheduledAt))
@@ -156,9 +165,9 @@ func validationSection(ctx context.Context) {
 	must(mAdmin.DestroySchedule(ctx, prefix+".feb29"))
 	fmt.Printf("  ✓ Feb-29 expression registered, seeded to %s\n", feb29.NextScheduledAt.UTC().Format("2006-01-02"))
 
-	first, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", hourly, map[string]string{"kind": "lab"}, nil)
+	first, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", hourly, target.Name, payload, nil)
 	must(err)
-	again, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", hourly, map[string]string{"kind": "lab"}, nil)
+	again, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", hourly, target.Name, payload, nil)
 	must(err)
 	if again.Id != first.Id {
 		die(fmt.Sprintf("identical re-register resolved to a different job: %d vs %d", again.Id, first.Id))
@@ -166,7 +175,7 @@ func validationSection(ctx context.Context) {
 
 	daily := parse("@daily")
 	must(mAdmin.SuspendSchedule(ctx, prefix+".redeclare"))
-	redeclared, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", daily, map[string]string{"kind": "lab"}, nil)
+	redeclared, err := mAdmin.RegisterSchedule(ctx, prefix+".redeclare", daily, target.Name, payload, nil)
 	must(err)
 	if redeclared.Id != first.Id {
 		die(fmt.Sprintf("re-register resolved to a different job: %d vs %d", redeclared.Id, first.Id))
@@ -184,20 +193,16 @@ func validationSection(ctx context.Context) {
 	fmt.Println("  ✓ identical re-register is a no-op, a differing one wins and leaves suspended alone")
 }
 
-func ownershipSection(ctx context.Context) {
-	step("ownership: topic-owned job cascades with its topic, system-owned survives")
+func targetSection(ctx context.Context) {
+	step("target: a schedule dies with its target topic, one on another topic survives")
 
 	topicName := prefix + ".ownedtopic"
-	tp, err := mAdmin.RegisterTopic(ctx, topicName, nil)
+	_, err := mAdmin.RegisterTopic(ctx, topicName, nil)
 	must(err)
 
-	schedules, err := schedulecontroller.NewScheduleController(ds, nil)
+	_, err = mAdmin.RegisterSchedule(ctx, prefix+".cascade", parse("@hourly"), topicName, payload, nil)
 	must(err)
-	topicOwner, err := common.NewTopicOwner(tp.SystemId, tp.Id, tp.Name)
-	must(err)
-	_, err = schedules.Register(ctx, topicOwner, prefix+".cascade", parse("@hourly"), nil, nil)
-	must(err)
-	_, err = mAdmin.RegisterSchedule(ctx, prefix+".standalone", parse("@hourly"), nil, nil)
+	_, err = mAdmin.RegisterSchedule(ctx, prefix+".standalone", parse("@hourly"), target.Name, payload, nil)
 	must(err)
 
 	must(mAdmin.DestroyTopic(ctx, topicName, admin.DestroyOptions{Force: true}))
@@ -205,24 +210,24 @@ func ownershipSection(ctx context.Context) {
 	cascaded, err := mAdmin.GetSchedule(ctx, prefix+".cascade")
 	must(err)
 	if cascaded != nil {
-		die("topic-owned schedule must cascade away with its topic")
+		die("a schedule must cascade away with its target topic")
 	}
 	standalone, err := mAdmin.GetSchedule(ctx, prefix+".standalone")
 	must(err)
 	if standalone == nil {
-		die("system-owned schedule must survive an unrelated topic destroy")
+		die("a schedule on another topic must survive an unrelated topic destroy")
 	}
 	must(mAdmin.DestroySchedule(ctx, prefix+".standalone"))
-	fmt.Println("  ✓ cascade removed the topic-owned job, the system-owned job survived")
+	fmt.Println("  ✓ cascade removed the schedule with its target topic, the other survived")
 }
 
 func produceOnceSection(ctx context.Context) {
 	step("produce-once: a 5m-backdated row produces ONE message, stamped with the NEWEST due scheduled time")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".walk", parse("@every 1m"), nil, nil)
+	job, err := mAdmin.RegisterSchedule(ctx, prefix+".walk", parse("@every 1m"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".walk")) }()
-	key := strconv.FormatInt(job.Id, 10)
+	key := job.Name
 
 	backdated := time.Now().UTC().Add(-5 * time.Minute)
 	backdate(ctx, job.Id, backdated)
@@ -244,10 +249,10 @@ func produceOnceSection(ctx context.Context) {
 func dedupeSection(ctx context.Context) {
 	step("v7 dedupe: re-backdating to the SAME scheduled time is a Duplicate, not a second message")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".dedupe", parse("@every 1m"), nil, nil)
+	job, err := mAdmin.RegisterSchedule(ctx, prefix+".dedupe", parse("@every 1m"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".dedupe")) }()
-	key := strconv.FormatInt(job.Id, 10)
+	key := job.Name
 
 	// 10s back: due now, and its successor stays out of reach for ~50s more,
 	// so the re-backdated tick can only re-produce this exact scheduled time
@@ -269,10 +274,10 @@ func dedupeSection(ctx context.Context) {
 func suspendSection(ctx context.Context) {
 	step("suspend/unsuspend: a due-while-suspended scheduled time is dropped, not produced late")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".suspend", parse("@hourly"), nil, nil)
+	job, err := mAdmin.RegisterSchedule(ctx, prefix+".suspend", parse("@hourly"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".suspend")) }()
-	key := strconv.FormatInt(job.Id, 10)
+	key := job.Name
 
 	must(mAdmin.SuspendSchedule(ctx, prefix+".suspend"))
 	backdate(ctx, job.Id, time.Now().UTC().Add(-2*time.Hour))
@@ -304,14 +309,14 @@ func suspendSection(ctx context.Context) {
 func poisonSection(ctx context.Context) {
 	step("poisoned row: one job's produce fails every tick, siblings still produce")
 
-	poisoned, err := mAdmin.RegisterSchedule(ctx, prefix+".poison", parse("@hourly"), nil, nil)
+	poisoned, err := mAdmin.RegisterSchedule(ctx, prefix+".poison", parse("@hourly"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".poison")) }()
-	sibling, err := mAdmin.RegisterSchedule(ctx, prefix+".sibling", parse("@every 1m"), nil, nil)
+	sibling, err := mAdmin.RegisterSchedule(ctx, prefix+".sibling", parse("@every 1m"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".sibling")) }()
-	poisonedKey := strconv.FormatInt(poisoned.Id, 10)
-	siblingKey := strconv.FormatInt(sibling.Id, 10)
+	poisonedKey := poisoned.Name
+	siblingKey := sibling.Name
 
 	// registration validated the schedule, so corrupt the row directly --
 	// every ClaimDueSchedule's ParseSchedule now fails for this row
@@ -340,7 +345,7 @@ func poisonSection(ctx context.Context) {
 func deferSection(ctx context.Context) {
 	step("exclusive (spot): a scheduler request waits behind a running one, then runs")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".defer", parse("@every 1m"), nil,
+	job, err := mAdmin.RegisterSchedule(ctx, prefix+".defer", parse("@every 1m"), target.Name, payload,
 		&schedulecontroller.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".defer")) }()
@@ -351,7 +356,7 @@ func deferSection(ctx context.Context) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	stop := startConsumer(ctx, groupName, []string{prefix + ".defer"}, 3, func(ctx context.Context, request *schedule.JobRequest) error {
+	stop := startConsumer(ctx, groupName, []string{prefix + ".defer"}, 3, func(ctx context.Context, _ *labMessage) error {
 		var first bool
 		once.Do(func() { first = true })
 		if first {
@@ -372,24 +377,24 @@ func deferSection(ctx context.Context) {
 	backdate(ctx, job.Id, time.Now().UTC().Add(-9*time.Second))
 	waitAdvanced(ctx, job.Id)
 	deferred := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id),
-		strconv.FormatInt(job.Id, 10))
+		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, target.Id),
+		job.Name)
 
 	// the 'deferred' row lands while the first request is still running
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
-		jobRequests.Id, group, deferred), 1)
+		target.Id, group, deferred), 1)
 	close(release)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, group, deferred), 1)
+		target.Id, group, deferred), 1)
 	fmt.Println("  ✓ scheduler request deferred behind the running one, then ran to success")
 }
 
 func runNowOverrideSection(ctx context.Context) {
 	step("run-now beside a running request: default 'parallel' runs alongside it, cfg exclusive waits for it")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".runnow", parse("@hourly"), nil,
+	job, err := mAdmin.RegisterSchedule(ctx, prefix+".runnow", parse("@hourly"), target.Name, payload,
 		&schedulecontroller.ScheduleConfig{Concurrency: common.ConcurrencyExclusive})
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".runnow")) }()
@@ -400,7 +405,7 @@ func runNowOverrideSection(ctx context.Context) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	stop := startConsumer(ctx, groupName, []string{prefix + ".runnow"}, 3, func(ctx context.Context, request *schedule.JobRequest) error {
+	stop := startConsumer(ctx, groupName, []string{prefix + ".runnow"}, 3, func(ctx context.Context, _ *labMessage) error {
 		var first bool
 		once.Do(func() { first = true })
 		if first {
@@ -417,8 +422,8 @@ func runNowOverrideSection(ctx context.Context) {
 	waitAdvanced(ctx, job.Id)
 	<-started
 	blocker := scalarInt64(ctx, fmt.Sprintf(
-		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id),
-		strconv.FormatInt(job.Id, 10))
+		`SELECT MAX(id) FROM message_log_%d WHERE message_key = $1;`, target.Id),
+		job.Name)
 
 	// were the second request stamped with the job's 'exclusive', it would wait
 	// until the first finishes -- the default 'parallel' runs it now
@@ -426,10 +431,10 @@ func runNowOverrideSection(ctx context.Context) {
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, group, override.Id), 1)
+		target.Id, group, override.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, group, blocker)); got != 0 {
+		target.Id, group, blocker)); got != 0 {
 		die("the first request finished before the override ran -- the mid-run window was missed")
 	}
 	fmt.Println("  ✓ default run-now succeeded while the first was still running")
@@ -440,23 +445,23 @@ func runNowOverrideSection(ctx context.Context) {
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'deferred';`,
-		jobRequests.Id, group, deferred.Id), 1)
+		target.Id, group, deferred.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, group, deferred.Id)); got != 0 {
+		target.Id, group, deferred.Id)); got != 0 {
 		die("an exclusive run-now must not run while a previous request is still running")
 	}
 	close(release)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND status = 'success';`,
-		jobRequests.Id, group), 3)
+		target.Id, group), 3)
 	fmt.Println("  ✓ exclusive run-now waited for the running request, then ran")
 }
 
 func supersedeSection(ctx context.Context) {
 	step("run-now supersedes a pending unclaimed request")
 
-	job, err := mAdmin.RegisterSchedule(ctx, prefix+".supersede", parse("@hourly"), nil, nil)
+	job, err := mAdmin.RegisterSchedule(ctx, prefix+".supersede", parse("@hourly"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".supersede")) }()
 
@@ -473,14 +478,14 @@ func supersedeSection(ctx context.Context) {
 	head, err := mAdmin.RunSchedule(ctx, prefix+".supersede", nil)
 	must(err)
 
-	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, jobRequests.Id),
-		strconv.FormatInt(job.Id, 10)); got != head.Id {
+	if got := scalarInt64(ctx, fmt.Sprintf(`SELECT head_id FROM compaction_head_%d WHERE compaction_key = $1;`, target.Id),
+		job.Name); got != head.Id {
 		die(fmt.Sprintf("the second run-now must take the compaction head, got %d want %d", got, head.Id))
 	}
 
 	var handled int64
 	var mu sync.Mutex
-	stop := startConsumer(ctx, groupName, []string{prefix + ".supersede"}, 1, func(ctx context.Context, request *schedule.JobRequest) error {
+	stop := startConsumer(ctx, groupName, []string{prefix + ".supersede"}, 1, func(ctx context.Context, _ *labMessage) error {
 		mu.Lock()
 		defer mu.Unlock()
 		handled++
@@ -490,10 +495,10 @@ func supersedeSection(ctx context.Context) {
 
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, group, head.Id), 1)
+		target.Id, group, head.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d;`,
-		jobRequests.Id, group, pending.Id)); got != 0 {
+		target.Id, group, pending.Id)); got != 0 {
 		die(fmt.Sprintf("the superseded request must leave no delivery rows, got %d", got))
 	}
 	mu.Lock()
@@ -515,16 +520,16 @@ func supersedeSection(ctx context.Context) {
 
 	// the request listing names the replacement: newest first, the dropped
 	// request points at the one that replaced it
-	requests, err := mAdmin.ScheduleRequests(ctx, prefix+".supersede", 20)
+	requests, err := mAdmin.ScheduleMessages(ctx, prefix+".supersede", 20)
 	must(err)
 	if len(requests) != 2 {
 		die(fmt.Sprintf("want 2 listed requests, got %d", len(requests)))
 	}
 	newest, oldest := requests[0], requests[1]
-	if newest.MessageId != head.Id || newest.Outcome != schedule.JobRequestSucceeded {
+	if newest.MessageId != head.Id || newest.Outcome != schedule.MessageSucceeded {
 		die(fmt.Sprintf("newest request: want %d succeeded, got %d %s", head.Id, newest.MessageId, newest.Outcome))
 	}
-	if oldest.MessageId != pending.Id || oldest.Outcome != schedule.JobRequestSuperseded {
+	if oldest.MessageId != pending.Id || oldest.Outcome != schedule.MessageSuperseded {
 		die(fmt.Sprintf("oldest request: want %d superseded, got %d %s", pending.Id, oldest.MessageId, oldest.Outcome))
 	}
 	if oldest.SupersededBy == nil || *oldest.SupersededBy != head.Id || oldest.SupersededAt == nil {
@@ -539,7 +544,7 @@ func statusSection(ctx context.Context) {
 	step("consumer end-to-end + status: fail-once retry, always-failing sibling, RAN/SUCCEEDED/FAILED")
 
 	jobName := prefix + ".status"
-	_, err := mAdmin.RegisterSchedule(ctx, jobName, parse("@hourly"), nil, nil)
+	_, err := mAdmin.RegisterSchedule(ctx, jobName, parse("@hourly"), target.Name, payload, nil)
 	must(err)
 	defer func() { must(mAdmin.DestroySchedule(ctx, jobName)) }()
 
@@ -555,14 +560,15 @@ func statusSection(ctx context.Context) {
 	var mu sync.Mutex
 	attempts := map[time.Time]int{}
 	var firstScheduledTime time.Time
-	stop := startConsumer(ctx, boundName, []string{jobName}, 1, func(ctx context.Context, request *schedule.JobRequest) error {
+	stop := startConsumer(ctx, boundName, []string{jobName}, 1, func(ctx context.Context, _ *labMessage) error {
+		meta, _ := consumergroup.MetaFromContext(ctx)
 		mu.Lock()
 		defer mu.Unlock()
 		if firstScheduledTime.IsZero() {
-			firstScheduledTime = request.ScheduledAt
+			firstScheduledTime = meta.ScheduledAt
 		}
-		attempts[request.ScheduledAt]++
-		if request.ScheduledAt.Equal(firstScheduledTime) && attempts[request.ScheduledAt] > 1 {
+		attempts[meta.ScheduledAt]++
+		if meta.ScheduledAt.Equal(firstScheduledTime) && attempts[meta.ScheduledAt] > 1 {
 			return nil
 		}
 		return errors.New("scripted failure")
@@ -575,10 +581,10 @@ func statusSection(ctx context.Context) {
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'success';`,
-		jobRequests.Id, bound, first.Id), 1)
+		target.Id, bound, first.Id), 1)
 	if got := scalarInt64(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`,
-		jobRequests.Id, bound, first.Id)); got < 1 {
+		target.Id, bound, first.Id)); got < 1 {
 		die("the first request must record its failed attempt before succeeding")
 	}
 
@@ -586,7 +592,7 @@ func statusSection(ctx context.Context) {
 	must(err)
 	waitForCount(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM delivery_log_%d WHERE consumer_group_id = %d AND message_id = %d AND status = 'failure';`,
-		jobRequests.Id, bound, second.Id), 1)
+		target.Id, bound, second.Id), 1)
 
 	statuses, err := mAdmin.ScheduleStatus(ctx, jobName)
 	must(err)
@@ -620,17 +626,17 @@ func statusSection(ctx context.Context) {
 
 	// per-group outcomes for the same two requests: the bound group ran both,
 	// the bindingless group ran neither
-	requests, err := mAdmin.ScheduleRequests(ctx, jobName, 20)
+	requests, err := mAdmin.ScheduleMessages(ctx, jobName, 20)
 	must(err)
-	outcomes := map[string]schedule.JobRequestOutcome{}
+	outcomes := map[string]schedule.MessageOutcome{}
 	for _, request := range requests {
 		outcomes[fmt.Sprintf("%s/%d", request.ConsumerGroup, request.MessageId)] = request.Outcome
 	}
-	want := map[string]schedule.JobRequestOutcome{
-		fmt.Sprintf("%s/%d", boundName, first.Id):        schedule.JobRequestSucceeded,
-		fmt.Sprintf("%s/%d", boundName, second.Id):       schedule.JobRequestFailed,
-		fmt.Sprintf("%s/%d", bindinglessName, first.Id):  schedule.JobRequestSuperseded,
-		fmt.Sprintf("%s/%d", bindinglessName, second.Id): schedule.JobRequestPending,
+	want := map[string]schedule.MessageOutcome{
+		fmt.Sprintf("%s/%d", boundName, first.Id):        schedule.MessageSucceeded,
+		fmt.Sprintf("%s/%d", boundName, second.Id):       schedule.MessageFailed,
+		fmt.Sprintf("%s/%d", bindinglessName, first.Id):  schedule.MessageSuperseded,
+		fmt.Sprintf("%s/%d", bindinglessName, second.Id): schedule.MessagePending,
 	}
 	if len(requests) != len(want) {
 		die(fmt.Sprintf("want %d listed (request, group) rows, got %d", len(want), len(requests)))
@@ -687,22 +693,22 @@ func startScheduler(ctx context.Context) func() {
 	}
 }
 
-// registerGroup creates the consumer group on the job_requests topic, bound to
-// the given job names (none = bindingless), and returns its id.
+// registerGroup creates the consumer group on the lab's target topic, bound
+// to the given schedule names (none = bindingless), and returns its id.
 func registerGroup(ctx context.Context, name string, bindings ...string) int64 {
 	controller, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)
 	must(err)
-	group, err := controller.RegisterGroup(ctx, jobRequests.Id, name, consumergroup.Beginning())
+	group, err := controller.RegisterGroup(ctx, target.Id, name, consumergroup.Beginning())
 	must(err)
-	_, err = controller.DeclareBindings(ctx, jobRequests.Id, group.Id, bindings, time.Now())
+	_, err = controller.DeclareBindings(ctx, target.Id, group.Id, bindings, time.Now())
 	must(err)
 	return group.Id
 }
 
 // startConsumer runs one consumer instance on the group until the returned
 // stop is called.
-func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *schedule.JobRequest) error) func() {
-	jobRequestConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
+func startConsumer(ctx context.Context, group string, bindings []string, concurrency int, handler func(context.Context, *labMessage) error) func() {
+	labConsumer, err := consumer.NewConsumer(ds, &consumer.ConsumerConfig{
 		ClaimPollRate:           schedulerPollRate,
 		MessageConcurrency:      concurrency,
 		ExceptionInitialBackoff: 200 * time.Millisecond,
@@ -710,7 +716,7 @@ func startConsumer(ctx context.Context, group string, bindings []string, concurr
 	must(err)
 
 	lifecycleCtx, cancel := context.WithCancel(ctx)
-	instance, err := jobRequestConsumer.Register[schedule.JobRequest](lifecycleCtx, group, schedule.TopicName, bindings)
+	instance, err := labConsumer.Register[labMessage](lifecycleCtx, group, target.Name, bindings)
 	must(err)
 	done := make(chan struct{})
 	go func() {
@@ -732,16 +738,8 @@ func statusFor(statuses []*schedule.GroupStatus, group string) *schedule.GroupSt
 	return nil
 }
 
-func cleanupGroups() {
-	ctx := context.Background()
-	for _, sql := range []string{
-		fmt.Sprintf(`DELETE FROM exception_queue_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM delivery_log_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM claim_lease_%d WHERE consumer_group_id IN (SELECT id FROM consumer_group_config WHERE name LIKE '%s.%%');`, jobRequests.Id, prefix),
-		fmt.Sprintf(`DELETE FROM consumer_group_config WHERE name LIKE '%s.%%';`, prefix),
-	} {
-		exec(ctx, sql)
-	}
+func cleanupTarget() {
+	must(mAdmin.DestroyTopic(context.Background(), target.Name, admin.DestroyOptions{Force: true}))
 }
 
 // --- assertion helpers ---
@@ -767,12 +765,12 @@ func waitAdvanced(ctx context.Context, jobId int64) {
 
 func messageCount(ctx context.Context, messageKey string) int64 {
 	return scalarInt64(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, jobRequests.Id), messageKey)
+		`SELECT COUNT(*) FROM message_log_%d WHERE message_key = $1;`, target.Id), messageKey)
 }
 
 func producedScheduledTimes(ctx context.Context, messageKey string) []time.Time {
 	rows, err := ds.Pool.Query(ctx, fmt.Sprintf(
-		`SELECT payload->>'scheduled_at' FROM message_log_%d WHERE message_key = $1 ORDER BY id;`, jobRequests.Id), messageKey)
+		`SELECT options->>'scheduled_at' FROM message_log_%d WHERE message_key = $1 ORDER BY id;`, target.Id), messageKey)
 	must(err)
 	defer rows.Close()
 

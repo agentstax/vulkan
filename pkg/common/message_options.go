@@ -25,6 +25,11 @@ type MessageOptions struct {
 	// to the consumer's policy per-field.
 	// Default: nil (the consumer's policy applies whole).
 	Retry *RetryPolicy `json:"retry,omitempty"`
+
+	// ScheduledAt - the scheduled time a schedule's message is for, set
+	// by the schedule producer; zero on every other message. A fact about
+	// the message, never a consumer knob -- Fill and Clamp pass it through.
+	ScheduledAt time.Time `json:"scheduled_at,omitzero"`
 }
 
 // returns new copy not modified pointer
@@ -91,7 +96,8 @@ func (o *MessageOptions) Equal(other *MessageOptions) bool {
 	}
 	return o.Concurrency == other.Concurrency &&
 		o.Timeout == other.Timeout &&
-		o.Retry.Equal(other.Retry)
+		o.Retry.Equal(other.Retry) &&
+		o.ScheduledAt.Equal(other.ScheduledAt)
 }
 
 func (o *MessageOptions) WithDefaults() *MessageOptions {

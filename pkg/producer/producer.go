@@ -16,7 +16,7 @@ import (
 
 // ProducerFunc runs inside the append's transaction; the type and its docs
 // live with the datastore.
-type ProducerFunc[Message any] = controller.ProduceFunc[Message]
+type ProducerFunc[Message topic.Versioned] = controller.ProduceFunc[Message]
 
 type Producer struct {
 	Config *ProducerConfig

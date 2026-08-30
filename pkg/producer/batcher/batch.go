@@ -2,15 +2,16 @@ package batcher
 
 import (
 	"cmp"
+	"github.com/agentstax/vulkan/pkg/topic"
 	"slices"
 )
 
 // batch is the operations dequeued together and resolved in one transaction.
-type batch[Message any] struct {
+type batch[Message topic.Versioned] struct {
 	operations []*batchOperation[Message]
 }
 
-func newBatch[Message any](operations []*batchOperation[Message]) *batch[Message] {
+func newBatch[Message topic.Versioned](operations []*batchOperation[Message]) *batch[Message] {
 	// ascending message key (compacted only) -> every batch txn takes its
 	// compaction_head row locks in one global order: hot keys queue
 	// batch-to-batch, never deadlock
@@ -55,7 +56,7 @@ func (b *batch[Message]) recordAll(err error) {
 
 // compactionSortKey reads an operation's message key when the produce enabled
 // compaction; "" for a message that takes no compaction_head lock.
-func compactionSortKey[Message any](operation *batchOperation[Message]) string {
+func compactionSortKey[Message topic.Versioned](operation *batchOperation[Message]) string {
 	options := operation.request.options
 	if options.Compaction == nil || !options.Compaction.Enable {
 		return ""

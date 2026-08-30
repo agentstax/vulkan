@@ -7,15 +7,14 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule"
 )
 
-// ScheduleData is one schedule_config row joined to its schedule_cursor row
-// -- the nullable owner id columns scan COALESCE'd to 0.
+// ScheduleData is one schedule_config row joined to its schedule_cursor row.
 type ScheduleData struct {
 	Id              int64           `db:"id"`
 	SystemId        int64           `db:"system_id"`
 	TopicId         int64           `db:"topic_id"`
-	ConsumerGroupId int64           `db:"consumer_group_id"`
 	Name            string          `db:"name"`
 	Expression      string          `db:"expression"`
+	SchemaVersion   int             `db:"schema_version"`
 	Concurrency     string          `db:"concurrency"`
 	TimeoutNs       int64           `db:"timeout_ns"`
 	Suspended       bool            `db:"suspended"`
@@ -28,12 +27,15 @@ type ScheduleData struct {
 // RegisterScheduleData is one declaration of a schedule, as RegisterSchedule
 // takes it. Schedule stays parsed -- next_scheduled_at is computed from it.
 type RegisterScheduleData struct {
-	Name        string
-	Expression  *schedule.Expression
-	Concurrency string
-	TimeoutNs   int64
-	Payload     any
-	Metadata    any
+	Name          string
+	Expression    *schedule.Expression
+	SystemId      int64
+	TopicId       int64
+	Concurrency   string
+	TimeoutNs     int64
+	Payload       any
+	SchemaVersion int
+	Metadata      any
 }
 
 // GroupStatusData is one consumer group's Status counts.
@@ -45,11 +47,11 @@ type GroupStatusData struct {
 	Failed        int64
 }
 
-// JobRequestStatusData is one (consumer group, job request) ListRequests row.
-type JobRequestStatusData struct {
+// MessageStatusData is one (consumer group, message) ListMessages row.
+type MessageStatusData struct {
 	ConsumerGroup string
 	MessageId     int64
-	Payload       json.RawMessage
+	ScheduledAt   time.Time
 	ProducedAt    time.Time
 	Head          bool
 	Succeeded     bool
@@ -59,22 +61,22 @@ type JobRequestStatusData struct {
 	SupersededAt  *time.Time
 }
 
-// matchingGroupData is one consumer group that receives a schedule's requests.
+// matchingGroupData is one consumer group that receives a schedule's messages.
 type matchingGroupData struct {
 	Id   int64  `db:"id"`
 	Name string `db:"name"`
 }
 
-// jobMessageData is one of a schedule's message-log rows.
-type jobMessageData struct {
-	Id        int64           `db:"id"`
-	Payload   json.RawMessage `db:"payload"`
-	CreatedAt time.Time       `db:"created_at"`
+// keyMessageData is one of a schedule's message-log rows.
+type keyMessageData struct {
+	Id          int64     `db:"id"`
+	ScheduledAt time.Time `db:"scheduled_at"` // options->>'scheduled_at'
+	CreatedAt   time.Time `db:"created_at"`
 }
 
-// requestOutcomeData is one message's delivery history for one consumer
+// messageOutcomeData is one message's delivery history for one consumer
 // group, rolled up to booleans. The zero value reads as "never delivered".
-type requestOutcomeData struct {
+type messageOutcomeData struct {
 	Succeeded bool `db:"succeeded"`
 	Raised    bool `db:"raised"`
 	Deferred  bool `db:"deferred"`

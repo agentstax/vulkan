@@ -51,10 +51,11 @@ and the code lands on a page here the same way.
 | [VK0032](/errors/VK0032) | stored message options outside this consumer's bounds | warn |
 | [VK0033](/errors/VK0033) | could not create partition ahead | warn |
 | [VK0057](/errors/VK0057) | no partition covers the next message id | warn |
+| [VK0058](/errors/VK0058) | schedule target topic keeps no success rows | warn |
 | [VK0034](/errors/VK0034) | worker instance lost | warn |
 | [VK0035](/errors/VK0035) | manager row suspended | warn |
 | [VK0036](/errors/VK0036) | worker tick backoff curve exhausted | error |
-| [VK0037](/errors/VK0037) | schedule request was already published by an earlier ambiguous commit | warn |
+| [VK0037](/errors/VK0037) | schedule message was already produced by an earlier ambiguous commit | warn |
 | [VK0038](/errors/VK0038) | produce exceeded the duration threshold | warn |
 | [VK0039](/errors/VK0039) | delivery dispatch exceeded the duration threshold | warn |
 | [VK0040](/errors/VK0040) | worker tick exceeded its poll rate | warn |

@@ -2,14 +2,15 @@ package controller
 
 import (
 	"github.com/agentstax/vulkan/pkg/common"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 // MessageRow is one stored message, typed; the struct and its docs live in
 // pkg/common.
-type MessageRow[Message any] = common.MessageRow[Message]
+type MessageRow[Message topic.Versioned] = common.MessageRow[Message]
 
 // Appended is one append's outcome.
-type Appended[Message any] struct {
+type Appended[Message topic.Versioned] struct {
 	// Message - the payload this call built. On a duplicate it is NOT the
 	// originally-stored payload: the idempotency table records only the key.
 	Message *Message

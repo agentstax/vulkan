@@ -9,16 +9,17 @@ import (
 
 // ScheduleConfig is RegisterSchedule's spec -- every field is optional.
 type ScheduleConfig struct {
-	// Timeout - how long one job request's delivery may run.
+	// Timeout - how long one message's delivery may run.
 	// Default: 30s.
 	Timeout time.Duration
 
-	// Concurrency - whether a job request runs while a previous one is still
+	// Concurrency - whether a message runs while a previous one is still
 	// running (parallel) or waits for it (exclusive).
 	// Default: parallel.
 	Concurrency common.ConcurrencyPolicy
 
-	// Metadata - marshaled to opaque JSON carried on every job request.
+	// Metadata - marshaled to opaque JSON stored on the row and shown by
+	// `vulkan schedule get`; it is not part of the produced message.
 	// Default: {}.
 	Metadata any
 }

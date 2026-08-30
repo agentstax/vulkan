@@ -1,13 +1,13 @@
 package controller
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/agentstax/vulkan/pkg/common"
 	"github.com/agentstax/vulkan/pkg/schedule"
 	"github.com/agentstax/vulkan/pkg/schedule/controller/datastore"
+	"github.com/agentstax/vulkan/pkg/topic"
 )
 
 func toSchedule(data *datastore.ScheduleData) (*schedule.Schedule, error) {
@@ -20,9 +20,9 @@ func toSchedule(data *datastore.ScheduleData) (*schedule.Schedule, error) {
 		Id:              data.Id,
 		SystemId:        data.SystemId,
 		TopicId:         data.TopicId,
-		ConsumerGroupId: data.ConsumerGroupId,
 		Name:            data.Name,
 		Expression:      data.Expression,
+		SchemaVersion:   data.SchemaVersion,
 		Concurrency:     concurrency,
 		Timeout:         time.Duration(data.TimeoutNs),
 		Suspended:       data.Suspended,
@@ -43,53 +43,50 @@ func toGroupStatus(data *datastore.GroupStatusData) *schedule.GroupStatus {
 	}
 }
 
-func toJobRequestStatus(data *datastore.JobRequestStatusData) (*schedule.JobRequestStatus, error) {
-	// ScheduledAt lives in the message payload, not a column
-	var request schedule.JobRequest
-	if err := json.Unmarshal(data.Payload, &request); err != nil {
-		return nil, fmt.Errorf("job request payload: %w", err)
-	}
-
-	status := &schedule.JobRequestStatus{
+func toMessageStatus(data *datastore.MessageStatusData) *schedule.MessageStatus {
+	status := &schedule.MessageStatus{
 		ConsumerGroup: data.ConsumerGroup,
 		MessageId:     data.MessageId,
-		ScheduledAt:   request.ScheduledAt,
+		ScheduledAt:   data.ScheduledAt,
 		ProducedAt:    data.ProducedAt,
-		Outcome:       toJobRequestOutcome(data),
+		Outcome:       toMessageOutcome(data),
 	}
-	if status.Outcome == schedule.JobRequestSuperseded {
+	if status.Outcome == schedule.MessageSuperseded {
 		status.SupersededBy = data.SupersededBy
 		status.SupersededAt = data.SupersededAt
 	}
-	return status, nil
+	return status
 }
 
-func toJobRequestOutcome(data *datastore.JobRequestStatusData) schedule.JobRequestOutcome {
+func toMessageOutcome(data *datastore.MessageStatusData) schedule.MessageOutcome {
 	switch {
 	case data.Succeeded:
-		return schedule.JobRequestSucceeded
+		return schedule.MessageSucceeded
 	case data.Raised:
-		return schedule.JobRequestFailed
+		return schedule.MessageFailed
 	// order specific - must be after Succeeded and Raised.
 	// if it gets here the request never ran and a non-head
 	// message can never run ie it was Superseded.
 	case !data.Head:
-		return schedule.JobRequestSuperseded
+		return schedule.MessageSuperseded
 	case data.Deferred:
-		return schedule.JobRequestDeferred
+		return schedule.MessageDeferred
 	default:
-		return schedule.JobRequestPending
+		return schedule.MessagePending
 	}
 }
 
-func toRegisterScheduleData(name string, expression *schedule.Expression, payload any, cfg *ScheduleConfig) *datastore.RegisterScheduleData {
+func toRegisterScheduleData[Message topic.Versioned](systemId int64, name string, expression *schedule.Expression, topicId int64, payload *Message, cfg *ScheduleConfig) *datastore.RegisterScheduleData {
 	return &datastore.RegisterScheduleData{
-		Name:        name,
-		Expression:  expression,
-		Concurrency: string(cfg.Concurrency),
-		TimeoutNs:   int64(cfg.Timeout),
-		Payload:     payload,
-		Metadata:    cfg.Metadata,
+		Name:          name,
+		Expression:    expression,
+		SystemId:      systemId,
+		TopicId:       topicId,
+		Concurrency:   string(cfg.Concurrency),
+		TimeoutNs:     int64(cfg.Timeout),
+		Payload:       payload,
+		SchemaVersion: topic.SchemaVersionOf[Message](),
+		Metadata:      cfg.Metadata,
 	}
 }
 
