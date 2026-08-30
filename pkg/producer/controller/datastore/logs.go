@@ -14,5 +14,5 @@ var eventPartitionNotCreatedAhead = diagnostic.NewEvent("VK0033",
 // id and created one itself: create-ahead did not run, or a burst
 // outran its triggers.
 var eventPartitionCreatedOnInsert = diagnostic.NewEvent("VK0057",
-	"no partition covers the next message id -- creating it",
-	"that insert pays the creation latency; run a consumer for the topic's upkeep or raise PartitionSize")
+	"no partition covers the next message id",
+	"the insert creates it and pays the creation latency; run a consumer for the topic's upkeep or raise PartitionSize")

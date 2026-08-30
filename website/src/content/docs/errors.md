@@ -50,7 +50,7 @@ and the code lands on a page here the same way.
 | [VK0031](/errors/VK0031) | crash-loop kill backstop fired | warn |
 | [VK0032](/errors/VK0032) | stored message options outside this consumer's bounds | warn |
 | [VK0033](/errors/VK0033) | could not create partition ahead | warn |
-| [VK0057](/errors/VK0057) | no partition covers the next message id -- creating it | warn |
+| [VK0057](/errors/VK0057) | no partition covers the next message id | warn |
 | [VK0034](/errors/VK0034) | worker instance lost | warn |
 | [VK0035](/errors/VK0035) | manager row suspended | warn |
 | [VK0036](/errors/VK0036) | worker tick backoff curve exhausted | error |
