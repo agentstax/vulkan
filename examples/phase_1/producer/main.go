@@ -51,9 +51,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		return err
-	}
 
 	t, err := mAdmin.RegisterTopic(ctx, *topicPtr, &topiccontroller.TopicConfig{})
 	if err != nil {

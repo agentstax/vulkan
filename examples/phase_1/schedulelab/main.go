@@ -104,7 +104,6 @@ func run() (err error) {
 
 	mAdmin, err = admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 	labScheduler, err = scheduler.NewScheduler(ds, nil)
 	must(err)
 

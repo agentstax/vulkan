@@ -17,8 +17,9 @@ First boot needed no new locking (`system.register` already serializes
 under `pg_advisory_xact_lock`); a probe racing six pools calling bare
 RegisterTopic on an empty database converged every round. Quickstart and
 six playgrounds lost the RegisterSystem line; scenario 03 lost its whole
-admin detour. Labs register-idempotency, topic, reserved-topic,
-destroy-system, alert, schema-gate pass; playground 01 runs clean.
+admin detour. The labs dropped the boilerplate call too -- only the seven
+where RegisterSystem is the subject or no topic gets registered keep it.
+Full fresh-DB lab suite 44/44.
 
 ## 2026-08-30 — std uuid replaces github.com/google/uuid [0623]
 

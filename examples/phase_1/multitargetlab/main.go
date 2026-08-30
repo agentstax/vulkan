@@ -249,7 +249,6 @@ func callerKeyRetryScenario(ctx context.Context, ds *iDatastore.PostgresDatastor
 func newTarget(ctx context.Context, ds *iDatastore.PostgresDatastore, label string, partitionSize int64) (*topic.Topic, *producer.ProducerInstance[common.Work], func()) {
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("multitargetlab.%s.%d", label, time.Now().UnixNano())
 	tp, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{PartitionSize: partitionSize})

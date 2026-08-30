@@ -72,7 +72,6 @@ func run() (err error) {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("schemagate.lab.%d", time.Now().UnixNano())
 	siblingName := name + ".sibling"

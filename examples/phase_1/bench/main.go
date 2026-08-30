@@ -62,9 +62,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := mAdmin.RegisterSystem(ctx, nil); err != nil {
-		return err
-	}
 
 	t, err := mAdmin.GetTopic(ctx, *topicPtr)
 	if err != nil {

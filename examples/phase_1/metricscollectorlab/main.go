@@ -97,7 +97,6 @@ func run() (err error) {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 
 	step("seed 6 topics x 2 groups x 5 messages -- more topics than TopicConcurrency")
 	consumers, err := consumergroupcontroller.NewConsumerGroupController(ds, nil)

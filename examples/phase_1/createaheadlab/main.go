@@ -68,7 +68,6 @@ func run() (err error) {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 
 	perCallScenario(ctx, ds, mAdmin)
 	batchedScenario(ctx, ds, mAdmin)

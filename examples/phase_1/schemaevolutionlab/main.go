@@ -111,7 +111,6 @@ func run() (err error) {
 
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 
 	name := fmt.Sprintf("phase14a.schemaevolutionlab.%d", time.Now().UnixNano())
 	registered, err := mAdmin.RegisterTopic(ctx, name, &topiccontroller.TopicConfig{})

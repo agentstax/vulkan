@@ -1,11 +1,8 @@
 # Public API
 
-need metric / alert example playground scenarios
-
 ---
-- hide RegisterSystem calls
-- improve comments on New*
 - where to put consumer.ConsumerConfig ie NewConsumer or Register, same pattern for producer etc
+- need metric / alert example playground scenarios
 ---
 
 01 reconsider this postgres per param layout and having password in optional config

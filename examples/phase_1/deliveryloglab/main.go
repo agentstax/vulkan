@@ -88,10 +88,6 @@ func run() (err error) {
 	must(err)
 	defer ds.Close()
 
-	mAdmin, err := admin.NewMessageAdmin(ds, nil)
-	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
-
 	scenarioFreshFailureAndSuccess(ctx, ds)
 	scenarioRetryDistinctAttempts(ctx, ds)
 	scenarioDeliveryLogOff(ctx, ds)
@@ -116,7 +112,6 @@ func scenarioFreshFailureAndSuccess(ctx context.Context, ds *iDatastore.Postgres
 	tp, cd, wp, groupId := newTopic(ctx, ds, "scenario1", topiccontroller.TopicConfig{})
 	mAdmin, err := admin.NewMessageAdmin(ds, &admin.MessageAdminConfig{AllowDestroy: true})
 	must(err)
-	must(mAdmin.RegisterSystem(ctx, nil))
 	defer func() {
 		must(mAdmin.DestroyTopic(ctx, tp.Name, admin.DestroyOptions{Force: true}))
 	}()
