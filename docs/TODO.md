@@ -30,11 +30,13 @@ its labs pass alone; the full fresh-DB suite runs at the end.
    from a type. `scheduled_at` onto the message options document and
    `consumergroup.MessageMeta.ScheduledAt`. Status/messages reads move
    to the target topic's delivery_log by message key.
-3. **The handle.** `pkg/scheduler` (API package): `NewScheduler`,
-   `Register[Message topic.Versioned](ctx, name, expression, topicName,
-   payload, cfg)` -> `*SchedulerInstance[Message]`, `Schedule(ctx)` =
-   system manager. `RegisterSchedule` on admin stays for the CLI (no
-   type argument: payload as JSON, version explicit).
+3. DONE 2026-08-30 (uncommitted) -- **The handle.** `pkg/scheduler` (API package): `NewScheduler`,
+   `Register[Message topic.Versioned](ctx, name, expression string,
+   topicName, payload, cfg)` -> `*SchedulerInstance[Message]`
+   (`Registered` row + `Payload`; the row field is not named `Schedule`
+   because that is the verb), `Schedule(ctx)` = a per-instance system
+   manager's Run. `RegisterSchedule` on admin stays (alerts + CLI path);
+   playground 06 and a schedulelab handle section drive the handle.
 4. **Alerts through the handle + docs sweep.** (JobRequest retirement,
    alerts consuming `alert.JobPayload`, and the playground 06 rewrite
    landed with step 2.) partitioncount / compactionreadcost register
@@ -51,5 +53,6 @@ additively if a real writer appears); `RegisterSchedule` warns VK0058
 when the target's DeliveryLogMode keeps no success rows;
 `ScheduleConfig.Metadata` stays as operator annotation.
 
-Parked for later (user): sweep every `[Message any]` to
-`[Message topic.Versioned]` outside pkg/producer.
+Done 2026-08-30: every `[Message any]` outside pkg/producer is
+`[Message topic.Versioned]`; `common.MessageRow` keeps `any` because
+pkg/common (infrastructure) cannot import the pkg/topic vocabulary root.

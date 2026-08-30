@@ -12,14 +12,13 @@ the expression comes due. Consuming it is a plain consumer group on
 that topic, and there can be any number of them - the schedule knows
 nothing about who listens.
 
-<ThreadAside label="PROPOSED" title="Not shipped">
-Today's shape is `MessageAdmin.RegisterCronJob`, which produces a
-`cron.JobRequest` envelope onto the `__system.job_requests` topic with
-the job's name as the routing key; a consumer binds that name and
-unmarshals the payload by hand. This page is the spec for replacing
-that, and "cron job" is renamed "schedule" everywhere with it - code,
-admin, CLI, tables, log attributes. Nothing below compiles against the
-shipped library yet.
+<ThreadAside label="PROPOSED" title="Partly shipped">
+The `scheduler` handle, the rename, and the stored-payload produce
+path below are in the library; every sample on this page compiles.
+What is still ahead: the built-in alerts register their own schedules
+through `MessageAdmin.RegisterSchedule` rather than this handle, and
+the older pages (quickstart, architecture, table design) still
+describe the cron-job shape. The aside comes off when those catch up.
 
 </ThreadAside>
 

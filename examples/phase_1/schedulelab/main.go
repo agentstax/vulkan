@@ -6,6 +6,9 @@
 //     timeout vs min rate, re-register wins, Feb-29 single-scheduled-time pass
 //  2. target -- a schedule dies with its target topic; one targeting another
 //     topic survives
+//  2b. handle -- scheduler.Register declares the same row admin does, refuses
+//     an unregistered topic and a bad expression, and Schedule runs the
+//     system manager until its ctx cancels
 //  3. produce-once -- a backdated row produces ONE message stamped with the
 //     NEWEST due scheduled time, older dues dropped
 //  4. v7 dedupe -- re-backdating to the SAME scheduled time is a Duplicate,
@@ -40,6 +43,7 @@ import (
 	"github.com/agentstax/vulkan/pkg/schedule"
 	schedulecontroller "github.com/agentstax/vulkan/pkg/schedule/controller"
 	scheduleproducer "github.com/agentstax/vulkan/pkg/schedule/producer"
+	"github.com/agentstax/vulkan/pkg/scheduler"
 	"github.com/agentstax/vulkan/pkg/topic"
 	topiccontroller "github.com/agentstax/vulkan/pkg/topic/controller"
 	"github.com/agentstax/vulkan/pkg/worker"
@@ -109,6 +113,7 @@ func run() (err error) {
 
 	validationSection(ctx)
 	targetSection(ctx)
+	handleSection(ctx)
 
 	// every scheduler-driven section below rides this one claimed instance
 	stopScheduler := startScheduler(ctx)
@@ -219,6 +224,40 @@ func targetSection(ctx context.Context) {
 	}
 	must(mAdmin.DestroySchedule(ctx, prefix+".standalone"))
 	fmt.Println("  ✓ cascade removed the schedule with its target topic, the other survived")
+}
+
+func handleSection(ctx context.Context) {
+	step("handle: scheduler.Register declares the row, Schedule runs the manager until ctx cancels")
+
+	invoiceScheduler, err := scheduler.NewScheduler(ds, nil)
+	must(err)
+
+	if _, err := invoiceScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", prefix+".missing", payload, nil); !errors.Is(err, topic.ErrTopicNotFound) {
+		die(fmt.Sprintf("want ErrTopicNotFound for an unregistered target, got %v", err))
+	}
+	if _, err := invoiceScheduler.Register[labMessage](ctx, prefix+".handle", "every day at noon", target.Name, payload, nil); err == nil {
+		die("want an error for an unparseable expression")
+	}
+
+	nightly, err := invoiceScheduler.Register[labMessage](ctx, prefix+".handle", "@hourly", target.Name, payload, nil)
+	must(err)
+	defer func() { must(mAdmin.DestroySchedule(ctx, prefix+".handle")) }()
+	found, err := mAdmin.GetSchedule(ctx, prefix+".handle")
+	must(err)
+	if found == nil || found.Id != nightly.Registered.Id || found.TopicId != target.Id || found.SchemaVersion != 1 {
+		die(fmt.Sprintf("handle row differs from admin's read: %+v vs %+v", nightly.Registered, found))
+	}
+	if nightly.Payload != payload {
+		die("instance must keep the payload it registered")
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	time.AfterFunc(2*time.Second, cancel)
+	if err := nightly.Schedule(runCtx); err != nil {
+		die(fmt.Sprintf("Schedule must return nil on a requested stop, got %v", err))
+	}
+	fmt.Println("  ✓ handle registered the same row admin reads; Schedule ran the manager and stopped clean")
 }
 
 func produceOnceSection(ctx context.Context) {

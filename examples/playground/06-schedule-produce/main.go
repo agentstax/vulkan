@@ -4,14 +4,14 @@
 // produces and the topic it produces to, consume that topic like any
 // other.
 //
-// Concepts held before domain code (10): the consume set from scenario 03,
-// plus MessageAdmin (needed here, for RegisterSchedule), schedule.ParseExpression,
-// ScheduleConfig, consumergroup.MetaFromContext for the scheduled time, and
-// the fact that the schedule producer worker runs only under a manager.
+// Concepts held before domain code (9): the consume set from scenario 03,
+// plus Scheduler, its Register and Schedule, ScheduleConfig,
+// consumergroup.MetaFromContext for the scheduled time, and the fact that
+// Schedule runs the system manager.
 //
 // Traps hit:
-//   - Nothing produces if no manager is running; a register-and-exit
-//     program registers a schedule that never fires.
+//   - Nothing produces if no manager is running; Schedule is the manager,
+//     so a register-and-exit program registers a schedule that never fires.
 //   - The scheduled time is not in the payload (the payload never
 //     changes) -- it is on the delivery's meta, reached through ctx.
 //   - A one-off "run this in 10 minutes" is not this feature; it is
@@ -28,7 +28,8 @@ import (
 	"github.com/agentstax/vulkan/pkg/consumer"
 	"github.com/agentstax/vulkan/pkg/consumergroup"
 	"github.com/agentstax/vulkan/pkg/datastore"
-	"github.com/agentstax/vulkan/pkg/schedule"
+	"github.com/agentstax/vulkan/pkg/scheduler"
+	"golang.org/x/sync/errgroup"
 )
 
 type InvoiceRun struct {
@@ -68,11 +69,11 @@ func run() error {
 		return err
 	}
 
-	expression, err := schedule.ParseExpression("0 2 * * *")
+	invoiceScheduler, err := scheduler.NewScheduler(ds, nil)
 	if err != nil {
 		return err
 	}
-	_, err = messageAdmin.RegisterSchedule(ctx, "invoices.nightly", expression, invoices.Name, &InvoiceRun{Region: "eu"}, nil)
+	nightly, err := invoiceScheduler.Register[InvoiceRun](ctx, "invoices.nightly", "0 2 * * *", invoices.Name, &InvoiceRun{Region: "eu"}, nil)
 	if err != nil {
 		return err
 	}
@@ -86,9 +87,14 @@ func run() error {
 		return err
 	}
 
-	return runs.Consume(ctx, func(ctx context.Context, run *InvoiceRun) error {
-		meta, _ := consumergroup.MetaFromContext(ctx)
-		fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
-		return nil
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error { return nightly.Schedule(groupCtx) })
+	group.Go(func() error {
+		return runs.Consume(groupCtx, func(ctx context.Context, run *InvoiceRun) error {
+			meta, _ := consumergroup.MetaFromContext(ctx)
+			fmt.Printf("invoicing %s for %s\n", run.Region, meta.ScheduledAt.Format("2006-01-02"))
+			return nil
+		})
 	})
+	return group.Wait()
 }

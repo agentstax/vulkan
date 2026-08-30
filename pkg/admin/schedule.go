@@ -37,7 +37,7 @@ func (a *MessageAdmin) RegisterSchedule[Message topic.Versioned](ctx context.Con
 		return nil, errors.New("topic name is required")
 	}
 
-	// gate -- a schedule can't exist without the control-plane schema it rides on
+	// gate -- a schedule needs the control-plane schema RegisterSystem creates
 	sys, err := a.systemController.Get(ctx)
 	if err != nil {
 		return nil, err
